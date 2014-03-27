@@ -11,7 +11,6 @@
 #include <keyU.h>
 #include <soi_error.h>
 #include <sum_rpc.h>
-
 #include "serverdefs.h"
 #include "drmssite_info.h"
 
@@ -28,6 +27,7 @@ extern int debugflg;
 extern int rrid;
 extern float ftmp;
 extern char logname[];
+extern char jsoc_machine[];
 static int NO_OPEN = 0;
 static char callername[MAX_STR];
 static char nametmp[80];
@@ -189,6 +189,10 @@ KEY *configdo_1(KEY *params)
     return((KEY *)1);			/* nothing will be sent later */
   } 
   numSUM = SUM_NUMSUM;          //in base/drms/apps/serverdefs.h;
+
+  //numSUM = 1;			//!!TEMP force to 1
+  //write_log("This is the xsum_svc with numSUM forced to 1\n");
+
   rinfo = (uint32_t)numSUM;
   if(rinfo) {
     write_time();
@@ -197,6 +201,33 @@ KEY *configdo_1(KEY *params)
   send_ack();				/* ack original sum_svc caller */
   return((KEY *)1);			/* nothing will be sent later */
 }
+
+/* Called by the SUM API SUM_repartn() in order to get this sums process
+ * to reread the sum_partn_avail DB table. (Used after a change to the
+ * sum_partn_avail DB table.)
+ * Returns 0 if error. Called:
+ * USER:           KEYTYP_STRING   production
+ * DEBUGFLG:	   KEYTYPE_INT	   0
+ * uid:		   KEYTYP_UINT64   574
+*/
+KEY *repartndo_1(KEY *params)
+{
+  int stat;
+
+  stat = DS_PavailRequest2();
+  if(!stat) {
+    write_time();
+    write_log("Successful reread of sum_partn_avail DB table\n");
+    rinfo = 0;
+  }
+  else {
+    write_log("Unsuccessful reread of sum_partn_avail DB table\n");
+    rinfo = 1;
+  }
+  send_ack();				/* ack original sum_svc caller */
+  return((KEY *)1);			/* nothing will be sent later */
+}
+
 
 /* Called by the SUM API SUM_shutdown() making a clnt_call to sum_svc for the
  * SHUTDO procedure. First sets the NO_OPEN flag to prevent further 
@@ -269,21 +300,21 @@ KEY *getdo_1(KEY *params)
   enum clnt_stat status;
   int reqcnt, i, offline, storeset, offcnt;
   char *call_err, *cptr, *wd;
-  char scmd[96];
+  char scmd[96], errstr[80];
   double bytes;
 
   sprintf(callername, "getdo_1");	//!!TEMP
   if(findkey(params, "DEBUGFLG")) {
   debugflg = getkey_int(params, "DEBUGFLG");
   if(debugflg) {
-    write_log("!!Keylist in getdo_1() is:\n");
+    write_log("!!Keylist in getdo_1() in xsum_svc_proc.c is:\n");
     keyiterate(logkey, params);
   }
   }
   reqcnt = getkey_int(params, "reqcnt");
   sunum = getkey_uint64(params, "dsix_0");
-  write_log("SUM_get() id=%d for user=%s sunum=%lu cnt=%d\n", 
-		rrid, GETKEY_str(params, "username"), sunum, reqcnt);
+  //write_log("SUM_get() id=%d for user=%s sunum=%lu cnt=%d\n", 
+  //		rrid, GETKEY_str(params, "username"), sunum, reqcnt);
   retlist=newkeylist();
   uid = getkey_uint64(params, "uid");
 //  if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
@@ -295,7 +326,8 @@ KEY *getdo_1(KEY *params)
   add_keys(params, &retlist);
   /* set up for response. sets current_client */
   if(!(clresp = set_client_handle(RESPPROG, (uint32_t)uid))) {
-    write_log("**Error: getdo_1() can't set_client_handle for response\n");
+    write_log("SUM_get() id=%d for user=%s sunum=%lu cnt=%d uid=%lu\n**Error: getdo_1() can't set_client_handle for response\n",
+                rrid, GETKEY_str(params, "username"), sunum, reqcnt, uid);
     freekeylist(&retlist);
     rinfo = 1;	/* give err status back to original caller */
     send_ack();	/* ack original sum_svc caller */
@@ -304,14 +336,30 @@ KEY *getdo_1(KEY *params)
     /* in case call tape_svc pass on who to eventually respond to */
     setkey_fileptr(&retlist, "current_client", (FILE *)clresp);
     if(DS_DataRequest(params, &retlist)) { /*get SU info & do any TOUCH */
+      write_log("SUM_get() id=%d for user=%s sunum=%lu cnt=%d uid=%lu\n**Error: DS_DataRequest() returns error\n",
+                rrid, GETKEY_str(params, "username"), sunum, reqcnt, uid);
       freekeylist(&retlist);
       rinfo = 1;	/* give err status back to original caller */
       send_ack();	/* ack original sum_svc caller */
       clnt_destroy(clresp);
       return((KEY *)1);	/* nothing more to be sent */
     }
+    offline = getkey_int(retlist, "offline");
+    write_log("SUM_get() id=%d for user=%s sunum=%lu cnt=%d uid=%lu rtrv=%d\n",
+        rrid, GETKEY_str(params, "username"), sunum, reqcnt, uid, offline);
     /* param says if one or more are offline and need to be retrieved */
-    if(offline = getkey_int(retlist, "offline")) {  
+    if(offline) {  
+      //ck if old code that has bug with tape rds (e.g. show_info)
+      if(!findkey(params, "newflg")) {  //this is old code
+        rinfo = 0;        /* indicate error through STATUS below */
+        send_ack();       /* ack original sum_svc caller */
+        setkey_int(&retlist, "STATUS", 1);   /* give error back to caller */
+        sprintf(errstr, "Caller is old DRMS version. No tape read allowed. Remake your code\n");
+        setkey_str(&retlist, "ERRSTR", errstr);
+        write_log("No tape read for old DRMS version. id=%d for user=%s sunum=%lu cnt=%d uid=%lu\n",
+        rrid, GETKEY_str(params, "username"), sunum, reqcnt, uid);
+        return(retlist);    /* send ans now */
+      }
       offcnt = 0;
       for(i=0; i < reqcnt; i++) {
         sprintf(nametmp, "online_status_%d", i);
@@ -361,6 +409,8 @@ KEY *getdo_1(KEY *params)
       rinfo = RESULT_PEND;  /* now tell caller to wait for results */
       tapeback = 0;
       //tell tape_svc which sums process to respond to
+      write_log("SUM_get() id=%d for SPROG=%u SVERS=%u uid=%lu rtrv=%d\n",
+        rrid, sumprog, sumvers, uid, offline);
       setkey_uint32(&retlist, "SPROG", sumprog);
       setkey_uint32(&retlist, "SVERS", sumvers);
       status = clnt_call(clnttape,READDO, (xdrproc_t)xdr_Rkey, (char *)retlist, 
@@ -467,6 +517,7 @@ KEY *allocdo_1(KEY *params)
 		GETKEY_str(retlist, "USER"), uid);
     if(!(set_client_handle(RESPPROG, (uint32_t)uid))) { /*set up for response*/
       write_log("Alloc Error Can't set client handle id=%d user=%s sumid=%lu\n", rrid, GETKEY_str(retlist, "USER"), uid);
+      free(wd);
       freekeylist(&retlist);
       rinfo = 1;  /* give err status back to original caller */
       send_ack();
@@ -545,6 +596,60 @@ KEY *infodo_1(KEY *params)
   return((KEY *)1);		/* nothing will be sent later */
 }
 
+/* Called when a client does a SUM_infoArray() call to get sum_main info. 
+ * This uses a Sunumarray arg structure instead of the usual keylist.
+*/
+KEY *infodoArray_1(Sunumarray *params)
+{
+  int reqcnt, i, status, filemode;
+  double bytes = 10000000.0;
+  char *partname, *effective_date;
+  char filename[128];
+  //char *filename = "/home/production/junk/infoarray.ans"; //!!TEMP
+
+  reqcnt = params->reqcnt;
+  retlist = newkeylist();
+  write_log("SUM_infoArray() id=%d for user=%s uid=%lu 1st sunum=%lu cnt=%d\n", 
+	rrid, params->username, params->uid, *params->sunums, reqcnt);
+  if((status=SUMLIB_PavailGet(bytes,0,params->uid,0,&retlist))) {
+    write_log("Can't alloc storage for %s in infodoArray_1()\n", params->username);
+    freekeylist(&retlist);
+    rinfo = status;		/* ret err code back to caller */
+    send_ack();
+    return((KEY *)1);	/* nothing will be sent later */
+  } 
+  partname = getkey_str(retlist, "partn_name");
+  sprintf(filename, "%s/infoarray.ans", partname);
+  effective_date = (char *)get_effdate(0);
+
+  //make the alloc dir del pending
+  NC_PaUpdate(partname, params->uid, bytes, DADP, DAAEDDP, effective_date, 
+		0, 0, getkey_uint64(retlist, "ds_index"), 1, 0);
+  free(partname);
+  free(effective_date);
+  freekeylist(&retlist);
+  if(!(status=SUMLIB_InfoGetArray(params, filename, &filemode))) {
+    if(!(set_client_handle(RESPPROG, (uint32_t)params->uid))) { /*set up for response*/
+      write_log("**Error: infodoArray_1() can't set_client_handle for response\n");
+      rinfo = SUM_RESPPROG_ERR;
+      send_ack();
+      return((KEY *)1);  /* error. nothing to be sent */
+    }
+    rinfo = 0;
+    send_ack();
+    retlist = newkeylist();
+    setkey_int(&retlist, "STATUS", 0);   /* give success back to caller */
+    setkey_str(&retlist, "FILE", filename);
+    setkey_int(&retlist, "filemode", filemode);
+    setkey_uint64(&retlist, "uid", params->uid);
+    setkey_int(&retlist, "reqcnt", reqcnt);
+    return(retlist);		/* return the ans now */
+  }
+  rinfo = status;		/* ret err code 1 back to caller */
+  send_ack();
+  return((KEY *)1);	/* nothing will be sent later */
+}
+
 /* Called when a client does a SUM_infoEx() call to get sum_main info. 
  * A typical keylist is:
  * dsix_1: KEYTYP_UINT64    285
@@ -616,6 +721,7 @@ KEY *infodoX_1(KEY *params)
 */
 KEY *infodoX_1_U(KEY *params)
 {
+/********************TEST CODE ONLY*************************************
   KEYU *retlistU;
   int status, reqcnt;
   uint64_t uid;
@@ -639,29 +745,30 @@ KEY *infodoX_1_U(KEY *params)
                 rrid, GETKEY_strU(retlistU, "username"), sunum, reqcnt);
 
   if(!(status=SUMLIB_InfoGetEx_U(retlistU, &retlistU))) {
-    if(!(set_client_handle(RESPPROG, (uint32_t)uid))) { /*set up for response*/
+    if(!(set_client_handle(RESPPROG, (uint32_t)uid))) { //set up for response
       write_log("**Error: infodoX_1_U() can't set_client_handle for response\n");
       freekeylistU(&retlistU);
-      /*rinfo = 1;  /* give err status back to original caller */
+      //rinfo = 1;  //give err status back to original caller
       rinfo = SUM_RESPPROG_ERR;
       send_ack();
-      return((KEY *)1);  /* error. nothing to be sent */
+      return((KEY *)1);  //error. nothing to be sent
     }
     rinfo = 0;
     send_ack();
-    setkey_intU(&retlistU, "STATUS", 0);   /* give success back to caller */
+    setkey_intU(&retlistU, "STATUS", 0);   //give success back to caller
     //now convert the UTHASH back to our normal keylist
     retlist = newkeylist();
     add_keyU2key(retlistU, &retlist);
     freekeylistU(&retlistU);
-    return(retlist);		/* return the ans now */
+    return(retlist);		//return the ans now
   }
-  rinfo = status;		/* ret err code 1 back to caller */
+  rinfo = status;		//ret err code 1 back to caller
   //if(!drmssite_sunum_is_local(sunum))
   //  rinfo = SUM_SUNUM_NOT_LOCAL; // else this error code 
   send_ack();
   freekeylistU(&retlistU);
-  return((KEY *)1);		/* nothing will be sent later */
+  return((KEY *)1);		//nothing will be sent later
+********************TEST CODE ONLY*************************************/
 }
 
 
@@ -720,15 +827,16 @@ KEY *putdo_1(KEY *params)
       sprintf(nametmp, "%s.chmown",  logname);
       sprintf(sysstr, "%s/sum_chmown %s 1>> %s 2>&1",
                         SUMBIN_BASEDIR, cptr, nametmp);
-      //write_log("%s\n", sysstr);
+      write_log("%s\n", sysstr);
       //StartTimer(3);          //!!TEMP
-      if(system(sysstr)) {
-          write_log("**Warning: Error on: %s. errno=%d\n", sysstr,errno);
-          rinfo = 1;                    /* error back to caller */
-          send_ack();
-          freekeylist(&retlist);
-          return((KEY *)1);             /* nothing but status back */
-      }
+//!!TEMP ignore sum_chmown
+//      if(system(sysstr)) {
+//          write_log("**Warning: Error on: %s. errno=%d\n", sysstr,errno);
+//         rinfo = 1;                    /* error back to caller */
+//         send_ack();
+//          freekeylist(&retlist);
+//          return((KEY *)1);             /* nothing but status back */
+//      }
       //ftmp = StopTimer(3);
       //write_log("#END: sum_chmown() %fsec\n", ftmp);    //!!TEMP for test
     }
@@ -755,12 +863,17 @@ KEY *putdo_1(KEY *params)
 /* Typical keylist is:
  * REQCODE:        KEYTYP_INT      3
  * DEBUGFLG:       KEYTYP_INT      1
+ * TAPERDACTIVE:   KEYTYP_INT      1
  * USER:   	   KEYTYP_STRING   production
  * uid:    KEYTYP_UINT64    574
 */
 KEY *closedo_1(KEY *params)
 {
   uint64_t uid;
+  uint32_t tapeback;
+  enum clnt_stat status;
+  char *call_err;
+  static struct timeval TIMEOUT = { 50, 0 };
 
   if(findkey(params, "DEBUGFLG")) {
   debugflg = getkey_int(params, "DEBUGFLG");
@@ -770,6 +883,28 @@ KEY *closedo_1(KEY *params)
   }
   }
   uid = getkey_uint64(params, "uid");
+  if(findkey(params, "TAPERDACTIVE")) {  //client closed w/a rd active
+    //tell tape_svc to ignore completion msg to this client
+    if(clnttape != 0) {  //sum_svc still connected to tape_svc
+      retlist=newkeylist();
+      add_keys(params, &retlist);
+      write_log("Calling CLNTGONE from closedo_1() in sums uid=%lu\n", uid);
+      status = clnt_call(clnttape,CLNTGONE, (xdrproc_t)xdr_Rkey, (char *)retlist,
+                        (xdrproc_t)xdr_uint32_t, (char *)&tapeback, TIMEOUT);
+      if(status != RPC_SUCCESS) {
+          if(status != RPC_TIMEDOUT) {
+            call_err = clnt_sperror(clnttape, "Error clnt_call for CLNTGONE");
+            write_log("%s %d %s\n", datestring(), status, call_err);
+          } else {
+            write_log("%s timeout ignored in closedo_1() CLNTGONE\n", datestring());
+          }
+      }
+      if(tapeback == 1) {
+        write_log("**Error in CLNTGONE call to tape_svc in sum_svc_proc.c\n");
+      }
+      freekeylist(&retlist);
+    }
+  }
 //  if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
 //    write_log("**Error: closedo_1() called with unopened uid=%lu\n", uid);
 //    rinfo = 1;	/* give err status back to original caller */
@@ -807,7 +942,7 @@ KEY *nopdo_1(KEY *params)
   int ans;
   enum clnt_stat status;
 
-  usr = getkey_str(params, "USER");
+  //usr = getkey_str(params, "USER");
   if(findkey(params, "DEBUGFLG")) {
     debugflg = getkey_int(params, "DEBUGFLG");
     if(debugflg) {
@@ -815,6 +950,7 @@ KEY *nopdo_1(KEY *params)
       keyiterate(logkey, params);
     }
   }
+  uid = getkey_uint64(params, "uid");
   rinfo = 0;
 /********************************************************************
   //ck if a sum_svc to tape_svc reconnect call was made (done by
@@ -831,7 +967,6 @@ KEY *nopdo_1(KEY *params)
 /***************************************************************
 //!!NOTE: if call tape_svc do we need to set up current_client here and pass it along
     rinfo = 1;
-    uid = getkey_uint64(params, "uid");
     klist = newkeylist();
     setkey_uint64(&klist, "uid", uid);
     setkey_str(&klist, "USER", GETKEY_str(params, "USER") );
@@ -870,7 +1005,7 @@ KEY *nopdo_1(KEY *params)
 KEY *tapereconnectdo_1(KEY *params)
 {
   uint64_t uid;
-  char *cptr;
+  char *cptr, *dptr;
   char *user;
 
   rinfo = 0;
@@ -885,7 +1020,11 @@ KEY *tapereconnectdo_1(KEY *params)
   else if(!strcmp(cptr, "reconnect")) {
     //connect to tape_svc
     clnttape_old = NULL;	//let nopdo_1() know that the old handle is NG
-    clnttape = clnt_create(TAPEHOST, TAPEPROG, TAPEVERS, "tcp");
+    dptr = getkey_str(params, "HOST");
+    if(!strcmp(dptr, "xim"))   //use xim if request is from xim
+      clnttape = clnt_create(dptr, TAPEPROG, TAPEVERS, "tcp");
+    else 
+      clnttape = clnt_create(TAPEHOST, TAPEPROG, TAPEVERS, "tcp");
     if(!clnttape) {       /* server not there */
       clnt_pcreateerror("Can't get client handle to tape_svc (from sum_svc)");
       write_log("Cannot connect to new tape_svc on d02\n");
@@ -991,6 +1130,13 @@ KEY *delseriesdo_1(KEY *params)
 */
 KEY *sumrespdo_1(KEY *params)
 {
+  FILE *fin;
+  uint64_t uid;
+  int pidcall;
+  int found = 0;
+  char idstr[128], string[196], pidstr[80];
+  char *hostcall, *newstr;
+
   if(findkey(params, "DEBUGFLG")) {
   debugflg = getkey_int(params, "DEBUGFLG");
   if(debugflg) {
@@ -1003,6 +1149,29 @@ KEY *sumrespdo_1(KEY *params)
   current_client = (CLIENT *)getkey_fileptr(params, "current_client");
   rinfo = 0;
   send_ack();
+  //If keyword pidcaller is found it means that this is a tape read
+  //return from tape_svc from an original SUM_get() call by a user.
+  //Make sure the orig process is  still running, else
+  //if you try to return info to it this Sget process will go away.
+  if(findkey(params, "pidcaller")) {
+    pidcall = getkey_int(params, "pidcaller");
+    hostcall = getkey_str(params, "hostcaller");
+    sprintf(idstr, "ssh -o \"StrictHostKeyChecking no\" %s ps -p %d -o pid= -o cmd=", hostcall, pidcall);
+    if(fin = popen(idstr, "r")) {
+      sprintf(pidstr, "%d ", pidcall);
+      while(fgets(string, sizeof string, fin)) {  //get ps line
+        //newstr = trimwhitespace(string);
+        if(strstr(string, pidstr)) { found = 1; }
+      }
+      pclose(fin);
+    }
+    if(!found) {                //the calling process is gone
+      write_log("**Error: %s process is gone when tape rd completes\n",
+                getkey_str(params, "username"));
+      return((KEY *)1);         // nothing will be sent
+    }
+  }
+
   return(retlist);
 }
 
