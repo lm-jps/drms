@@ -1,0 +1,174 @@
+#!/usr/bin/perl
+#/home/production/cvs/JSOC/base/sums/scripts/sumck_k1M
+#This run periodically and sees if the multi sum_svc
+#processes are still running.
+#If not it will restart things as appropriate.
+#This is started by sum_start_k1.MULTI.
+#
+use FindBin qw($RealBin);
+use lib "$RealBin/../../../localization";
+use drmsparams;
+
+$hostdb = drmsparams::SUMS_DB_HOST;
+$| = 1;                 #flush output as we go
+$SSLOG = "/usr/local/logs/SUM/sum_start_stop.log";
+
+$wdpath = `which $0`;
+chomp($wdpath);
+$pos = rindex($wdpath, "/");
+$wd = substr($wdpath, 0, $pos);
+$ldir = "$wd/../include/localization.h";
+$sdir = "$wd/../include/serverdefs.h";
+
+if(-e $ldir) {
+  $xdir = $ldir;
+  $localization = 1;
+}
+else {
+  $xdir = $sdir;
+  $localization = 0;
+}
+@servdefs = `cat $xdir`;
+@def = grep(/^#define SUM_NUMSUM/, @servdefs);
+($a,$b,$numsum) = split(/\s+/, shift(@def));
+if(!$numsum) {
+  print "ERROR: Can't get SUM_NUMSUM from $xdir\n";
+  exit(1);
+}
+#print "Number of SUM process sets to spawn = $numsum\n";
+@def = grep(/^#define SUM_MAXNUMSUM/, @servdefs);
+($a,$b,$maxnumsum) = split(/\s+/, shift(@def));
+#print "Max number of SUM process can spawn = $maxnumsum\n";
+
+
+@def = grep(/^#define SUMSERVER/, @servdefs);
+($a,$b,$sumserver) = split(/\s+/, shift(@def));
+if(($pos = index($sumserver, '.')) != -1) {
+  $sumserver = substr($sumserver, 0, $pos);
+}
+$sumserver = substr($sumserver, 1, -1); #get rid of quotes (")
+$host = `hostname`;
+chomp($host);
+if(($pos = index($host, '.')) != -1) {
+  $host = substr($host, 0, $pos);
+}
+#for specific script sum_start_xim.MULTI force xim
+#$sumserver = "xim";     #!!!Special case for testing
+if($host ne $sumserver) {
+  print "This can only be run on $host.\n";
+  exit;
+}
+$ENV{'SUMSERVER'} = $sumserver;      #make sure we stay in this machine
+print "SUMSERVER is $sumserver\n";
+@def = grep(/^#define SUMS_MANAGER/, @servdefs);
+($a,$b,$sumsmanager) = split(/\s+/, shift(@def));
+$sumsmanager = substr($sumsmanager, 1, -1); #get rid of quotes (")
+print "SUMS_MANAGER is $sumsmanager\n";
+$user = $ENV{'USER'};
+if($user ne $sumsmanager) {
+  print "You must be user $sumsmanager to run\n";
+  exit;
+}
+@def = grep(/^#define SUMS_MANAGER_UID/, @servdefs);
+($a,$b,$sumsmanageruid) = split(/\s+/, shift(@def));
+$sumsmanageruid = substr($sumsmanageruid, 1, -1); #get rid of quotes (")
+print "SUMS_MANAGER_UID is $sumsmanageruid\n";
+$GREPPS = $sumsmanageruid;
+@def = grep(/^#define DBNAME/, @servdefs);
+($a,$b,$dbname) = split(/\s+/, shift(@def));
+$dbname = substr($dbname, 1, -1); #get rid of quotes (")
+$DB = $dbname."_sums";
+@def = grep(/^#define SUMLOG_BASEDIR/, @servdefs);
+($a,$b,$SUMLOG) = split(/\s+/, shift(@def));
+$SUMLOG = substr($SUMLOG, 1, -1); #get rid of quotes (")
+
+
+  #Now make an array for what to start for each $numsum
+  if($numsum == 1) {
+    @spawn = (sum_svc);
+  }
+  elsif ($numsum == 2) {
+    @spawn = (sum_svc, Sdelser, Sinfo, Sinfo1, Sput, Sput1, Sget, Sget1, Salloc, Salloc1, Sopen, Sopen1);
+  }
+  elsif ($numsum == 3) {
+    @spawn = (sum_svc, Sdelser, Sinfo, Sinfo1, Sinfo2, Sput, Sput1, Sput2, Sget, Sget1, Sget2, Salloc, Salloc1, Salloc2, Sopen, Sopen1, Sopen2);
+  }
+  elsif ($numsum == 4) {
+    @spawn = (sum_svc, Sdelser, Sinfo, Sinfo1, Sinfo2, Sinfo3, Sput, Sput1, Sput2, Sput3, Sget, Sget1, Sget2, Sget3, Salloc, Salloc1, Salloc2, Salloc3, Sopen, Sopen1, Sopen2, Sopen3);
+  }
+  elsif ($numsum == 5) {
+    @spawn = (sum_svc, Sdelser, Sinfo, Sinfo1, Sinfo2, Sinfo3, Sinfo4, Sput, Sput1, Sput2, Sput3, Sput4, Sget, Sget1, Sget2, Sget3, Sget4, Salloc, Salloc1, Salloc2, Salloc3, Salloc4, Sopen, Sopen1, Sopen2, Sopen3, Sopen4);
+  }
+  elsif ($numsum == 6) {
+    @spawn = (sum_svc, Sdelser, Sinfo, Sinfo1, Sinfo2, Sinfo3, Sinfo4, Sinfo5, Sput, Sput1, Sput2, Sput3, Sput4, Sput5, Sget, Sget1, Sget2, Sget3, Sget4, Sget5, Salloc, Salloc1, Salloc2, Salloc3, Salloc4, Salloc5, Sopen, Sopen1, Sopen2, Sopen3, Sopen4, Sopen5);
+  }
+  elsif ($numsum == 7) {
+    @spawn = (sum_svc, Sdelser, Sinfo, Sinfo1, Sinfo2, Sinfo3, Sinfo4, Sinfo5, Sinfo6, Sput, Sput1, Sput2, Sput3, Sput4, Sput5, Sput6, Sget, Sget1, Sget2, Sget3, Sget4, Sget5, Sget6, Salloc, Salloc1, Salloc2, Salloc3, Salloc4, Salloc5, Salloc6, Sopen, Sopen1, Sopen2, Sopen3, Sopen4, Sopen5, Sopen6);
+  }
+  elsif ($numsum == 8) {
+    @spawn = (sum_svc, Sdelser, Sinfo, Sinfo1, Sinfo2, Sinfo3, Sinfo4, Sinfo5, Sinfo6, Sinfo7, Sput, Sput1, Sput2, Sput3, Sput4, Sput5, Sput6, Sput7, Sget, Sget1, Sget2, Sget3, Sget4, Sget5, Sget6, Sget7, Salloc, Salloc1, Salloc2, Salloc3, Salloc4, Salloc5, Salloc6, Salloc7, Sopen, Sopen1, Sopen2, Sopen3, Sopen4, Sopen5, Sopen6, Sopen7);
+  }
+
+sleep(40);	#delay on startup
+($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
+$sec2 = sprintf("%02d", $sec);
+$min2 = sprintf("%02d", $min);
+$hour2 = sprintf("%02d", $hour);
+$mday2 = sprintf("%02d", $mday);
+$mon2 = sprintf("%02d", $mon+1);
+$year2 = sprintf("%02d", $year);
+$date = (1900 + $year).".".$mon2.".$mday2"._.$hour2.":$min2".":$sec2";
+#print "sumck at $date\n\n";
+
+while(1) {
+  @ps_prod = `ps -ef | grep $GREPPS`;
+  $found = 0;
+  @spawnX = @spawn;
+
+  while($p = shift(@spawnX)) {
+    $name = "$p $DB";
+    @line = grep(/$name/, @ps_prod);
+    if(!@line) {  #this process is missing. restart it
+      print "sumck_k1M sees missing process: $name\n";
+      if(!open(SLOG, ">>$SSLOG")) {
+        print "Can't open for append: $SSLOG\n";
+      }
+      else {
+        print SLOG "START: AUTO $p: $date\n";
+        $sql = "select max(ds_index) from sum_main";
+        $pcmd = "echo \"$sql\" | psql -q -h $hostdb -p 5434 jsoc_sums";
+        @maxi = `$pcmd`;
+        $maxindex = @maxi[2];
+        print SLOG "START: AUTO: $maxindex\n";
+        close(SLOG);
+      }
+      @log = `ls -alt $SUMLOG/sum_svc_* | head`;
+      $logline = shift(@log);
+      ($a,$b,$c,$d,$e,$f,$g,$h,$log) = split(/\s+/, $logline);
+      $pos = rindex($log, '/');
+      $logfile = substr($log, $pos+1);
+      $logfile = $logfile."_R";  #tell the sums process it's a restart
+      $cmd = "$name $logfile &";
+      if(system($cmd)) {
+        print "Error: failure on $cmd\n";
+      }
+      $mail = "Mail -s \"$name on $HOST Not Found\"";
+      #$SENDMAILTO = "jsoc_users, jima2344\@gmail.com";
+      $SENDMAILTO = "jim, hao, jeneen, jima2344\@gmail.com";
+      $cmd = "echo \"No $name on $ENV{'HOST'}. Will restart one...\" | $mail $SENDMAILTO";
+      system $cmd;
+    }
+  }
+  #Now handle xtape_svc differentley
+  $name = "tape_svc";
+  @line = grep(/$name/, @ps_prod);
+  if(!@line) {  #this process is missing
+      print "The tape_svc s/b restarted by running tape_svc_restart\n";
+      $mail = "Mail -s \"$name on $HOST Not Found\"";
+      $SENDMAILTO = "jim, hao, jeneen, jima2344\@gmail.com";
+      $cmd = "echo \"No $name process. You should run tape_svc_restart\" | $mail $SENDMAILTO";
+      system $cmd;
+      sleep(20);        #wait longer for tape_svc to restart
+  }
+  sleep(20);
+}
