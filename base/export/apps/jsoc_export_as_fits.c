@@ -236,6 +236,23 @@ ModuleArgs_t module_args[] =
 
 char gDefBuf[PATH_MAX] = {0};
 
+static void JEAFPrintLocalTime(FILE *stm, const char *msg)
+{
+    char tbuf[64];
+    time_t sounnecessarilycomplicated;
+    struct tm *ltime = NULL;
+    
+    time(&sounnecessarilycomplicated);
+    ltime = localtime(&sounnecessarilycomplicated);
+    
+    *tbuf = '\0';
+    if (ltime)
+    {
+        snprintf(tbuf, sizeof(tbuf), "%s", asctime(ltime));
+        fprintf(stm, "%s - %s\n", tbuf, msg);
+    }
+}
+
 /* Convert number of bytes to number of MB. If number of bytes < 1MB, then return 1. */
 static long long ToMB(long long nbytes)
 {
@@ -295,9 +312,12 @@ static unsigned long long MapexportRecordToDir(DRMS_Record_t *recin,
    int iseg;
    int lastcparms;
    int count;
+    char buf[256];
    ExpUtlStat_t expfn = kExpUtlStat_Success;
 
+   //    JEAFPrintLocalTime(stdout, "Calling drms_record_directory() from MapexportRecordToDir().");
    drms_record_directory(recin, dir, 1); /* This fetches the input data from SUMS. */
+   //    JEAFPrintLocalTime(stdout, "Done calling drms_record_directory() from MapexportRecordToDir().");
 
    /* Must create query from series name and prime keyword values */
    drms_sprint_rec_query(query, recin);
@@ -350,6 +370,8 @@ static unsigned long long MapexportRecordToDir(DRMS_Record_t *recin,
       }
 
       /* Must pass source segment if the segment is a linked segment. */
+       // snprintf(buf, sizeof(buf), "Calling fitsexport_mapexport_tofile() from MapexportRecordToDir() on file %s", fullfname);
+       //       JEAFPrintLocalTime(stdout, buf);
       drmsstat = fitsexport_mapexport_tofile(segin, 
                                              !lastcparms ? cparms[iseg] : NULL, 
                                              classname, 
@@ -357,6 +379,7 @@ static unsigned long long MapexportRecordToDir(DRMS_Record_t *recin,
                                              fullfname, 
                                              &actualfname,
                                              &expsize);
+      //       JEAFPrintLocalTime(stdout, "Done calling fitsexport_mapexport_tofile() from MapexportRecordToDir().");
       if (drmsstat == DRMS_ERROR_INVALIDFILE)
       {
          /* No input segment file. */
@@ -444,7 +467,10 @@ static unsigned long long MapexportToDir(DRMS_Env_t *env,
    int count;
    int itcount;
 
+
    itcount = 0;
+   //    JEAFPrintLocalTime(stdout, "Calling drms_open_records().");
+    
    if (RecordLimit == 0)
      //     rsin = drms_open_recordset(env, rsinquery, &stat);
      // temporarily reverting to drms_open_records until I can fix the problem with
@@ -452,6 +478,7 @@ static unsigned long long MapexportToDir(DRMS_Env_t *env,
      rsin = drms_open_records(env, rsinquery, &stat);
    else
      rsin = drms_open_nrecords(env, rsinquery, RecordLimit, &stat);
+   //        JEAFPrintLocalTime(stdout, "Done calling drms_open_records().");
 
    if (rsin)
    {
