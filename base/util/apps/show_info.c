@@ -870,6 +870,9 @@ static int PrintHeader(DRMS_Env_t *env, const char* series, const char *keylist,
     
     /* get list of segments to show for each record */
     // NEED to also check for {seglist} notation at end of each ss query
+    /* ART - This doesn't quite work because the {seglist} token could result in records with fewer
+     * segments than the segments in the template record.
+     */
     *nsegs = 0;
     if (show_all_segs)
     { /* if wanted get list of all segments */
