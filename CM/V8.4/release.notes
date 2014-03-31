@@ -1,0 +1,82 @@
+                       Release Notes JSOC V8.4        31MAR014
+                       -----------------------        --------
+
+
+A release is a set of files, each having a specific version.  And a release typcially
+has a version number because over time you have newer and newer releases of the 
+same product.  For example, a hypothetical 1.3 release may contain fileA#1.8, 
+fileB#1.2, fileC#2.2 and a 1.4 release may contain fileA#2.5, fileB#2.1, fileC#2.9. 
+JSOC releases are similarly versioned and contain a set of such files.  JSOC release
+code is guaranteed to compile on cluster nodes (eg., n00, n02).  At the
+time of the creation of the release, the release versions of each file
+will be the most recent.  But as time passes, newer versions of some
+files will be made, and there is no guarantee that these changes will
+not destabilize JSOC (ie., they may cause JSOC to no longer compile or execute
+properly).  
+
+There are several ways to use this release.  If you wish to simply use pre-built
+binaries, you can simply use the production binaries, which are located at 
+/home/jsoc/cvs/Development/JSOC (The release binaries are actually in
+/home/jsoc/cvs/JSOC, but as our production code changes more quickly
+than releases are generated, we put critical fixes in the
+"Development" tree. To be sure you use code that has been built with
+these critical fixes, you'll need to use the "Development" tree. As
+time passes our production code will stabilize. When that happens, you should use
+/home/jsoc/cvs/JSOC. But for now, you should use the "Development"
+tree.). Every time a release is created, the binaries in
+this location get updated.  Only the jsoc user can update these binaries.
+You could run /home/jsoc/cvs/JSOC/Development/bin/linux_x86_64/show_keys, 
+for example.
+
+If instead you want to work with stable source files, then you must have a sandbox,
+which is a local copy (in your home directory) of the files in the cvs depot.  
+You would probably want to work with a sandbox if you plan on making eventual 
+changes to the depot files.  Changes you make to your sandbox files are not visible 
+to other users until you "commit" those changes back to the cvs depot.  Please see
+"If You Don't Have a Sandbox" below for more information on how to create a sandbox.  
+
+Obtaining the Release
+---------------------
+To update your working directory to this release, or to check-out this release anew, 
+please visit http://jsoc.stanford.edu/jsocwiki/CvsInit (please see the section entitled
+Update Your Existing Working Directory ("Sandbox")). Please keep in mind that
+users may have modified files since the release was created, so use of the 
+scripts documented in the web page may result in a working directory whose
+content is not identical to the release.  
+
+Additional Info
+---------------
+Use the Apache cvs gui to see the diffs between file revisions. For
+example, go to http://jsoc.stanford.edu/cvs/JSOC/base/drms/
+and click on the name in the File column and then click on
+"diffs to previous #" to see the diffs.
+
+Changes since previous release (V8.3 - February 7, 2014)
+----------------------------------------------------------
+
+NEW FEATURES:
++ Project CGEM was added.
++ Project MHD_64CR was added.
++ Several sum_rum parameters were localized (SUMRM_PART_PERCENT_FREE, SUMRM_SLEEP, SUMRM_LOG, SUMRM_MAIL, SUMRM_NOOP, SUMRM_USER, SUMRM_NORUN_START, SUMRM_NORUN_STOP).
++ Three SQL queries used at the beginning of DRMS-module execution have been optimized. The results of one are now cached for use by future calls.
++ Segments not specified in the seglist-{} notation are now removed from records opened by drms_open_recordset(). 
++ Linked records are no longer staged, unless the source records contain segments that are linked to target-record segments.
++ The code needed to maintain the su_production.slonycfg and su_production.slonylst tables was completed. When the slony_parser.cfg and .lst files get updated, these two database tables also get updated.
++ Support was added for filtering-out identified SUs from exp_su export requests. The SUs to be rejected are specified by indicating a date range and an the owning series, and we can reject between 0 and 100% of requests for such SUs.
++ The release contains a new magnetic DRMS module that generates both Br and Blos dailyupdate synoptic maps.
++ update_sharp_keys has additional parameters that allow the user to specify input and output series.
++ The logic in gen_sumcf.pl was ported to localize.py, the script that localizes the DRMS build.
++ findsessionrecs.pl, the script that identifies all DRMS records written during a time window, can now be restricted to operate on a list of DRMS series.
++ The cron job running gensureports.pl has been restored. It will result in the generation of a list of SUMS usage by each DRMS series.
+
+DEFECTS FIXED:
++ jsoc_update.pl now displays file-update conflicts and it properly accesses cvsupdate.log. When the call to jsoc_update.pl fails, it now writes cleaner output.
++ A segfault in the link code was fixed. A flag was added to track the disposition of a link (whether it has been followed or not). The linked-record refcount is now properly incremented when a link is followed the first time.
++ A segfault in newish auto-link-follow code was fixed. The prime-key fields in the template link info struct had not been initialized.
++ A segfault in DRMS was fixed. A variable holding the size of an allocating string was being reused (accidentally) for another allocation.
++ Several defects in the Slony-replication-support code were fixed.
++ A failure was fixed in the code that removes files that are tar'd by the export system.
++ Some jsoc_fetch memory leaks were plugged. 
++ A bug in the code that rejects a too-large export payload was fixed. The code had been rejecting small payloads of data exported uncompressed (but it did not first check to see if the data were going to be uncompressed during the export process).
++ A build of our source tree will no longer fail if the code is detached from CVS control.
++ The main CVS tree updater, dlsource.pl, now properly handles the case where a user asks to update a file that does not already exist in their working directory.
