@@ -218,6 +218,12 @@ __PROJ__
         </filters>
    </proj>
    <proj>
+        <name>mhd_32daily</name>
+        <subdirs>
+                <subdir>apps</subdir>
+        </subdirs>
+   </proj>
+   <proj>
         <name>mhd_64cr</name>
         <subdirs>
                 <subdir>apps</subdir>
