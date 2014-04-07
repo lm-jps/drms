@@ -271,6 +271,14 @@ CFITSIO_LIB             cfitsio
 
 # *** end CFITSIO ***
 
+TAR_INCS:X86_64         /home/jsoc/include
+TAR_INCS:IA32           /home/jsoc/include
+TAR_INCS:AVX            /home/jsoc/include
+
+TAR_LIBS:X86_64         /home/jsoc/lib/linux-x86_64
+TAR_LIBS:IA32           /home/jsoc/lib/linux-ia32
+TAR_LIBS:AVX            /home/jsoc/lib/linux_avx
+
 # NetDRMS users can request subdirectories from the Stanford proj directories 
 # (e.g., JSOC/proj/util). These users will need to contact Stanford and obtain
 # the source subdirectories desired. They will then place these subdirectories
