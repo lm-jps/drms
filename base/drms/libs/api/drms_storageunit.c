@@ -23,8 +23,43 @@
   #define STDRETENTION (-3)
 #endif
 
+//igor VSO HTTP request to JMD start
+#include <curl/curl.h>
+#include <curl/types.h>
+#include <curl/easy.h>
+struct POSTState 
+{
+  char session_id[256];
+  int  no_submitted;
+};
+
+int session_status (char *session);
+size_t parse_session_state(void *buffer, size_t size, size_t nmemb, void *userp);
+
+void populate_with_sunums(DRMS_Env_t *env, HContainer_t *postmap, char * seriesname, int n, long long sulist[]);
+struct PassSunumList 
+{
+  char series[500];
+  char **sunumlist;
+  long long *sunumarr;
+  int  n;
+  int  ncount;
+  char id[256];
+  int   submitted;
+  int  sizeadded;
+};
+
+void add_sunum_to_POST(DRMS_Env_t *env, HContainer_t *postmap, char *seriesname, long long sunum);
+size_t create_post_msg(HContainer_t *postmap, char **ptr);
+size_t write_data(void *buffer, size_t size, size_t nmemb, void *userp);
+int send_POST_request(char * postrequeststr, curl_off_t postsize, struct POSTState *ps);
+void free_post_request(HContainer_t *postmap);
+
+size_t read_callback(void *ptr, size_t size, size_t nmemb, void *userp);
+//igor VSO HTTP request to JMD end
+
 #define kEXTREMOTESUMS "remotesums_master.pl"
-#define kSUNUMLISTSIZE 512
+#define kSUNUMLISTSIZE 248576
 
 struct SUList_struct
 {
@@ -732,79 +767,115 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
             * that an empty dir denotes a remote SUNUM).
             */
 
-           int infd[2];  /* child writes to this pipe */
-           char rbuf[128]; /* expecting ascii for 0 or 1 */
+#ifdef JMD_IS_INSTALLED
+           //ISS VSO HTTP JMD START {
+           struct POSTState ps;
+           char *postrequeststr=NULL;
 
-           pipe(infd);
+           HContainer_t *postmap = hcon_create(sizeof(struct PassSunumList *), 128, NULL, NULL, NULL, NULL, 0);
+           char *sname = su->seriesinfo ? su->seriesinfo->seriesname : "unknown";
+           long long sunum = su->sunum;
+           add_sunum_to_POST(env, postmap,sname,sunum);
 
-           if(!fork())
+           int inprogress=-1;
+           int ntries = 0;
+           int totaltries=24;
+           int waittime=10;
+           while ((inprogress = session_status(ps.session_id)) > 0 && ntries < totaltries)
            {
-              char url[DRMS_MAXPATHLEN];
-              char *sunumlist = NULL;
-              size_t listsize;
-              char listbuf[128];
-
-              /* child - writes to pipe */
-              close(infd[0]); /* close fd to read end of pipe */
-              dup2(infd[1], 1);  /* redirect stdout to write end of pipe */
-              close(infd[1]); /* close fd to write end of pipe; okay since stdout now points to 
-                               * write end of pipe */
-
-              if (!drms_su_getexportURL(env, su->sunum, url, sizeof(url)))
-              {
-                 /* Call external program; doesn't return - must be in path */
-                 char cmd[PATH_MAX];
-                 sunumlist = (char *)malloc(kSUNUMLISTSIZE);
-                 memset(sunumlist, 0, kSUNUMLISTSIZE);
-
-                 listsize = kSUNUMLISTSIZE;
-                 snprintf(listbuf, 
-                          sizeof(listbuf), 
-                          "%s\\{%lld\\}",
-                          su->seriesinfo ? su->seriesinfo->seriesname : "unknown",
-                          (long long)su->sunum);
-                 sunumlist = base_strcatalloc(sunumlist, url, &listsize);
-                 sunumlist = base_strcatalloc(sunumlist, "=", &listsize);
-                 sunumlist = base_strcatalloc(sunumlist, listbuf, &listsize);
-                 snprintf(cmd, sizeof(cmd), "%s %s", kEXTREMOTESUMS, sunumlist);
-                                
-                 /* Careful with the $PATH env variable! The following call creates a new 
-                  * shell instance. If the path to remotesums_master.pl is not properly 
-                  * added to the $PATH variable via .cshrc or some other login script, 
-                  * then remotesums_master.pl will never be found. The parent will then 
-                  * unblock and fail to read an data from infd[0]. */
-                 execl("/bin/tcsh", "tcsh", "-c", cmd, (char *)0);
-              }
+              sleep(waittime);
+              ntries++;
            }
-           else
+
+           //free any post structures
+           free_post_request(postmap);
+           free(postrequeststr);
+
+           if (0 != inprogress)
            {
-              /* parent - reads from pipe */
-              close(infd[1]); /* close fd to write end of pipe */
-
-              /* Read results from external program - either 0 (don't try again) or 1 (try again) */
-              if (read(infd[0], rbuf, sizeof(rbuf)) > 0)
+              /* JMD has not finished the request, so the caller should not attempt to use the SU(s) they want to use. */
+              sustatus = DRMS_REMOTESUMS_TRYLATER;
+              tryagain = 0;
+           }
+           //ISS VSO HTTP JMD END }
+#else
+           /* Begin remotesums_master.pl*/
+           {
+              int infd[2];  /* child writes to this pipe */
+              char rbuf[128]; /* expecting ascii for 0 or 1 */
+              
+              pipe(infd);
+              
+              if(!fork())
               {
-                 sscanf(rbuf, "%d", &tryagain);
-
-                 if (tryagain == 0)
+                 char url[DRMS_MAXPATHLEN];
+                 char *sunumlist = NULL;
+                 size_t listsize;
+                 char listbuf[128];
+                 
+                 /* child - writes to pipe */
+                 close(infd[0]); /* close fd to read end of pipe */
+                 dup2(infd[1], 1);  /* redirect stdout to write end of pipe */
+                 close(infd[1]); /* close fd to write end of pipe; okay since stdout now points to 
+                                  * write end of pipe */
+                 
+                 if (!drms_su_getexportURL(env, su->sunum, url, sizeof(url)))
                  {
-                    sustatus = DRMS_REMOTESUMS_TRYLATER;
-                 }
-                 else if (tryagain == -1)
-                 {
-                    /* error running remotesums_master.pl */
-                    sustatus = DRMS_ERROR_REMOTESUMSMASTER;
-                    tryagain = 0;
-                    fprintf(stderr, "Master remote SUMS script did not run properly.\n");
+                    /* Call external program; doesn't return - must be in path */
+                    char cmd[PATH_MAX];
+                    sunumlist = (char *)malloc(kSUNUMLISTSIZE);
+                    memset(sunumlist, 0, kSUNUMLISTSIZE);
+                    
+                    listsize = kSUNUMLISTSIZE;
+                    snprintf(listbuf, 
+                             sizeof(listbuf), 
+                             "%s\\{%lld\\}",
+                             su->seriesinfo ? su->seriesinfo->seriesname : "unknown",
+                             (long long)su->sunum);
+                    sunumlist = base_strcatalloc(sunumlist, url, &listsize);
+                    sunumlist = base_strcatalloc(sunumlist, "=", &listsize);
+                    sunumlist = base_strcatalloc(sunumlist, listbuf, &listsize);
+                    snprintf(cmd, sizeof(cmd), "%s %s", kEXTREMOTESUMS, sunumlist);
+                    
+                    /* Careful with the $PATH env variable! The following call creates a new 
+                     * shell instance. If the path to remotesums_master.pl is not properly 
+                     * added to the $PATH variable via .cshrc or some other login script, 
+                     * then remotesums_master.pl will never be found. The parent will then 
+                     * unblock and fail to read an data from infd[0]. */
+                    execl("/bin/tcsh", "tcsh", "-c", cmd, (char *)0);
                  }
               }
               else
               {
-                 fprintf(stderr, "Master remote SUMS script did not run properly.\n");
-              }
-
-              close(infd[0]);
+                 /* parent - reads from pipe */
+                 close(infd[1]); /* close fd to write end of pipe */
+                 
+                 /* Read results from external program - either 0 (don't try again) or 1 (try again) */
+                 if (read(infd[0], rbuf, sizeof(rbuf)) > 0)
+                 {
+                    sscanf(rbuf, "%d", &tryagain);
+                    
+                    if (tryagain == 0)
+                    {
+                       sustatus = DRMS_REMOTESUMS_TRYLATER;
+                    }
+                    else if (tryagain == -1)
+                    {
+                       /* error running remotesums_master.pl */
+                       sustatus = DRMS_ERROR_REMOTESUMSMASTER;
+                       tryagain = 0;
+                       fprintf(stderr, "Master remote SUMS script did not run properly.\n");
+                    }
+                 }
+                 else
+                 {
+                    fprintf(stderr, "Master remote SUMS script did not run properly.\n");
+                 }
+                 
+                 close(infd[0]);
+              } /* End remotesums_master.pl */
            }
+#endif /* JMD_IS_INSTALLED */
         }
      }
 
@@ -1064,203 +1135,277 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
       * and then retry. */
      if (natts < 2 && retrysus && list_llgetnitems(retrysus) > 0)
      {
-        int infd[2];  /* child writes to this pipe */
-        char rbuf[128]; /* expecting ascii for 0 or 1 */
+#ifdef JMD_IS_INSTALLED
+        //ISS VSO HTTP JMD START {
+        /* iterate through each sunum */
+        ListNode_t *node = NULL;
+        DRMS_StorageUnit_t *rsu = NULL;
 
-        pipe(infd);
+        list_llreset(retrysus);
 
-        if(!fork())
+        struct POSTState ps;
+        char *postrequeststr=NULL; //this pointer is allocated
+
+        HContainer_t *postmap = hcon_create(sizeof(struct PassSunumList *), 128, NULL, NULL, NULL, NULL, 0);
+        while ((node = list_llnext(retrysus)) != NULL)
         {
-           /* child - writes to pipe */
-           close(infd[0]); /* close fd to read end of pipe */
-           dup2(infd[1], 1);  /* redirect stdout to write end of pipe */
-           close(infd[1]); /* close fd to write end of pipe; okay since stdout now points to 
-                            * write end of pipe */
+           rsu = *((DRMS_StorageUnit_t **)(node->data));
+           char *sname = rsu->seriesinfo ? rsu->seriesinfo->seriesname : "unknown";
+           long long sunum = rsu->sunum;
+           add_sunum_to_POST(env, postmap,sname,sunum);
+        }
 
-           /* iterate through each sunum */
-           ListNode_t *node = NULL;
-           DRMS_StorageUnit_t *rsu = NULL;
-           HContainer_t *sulists = hcon_create(sizeof(HContainer_t), 128, NULL, NULL, NULL, NULL, 0);
-           char listbuf[128];
-           char url[DRMS_MAXPATHLEN];
-           HContainer_t *acont = NULL;
-           SUList_t *alist = NULL;
-           SUList_t *newlist = NULL;
-           char cmd[PATH_MAX];
-           char *sunumlist = NULL;
-           HIterator_t *hiturl = NULL;
-           HIterator_t *hitsers = NULL;
-           
-           int firsturl;
-           int firstsers;
-           size_t listsize;
-           list_llreset(retrysus);
+        int postsize = create_post_msg(postmap,&postrequeststr);
+        send_POST_request(postrequeststr,postsize,&ps);
 
-           while ((node = list_llnext(retrysus)) != NULL)
+        int inprogress=-1;
+        int ntries = 0;
+        int totaltries=40;
+        int waittime=10;
+        while ((inprogress = session_status(ps.session_id)) > 0 && ntries < totaltries) 
+        {
+           sleep(waittime);
+           ntries++;
+        }
+
+        //free any post structures
+        free_post_request(postmap);
+        free(postrequeststr);
+
+        if (0 == inprogress)
+        {
+           /* JMD worked - need to call SUM_get() one more time
+            * with SUNUMS that failed originally */
+           nretrySUNUMS = list_llgetnitems(retrysus);
+
+           start = 0;
+           /* index of SU one past the last one to be processed */
+           end = SUMIN(MAXSUMREQCNT, nretrySUNUMS);
+           rsumssus = (DRMS_StorageUnit_t **)malloc(sizeof(DRMS_StorageUnit_t *) * nretrySUNUMS);
+
+           isu = 0;
+
+           while (node = list_llgethead(retrysus))
            {
-              rsu = *((DRMS_StorageUnit_t **)(node->data));
-              char *sname = rsu->seriesinfo ? rsu->seriesinfo->seriesname : "unknown";
-              if (!drms_su_getexportURL(env, rsu->sunum, url, sizeof(url)))
-              {
-                 /* Each exportURL contains one or more series, and each series contains
-                  * one or more SUNUMs. So sulists is a container of (expURLs, series container), and
-                  * series container is a container of (series, sulist) */
+              onesu = (DRMS_StorageUnit_t *)malloc(sizeof(DRMS_StorageUnit_t));
+              onesu->sunum = (*(DRMS_StorageUnit_t **)(node->data))->sunum;
+              *(onesu->sudir) = '\0';
+              rsumssus[isu] = onesu;
+              isu++;
+              list_llremove(retrysus, node);
+              list_llfreenode(&node);
+           }
 
-                 /* see if a list for rsunum already exists. */
-                 if ((acont = hcon_lookup(sulists, url)) != NULL)
+           if (retrysus)
+           {
+              list_llfree(&retrysus);
+           }
+
+           workingsus = rsumssus;
+           workingn = nretrySUNUMS;
+           natts++;
+        }
+        //ISS VSO HTTP JMD END }
+#else
+        /* Begin remotesums_master.pl*/
+        {
+           int infd[2];  /* child writes to this pipe */
+           char rbuf[128]; /* expecting ascii for 0 or 1 */
+           
+           pipe(infd);
+           
+           if(!fork())
+           {
+              /* child - writes to pipe */
+              close(infd[0]); /* close fd to read end of pipe */
+              dup2(infd[1], 1);  /* redirect stdout to write end of pipe */
+              close(infd[1]); /* close fd to write end of pipe; okay since stdout now points to 
+                               * write end of pipe */
+              
+              /* iterate through each sunum */
+              DRMS_StorageUnit_t *rsu = NULL;
+              HContainer_t *sulists = hcon_create(sizeof(HContainer_t), 128, NULL, NULL, NULL, NULL, 0);
+              char listbuf[128];
+              char url[DRMS_MAXPATHLEN];
+              HContainer_t *acont = NULL;
+              SUList_t *alist = NULL;
+              SUList_t *newlist = NULL;
+              char cmd[PATH_MAX];
+              char *sunumlist = NULL;
+              HIterator_t *hiturl = NULL;
+              HIterator_t *hitsers = NULL;
+              
+              int firsturl;
+              int firstsers;
+              size_t listsize;
+              list_llreset(retrysus);
+              
+              while ((node = list_llnext(retrysus)) != NULL)
+              {
+                 rsu = *((DRMS_StorageUnit_t **)(node->data));
+                 char *sname = rsu->seriesinfo ? rsu->seriesinfo->seriesname : "unknown";
+                 if (!drms_su_getexportURL(env, rsu->sunum, url, sizeof(url)))
                  {
-                    /* Got the (url, series cont) container; look for series name. */
-                    if ((alist = hcon_lookup(acont, sname)) != NULL)
+                    /* Each exportURL contains one or more series, and each series contains
+                     * one or more SUNUMs. So sulists is a container of (expURLs, series container), and
+                     * series container is a container of (series, sulist) */
+                    
+                    /* see if a list for rsunum already exists. */
+                    if ((acont = hcon_lookup(sulists, url)) != NULL)
                     {
-                       /* alist is the sname-specific sulist; append this sunum */
-                       snprintf(listbuf, sizeof(listbuf), ",%lld", rsu->sunum);
-                       alist->str = base_strcatalloc(alist->str, listbuf, &(alist->size)); 
+                       /* Got the (url, series cont) container; look for series name. */
+                       if ((alist = hcon_lookup(acont, sname)) != NULL)
+                       {
+                          /* alist is the sname-specific sulist; append this sunum */
+                          snprintf(listbuf, sizeof(listbuf), ",%lld", rsu->sunum);
+                          alist->str = base_strcatalloc(alist->str, listbuf, &(alist->size)); 
+                       }
+                       else
+                       {
+                          newlist = hcon_allocslot(acont, sname);
+                          newlist->str = malloc(kSUNUMLISTSIZE);
+                          newlist->size = kSUNUMLISTSIZE;
+                          memset(newlist->str, 0, kSUNUMLISTSIZE);
+                          
+                          snprintf(listbuf, sizeof(listbuf), "%s=%s\\{%lld", url, sname, rsu->sunum);
+                          newlist->str = base_strcatalloc(newlist->str, listbuf, &(newlist->size));
+                       }
                     }
                     else
                     {
-                       newlist = hcon_allocslot(acont, sname);
+                       /* Create a new (series, sulist) container */
+                       HContainer_t *newcont = hcon_allocslot(sulists, url);
+                       hcon_init(newcont, sizeof(SUList_t), DRMS_MAXSERIESNAMELEN, NULL, NULL);
+                       
+                       /* create a new list and add rsunum to it */
+                       newlist = hcon_allocslot(newcont, sname);
+                       
                        newlist->str = malloc(kSUNUMLISTSIZE);
                        newlist->size = kSUNUMLISTSIZE;
                        memset(newlist->str, 0, kSUNUMLISTSIZE);
-
+                       
                        snprintf(listbuf, sizeof(listbuf), "%s=%s\\{%lld", url, sname, rsu->sunum);
                        newlist->str = base_strcatalloc(newlist->str, listbuf, &(newlist->size));
                     }
                  }
-                 else
-                 {
-                    /* Create a new (series, sulist) container */
-                    HContainer_t *newcont = hcon_allocslot(sulists, url);
-                    hcon_init(newcont, sizeof(SUList_t), DRMS_MAXSERIESNAMELEN, NULL, NULL);
-
-                    /* create a new list and add rsunum to it */
-                    newlist = hcon_allocslot(newcont, sname);
-
-                    newlist->str = malloc(kSUNUMLISTSIZE);
-                    newlist->size = kSUNUMLISTSIZE;
-                    memset(newlist->str, 0, kSUNUMLISTSIZE);
-
-                    snprintf(listbuf, sizeof(listbuf), "%s=%s\\{%lld", url, sname, rsu->sunum);
-                    newlist->str = base_strcatalloc(newlist->str, listbuf, &(newlist->size));
-                 }
               }
-           }
-
-           /* Call external program; doesn't return - must be in path */
-           sunumlist = (char *)malloc(kSUNUMLISTSIZE);
-           memset(sunumlist, 0, kSUNUMLISTSIZE);
-
-           /* Make the lists of SUNUMs - one for each export URL */
-           listsize = kSUNUMLISTSIZE;
-           firsturl = 1;
-           firstsers = 1;
-           hiturl = hiter_create(sulists);
-
-           if (hiturl)
-           {
-              while ((acont = hiter_getnext(hiturl)) != NULL)
+              
+              /* Call external program; doesn't return - must be in path */
+              sunumlist = (char *)malloc(kSUNUMLISTSIZE);
+              memset(sunumlist, 0, kSUNUMLISTSIZE);
+              
+              /* Make the lists of SUNUMs - one for each export URL */
+              listsize = kSUNUMLISTSIZE;
+              firsturl = 1;
+              firstsers = 1;
+              hiturl = hiter_create(sulists);
+              
+              if (hiturl)
               {
-                 if (!firsturl)
+                 while ((acont = hiter_getnext(hiturl)) != NULL)
                  {
-                    sunumlist = base_strcatalloc(sunumlist, "#", &listsize);
-                 }
-                 else
-                 {
-                    firsturl = 0;
-                 }
-
-                 hitsers = hiter_create(acont);
-                 if (hitsers)
-                 {
-                    while ((alist = hiter_getnext(hitsers)) != NULL)
+                    if (!firsturl)
                     {
-                       /* Must append the final '}' to all lists */
-                       alist->str = base_strcatalloc(alist->str, "\\}", &(alist->size));
-
-                       /* create a string that contains all sulists */
-                       if (!firstsers)
-                       {
-                          sunumlist = base_strcatalloc(sunumlist, "&", &listsize);
-                       }
-                       else
-                       {
-                          firstsers = 0;
-                       }
-
-                       sunumlist = base_strcatalloc(sunumlist, alist->str, &listsize);
+                       sunumlist = base_strcatalloc(sunumlist, "#", &listsize);
                     }
-
-                    hiter_destroy(&hitsers);
+                    else
+                    {
+                       firsturl = 0;
+                    }
+                    
+                    hitsers = hiter_create(acont);
+                    if (hitsers)
+                    {
+                       while ((alist = hiter_getnext(hitsers)) != NULL)
+                       {
+                          /* Must append the final '}' to all lists */
+                          alist->str = base_strcatalloc(alist->str, "\\}", &(alist->size));
+                          
+                          /* create a string that contains all sulists */
+                          if (!firstsers)
+                          {
+                             sunumlist = base_strcatalloc(sunumlist, "&", &listsize);
+                          }
+                          else
+                          {
+                             firstsers = 0;
+                          }
+                          
+                          sunumlist = base_strcatalloc(sunumlist, alist->str, &listsize);
+                       }
+                       
+                       hiter_destroy(&hitsers);
+                    }
                  }
+                 
+                 hiter_destroy(&hiturl);
               }
-
-              hiter_destroy(&hiturl);
+              
+              snprintf(cmd, sizeof(cmd), "%s %s", kEXTREMOTESUMS, sunumlist);
+              
+              // fprintf(stderr, "cmd is %s\n", cmd);
+              
+              execl("/bin/tcsh", "tcsh", "-c", cmd, (char *)0);
+              
+              /* Execution never gets here. */
            }
-
-           snprintf(cmd, sizeof(cmd), "%s %s", kEXTREMOTESUMS, sunumlist);
-
-           // fprintf(stderr, "cmd is %s\n", cmd);
-
-           execl("/bin/tcsh", "tcsh", "-c", cmd, (char *)0);
-
-           /* Execution never gets here. */
-        }
-        else
-        {
-           /* parent - reads from pipe */
-           close(infd[1]); /* close fd to write end of pipe */
-
-           /* Read results from external program - either 0 (don't try again) or 1 (try again) */
-           if (read(infd[0], rbuf, sizeof(rbuf)) > 0)
+           else
            {
-              sscanf(rbuf, "%d", &tryagain);
-
-              if (tryagain == 0)
+              /* parent - reads from pipe */
+              close(infd[1]); /* close fd to write end of pipe */
+              
+              /* Read results from external program - either 0 (don't try again) or 1 (try again) */
+              if (read(infd[0], rbuf, sizeof(rbuf)) > 0)
               {
-                 sustatus = DRMS_REMOTESUMS_TRYLATER;
-              }
-              else if (tryagain == -1)
-              {
-                 /* error running remotesums_master.pl */
-                 sustatus = DRMS_ERROR_REMOTESUMSMASTER;
-                 tryagain = 0;
-                 fprintf(stderr, "Master remote SUMS script did not run properly.\n");
-              }
-              else
-              {
-                 /* remotesums_master.pl worked - need to call SUM_get() one more time
-                  * with SUNUMS that failed originally */
-                 nretrySUNUMS = list_llgetnitems(retrysus);
-
-                 start = 0;
-                 /* index of SU one past the last one to be processed */
-                 end = SUMIN(MAXSUMREQCNT, nretrySUNUMS); 
-                 rsumssus = (DRMS_StorageUnit_t **)malloc(sizeof(DRMS_StorageUnit_t *) * nretrySUNUMS);
-                 ListNode_t *node = NULL;
-
-                 isu = 0;
-                 while (node = list_llgethead(retrysus))
+                 sscanf(rbuf, "%d", &tryagain);
+                 
+                 if (tryagain == 0)
                  {
-                    onesu = (DRMS_StorageUnit_t *)malloc(sizeof(DRMS_StorageUnit_t));
-                    onesu->sunum = (*(DRMS_StorageUnit_t **)(node->data))->sunum;
-                    *(onesu->sudir) = '\0';
-                    rsumssus[isu] = onesu;
-                    isu++;
-                    list_llremove(retrysus, node);
-                    list_llfreenode(&node);
+                    sustatus = DRMS_REMOTESUMS_TRYLATER;
                  }
-
-                 if (retrysus)
+                 else if (tryagain == -1)
                  {
-                    list_llfree(&retrysus);
+                    /* error running remotesums_master.pl */
+                    sustatus = DRMS_ERROR_REMOTESUMSMASTER;
+                    tryagain = 0;
+                    fprintf(stderr, "Master remote SUMS script did not run properly.\n");
                  }
-
-                 workingsus = rsumssus;
-                 workingn = nretrySUNUMS;
-                 natts++;
+                 else
+                 {
+                    /* remotesums_master.pl worked - need to call SUM_get() one more time
+                     * with SUNUMS that failed originally */
+                    nretrySUNUMS = list_llgetnitems(retrysus);
+                    
+                    start = 0;
+                    /* index of SU one past the last one to be processed */
+                    end = SUMIN(MAXSUMREQCNT, nretrySUNUMS); 
+                    rsumssus = (DRMS_StorageUnit_t **)malloc(sizeof(DRMS_StorageUnit_t *) * nretrySUNUMS);
+                    
+                    isu = 0;
+                    while (node = list_llgethead(retrysus))
+                    {
+                       onesu = (DRMS_StorageUnit_t *)malloc(sizeof(DRMS_StorageUnit_t));
+                       onesu->sunum = (*(DRMS_StorageUnit_t **)(node->data))->sunum;
+                       *(onesu->sudir) = '\0';
+                       rsumssus[isu] = onesu;
+                       isu++;
+                       list_llremove(retrysus, node);
+                       list_llfreenode(&node);
+                    }
+                    
+                    if (retrysus)
+                    {
+                       list_llfree(&retrysus);
+                    }
+                    
+                    workingsus = rsumssus;
+                    workingn = nretrySUNUMS;
+                    natts++;
+                 }
               }
-           }
-        } /* end parent*/
+           } /* end parent*/
+        }
+#endif /* JMD_IS_INSTALLED */
      } /* code to set up parent/child and call remotesums_master.pl */
   } /* while - retry */
 
@@ -2284,4 +2429,284 @@ int drms_su_sumexport(DRMS_Env_t *env, SUMEXP_t *sumexpt)
 
    return drmsst;
 }
+
+#ifdef JMD_IS_INSTALLED
+//igor ISS VSO HTTP request to JMD START {
+
+int send_POST_request(char * postrequeststr, curl_off_t postsize, struct POSTState *ps) 
+{
+   CURL *curl;
+
+   curl_global_init(CURL_GLOBAL_ALL);
+
+   curl = curl_easy_init();
+   curl_easy_setopt(curl, CURLOPT_URL, JMD_URL);
+
+   /* Now specify we want to POST data */
+   curl_easy_setopt(curl, CURLOPT_POST, 1L);
+
+   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data);
+   curl_easy_setopt(curl, CURLOPT_WRITEDATA, ps);
+   curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postrequeststr);
+   curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, (curl_off_t) postsize);
+
+   curl_easy_perform(curl);
+
+   /* always cleanup */
+   curl_easy_cleanup(curl);
+
+   return 0;
+}
+
+void populate_with_sunums(DRMS_Env_t *env, HContainer_t *postmap, char * seriesname, int n, long long sulist[]) 
+{
+   int k = 0;
+   for (k = 0; k < n; k++) 
+   {
+      add_sunum_to_POST(env, postmap, seriesname, sulist[k]);
+   }
+}
+
+/*
+struct PassSunumList
+{
+  char series[500];
+  char **sunumlist;
+  long long *sunumarr;
+  int  n;
+  int  ncount;
+  char id[256];
+  int   submitted;
+  int  sizeadded;
+};
+*/
+
+//After create_post_msg has created the basic stuff we can start adding sunums to the JMD request
+void add_sunum_to_POST(DRMS_Env_t *env, HContainer_t *postmap, char *seriesname, long long sunum) 
+{
+   int  allocsize = 1000;
+
+   struct PassSunumList *poststruct = NULL;
+
+   //if no postmap struct found for the given seriesname
+   // go and create a new one and set it in the hash structure
+   if (!hcon_member(postmap,seriesname))
+   {
+      poststruct = calloc(1,sizeof(struct PassSunumList)); //want to do a memset too
+      strcpy(poststruct->series,seriesname);
+      poststruct->sunumarr = malloc(sizeof(long long)*allocsize);
+      hcon_insert(postmap,seriesname,&poststruct);
+   } 
+   else
+   {
+      struct PassSunumList **ptr;
+      if ((ptr = hcon_lookup(postmap,seriesname))!= NULL)
+      {
+         poststruct = *ptr;
+      } 
+      else 
+      {
+         //error!!
+         fprintf(stderr, "Seriesname [%s], is unknown to hash structure in remote POST handling.\n", seriesname);
+         /* ART - cannot call exit(). Send a message to the signal thread to shutdown instead.
+            exit(1);
+         */
+         pthread_kill(env->signal_thread, SIGTERM);
+      }
+
+      //note that we increment the size of poststruct in allocsize chunks
+      if (((poststruct->n+1) % allocsize) == 0) 
+      {
+         //realloc allocsize array to sunumarr
+         if ((poststruct->sunumarr = realloc((void *) poststruct->sunumarr, sizeof(long long ) * (poststruct->n+1) + sizeof(long long ) * allocsize)) == NULL)
+         {
+            fprintf(stderr, "Can not allocate new memory for POST sunum array.\n");
+            /* xxx NO - cannot call exit()! Send a message to the signal thread to shutdown. 
+               exit(1);
+            */
+            pthread_kill(env->signal_thread, SIGTERM);
+
+         } 
+         else 
+         {
+
+         }
+      }
+   }
+
+   poststruct->sunumarr[poststruct->n] = sunum;
+   poststruct->n++;
+}
+
+//Creates the basic POST msg container
+size_t create_post_msg(HContainer_t *postmap, char **ptrr) 
+{
+   int size_count = 0;   //count of sunums so far in message??
+   int i = 0;
+   struct PassSunumList **lpptr = NULL;
+   struct PassSunumList *list = NULL;
+
+   char *seriesname = NULL;
+   long estsize = 0;
+   int totalSuCount = 0;
+   HIterator_t hit;
+
+   hiter_new(&hit,postmap);
+   
+   while ((lpptr = (struct PassSunumList **)hiter_getnext(&hit))) 
+   {
+      list = *lpptr;
+      estsize = estsize + 1000 + list->n * (strlen(list->series) + 20);
+
+      if (*ptrr == NULL) 
+      {
+         //estimated size
+         *ptrr = calloc(1,sizeof(char) * estsize);
+      } 
+      else 
+      {
+         *ptrr = realloc(*ptrr, sizeof(char) * estsize);
+      }
+
+      char *ptr2 = *ptrr;
+      ptr2 += size_count;
+
+      if (seriesname == NULL || strcmp(seriesname, list->series)) 
+      {
+         if (seriesname == NULL) 
+         {
+            sprintf(ptr2, "type=request&series=%s", list->series);
+         } 
+         else 
+         {
+            sprintf(ptr2, "&series=%s", list->series);
+         }
+
+         seriesname = list->series;
+         size_count += strlen(ptr2);
+         ptr2 = *ptrr;
+         ptr2 += size_count; //note: ptr2 is pointing to the char after the "="
+      }
+
+      // loop through the list of sunums and start building the
+      // post query in array form.
+      //  i.e. series_name=sunum1&series_name=sunum2 ...
+      for(i = 0; i < list->n; i++) 
+      {
+         //if not the first time. I.e. there are already sunums in the POST array
+
+         char chunk[1000];  //top size of a post sunum slice. e.g. &<series_name>=sunum
+
+         sprintf(chunk, "&%s=%lld", list->series, list->sunumarr[i]);
+         int chunklen = strlen(chunk);
+
+         size_count += chunklen;
+
+         if (size_count > estsize) 
+         {
+            estsize = estsize + (list->n - list->ncount) * (strlen(list->series) + 40);
+            *ptrr = realloc(*ptrr, sizeof(char) * estsize);
+            ptr2 = *ptrr;
+            ptr2 += (size_count - chunklen);
+         }
+
+         strcpy(ptr2,chunk);
+         //reset ptr2
+         ptr2 = *ptrr;
+         ptr2 += size_count; //increment pointer to end of POST string
+         list->ncount++;   //increment sunum count
+         totalSuCount++;   //increment total sunum count. Only for test purposes
+      }
+   }
+
+   return size_count;
+}
+
+//Callback function in charge of populating the POSTState structure
+// this callback is called from send_POST_request
+size_t write_data(void *buffer, size_t size, size_t nmemb, void *userp) 
+{
+   /*
+     sessionID=4022d6a7-d7e3-4b73-898a-3526efc321a4
+     Summary:
+     SUCCESFUL submissions:0
+   */
+
+   struct POSTState *ps = (struct POSTState *)userp;
+   int submissions = -2;
+   char id[256] = "NO SessionID";
+
+   //  char *buffer = "sessionID=4022d6a7-d7e3-4b73-898a-3526efc321a4\nSummary:\nSUCCESFUL submissions:0";
+   sscanf(buffer, "sessionID=%s\nSummary:\nSUCCESFUL submissions:%d", id, &submissions);
+   strcpy(ps->session_id, id);
+   ps->no_submitted = submissions;
+   return strlen(buffer);
+}
+
+//parse routine of JMD output
+size_t parse_session_state(void *buffer, size_t size, size_t nmemb, void *userp) 
+{
+   int *inprogress = (int *)userp;
+   int total = -2;
+   char rest[1000];
+
+   //char *buffer = "QUERY REQUEST:\nTotal Count=30\nIn Progress=0\nDONE=30\nPNDG=24\n";
+   sscanf(buffer, "QUERY REQUEST:\nTotal Count=%d\nIn Progress=%d\n%s", &total, inprogress, rest);
+   return strlen(buffer);
+}
+
+//for a given request (session) return its status
+// return status is the number of sunums waiting to be downloaded
+// see parse_session_state
+int session_status (char *session) 
+{
+   CURL *curl;
+
+   curl_global_init(CURL_GLOBAL_ALL);
+   curl = curl_easy_init();
+
+   char url[2000];
+
+   //sprintf(url,"http://vso2.tuc.noao.edu:8080/JMD/JMD?type=query&sessionid=%s",session);
+   sprintf(url, "%s?type=query&sessionid=%s", JMD_URL, session);
+   curl_easy_setopt(curl, CURLOPT_URL, url);
+
+   /* Now specify we want to POST data */
+   int inprogress = -1;
+   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, parse_session_state);
+   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &inprogress);
+   curl_easy_perform(curl);
+
+   /* always cleanup */
+   curl_easy_cleanup(curl);
+
+   return inprogress;
+}
+
+void free_post_request (HContainer_t *postmap)
+{
+   HIterator_t *hitmap = hiter_create(postmap);
+   if (hitmap) 
+   {
+      struct PassSunumList **ppoststruct = NULL;
+      while ((ppoststruct = hiter_getnext(hitmap)) != NULL)
+      {
+         struct PassSunumList *poststruct = *ppoststruct;
+         if (poststruct->sunumarr != NULL) 
+         {
+            free(poststruct->sunumarr);
+            poststruct->sunumarr=NULL;
+         }
+
+         free(poststruct);
+         poststruct = NULL;
+      }
+   }
+
+   hiter_destroy(&hitmap);
+   hcon_destroy(&postmap);
+}
+//igor ISS VSO HTTP request to JMD END }
+#endif /* JMD_IS_INSTALLED */
+
 #endif // DRMS_CLIENT

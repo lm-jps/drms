@@ -1592,10 +1592,21 @@ int fitsrw_read(int verbose,
 
 int fitsrw_write(int verbose,
                  const char* filein,
-                 CFITSIO_IMAGE_INFO* info,  
+                 CFITSIO_IMAGE_INFO* info,
                  void* image,
                  const char* cparms,
                  CFITSIO_KEYWORD* keylist)
+{ //ISS fly-tar
+   return fitsrw_write2(verbose, filein, info, image, cparms, keylist, (export_callback_func_t) NULL);
+}
+
+int fitsrw_write2(int verbose,
+                  const char* filein,
+                  CFITSIO_IMAGE_INFO* info,  
+                  void* image,
+                  const char* cparms,
+                  CFITSIO_KEYWORD* keylist,
+                  export_callback_func_t callback) //ISS fly-tar
 {
    int err = CFITSIO_SUCCESS;
    int idim;
@@ -1670,13 +1681,28 @@ int fitsrw_write(int verbose,
          }
 
          remove(filein);
-          
-         fptr = fitsrw_getfptr(verbose, filename, 1, &err);
-
-         if (!fptr)
+         
+         //ISS fly-tar START
+         if (callback != NULL) 
          {
-            err = CFITSIO_ERROR_FILE_IO;
+            int retVal =0;
+            
+            (*callback)("create", &fptr, filein, cparms, &cfiostat, &retVal);
+            if (retVal)
+            {
+               err = CFITSIO_ERROR_FILE_IO;
+            }
+         } 
+         else 
+         {
+            fptr = fitsrw_getfptr(verbose, filename, 1, &err);
+            
+            if (!fptr)
+            {
+               err = CFITSIO_ERROR_FILE_IO;
+            }
          }
+         //ISS fly-tar END
       }
 
       if (!err)
@@ -1779,32 +1805,45 @@ int fitsrw_write(int verbose,
    if (fptr)
    {
       /* set the fpinfo struct with the values from image_info (but do not overwrite the fhash field) */
-      CFITSIO_IMAGE_INFO fpinfo;
-      CFITSIO_IMAGE_INFO fpinfonew;
 
-      if (fitsrw_getfpinfo_ext(fptr, &fpinfo))
+      //ISS fly-tar
+      if (callback != NULL ) 
+      {   //ISS fly-tar
+         (*callback)("stdout",fptr, image, &cfiostat);
+         if (cfiostat) {
+            fprintf(stderr, "Trouble executing callback [%s]\n", filename);
+            err = CFITSIO_ERROR_LIBRARY;
+         }
+      } 
+      else 
       {
-         fprintf(stderr, "Invalid fitsfile pointer '%p'.\n", fptr);
-         err = CFITSIO_ERROR_FILE_IO;
-      }
-      else
-      {
-         fpinfonew = *info;
-         snprintf(fpinfonew.fhash, sizeof(fpinfonew.fhash), "%s", fpinfo.fhash);
-
-         if (fitsrw_setfpinfo_ext(fptr, &fpinfonew))
+         CFITSIO_IMAGE_INFO fpinfo;
+         CFITSIO_IMAGE_INFO fpinfonew;
+         
+         if (fitsrw_getfpinfo_ext(fptr, &fpinfo))
          {
-            fprintf(stderr, "Unable to update file pointer information.\n");
+            fprintf(stderr, "Invalid fitsfile pointer '%p'.\n", fptr);
             err = CFITSIO_ERROR_FILE_IO;
          }
          else
          {
-            if (fitsrw_closefptr(verbose, fptr))
+            fpinfonew = *info;
+            snprintf(fpinfonew.fhash, sizeof(fpinfonew.fhash), "%s", fpinfo.fhash);
+            
+            if (fitsrw_setfpinfo_ext(fptr, &fpinfonew))
             {
+               fprintf(stderr, "Unable to update file pointer information.\n");
                err = CFITSIO_ERROR_FILE_IO;
             }
+            else
+            {
+               if (fitsrw_closefptr(verbose, fptr))
+               {
+                  err = CFITSIO_ERROR_FILE_IO;
+               }
+            }
          }
-      }
+      }  //ISS fly-tar
    }
    
    return err;

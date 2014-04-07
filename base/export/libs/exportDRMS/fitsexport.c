@@ -34,6 +34,11 @@ enum FE_ReservedKeys_enum
 typedef enum FE_ReservedKeys_enum FE_ReservedKeys_t;
 typedef int (*pFn_ExportHandler)(void *key, void **fitskeys, void *nameout);
 
+int drms_segment_mapexport_tofile2(DRMS_Segment_t *seg, const char *cparms, const char *clname, const char *mapfile, const char *fileout, export_callback_func_t callback); //ISS fly-tar
+static int ExportFITS(DRMS_Env_t *env, DRMS_Array_t *arrout, const char *fileout, const char *cparms, CFITSIO_KEYWORD *fitskeys); //ISS fly-tar
+static int ExportFITS2(DRMS_Env_t *env, DRMS_Array_t *arrout, const char *fileout, const char *cparms, CFITSIO_KEYWORD *fitskeys, export_callback_func_t callback); //ISS fly-tar
+
+
 /* Available keyword handlers */
 int DateHndlr(void *keyin, void **fitskeys, void *nameout);
 int CommHndlr(void *keyin, void **fitskeys, void *nameout);
@@ -469,11 +474,22 @@ int GenerateFitsKeyName(const char *drmsName, char *fitsName, int size)
 }
 
 /* keys may be NULL, in which case no extra keywords are placed into the FITS file. */
-static int ExportFITS(DRMS_Env_t *env,
-                      DRMS_Array_t *arrout, 
-                      const char *fileout, 
-                      const char *cparms, 
-                      CFITSIO_KEYWORD *fitskeys)
+int ExportFITS(DRMS_Env_t *env,
+               DRMS_Array_t *arrout, 
+               const char *fileout, 
+               const char *cparms, 
+               CFITSIO_KEYWORD *fitskeys)
+{ //ISS fly-tar
+   return ExportFITS2(env, arrout, fileout, cparms, fitskeys, (export_callback_func_t) NULL);
+}
+
+/* keys may be NULL, in which case no extra keywords are placed into the FITS file. */
+static int ExportFITS2(DRMS_Env_t *env,
+                       DRMS_Array_t *arrout,
+                       const char *fileout,
+                       const char *cparms,
+                       CFITSIO_KEYWORD *fitskeys,
+                       export_callback_func_t callback) //ISS fly-tar
 {
     int stat = DRMS_SUCCESS;
     
@@ -510,11 +526,17 @@ static int ExportFITS(DRMS_Env_t *env,
                 }
                 else
                 {
-                    if (fitsrw_write(env->verbose, fileout, &imginfo, arrout->data, cparms, fitskeys))
-                    {
-                        fprintf(stderr, "Can't write fits file '%s'.\n", fileout);
-                        stat = DRMS_ERROR_EXPORT;
-                    }
+                   //ISS fly-tar START
+                   if (callback != NULL) 
+                   {
+                      (*callback)("setarrout", arrout);
+                   }
+
+                   if (fitsrw_write2(env->verbose, fileout, &imginfo, arrout->data, cparms, fitskeys, callback)) //ISS fly-tar
+                   {
+                      fprintf(stderr, "Can't write fits file '%s'.\n", fileout);
+                      stat = DRMS_ERROR_EXPORT;
+                   }
                 }
             }
             else
@@ -683,6 +705,18 @@ int fitsexport_mapexport_tofile(DRMS_Segment_t *seg,
                                 char **actualfname,
                                 unsigned long long *expsize)
 {
+   return fitsexport_mapexport_tofile2(seg, cparms, clname, mapfile, fileout, actualfname, expsize, (export_callback_func_t) NULL);  //ISS fly-tar
+}
+
+int fitsexport_mapexport_tofile2(DRMS_Segment_t *seg,
+                                 const char *cparms,
+                                 const char *clname,
+                                 const char *mapfile,
+                                 const char *fileout,
+                                 char **actualfname,
+                                 unsigned long long *expsize,
+                                 export_callback_func_t callback) //ISS fly-tar
+{
    int status = DRMS_SUCCESS;
 
    CFITSIO_KEYWORD *fitskeys = NULL;
@@ -819,7 +853,7 @@ int fitsexport_mapexport_tofile(DRMS_Segment_t *seg,
 
                  if (arrout)
                  {
-                    status = ExportFITS(seg->record->env, arrout, realfileout, cparms ? cparms : (seg->info->islink ? tgtseg->cparms : seg->cparms), fitskeys);
+                    status = ExportFITS2(seg->record->env, arrout, realfileout, cparms ? cparms : (seg->info->islink ? tgtseg->cparms : seg->cparms), fitskeys, callback); //ISS fly-tar
                     drms_free_array(arrout);	     
                  }
               }
@@ -842,18 +876,26 @@ int fitsexport_mapexport_tofile(DRMS_Segment_t *seg,
                       "Data export does not support data segment protocol '%s'.\n", 
                       drms_prot2str(seg->info->protocol));
          }
-          
-          /* Ensure file got created. */
-          if (stat(realfileout, &filestat))
-          {
-              status = DRMS_ERROR_EXPORT;
-          }
-          else if (expsize)
-          {
-              *actualfname = strdup(basename(realfileout));
-              *expsize = filestat.st_size;
-          }
-   
+
+
+         // fly-tar ISS
+         // Don't test the file if callback is not NULL
+         // in that case callback handles everything related
+         // to the fits generation
+         if (callback == NULL) 
+         {
+            /* Ensure file got created. */
+            if (stat(realfileout, &filestat))
+            {
+               status = DRMS_ERROR_EXPORT;
+            }
+            else if (expsize)
+            {
+               *actualfname = strdup(basename(realfileout));
+               *expsize = filestat.st_size;
+            }
+         }
+
          cfitsio_free_keys(&fitskeys);
       }
    }

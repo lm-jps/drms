@@ -128,6 +128,10 @@ FFTWL = -L$(FFTW_LIBS)
 FFTW3LIBS = $(FFTWL) -lfftw3
 FFTW3FLIBS = $(FFTWL) -lfftw3f
 
+# TAR
+LIBTARH = -I$(TAR_INCS)
+LIBTARL = -L$(TAR_LIBS) -ltar
+
 #***********************************************************************************************#
 
 
@@ -210,7 +214,7 @@ endif
 #
 # Link flags for all targets
 #
-LL_ALL		= $(SYSLIBS)
+LL_ALL		= $(SYSLIBS) -lcurl
 GCC_LF_ALL	= $(STATIC) 
 ICC_LF_ALL	= -diag-disable 10237 $(STATIC) -openmp -static-intel -Wl,-export-dynamic
 

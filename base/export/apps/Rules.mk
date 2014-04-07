@@ -8,7 +8,7 @@ d		:= $(dir)
 
 # Local variables
 # NOTE: Add the base of the module's filename below (next to mymod)
-MODEXE_$(d)	:= $(addprefix $(d)/, jsoc_export_as_fits jsoc_export_as_is jsoc_export_SU_as_is jsoc_fetch jsoc_export_manage jsoc_stats1 jsoc_export_clone)
+MODEXE_$(d)	:= $(addprefix $(d)/, jsoc_export_as_fits jsoc_export_as_is jsoc_export_SU_as_is jsoc_fetch jsoc_export_manage jsoc_stats1 jsoc_export_clone drms_export_cgi)
 
 MODEXE_ONLY_$(d)	:= $(addprefix $(d)/, jsoc_info)
 
@@ -35,7 +35,7 @@ S_$(d)		:= $(notdir $(EXE_$(d)) $(MODEXE_SOCK_$(d)))
 
 # Local rules
 $(OBJ_$(d)):		$(SRCDIR)/$(d)/Rules.mk
-$(OBJ_$(d)):		CF_TGT := $(CF_TGT) -I$(SRCDIR)/$(d)/../../libs/json -I$(SRCDIR)/$(d)/../libs/util
+$(OBJ_$(d)):		CF_TGT := $(CF_TGT) $(CFITSIOH) $(LIBTARH) -I$(SRCDIR)/$(d)/../../libs/json -I$(SRCDIR)/$(d)/../libs/util
 # DBMS is the POSTGRESQL macro needed so that jsoc_fetch can see db_int8_t
 $(OBJ_$(d)):		CF_TGT := $(CF_TGT) -DCDIR="\"$(SRCDIR)/$(d)\"" -D$(DBMS)
 
@@ -43,6 +43,9 @@ $(CEXE_$(d)):		$(LIBJSON) $(LIBEXPDRMS) $(LIBEXPUTL) $(LIBQDECODER)
 $(MODEXE_$(d)):		$(LIBJSON) $(LIBEXPDRMS) $(LIBEXPUTL) $(LIBQDECODER)
 $(MODEXE_ONLY_$(d)):	$(LIBJSON) $(LIBEXPDRMS) $(LIBEXPUTL) $(LIBQDECODER)
 $(MODEXE_SOCK_$(d)):	$(LIBJSON) $(LIBEXPDRMS) $(LIBEXPUTL) $(LIBQDECODER)
+
+$(MODEXE_$(d)):		LL_TGT := $(LL_TGT) $(LIBTARL)
+$(MODEXE_SOCK_$(d)):	LL_TGT := $(LL_TGT) $(LIBTARL)
 
 # Shortcuts
 .PHONY:	$(S_$(d))

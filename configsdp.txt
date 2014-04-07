@@ -1,4 +1,3 @@
-# ART - test6 CVS admin locking.
 # This file contains JSOC_SDP-specific configuration information. It is used only if the '-sdp' flag is used 
 # as an argument to the check-out script (checkoutDRMS.pl). To change the configuration at Stanford, edit
 # this file directly, and commit those changes to the source-tree repository.
@@ -56,6 +55,9 @@ q:SUMRM_NOOP		            0
 q:SUMRM_USER		            production
 q:SUMRM_NORUN_START	            0
 q:SUMRM_NORUN_STOP              0
+# JMD
+q:JMD_IS_INSTALLED              1
+q:JMD_URL                       http://localhost:8080/JMD/JMD
 
 __MAKE__
 # JSOC_SDP third-party libraries used by base
@@ -159,6 +161,16 @@ MPI_LIBS:AVX            /home/jsoc/avx/lib
 
 MPI_PATH:X86_64         /home/jsoc/mpich2/bin
 MPI_PATH:AVX            /home/jsoc/avx/bin
+
+TAR_INCS:X86_64         /home/jsoc/include
+TAR_INCS:IA32           /home/jsoc/include
+TAR_INCS:AVX            /home/jsoc/include
+TAR_INCS:IA64           /home/jsoc/include
+
+TAR_LIBS:X86_64         /home/jsoc/lib/linux-x86_64
+TAR_LIBS:IA32           /home/jsoc/lib/linux-ia32
+TAR_LIBS:AVX            /home/jsoc/lib/linux_avx
+TAR_LIBS:IA64           /home/jsoc/lib/linux-ia64
 
 # Set custom make file to tell the make system that the gcc cfitsio library is called
 # libcfitsio_gcc.a

@@ -155,6 +155,19 @@ int fitsrw_write(int verbose,
                  const char* cparms,
                  CFITSIO_KEYWORD* keylist);
 
+//ISS fly-tar START
+#ifndef __export_callback_func_t__
+#define __export_callback_func_t__
+typedef int (*export_callback_func_t)(char *, ...); //ISS fly-tar
+#endif
+int fitsrw_write2(int verbose,
+                  const char* filein,
+                  CFITSIO_IMAGE_INFO* info,
+                  void* image,
+                  const char* cparms,
+                  CFITSIO_KEYWORD* keylist,
+                  export_callback_func_t callback); //ISS fly-tar
+//ISS fly-tar END
 
 int cfitsio_free_keys(CFITSIO_KEYWORD** keylist);
 

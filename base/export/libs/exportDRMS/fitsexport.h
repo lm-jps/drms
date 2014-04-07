@@ -40,6 +40,20 @@ int fitsexport_mapexport_tofile(DRMS_Segment_t *seg,
                                 const char *fileout,
                                 char **actualfname,
                                 unsigned long long *expsize);
+
+#ifndef __export_callback_func_t__
+#define __export_callback_func_t__
+typedef int (*export_callback_func_t)(char *, ...); //ISS fly-tar
+#endif
+int fitsexport_mapexport_tofile2(DRMS_Segment_t *seg,
+                                 const char *cparms,
+                                 const char *clname,
+                                 const char *mapfile,
+                                 const char *fileout,
+                                 char **actualfname,
+                                 unsigned long long *expsize,
+                                 export_callback_func_t callback); //ISS fly-tar
+
 CFITSIO_KEYWORD *fitsexport_mapkeys(DRMS_Segment_t *seg, 
                                     const char *clname, 
                                     const char *mapfile, 
