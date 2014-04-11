@@ -319,7 +319,7 @@ bailout:
 }
 
 int drms_zipfile_write (char *filename, DRMS_Array_t *rf) {
-  gzFile *fp;
+  gzFile fp;
   int i;
   char magic[] = "DRMS RAW";
   size_t bufsize;
