@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>Data Replication</title>
+    <link rel="stylesheet" href="jquery-ui-1.10.4.custom/css/pepper-grinder/jquery-ui-1.10.4.custom.css" />
+    
+    <!--This is the development version of jquery. Change to js/jquery-2.1.0.min.js for production. -->
+    <script src="js/jquery-2.1.0.js"></script>
+    <script src="jquery-ui-1.10.4.custom/js/jquery-ui-1.10.4.custom.js"></script>
+    <script src="js/datarepl.js"></script>
+    
+    <style>        
+        #feedback { font-size: 1.4em; }
+        #publist .ui-selecting { background: #F39814; }
+        #publist .ui-selected { background: #B83400; color: white; }
+        #publist { list-style-type: none; margin: 0; padding: 0; width: 100%; }
+        #publist li { margin: 2px; padding: 0.4em; font-size: 1.2em; height: 18px; border: none}
+        
+        .overflowdiv { max-height: 150px; overflow: auto; width: 50%; }
+        </style>
+</head>
+<body bgcolor="#4b60e7">
+
+    <div class="overflowdiv ui-state-default">
+        <div>
+            <ol id="publist">
+                <li class="ui-widget-content ui-state-default">Item 1</li>
+                <li class="ui-widget-content ui-state-default">Item 2</li>
+                <li class="ui-widget-content ui-state-default">Item 3</li>
+                <li class="ui-widget-content ui-state-default">Item 4</li>
+                <li class="ui-widget-content ui-state-default">Item 5</li>
+                <li class="ui-widget-content ui-state-default">Item 6</li>
+                <li class="ui-widget-content ui-state-default">Item 7</li>
+                <li class="ui-widget-content ui-state-default">Item 7</li>
+                <li class="ui-widget-content ui-state-default">Item 7</li>
+                <li class="ui-widget-content ui-state-default">Item 7</li>
+                <li class="ui-widget-content ui-state-default">Item 7</li>
+                <li class="ui-widget-content ui-state-default">Item 7</li>
+                <li class="ui-widget-content ui-state-default">Item 7</li>
+                <li class="ui-widget-content ui-state-default">Item 7</li>
+                <li class="ui-widget-content ui-state-default">Item 7</li>
+                <li class="ui-widget-content ui-state-default">Item 7</li>
+                <li class="ui-widget-content ui-state-default">Item 7</li>
+            </ol>
+        </div>
+    </div>
+    
+    <input type="text" name="date" id="date" />
+
+</body>
+</html>
