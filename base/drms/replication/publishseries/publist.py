@@ -11,6 +11,8 @@ import os.path
 import getopt
 import pwd
 import re
+import json
+import cgi
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '..'))
 import psycopg2
 
@@ -49,38 +51,64 @@ def GetArgs(args):
     optD = {}
     
     try:
-        opts, remainder = getopt.getopt(args, "hc:i:ns:u:", ["cfg=", "insts=", "subs=", "user="])
-    except getopt.GetoptError:
-        print('Usage:\n  publist.py [-h] -c <configuration file> [ -i <institution list> ] [ -s <series list> ]', file=sys.stderr)
-        istat = bool(1)
-    
-    if istat == bool(0):
-        for opt, arg in opts:
-            if opt == '-h':
-                print('Usage:\n  publist.y [-h] -c <configuration file> [ -i <institution list> ] [ -s <series list> ]')
-                sys.exit(0)
-            elif opt in ("-c", "--cfg"):
-                regexp = re.compile(r"(\S+)/?")
-                matchobj = regexp.match(arg)
-                if matchobj is None:
-                    istat = bool(1)
+        # Try to get arguments with the cgi module. If that doesn't work, then fetch them from the command line.
+        arguments = cgi.FieldStorage()
+        
+        if arguments:
+            for key in arguments.keys():
+                val = arguments.getvalue(key)
+                if key in ('c', 'cfg'):
+                    regexp = re.compile(r"(\S+)/?")
+                    matchobj = regexp.match(val)
+                    if not(matchobj is None):
+                        optD['cfg'] = matchobj.group(1)
+                elif key in ('i' or 'insts'):
+                    optD['insts'] = arg.split(',') # a list
+                elif key in ('n'):
+                    optD['nojson'] = 1
+                elif key in ('s' or 'subs'):
+                    optD['subs'] = arg.split(',') # a list
+
+            optD['source'] = 'form'
+
+    except ValueError:
+        insertJson(rootObj, 'errMsg', 'Invalid usage.\nUsage:\n  publist.py cfg=<configuration file> [ insts=<institution list> ] [ series=<series list> ]')
+        raise Exception('getArgsForm', 'Invalid arguments.')
+
+    if not(optD):
+        try:
+            opts, remainder = getopt.getopt(args, "hc:i:ns:u:", ["cfg=", "insts=", "subs=", "user="])
+            for opt, arg in opts:
+                if opt == '-h':
+                    print('Usage:\n  publist.y [ -h ] [ -n ] -c <configuration file> [ -i <institution list> ] [ -s <series list> ]')
+                    sys.exit(0)
+                elif opt in ("-c", "--cfg"):
+                    regexp = re.compile(r"(\S+)/?")
+                    matchobj = regexp.match(arg)
+                    if matchobj is None:
+                        istat = bool(1)
+                    else:
+                        optD['cfg'] = matchobj.group(1)
+                elif opt in ("-i", "--insts"):
+                    optD['insts'] = arg.split(',') # a list
+                elif opt in ("-n"):
+                    optD['nojson'] = 1
+                elif opt in ("-s", "--subs"):
+                    optD['subs'] = arg.split(',') # a list
+                elif opt in ("-u", "--user"):
+                    optD['user'] = arg
                 else:
-                    optD['cfg'] = matchobj.group(1)
-            elif opt in ("-i", "--insts"):
-                optD['insts'] = arg.split(',') # a list
-            elif opt in ("-n"):
-                optD['nojson'] = 1
-            elif opt in ("-s", "--subs"):
-                optD['subs'] = arg.split(',') # a list
-            elif opt in ("-u", "--user"):
-                optD['user'] = arg
-            else:
-                optD[opt] = arg
+                    optD[opt] = arg
+
+            optD['source'] = 'cmdline'
+    
+        except getopt.GetoptError:
+            print('Usage:\n  publist.py [-h] -c <configuration file> [ -i <institution list> ] [ -s <series list> ]', file=sys.stderr)
+            raise Exception('getArgs', 'Invalid arguments.')
 	
     return optD
 
 def GetPubList(cursor, plDict):
-    istat = bool(0)
     list = []
     cmd = 'SELECT ' + SLONY_TABLE_NSP + "||'.'||" + SLONY_TABLE_REL + ' AS series FROM _' + SLONY_CLUSTER + '.' + SLONY_TABLE + ' ORDER BY series;'
     
@@ -88,18 +116,15 @@ def GetPubList(cursor, plDict):
         cursor.execute(cmd)
     
     except psycopg2.Error as exc:
-        print(exc.diag.message_primary, file=sys.stderr)
-        istat = bool(1)
+        raise Exception('getPubList', exc.diag.message_primary)
 
-    if not(istat):
-        for record in cursor:
-            list.append(record[0])
-            plDict[record[0]] = 'Y'
+    for record in cursor:
+        list.append(record[0])
+        plDict[record[0]] = 'Y'
 
     return list
 
 def GetSubList(cursor, cfgDict, inst):
-    istat = bool(0)
     list = []
     cmd = 'SELECT ' + LST_TABLE_SERIES + ' FROM ' + cfgDict['kLstTable'] + ' WHERE ' + LST_TABLE_NODE + " = '" + inst + "' ORDER BY " + LST_TABLE_SERIES
 
@@ -107,17 +132,14 @@ def GetSubList(cursor, cfgDict, inst):
         cursor.execute(cmd)
 
     except psycopg2.Error as exc:
-        print(exc.diag.message_primary, file=sys.stderr)
-        istat = bool(1)
-        
-    if not(istat):
-        for record in cursor:
-            list.append(record[0])
+        raise Exception('getSubList', exc.diag.message_primary, inst)
+
+    for record in cursor:
+        list.append(record[0])
             
     return list
 
 def GetSubscribedInsts(cursor, cfgDict):
-    istat = bool(0)
     list = []
     cmd = 'SELECT ' + CFG_TABLE_NODE + ' FROM ' + cfgDict['kCfgTable'] + ' GROUP BY ' + CFG_TABLE_NODE
 
@@ -125,17 +147,14 @@ def GetSubscribedInsts(cursor, cfgDict):
         cursor.execute(cmd)
 
     except psycopg2.Error as exc:
-        print(exc.diag.message_primary, file=sys.stderr)
-        istat = bool(1)
+        raise Exception('getSubscribedInsts', exc.diag.message_primary)
         
-    if not(istat):
-        for record in cursor:
-            list.append(record[0])
+    for record in cursor:
+        list.append(record[0])
         
     return list
 
 def GetNodeList(cursor, cfgDict, series):
-    istat = bool(0)
     list = []
     cmd = 'SELECT ' + LST_TABLE_NODE + ' FROM ' + cfgDict['kLstTable'] + ' WHERE lower(' + LST_TABLE_SERIES + ") = '" + series.lower() + "' GROUP BY " + LST_TABLE_NODE + ' ORDER BY ' + LST_TABLE_NODE
     
@@ -143,55 +162,86 @@ def GetNodeList(cursor, cfgDict, series):
         cursor.execute(cmd)
     
     except psycopg2.Error as exc:
-        print(exc.diag.message_primary, file=sys.stderr)
-        istat = bool(1)
+        raise Exception('getNodeList', exc.diag.message_primary, series)
     
-    if not(istat):
-        for record in cursor:
-            list.append(record[0])
+    for record in cursor:
+        list.append(record[0])
     
     return list
 
-def checkSeries(series, pubListDict):
-    if series in pubList:
+def checkSeries(series, pubListDict, errMsg):
+    if series in pubListDict:
         return True
     else:
-        print('Series ' + series + ' is not published; skipping.', file=sys.stderr)
+        errMsg.extend(list('Series ' + series + ' is not published; skipping.'))
+        
         return False
 
+def insertJson(jsonDict, property, value):
+    jsonDict[property] = value
 
 rv = RET_SUCCESS
 cfgDict = {}
 
 # Parse arguments
 if __name__ == "__main__":
-    optD = GetArgs(sys.argv[1:])
-    if not(optD is None):
-        if 'cfg' in optD:
-            cfgFile = optD['cfg']
-        else:
-            print('Missing required argument, -c <configuration file>', file=sys.stderr)
-            print('Usage:\n  publist.y [-h] -c <configuration file> [ -i <institution list> ] [ -s <series list> ]')
+    try:
+        optD = GetArgs(sys.argv[1:])
+        if optD is None:
+            # Return JSON just in case this script was initiated by web.
+            raise Exception('getArgsForm', 'No arguments provided.')
+    
+    except Exception as exc:
+        etype = exc.args[0]
+        msg = exc.args[1]
+
+        if etype == 'getArgsForm':
+            rootObj = {}
+            listObj = {}
+            insertJson(listObj, 'errMsg', msg)
+            insertJson(rootObj, 'publist', listObj)
+            print('Content-type: application/json\n')
+            print(json.dumps(rootObj))
+            sys.exit(0)
+        elif etype == 'getArgs':
+            print('Invalid arguments.')
+            print('Usage:\n  publist.y [ -h ] [ -n ] -c <configuration file> [ -i <institution list> ] [ -s <series list> ]')
             rv = RET_INVALIDARG
 
-        if rv == RET_SUCCESS:
-            insts = None
-            nojson = None
-            subs = None
+    if 'cfg' in optD:
+        cfgFile = optD['cfg']
+    else:
+        if optD['source'] == 'cmdline':
+            print('Missing required argument, -c <configuration file>', file=sys.stderr)
+            print('Usage:\n  publist.y [ -h ] [ -n ] -c <configuration file> [ -i <institution list> ] [ -s <series list> ]')
+            rv = RET_INVALIDARG
+        else:
+            rootObj = {}
+            listObj = {}
+            insertJson(listObj, 'errMsg', "Required argument 'cfg' missing.")
+            insertJson(rootObj, 'publist', listObj)
+            print('Content-type: application/json\n')
+            print(json.dumps(rootObj))
+            sys.exit(0)
 
-            if 'insts' in optD:
-                insts = optD['insts']
+    if rv == RET_SUCCESS:
+        insts = None
+        nojson = None
+        subs = None
 
-            if 'nojson' in optD:
-                nojson = (optD['nojson'] == 1)
+        if 'insts' in optD:
+            insts = optD['insts']
 
-            if 'subs' in optD:
-                subs = optD['subs']
+        if 'nojson' in optD:
+            nojson = (optD['nojson'] == 1)
 
-            if 'user' in optD:
-                dbuser = optD['user']
-            else:
-                dbuser = pwd.getpwuid(os.getuid())[0]
+        if 'subs' in optD:
+            subs = optD['subs']
+
+        if 'user' in optD:
+            dbuser = optD['user']
+        else:
+            dbuser = pwd.getpwuid(os.getuid())[0]
 
 if rv == RET_SUCCESS:
     rv = getCfg(cfgFile, cfgDict)
@@ -202,15 +252,26 @@ if rv == RET_SUCCESS:
         # The connection is NOT in autocommit mode. If changes need to be saved, then conn.commit() must be called.
         with psycopg2.connect(database=DB_NAME, user=dbuser, host=DB_HOST, port=5432) as conn:
             with conn.cursor() as cursor:
+                if not nojson:
+                    rootObj = {}
+                    listObj = {}
+                    subListObj = {}
+                    nodeListObj = {}
+            
                 # First print all published series
                 pubListDict = {}
-                print('All published series')
-                print('--------------------')
                 pubList = GetPubList(cursor, pubListDict)
-                for series in pubList:
-                    print(series)
-                print('')
                 
+                if nojson:
+                    print('All published series')
+                    print('--------------------')
+                    for series in pubList:
+                        print(series)
+                    print('')
+                else:
+                    insertJson(listObj, 'list', pubList)
+                    insertJson(rootObj, 'publist', listObj)
+            
                 if not(insts is None):
                     if insts[0].lower() == 'all'.lower():
                         # Print sublists for all institutions by first querying the cfg db table for a list of all nodes
@@ -222,34 +283,50 @@ if rv == RET_SUCCESS:
                     # For each institution, print a list of subscribed-to series
                     for inst in insts:
                         subList = GetSubList(cursor, cfgDict, inst)
-                        print('Series subscribed to by ' + inst)
-                        print('------------------------------')
-                        if len(subList) == 0:
-                            print('Institution ' + inst + ' is not subscribed to any published series.\n')
+                        if nojson:
+                            print('Series subscribed to by ' + inst)
+                            print('------------------------------')
+                        
+                            if len(subList) == 0:
+                                print('Institution ' + inst + ' is not subscribed to any published series.\n')
+                            else:
+                                for oneSeries in subList:
+                                    print(oneSeries)
+                                print('')
                         else:
-                            for oneSeries in subList:
-                                print(oneSeries)
-                            print('')
+                            insertJson(subListObj, inst, subList)
+            
+                    if not nojson:
+                        insertJson(rootObj, 'sublist', subListObj)
 
                 if not(subs is None):
                     if subs[0].lower() != 'all':
                         # Print nodelists for the series specified in the subs list by first modifying pubList to contain the subs list,
                         # unless the user has specified all series, in which case pubList can be used as it (it contains a list of all
                         # published series).
-                        pubListClean = [series for series in subs if checkSeries(series, pubListDict)]
+                        warnMsg = ()
+                        pubListClean = [series for series in subs if checkSeries(series, pubListDict, warnMsg)]
+                        if nojson:
+                            print(''.join(warnMsg), file=sys.stderr)
                         pubList = pubListClean
                     
                     # For each published series, print a list of institutions subscribed to that series
                     for series in pubList:
                         nodeList = GetNodeList(cursor, cfgDict, series)
-                        print('Institutions subscribed to series ' + series)
-                        print('---------------------------------------------------')
-                        if len(nodeList) == 0:
-                            print('No institutions are subscribed to series ' + series + '.\n')
+                        if nojson:
+                            print('Institutions subscribed to series ' + series)
+                            print('---------------------------------------------------')
+                            if len(nodeList) == 0:
+                                print('No institutions are subscribed to series ' + series + '.\n')
+                            else:
+                                for oneInst in nodeList:
+                                    print(oneInst)
+                                print('')
                         else:
-                            for oneInst in nodeList:
-                                print(oneInst)
-                            print('')
+                            insertJson(nodeListObj, series, nodeList)
+
+                    if not nojson:
+                        insertJson(rootObj, 'nodelist', nodeListObj)
 
     except psycopg2.Error as exc:
         # Closes the cursor and connection
@@ -258,5 +335,35 @@ if rv == RET_SUCCESS:
         # No need to close cursor - leaving the with block does that.
         rv = RET_DBCONNECT
 
+    except Exception as exc:
+        etype = exc.args[0]
+        dbmsg = exc.args[1]
+        
+        if etype == 'getPubList':
+            msg = 'Error retrieving from the database the publication list.'
+        elif etype == 'getSubList':
+            inst = exc.args[2]
+            msg = 'Error retrieving from the database the subscription list for institution ' + inst + '.'
+        elif etype == 'getSubscribedInsts':
+            msg = 'Error retrieving from the database the list of institutions subscribed to at least one series.'
+        elif etype == 'getNodeList':
+            series = exc.args[2]
+            msg = 'Error retrieving from the database the list of institutions subscribed to series ' + series + '.'
+
+        if nojson:
+            print(msg + '\n' + dbmsg, file=sys.stderr)
+        else:
+            insertJson(listObj, 'errMsg', msg + '\n' + dbmsg)
+
     # There is no need to call conn.commit() since connect() was called from within a with block. If an exception was not raised in the with block,
     # then a conn.commit() was implicitly called. If an exception was raised, then conn.rollback() was implicitly called.
+
+    if not nojson:
+        # dump json to a string - don't forget that fracking newline! Boy did that stump me.
+        print('Content-type: application/json\n')
+        print(json.dumps(rootObj))
+
+if optD['source'] == 'cmdline':
+    sys.exit(rv)
+else:
+    sys.exit(0)
