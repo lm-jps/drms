@@ -10,24 +10,93 @@
     <script src="jquery-ui-1.10.4.custom/js/jquery-ui-1.10.4.custom.js"></script>
     <script src="js/datarepl.js"></script>
     
-    <style>        
-        #feedback { font-size: 1.4em; }
-        #publist .ui-selecting { background: #F39814; }
-        #publist .ui-selected { background: #B83400; color: white; }
-        #publist { list-style-type: none; margin: 0; padding: 0; width: 100%; }
-        #publist li { margin: 2px; padding: 0.4em; font-size: 1.2em; height: 18px; border: none}
+    <style>
+        body { background: #e2dfcf; }
         
-        .overflowdiv { min-height: 250px; max-height: 250px; overflow: auto; width: 50%; }
+        #mainheader
+        {
+            background: linear-gradient(#B83400, #661d00);
+            min-height: 128px;
+            max-height: 128px;
+            width: 100%;
+            position: relative;
+        }
+        
+        #maintitle
+        {
+            font: bold 48px Verdana, Arial, Helvetica, sans-serif;
+            text-indent: 24px;
+            color: white;
+            height: 64px;
+            position: absolute;
+            margin-top: 29px;
+            white-space: nowrap;
+        }
+        
+    
+        #feedback { font-size: 1.4em; }
+        
+        #publist .ui-selecting
+        {
+            background: #F39814;
+        }
+    
+        #publist .ui-selected
+        {
+            background: #B83400;
+            color: white;
+        }
+    
+        #publist
+        {
+            list-style-type: none;
+            margin: 0;
+            padding: 0;
+            width: 100%;
+        }
+    
+        #publist li
+        {
+            margin: 2px;
+            padding: 0.4em;
+            font: 1.2em Verdana, Arial, Helvetica, sans-serif;
+            height: 18px;
+            border: none;
+        }
+        
+        .transimg
+        {
+            opacity: 0.75;
+            filter:alpha(opacity=75);
+        }
+    
+        .overflowdiv
+        {
+            min-height: 250px;
+            max-height: 250px;
+            overflow: auto;
+            width: 50%;
+        }
         </style>
 </head>
-<body bgcolor="#4b60e7">
-    <div class="overflowdiv ui-state-default">
+<body>
+    <!--
+    <div id="maintitle" style="text-align: center">
+     -->
+    <div id="mainheader">
+    <div id="maintitle">
+        <a href = http://jsoc.stanford.edu><img class="transimg" src="http://hmi.stanford.edu/images/web/JSOC_120.gif" style="float: middle; vertical-align: middle; height: 72px; border: 0" alt="JSOC logo"></a>
+        Data Replication
+    </div>
+    </div>
+    <br>
+    <div class="overflowdiv ui-state-default element">
         <div>
             <ol id="publist"></ol>
         </div>
     </div>
     
-    <input type="text" name="date" id="date" />
+    <input class="ui-state-default" type="text" name="date" id="date" />
 
 </body>
 </html>

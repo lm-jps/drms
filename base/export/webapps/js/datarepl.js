@@ -24,7 +24,8 @@ $(document).ready(function()
     // Everything having to do with the publist select control.
     $(function()
     {
-        $("#publist").selectable();
+        $("#publist").selectable(
+      );
 
         // Fetch the list of published series from the PostgreSQL database.
         $.ajax(
