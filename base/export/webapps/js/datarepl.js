@@ -9,7 +9,7 @@ function listPopulator(listObj, list)
 {
     for (var series in list)
     {
-        listObj.append('<li class="ui-widget-content ui-state-default">' + list[series] + '</li>');
+        listObj.append('<li class="ui-widget-content ui-state-default">' + list[series][0] + '</li>');
     }
 };
 
@@ -38,6 +38,25 @@ $(document).ready(function()
         });
                
 
+    });
+                  
+    // Everything having to do with the accordion.
+    $(function()
+    {
+      $("#accordion").accordion({
+                                    heightStyle: "fill"
+                                });
+      
+      $("#accordion-resizer").resizable({
+                                            minHeight: 140,
+                                            minWidth: 200,
+                                            resize: function()
+                                                    {
+                                                        $("#accordion").accordion( "refresh" );
+                                                    }
+                                        });
+     
+      
     });
                   
     $("#date").datepicker();

@@ -1252,6 +1252,7 @@ sub parseLog {
       # to which the remote site is subscribed.
       if ($_ =~ /^\s*alter\s+table\s+(\S+\.\S+)\s+/i)
       {
+          # I don't think that there can be newlines in the contents of the ALTER TABLE command.
           my($series) = $1;
           my($weirdseriesname);
           my(@parts);
@@ -1288,6 +1289,8 @@ sub parseLog {
       if ($_ =~ /^\s*insert\s+into\s+\S+\.drms_keyword.+\)\s+values\s+\(\s*(\S+\.[^,]+),/i)
       {
           # Yay, this is an insert statement that goes with the alter table statement.
+          
+          # There could be newlines in this insert statement.
           my($series) = $1;
           my(@parts);
           
@@ -1342,6 +1345,8 @@ sub parseLog {
           $_ =~ /^insert\s+into\s+("\S+"\.\S+)/i ||
           $_ =~ /^insert\s+into\s+(\S+\.\S+)/i) 
       {
+          # There could be newlines in this insert statement.
+          
           my $series = $1;
           if ($_ =~ /.*\);$/ ) 
           {
@@ -1357,6 +1362,8 @@ sub parseLog {
           # update "lm_jps"."lev1_test4k10s" set blah = 'hithere' ...
           # There might be no namespace in the slong log (if there is a preceding set search_path to ... statement), 
           # and if so, we're screwed.
+          
+          # There could be newlines in this update statement.
           my($series) = GetQuotedSeries($1);
           
           # I guess we want to make sure that the line ends with a semicolon.
@@ -1371,6 +1378,8 @@ sub parseLog {
       }
       elsif ($_ =~ /^delete\s+from\s+only\s+(\S+.\S+)/i || $_ =~ /^delete\s+from\s+(\S+.\S+)/i)
       {
+          # There could be newlines in this delete statement.
+          
           # delete from only "aia_test"."synoptic2" where "recnum"='1544700'.
           my($series) = GetQuotedSeries($1);
           

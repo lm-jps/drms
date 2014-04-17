@@ -35,11 +35,12 @@ LST_TABLE_NODE = 'node'
 CFG_TABLE_NODE = 'node'
 
 # Read arguments
-# (c)fg    - path to configuration file
-# (i)insts - [OPTIONAL] comma-separated list of institutions ('all' for all institutions). For each institution in this
-#            list, print the list of series to which the institution is subscribed.
+# (c)fg    - Path to configuration file
+# (d)escs  - [OPTIONAL] In addition to a list of series, fetch series descriptions.
 # (n)ojson - [OPTIONAL] If this flag is specified, then the output is formatted text. If not provided, then the
 #            output is json.
+# (i)insts - [OPTIONAL] Comma-separated list of institutions ('all' for all institutions). For each institution in this
+#            list, print the list of series to which the institution is subscribed.
 # (s)ubs   - [OPTIONAL] comma-separated list of series ('all' for all series). For each series in this list, print
 #            the list of institutions that are subscribed to that series.
 # (u)ser   - [OPTIONAL] db user to connect to the db as. If not provided, then the linux user name is used.
@@ -62,25 +63,28 @@ def GetArgs(args):
                     matchobj = regexp.match(val)
                     if not(matchobj is None):
                         optD['cfg'] = matchobj.group(1)
-                elif key in ('i' or 'insts'):
-                    optD['insts'] = arg.split(',') # a list
+                elif key in ('d'):
+                    optD['descs'] = 1
                 elif key in ('n'):
                     optD['nojson'] = 1
+                elif key in ('i' or 'insts'):
+                    optD['insts'] = arg.split(',') # a list
                 elif key in ('s' or 'subs'):
                     optD['subs'] = arg.split(',') # a list
 
             optD['source'] = 'form'
 
     except ValueError:
-        insertJson(rootObj, 'errMsg', 'Invalid usage.\nUsage:\n  publist.py cfg=<configuration file> [ insts=<institution list> ] [ series=<series list> ]')
+        insertJson(rootObj, 'errMsg', 'Invalid usage.\nUsage:\n  publist.py [ d=1 ] [n=1] cfg=<configuration file> [ insts=<institution list> ] [ series=<series list> ]')
         raise Exception('getArgsForm', 'Invalid arguments.')
 
     if not(optD):
+        usage = 'publist.y [ -h ] [ -d ] [ -n ] -c <configuration file> [ -i <institution list> ] [ -s <series list> ]'
         try:
-            opts, remainder = getopt.getopt(args, "hc:i:ns:u:", ["cfg=", "insts=", "subs=", "user="])
+            opts, remainder = getopt.getopt(args, "hc:dni:s:u:", ["cfg=", "insts=", "subs=", "user="])
             for opt, arg in opts:
                 if opt == '-h':
-                    print('Usage:\n  publist.y [ -h ] [ -n ] -c <configuration file> [ -i <institution list> ] [ -s <series list> ]')
+                    print('Usage:\n  ' + usage)
                     sys.exit(0)
                 elif opt in ("-c", "--cfg"):
                     regexp = re.compile(r"(\S+)/?")
@@ -89,10 +93,12 @@ def GetArgs(args):
                         istat = bool(1)
                     else:
                         optD['cfg'] = matchobj.group(1)
-                elif opt in ("-i", "--insts"):
-                    optD['insts'] = arg.split(',') # a list
+                elif opt in ("-d"):
+                    optD['descs'] = 1
                 elif opt in ("-n"):
                     optD['nojson'] = 1
+                elif opt in ("-i", "--insts"):
+                    optD['insts'] = arg.split(',') # a list
                 elif opt in ("-s", "--subs"):
                     optD['subs'] = arg.split(',') # a list
                 elif opt in ("-u", "--user"):
@@ -103,14 +109,17 @@ def GetArgs(args):
             optD['source'] = 'cmdline'
     
         except getopt.GetoptError:
-            print('Usage:\n  publist.py [-h] -c <configuration file> [ -i <institution list> ] [ -s <series list> ]', file=sys.stderr)
+            print('Usage:\n  ' + usage, file=sys.stderr)
             raise Exception('getArgs', 'Invalid arguments.')
 	
     return optD
 
-def GetPubList(cursor, plDict):
+def GetPubList(cursor, plDict, descsDict):
     list = []
-    cmd = 'SELECT ' + SLONY_TABLE_NSP + "||'.'||" + SLONY_TABLE_REL + ' AS series FROM _' + SLONY_CLUSTER + '.' + SLONY_TABLE + ' ORDER BY series;'
+    if not descsDict is None:
+        cmd = 'SELECT T1.' + SLONY_TABLE_NSP + "||'.'||T1." + SLONY_TABLE_REL + ' AS series, T2.description AS description FROM _' + SLONY_CLUSTER + '.' + SLONY_TABLE + ' T1 LEFT OUTER JOIN drms_series() T2 ON (T1.' + SLONY_TABLE_NSP + "||'.'||T1." + SLONY_TABLE_REL + ' = lower(T2.seriesname)) ORDER BY SERIES'
+    else:
+        cmd = 'SELECT ' + SLONY_TABLE_NSP + "||'.'||" + SLONY_TABLE_REL + ' AS series FROM _' + SLONY_CLUSTER + '.' + SLONY_TABLE + ' ORDER BY series;'
     
     try:
         cursor.execute(cmd)
@@ -118,9 +127,15 @@ def GetPubList(cursor, plDict):
     except psycopg2.Error as exc:
         raise Exception('getPubList', exc.diag.message_primary)
 
-    for record in cursor:
-        list.append(record[0])
-        plDict[record[0]] = 'Y'
+    if not descsDict is None:
+        for record in cursor:
+            list.append(record[0])
+            descsDict[record[0]] = record[1]
+            plDict[record[0]] = 'Y'
+    else:
+        for record in cursor:
+            list.append(record[0])
+            plDict[record[0]] = 'Y'
 
     return list
 
@@ -226,11 +241,15 @@ if __name__ == "__main__":
 
     if rv == RET_SUCCESS:
         insts = None
+        descs = None
         nojson = None
         subs = None
 
         if 'insts' in optD:
             insts = optD['insts']
+        
+        if 'descs' in optD:
+            descs = optD['descs']
 
         if 'nojson' in optD:
             nojson = (optD['nojson'] == 1)
@@ -260,18 +279,39 @@ if rv == RET_SUCCESS:
             
                 # First print all published series
                 pubListDict = {}
-                pubList = GetPubList(cursor, pubListDict)
-                
+                if descs:
+                    descsDict = {}
+                else:
+                    descsDict = None
+
+                pubList = GetPubList(cursor, pubListDict, descsDict)
+
                 if nojson:
                     print('All published series')
                     print('--------------------')
-                    for series in pubList:
-                        print(series)
+                    
+                    if descs:
+                        for series in pubList:
+                            if series in descsDict:
+                                print(series + ' - ' + descsDict[series])
+                            else:
+                                print(series)
+                    else:
+                        for series in pubList:
+                            print(series)
                     print('')
                 else:
-                    insertJson(listObj, 'list', pubList)
+                    if descs:
+                        # Make a list of elements, each of which is a tuple of length 2: (name, description)
+                        pubListWithDescs = [(series, descsDict[series]) for series in pubList]
+                        insertJson(listObj, 'list', pubListWithDescs)
+                    else:
+                        # Make a list of elements, each of which is a tuple of length 1: (name).
+                        pubListWithoutDescs = [(series,) for series in pubList]
+                        insertJson(listObj, 'list', pubListWithoutDescs)
+                    
                     insertJson(rootObj, 'publist', listObj)
-            
+
                 if not(insts is None):
                     if insts[0].lower() == 'all'.lower():
                         # Print sublists for all institutions by first querying the cfg db table for a list of all nodes
