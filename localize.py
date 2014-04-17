@@ -976,7 +976,12 @@ def configureNet(cfgfile, cfile, mfile, pfile, pCfile, pMfile, pRfile, pTfile, b
         print(exc.strerror, file=sys.stderr)
         print('Unable to read configuration file ' + cfgfile + '.', file=sys.stderr)
     except Exception as exc:
-        type, msg = exc.args
+        if len(exc.args >= 2):
+            type, msg = exc.args
+        else:
+            # re-raise the exception
+            raise
+
         if type == 'unexpectedIccRet':
             print('icc -V returned this unexpected message:\n' + msg, file=sys.stderr)
             rv = bool(1)
