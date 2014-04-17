@@ -1,7 +1,7 @@
-#!/home/jsoc/bin/linux_x86_64/activepython
+#!/usr/bin/python
 
 # When run with the -s flag, localize.py configures the SUMS-server component of NetDRMS.
-
+from __future__ import print_function
 import sys
 import getopt
 import re
