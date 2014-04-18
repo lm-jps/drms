@@ -513,22 +513,26 @@ def parseConfig(fin, keymap, addenda, defs, cDefs, mDefsGen, mDefsMake, projCfg,
                     # Unknown section
                     raise Exception('unknownSection', section)
     except Exception as exc:
-        msg = exc.args[0]
+        if len(exc.args) >= 2:
+            msg = exc.args[0]
+        else:
+            # re-raise the exception
+            raise
         if msg == 'badKeyMapKey':
             # If we are here, then there was a non-empty keymap, and the parameter came from
             # the configuration file.
             violator = exc.args[1]
-            print('Unknown parameter name ' + "'" + violator + "'" + ' in ' + cfgfile + '.', file=sys.stderr)
+            print('Unknown parameter name ' + "'" + violator + "'" + ' in ' + fin.name + '.', file=sys.stderr)
             rv = bool(1)
         elif msg == 'badQuoteQual':
             # The bad quote qualifier came from the configuration file, not the addenda, since
             # we will have fixed any bad qualifiers in the addenda (which is populated by code).
             violator = exc.args[1]
-            print('Unknown quote qualifier ' + "'" + violator + "'" + ' in ' + cfgfile + '.', file=sys.stderr)
+            print('Unknown quote qualifier ' + "'" + violator + "'" + ' in ' + fin.name + '.', file=sys.stderr)
             rv = bool(1)
         elif msg == 'missingQuoteQual':
             violator = exc.args[1]
-            print('Missing quote qualifier for parameter ' + "'" + violator + "'" + ' in ' + cfgfile + '.', file=sys.stderr)
+            print('Missing quote qualifier for parameter ' + "'" + violator + "'" + ' in ' + fin.name + '.', file=sys.stderr)
             rv = bool(1)
         elif msg == 'paramNameTooLong':
             violator = exc.args[1]
@@ -1054,7 +1058,12 @@ def configureSdp(cfgfile, cfile, mfile, pfile, pCfile, pMfile, pRfile, pTfile, b
         print(exc.strerror, file=sys.stderr)
         print('Unable to read configuration file ' + cfgfile + '.', file=sys.stderr)
     except Exception as exc:
-        type = exc.args[0]
+        if len(exc.args) >= 2:
+            type = exc.args[0]
+        else:
+            # re-raise the exception
+            raise
+        
         if type == 'unexpectedIccRet':
             msg = exc.args[1]
             print('icc -V returned this unexpected message:\n' + msg, file=sys.stderr)
