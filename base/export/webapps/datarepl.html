@@ -86,6 +86,17 @@
             overflow: auto;
             width: 40%;
         }
+
+	.side-by-side
+	{
+	    float: left;
+	}
+
+	#series-desc
+	{
+	    margin-left: 24px;
+	    margin-right: 24px;
+	}
         </style>
 </head>
 <body>
@@ -106,15 +117,19 @@
     <div id="accordion">
         <h3>Home</h3>
         <div>
-        <p>
+          <p>
             This is a list of all published series. NetDRMS sites can subscribe to any of these series. Data from the series are also
             available from the export system. Click on one or more series to see descriptions of the data they contain.
-        </p>
-        <div class="overflowdiv ui-state-default element">
+          </p>
+          <div class="overflowdiv ui-state-default side-by-side">
             <div>
-                <ol id="publist"></ol>
+              <ol id="publist"></ol>
             </div>
-        </div>
+          </div>
+	  <div class="side-by-side">
+	    <p id="series-desc">blah
+	    </p>
+	  </div>
         </div>
         <h3>Series</h3>
         <div>
