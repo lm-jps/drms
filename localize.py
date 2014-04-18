@@ -976,7 +976,7 @@ def configureNet(cfgfile, cfile, mfile, pfile, pCfile, pMfile, pRfile, pTfile, b
         print(exc.strerror, file=sys.stderr)
         print('Unable to read configuration file ' + cfgfile + '.', file=sys.stderr)
     except Exception as exc:
-        if len(exc.args >= 2):
+        if len(exc.args) >= 2:
             type, msg = exc.args
         else:
             # re-raise the exception
