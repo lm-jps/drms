@@ -1,8 +1,5 @@
-<!--Download the complete list of published series-->
-var gCodeTree = '/home/jsoc/cvs/Development/JSOC'
-// var gCgiBinBaseUrl = '/Volumes/arta/jsoctrees/JSOC/base/drms/replication/publishseries';
-// var gCgiBinBaseUrl = '../../cgi-bin/ajax';
-var gCgiBinBaseUrl = 'http://jsoc2.stanford.edu/cgi-bin/ajax';
+// Download the complete list of published series
+var gCgiBinBaseUrl = '../../cgi-bin/ajax';
 
 
 function seriesDict(listObj, list)
@@ -28,11 +25,11 @@ function seriesDict(listObj, list)
     }
 };
 
-<!--Called when the DOM has completed loading.-->
+// Called when the DOM has completed loading.
 $(document).ready(function()
 {
-    var pubListUrl = gCgiBinBaseUrl + '/publist.py';
-    var cfgFile = gCodeTree + '/proj/replication/etc/repserver.cfg';
+    var pubListUrl = gCgiBinBaseUrl + '/' + gPublistFile;
+    var cfgFile = gCfgFile;
     var sDict;
                   
     alert("the eagle has landed");
@@ -85,18 +82,20 @@ $(document).ready(function()
     // Everything having to do with the accordion.
     $(function()
     {
-      $("#accordion").accordion({
-                                    heightStyle: "fill"
-                                });
+        $("#accordion").accordion(
+        {
+            heightStyle: "fill"
+        });
       
-      $("#accordion-resizer").resizable({
-                                            minHeight: 140,
-                                            minWidth: 200,
-                                            resize: function()
-                                                    {
-                                                        $("#accordion").accordion( "refresh" );
-                                                    }
-                                        });
+        $("#accordion-resizer").resizable(
+        {
+            minHeight: 140,
+            minWidth: 200,
+            resize: function()
+                    {
+                        $("#accordion").accordion( "refresh" );
+                    }
+        });
      
       
     });

@@ -5,13 +5,18 @@
     <title>Data Replication</title>
     <link rel="stylesheet" href="jquery-ui-1.10.4.custom/css/pepper-grinder/jquery-ui-1.10.4.custom.css" />
     
-    <!--This is the development version of jquery. Change to js/jquery-2.1.0.min.js for production. -->
+    <!--This is the development version of jquery. Change to js/jquery-2.1.0.min.js for production.-->
     <script src="js/jquery-2.1.0.js"></script>
     <script src="jquery-ui-1.10.4.custom/js/jquery-ui-1.10.4.custom.js"></script>
-    <script src="js/datarepl.js"></script>
+    <!--Files and script files subject to development. The paths to these files need to be modified when switching from development to production, and vice versa.-->
+    <script>
+        var gCfgFile='/home/arta/jsoctrees/JSOC/proj/replication/etc/repserver.cfg';
+        var gPublistFile='publistart.py';
+    </script>
+    <script src="js/datareplart.js"></script>
     
     <style>
-        body { background: #e2dfcf; }
+        body { background: #FFFFFF; }
         
         #mainheader
         {
@@ -111,6 +116,11 @@
             <a href = http://jsoc.stanford.edu><img class="transimg" src="http://hmi.stanford.edu/images/web/JSOC_120.gif" style="float: middle; vertical-align: middle; height: 72px; border: 0" alt="JSOC logo"></a>
             Data Replication
         </div>
+    </div>
+    
+    <!--Spacer-->
+    <div>
+        <br>
     </div>
     
     <!--Accordion-->
