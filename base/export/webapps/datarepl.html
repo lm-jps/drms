@@ -38,7 +38,7 @@
         
         #publist .ui-selecting
         {
-            background: #F39814;
+            background: #FF6224;
         }
     
         #publist .ui-selected
@@ -71,6 +71,7 @@
             height: 75%;
             margin-left:auto;
             margin-right:auto;
+            box-shadow: 10px 10px 5px #888888;
         }
         
         .transimg
@@ -92,7 +93,7 @@
 	    float: left;
 	}
 
-	#series-desc
+	.div-margin
 	{
 	    margin-left: 24px;
 	    margin-right: 24px;
@@ -126,17 +127,22 @@
               <ol id="publist"></ol>
             </div>
           </div>
-	  <div class="side-by-side">
-	    <p id="series-desc">blah
-	    </p>
-	  </div>
+          <div class="side-by-side div-margin">
+              <p>
+                DRMS Dataseries Descripton:
+              </p>
+              <p id="series-desc" class="div-margin">
+              </p>
+          </div>
         </div>
+        
         <h3>Series</h3>
         <div>
             <p>
                 blah, blah, blaaaaaaaaahhhhhhhhh.
-            </p>
+                </p>
         </div>
+        
         <h3>Institutions</h3>
         <div>
             <p>
@@ -148,6 +154,7 @@
                 <li>List item three</li>
             </ul>
         </div>
+        
         <h3>Status</h3>
         <div>
             <p>
