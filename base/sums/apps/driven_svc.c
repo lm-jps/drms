@@ -1152,6 +1152,7 @@ KEY *writedrvdo_1(KEY *params)
     keyiterate(logkey, params);
   }
   }
+  retlist = newkeylist();
   dnum = getkey_int(params, "dnum");
   sprintf(dname, "%s%d", SUMDR, dnum);
   filenumwrt = getkey_int(params, "nxtwrtfn"); /* file# to be written */
@@ -1172,7 +1173,6 @@ KEY *writedrvdo_1(KEY *params)
     return(retlist);
   }
 
-  retlist = newkeylist();
   add_keys(params, &retlist);           /* NOTE:does not do fileptr */
   client = (CLIENT *)getkey_fileptr(params, "current_client");
   /* final destination */
