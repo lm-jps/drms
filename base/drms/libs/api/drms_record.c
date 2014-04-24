@@ -786,41 +786,42 @@ static DRMS_Record_t *CacheRecordProto(DRMS_Env_t *env,
 				       const char *seriesName, 
 				       int *status)
 {
-   int stat = DRMS_SUCCESS;
-   DRMS_Record_t *cached = NULL;
-
-   /* seriesName might actually exist, but not be in the series_cache, because we now cache the series 
-    * on-demand. */
-   if (drms_template_record(env, seriesName, &stat) != NULL)
-   {
-      fprintf(stderr,"drms_open_dsdsrecords(): "
-	      "ERROR: Series '%s' already exists.\n", seriesName);
-      drms_free_template_record_struct(proto);
-      stat = DRMS_ERROR_INVALIDDATA;
-   }
-   else
-   {
-      stat = DRMS_SUCCESS; /* ingore drms_template_record status, which might have been 'unknown series' */
-      cached = (DRMS_Record_t *)hcon_allocslot_lower(&(env->series_cache), seriesName);
-      drms_copy_record_struct(cached, proto);  
-
-      for (int i = 0; i < cached->seriesinfo->pidx_num; i++) 
-      {
-	 cached->seriesinfo->pidx_keywords[i] = 
-	   drms_keyword_lookup(cached, 
-			       proto->seriesinfo->pidx_keywords[i]->info->name, 
-			       0);
-      }
-
-      drms_free_record_struct(proto);
-   }
-
-   if (status)
-   {
-      *status = stat;
-   }
-   
-   return cached;
+    int stat = DRMS_SUCCESS;
+    DRMS_Record_t *cached = NULL;
+    
+    /* seriesName might actually exist, but not be in the series_cache, because we now cache the series
+     * on-demand. */
+    if (drms_template_record(env, seriesName, &stat) != NULL)
+    {
+        fprintf(stderr,"drms_open_dsdsrecords(): "
+                "ERROR: Series '%s' already exists.\n", seriesName);
+        drms_free_template_record_struct(proto);
+        stat = DRMS_ERROR_INVALIDDATA;
+    }
+    else
+    {
+        stat = DRMS_SUCCESS; /* ingore drms_template_record status, which might have been 'unknown series' */
+        cached = (DRMS_Record_t *)hcon_allocslot_lower(&(env->series_cache), seriesName);
+        drms_copy_record_struct(cached, proto);
+        
+        for (int i = 0; i < cached->seriesinfo->pidx_num; i++)
+        {
+            cached->seriesinfo->pidx_keywords[i] =
+            drms_keyword_lookup(cached,
+                                proto->seriesinfo->pidx_keywords[i]->info->name,
+                                0);
+        }
+        
+        drms_free_record_struct(proto);
+        free(proto);
+    }
+    
+    if (status)
+    {
+        *status = stat;
+    }
+    
+    return cached;
 }
 
 static DRMS_RecordSet_t *CreateRecordsFromDSDSKeylist(DRMS_Env_t *env,
@@ -1524,6 +1525,8 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
                                 
                                 fileIndex++;
                             }
+                            
+                            free(fileList);
                         }	
                     }
                     

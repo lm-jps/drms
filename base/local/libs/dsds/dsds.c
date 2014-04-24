@@ -566,6 +566,7 @@ static void DestroyHandle(DSDS_pHandle_t h)
             
             /* Remove handle from table of known handles. */
             hcon_remove(htable, *h);
+            free(*h);
             *h = NULL;
         }
     }
@@ -1256,14 +1257,14 @@ static void FreeDSDSKeyList(DSDS_KeyList_t **list)
         /* need to free malloc'd mem */
         if (pList->elem)
         {
-            if (pList->elem->info)
-            {
-                free (pList->elem->info);
-            }
-            
             if (pList->elem->info->type == DRMS_TYPE_STRING && pList->elem->value.string_val)
             {
                 free(pList->elem->value.string_val);
+            }
+            
+            if (pList->elem->info)
+            {
+                free (pList->elem->info);
             }
             
             free(pList->elem);
@@ -2160,6 +2161,10 @@ DRMS_Array_t *DSDS_segment_read(char *paramsDesc, int ds, int rn, const char *fi
                     if (sds)
                     {
                         local = CreateDRMSArray(hSOI, sds, &status);
+                        
+                        /* Can't free the entire SDS, as I'd like, because there is some difficult-to-see connection between
+                         * the containing VDS and the SDSs. And there doesn't seem to be a way to tell VDS to clean-up its
+                         * VDS. So we're stuck with a leak. */
                         (*pFn_sds_free_data)(sds);
                     }
                     
