@@ -21,6 +21,7 @@
 
 void *gHandleSOI = NULL;
 long long gSeriesGuid = 1;
+static HContainer_t *gHandleVDSCache = NULL;
 
 const char kDSDS_GenericSeriesName[] = "dsds_series";
 #define kLIBSOI "libsoi.so"
@@ -140,42 +141,290 @@ const int kDSDS_MaxFunctions = 128;
 const int kDSDS_MaxKeyName = 1024;
 const int kDSDS_MaxHandles = 4096;
 
+const int kDSDS_MaxVDSs = 256;
+
 /* Forward decls */
 void DSDS_free_keylistarr(DSDS_KeyList_t ***pklarr, int n);
 void DSDS_free_segarr(DRMS_Segment_t **psarr, int n);
 
 static void *GetSOI(kDSDS_Stat_t *stat)
 {
-   static int attempted = 0;
-   kDSDS_Stat_t status;
+    static int attempted = 0;
+    kDSDS_Stat_t status;
+    
+    if (!attempted && !gHandleSOI)
+    {
+        /* Get handle to libdsds.so */
+        gHandleSOI = DSDS_GetLibHandle(kLIBSOI, &status);
+        if (status == kDSDS_Stat_CantOpenLibrary)
+        {
+            status = kDSDS_Stat_NoSOI;
+        }
+        
+        attempted = 1;
+    }
+    
+    if (gHandleSOI)
+    {
+        status = kDSDS_Stat_Success;
+    }
+    else
+    {
+        status = kDSDS_Stat_NoSOI;
+    }
+    
+    if (stat)
+    {
+        *stat = status;
+    }
+    
+    return gHandleSOI;
+}
 
-   if (!attempted && !gHandleSOI)
-   {
-      /* Get handle to libdsds.so */
-      gHandleSOI = DSDS_GetLibHandle(kLIBSOI, &status);
-      if (status == kDSDS_Stat_CantOpenLibrary)
-      {
-	 status = kDSDS_Stat_NoSOI;
-      }
+static void *GetSOIFPtr(void *hSOI, Soifn_t fnNum)
+{
+    void *ret = NULL;
+    char *msg = NULL;
+    int err = 0;
+    
+    if (hSOI)
+    {
+        if (!ftable)
+        {
+            ftable = (struct hsearch_data *)malloc(sizeof(struct hsearch_data));
+            gpFn = (void **)malloc(sizeof(void *) * kDSDS_MaxFunctions);
+            memset(ftable, 0, sizeof(struct hsearch_data));
+            memset(gpFn, 0, sizeof(void *) * kDSDS_MaxFunctions);
+            
+            if (hcreate_r(kDSDS_MaxFunctions, ftable))
+            {
+                ENTRY entry;
+                ENTRY *entryRet = NULL;
+                int nfn;
+                
+                for (nfn = 0; err == 0 && nfn < kSOI_NFNS; nfn++)
+                {
+                    entry.key = SoifnNames[nfn];
+                    entry.data = &(gpFn[nfn]); /* data is address of global function pointer */
+                    if (!hsearch_r(entry, ENTER, &entryRet, ftable))
+                    {
+                        err = 1;
+                    }
+                }
+            }
+        }
+    }
+    
+    if (!err && ftable)
+    {
+        ENTRY entrySearch;
+        ENTRY *entryFound = NULL;
+        
+        entrySearch.key = SoifnNames[fnNum];
+        hsearch_r(entrySearch, FIND, &entryFound, ftable);
+        if (!entryFound)
+        {
+            fprintf(stderr, "Symbol %s not found in ftable.\n", SoifnNames[fnNum]);
+            err = 1;
+        }
+        else
+        {
+            void **pFn = entryFound->data;
+            
+            if (*pFn == NULL)
+            {
+                /* This function isn't in ftable yet. */
+                dlerror();
+                ret = dlsym(hSOI, SoifnNames[fnNum]);
+                if ((msg = dlerror()) != NULL)
+                {
+                    /* symbol not found */
+                    fprintf(stderr, "Symbol %s not found: %s.\n", SoifnNames[fnNum], msg);
+                    ret = NULL;
+                    err = 1;
+                }
+                
+                if (ret)
+                {
+                    *pFn = ret;
+                }
+            }
+            else
+            {
+                ret = *pFn;
+            }
+        }
+    }
+    
+    return ret;
+}
 
-      attempted = 1;
-   }
+static void freeVDS(const void *value)
+{
+    kDSDS_Stat_t status = kDSDS_Stat_Success;
+    
+    VDS *tofree = *((VDS **)value);
+    if (tofree)
+    {
+        void *hSOI = GetSOI(&status);
+        
+        if (hSOI)
+        {
+            pSOIFn_vds_close_t pFn_vds_close = (pSOIFn_vds_close_t)GetSOIFPtr(hSOI, kSOI_VDS_CLOSE);
+            
+            if (pFn_vds_close)
+            {
+                (*pFn_vds_close)(&tofree);
+            }
+        }
+    }
+}
 
-   if (gHandleSOI)
-   {
-      status = kDSDS_Stat_Success;
-   }
-   else
-   {
-      status = kDSDS_Stat_NoSOI;
-   }
+/* Will create the cache if it has not been created already. */
+static HContainer_t *getVDSCache(kDSDS_Stat_t *rstat)
+{
+    kDSDS_Stat_t status = kDSDS_Stat_Success;
+    
+    if (!gHandleVDSCache)
+    {
+        /* Map the hparams handle string to the address of the VDS. */
+        gHandleVDSCache = hcon_create(sizeof(VDS *), kDSDS_MaxHandle, freeVDS, NULL, NULL, NULL, 0);
+        if (!gHandleVDSCache)
+        {
+            status = kDSDS_Stat_NoMemory;
+        }
+    }
+    
+    if (rstat)
+    {
+        *rstat = status;
+    }
+    
+    return gHandleVDSCache;
+}
 
-   if (stat)
-   {
-      *stat = status;
-   }
+static void purgeVDSCache()
+{
+    /* Randomly dump half of the cache entries. */
+    int initSize;
+    HIterator_t iter;
+    const char *key = NULL;
+    int ielem;
+    
+    if (gHandleVDSCache)
+    {
+        initSize = hcon_size(gHandleVDSCache);
+        hiter_new(&iter, gHandleVDSCache);
+        ielem = 0;
+        
+        while (hcon_size(gHandleVDSCache) > initSize / 2)
+        {
+            /* hacky, hacky! */
+            key = iter.elems[ielem]->key;
+            hcon_remove(gHandleVDSCache, key);
+            ielem++;
+        }
+    }
+}
 
-   return gHandleSOI;
+static int isfullVDSCache()
+{
+    if (gHandleVDSCache)
+    {
+        return hcon_size(gHandleVDSCache) >= kDSDS_MaxVDSs;
+    }
+    
+    return 0;
+}
+
+static int insertVDSIntoCache(DSDS_Handle_t handle, VDS *vds)
+{
+    kDSDS_Stat_t status = kDSDS_Stat_Success;
+    HContainer_t *cache = NULL;
+    
+    cache = getVDSCache(&status);
+    
+    if (cache && status == kDSDS_Stat_Success)
+    {
+        if (isfullVDSCache())
+        {
+            purgeVDSCache();
+        }
+        
+        if (hcon_insert(cache, handle, &vds) != 0)
+        {
+            status = kDSDS_Stat_VDSCache;
+        }
+    }
+    
+    return status;
+}
+
+static VDS *getVDSFromCache(DSDS_Handle_t handle)
+{
+    if (gHandleVDSCache)
+    {
+        VDS **pVds = (VDS **)hcon_lookup(gHandleVDSCache, handle);
+        
+        if (pVds)
+        {
+            return *(pVds);
+        }
+    }
+    
+    return NULL;
+}
+
+/* Maintain a set of open VDSs. */
+static VDS *getVDS(KEY *keylist, const char *dsname, DSDS_Handle_t handle, kDSDS_Stat_t *rstat)
+{
+    VDS *vds = NULL;
+    kDSDS_Stat_t status;
+    void *hSOI = NULL;
+    
+    status = kDSDS_Stat_Success;
+    
+    vds = getVDSFromCache(handle);
+    
+    if (!vds)
+    {
+        hSOI = GetSOI(&status);
+        
+        if (hSOI)
+        {
+            pSOIFn_vds_open_t pFn_vds_open = (pSOIFn_vds_open_t)GetSOIFPtr(hSOI, kSOI_VDS_OPEN);
+            vds = (*pFn_vds_open)(keylist, dsname);
+            
+            if (vds)
+            {
+                /* If this fails, don't care. This just means that caching didn't work. */
+                insertVDSIntoCache(handle, vds);
+            }
+        }
+    }
+    
+    if (rstat)
+    {
+        *rstat = status;
+    }
+    
+    return vds;
+}
+
+static void removeVDSFromCache(DSDS_Handle_t handle)
+{
+    if (gHandleVDSCache)
+    {
+        hcon_remove(gHandleVDSCache, handle);
+    }
+}
+
+static void destroyVDSCache()
+{
+    if (gHandleVDSCache)
+    {
+        hcon_destroy(&gHandleVDSCache);
+    }
 }
 
 /* Return a pointer to JSOC code so that when the underlying structure is deleted
@@ -190,193 +439,136 @@ static void *GetSOI(kDSDS_Stat_t *stat)
 */
 static int GenerateHandle(const char *desc, void *structure, DSDS_pHandle_t out)
 {
-   char buf[kDSDS_MaxHandle];
-   snprintf(buf, sizeof(buf), "%s:%p", desc, structure);
-   int err = 0;
-
-   /* put in hash for later retrieval to free structure */
-   if (!htable)
-   {
-      htable = hcon_create(kDSDS_MaxHandle, kDSDS_MaxHandle, NULL, NULL, NULL, NULL, 0);
-   }
-
-   if (htable)
-   {
-      err = hcon_insert(htable, buf, buf);
-
-      if (!err)
-      {
-	 void *item = hcon_lookup(htable, buf);
-	 if (item)
-	 {
-	    *out = (DSDS_Handle_t)item;
-	 }
-	 else
-	 {
-	    err = 1;
-	 }
-      }
-   }
-   else
-   {
-      err = 1;
-   }
-
-   return err;
+    char buf[kDSDS_MaxHandle];
+    snprintf(buf, sizeof(buf), "%s:%p", desc, structure);
+    int err = 0;
+    
+    /* put in hash for later retrieval to free structure */
+    if (!htable)
+    {
+        htable = hcon_create(kDSDS_MaxHandle, kDSDS_MaxHandle, NULL, NULL, NULL, NULL, 0);
+    }
+    
+    if (htable)
+    {
+        err = hcon_insert(htable, buf, buf);
+        
+        if (!err)
+        {
+            void *item = hcon_lookup(htable, buf);
+            if (item)
+            {
+                *out = (DSDS_Handle_t)item;
+            }
+            else
+            {
+                err = 1;
+            }
+        }
+    }
+    else
+    {
+        err = 1;
+    }
+    
+    return err;
 }
 
 static DSDS_Handle_t FindHandle(const char *desc)
 {
-   DSDS_Handle_t ret = NULL;
-
-   if (htable)
-   {
-      void *item = hcon_lookup(htable, desc);
-      if (item)
-      {
-	 ret = (DSDS_Handle_t)item;
-      }
-   }
-
-   return ret;
+    DSDS_Handle_t ret = NULL;
+    
+    if (htable)
+    {
+        void *item = hcon_lookup(htable, desc);
+        if (item)
+        {
+            ret = (DSDS_Handle_t)item;
+        }
+    }
+    
+    return ret;
 }
 
 static int GetStructure(DSDS_Handle_t handle, void **out)
 {
-   void *structure = NULL;
-   char *handleStr = NULL;
-   char *pCh = NULL;
-   int err = 1;
-   
-   if (handle && out && htable)
-   {
-      /* Check for valid handle */
-      void *item = hcon_lookup(htable, handle);
-
-      if (!item)
-      {
-	 fprintf(stderr, "Invalid DSDS_Handle %s.\n", handle);
-	 err = 1;
-      }
-      else
-      {
-	 handleStr = strdup((const char *)handle);
-	 if (handleStr)
-	 {
-	    pCh = strchr(handleStr, ':');
-	    if (pCh)
-	    {
-	       pCh++;
-	       if (pCh < handleStr + strlen(handleStr))
-	       {
-		  if (sscanf(pCh, "%p", &structure) == 1)
-		  {
-		     *out = structure;
-		     err = 0;
-		  }
-	       }
-	    }
-	 }
-      }
-   }
-
-   if (handleStr)
-   {
-      free(handleStr);
-   }
-
-   return err;
+    void *structure = NULL;
+    char *handleStr = NULL;
+    char *pCh = NULL;
+    int err = 1;
+    
+    if (handle && out && htable)
+    {
+        /* Check for valid handle */
+        void *item = hcon_lookup(htable, handle);
+        
+        if (!item)
+        {
+            fprintf(stderr, "Invalid DSDS_Handle %s.\n", handle);
+            err = 1;
+        }
+        else
+        {
+            handleStr = strdup((const char *)handle);
+            if (handleStr)
+            {
+                pCh = strchr(handleStr, ':');
+                if (pCh)
+                {
+                    pCh++;
+                    if (pCh < handleStr + strlen(handleStr))
+                    {
+                        if (sscanf(pCh, "%p", &structure) == 1)
+                        {
+                            *out = structure;
+                            err = 0;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    if (handleStr)
+    {
+        free(handleStr);
+    }
+    
+    return err;
 }
 
 static void DestroyHandle(DSDS_pHandle_t h)
 {
-   if (h && *h)
-   {
-      void *item = hcon_lookup(htable, *h);
-      if (item)
-      {
-	 hcon_remove(htable, *h);
-	 *h = NULL;
-      }
-   }
-}
-
-static void *GetSOIFPtr(void *hSOI, Soifn_t fnNum)
-{
-   void *ret = NULL;
-   char *msg = NULL;
-   int err = 0;
-
-   if (hSOI)
-   {
-      if (!ftable)
-      {
-	 ftable = (struct hsearch_data *)malloc(sizeof(struct hsearch_data));
-	 gpFn = (void **)malloc(sizeof(void *) * kDSDS_MaxFunctions);
-	 memset(ftable, 0, sizeof(struct hsearch_data));
-	 memset(gpFn, 0, sizeof(void *) * kDSDS_MaxFunctions);
-
-	 if (hcreate_r(kDSDS_MaxFunctions, ftable))
-	 {
-	    ENTRY entry;
-	    ENTRY *entryRet = NULL;
-	    int nfn;
-
-	    for (nfn = 0; err == 0 && nfn < kSOI_NFNS; nfn++)
-	    {
-	       entry.key = SoifnNames[nfn];
-	       entry.data = &(gpFn[nfn]); /* data is address of global function pointer */
-	       if (!hsearch_r(entry, ENTER, &entryRet, ftable))
-	       {
-		  err = 1;
-	       }
-	    }
-	 }
-      }
-   }
-
-   if (!err && ftable)
-   {
-      ENTRY entrySearch;
-      ENTRY *entryFound = NULL;
-
-      entrySearch.key = SoifnNames[fnNum];
-      hsearch_r(entrySearch, FIND, &entryFound, ftable);
-      if (!entryFound)
-      {
-	 fprintf(stderr, "Symbol %s not found in ftable.\n", SoifnNames[fnNum]);
-	 err = 1;
-      }
-      else
-      {
-	 void **pFn = entryFound->data;
-	 
-	 if (*pFn == NULL)
-	 {
-	    /* This function isn't in ftable yet. */
-	    dlerror();
-	    ret = dlsym(hSOI, SoifnNames[fnNum]);
-	    if ((msg = dlerror()) != NULL)
-	    {
-	       /* symbol not found */
-	       fprintf(stderr, "Symbol %s not found: %s.\n", SoifnNames[fnNum], msg);
-	       ret = NULL;
-	       err = 1;
-	    }
-
-	    if (ret)
-	    {
-	       *pFn = ret;
-	    }
-	 }
-	 else
-	 {
-	    ret = *pFn;
-	 }
-      }
-   }
-
-   return ret;
+    if (h && *h)
+    {
+        void *item = hcon_lookup(htable, *h);
+        if (item)
+        {
+            KEY *keylist = NULL;
+            pSOIFn_freekeylist_t pFn_freekeylist = NULL;
+            void *hSOI = NULL;
+            kDSDS_Stat_t status;
+            
+            hSOI = GetSOI(&status);
+            
+            if (hSOI)
+            {
+                pFn_freekeylist = (pSOIFn_freekeylist_t)GetSOIFPtr(hSOI, kSOI_FREEKEYLIST);
+            }
+            
+            /* Free the open VDS for this handle. */
+            if (pFn_freekeylist)
+            {
+                /* Free KEY-list structure. */
+                GetStructure(*h, (void **)&keylist);
+                (*pFn_freekeylist)(&keylist);
+            }
+            
+            /* Remove handle from table of known handles. */
+            hcon_remove(htable, *h);
+            *h = NULL;
+        }
+    }
 }
 
 static void Printkey(KEY *key)
@@ -1054,27 +1246,33 @@ static void MakeDRMSSeriesName(void *hSOI,
 
 static void FreeDSDSKeyList(DSDS_KeyList_t **list)
 {
-   DSDS_KeyList_t *pList = *list;
-   DSDS_KeyList_t *nElem = NULL;
-
-   while (pList)
-   {      
-      nElem = pList->next;
-
-      /* need to free malloc'd mem */
-      if (pList->elem)
-      {
-	 if (pList->elem->info)
-	 {
-	    free (pList->elem->info);
-	 }
-	 free(pList->elem);
-      }
-      free(pList);
-      pList = nElem;
-   }
-
-   *list = NULL;
+    DSDS_KeyList_t *pList = *list;
+    DSDS_KeyList_t *nElem = NULL;
+    
+    while (pList)
+    {
+        nElem = pList->next;
+        
+        /* need to free malloc'd mem */
+        if (pList->elem)
+        {
+            if (pList->elem->info)
+            {
+                free (pList->elem->info);
+            }
+            
+            if (pList->elem->info->type == DRMS_TYPE_STRING && pList->elem->value.string_val)
+            {
+                free(pList->elem->value.string_val);
+            }
+            
+            free(pList->elem);
+        }
+        free(pList);
+        pList = nElem;
+    }
+    
+    *list = NULL;
 }
 
 /* returns number of attributes processed */
@@ -1533,6 +1731,11 @@ long long DSDS_open_records(const char *dsspec,
                         /* The actual number of drms records created is <= nRecs, so
                          * some of these DSDS_KeyList_ts may not get used. But *keys
                          * will get freed by DSDS_free_keylistarr() */
+                        
+                        /* If the SDS has a protocol of FITS_MERGE, then the SDS file contains
+                         * data for more than one record (like a TAS file in DRMS). So, we don't
+                         * know at this point how many DRMS segments we want to create. We have
+                         * to first call vds_open() to get that information. */
                         *keys = (DSDS_KeyList_t **)malloc(sizeof(DSDS_KeyList_t *) * nRecs);
                         *segs = (DRMS_Segment_t *)malloc(sizeof(DRMS_Segment_t) * nRecs);
                         if (*keys && *segs)
@@ -1867,105 +2070,120 @@ void DSDS_steal_seginfo(DRMS_Segment_t *thief, DRMS_Segment_t *victim)
    }
 }
 
-/* keylist must come from series (all recs have the same keylist).  So, in 
+/* Ideally the DRMS module will call this at shutdown, but the logic to figure out whether or not a VDS cache exists in a module plugin
+ * would be a little convoluted, so we'll probably simply not clean up the cache. However, when drms_close_records() is called, 
+ * the associated open VDSs will be freed and removed from the cache. So at shutdown, there will be an empty cache that doesn't get
+ * freed. */
+void DSDS_free_vdscache()
+{
+    destroyVDSCache();
+}
+
+/* keylist must come from series (all recs have the same keylist).  So, in
  * drms_segment_read(), get record, then seriesinfo, then keylist handle.
  *
  * If no paramsDesc is provided, then create an SDS from filename, if it 
  * exists, otherwise, fail.
+ * 
+ * paramsDesc is a reference to the KEY list that vds_open() uses to identify
+ * the VDS that is to be opened.
  */
-DRMS_Array_t *DSDS_segment_read(char *paramsDesc, 
-				int ds, 
-				int rn, 
-				const char *filename,
-				kDSDS_Stat_t *stat)
+DRMS_Array_t *DSDS_segment_read(char *paramsDesc, int ds, int rn, const char *filename, kDSDS_Stat_t *stat)
 {
-   kDSDS_Stat_t status = kDSDS_Stat_Success;
-   void *hSOI = GetSOI(&status);
-   DRMS_Array_t *ret = NULL;
-   DRMS_Array_t *local = NULL;
+    kDSDS_Stat_t status = kDSDS_Stat_Success;
+    void *hSOI = GetSOI(&status);
+    DRMS_Array_t *ret = NULL;
+    DRMS_Array_t *local = NULL;
+    
+    if (hSOI)
+    {
+        if (!paramsDesc)
+        {
+            pSOIFn_sds_read_fits_t pFn_sds_read_fits =
+            (pSOIFn_sds_read_fits_t)GetSOIFPtr(hSOI, kSOI_SDS_READ_FITS);
+            pSOIFn_sds_free_t pFn_sds_free =
+            (pSOIFn_sds_free_t)GetSOIFPtr(hSOI, kSOI_SDS_FREE);
+            
+            if (pFn_sds_read_fits && pFn_sds_free)
+            {
+                FILE *fp = fopen(filename, "r");
+                if (fp)
+                {
+                    SDS *sds = (*pFn_sds_read_fits)(fp);
+                    if (sds)
+                    {
+                        fclose(fp);
+                        fp = NULL;
+                        local = CreateDRMSArray(hSOI, sds, &status);
+                        (*pFn_sds_free)(&sds);
+                    }
+                }
+            }
+            else
+            {
+                status = kDSDS_Stat_MissingAPI;
+            }
+        }
+        else
+        {
+            pSOIFn_vds_open_t pFn_vds_open =
+            (pSOIFn_vds_open_t)GetSOIFPtr(hSOI, kSOI_VDS_OPEN);
+            pSOIFn_VDS_select_rec_t pFn_VDS_select_rec =
+            (pSOIFn_VDS_select_rec_t)GetSOIFPtr(hSOI, kSOI_VDS_SELECT_REC);
+            pSOIFn_vds_close_t pFn_vds_close =
+            (pSOIFn_vds_close_t)GetSOIFPtr(hSOI, kSOI_VDS_CLOSE);
+            pSOIFn_sds_free_data_t pFn_sds_free_data =
+            (pSOIFn_sds_free_data_t)GetSOIFPtr(hSOI, kSOI_SDS_FREE_DATA);
+            
+            /* Need something here to distinguish a FITS_MERGE VDS from a non-FITS_MERGE one. If the VDS is a 
+             * FITS_MERGE VDS, then attempt to fetch the VDS from the container of open VDSs. If the VDS isn't
+             * in this container, then open the VDS and put it in the container (flushing some chunk of the 
+             * cache if the cache is full). */
+            
+            
+            SDS *sds = NULL;
+            VDS *vds = NULL;
+            KEY *keylist = NULL;
+            char dsname[kDSDS_MaxKeyName];
+            
+            if (pFn_vds_open && pFn_VDS_select_rec && pFn_vds_close && pFn_sds_free_data)
+            {
+                DSDS_Handle_t hparams = FindHandle(paramsDesc);
+                GetStructure(hparams, (void **)&keylist);
+                sprintf(dsname, "in_%d", ds);
+                vds = getVDS(keylist, dsname, hparams, NULL); /* Ignore error code, I guess. */
 
-   if (hSOI)
-   {
-      if (!paramsDesc)
-      {
-	 pSOIFn_sds_read_fits_t pFn_sds_read_fits = 
-	   (pSOIFn_sds_read_fits_t)GetSOIFPtr(hSOI, kSOI_SDS_READ_FITS);
-	 pSOIFn_sds_free_t pFn_sds_free = 
-	   (pSOIFn_sds_free_t)GetSOIFPtr(hSOI, kSOI_SDS_FREE);
-
-	 if (pFn_sds_read_fits && pFn_sds_free)
-	 {
-	    FILE *fp = fopen(filename, "r");
-	    if (fp)
-	    {
-	       SDS *sds = (*pFn_sds_read_fits)(fp);
-	       if (sds)
-	       {
-		  fclose(fp);
-		  fp = NULL;
-		  local = CreateDRMSArray(hSOI, sds, &status);
-		  (*pFn_sds_free)(&sds);
-	       }
-	    }
-	 }
-	 else
-	 {
-	    status = kDSDS_Stat_MissingAPI;
-	 }
-      }
-      else
-      {
-	 pSOIFn_vds_open_t pFn_vds_open = 
-	   (pSOIFn_vds_open_t)GetSOIFPtr(hSOI, kSOI_VDS_OPEN);
-	 pSOIFn_VDS_select_rec_t pFn_VDS_select_rec =
-	   (pSOIFn_VDS_select_rec_t)GetSOIFPtr(hSOI, kSOI_VDS_SELECT_REC);
-	 pSOIFn_vds_close_t pFn_vds_close =
-	   (pSOIFn_vds_close_t)GetSOIFPtr(hSOI, kSOI_VDS_CLOSE);
-	 pSOIFn_sds_free_data_t pFn_sds_free_data =
-	   (pSOIFn_sds_free_data_t)GetSOIFPtr(hSOI, kSOI_SDS_FREE_DATA); 
-
-	 SDS *sds = NULL;
-	 VDS *vds = NULL;
-	 KEY *keylist = NULL;
-	 char dsname[kDSDS_MaxKeyName];
-
-	 if (pFn_vds_open && pFn_VDS_select_rec && pFn_vds_close && pFn_sds_free_data)
-	 {
-	    DSDS_Handle_t hparams = FindHandle(paramsDesc);
-	    GetStructure(hparams, (void **)&keylist);
-	    sprintf(dsname, "in_%d", ds);
-	    vds = (*pFn_vds_open)(keylist, dsname);
-	    if (vds)
-	    {
-	       sds = (*pFn_VDS_select_rec)(vds, 0, rn);
-
-	       if (sds)
-	       {
-		  local = CreateDRMSArray(hSOI, sds, &status);
-		  (*pFn_sds_free_data)(sds);
-	       }
-
-	       (*pFn_vds_close)(&vds);
-	    }
-	 }
-	 else
-	 {
-	    status = kDSDS_Stat_MissingAPI;
-	 }
-      }  
-   }
-
-   if (status == kDSDS_Stat_Success)
-   {
-      ret = local;
-   }
-
-   if (stat)
-   {
-      *stat = status;
-   }
-
-   return ret;
+                if (vds)
+                {
+                    sds = (*pFn_VDS_select_rec)(vds, 0, rn);
+                    
+                    if (sds)
+                    {
+                        local = CreateDRMSArray(hSOI, sds, &status);
+                        (*pFn_sds_free_data)(sds);
+                    }
+                    
+                    /* Used to call vds_close() here, but do not do that any more. Instead, the VDS will be closed when drms_close_records() is called. */
+                }
+            }
+            else
+            {
+                status = kDSDS_Stat_MissingAPI;
+            }
+        }  
+    }
+    
+    if (status == kDSDS_Stat_Success)
+    {
+        ret = local;
+    }
+    
+    if (stat)
+    {
+        *stat = status;
+    }
+    
+    return ret;
 }
 
 void DSDS_free_array(DRMS_Array_t **arr)
@@ -1984,33 +2202,36 @@ void DSDS_free_array(DRMS_Array_t **arr)
 
 void DSDS_handle_todesc(DSDS_Handle_t handle, char *desc, kDSDS_Stat_t *stat)
 {
-   int error = 1;
-
-   /* First check validity of handle */
-   if (handle)
-   {
-      if (FindHandle(handle))
-      {
-	 error = 0;
-	 snprintf(desc, kDSDS_MaxHandle, "[%s]", handle);
-      }
-   }
-
-   if (stat)
-   {
-      if (error)
-      {
-	 *stat = kDSDS_Stat_InvalidHandle;
-      }
-      else
-      {
-	 *stat = kDSDS_Stat_Success;
-      }
-   }
+    int error = 1;
+    
+    /* First check validity of handle */
+    if (handle)
+    {
+        if (FindHandle(handle))
+        {
+            error = 0;
+            snprintf(desc, kDSDS_MaxHandle, "[%s]", handle);
+        }
+    }
+    
+    if (stat)
+    {
+        if (error)
+        {
+            *stat = kDSDS_Stat_InvalidHandle;
+        }
+        else
+        {
+            *stat = kDSDS_Stat_Success;
+        }
+    }
 }
 
 void DSDS_free_handle(DSDS_pHandle_t pHandle)
 {
+   /* Free the associated open VDS, if one exists, from the VDS cache. */
+   removeVDSFromCache(*pHandle);
+
    DestroyHandle(pHandle);
 }
 

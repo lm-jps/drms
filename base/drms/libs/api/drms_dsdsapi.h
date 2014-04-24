@@ -39,8 +39,8 @@ typedef enum kDSDS_Stat_enum
    kDSDS_Stat_InvalidFITS,    /* Not a fits file */
    kDSDS_Stat_UnkFITSpath,    /* The fits file path was not in vds->filename and 
                                * not in sds->filename */
-   kDSDS_Stat_DSDSOffline     /* DSDS data are in SUMS, but offline */
-				
+   kDSDS_Stat_DSDSOffline,    /* DSDS data are in SUMS, but offline */
+   kDSDS_Stat_VDSCache        /* Some error having to do with the VDS cache */
 } kDSDS_Stat_t;
 
 typedef const char *DSDS_Handle_t;
@@ -79,6 +79,7 @@ static inline const char *DSDS_GetNsPrefix()
 #define kDSDS_DSDS_HANDLE_TODESC "DSDS_handle_todesc"
 #define kDSDS_DSDS_FREE_HANDLE "DSDS_free_handle"
 #define kDSDS_DSDS_READ_FITSHEADER "DSDS_read_fitsheader"
+#define kDSDS_DSDS_FREE_VDSCACHE "DSDS_free_vdscache"
 
 typedef long long (*pDSDSFn_DSDS_open_records_t)(const char *dsspec, 
 						 char *drmsSeries,
@@ -108,5 +109,6 @@ typedef int (*pDSDSFn_DSDS_read_fitsheader_t)(const char *file,
 					      DRMS_Segment_t **seg,
 					      const char *segname,
 					      kDSDS_Stat_t *stat);
+typedef void (*pDSDSFn_DSDS_free_vdscache_t)();
 
 #endif /* _DSDSAPI_H */

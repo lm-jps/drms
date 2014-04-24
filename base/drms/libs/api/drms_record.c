@@ -1260,7 +1260,7 @@ DRMS_RecordSet_t *drms_open_dsdsrecords(DRMS_Env_t *env, const char *dsRecSet, i
                                              seriesName, 
                                              &hparams, 
                                              &keylistarr, 
-                                             &segarr, 
+                                             &segarr,
                                              &dsdsStat);
             if (dsdsStat == kDSDS_Stat_Success)
             {
@@ -3151,6 +3151,49 @@ int drms_close_records(DRMS_RecordSet_t *rs, int action)
       rs->cursor->currentrec = -1;
       rs->cursor->lastrec = -1;
   }
+
+    /* DSDS - Close the various structures that were opened with DSDS_open_records(). */
+    int ssstatus;
+    int iset;
+    int ssn;
+    
+    pDSDSFn_DSDS_free_handle_t pFn_DSDS_free_handle = (pDSDSFn_DSDS_free_handle_t)DSDS_GetFPtr(ghDSDS, kDSDS_DSDS_FREE_HANDLE);
+    
+    for (iset = 0, ssstatus = DRMS_SUCCESS; ssstatus == DRMS_SUCCESS && pFn_DSDS_free_handle && iset < rs->ss_n; iset++)
+    {
+        ssn = drms_recordset_getssnrecs(rs, iset, &ssstatus);
+        
+        if (ssstatus == DRMS_SUCCESS)
+        {
+            /* For now at least, all DSDS and PlainFile types of recordsets are handled with DSDS code. And in that case, the
+             * VDSs that were created to handle these recordsets will have been left opened (in case the VDS is repeatedly used
+             * as slices of the VDS are read during a drms_segment_read().) */
+            if (ssn > 0 && (rs->ss_types[iset] == kRecordSetType_DSDS || rs->ss_types[iset] == kRecordSetType_PlainFile))
+            {
+                char *dsdsParams = NULL;
+                DRMS_Record_t *dsdsRec = NULL;
+                DRMS_SeriesInfo_t *si = NULL;
+                DSDS_pHandle_t pHandle = NULL;
+                
+                dsdsRec = rs->records[(rs->ss_starts)[iset]]; /* Grab first record in subset. */
+                si = dsdsRec->seriesinfo;
+                
+                /* Must pass KEY-list handle. */
+                dsdsParams = (char *)malloc(sizeof(char) * kDSDS_MaxHandle);
+                if (!dsdsParams)
+                {
+                    status = DRMS_ERROR_OUTOFMEMORY;
+                    break;
+                }
+                
+                pHandle = (DSDS_pHandle_t)(&dsdsParams);
+                DSDS_GetDSDSParams(si, dsdsParams);
+                
+                /* Frees the handle string and sets the handle to NULL. */
+                (*pFn_DSDS_free_handle)(pHandle);
+            }
+        }
+    }
 
   drms_free_records(rs);
   return status;

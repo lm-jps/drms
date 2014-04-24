@@ -602,7 +602,7 @@ void drms_segment_filename(DRMS_Segment_t *seg, char *filename)
    if (seg->info->protocol == DRMS_DSDS)
    {
       /* For the DSDS protocol, filename is not used, except to signify that
-       * ther is no data file.  In that case, it is set to  */
+       * there is no data file.  In that case, it is set to the empty string. */
       if (strlen(seg->filename) > 0)
       {
          snprintf(filename, DRMS_MAXPATHLEN, "%s", seg->filename);
@@ -945,405 +945,407 @@ int drms_segment_fclose(FILE *fptr)
 DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type, 
 				int *status)
 {
-  int statint=0,i;
-  DRMS_Array_t *arr = NULL;
-  char filename[DRMS_MAXPATHLEN];
-  DRMS_Record_t *rec;
-
-  CHECKNULL_STAT(seg,status);
-  
-  rec = seg->record;
-
-  if (seg->info->scope == DRMS_CONSTANT &&
-      !seg->info->cseg_recnum) {
-    fprintf(stderr, "ERROR in drms_segment_read: constant segment has not yet"
-	    " been initialized. Series = %s.\n",  rec->seriesinfo->seriesname);
-    statint = DRMS_ERROR_INVALIDACTION;
-    goto bailout1;
-  }
-
-  if (seg->info->protocol == DRMS_GENERIC)
-    {
-    fprintf(stderr, "ERROR in drms_segment_read: Not appropriate function"
-       "for DRMS_GENERIC segment.  Series = %s.\n",  rec->seriesinfo->seriesname);
-    statint = DRMS_ERROR_INVALIDACTION;
-    goto bailout1;
+    int statint=0,i;
+    DRMS_Array_t *arr = NULL;
+    char filename[DRMS_MAXPATHLEN];
+    DRMS_Record_t *rec;
+    
+    CHECKNULL_STAT(seg,status);
+    
+    rec = seg->record;
+    
+    if (seg->info->scope == DRMS_CONSTANT &&
+        !seg->info->cseg_recnum) {
+        fprintf(stderr, "ERROR in drms_segment_read: constant segment has not yet"
+                " been initialized. Series = %s.\n",  rec->seriesinfo->seriesname);
+        statint = DRMS_ERROR_INVALIDACTION;
+        goto bailout1;
     }
-
-  if (rec->sunum != -1LL && rec->su==NULL)
-  {
-    /* The storage unit has not been requested from SUMS yet. Do it. */
-    if ((rec->su = drms_getunit(rec->env, rec->seriesinfo->seriesname, 
-				rec->sunum, 1, &statint)) == NULL)
+    
+    if (seg->info->protocol == DRMS_GENERIC)
     {
-       /* A record may have an SUNUM, but the corresponding SU may no longer exist. The 
-        * series may have archive == 0 so that the SU got removed by sum_rm. Attempting to 
-        * read a data-segment file from a record whose SU has been deleted is an
-        * error, although the caller of drms_segment_read() won't typically be aware of this
-        * situation, unless they called SUM_info() before calling drms_segment_read(). 
-        * Return an error code that the call must deal with. */
-      statint = DRMS_ERROR_NOSTORAGEUNIT;
-      goto bailout1;
+        fprintf(stderr, "ERROR in drms_segment_read: Not appropriate function"
+                "for DRMS_GENERIC segment.  Series = %s.\n",  rec->seriesinfo->seriesname);
+        statint = DRMS_ERROR_INVALIDACTION;
+        goto bailout1;
     }
-    rec->su->refcount++;
-  }
-
-  drms_segment_filename(seg, filename);
-#ifdef DEBUG
-  printf("Trying to open segment file '%s'.\n",filename);
-#endif
-
-  if (seg->info->protocol == DRMS_DSDS || seg->info->protocol == DRMS_LOCAL)
-  {
-     /* For both of these protocols, the fits file was read with DSDS code. Be careful - 
-      * DSDS code does some unexpected things when reading fits files, like converting 
-      * all integer data to floating-point data. */
-     char *dsdsParams;
-     int ds;
-     int rn;
-     char *locfilename;
-
-     if (seg->info->protocol == DRMS_DSDS)
-     {
-        if (!*filename)
+    
+    if (rec->sunum != -1LL && rec->su==NULL)
+    {
+        /* The storage unit has not been requested from SUMS yet. Do it. */
+        if ((rec->su = drms_getunit(rec->env, rec->seriesinfo->seriesname,
+                                    rec->sunum, 1, &statint)) == NULL)
         {
-           /* This DSDS record has no data file. We don't actually use the 
-            * filename here - the DSDS parameters are used below to fetch 
-            * the file.  The filename is used to respond to requests for
-            * the segment filename. */
-           fprintf(stderr, "There is no data file for this DSDS data record.\n");
-           goto bailout1;
-        }
-
-	dsdsParams = (char *)malloc(sizeof(char) * kDSDS_MaxHandle);
-	if (DSDS_GetDSDSParams(seg->record->seriesinfo, dsdsParams))
-	{
-	   fprintf(stderr, "Couldn't get DSDS keylist.\n");
-	   goto bailout1;
-	}
-
-	ds = drms_getkey_int(seg->record, kDSDS_DS, &statint);
-	rn = drms_getkey_int(seg->record, kDSDS_RN, &statint);
-
-	locfilename = NULL;
-     }
-     else
-     {
-	dsdsParams = NULL;
-	ds = -1;
-	rn = -1;
-	locfilename = strdup(seg->filename);
-     }
-
-     /* The DSDS and LOCAL protocols do not use SUMS.  Call into libdsds (if available) 
-      * to obtain data. */
-     static void *hDSDS = NULL;
-     static int attempted = 0;
-
-     if (!attempted && !hDSDS)
-     {
-	kDSDS_Stat_t dsdsstat;
-	hDSDS = DSDS_GetLibHandle(kLIBDSDS, &dsdsstat);
-	if (dsdsstat != kDSDS_Stat_Success)
-	{
-	   statint = DRMS_ERROR_CANTOPENLIBRARY;
-	}
-
-	attempted = 1;
-     }
-
-     if (hDSDS)
-     {
-	kDSDS_Stat_t dsdsStat;
-	pDSDSFn_DSDS_segment_read_t pFn_DSDS_segment_read = 
-	  (pDSDSFn_DSDS_segment_read_t)DSDS_GetFPtr(hDSDS, kDSDS_DSDS_SEGMENT_READ);
-	pDSDSFn_DSDS_free_array_t pFn_DSDS_free_array = 
-	  (pDSDSFn_DSDS_free_array_t)DSDS_GetFPtr(hDSDS, kDSDS_DSDS_FREE_ARRAY);
-
-	if (pFn_DSDS_segment_read && pFn_DSDS_free_array)
-	{
-	   DRMS_Array_t *copy = NULL;
-	   
-	   if (statint == DRMS_SUCCESS)
-	   {
-	      arr = (*pFn_DSDS_segment_read)(dsdsParams, ds, rn, locfilename, &dsdsStat);
-	   }
-	   else
-	   {
-	      goto bailout1;
-	   }
-
-	   if (dsdsStat == kDSDS_Stat_Success)
-	   {
-	      /* Copy - the DSDS array should be freed by libdsds. */
-	      long long datalen = drms_array_size(arr);
-	      void *data = calloc(1, datalen);
-	      if (data)
-	      {
-		 memcpy(data, arr->data, datalen);
-		 copy = drms_array_create(arr->type, arr->naxis, arr->axis, data, &statint);
-		 if (statint != DRMS_SUCCESS)
-		 {
-		    if (data)
-		    {
-		       free(data);
-		    }
-		    goto bailout;
-		 }
-	      }
-	      else
-	      {
-		 statint = DRMS_ERROR_OUTOFMEMORY;
-		 goto bailout;
-	      }
-
-	      copy->bzero = arr->bzero;
-	      copy->bscale = arr->bscale;
-	      copy->israw = arr->israw;
-
-	      (*pFn_DSDS_free_array)(&arr);
-	      arr = copy;
-
-              /* drms_open_records() makes a temporary series to contain all DSDS data
-               * ingested during a module session. It makes a single segment whose 
-               * data type is determined by the bitpix value of the header of the first fits file
-               * in the set of fits files being accessed. To do this, it calls VDS_select_hdr() 
-               * which does NOT convert integer data types to a floating-point data type.
-               * But the later call to drms_segment_read(), which calls sds_read_fits(), will
-               * convert all integer image data to either a double (if the actual type is 
-               * int or long long) or a float (if the actual type is char or short), provided there
-               * are bzero/bscale keywords in the fits-file header. To cope with this 
-               * discrepancy, DSDS_open_records(), which is called by drms_open_records(), 
-               * creates a DRMS segment with the appropriate floating-point data type. 
-               * All is good, so long as sds_read_fits() converts all integer
-               * images to floating-point images. But we found a bug in DSDS. If bzero/bscale
-               * values are missing, which implies a bzero of 0 and a bscale of 1, then 
-               * sds_read_fits() will NOT convert the image data. If the data array
-               * were left untouched at this point, arr->type would be an integer type, but
-               * seg->info->type would be a floating-point type, and a mismatch error, detected
-               * near the end of drms_segment_read(), would be encountered.
-               *
-               * To work around this DSDS issue, at this point we convert the integer data to a 
-               * floating-point data type. DSDS is always supposed to convert integer image
-               * data to floating-point data, so explicitly doing that here will patch
-               * the bug in DSDS. 
-               */
-              if (copy->type == DRMS_TYPE_INT || copy->type == DRMS_TYPE_LONGLONG)
-              {
-                 drms_array_convert_inplace(DRMS_TYPE_DOUBLE, arr->bzero, arr->bscale, arr);
-              }
-              else if (copy->type == DRMS_TYPE_CHAR || copy->type == DRMS_TYPE_SHORT)
-              {
-                 drms_array_convert_inplace(DRMS_TYPE_FLOAT, arr->bzero, arr->bscale, arr);
-              }
-	   }
-	   else
-	   {
-	      statint = DRMS_ERROR_LIBDSDS;
-	      fprintf(stderr, "Error reading DSDS segment.\n");
-	      goto bailout1;
-	   }
-	}
-	else
-	{
-	   statint = DRMS_ERROR_LIBDSDS;
-	   goto bailout1;
-	}
-     }
-     else
-     {
-	fprintf(stdout, "Your JSOC environment does not support DSDS database access.\n");
-	statint = DRMS_ERROR_NODSDSSUPPORT;
-     }
-
-     if (dsdsParams)
-     {
-	free(dsdsParams);
-     }
-
-     if (locfilename)
-     {
-	free(locfilename);
-     }
-
-  } /* protocols DRMS_DSDS || DRMS_LOCAL */
-  else
-  {
-     /* For the remaining protocols, the code needs to open the file. Under some circumstances, the 
-      * file could be missing. There could be multiple data segments, but not all data segments
-      * have files in the storage unit directory (only some were written). This is not an error.
-      * Unfortunately, the current design doesn't distinguish this sitation from the error
-      * where the file is missing for some other reason (eg., DRMS crashes and fails to write
-      * a file). So, we have to assume that there is no error. But how do we tell the user
-      * that the file is missing since we have this requirement that the status cannot
-      * return status? If status is not zero, this means "error". So, if a file is missing, 
-      * we have to assume an error. Compromise: don't write an error message, but issue an
-      * error. */
-     struct stat stbuf;
-     
-     if (stat(filename, &stbuf))
-     {
-        /* file filename is missing */
-        statint = DRMS_ERROR_INVALIDFILE;
-        goto bailout1;
-     }
-
-    switch(seg->info->protocol)
-    {
-    case DRMS_GENERIC:
-    case DRMS_MSI:
-      statint = DRMS_ERROR_NOTIMPLEMENTED;
-      goto bailout1;
-      break;
-    case DRMS_BINARY:
-      arr = malloc(sizeof(DRMS_Array_t));
-      XASSERT(arr);
-      if ((statint = drms_binfile_read(filename, 0, arr)))
-      {
-	fprintf(stderr,"Couldn't read segment from file '%s'.\n",
-		filename);      
-	goto bailout1;
-      }
-      break;
-    case DRMS_BINZIP:
-      arr = malloc(sizeof(DRMS_Array_t));
-      XASSERT(arr);
-      if ((statint = drms_zipfile_read(filename, 0, arr)))
-      {
-	fprintf(stderr,"Couldn't read segment from file '%s'.\n",
-		filename);      
-	goto bailout1;
-      }
-      break;
-    case DRMS_FITZ:
-    case DRMS_FITS:
-      {
-	 CFITSIO_IMAGE_INFO *info = NULL;
-	 void *image = NULL;
-
-	 /* Call Tim's function to read data */
-	 if (fitsrw_readintfile(rec->env->verbose, filename, &info, &image, NULL) == CFITSIO_SUCCESS)
-	 {
-	    if (drms_fitsrw_CreateDRMSArray(info, image, &arr))
-	    {
-	       fprintf(stderr,"Couldn't read segment from file '%s'.\n", filename);      
-	       goto bailout1;
-	    }
-
-	    /* Don't free image - arr has stolen it. */
-	    cfitsio_free_these(&info, NULL, NULL);
-	 }
-	 else
-	 {
-            /* filename exists, but for some reason, cfitsio failed to read it. */
-	    fprintf(stderr,"Couldn't read FITS file '%s'.\n", filename); 
-	    statint = DRMS_ERROR_FITSRW;
-	    goto bailout1;
-	 }
-      }
-      break;
-    case DRMS_FITZDEPRECATED:
-    case DRMS_FITSDEPRECATED:
-      {
-        arr = NULL;
-        statint = DRMS_ERROR_NOTIMPLEMENTED;
-        fprintf(stderr,"Protocol DRMS_FITSDEPRECATED and DRMS_FITZDEPRECATED have been deprecated.\n");
-        goto bailout1;
-      }
-      break;
-    case DRMS_TAS:
-      {
-         /* Read the slice in the TAS file corresponding to this record's 
-            slot. */
-
-         /* The underlying fits file will have bzero/bscale fits keywords - 
-          * those are used to populate arr. They must match the values 
-          * that originate in the record's _bzero/_bscale keywords. They cannot 
-          * vary across records. */
-         if ((statint = drms_fitstas_readslice(seg->record->env,
-                                               filename, 
-                                               seg->info->naxis,
-                                               seg->axis,
-                                               NULL,
-                                               NULL,
-                                               seg->record->slotnum,
-                                               &arr)) != DRMS_SUCCESS)
-         {
-            fprintf(stderr,"Couldn't read segment from file '%s'.\n",
-                    filename);      
+            /* A record may have an SUNUM, but the corresponding SU may no longer exist. The
+             * series may have archive == 0 so that the SU got removed by sum_rm. Attempting to
+             * read a data-segment file from a record whose SU has been deleted is an
+             * error, although the caller of drms_segment_read() won't typically be aware of this
+             * situation, unless they called SUM_info() before calling drms_segment_read().
+             * Return an error code that the call must deal with. */
+            statint = DRMS_ERROR_NOSTORAGEUNIT;
             goto bailout1;
-         }
-      }
-      break;
-    default:
-      statint = DRMS_ERROR_UNKNOWNPROTOCOL;
-      goto bailout1;
-    }
-  }
-  
-  /* Check that dimensions match template. */
-  if (arr->type != seg->info->type) {
-    fprintf (stderr, "Data types in file (%d) do not match those in segment " 
-	"descriptor (%d).\n", (int)arr->type, (int)seg->info->type);
-    statint = DRMS_ERROR_SEGMENT_DATA_MISMATCH;
-    goto bailout;
-  }
-  if (arr->naxis != seg->info->naxis) {
-    fprintf (stderr, "Number of axis in file (%d) do not match those in "
-	    "segment descriptor (%d).\n", arr->naxis, seg->info->naxis);
-    statint = DRMS_ERROR_SEGMENT_DATA_MISMATCH;
-    goto bailout;
-  }
-
-  if (seg->info->scope != DRMS_VARDIM)
-  {
-     for (i=0;i<arr->naxis;i++) {    
-        if (arr->axis[i] != seg->axis[i]) {
-           fprintf (stderr,"Dimension of axis %d in file (%d) do not match those"
-                    " in segment descriptor (%d).\n", i, arr->axis[i], seg->axis[i]);
-           statint = DRMS_ERROR_SEGMENT_DATA_MISMATCH;
-           goto bailout;
         }
-     }
-  }
-
-  for (i=0;i<arr->naxis;i++)
+        rec->su->refcount++;
+    }
+    
+    drms_segment_filename(seg, filename);
+#ifdef DEBUG
+    printf("Trying to open segment file '%s'.\n",filename);
+#endif
+    
+    if (seg->info->protocol == DRMS_DSDS || seg->info->protocol == DRMS_LOCAL)
+    {
+        /* For both of these protocols, the fits file was read with DSDS code. Be careful -
+         * DSDS code does some unexpected things when reading fits files, like converting
+         * all integer data to floating-point data. */
+        char *dsdsParams;
+        int ds;
+        int rn;
+        char *locfilename;
+        
+        if (seg->info->protocol == DRMS_DSDS)
+        {
+            if (!*filename)
+            {
+                /* This DSDS record has no data file. We don't actually use the
+                 * filename here - the DSDS parameters are used below to fetch
+                 * the file.  The filename is used to respond to requests for
+                 * the segment filename. */
+                fprintf(stderr, "There is no data file for this DSDS data record.\n");
+                goto bailout1;
+            }
+            
+            /* When the DSDS records were opened, a string representation of the keylist needed by
+               to call vds_open() is saved in the record's seriesinfo description field. */
+            dsdsParams = (char *)malloc(sizeof(char) * kDSDS_MaxHandle);
+            if (DSDS_GetDSDSParams(seg->record->seriesinfo, dsdsParams))
+            {
+                fprintf(stderr, "Couldn't get DSDS keylist.\n");
+                goto bailout1;
+            }
+            
+            ds = drms_getkey_int(seg->record, kDSDS_DS, &statint);
+            rn = drms_getkey_int(seg->record, kDSDS_RN, &statint);
+            
+            locfilename = NULL;
+        }
+        else
+        {
+            dsdsParams = NULL;
+            ds = -1;
+            rn = -1;
+            locfilename = strdup(seg->filename);
+        }
+        
+        /* The DSDS and LOCAL protocols do not use SUMS.  Call into libdsds (if available)
+         * to obtain data. */
+        static void *hDSDS = NULL;
+        static int attempted = 0;
+        
+        if (!attempted && !hDSDS)
+        {
+            kDSDS_Stat_t dsdsstat;
+            hDSDS = DSDS_GetLibHandle(kLIBDSDS, &dsdsstat);
+            if (dsdsstat != kDSDS_Stat_Success)
+            {
+                statint = DRMS_ERROR_CANTOPENLIBRARY;
+            }
+            
+            attempted = 1;
+        }
+        
+        if (hDSDS)
+        {
+            kDSDS_Stat_t dsdsStat;
+            pDSDSFn_DSDS_segment_read_t pFn_DSDS_segment_read =
+            (pDSDSFn_DSDS_segment_read_t)DSDS_GetFPtr(hDSDS, kDSDS_DSDS_SEGMENT_READ);
+            pDSDSFn_DSDS_free_array_t pFn_DSDS_free_array =
+            (pDSDSFn_DSDS_free_array_t)DSDS_GetFPtr(hDSDS, kDSDS_DSDS_FREE_ARRAY);
+            
+            if (pFn_DSDS_segment_read && pFn_DSDS_free_array)
+            {
+                DRMS_Array_t *copy = NULL;
+                
+                if (statint == DRMS_SUCCESS)
+                {
+                    arr = (*pFn_DSDS_segment_read)(dsdsParams, ds, rn, locfilename, &dsdsStat);
+                }
+                else
+                {
+                    goto bailout1;
+                }
+                
+                if (dsdsStat == kDSDS_Stat_Success)
+                {
+                    /* Copy - the DSDS array should be freed by libdsds. */
+                    long long datalen = drms_array_size(arr);
+                    void *data = calloc(1, datalen);
+                    if (data)
+                    {
+                        memcpy(data, arr->data, datalen);
+                        copy = drms_array_create(arr->type, arr->naxis, arr->axis, data, &statint);
+                        if (statint != DRMS_SUCCESS)
+                        {
+                            if (data)
+                            {
+                                free(data);
+                            }
+                            goto bailout;
+                        }
+                    }
+                    else
+                    {
+                        statint = DRMS_ERROR_OUTOFMEMORY;
+                        goto bailout;
+                    }
+                    
+                    copy->bzero = arr->bzero;
+                    copy->bscale = arr->bscale;
+                    copy->israw = arr->israw;
+                    
+                    (*pFn_DSDS_free_array)(&arr);
+                    arr = copy;
+                    
+                    /* drms_open_records() makes a temporary series to contain all DSDS data
+                     * ingested during a module session. It makes a single segment whose
+                     * data type is determined by the bitpix value of the header of the first fits file
+                     * in the set of fits files being accessed. To do this, it calls VDS_select_hdr()
+                     * which does NOT convert integer data types to a floating-point data type.
+                     * But the later call to drms_segment_read(), which calls sds_read_fits(), will
+                     * convert all integer image data to either a double (if the actual type is
+                     * int or long long) or a float (if the actual type is char or short), provided there
+                     * are bzero/bscale keywords in the fits-file header. To cope with this
+                     * discrepancy, DSDS_open_records(), which is called by drms_open_records(),
+                     * creates a DRMS segment with the appropriate floating-point data type.
+                     * All is good, so long as sds_read_fits() converts all integer
+                     * images to floating-point images. But we found a bug in DSDS. If bzero/bscale
+                     * values are missing, which implies a bzero of 0 and a bscale of 1, then
+                     * sds_read_fits() will NOT convert the image data. If the data array
+                     * were left untouched at this point, arr->type would be an integer type, but
+                     * seg->info->type would be a floating-point type, and a mismatch error, detected
+                     * near the end of drms_segment_read(), would be encountered.
+                     *
+                     * To work around this DSDS issue, at this point we convert the integer data to a
+                     * floating-point data type. DSDS is always supposed to convert integer image
+                     * data to floating-point data, so explicitly doing that here will patch
+                     * the bug in DSDS.
+                     */
+                    if (copy->type == DRMS_TYPE_INT || copy->type == DRMS_TYPE_LONGLONG)
+                    {
+                        drms_array_convert_inplace(DRMS_TYPE_DOUBLE, arr->bzero, arr->bscale, arr);
+                    }
+                    else if (copy->type == DRMS_TYPE_CHAR || copy->type == DRMS_TYPE_SHORT)
+                    {
+                        drms_array_convert_inplace(DRMS_TYPE_FLOAT, arr->bzero, arr->bscale, arr);
+                    }
+                }
+                else
+                {
+                    statint = DRMS_ERROR_LIBDSDS;
+                    fprintf(stderr, "Error reading DSDS segment.\n");
+                    goto bailout1;
+                }
+            }
+            else
+            {
+                statint = DRMS_ERROR_LIBDSDS;
+                goto bailout1;
+            }
+        }
+        else
+        {
+            fprintf(stdout, "Your JSOC environment does not support DSDS database access.\n");
+            statint = DRMS_ERROR_NODSDSSUPPORT;
+        }
+        
+        if (dsdsParams)
+        {
+            free(dsdsParams);
+        }
+        
+        if (locfilename)
+        {
+            free(locfilename);
+        }
+        
+    } /* protocols DRMS_DSDS || DRMS_LOCAL */
+    else
+    {
+        /* For the remaining protocols, the code needs to open the file. Under some circumstances, the
+         * file could be missing. There could be multiple data segments, but not all data segments
+         * have files in the storage unit directory (only some were written). This is not an error.
+         * Unfortunately, the current design doesn't distinguish this sitation from the error
+         * where the file is missing for some other reason (eg., DRMS crashes and fails to write
+         * a file). So, we have to assume that there is no error. But how do we tell the user
+         * that the file is missing since we have this requirement that the status cannot
+         * return status? If status is not zero, this means "error". So, if a file is missing,
+         * we have to assume an error. Compromise: don't write an error message, but issue an
+         * error. */
+        struct stat stbuf;
+        
+        if (stat(filename, &stbuf))
+        {
+            /* file filename is missing */
+            statint = DRMS_ERROR_INVALIDFILE;
+            goto bailout1;
+        }
+        
+        switch(seg->info->protocol)
+        {
+            case DRMS_GENERIC:
+            case DRMS_MSI:
+            statint = DRMS_ERROR_NOTIMPLEMENTED;
+            goto bailout1;
+            break;
+            case DRMS_BINARY:
+            arr = malloc(sizeof(DRMS_Array_t));
+            XASSERT(arr);
+            if ((statint = drms_binfile_read(filename, 0, arr)))
+            {
+                fprintf(stderr,"Couldn't read segment from file '%s'.\n",
+                        filename);
+                goto bailout1;
+            }
+            break;
+            case DRMS_BINZIP:
+            arr = malloc(sizeof(DRMS_Array_t));
+            XASSERT(arr);
+            if ((statint = drms_zipfile_read(filename, 0, arr)))
+            {
+                fprintf(stderr,"Couldn't read segment from file '%s'.\n",
+                        filename);
+                goto bailout1;
+            }
+            break;
+            case DRMS_FITZ:
+            case DRMS_FITS:
+            {
+                CFITSIO_IMAGE_INFO *info = NULL;
+                void *image = NULL;
+                
+                /* Call Tim's function to read data */
+                if (fitsrw_readintfile(rec->env->verbose, filename, &info, &image, NULL) == CFITSIO_SUCCESS)
+                {
+                    if (drms_fitsrw_CreateDRMSArray(info, image, &arr))
+                    {
+                        fprintf(stderr,"Couldn't read segment from file '%s'.\n", filename);
+                        goto bailout1;
+                    }
+                    
+                    /* Don't free image - arr has stolen it. */
+                    cfitsio_free_these(&info, NULL, NULL);
+                }
+                else
+                {
+                    /* filename exists, but for some reason, cfitsio failed to read it. */
+                    fprintf(stderr,"Couldn't read FITS file '%s'.\n", filename);
+                    statint = DRMS_ERROR_FITSRW;
+                    goto bailout1;
+                }
+            }
+            break;
+            case DRMS_FITZDEPRECATED:
+            case DRMS_FITSDEPRECATED:
+            {
+                arr = NULL;
+                statint = DRMS_ERROR_NOTIMPLEMENTED;
+                fprintf(stderr,"Protocol DRMS_FITSDEPRECATED and DRMS_FITZDEPRECATED have been deprecated.\n");
+                goto bailout1;
+            }
+            break;
+            case DRMS_TAS:
+            {
+                /* Read the slice in the TAS file corresponding to this record's
+                 slot. */
+                
+                /* The underlying fits file will have bzero/bscale fits keywords -
+                 * those are used to populate arr. They must match the values
+                 * that originate in the record's _bzero/_bscale keywords. They cannot
+                 * vary across records. */
+                if ((statint = drms_fitstas_readslice(seg->record->env,
+                                                      filename,
+                                                      seg->info->naxis,
+                                                      seg->axis,
+                                                      NULL,
+                                                      NULL,
+                                                      seg->record->slotnum,
+                                                      &arr)) != DRMS_SUCCESS)
+                {
+                    fprintf(stderr,"Couldn't read segment from file '%s'.\n",
+                            filename);
+                    goto bailout1;
+                }
+            }
+            break;
+            default:
+            statint = DRMS_ERROR_UNKNOWNPROTOCOL;
+            goto bailout1;
+        }
+    }
+    
+    /* Check that dimensions match template. */
+    if (arr->type != seg->info->type) {
+        fprintf (stderr, "Data types in file (%d) do not match those in segment "
+                 "descriptor (%d).\n", (int)arr->type, (int)seg->info->type);
+        statint = DRMS_ERROR_SEGMENT_DATA_MISMATCH;
+        goto bailout;
+    }
+    if (arr->naxis != seg->info->naxis) {
+        fprintf (stderr, "Number of axis in file (%d) do not match those in "
+                 "segment descriptor (%d).\n", arr->naxis, seg->info->naxis);
+        statint = DRMS_ERROR_SEGMENT_DATA_MISMATCH;
+        goto bailout;
+    }
+    
+    if (seg->info->scope != DRMS_VARDIM)
+    {
+        for (i=0;i<arr->naxis;i++) {    
+            if (arr->axis[i] != seg->axis[i]) {
+                fprintf (stderr,"Dimension of axis %d in file (%d) do not match those"
+                         " in segment descriptor (%d).\n", i, arr->axis[i], seg->axis[i]);
+                statint = DRMS_ERROR_SEGMENT_DATA_MISMATCH;
+                goto bailout;
+            }
+        }
+    }
+    
+    for (i=0;i<arr->naxis;i++)
     arr->start[i] = 0;
-
-  /* Set information about mapping from parent segment to array. */ 
-  arr->parent_segment = seg;
-  
-  /* Scale and convert to desired type. */
-  if (type == DRMS_TYPE_RAW)
-  {
-    arr->israw = 1;
-  }
-  else if (arr->type != type || arr->bscale != 1.0 || arr->bzero != 0.0)
-  {
-     /* convert TAS as well. */
-    drms_array_convert_inplace(type, arr->bzero, arr->bscale, arr);
+    
+    /* Set information about mapping from parent segment to array. */ 
+    arr->parent_segment = seg;
+    
+    /* Scale and convert to desired type. */
+    if (type == DRMS_TYPE_RAW)
+    {
+        arr->israw = 1;
+    }
+    else if (arr->type != type || arr->bscale != 1.0 || arr->bzero != 0.0)
+    {
+        /* convert TAS as well. */
+        drms_array_convert_inplace(type, arr->bzero, arr->bscale, arr);
 #ifdef DEBUG
-    printf("converted with bzero=%g, bscale=%g\n",arr->bzero, arr->bscale);
+        printf("converted with bzero=%g, bscale=%g\n",arr->bzero, arr->bscale);
 #endif
-    arr->israw = 0;    
-  }
-
-  if (status)
+        arr->israw = 0;    
+    }
+    
+    if (status)
     *status = DRMS_SUCCESS;
-  
-  return arr;
-
- bailout:
-  free(arr->data);
-  free(arr);
- bailout1:
+    
+    return arr;
+    
+bailout:
+    free(arr->data);
+    free(arr);
+bailout1:
 #ifdef DEBUG
-  printf("Segment = \n");
-  drms_segment_print(seg);
+    printf("Segment = \n");
+    drms_segment_print(seg);
 #endif
-  if (status)
+    if (status)
     *status = statint;
-  return NULL;  
+    return NULL;  
 }
 
 
