@@ -18,7 +18,7 @@ function seriesDict(listObj, list)
     for (var series in list)
     {
         // Create a list item for each series.
-        listObj.append('<li class="ui-widget-content ui-state-default">' + list[series][0] + '</li>');
+        listObj.append('<li class="sellist-item ui-widget-content ui-state-default">' + list[series][0] + '</li>');
 
         // Map series name to description.
         this.dict[list[series][0]] = list[series][1];

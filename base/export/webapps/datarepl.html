@@ -16,8 +16,12 @@
     <script src="js/datareplart.js"></script>
     
     <style>
-        body { background: #FFFFFF; }
-        
+        body 
+        { 
+            background: #FFFFFF;
+            background: #654B24 url("jquery-ui-1.10.4.custom/css/pepper-grinder/images/ui-bg_fine-grain_65_654b24_60x60.png") 50% 50% repeat;
+        }
+
         #mainheader
         {
             background: linear-gradient(#B83400, #661d00);
@@ -37,46 +41,58 @@
             margin-top: 29px;
             white-space: nowrap;
         }
-        
     
         #feedback { font-size: 1.4em; }
         
-        #publist .ui-selecting
+        .sellist .ui-selecting
         {
             background: #FF6224;
         }
     
-        #publist .ui-selected
+        .sellist .ui-selected
         {
             background: #B83400;
             color: white;
         }
     
-        #publist
+        .sellist
         {
             list-style-type: none;
             margin: 0;
             padding: 0;
             width: 100%;
         }
-    
-        #publist li
+
+        /* Must be very specific because the list items belong to other classes that will set certain properties
+         * that are not desirable. */
+        .sellist li.sellist-item
         {
-            margin: 2px;
-            padding: 0.4em;
-            font: 1.2em Verdana, Arial, Helvetica, sans-serif;
-            height: 18px;
-            border: none;
+            margin: 0.1em;
+            padding: 0.2em;
+            font: normal normal bold 1.0em Verdana, Arial, Helvetica, sans-serif;
+            border: 0;
         }
-    
+
         #accordion-resizer
         {
             padding: 10px;
             width: 85%;
+            min-width: 800px;
             height: 75%;
             margin-left:auto;
             margin-right:auto;
             box-shadow: 10px 10px 5px #888888;
+            box-shadow: 10px 10px 5px #3C2D16
+        }
+
+        #accordion h3
+        {
+            font: normal normal bold 1.4em Verdana, Arial, Helvetica, sans-serif;
+        }
+
+        #accordion p
+        {
+            font: normal normal normal 1.0em Verdana, Arial, Helvetica, sans-serif;
         }
         
         .transimg
@@ -90,20 +106,17 @@
             min-height: 250px;
             max-height: 250px;
             overflow: auto;
-            width: 40%;
+            width: 500px;
+            margin-right: 24px;
         }
-
-	.side-by-side
-	{
-	    float: left;
-	}
-
-	.div-margin
-	{
-	    margin-left: 24px;
-	    margin-right: 24px;
-	}
-        </style>
+    
+        .floatleft
+        {
+            float: left;
+        }
+    
+    
+    </style>
 </head>
 <body>
     <!--
@@ -126,34 +139,40 @@
     <!--Accordion-->
     <div id="accordion-resizer" class="ui-widget-content">
     <div id="accordion">
-        <h3>Home</h3>
-        <div>
-          <p>
-            This is a list of all published series. NetDRMS sites can subscribe to any of these series. Data from the series are also
-            available from the export system. Click on one or more series to see descriptions of the data they contain.
-          </p>
-          <div class="overflowdiv ui-state-default side-by-side">
-            <div>
-              <ol id="publist"></ol>
-            </div>
-          </div>
-          <div class="side-by-side div-margin">
-              <p>
-                DRMS Dataseries Descripton:
-              </p>
-              <p id="series-desc" class="div-margin">
-              </p>
-          </div>
-        </div>
-        
-        <h3>Series</h3>
+        <h3>Published Series</h3>
         <div>
             <p>
-                blah, blah, blaaaaaaaaahhhhhhhhh.
+                This is a list of all published series. NetDRMS sites can subscribe to any of these series. Data from the series are also
+                available from the export system. Click on one or more series to see descriptions of the data they contain.
+            </p>
+            <div class="overflowdiv ui-state-default floatleft">
+                <div>
+                    <ol id="publist" class="sellist"></ol>
+                </div>
+            </div>
+            <div class="desc">
+                <p>
+                    DRMS Dataseries Descripton:
                 </p>
+                <p id="series-desc">
+                </p>
+            </div>
         </div>
         
-        <h3>Institutions</h3>
+        <h3>Subscribed Series</h3>
+        <div>
+            <p>
+                Select one or more series to see which institutions have subscriptions. Institutions that appear in the list on the right are subscribed
+                to at least one of the selected series in the list on the left.
+            </p>
+            <div class="overflowdiv ui-state-default floatleft">
+                <div>
+                    <ol id="sublist" class="sellist"></ol>
+                </div>
+            </div>
+        </div>
+        
+        <h3>Subscribing Institutions</h3>
         <div>
             <p>
                 whatever, man.
@@ -165,7 +184,7 @@
             </ul>
         </div>
         
-        <h3>Status</h3>
+        <h3>Replication Status</h3>
         <div>
             <p>
                 I am the danger!
