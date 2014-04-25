@@ -2221,7 +2221,7 @@ int drms_client_isproduser(DRMS_Env_t *env, int *status)
         return isproduser;
     }
     
-#ifdef PRODUSER_DBHOST
+#if defined(PRODUSER_DBHOST) && defined(PRODUSER_DBNAME) && defined(PRODUSER_PRODTAB) && defined(PRODUSER_COLUSER)
     /* Derive the db host machine from the PRODUSER_DBHOST string (which has the format host:port). */
     dbhost = strdup(PRODUSER_DBHOST);
     
