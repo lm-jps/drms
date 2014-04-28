@@ -371,6 +371,11 @@ int do_tape_file()
         printf("%s: Don't archive bad dir: %s \n", MYNAME, walker->wd);
       }
       else {
+      if(walker->group_id < 0) {
+        send_mail("%s: Don't archive neg group#: %d \n  ds_index=%u\n", MYNAME, walker->group_id, walker->ds_index);
+        printf("%s: Don't archive neg group#: %d \n", MYNAME, walker->group_id);
+      }
+      else {
         sprintf(name, "wd_%d", i);
         setkey_str(&alist, name, walker->wd);
         sprintf(name, "effective_date_%d", i);
@@ -393,6 +398,7 @@ int do_tape_file()
         sprintf(name, "username_%d", i);
         setkey_str(&alist, name, username);
         i++;
+      }
       }
       walker=walker->next;
     }
