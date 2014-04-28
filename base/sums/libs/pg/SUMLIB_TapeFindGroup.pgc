@@ -30,6 +30,10 @@ EXEC SQL END DECLARE SECTION;
   double size;
   char cltape[20];
 
+  if(group < 0) {   //no negative group#
+    printk("Error in SUMLIB_TapeFindGroup. Found neg group %d\n", group); 
+    return(1);
+  }
     EXEC SQL WHENEVER SQLERROR GOTO sqlerror;
     l_group_id = group;
 
