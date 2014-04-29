@@ -8,7 +8,7 @@
 
 import sys
 import os.path
-import getopt
+import argparse
 import pwd
 import re
 import json
@@ -17,6 +17,9 @@ sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '..'))
 import psycopg2
 
 from toolbox import getCfg
+
+# Debug flag
+DEBUG_CGI = True
 
 # Return codes
 RET_SUCCESS = 0
@@ -35,83 +38,125 @@ LST_TABLE_NODE = 'node'
 CFG_TABLE_NODE = 'node'
 
 # Read arguments
-# (c)fg    - Path to configuration file
-# (d)escs  - [OPTIONAL] In addition to a list of series, fetch series descriptions.
-# (n)ojson - [OPTIONAL] If this flag is specified, then the output is formatted text. If not provided, then the
-#            output is json.
-# (i)insts - [OPTIONAL] Comma-separated list of institutions ('all' for all institutions). For each institution in this
-#            list, print the list of series to which the institution is subscribed.
-# (s)ubs   - [OPTIONAL] comma-separated list of series ('all' for all series). For each series in this list, print
-#            the list of institutions that are subscribed to that series.
-# (u)ser   - [OPTIONAL] db user to connect to the db as. If not provided, then the linux user name is used.
+# (c)fg     - Path to configuration file
+# (i)insts  - [OPTIONAL] Comma-separated list of institutions ('all' for all institutions). For each institution in this
+#             list, print the list of series to which the institution is subscribed.
+# (s)series - [OPTIONAL] comma-separated list of series ('all' for all series). For each series in this list, print
+#             the list of institutions that are subscribed to that series.
+# (u)ser    - [OPTIONAL] db user to connect to the db as. If not provided, then the linux user name is used.
+#
+# Flags (all optional)
+# d         - In addition to a list of series, fetch series descriptions (and print them too, when printing series).
+# p         - Do not print list of published series (by default, this list is generated).
+# t         - If this flag is specified, then the output is formatted text. If not provided, then the
+#             output is json.
 #
 # By default, a list of all published series is printed.
+#
+# This function contains two methods for getting program arguments. It uses one method, cgi.FieldStorage(), when the script
+# is invoked from within a CGI context, and it uses another, the argparse module, when it is run from the command line.
+# The script looks for the presence of the REQUEST_URI environment variable to indicate that program invocation came from within a
+# CGI context (although this is not 100% reliable since the application calling this script could really do what it wants and not
+# set this variable. In general, though, this environment variable will be set). cgi.FieldStorage() knows how to parse
+# both HTTP GET and POST requests. A nice feature is that we can test the script as it runs in a CGI context
+# by simply running on the command line with a single argument that is equivalent to an HTTP GET parameter string
+# (e.g., cfg=/home/jsoc/cvs/Development/JSOC/proj/replication/etc/repserver.cfg&insts=kis&d=1&p=1).
+#
+# The script uses the argparse Python module when it is invoked from the command line. Although thie module nicely handles options
+# and arguments whose names begin with a '-', it does not support other kinds of arguments, unless they are positional.
+# And we're not interested in positional arguments. So I had to essentially implement the <key>=<val> arguments myself,
+# treating them as optional positional arugments. As far as I can tell, Python does not provide a good <key>=<val>-argument cmd-line
+# parser. I was then hoping I could convert the mixed <key>=<val>-argument and -arg-argument command-line into a form that
+# could be used by cgi.FieldStorage() [ampersand-separated arguments]. However, the arguments in a string cannot be passed to
+# to cgi.FieldStorage().
+#
+# So we're stuck with clunky argument parsing.
+def parseArg(options, args, arg, regexp, isList):
+    if not arg is None:
+        matchobj = regexp.match(arg)
+        if not(matchobj is None):
+            # Ensure that the name of the argument is legitimate.
+            if matchobj.group(1) in args:
+                if isList:
+                    options[matchobj.group(1)] = matchobj.group(2).split(',')
+                else:
+                    options[matchobj.group(1)] = matchobj.group(2)
+            else:
+                raise Exception('getArgsCmdline', 'Invalid arguments ' + matchobj.group(1) + '.')
+        else:
+            raise Exception('getArgsCmdline', 'Invalid argument format ' + arg + '.')
 
 def GetArgs(args):
     istat = bool(0)
     optD = {}
     
-    try:
-        # Try to get arguments with the cgi module. If that doesn't work, then fetch them from the command line.
-        arguments = cgi.FieldStorage()
-        
-        if arguments:
-            for key in arguments.keys():
-                val = arguments.getvalue(key)
-                if key in ('c', 'cfg'):
-                    regexp = re.compile(r"(\S+)/?")
-                    matchobj = regexp.match(val)
-                    if not(matchobj is None):
-                        optD['cfg'] = matchobj.group(1)
-                elif key in ('d'):
-                    optD['descs'] = 1
-                elif key in ('n'):
-                    optD['nojson'] = 1
-                elif key in ('i' or 'insts'):
-                    optD['insts'] = arg.split(',') # a list
-                elif key in ('s' or 'subs'):
-                    optD['subs'] = arg.split(',') # a list
+    # Use REQUEST_URI as surrogate for the invocation coming from a CGI request.
+    if os.getenv('REQUEST_URI'):
+        optD['source'] = 'cgi'
+    else:
+        optD['source'] = 'cmdline'
 
-            optD['source'] = 'form'
+    # Options default to False.
+    optD['descs'] = False
+    optD['publist'] = False
+    optD['nojson'] = False
 
-    except ValueError:
-        insertJson(rootObj, 'errMsg', 'Invalid usage.\nUsage:\n  publist.py [ d=1 ] [n=1] cfg=<configuration file> [ insts=<institution list> ] [ series=<series list> ]')
-        raise Exception('getArgsForm', 'Invalid arguments.')
-
-    if not(optD):
-        usage = 'publist.y [ -h ] [ -d ] [ -n ] -c <configuration file> [ -i <institution list> ] [ -s <series list> ]'
+    if optD['source'] == 'cgi' or DEBUG_CGI:
         try:
-            opts, remainder = getopt.getopt(args, "hc:dni:s:u:", ["cfg=", "insts=", "subs=", "user="])
-            for opt, arg in opts:
-                if opt == '-h':
-                    print('Usage:\n  ' + usage)
-                    sys.exit(0)
-                elif opt in ("-c", "--cfg"):
-                    regexp = re.compile(r"(\S+)/?")
-                    matchobj = regexp.match(arg)
-                    if matchobj is None:
-                        istat = bool(1)
-                    else:
-                        optD['cfg'] = matchobj.group(1)
-                elif opt in ("-d"):
-                    optD['descs'] = 1
-                elif opt in ("-n"):
-                    optD['nojson'] = 1
-                elif opt in ("-i", "--insts"):
-                    optD['insts'] = arg.split(',') # a list
-                elif opt in ("-s", "--subs"):
-                    optD['subs'] = arg.split(',') # a list
-                elif opt in ("-u", "--user"):
-                    optD['user'] = arg
-                else:
-                    optD[opt] = arg
+            # Try to get arguments with the cgi module. If that doesn't work, then fetch them from the command line.
+            arguments = cgi.FieldStorage()
+        
+            if arguments:
+                for key in arguments.keys():
+                    val = arguments.getvalue(key)
+                    if key in ('c', 'cfg'):
+                        regexp = re.compile(r"(\S+)/?")
+                        matchobj = regexp.match(val)
+                        if not(matchobj is None):
+                            optD['cfg'] = matchobj.group(1)
+                    elif key in ('d'):
+                        optD['descs'] = True
+                    elif key in ('p'):
+                        optD['publist'] = True
+                    elif key in ('t'):
+                        optD['nojson'] = True
+                    elif key in ('i', 'insts'):
+                        optD['insts'] = val.split(',') # a list
+                    elif key in ('s', 'series'):
+                        optD['series'] = val.split(',') # a list
 
-            optD['source'] = 'cmdline'
-    
-        except getopt.GetoptError:
-            print('Usage:\n  ' + usage, file=sys.stderr)
-            raise Exception('getArgs', 'Invalid arguments.')
-	
+        except ValueError:
+            insertJson(rootObj, 'errMsg', 'Invalid usage.\nUsage:\n  publist.py [ d=1 ] [ p=1 ] [ t=1 ] cfg=<configuration file> [ insts=<institution list> ] [ series=<series list> ]')
+            raise Exception('getArgsForm', 'Invalid arguments.')
+    else:
+        # Try this argparse stuff.
+        parser = argparse.ArgumentParser()
+        parser.add_argument('-d', '--descs', help="Print each series' description.", action='store_true')
+        parser.add_argument('-p', '--publist', help='Print the list of published series.', action='store_true')
+        parser.add_argument('-t', '--text', help='Print output in text format (not JSON).', action='store_true')
+        parser.add_argument('cfg', help='[cfg=<configuration file>] The configuration file that contains information needed to locate database information.', nargs='?')
+        parser.add_argument('insts', help='[insts=<institution list>] A comma-separated list of institutions. The series to which these institutions are printed.', nargs='?')
+        parser.add_argument('series', help='[series=<series list>] A comma-separated list of series. The institutions subscribed to these series are printed.', nargs='?')
+        parser.add_argument('dbuser', help='[dbuser=<database user>] The database user-account name to login to the database as.', nargs='?')
+        args = parser.parse_args()
+        
+        # Collect the optional arguments.
+        if args.descs:
+            optD['descs'] = True
+        if args.publist:
+            optD['publist'] = True
+        if args.text:
+            optD['nojson'] = True
+
+        # The non-optional arguments are positional. It is possible that the caller could put the arguments for one argument into
+        # the position for a different argument. Positional arguments are a nuisance. So we must parse the values of these three arguments
+        # and get the name of the arguments from the LHS of the equal sign.
+        regexp = re.compile(r"(\S+)=(\S+)")
+        parseArg(optD, args, args.cfg, regexp, False)
+        parseArg(optD, args, args.insts, regexp, True)
+        parseArg(optD, args, args.series, regexp, True)
+        parseArg(optD, args, args.dbuser, regexp, False)
+
     return optD
 
 def GetPubList(cursor, plDict, descsDict):
@@ -185,7 +230,7 @@ def GetNodeList(cursor, cfgDict, series):
     return list
 
 def checkSeries(series, pubListDict, errMsg):
-    if series in pubListDict:
+    if series.lower() in pubListDict:
         return True
     else:
         errMsg.extend(list('Series ' + series + ' is not published; skipping.'))
@@ -200,6 +245,7 @@ cfgDict = {}
 
 # Parse arguments
 if __name__ == "__main__":
+    optD = {}
     try:
         optD = GetArgs(sys.argv[1:])
         if optD is None:
@@ -207,6 +253,9 @@ if __name__ == "__main__":
             raise Exception('getArgsForm', 'No arguments provided.')
     
     except Exception as exc:
+        if len(exc.args) != 2:
+            raise # Re-raise
+        
         etype = exc.args[0]
         msg = exc.args[1]
 
@@ -217,18 +266,20 @@ if __name__ == "__main__":
             insertJson(rootObj, 'publist', listObj)
             print('Content-type: application/json\n')
             print(json.dumps(rootObj))
-            sys.exit(0)
-        elif etype == 'getArgs':
+            optD['source'] = 'form'
+        elif etype == 'getArgsCmdline':
             print('Invalid arguments.')
-            print('Usage:\n  publist.y [ -h ] [ -n ] -c <configuration file> [ -i <institution list> ] [ -s <series list> ]')
+            print('Usage:\n  publist.y [ -h ] [ -d ] [ -p ] [ -t ] cfg=<configuration file> [ insts=<institution list> ] [ series=<series list> ] [ dbuser=<dbuser> ]')
+            optD['source'] = 'cmdline'
             rv = RET_INVALIDARG
 
+if rv == RET_SUCCESS:
     if 'cfg' in optD:
         cfgFile = optD['cfg']
     else:
         if optD['source'] == 'cmdline':
-            print('Missing required argument, -c <configuration file>', file=sys.stderr)
-            print('Usage:\n  publist.y [ -h ] [ -n ] -c <configuration file> [ -i <institution list> ] [ -s <series list> ]')
+            print('Missing required argument, cfg=<configuration file>', file=sys.stderr)
+            print('Usage:\n  publist.y [ -h ] [ -d ] [ -p ] [ -t ] cfg=<configuration file> [ insts=<institution list> ] [ series=<series list> ] [ dbuser=<dbuser> ]')
             rv = RET_INVALIDARG
         else:
             rootObj = {}
@@ -237,29 +288,28 @@ if __name__ == "__main__":
             insertJson(rootObj, 'publist', listObj)
             print('Content-type: application/json\n')
             print(json.dumps(rootObj))
-            sys.exit(0)
 
     if rv == RET_SUCCESS:
+        descs = optD['descs']
+        dispPubList = optD['publist']
+        nojson = optD['nojson']
         insts = None
-        descs = None
-        nojson = None
-        subs = None
+        series = None
+        
+        # If the user has specified neither -p, -i, or -s, then default to displaying the publication list
+        if not(optD['publist']) and not('insts' in optD) and not('series' in optD):
+            dispPubList = True
 
         if 'insts' in optD:
             insts = optD['insts']
-        
-        if 'descs' in optD:
-            descs = optD['descs']
 
-        if 'nojson' in optD:
-            nojson = (optD['nojson'] == 1)
+        if 'series' in optD:
+            series = optD['series']
 
-        if 'subs' in optD:
-            subs = optD['subs']
-
-        if 'user' in optD:
-            dbuser = optD['user']
+        if 'dbuser' in optD:
+            dbuser = optD['dbuser']
         else:
+            # Assume the dbuser is the linux user.
             dbuser = pwd.getpwuid(os.getuid())[0]
 
 if rv == RET_SUCCESS:
@@ -276,41 +326,44 @@ if rv == RET_SUCCESS:
                     listObj = {}
                     subListObj = {}
                     nodeListObj = {}
-            
-                # First print all published series
-                pubListDict = {}
-                if descs:
-                    descsDict = {}
-                else:
-                    descsDict = None
 
-                pubList = GetPubList(cursor, pubListDict, descsDict)
+                # Need pubListDict if printing all instituions subscribed to series
+                if dispPubList or not(series is None):
+                    # First print all published series
+                    pubListDict = {}
+                    if descs:
+                        descsDict = {}
+                    else:
+                        descsDict = None
 
-                if nojson:
-                    print('All published series')
-                    print('--------------------')
+                    pubList = GetPubList(cursor, pubListDict, descsDict)
+
+                if dispPubList:
+                    if nojson:
+                        print('All published series')
+                        print('--------------------')
                     
-                    if descs:
-                        for series in pubList:
-                            if series in descsDict:
-                                print(series + ' - ' + descsDict[series])
-                            else:
-                                print(series)
+                        if descs:
+                            for seriesname in pubList:
+                                if seriesname in descsDict:
+                                    print(seriesname + ' - ' + descsDict[seriesname])
+                                else:
+                                    print(seriesname)
+                        else:
+                            for seriesname in pubList:
+                                print(seriesname)
+                            print('')
                     else:
-                        for series in pubList:
-                            print(series)
-                    print('')
-                else:
-                    if descs:
-                        # Make a list of elements, each of which is a tuple of length 2: (name, description)
-                        pubListWithDescs = [(series, descsDict[series]) for series in pubList]
-                        insertJson(listObj, 'list', pubListWithDescs)
-                    else:
-                        # Make a list of elements, each of which is a tuple of length 1: (name).
-                        pubListWithoutDescs = [(series,) for series in pubList]
-                        insertJson(listObj, 'list', pubListWithoutDescs)
+                        if descs:
+                            # Make a list of elements, each of which is a tuple of length 2: (name, description)
+                            pubListWithDescs = [(seriesname, descsDict[seriesname]) for seriesname in pubList]
+                            insertJson(listObj, 'list', pubListWithDescs)
+                        else:
+                            # Make a list of elements, each of which is a tuple of length 1: (name).
+                            pubListWithoutDescs = [(seriesname,) for seriesname in pubList]
+                            insertJson(listObj, 'list', pubListWithoutDescs)
                     
-                    insertJson(rootObj, 'publist', listObj)
+                        insertJson(rootObj, 'publist', listObj)
 
                 if not(insts is None):
                     if insts[0].lower() == 'all'.lower():
@@ -339,31 +392,31 @@ if rv == RET_SUCCESS:
                     if not nojson:
                         insertJson(rootObj, 'sublist', subListObj)
 
-                if not(subs is None):
-                    if subs[0].lower() != 'all':
+                if not(series is None):
+                    if series[0].lower() != 'all':
                         # Print nodelists for the series specified in the subs list by first modifying pubList to contain the subs list,
                         # unless the user has specified all series, in which case pubList can be used as it (it contains a list of all
                         # published series).
-                        warnMsg = ()
-                        pubListClean = [series for series in subs if checkSeries(series, pubListDict, warnMsg)]
+                        warnMsg = []
+                        pubListClean = [seriesname for seriesname in series if checkSeries(seriesname, pubListDict, warnMsg)]
                         if nojson:
                             print(''.join(warnMsg), file=sys.stderr)
                         pubList = pubListClean
                     
                     # For each published series, print a list of institutions subscribed to that series
-                    for series in pubList:
-                        nodeList = GetNodeList(cursor, cfgDict, series)
+                    for seriesname in pubList:
+                        nodeList = GetNodeList(cursor, cfgDict, seriesname)
                         if nojson:
-                            print('Institutions subscribed to series ' + series)
+                            print('Institutions subscribed to series ' + seriesname)
                             print('---------------------------------------------------')
                             if len(nodeList) == 0:
-                                print('No institutions are subscribed to series ' + series + '.\n')
+                                print('No institutions are subscribed to series ' + seriesname + '.\n')
                             else:
                                 for oneInst in nodeList:
                                     print(oneInst)
                                 print('')
                         else:
-                            insertJson(nodeListObj, series, nodeList)
+                            insertJson(nodeListObj, seriesname, nodeList)
 
                     if not nojson:
                         insertJson(rootObj, 'nodelist', nodeListObj)
@@ -387,8 +440,8 @@ if rv == RET_SUCCESS:
         elif etype == 'getSubscribedInsts':
             msg = 'Error retrieving from the database the list of institutions subscribed to at least one series.'
         elif etype == 'getNodeList':
-            series = exc.args[2]
-            msg = 'Error retrieving from the database the list of institutions subscribed to series ' + series + '.'
+            seriesname = exc.args[2]
+            msg = 'Error retrieving from the database the list of institutions subscribed to series ' + seriesname + '.'
 
         if nojson:
             print(msg + '\n' + dbmsg, file=sys.stderr)
