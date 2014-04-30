@@ -5,6 +5,7 @@ var gCgiBinBaseUrl = '../../cgi-bin/ajax';
 function seriesDict(listObj, list)
 {
     this.dict = {}; // Emtpy object
+    
     this.applyFn = function(fn, args)
     {
         for (item in this.dict)
@@ -12,13 +13,15 @@ function seriesDict(listObj, list)
             fn(item, args);
         }
     };
+    
     this.getDesc = function(series)
     {
         return this.dict[series];
     };
+    
     this.isValid = function(series)
     {
-        return (dict[series] != undefined);
+        return (this.dict[series] != undefined);
     };
 
     for (var series in list)
@@ -46,6 +49,8 @@ function pubList(listObj, sDict)
 
 function subList(listObj, list, sDict)
 {
+    this.sdict = sDict;
+    
     this.dict = {};
     
     this.getSelected = function()
@@ -55,7 +60,7 @@ function subList(listObj, list, sDict)
     
     this.addToSelected = function(series)
     {
-        if (sDict.isValid(series))
+        if (this.sdict.isValid(series))
         {
             this.selected[this.selected.length] = series;
         }
@@ -63,7 +68,7 @@ function subList(listObj, list, sDict)
     
     this.setSelected = function(seriesList) // seriesList is an array of series
     {
-        if (seriesList.every(sDict.isValid))
+        if (seriesList.every(this.sdict.isValid))
         {
             this.selected = seriesList.slice(0);
         }
@@ -97,14 +102,27 @@ function subList(listObj, list, sDict)
     this.applyFn(this.populate, [listObj]);
 }
 
+// I think these have to be global since they are defined in callback functions and used by other callback functions.
+var sDict;
+var pList;
+var sList;
+var sListInterval;
+
+function createSlist(data)
+{
+    alert('calling createSlist');
+    if (sDict != undefined)
+    {
+        sList = new subList($("#sublist"), data.nodelist, sDict);
+        clearInterval(sListInterval);
+    }
+}
+
 // Called when the DOM has completed loading.
 $(document).ready(function()
 {
     var pubListUrl = gCgiBinBaseUrl + '/' + gPublistFile;
     var cfgFile = gCfgFile;
-    var sDict;
-    var pList;
-    var sList;
                   
     alert("the eagle has landed");
                   
@@ -155,12 +173,9 @@ $(document).ready(function()
     {
         $("#sublist").selectable(
         {
+                                 
             start: function(event, ui)
             {
-                //$(ui.selected).siblings().removeClass("ui-selected");
-                //$(ui.selected).removeClass("ui-selected");
-                //$("#sublist").children.removeClass("ui-selected");
-
                 if (sList != undefined)
                 {
                     sList.clearSelected();
@@ -182,15 +197,20 @@ $(document).ready(function()
                 {
                     // Need to populate another list
                 }
-            },
+            }
         });
       
         // Fetch the list of subscribed-to series from the PostgreSQL database.
+        // This asynchronous call relies upon the successful execution of another asynchronous call. In particular, it needs the
+        // sDict object to have been created by the success callback in the publist AJAX call. However, this sublist AJAX call
+        // may complete before the publist AJAX call has completed. To handle this properly, the success callback must register
+        // another callback that polls for the existence of the sDict object. When that object exists, the callback can unregister
+        // itself. This callback should give up after some number of tries too.
         $.ajax(
         {
             url: pubListUrl,
             data: {"cfg" : cfgFile, "series" : 'all'},
-            success: function(data, textStatus, xhr){ sList = new subList($("#sublist"), data.nodelist, sDict); },
+            success: function(data, textStatus, xhr){ sListInterval = setInterval(function() { createSlist(data); }, 500); },
             error: function(xhr, textStatus, errorThrown){ alert('Something done went wrong ' + textStatus); },
             dataType: 'json'
         });
