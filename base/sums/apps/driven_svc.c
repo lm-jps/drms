@@ -877,11 +877,11 @@ KEY *readdrvdo_1(KEY *params)
   int sim, dsmdiflg;
   uint64_t file_dsix[MAXSUMREQCNT+1]; /* the ds_index of all SU in a tape file*/
   uint64_t file_dsix_off[MAXSUMREQCNT+1]; /* the ds_index that are offline*/
-  uint64_t uid, ds_index;
+  uint64_t uid, ds_index, dsixtmp;
   double file_bytes[MAXSUMREQCNT+1];  /* bytes of all SU in a tape file */
   double bytes;
   int dnum, tapefilenum, reqofflinenum, status, tapemode, filenum, touch;
-  int reqcnt, xtapefilenum, i, j, filenumdelta;
+  int reqcnt, xtapefilenum, i, j, filenumdelta, retainday;
   char tmpname[80], newdir[80], dname[64], rdlog[80];
   char *wd, *oldwd, *token, *lasttoken;
   char *tapeid, *xtapeid, *cptr, *delday;
@@ -1043,6 +1043,15 @@ KEY *readdrvdo_1(KEY *params)
     for(i=0; ; i++) {
       ds_index = file_dsix_off[i];
       if(!ds_index) break;
+      retainday = 1;
+      for(j=0; j < reqcnt ; j++) {
+        sprintf(tmpname, "dsix_%d", j);
+        dsixtmp = getkey_uint64(params, tmpname);
+        if(ds_index == dsixtmp) {         //this was an expliit request for this sunum
+          retainday = touch;
+          break;
+        }
+      }
       sprintf(newdir, "%s/D%lu", wd, ds_index);
       bytes = file_bytes[i];
         if(SUM_StatOnline(ds_index, newdir)) {
@@ -1054,9 +1063,9 @@ KEY *readdrvdo_1(KEY *params)
           free(tapeid);
           return(retlist);
         }
-        delday = (char *)get_effdate(touch);  /* delete in touch days */
+        delday = (char *)get_effdate(retainday);  /* delete in touch days */
         write_log("Tape rd of sunum=%lu has touch days = %d\n",
-			ds_index, touch);	//!!TEMP added 8/11/2011
+			ds_index, retainday);	//!!TEMP added 8/11/2011
         /* put on delete pending list in sum_partn_alloc table */
         if(NC_PaUpdate(newdir, uid, bytes, DADP, 0, delday,
 		 0, 0, ds_index, 1, 1)) {  /* call w/commit */
