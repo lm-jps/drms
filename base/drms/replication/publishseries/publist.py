@@ -19,7 +19,7 @@ import psycopg2
 from toolbox import getCfg
 
 # Debug flag
-DEBUG_CGI = True
+DEBUG_CGI = False
 
 # Return codes
 RET_SUCCESS = 0
@@ -201,7 +201,7 @@ def GetSubList(cursor, cfgDict, inst):
 
 def GetSubscribedInsts(cursor, cfgDict):
     list = []
-    cmd = 'SELECT ' + CFG_TABLE_NODE + ' FROM ' + cfgDict['kCfgTable'] + ' GROUP BY ' + CFG_TABLE_NODE
+    cmd = 'SELECT ' + CFG_TABLE_NODE + ' FROM ' + cfgDict['kCfgTable'] + ' GROUP BY ' + CFG_TABLE_NODE + ' ORDER BY lower(' + CFG_TABLE_NODE + ')'
 
     try:
         cursor.execute(cmd)
@@ -216,7 +216,7 @@ def GetSubscribedInsts(cursor, cfgDict):
 
 def GetNodeList(cursor, cfgDict, series):
     list = []
-    cmd = 'SELECT ' + LST_TABLE_NODE + ' FROM ' + cfgDict['kLstTable'] + ' WHERE lower(' + LST_TABLE_SERIES + ") = '" + series.lower() + "' GROUP BY " + LST_TABLE_NODE + ' ORDER BY ' + LST_TABLE_NODE
+    cmd = 'SELECT ' + LST_TABLE_NODE + ' FROM ' + cfgDict['kLstTable'] + ' WHERE lower(' + LST_TABLE_SERIES + ") = '" + series.lower() + "' GROUP BY " + LST_TABLE_NODE + ' ORDER BY lower(' + LST_TABLE_NODE + ')'
     
     try:
         cursor.execute(cmd)

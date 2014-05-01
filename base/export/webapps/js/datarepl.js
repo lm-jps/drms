@@ -4,13 +4,19 @@ var gCgiBinBaseUrl = '../../cgi-bin/ajax';
 
 function seriesDict(listObj, list)
 {
-    this.dict = {}; // Emtpy object
+    this.dict = {}; // Empty object
     
     this.applyFn = function(fn, args)
     {
-        for (item in this.dict)
+        // Since this.dict is a JS object, the items are not in any defined order. Sort them first.
+        sortedList = [];
+        for (sortedList[sortedList.length] in this.dict);
+
+        sortedList.sort();
+
+        for (var iseries in sortedList)
         {
-            fn(item, args);
+            fn(sortedList[iseries], args);
         }
     };
     
@@ -47,13 +53,24 @@ function pubList(listObj, sDict)
     sDict.applyFn(this.populate, [listObj]);
 };
 
-function subList(listObj, list, sDict)
+function subList(sListElem, iListElem, list, sDict)
 {
     this.sdict = sDict;
     
     // The keys for dict are series names, and the values for dict are the institutions subscribed
     // to those series identified by the series names.
     this.dict = {};
+
+    // The list (an object actually) of selected, subscribed-to series.
+    this.selected = {};
+
+    // This is a list (an object actually) of institutions whose members are subscribed to the series in the 
+    // selected list.
+    this.selectedInsts = {};
+
+    this.sListElem = sListElem;
+     
+    this.iListElem = iListElem;
     
     this.getSelected = function()
     {
@@ -62,9 +79,50 @@ function subList(listObj, list, sDict)
     
     this.addToSelected = function(series)
     {
-        if (this.sdict.isValid(series))
+        if (this.sdict.isValid(series) && (!(series in this.selected) || this.selected[series] == undefined))
         {
-            this.selected[this.selected.length] = series;
+            // Add to the list of selected series.
+            this.selected[series] = true;
+
+            // Add to the list of selected institutions.
+            for (var iinst in this.dict[series])
+            {
+                var inst = this.dict[series][iinst];
+
+                if (!(inst in this.selectedInsts) || this.selectedInsts[inst] == undefined)
+                {
+                    this.selectedInsts[inst] = 1;
+                }
+                else
+                {
+                    this.selectedInsts[inst]++;
+                }
+            }
+        }
+    };
+
+    this.removeFromSelected = function(series)
+    {
+        // Remove from the list of selected series. 
+        if (series in this.selected)
+        {
+            this.selected[series] = undefined;
+        }
+
+        // Remove from the list of selected institutions.
+        for (var iinst in this.dict[series])
+        {
+            var inst = this.dict[series][iinst];
+
+            if (inst in this.selectedInsts && this.selectedInsts[inst] != undefined)
+            {
+                this.selectedInsts[inst]--;
+
+                if (this.selectedInsts[inst] == 0)
+                {
+                    this.selectedInsts[inst] = undefined;
+                }
+            }
         }
     };
     
@@ -79,28 +137,35 @@ function subList(listObj, list, sDict)
     this.clearSelected = function()
     {
         this.selected = [];
+        this.selectedInsts = {};
     };
     
-    this.displaySelected = function(listObj)
+    this.displaySelected = function()
     {
-        var instList;
+        // Clear the previous items.
+        this.iListElem.empty();
         
-        for (var series in this.dict)
+        // Add selected items to list of institutions.
+        for (var inst in this.selectedInsts)
         {
-            instList = this.dict[series];
-            
-            for (var inst in instList)
+            if (this.selectedInsts[inst] != undefined)
             {
-                listObj.append('<li class="nonsellist-item ui-widget-content ui-state-default">' + instList[inst] + '</li>');
+                this.iListElem.append('<li class="nonsellist-item ui-widget-content ui-state-default">' + inst + '</li>');
             }
         }
     };
     
     this.applyFn = function(fn, args)
     {
-        for (var series in this.dict)
+        // Since this.dict is a JS object, the items are not in any defined order. Sort them first.
+        sortedList = [];
+        for (sortedList[sortedList.length] in this.dict);
+
+        sortedList.sort();
+
+        for (var iseries in sortedList)
         {
-            fn(series, args);
+            fn(sortedList[iseries], args);
         }
     };
     
@@ -110,13 +175,16 @@ function subList(listObj, list, sDict)
         args[0].append('<li class="sellist-item ui-widget-content ui-state-default">' + series + '</li>');
     };
 
-    // Copy the list to the internal dictionary. Some series will have no subscribers.
+    // Copy the list to the internal dictionary. Some series will have no subscribers. 
     for (var series in list)
     {
-        this.dict[series] = list[series].slice(0);
+        if (list[series].length > 0)
+        {
+            this.dict[series] = list[series].slice(0);
+        }
     }
-    
-    this.applyFn(this.populate, [listObj]);
+
+    this.applyFn(this.populate, [sListElem]);
 }
 
 // I think these have to be global since they are defined in callback functions and used by other callback functions.
@@ -129,7 +197,7 @@ function createSlist(data)
 {
     if (sDict != undefined)
     {
-        sList = new subList($("#sublist"), data.nodelist, sDict);
+        sList = new subList($("#sublist"), $("#subscr-insts"), data.nodelist, sDict);
         clearInterval(sListInterval);
     }
 }
@@ -139,8 +207,6 @@ $(document).ready(function()
 {
     var pubListUrl = gCgiBinBaseUrl + '/' + gPublistFile;
     var cfgFile = gCfgFile;
-                  
-    alert("the eagle has landed");
                   
     // Everything having to do with the publist select control.
     $(function()
@@ -188,21 +254,20 @@ $(document).ready(function()
     $(function()
     {
         $("#sublist").selectable(
-        {
-                                 
-            start: function(event, ui)
-            {
-                if (sList != undefined)
-                {
-                    sList.clearSelected();
-                }
-            },
-
+        {                                 
             selected: function(event, ui)
             {
                 if (sList != undefined)
                 {
                     sList.addToSelected($(ui.selected).text());
+                }
+            },
+
+            unselected: function(event, ui)
+            {
+                if (sList != undefined)
+                {
+                    sList.removeFromSelected($(ui.unselected).text());
                 }
             },
                                  
@@ -212,7 +277,7 @@ $(document).ready(function()
                 if (sList != undefined)
                 {
                     // Need to populate another list
-                    sList.displaySelected($("#subscr-insts"));
+                    sList.displaySelected();
                 }
             }
         });
