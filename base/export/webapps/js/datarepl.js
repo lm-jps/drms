@@ -51,6 +51,8 @@ function subList(listObj, list, sDict)
 {
     this.sdict = sDict;
     
+    // The keys for dict are series names, and the values for dict are the institutions subscribed
+    // to those series identified by the series names.
     this.dict = {};
     
     this.getSelected = function()
@@ -77,6 +79,21 @@ function subList(listObj, list, sDict)
     this.clearSelected = function()
     {
         this.selected = [];
+    };
+    
+    this.displaySelected = function(listObj)
+    {
+        var instList;
+        
+        for (var series in this.dict)
+        {
+            instList = this.dict[series];
+            
+            for (var inst in instList)
+            {
+                listObj.append('<li class="nonsellist-item ui-widget-content ui-state-default">' + instList[inst] + '</li>');
+            }
+        }
     };
     
     this.applyFn = function(fn, args)
@@ -110,7 +127,6 @@ var sListInterval;
 
 function createSlist(data)
 {
-    alert('calling createSlist');
     if (sDict != undefined)
     {
         sList = new subList($("#sublist"), data.nodelist, sDict);
@@ -196,6 +212,7 @@ $(document).ready(function()
                 if (sList != undefined)
                 {
                     // Need to populate another list
+                    sList.displaySelected($("#subscr-insts"));
                 }
             }
         });

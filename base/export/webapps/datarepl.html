@@ -35,6 +35,7 @@
         {
             font: bold 48px Verdana, Arial, Helvetica, sans-serif;
             text-indent: 24px;
+            text-align: center;
             color: white;
             height: 64px;
             position: absolute;
@@ -55,7 +56,7 @@
             color: white;
         }
     
-        .sellist
+        .sellist,.nonsellist
         {
             list-style-type: none;
             margin: 0;
@@ -72,13 +73,21 @@
             font: normal normal bold 1.0em Verdana, Arial, Helvetica, sans-serif;
             border: 0;
         }
+    
+        .nonsellist li.nonsellist-item
+        {
+            margin: 0.1em;
+            padding: 0.2em;
+            font: normal normal bold 1.0em Verdana, Arial, Helvetica, sans-serif;
+            border: 0;
+        }
 
         #accordion-resizer
         {
             padding: 10px;
             width: 85%;
             min-width: 800px;
-            height: 75%;
+            min-height: 500px;
             margin-left:auto;
             margin-right:auto;
             box-shadow: 10px 10px 5px #888888;
@@ -94,7 +103,13 @@
         {
             font: normal normal normal 1.0em Verdana, Arial, Helvetica, sans-serif;
         }
-        
+    
+        #accordion span
+        {
+            font: normal normal normal 1.0em Verdana, Arial, Helvetica, sans-serif;
+        }
+
+
         .transimg
         {
             opacity: 0.75;
@@ -114,13 +129,18 @@
         {
             float: left;
         }
-    
+
+        .side-by-side
+        {    
+            display: inline-block;
+            vertical-align: top;
+        }
     
     </style>
 </head>
 <body>
     <!--
-    <div id="maintitle" style="text-align: center">
+    <div id="maintitle">
      -->
     
     <!--Banner-->
@@ -145,9 +165,13 @@
                 This is a list of all published series. NetDRMS sites can subscribe to any of these series. Data from the series are also
                 available from the export system. Click on one or more series to see descriptions of the data they contain.
             </p>
-            <div class="overflowdiv ui-state-default floatleft">
-                <div>
-                    <ol id="publist" class="sellist"></ol>
+            
+            <div class="floatleft">
+                <span>Published Series:</span>
+                <div class="overflowdiv ui-state-default">
+                    <div>
+                        <ol id="publist" class="sellist"></ol>
+                    </div>
                 </div>
             </div>
             <div class="desc">
@@ -166,15 +190,28 @@
                 Select one or more series to see which institutions have subscriptions. Institutions that appear in the list on the right are subscribed
                 to at least one of the selected series in the list on the left.
             </p>
-            <div class="overflowdiv ui-state-default floatleft">
-                <div>
-                    <ol id="sublist" class="sellist"></ol>
+            <div class="side-by-side">
+                <p>
+                    Subscribed-To Series:
+                </p>
+                <div class="overflowdiv ui-state-default">
+                    <div>
+                        <ol id="sublist" class="sellist"></ol>
+                    </div>
                 </div>
             </div>
-            <div class="desc">
+            <div class="side-by-side">
                 <p>
                     Subscribing Institutions:
-                <ol id="subscr-insts"></ol>
+                </p>
+                <div class="overflowdiv ui-state-default">
+                    <div class="desc">
+                        <div>
+                            <ol id="subscr-insts" class="nonsellist">
+                            </ol>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
         
@@ -198,10 +235,6 @@
         </div>
     </div>
     </div>
-    <br>
-    
-    
-    <input class="ui-state-default" type="text" name="date" id="date" />
 
 </body>
 </html>
