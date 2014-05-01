@@ -27,6 +27,7 @@
 #include <dirent.h>
 #include <openssl/md5.h>
 
+#define RETAINDAY 3  /* #of days to retain "accidental" file read fr tape*/
 #define MAX_WAIT 20  /* max times to wait for rdy in get_tape_fnum_rdy() */
 #define BLOCK_SIZE GTARBLOCK*512
 #define CMDLENWRT 24576
@@ -1043,7 +1044,7 @@ KEY *readdrvdo_1(KEY *params)
     for(i=0; ; i++) {
       ds_index = file_dsix_off[i];
       if(!ds_index) break;
-      retainday = 1;
+      retainday = RETAINDAY;
       for(j=0; j < reqcnt ; j++) {
         sprintf(tmpname, "dsix_%d", j);
         dsixtmp = getkey_uint64(params, tmpname);
