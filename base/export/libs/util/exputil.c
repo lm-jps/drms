@@ -201,36 +201,35 @@ ExpUtlStat_t exputl_mk_expfilename(DRMS_Segment_t *srcseg,
                 {
                    /* non-time keyword types */
                 char formatwas[DRMS_MAXFORMATLEN];
+                DRMS_Keyword_t *followedKey = NULL;
+                char *pCh = NULL;
+                char *pVal = NULL;
+
                 strncpy(formatwas, key->info->format, DRMS_MAXFORMATLEN);
                 strncpy(key->info->format,layout,DRMS_MAXFORMATLEN);
-
-                /* avoid leaks */
-                if (srcseg->info->islink)
-                {
-                   tmpstr = drms_getkey_string(tgtseg->record,keyname,NULL);
-                }
-                else
-                {
-                   tmpstr = drms_getkey_string(srcseg->record,keyname,NULL);
-                }
-
-                snprintf(tmpstr2, sizeof(tmpstr2), "%s", tmpstr);
-                free(tmpstr);
-                // val = tmpstr2;
-
-                strncpy(key->info->format, formatwas, DRMS_MAXFORMATLEN);
-                // free(val);
-
-                /* Not sure why we bother setting val a couple of lines above - it gets
-                 * lost here. */
-                    /* ART - It looks like this was an accident.
-                     * val = valstr;
-                     *
-                     * Instead, copy tmpstr2, which has the correct string, to valstr.
-                     */
-                    *valstr = '\0';
-                    snprintf(valstr, sizeof(valstr), "%s", tmpstr2);
-                    val = valstr; // To be consistent with other cases above.
+                followedKey = drms_keyword_lookup(srcseg->record, keyname, 1);
+                    
+                if (followedKey)
+                    {
+                        *tmpstr2 = '\0';
+                        drms_keyword_snprintfval(followedKey, tmpstr2, sizeof(tmpstr2));
+                        
+                        /* Strip-out whitespace. */
+                        for (pCh = tmpstr2, pVal = valstr; *pCh && pVal < valstr + sizeof(valstr) - 1; pCh++)
+                        {
+                            if (!isspace(*pCh))
+                            {
+                                *pVal = *pCh;
+                                pVal++;
+                            }
+                        }
+                        
+                        *pVal = '\0';
+                        
+                        val = valstr; // To be consistent with other cases above.
+                    }
+                    
+                    strncpy(key->info->format, formatwas, DRMS_MAXFORMATLEN);
                 }
               }
             else // No user provided layout string
