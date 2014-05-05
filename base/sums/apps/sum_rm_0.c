@@ -166,6 +166,12 @@ void alrm_sig(int sig)
 {
   FILE *tstfp;
   char cmd[MAX_STR];
+    
+    /* Careful - if norunflg initializes to something other than 0, then sum_rm will never clean any partitions. 
+     * It must be the case that the compiler initializes this to 0 (but if the compiler ever changes...). We
+     * should probably intialize this to 0.
+     *   -ART
+     */
   int norunflg, update;
   double bytesdeleted, availstore;
 

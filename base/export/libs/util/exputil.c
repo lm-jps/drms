@@ -216,14 +216,21 @@ ExpUtlStat_t exputl_mk_expfilename(DRMS_Segment_t *srcseg,
 
                 snprintf(tmpstr2, sizeof(tmpstr2), "%s", tmpstr);
                 free(tmpstr);
-                val = tmpstr2;
+                // val = tmpstr2;
 
                 strncpy(key->info->format, formatwas, DRMS_MAXFORMATLEN);
                 // free(val);
 
                 /* Not sure why we bother setting val a couple of lines above - it gets
                  * lost here. */
-                val = valstr;
+                    /* ART - It looks like this was an accident.
+                     * val = valstr;
+                     *
+                     * Instead, copy tmpstr2, which has the correct string, to valstr.
+                     */
+                    *valstr = '\0';
+                    snprintf(valstr, sizeof(valstr), "%s", tmpstr2);
+                    val = valstr; // To be consistent with other cases above.
                 }
               }
             else // No user provided layout string
