@@ -51,9 +51,11 @@ ExpUtlStat_t exputl_mk_expfilename(DRMS_Segment_t *srcseg,
 {
    static int namesMade = 0;
    ExpUtlStat_t ret = kExpUtlStat_Success;
-   char *fn = filename;
+   char filenameWorking[128] = {0};
+   char *fn = filenameWorking;
    char format[1024];
    char *fmt;
+    
    if (filenamefmt)
      snprintf(format, sizeof(format), "%s", filenamefmt);
    else
@@ -268,20 +270,60 @@ ExpUtlStat_t exputl_mk_expfilename(DRMS_Segment_t *srcseg,
                val = valstr;
                }
 #endif
-            for (p=val; *p; )
-               {
-               *fn++ = *p++;
-               }
-            *fn = '\0';
+                if (strlen(filenameWorking) + strlen(val) < sizeof(filenameWorking))
+                {
+                    for (p=val; *p; )
+                    {
+                        *fn++ = *p++;
+                    }
+                    *fn = '\0';
+                }
+                else
+                {
+                    /* Return some kind of overflow error. */
+                    ret = kExpUtlStat_InvalidFmt;
+                }
             }
          fmt = last+1;
 
          val = NULL;
          }
       else
-        *fn++ = *fmt++;
+          {
+              if (strlen(filenameWorking) + strlen(fmt) < sizeof(filenameWorking))
+              {
+                  *fn++ = *fmt++;
+              }
+              else
+              {
+                  /* Return some kind of overflow error. */
+                  ret = kExpUtlStat_InvalidFmt;
+              }
+          }
       }
    *fn = '\0';
+    
+    if (filename)
+    {
+        /* Just gotta hope this doesn't overrun the output buffer. */
+        /* Replace remaining whitespace with underscores. */
+        char *pIn = NULL;
+        char *pOut = NULL;
+        
+        for (pIn = filenameWorking, pOut = filename; *pIn ; pIn++)
+        {
+            if (!isspace(*pIn))
+            {
+                *pOut = *pIn;
+                pOut++;
+            }
+        }
+        
+        *pOut = '\0';
+        
+        
+        snprintf(filename, sizeof(filenameWorking), "%s", filenameWorking);
+    }
 
    return ret;
 }
