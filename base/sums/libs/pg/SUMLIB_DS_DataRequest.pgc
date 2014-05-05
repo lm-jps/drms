@@ -166,7 +166,12 @@ char STMT[] = "SELECT ONLINE_LOC, ONLINE_STATUS, ARCHIVE_STATUS, OFFSITE_ACK, BY
         if(tdays < 0) {		//if tdays neg, only make eff_date bigger
           posdays = abs(tdays);
           eff_date = (char *)get_effdate(posdays);
-          if(strcmp(eff_date, eff_date_str.arr) > 0) change = 1; 
+          if(strcmp(eff_date, eff_date_str.arr) > 0) {
+            change = 1; 
+            //New 5/5/2014 Add 3 days grace, so likely subsequent calls
+            //won't have to touch it again
+            eff_date = (char *)get_effdate(posdays+3); //add 3 days grace
+          }
           else change = 0;
         }
         else {
