@@ -2471,6 +2471,22 @@ int DoIt(void)
              printf("Last Recnum:  %lld", rs->records[0]->recnum);
              printf("\n");
           }
+           
+           /* Print shadow-table status. */
+           int shadowStat;
+           int hasShadow = drms_series_shadowexists(drms_env, rec->seriesinfo->seriesname, &shadowStat);
+           
+           if (shadowStat)
+           {
+               printf("Has shadow table: ?");
+           }
+           else
+           {
+               printf("Has shadow table: %s", hasShadow ? "yes" : "no");
+           }
+           
+           printf("\n");
+           
           show_info_return(0);
        }
        else 

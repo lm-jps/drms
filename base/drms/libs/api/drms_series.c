@@ -337,13 +337,22 @@ static int ShadowExists(DRMS_Env_t *env, const char *series, int *status)
     
     if (istat == DRMS_SUCCESS)
     {
+        
         /* First check template->seriesinfo->hasshadow. */
         if (template->seriesinfo->hasshadow == 1)
         {
+            if (status)
+            {
+                *status = istat;
+            }
             return 1;
         }
         else if (template->seriesinfo->hasshadow == 0)
         {
+            if (status)
+            {
+                *status = istat;
+            }
             return 0;
         }
         
