@@ -269,7 +269,7 @@ endif
         cd ../../..
 
         cd base/include
-            ln -s ../../../${RELLOCALIZATIONDIR}/drmsparams.h localization.h
+            ln -s ../../${RELLOCALIZATIONDIR}/drmsparams.h localization.h
         cd ../..
 
         cd base/include
