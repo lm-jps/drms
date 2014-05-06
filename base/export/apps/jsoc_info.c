@@ -184,7 +184,7 @@ ModuleArgs_t module_args[] =
   {ARG_FLAG, "h", "0", "help - show usage"},
   {ARG_FLAG, "R", "0", "Show record query"},
   {ARG_FLAG, "z", "0", "emit JSON output"},
-  {ARG_FLAG, "o", "0", "add owner info to series_struct"},
+  {ARG_FLAG, "o", "0", "print additional DRMS information when op==series_struct"},
   {ARG_STRING, "QUERY_STRING", "Not Specified", "AJAX query from the web"},
   {ARG_STRING, "REMOTE_ADDR", "0.0.0.0", "Remote IP address"},
   {ARG_STRING, "SERVER_NAME", "ServerName", "JSOC Server Name"},
