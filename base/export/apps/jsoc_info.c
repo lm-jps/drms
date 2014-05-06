@@ -602,15 +602,23 @@ static int get_series_stats(DRMS_Record_t *rec, json_t *jroot)
       char shadowStr[16];
       int hasShadow;
       
-      hasShadow= drms_series_shadowexists(rec->env, rec->seriesinfo->seriesname, &shadowStat);
-      
-      if (shadowStat)
+      if (wantowner)
       {
-          snprintf(shadowStr, sizeof(shadowStr), "?");
-      }
-      else
-      {
-          snprintf(shadowStr, sizeof(shadowStr), "%s", hasShadow ? "yes" : "no");
+          /* Use the -o flag to also control the display of the HasShadow property. IDL users have not updated
+           * the interface to jsoc_info to expect additional properties (and it must be that
+           * they are not using a JSON parser - if they were, then additional properties would
+           * not be a problem). -o means "print ownership information", but we are also going to
+           * use it to control the printing of shadow-table disposition. */
+          hasShadow= drms_series_shadowexists(rec->env, rec->seriesinfo->seriesname, &shadowStat);
+          
+          if (shadowStat)
+          {
+              snprintf(shadowStr, sizeof(shadowStr), "?");
+          }
+          else
+          {
+              snprintf(shadowStr, sizeof(shadowStr), "%s", hasShadow ? "yes" : "no");
+          }
       }
       
   if (!rs || rs->n < 1)
@@ -620,7 +628,10 @@ static int get_series_stats(DRMS_Record_t *rec, json_t *jroot)
     json_insert_pair_into_object(interval, "LastRecord", json_new_string("NA"));
     json_insert_pair_into_object(interval, "LastRecnum", json_new_string("NA"));
     json_insert_pair_into_object(interval, "MaxRecnum", json_new_number("0"));
-    json_insert_pair_into_object(interval, "HasShadow", json_new_string(shadowStr));
+    if (wantowner)
+    {
+        json_insert_pair_into_object(interval, "HasShadow", json_new_string(shadowStr));
+    }
         
     if (rs) drms_free_records(rs);
     json_insert_pair_into_object(jroot, "Interval", interval);
@@ -680,7 +691,10 @@ if (status != JSON_OK) fprintf(stderr, "json_insert_pair_into_object, status=%d,
 
     sprintf(val,"%lld", rs->records[0]->recnum);
     json_insert_pair_into_object(interval, "MaxRecnum", json_new_number(val));
-    json_insert_pair_into_object(interval, "HasShadow", json_new_string(shadowStr));
+    if (wantowner)
+    {
+        json_insert_pair_into_object(interval, "HasShadow", json_new_string(shadowStr));
+    }
     drms_free_records(rs);
     }
   json_insert_pair_into_object(jroot, "Interval", interval);
