@@ -2575,12 +2575,6 @@ int DoIt(void)
     show_info_return(1);
     }
 
-      if (finalin)
-      {
-          free(finalin);
-          finalin = NULL;
-      }
-      
 /* recordset now points to a struct with  count of records found ("n"), and a pointer to an
  * array of record pointers ("records");
  * it may be a chunked recordset (max_recs==0) or a limited size (max_recs!=0).
@@ -2668,6 +2662,12 @@ int DoIt(void)
   else
   {
      status = RecordLoopNoCursor(drms_env, recordset, requireSUMinfo, given_sunum, suinfo, want_path, want_path_noret, seriesnameforheader, keylist, seglist, show_all, show_keys, show_all_segs, show_segs, show_all_links, quiet, keyword_list, show_recnum, show_sunum, show_recordspec, parseRS, show_online, show_retention, show_archive, show_tapeinfo, show_size, show_session, want_dims, show_types, sunum_rs_query);
+  }
+
+  if (finalin)
+  {
+     free(finalin);
+     finalin = NULL;
   }
 
   if (seglist)
