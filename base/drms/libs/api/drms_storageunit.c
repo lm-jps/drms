@@ -24,38 +24,41 @@
 #endif
 
 //igor VSO HTTP request to JMD start
-#include <curl/curl.h>
-#include <curl/types.h>
-#include <curl/easy.h>
-struct POSTState 
-{
-  char session_id[256];
-  int  no_submitted;
-};
+#ifdef JMD_IS_INSTALLED
+    #include <curl/curl.h>
+    #include <curl/types.h>
+    #include <curl/easy.h>
 
-int session_status (char *session);
-size_t parse_session_state(void *buffer, size_t size, size_t nmemb, void *userp);
+    struct POSTState
+    {
+        char session_id[256];
+        int  no_submitted;
+    };
 
-void populate_with_sunums(DRMS_Env_t *env, HContainer_t *postmap, char * seriesname, int n, long long sulist[]);
-struct PassSunumList 
-{
-  char series[500];
-  char **sunumlist;
-  long long *sunumarr;
-  int  n;
-  int  ncount;
-  char id[256];
-  int   submitted;
-  int  sizeadded;
-};
+    int session_status (char *session);
+    size_t parse_session_state(void *buffer, size_t size, size_t nmemb, void *userp);
 
-void add_sunum_to_POST(DRMS_Env_t *env, HContainer_t *postmap, char *seriesname, long long sunum);
-size_t create_post_msg(HContainer_t *postmap, char **ptr);
-size_t write_data(void *buffer, size_t size, size_t nmemb, void *userp);
-int send_POST_request(char * postrequeststr, curl_off_t postsize, struct POSTState *ps);
-void free_post_request(HContainer_t *postmap);
+    void populate_with_sunums(DRMS_Env_t *env, HContainer_t *postmap, char * seriesname, int n, long long sulist[]);
+    struct PassSunumList
+    {
+        char series[500];
+        char **sunumlist;
+        long long *sunumarr;
+        int  n;
+        int  ncount;
+        char id[256];
+        int   submitted;
+        int  sizeadded;
+    };
 
-size_t read_callback(void *ptr, size_t size, size_t nmemb, void *userp);
+    void add_sunum_to_POST(DRMS_Env_t *env, HContainer_t *postmap, char *seriesname, long long sunum);
+    size_t create_post_msg(HContainer_t *postmap, char **ptr);
+    size_t write_data(void *buffer, size_t size, size_t nmemb, void *userp);
+    int send_POST_request(char * postrequeststr, curl_off_t postsize, struct POSTState *ps);
+    void free_post_request(HContainer_t *postmap);
+
+    size_t read_callback(void *ptr, size_t size, size_t nmemb, void *userp);
+#endif // JMD Support
 //igor VSO HTTP request to JMD end
 
 #define kEXTREMOTESUMS "remotesums_master.pl"
