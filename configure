@@ -88,6 +88,7 @@ endif
     if (-d include) then
 	cd include
 	find . -name "*.h" -exec rm {} \;
+        find . -name "drmsparams*" -exec rm {} \;
 	cd ..
     endif
     echo "done"
@@ -95,7 +96,9 @@ endif
     echo -n "Removing links to scripts..."
     if (-d scripts) then
 	cd scripts
-	find . -name "*" -exec rm {} \;
+        if ($? == 0) then
+            find . -type l -exec rm {} \;
+        endif
 	cd ..
     endif
     echo "done"
@@ -103,11 +106,12 @@ endif
     echo -n "Removing links to jsds..."
     if (-d jsds) then
 	cd jsds
-	find . -name "*" -exec rm {} \;
+        if ($? == 0) then
+            find . -type l -exec rm {} \;
+        endif
 	cd ..
     endif
     echo "done"
-
     echo
 
     if ($CLEAN == "yes") then
@@ -202,6 +206,11 @@ endif
             rm ${LOCALIZATIONDIR}/drmsparams.pm
         endif
 
+        if (-e ${LOCALIZATIONDIR}/drmsparams.py) then
+            rm ${LOCALIZATIONDIR}/drmsparams.py
+        endif
+
+
         # Must create the scripts subdirectory before the call to gen_init.csh
         if (!(-d scripts)) then
             mkdir scripts
@@ -280,6 +289,12 @@ endif
         if (-d ../base/include) then
             find ../base/include -name \*.h -exec ln -s {} . \;
         endif
+
+        # ${LOCALIZATIONDIR} is an absolute path
+        ln -s ../${RELLOCALIZATIONDIR}/drmsparams.h
+        ln -s ../${RELLOCALIZATIONDIR}/drmsparams.pm
+        ln -s ../${RELLOCALIZATIONDIR}/drmsparams.py
+
         cd ..
         echo "done"
         echo
