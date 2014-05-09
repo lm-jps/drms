@@ -58,12 +58,14 @@ def GetArgs(args):
                     optD['recnums'] = list()
                     
                     try:
+                        regexpRecnum = re.compile(r"\s*\d+\s*")
                         with open(arg, 'r') as fin:
                             while True:
                                 recnumsRaw = fin.readlines(8192)
                                 if not recnumsRaw:
                                     break
-                                recnums = [recnum.strip(' \t\n,') for recnum in recnumsRaw]
+                                recnumsNotEmpty = list(filter(lambda oneRecnum:  regexpRecnum.match(oneRecnum), recnumsRaw))
+                                recnums = [recnum.strip(' \t\n,') for recnum in recnumsNotEmpty]
                                 optD['recnums'].extend(recnums)
                     except IOError as exc:
                         type, value, traceback = sys.exc_info()
