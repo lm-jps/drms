@@ -538,7 +538,7 @@ sub EditLstFiles
             {                
                 if (!defined($tblmgr))
                 {
-                    $tblmgr = new SubTableMgr($gentablck, $cfgtab, $lsttab, $dbname, $tablesdir, $dbhost, $dbport, $dbuser);
+                    $tblmgr = new SubTableMgr($gentablck, $cfgtab, $lsttab, $tablesdir, $dbname, $dbhost, $dbport, $dbuser);
                     $rv = ($tblmgr->GetErr() != &kSuccess);
                 }
                 
