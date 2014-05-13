@@ -2,9 +2,10 @@
 
 import sys
 import os.path
-import getopt
+import argparse
 import pwd
 import re
+import copy
 import psycopg2
 
 # Return codes
@@ -14,13 +15,13 @@ RET_DBCONNECT = 2
 RET_SQL = 3
 
 # Read arguments
-# (s)eriestable - The series table from which we are deleting records.
+# (s)table      - The series table from which we are deleting records.
 # (r)ecnums     - The list of recnums that specify the db records to delete from seriestable.
 #                 The format maybe a single recnum, a list of comma-separated recnums, or a file
 #                 containing a list of newline-separated recnums.
 # db(n)ame      - The name of the database that contains the series table from which we are deleting
 #                 records.
-# db(h)ost      - The host machine of the database that contains the series table from which we
+# db(H)ost      - The host machine of the database that contains the series table from which we
 #                 are deleting records.
 # db(p)ort      - The port on the host machine that is accepting connections for the database that
 #                 contains the series table from which we are deleting records.
@@ -28,89 +29,146 @@ RET_SQL = 3
 #                 Otherwise, the script will merely print out the SQL commands it would otherwise
 #                 execute.
 
-def GetArgs(args):
+class CmdlParser(argparse.ArgumentParser):
+    def __init__(self, **kwargsin):
+        kwargs = copy.deepcopy(kwargsin)
+        
+        # Make all arguments optional (in the ArgumentParser sense).
+        if 'prefix_chars' not in kwargs:
+            # Can't put 'h' in here for some reason. It collides with the help argument.
+            kwargs['prefix_chars'] = '-ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefgijklmnopqrstuvwxyz'
+        super().__init__(**kwargs)
+        self.required = {}
+        self.reqGroup = None
+
+
+    def parse_args(self, args=None, namespace=None):
+        argsMod = []
+        
+        if args is None:
+            # Use the command line, but do some preparsing. We need to prefix command-line arguments that do not
+            # start with a '-' with a '-'. This is only true for required arguments, so ensure that such
+            # arguments are in self.required. Command-line arguments that start with a '-' are optional, and their
+            # keynames should not exist in self.required.
+            regexpDash = re.compile(r"-+(.+)")
+            regexpEqual = re.compile(r"([^=\s]+)=(.+)")
+            for arg in sys.argv[1:]:
+                matchObj = regexpDash.match(arg)
+                if matchObj is not None:
+                    argsMod.append(arg)
+                else:
+                    # Argument does not start with a '-'. It must be a required argument.
+                    matchObj = regexpEqual.match(arg)
+                    if matchObj is not None:
+                        if matchObj.group(1) not in self.required:
+                            raise Exception('CmdlParser-ArgUnrecognized', 'Unrecognized argument ' + "'" + arg + "'.")
+                    else:
+                        raise Exception('CmdlParser-ArgBadformat', 'whatever ' + "'" + arg + "'.")
+
+                    argsMod.append(arg)
+        else:
+            argsMod = args
+
+        return super().parse_args(argsMod, namespace)
+
+    def add_argument(self, *args, **kwargs):
+        # Make sure the caller provided the 'dest' argument (in kwargs). This is the name of the property in the dictionary returned by parse_args().
+        # If the caller were not to provide this argument, then ArgumentParser would apply some logic to determine the property name. However,
+        # let's simplify things and just require this argument. The base-class constructor will call add_argument() for the help argument,
+        # and it will not provide a 'dest' argument. Skip the help argument.
+        if '--help' not in args and 'dest' not in kwargs:
+            raise Exception('CmdlParser', "Required 'dest' argument to add_argument() missing for " + str(args) + ".")
+        
+        # Keep track of required arguments. A user who provides an argument that starts with a '-' is providing an optional
+        # argument. If the option's keyname matches a reqiured argument's keyname, this is an error.
+        if 'required' in kwargs and kwargs['required'] == True:
+            self.required[kwargs['dest']] = True
+    
+            if self.reqGroup is None:
+                self.reqGroup = super().add_argument_group('required arguments')
+
+            self.reqGroup.add_argument(*args, **kwargs)
+        else:
+            super().add_argument(*args, **kwargs)
+        
+
+def GetArgs():
     istat = bool(0)
     optD = {}
+
+    parser = CmdlParser(usage='%(prog)s [ -h ] [ -d ] stable=<series> recnums=<recnum list> [ --dbname=<db name> ] [ --dbhost=<db host> ] [ --dbport=<db port> ]')
+
+    parser.add_argument('s', 'stable', '--stable', help='The series table from which records are to be deleted.', metavar='<series>', dest='stable', required=True)
+    parser.add_argument('r', 'recnums', '--recnums', help='The list of recnums that specify the db records to delete from seriestable. The format maybe a single recnum, a list of comma-separated recnums, or a file containing a list of newline-separated recnums.', metavar='<recnum list or file>', dest='recnums', required=True)
+    parser.add_argument('-d', '--doit', help='If provided, the deletions are perfomed. Otherwise, the SQL to be executed is printed and no deletions are performed.', dest='doit', default=False, action='store_true')
+    parser.add_argument('-N', '--dbname', help='The name of the database that contains the series table from which records are to be deleted.', metavar='<db name>', dest='dbname', default='jsoc')
+    parser.add_argument('-H', '--dbhost', help='The host machine of the database that contains the series table from which records are to be deleted.', metavar='<db host machine>', dest='dbhost', default='hmidb')
+    parser.add_argument('-P', '--dbport', help='The port on the host machine that is accepting connections for the database that contains the series table from which records are to be deleted.', metavar='<db host port>', dest='dbport', default='5432')
     
     try:
-        opts, remainder = getopt.getopt(args, "hs:r:n:h:p:d", ["stable=", "recnums=", "dbname=", "dbhost=", "dbport="])
-    except getopt.GetoptError:
-        print('Usage:\n  deldbrecs.py [-h] -s <series> -r <recnum list> -n <db name> -h <db host> -p <db port> [-d]', file=sys.stderr)
-        istat = bool(1)
+        args = parser.parse_args()
+    
+    except Exception as exc:
+        if len(exc.args) == 2:
+            type = exc[0]
+            msg = exc[1]
 
-    if istat == bool(0):
-        for opt, arg in opts:
-            if opt == '-h':
-                print('Usage:\n  deldbrecs.py [-h] -s <series> -r <recnum list> -n <db name> -h <db host> -p <db port> [-d]')
-                sys.exit(0)
-            elif opt in ("-s", "--stable"):
-                regexp = re.compile(r"\s*(\S+)\.(\S+)\s*")
-                matchobj = regexp.match(arg)
-                if matchobj is None:
-                    istat = bool(1)
-                else:
-                    optD['ns'] = matchobj.group(1)
-                    optD['table'] = matchobj.group(2)
-            elif opt in ("-r", "--recnums"):
-                # Is the argument a file?
-                if os.path.isfile(arg):
-                    # If the argument is a file, parse it.
-                    optD['recnums'] = list()
+            if type != 'CmdlParser-ArgUnrecognized' and type != 'CmdlParser-ArgBadformat':
+                raise # Re-raise
                     
-                    try:
-                        regexpRecnum = re.compile(r"\s*\d+\s*")
-                        with open(arg, 'r') as fin:
-                            while True:
-                                recnumsRaw = fin.readlines(8192)
-                                if not recnumsRaw:
-                                    break
-                                recnumsNotEmpty = list(filter(lambda oneRecnum:  regexpRecnum.match(oneRecnum), recnumsRaw))
-                                recnums = [recnum.strip(' \t\n,') for recnum in recnumsNotEmpty]
-                                optD['recnums'].extend(recnums)
-                    except IOError as exc:
-                        type, value, traceback = sys.exc_info()
-                        print(exc.strerror, file=sys.stderr)
-                        print('Unable to open ' + "'" + value.filename + "'.", file=sys.stderr)
-                        istat = bool(1)
-                else:
-                    # Otherwise, parse the argument itself.
-                    optD['recnums'] = arg.split(',') # a list
-            elif opt in ("-n", "--dbname"):
-                optD['dbname'] = arg
-            elif opt in ("-h", "--dbhost"):
-                optD['dbhost'] = arg
-            elif opt in ("-p", "--dbport"):
-                optD['dbport'] = arg
-            elif opt == '-d':
-                # DoIt!
-                optD['doit'] = 1
-            else:
-                optD[opt] = arg
+            print(msg, file=sys.stderr)
+            istat = bool(1)
 
-    if istat or not optD or not 'ns' in optD or not 'table' in optD or not 'recnums' in optD or not 'dbname' in optD or not 'dbhost' in optD or not 'dbport' in optD:
-        print(optD)
-        print('Missing required arguments.', file=sys.stderr)
-        optD = list()
+        else:
+            raise # Re-raise
+    
+    if not istat:
+        optD['stable'] = args.stable
+        
+        if os.path.isfile(args.recnums):
+            optD['recnums'] = []
+            try:
+                regexpRecnum = re.compile(r"\s*\d+\s*")
+                with open(args.recnums, 'r') as fin:
+                    while True:
+                        recnumsRaw = fin.readlines(8192)
+                        if not recnumsRaw:
+                            break
+                        recnumsNotEmpty = list(filter(lambda oneRecnum:  regexpRecnum.match(oneRecnum), recnumsRaw))
+                        recnums = [recnum.strip(' \t\n,') for recnum in recnumsNotEmpty]
+                        optD['recnums'].extend(recnums)
+            except IOError as exc:
+                type, value, traceback = sys.exc_info()
+                print(exc.strerror, file=sys.stderr)
+                print('Unable to open ' + "'" + value.filename + "'.", file=sys.stderr)
+                istat = bool(1)
+        else:
+            # Otherwise, parse the argument itself.
+            optD['recnums'] = args.recnums.split(',') # a list
+
+        optD['dbname'] = args.dbname
+        optD['dbhost'] = args.dbhost
+        optD['dbport'] = args.dbport
+        optD['doit'] = args.doit
+        
     return optD
 
 rv = RET_SUCCESS
 
 # Parse arguments
 if __name__ == "__main__":
-    optD = GetArgs(sys.argv[1:])
+    optD = GetArgs()
+    
     if not optD:
         rv = RET_INVALIDARG
     else:
-        series = optD['ns'] + '.' + optD['table']
+        series = optD['stable']
         recnums = optD['recnums']
         dbuser = pwd.getpwuid(os.getuid())[0]
         dbname = optD['dbname']
         dbhost = optD['dbhost']
         dbport = optD['dbport']
-        if 'doit' in optD:
-            doit = 1
-        else:
-            doit = 0
+        doit = optD['doit']
 
 if rv == RET_SUCCESS:
     # Connect to the database
