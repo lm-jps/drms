@@ -91,6 +91,7 @@ struct tm *t_ptr;
 char datestr[32];
 char *dptr;
 int soi_errno = NO_ERROR;
+int usr1_sig_flag = 0;
 int logvers = 0;
 
 //indexes into ptab for this sum_rm_n
@@ -160,6 +161,19 @@ void sighandler(sig)
       signal(SIGALRM, sighandler);
 }
 
+/* User signal 1 is sent by user production calling a sum_rm_stop.
+ * */
+void usr1_sig(int sig)
+{
+  write_log("%s usr1_sig received by sum_rm_1\n", datestring());
+  write_log("sum_rm_1 will exit at its next opportunity\n");
+  usr1_sig_flag = 1;
+  if(!active) {
+      write_log("%s sum_rm_1 exit from usr1_sig\n", datestring());
+      exit(0);
+  }
+}
+
 /* Called when get a SIGALRM every sleep_sec seconds.
 */
 void alrm_sig(int sig)
@@ -169,6 +183,10 @@ void alrm_sig(int sig)
   int norunflg, update;
   double bytesdeleted, availstore;
 
+  if(usr1_sig_flag) {
+    write_log("%s sum_rm_1 exit\n", datestring());
+    exit(0);
+  }
   if((tstfp=fopen(NEWLOG_FILE, "r"))) { //close current log & start new one
     write_log("sum_rm_1: Close this log %d\n", logvers);
     fclose(tstfp);
@@ -233,6 +251,10 @@ int stat_storage()
   struct statvfs vfs;
 
   for(j=0; j<MAX_PART-1; j++) { //for sum_rm_1 partitions
+    if(usr1_sig_flag) {
+      write_log("%s sum_rm_1 exit from usr1_sig\n", datestring());
+      exit(0);
+    }
     i = ixptab[j];              //index into ptab
     if(i == -1) break;
     pptr=(PART *)&ptab[i];
@@ -481,6 +503,7 @@ void setup()
       signal(SIGINT, sighandler);
   if (signal(SIGTERM, SIG_IGN) != SIG_IGN)
       signal(SIGTERM, sighandler);
+  signal(SIGUSR1, &usr1_sig);   //handle a signal 16 sent by sum_rm_stop
 
   /* if another "sum_rm DB" is running, abort */
   sprintf(lfile, "/tmp/sum_rm.%d.log", pid);
