@@ -76,7 +76,7 @@ int drms_cmdparams_get_int(CmdParams_t *parms, const char *name, int *status)
 {
    int statint = DRMS_SUCCESS;
    DRMS_Value_t value;
-   const char *str = drms_cmdparams_get_str(parms, name, status);
+   const char *str = drms_cmdparams_get_str(parms, name, &statint);
 
    if (statint == DRMS_SUCCESS)
    {
