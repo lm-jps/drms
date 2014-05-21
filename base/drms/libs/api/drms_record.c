@@ -5502,7 +5502,7 @@ static int getLinkFetchTempTable(char *tabname, size_t size)
  * dbFetchRecsFromList
  * 
  * Given a single original series and the name of a link in that series and a list of records in the original series,
- * retrieve from the DRMS database original-record-linked-record tuples.
+ * retrieve from the DRMS database original-record-linked-record (and prime-key values that join the two series) tuples.
  *
  * oSeriesName - The name of the original series that has records linked to a target series.
  * linkTempl - The link template that identifies the target series from which records are to be retrieved.
@@ -5929,8 +5929,9 @@ static DB_Binary_Result_t *dbFetchRecsFromList(DRMS_Env_t *env, const char *oSer
 
 /* processFetchedRecs
  *
- * Set the link->recnum field for a link for all records specified in dbres. The records in dbres belong to
- * the series oSeries. Since this field is already set for static links, linkTempl must be a template for
+ * Set the link->recnum field for a link for all records specified in dbres. The records in dbres contain 
+ * original series' recnums (the records are from series oSeries), target series' recnums, and the prime-key 
+ * values that link the two records. Since this field is already set for static links, linkTempl must be a template for
  * a dynamic link.
  *
  * dbres has info for just dynamic links. It contains the linked-record recnum that was obtained from the db. For 
@@ -6545,7 +6546,7 @@ DRMS_RecordSet_t *drms_record_retrievelinks(DRMS_Env_t *env, DRMS_RecordSet_t *r
             DRMS_Record_t *templRec = NULL;
             DB_Binary_Result_t *dbres = NULL;
             
-            /* Must iterate through mapOseriesTseriesCont. Key is original series and target is a container whose
+            /* Must iterate through mapOseriesTseriesCont. Key is original series and value is a container whose
              * key is link name and whose value is a list of original-series recnums. For each list visited
              * by this iteration, a query is done to fetch target-series recnums by joining records from a temp table
              * created from the original series (recnum, pkeyvals) with records in the target series. The join
@@ -6609,7 +6610,12 @@ DRMS_RecordSet_t *drms_record_retrievelinks(DRMS_Env_t *env, DRMS_RecordSet_t *r
                                  */
                                 
                                 /* The following two functions set the link->recnum field for the current
-                                 * original series and link. */
+                                 * original-series' link. */
+                                
+                                /* dbFetchRecsFromList() joins the original series and the target series so that we can 
+                                 * map each original series' record to a target series' record so we can fetch the 
+                                 * target series' recnum and put it in the link->recnum field. This is needed only 
+                                 * for dynamic links. */
                                 if ((dbres = dbFetchRecsFromList(env, oSeriesGet, link, recListO, NULL)) == NULL)
                                 {
                                     istat = DRMS_ERROR_BADDBQUERY;
@@ -6665,20 +6671,6 @@ DRMS_RecordSet_t *drms_record_retrievelinks(DRMS_Env_t *env, DRMS_RecordSet_t *r
                     
                     hiter_destroy(&iterOseries);
                     iterOseries = NULL;
-                    
-                    if (istat == DRMS_SUCCESS)
-                    {
-                        /* Finally, create and cache the linked-series DRMS_Record_ts. The required info is in
-                         * mapTseriesReclist. Iterate through that list and get the record information for each
-                         * record from the db. */
-                        rv = callRetrieveRecsPreparedQuery(env, mapTseriesReclist, &istat);
-                        if (rv)
-                        {
-                            istat = mergePreparedResults(&rvMerge, rv);
-                        }
-                    }
-                    
-                    hcon_destroy(&mapTseriesReclist);
                 }
                 else
                 {
@@ -6686,6 +6678,26 @@ DRMS_RecordSet_t *drms_record_retrievelinks(DRMS_Env_t *env, DRMS_RecordSet_t *r
                 }
                 
                 hcon_destroy(&mapOseriesTseriesCont);
+            }
+            
+            if (istat == DRMS_SUCCESS)
+            {
+                /* Finally, create and cache the linked-series DRMS_Record_ts. The required info is in
+                 * mapTseriesReclist. Iterate through that list and get the record information for each
+                 * record from the db. */
+                if (mapTseriesReclist)
+                {
+                    rv = callRetrieveRecsPreparedQuery(env, mapTseriesReclist, &istat);
+                    if (rv)
+                    {
+                        istat = mergePreparedResults(&rvMerge, rv);
+                    }
+                }
+            }
+            
+            if (mapTseriesReclist)
+            {
+                hcon_destroy(&mapTseriesReclist);
             }
         }
         
