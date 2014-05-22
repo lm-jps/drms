@@ -676,9 +676,10 @@ def configureComps(defs, mDefs):
                 minor = matchobj.group(2)
                 if isVersion(int(major), int(minor), ICC_MAJOR, ICC_MINOR):
                     hasicc = bool(1)
-            
+
         # Try gcc.
         if not hasicc:
+            rv = bool(0)
             cmd = 'gcc -v 2>&1'
             try:
                 ret = check_output(cmd, shell=True)
@@ -687,7 +688,7 @@ def configureComps(defs, mDefs):
                 print('Command ' + "'" + cmd + "'" + ' ran improperly.')
                 rv = bool(1)
 
-            if rv == bool(0):
+            if not rv:
                 regexp = re.compile(r".+gcc\s+version\s+(\d+)\.(\d+)", re.DOTALL)
                 matchobj = regexp.match(ret)
                 if matchobj is None:
@@ -699,6 +700,7 @@ def configureComps(defs, mDefs):
                         hasgcc = bool(1)
 
         # Try ifort.
+        rv = bool(0)
         cmd = 'ifort --version 2>&1'
         try:
             ret = check_output(cmd, shell=True)
@@ -720,6 +722,7 @@ def configureComps(defs, mDefs):
         
         # Try gfortran
         if not hasifort:
+            rv = bool(0)
             cmd = 'gfortran -v 2>&1'
             try:
                 ret = check_output(cmd, shell=True)
@@ -728,7 +731,7 @@ def configureComps(defs, mDefs):
                 print('Command ' + "'" + cmd + "'" + ' ran improperly.')
                 rv = bool(1)
 
-            if rv == bool(0):
+            if not rv:
                 regexp = re.compile(r".+gcc\s+version\s+(\d+)\.(\d+)", re.DOTALL)
                 matchobj = regexp.match(ret)
                 if matchobj is None:
@@ -739,7 +742,9 @@ def configureComps(defs, mDefs):
                     if isVersion(int(major), int(minor), GFORT_MAJOR, GFORT_MINOR):
                         hasgfort = bool(1)
         
-        # Append the compiler make variables to the make file 
+        # Append the compiler make variables to the make file
+        rv = bool(0)
+        
         if not hasicc and not hasgcc:
             print('Fatal error: Acceptable C compiler not found! You will be unable to build the DRMS library.', file=sys.stderr)
             rv = bool(1)
