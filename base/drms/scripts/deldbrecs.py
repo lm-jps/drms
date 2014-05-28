@@ -1,18 +1,41 @@
 #!/home/jsoc/bin/linux_x86_64/activepython
 
+
 import sys
+from ctypes import *
+import ctypes.util
 import os.path
 import pwd
 import re
-import psycopg2
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../libs/py'))
 from drmsCmdl import CmdlParser
 
 # Return codes
 RET_SUCCESS = 0
-RET_INVALIDARG = 1
-RET_DBCONNECT = 2
-RET_SQL = 3
+RET_CRTL = 1
+RET_INVALIDARG = 2
+RET_DBCONNECT = 3
+RET_SQL = 4
+
+# psycopg2 requires libc.so.6 version 2.5+. Test that now.
+LIBC = ctypes.cdll.LoadLibrary(ctypes.util.find_library('c'))
+VERSFXN = LIBC.gnu_get_libc_version
+VERSFXN.restype = c_char_p
+libcVers = str(VERSFXN(None), 'utf-8')
+regexp = re.compile(r'(\d+)\.(\d+)\S*')
+matchobj = regexp.match(libcVers)
+if matchobj is not None:
+    maj = int(matchobj.group(1))
+    min = int(matchobj.group(2))
+
+    if maj < 2 or (maj == 2 and min < 5):
+        print('This script requires a C runtime library of at least verision 2.5. The host machine has version ' + libcVers + '.', file=sys.stderr)
+        sys.exit(RET_CRTL)
+else:
+    print('Unable to check C runtime library version.', file=sys.stderr)
+    sys.exit(RET_CRTL)
+
+import psycopg2
 
 # Read arguments
 # (s)table      - The series table from which we are deleting records.
