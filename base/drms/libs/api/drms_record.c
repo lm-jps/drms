@@ -11935,7 +11935,7 @@ DRMS_RecordSet_t *drms_open_recordset(DRMS_Env_t *env,
 				      int *status)
 {
     DRMS_RecordSet_t *rs = NULL;
-    static long long guid = 1;
+    long long guid = -1;
     int stat = DRMS_SUCCESS;
     char *cursorquery = NULL;
     char cursorname[DRMS_MAXCURSORNAMELEN];
@@ -11998,7 +11998,16 @@ DRMS_RecordSet_t *drms_open_recordset(DRMS_Env_t *env,
                     {
                         *dot = '_';
                     }
-                    snprintf(cursorname, sizeof(cursorname), "%s_CURSOR%lld", seriesname, guid++);
+                    
+#ifdef DRMS_CLIENT
+                    drms_send_commandcode(env->session->sockfd, DRMS_GETTMPGUID);
+                    guid = Readlonglong(env->session->sockfd);
+#else
+                    /* has direct access to drms_server.c. */
+                    guid = drms_server_gettmpguid(NULL);
+#endif /* DRMS_CLIENT */
+                    
+                    snprintf(cursorname, sizeof(cursorname), "%s_CURSOR%lld", seriesname, guid);
                     
                     /* pQuery has a limit statement in it - remove that else FETCH could 
                      * operate on a subset of the total number of records. */
