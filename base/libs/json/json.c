@@ -801,38 +801,39 @@ json_strip_white_spaces (char *text)
 
 
 char *
-json_format_string (char *text)
+json_format_string (const char *text)
 {
-	size_t pos = 0;
+	size_t pos = 0, text_length;
 	unsigned int indentation = 0;	/* the current indentation level */
 	unsigned int i;		/* loop iterator variable */
 	char loop;
-
+    
 	rcstring *output;
-
-	output = rcs_create (strlen (text));
-	while (pos < strlen (text))
+	text_length = strlen (text);
+    
+	output = rcs_create (text_length);
+	while (pos < text_length)
 	{
 		switch (text[pos])
 		{
-		case '\x20':
-		case '\x09':
-		case '\x0A':
-		case '\x0D':	/* JSON insignificant white spaces */
+            case '\x20':
+            case '\x09':
+            case '\x0A':
+            case '\x0D':	/* JSON insignificant white spaces */
 			pos++;
 			break;
-
-		case '{':
+            
+            case '{':
 			indentation++;
-			rcs_catc (output, '{');
+			rcs_catcs (output, "{\n", 2);
 			for (i = 0; i < indentation; i++)
 			{
 				rcs_catc (output, '\t');
 			}
 			pos++;
 			break;
-
-		case '}':
+            
+            case '}':
 			indentation--;
 			rcs_catc (output, '\n');
 			for (i = 0; i < indentation; i++)
@@ -842,13 +843,13 @@ json_format_string (char *text)
 			rcs_catc (output, '}');
 			pos++;
 			break;
-
-		case ':':
+            
+            case ':':
 			rcs_catcs (output, ": ", 2);
 			pos++;
 			break;
-
-		case ',':
+            
+            case ',':
 			rcs_catcs (output, ",\n", 2);
 			for (i = 0; i < indentation; i++)
 			{
@@ -856,12 +857,12 @@ json_format_string (char *text)
 			}
 			pos++;
 			break;
-
-		case '\"':	/* open string */
+            
+            case '\"':	/* open string */
 			rcs_catc (output, text[pos]);
 			pos++;
 			loop = 1;	/* inner string loop trigger is enabled */
-			while (loop)	/* parse the inner part of the string   ///TODO rethink this loop */
+			while (loop)
 			{
 				if (text[pos] == '\\')	/* escaped sequence */
 				{
@@ -877,24 +878,24 @@ json_format_string (char *text)
 				{
 					loop = 0;
 				}
-
+                
 				rcs_catc (output, text[pos]);
-
+                
 				pos++;
-				if (pos >= strlen (text))
+				if (pos >= text_length)
 				{
 					loop = 0;
 				}
 			}
 			break;
-
-		default:
+            
+            default:
 			rcs_catc (output, text[pos]);
 			pos++;
 			break;
 		}
 	}
-
+    
 	return rcs_unwrap (output);
 }
 

@@ -242,7 +242,7 @@ Formats a JSON markup text contained in the given string
 @param text a JSON formatted document
 @return a char string holding the formated document
 **/
-	char *json_format_string (char *text);
+	char *json_format_string (const char *text);
 
 
 /**
