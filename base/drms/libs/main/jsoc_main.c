@@ -115,30 +115,16 @@ session started by @a module. @a value can be either -1 (don't archive data, and
 storage unit's retention expires, delete all DRMS records whose data resides within this
 storage unit), 0 (don't archive, but do not delete any DRMS records), or 1 (archive data when 
 the storage unit's retention expires).
-\arg \c DRMS_RETENTION For all storage units allocated during the module's session, the
- value of this argument overrides the jsd value. Each newly created storage unit will
- be given abs(argument value) for its days of retention. For each storage unit created in previous
- module sessions and referenced by the record-set specification, the retention
- will be set to argument value if the argument value is greater than zero, unless the argument value
- is less than the current retention value. If that is true, then the retention of the storage unit
- will be decreased to the argument value only if the the module is connected to the database
- as the db user who owns the dataseries' series table, OR if db user is a production user 
- (i.e., prodution or jsocprod). If the db user is not the owner or a production user, then
- the storage unit retention will not be modified. In other words, a user cannot decrease 
- a storage unit's retention value, unless that user is the owner of the dataseries, or the user
- is a production user.  If the retention argument value is less than 
- zero, then the storage unit's retention value will be set to abs(value), but only if the 
- change would result in an increase in the retention time. In other words, a negative argument value can
- only increase a storage unit's retention value. The "series owner" is the db user who owns the "series table".
- The series table is the PostgreSQL table that contains the DRMS series' variable record values, and 
- its name is lc(series name) (for example, if the series is hmi.M_45s, then the series 
- table is named hmi.m_45s). The list of production users is stored in the database table
- su_production.produsers in db jsoc on hmidb. You must be a superuser to modify the contents of
- this table. Changes in a session to a previously existing 
- storage unit require that the referred-to storage unit be "retrieved" from SUMS with a SUM_get()
- call (e.g., call drms_segment_read() or drms_stage_records() with this storage unit's SUNUM as
- an argument. This can be achieved by calling show_info -P). One further caveat: this argument
- cannot be specified as an environment variable. 
+\arg \c DRMS_RETENTION For all existing storage units accessed during the module's session, the
+ value of this argument will be used update the retention time. The value is a positive 15-bit number.
+ If the current retention time is greater than the time specified with this value, then this
+ argument will have no effect. But if the current retention time is less than the time specified 
+ by this value, then SUMS will ensure that the SUs touched will have a retention time AT LEAST
+ as large as this argument's value. Setting this argument will never reduce the retention time
+ of any existing storage unit. This argument cannot be specified as an environment variable.
+\arg \c DRMS_NEWSURETENTION The value of this argument will be the retention time for all new
+ storage units created. The value is a positive 15-bit number. It will override the JSD retention time 
+ value specified for the series being operated on.
 \arg \c DRMS_QUERY_MEM Sets the memory maximum for a database query.
  \arg \c DRMS_DBTIMEOUT The value is the number of milliseconds any underlying database query is
  allowed to run, after which the database will issue an error, causing the module to terminate
@@ -376,6 +362,8 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
   const char *dbhost, *dbuser, *dbpasswd, *dbname, *sessionns;
   int printrel = 0;
   char reservebuf[128];
+  int16_t retention;
+  int16_t newsuretention;
 
    /* Initialize globals here */
    memset(&cmdparams, 0, sizeof(CmdParams_t));
@@ -386,11 +374,11 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
   /* Parse command line parameters. */
   snprintf(reservebuf, 
            sizeof(reservebuf), 
-           "%s,%s,%s,%s,%s,%s", 
+           "%s,%s,%s,%s,%s,%s,%s,%s",
            "L,Q,V,jsocmodver", 
            kARCHIVEARG,
            kRETENTIONARG,
-           kJsdRetention,
+           kNewSuRetention,
            kQUERYMEMARG,
            kLoopConn,
            kDBTimeOut,
@@ -462,15 +450,63 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
         archive = INT_MIN;
      }
   }
-  int retention = INT_MIN;
-  if (drms_cmdparams_exists(&cmdparams, kRETENTIONARG)) {
-    retention = drms_cmdparams_get_int(&cmdparams, kRETENTIONARG, NULL);
-  }
     
-    int jsdretention = 0;
-    if (drms_cmdparams_exists(&cmdparams, kJsdRetention)) 
+    retention = INT16_MIN;
+    char errbuf[128];
+    
+    if (drms_cmdparams_exists(&cmdparams, kRETENTIONARG))
     {
-        jsdretention = (drms_cmdparams_get_int(&cmdparams, kJsdRetention, NULL) != 0);
+        retention = drms_cmdparams_get_int16(&cmdparams, kRETENTIONARG, &status);
+        if (status != DRMS_SUCCESS)
+        {
+            if (status == DRMS_ERROR_INVALIDCMDARGCONV)
+            {
+                snprintf(errbuf, sizeof(errbuf), "The value for %s must be a 15-bit positive integer.", kRETENTIONARG);
+                fprintf(stderr, errbuf);
+            }
+            
+            snprintf(errbuf, sizeof(errbuf), "Invalid value for %s.", kRETENTIONARG);
+            fprintf(stderr, errbuf);
+            return 1;
+        }
+        else if (retention < 0)
+        {
+            snprintf(errbuf, sizeof(errbuf), "The value for %s must be a 15-bit positive integer.", kRETENTIONARG);
+            fprintf(stderr, errbuf);
+            return 1;
+        }
+        else
+        {
+            retention = (int16_t)(retention & 0x7FFF);
+        }
+    }
+    
+    newsuretention = INT16_MIN;
+    if (drms_cmdparams_exists(&cmdparams, kNewSuRetention))
+    {
+        newsuretention = drms_cmdparams_get_int16(&cmdparams, kNewSuRetention, &status);
+        if (status != DRMS_SUCCESS)
+        {
+            if (status == DRMS_ERROR_INVALIDCMDARGCONV)
+            {
+                snprintf(errbuf, sizeof(errbuf), "The value for %s must be a 15-bit positive integer.", kNewSuRetention);
+                fprintf(stderr, errbuf);
+            }
+            
+            snprintf(errbuf, sizeof(errbuf), "Invalid value for %s.", kNewSuRetention);
+            fprintf(stderr, errbuf);
+            return 1;
+        }
+        else if (newsuretention < 0)
+        {
+            snprintf(errbuf, sizeof(errbuf), "The value for %s must be a 15-bit positive integer.", kNewSuRetention);
+            fprintf(stderr, errbuf);
+            return 1;
+        }
+        else
+        {
+            newsuretention = (int16_t)(newsuretention & 0x7FFF);
+        }
     }
     
   int query_mem = 512;
@@ -559,8 +595,8 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
   db_handle = drms_env->session->db_handle;
 
   drms_env->archive = archive;
-  drms_env->retention = retention;
-  drms_env->jsdsgetret = jsdretention;
+  drms_env->retention = retention; /* SUM_get() retention. */
+  drms_env->newsuretention = newsuretention; /* New SU retention. */
   drms_env->query_mem = query_mem;
     drms_env->dbtimeout = dbtimeout;
   drms_env->verbose = verbose;

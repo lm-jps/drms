@@ -632,16 +632,18 @@ static int cmdparams_conv2type(const char *sdata,
                 intval = CP_MISSING_LONGLONG;
                 status = CMDPARAMS_INVALID_CONVERSION;
             }
-            
-            XASSERT(sizeof(intval) <= size);
-            if (sizeof(intval) <= size)
-            {
-                memcpy(bufout, &intval, sizeof(intval));
-                status = CMDPARAMS_SUCCESS;
-            }
             else
             {
-                status = CMDPARAMS_INVALID_CONVERSION;
+                XASSERT(sizeof(intval) <= size);
+                if (sizeof(intval) <= size)
+                {
+                    memcpy(bufout, &intval, sizeof(intval));
+                    status = CMDPARAMS_SUCCESS;
+                }
+                else
+                {
+                    status = CMDPARAMS_INVALID_CONVERSION;
+                }
             }
             
             break;
@@ -652,17 +654,19 @@ static int cmdparams_conv2type(const char *sdata,
             {
                 status = CMDPARAMS_INVALID_CONVERSION;
                 fval = CP_MISSING_FLOAT;
-            } 
-            
-            XASSERT(sizeof(fval) <= size);
-            if (sizeof(fval) <= size)
-            {
-                memcpy(bufout, &fval, sizeof(fval));
-                status = CMDPARAMS_SUCCESS;
             }
             else
             {
-                status = CMDPARAMS_INVALID_CONVERSION;
+                XASSERT(sizeof(fval) <= size);
+                if (sizeof(fval) <= size)
+                {
+                    memcpy(bufout, &fval, sizeof(fval));
+                    status = CMDPARAMS_SUCCESS;
+                }
+                else
+                {
+                    status = CMDPARAMS_INVALID_CONVERSION;
+                }
             }
             
             break;
@@ -673,17 +677,19 @@ static int cmdparams_conv2type(const char *sdata,
             {
                 status = CMDPARAMS_INVALID_CONVERSION;
                 dval = CP_MISSING_DOUBLE;
-            } 
-            
-            XASSERT(sizeof(dval) <= size);
-            if (sizeof(dval) <= size)
-            {
-                memcpy(bufout, &dval, sizeof(dval));   
-                status = CMDPARAMS_SUCCESS;
             }
             else
             {
-                status = CMDPARAMS_INVALID_CONVERSION;
+                XASSERT(sizeof(dval) <= size);
+                if (sizeof(dval) <= size)
+                {
+                    memcpy(bufout, &dval, sizeof(dval));
+                    status = CMDPARAMS_SUCCESS;
+                }
+                else
+                {
+                    status = CMDPARAMS_INVALID_CONVERSION;
+                }
             }
             
             break;
@@ -1180,12 +1186,19 @@ int cmdparams_parse (CmdParams_t *parms, int argc, char *argv[]) {
 
   parms->argc = iarg;
 
-  /*  Parse all command line tokens (including contents of @references) */
-  if ((status = cmdparams_parsetokens (parms, argc-1, argv+1, 0)))
-    return status;
-  if (cmdparams_exists (parms, "H") &&
-      cmdparams_get_int (parms, "H", NULL) != 0)
-    return CMDPARAMS_QUERYMODE;
+    /*  Parse all command line tokens (including contents of @references) */
+    if ((status = cmdparams_parsetokens (parms, argc-1, argv+1, 0)))
+        return status;
+    if (cmdparams_exists (parms, "H") &&
+        cmdparams_get_int (parms, "H", NULL) != 0)
+        return CMDPARAMS_QUERYMODE;
+
+    
+    /* This code belows checks for the presence of required arguments, so it must follow cmdparams_parsetokens. However, 
+     * cmdparams_parsetokens() sets the CmdParams_Arg_t::type field, which requires the code below to have already run (it
+     * sets the data type of the cmd-line arguments. Sigh.
+     *
+     * Modify the defps code below to set the CmdParams_Arg_t::type field. */
 					  /* Parse declared argument values. */
   if (defps) 
   {
@@ -1289,12 +1302,18 @@ int cmdparams_parse (CmdParams_t *parms, int argc, char *argv[]) {
 
       /* insert into parms->defps */
       hcon_insert(parms->defps, defps->name, &defps);
+        
+        /* Set the CmdParams_Arg_t::type field, if this argument appears on the cmd-line. */
+        if ((thisarg = LookUpArgByName(parms, defps->name)))
+        {
+            thisarg->type = defps->type;
+        }
 
       defps++;
     }
 	/*  Might want to report unparsed members following end declaration  */
   }
-
+    
   return hcon_size(parms->args);  
 }
 
@@ -2031,8 +2050,8 @@ static int cmdparams_get_ints(CmdParams_t *parms, char *name, int64_t **arr, int
       {
          if (arg->type != ARG_INTS)
          {
-            fprintf(stderr, "Argument '%s' is not an array of integers.\n", name);
-            stat = CMDPARAMS_INVALID_CONVERSION;
+             fprintf(stderr, "Argument '%s' is not an array of integers.\n", name);
+             stat = CMDPARAMS_INVALID_CONVERSION;
          }
          else
          {
@@ -2110,28 +2129,145 @@ int cmdparams_get_intarr(CmdParams_t *parms, char *name, int **arr, int *status)
  * must free the returned array in parameter arr. */
 int cmdparams_get_int64arr(CmdParams_t *parms, char *name, int64_t **arr, int *status)
 {
-   int stat = CMDPARAMS_SUCCESS;
-   int nelems = 0;
-   int64_t *arr64 = NULL;
-
-   if (arr)
-   {
-      nelems = cmdparams_get_ints(parms, name, &arr64, &stat);
-      if (stat == CMDPARAMS_SUCCESS)
-      {
-         /* arr64 is a pointer to the internal 64-bit array - don't free! */
-         *arr = (int64_t *)malloc(nelems * sizeof(int64_t));
-         memcpy(*arr, arr64, nelems * sizeof(int64_t));
-      }
-   }
-
-   if (status)
-   {
-      *status = stat;
-   }
-
-   return nelems;
+    int stat = CMDPARAMS_SUCCESS;
+    int nelems = 0;
+    CmdParams_Arg_t *arg = NULL;
+    int64_t *arr64 = NULL;
+    
+    if (arr)
+    {
+        arg = LookUpArgByName(parms, name);
+        
+        if (arg)
+        {
+            if (arg->type == ARG_INTS)
+            {
+                /* cmdparams_get_ints() succeeds only if the arg type is ARG_INTS. However, we could be converting
+                 * from a different argument type (e.g., ARG_STRING) to int64. If that is the case, convert the
+                 * stored string values to int64. */
+                nelems = cmdparams_get_ints(parms, name, &arr64, &stat);
+                if (stat == CMDPARAMS_SUCCESS)
+                {
+                    /* arr64 is a pointer to the internal 64-bit array - don't free! */
+                    *arr = (int64_t *)malloc(nelems * sizeof(int64_t));
+                    memcpy(*arr, arr64, nelems * sizeof(int64_t));
+                }
+            }
+            else
+            {
+                char valbuf[kARGSIZE];
+                char *tmp = NULL;
+                char *list = NULL;
+                char *next = NULL;
+                char *curr = NULL;
+                LinkedList_t *listvals = NULL;
+                ListNode_t *node = NULL;
+                int ival;
+                
+                tmp = strdup(arg->strval); /* must free */
+                if (tmp)
+                {
+                    str_compress(tmp); /* remove white space  */
+                    list = strip_delimiters(tmp); /* removes (), [], or {}, but ONLY if the first char and last char contain the matching
+                                                   * delimiter. And you lose your pointer to the beginning of the string passed to it. */
+                }
+                
+                listvals = list_llcreate(kARGSIZE, NULL);
+                
+                if (tmp && listvals)
+                {
+                    next = list;
+                    for (next = list, nelems = 0; next;)
+                    {
+                        curr = next;
+                        if ((next = (char *)strchr(curr, ',')) != NULL)
+                        {
+                            *next = 0;
+                            next++;
+                        }
+                        
+                        if (*curr == '\0')
+                        {
+                            continue;
+                        }
+                        
+                        /* curr points to the current integer value. */
+                        
+                        /* Be careful - inserttail is going to copy kARGSIZE bytes into a new list node,
+                         * so you can't use nptr as the final argument to inserttail, since nptr
+                         * might point to something less than kARGSIZE bytes.
+                         */
+                        snprintf(valbuf, sizeof(valbuf), "%s", curr);
+                        list_llinserttail(listvals, valbuf);
+                        
+                        nelems++;
+                    }
+                }
+                else
+                {
+                    stat = CMDPARAMS_OUTOFMEMORY;
+                }
+                
+                if (stat == CMDPARAMS_SUCCESS)
+                {
+                    *arr = (int64_t *)calloc(nelems, sizeof(int64_t));
+                    if (*arr)
+                    {
+                        list_llreset(listvals);
+                        ival = 0;
+                        while ((node = list_llnext(listvals)) != NULL)
+                        {
+                            if ((stat = cmdparams_conv2type(node->data, ARG_INT, (char *)(*arr) + sizeof(int64_t) * ival, sizeof(int64_t))) != CMDPARAMS_SUCCESS)
+                            {
+                                break;
+                            }
+                            
+                            ival++;
+                        }
+                        
+                        if (stat != CMDPARAMS_SUCCESS)
+                        {
+                            free(*arr);
+                            *arr = NULL;
+                            nelems = 0;
+                        }
+                    }
+                    else
+                    {
+                        stat = CMDPARAMS_OUTOFMEMORY;
+                    }
+                }
+                
+                if (listvals)
+                {
+                    list_llfree(&listvals);
+                }
+                
+                if (tmp)
+                {
+                    free(tmp);
+                    tmp = NULL;
+                }
+            }
+        }
+        else
+        {
+            fprintf(stderr, "Unknown keyword name '%s'.\n", name);
+            stat = CMDPARAMS_UNKNOWN_PARAM;
+        }
+    }
+    
+    if (status)
+    {
+        *status = stat;
+    }
+    
+    return nelems;
 }
+
+
+
+
 
 int32_t cmdparams_get_int32 (CmdParams_t *parms, char *name, int *status) {
     int stat;

@@ -101,6 +101,35 @@ int drms_cmdparams_get_int(CmdParams_t *parms, const char *name, int *status)
    }
 }
 
+int16_t drms_cmdparams_get_int16(CmdParams_t *parms, const char *name, int *status)
+{
+    int statint = DRMS_SUCCESS;
+    DRMS_Value_t value;
+    const char *str = drms_cmdparams_get_str(parms, name, &statint);
+    
+    if (statint == DRMS_SUCCESS)
+    {
+        if (drms_sscanf2(str, NULL, 0, DRMS_TYPE_SHORT, &value) == -1)
+        {
+            statint = DRMS_ERROR_INVALIDCMDARGCONV;
+        }
+    }
+    
+    if (status)
+    {
+        *status = statint;
+    }
+    
+    if (statint == DRMS_SUCCESS)
+    {
+        return (int16_t)(value.value.int_val);
+    }
+    else
+    {
+        return DRMS_MISSING_SHORT;
+    }
+}
+
 /* Unlike the other functions in this family, if there is a problem, this function returns NULL. */
 DRMS_Value_t *drms_cmdparams_get(CmdParams_t *parms, const char *name, DRMS_Type_t type, int *status)
 {

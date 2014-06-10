@@ -7145,3 +7145,23 @@ int drms_series_hastemptab(const char *query)
 
     return rv;
 }
+
+int16_t drms_series_getstagingretention(DRMS_SeriesInfo_t *si)
+{
+   if (si && si->seriesname && *si->seriesname)
+   {
+      return (int16_t)((si->retention >> 16) & 0x00007FFF);
+   }
+
+   return INT16_MIN;
+}
+
+int16_t drms_series_getnewsuretention(DRMS_SeriesInfo_t *si)
+{
+   if (si && si->seriesname && *si->seriesname)
+   {
+      return (int16_t)(si->retention & 0x00007FFF);
+   }
+
+   return INT16_MIN;
+}

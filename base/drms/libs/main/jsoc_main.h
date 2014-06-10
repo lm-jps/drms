@@ -38,7 +38,7 @@ parsing, and default-parameter initialization.
 #define kSERVERWAITARG "DRMS_SERVER_WAIT"
 #define kLoopConn "loopconn"
 #define kDBTimeOut "DRMS_DBTIMEOUT"
-#define kJsdRetention "DRMS_JSDRETENTION"
+#define kNewSuRetention "DRMS_NEWSURETENTION"
 #define kCreateShadows "DRMS_SHADOW"
 
 extern CmdParams_t cmdparams;

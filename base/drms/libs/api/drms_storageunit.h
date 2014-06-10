@@ -21,5 +21,6 @@ int drms_su_getexportserver(DRMS_Env_t *env,
                             long long sunum, 
                             char *expserver, 
                             int size);
+int drms_su_setretention(DRMS_Env_t *env, int16_t newRetention, int nsus, long long *sunums);
 
 #endif

@@ -337,8 +337,8 @@ struct DRMS_Env_struct
   DS_node_t *templist; /* List of temporary records created for each series 
 			by this session. */
 
-  int retention; /* retention in days. If not -1 then this value overrides
-		   the retention time for storage units created by this 
+  int16_t retention; /* retention in days. If not -1 then this value overrides
+		   the retention time for storage units accessed during this 
 		   session. Server only. */
   int query_mem; /* Maximum amount of memory (in MB) used by a single record
 		    query. */
@@ -397,7 +397,7 @@ struct DRMS_Env_struct
   int loopconn;
   int dbtimeout; /* DB queries running longer than this number milliseconds will be terminated.
                     * By default this is INT_MIN, which implies no timeout. */
-  int jsdsgetret; /* If 1, then use the retention value of the series' jsd when calling SUM_get(). */
+  int16_t newsuretention; /* The retention time from the JSD, possibly overridden with the DRMS_NEWSURETENTION command-line argument. */
   int sumssafe; /* If 0, then don't call sums because DRMS timed-out waiting for SUMS. */
   int createshadows;  /* 1 if it is okay for module code to attempt to create shadow tables. */
 };
@@ -857,13 +857,15 @@ typedef struct  DRMS_KeywordInfo_struct
 
   int kwflags;                    /* See DRMS_KeywordFlag_enum for the definitions
                                    * of these flags.  These flags are stored as bits
-                                   * of a 32-bit integer, and saved in psql as
-                                   * the "persegment" column in the "drm_keyword"
-                                   * table.
+                                   * of a 16-bit integer, and saved in PG in
+                                   * the lower 16 bits of the "persegment" column of the "drms_keyword"
+                                   * table. The upper 16 bits contains the rank of the keyword.
                                    */
   int rank;                       /* The order in which this keyword was created
                                    * during drms_insert_series(). 0 means it was
-                                   * the first keyword in its series. */
+                                   * the first keyword in its series. This is stored in PG as
+                                   * a 16-bit integer in the upper 16 bits of the "persegment"
+                                   * column of the "drms_keyword" table. */
 
 } DRMS_KeywordInfo_t;
 

@@ -2123,7 +2123,6 @@ DRMS_RecordSet_t *drms_open_nrecords(DRMS_Env_t *env,
                                      int n,
                                      int *status)
 {
-    char *allvers = NULL;
     DRMS_RecordSet_t *rs = NULL;
     DRMS_Record_t **recs = NULL;
     int statint = DRMS_SUCCESS;
@@ -12409,7 +12408,7 @@ int drms_count_records(DRMS_Env_t *env, const char *recordsetname, int *status)
         {
             if (settypes[iSet] == kRecordSetType_DRMS)
             {
-                /* oneSet may have a segement specifier - strip that off and 
+                /* oneSet may have a segment specifier - strip that off and 
                  * generate the HContainer_t that contains the requested segment 
                  * names. */
                 actualSet = strdup(oneSet);
@@ -12537,112 +12536,152 @@ DRMS_Array_t *drms_record_getvector(DRMS_Env_t *env,
    int keys = 0;
    DB_Binary_Result_t *bres=NULL;
    DRMS_Array_t *vectors=NULL;
-   int allvers = 0;
     HContainer_t *firstlast = NULL;
     int recnumq;
 
-    stat = drms_recordset_query(env, recordsetname, &where, &pkwhere, &npkwhere, &seriesname, &filter, &mixed, &allvers, &firstlast, &pkwhereNFL, &recnumq);
-   if (stat)
-     goto failure;
+    int iSet;
+    char *allvers = NULL; /* If 'y', then don't do a 'group by' on the primekey value.
+                           * The rationale for this is to allow users to get all versions
+                           * of the requested DRMS records */
+    char **sets = NULL;
+    DRMS_RecordSetType_t *settypes = NULL; /* a maximum doesn't make sense */
+    char **snames = NULL;
+    char **filts = NULL;
+    int nsets = 0;
+    DRMS_RecQueryInfo_t rsinfo; /* Filled in by parser as it encounters elements. */
 
-   query = drms_query_string(env, 
-                             seriesname, 
-                             where, 
-                             pkwhere,
-                             npkwhere,
-                             filter, 
-                             mixed, 
-                             DRMS_QUERY_FL, 
-                             &unique, 
-                             keylist, 
-                             allvers,
-                             firstlast,
-                             pkwhereNFL,
-                             recnumq,
-                             0);
-   if (!query)
-     goto failure;
-    
-    /* query may contain more than one SQL command, but drms_query_bin does not 
-     * support this. If this is the case, then the first command will be a command that
-     * creates a temporary table (used by the second command). So, we need to separate the 
-     * command, and issue the temp-table command separately. */
-    if (ParseAndExecTempTableSQL(env->session, &query))
+
+    /* You cannot call drms_recordset_query() on recordsetname. recordsetname has not been parsed at all.
+     * It might be an @file, or a comma-separated list of record-set specifications. */
+    stat = ParseRecSetDesc(recordsetname, &allvers, &sets, &settypes, &snames, &filts, &nsets, &rsinfo);
+
+    if (stat)
     {
-        stat = DRMS_ERROR_QUERYFAILED;
-        fprintf(stderr, "Failed in drms_record_getvector, query = '%s'\n",query);
-        goto failure;
+       goto failure;
     }
 
-   bres = drms_query_bin(env->session,  query);
+    for (iSet = 0; stat == DRMS_SUCCESS && iSet < nsets; iSet++)
+    {
+       char *oneSet = sets[iSet];
 
-   if (bres)
-   {
-      int col, row;
-      int dims[2];
-      dims[0] = keys = bres->num_cols;
-      dims[1] = count = bres->num_rows;
-      vectors = drms_array_create(type, 2, dims, NULL, &stat);
-      if (stat) goto failure;
-      drms_array2missing(vectors);
-      for (col=0; col<keys; col++)
-      {
-         DB_Type_t db_type = bres->column[col].type;
-         for (row=0; row<count; row++)
-         {
-            int8_t *val = (int8_t *)(vectors->data) + (count * col + row) * drms_sizeof(type);
-            char *db_src = bres->column[col].data + row * bres->column[col].size;
-            if (!bres->column[col].is_null[row])
-              switch(type)
-              {
-                 case DRMS_TYPE_CHAR:
-                   *(char *)val = dbtype2char(db_type,db_src);
-                   break;
-                 case DRMS_TYPE_SHORT:
-                   *(short *)val = dbtype2short(db_type,db_src);
-                   break;
-                 case DRMS_TYPE_INT:
-                   *(int *)val = dbtype2longlong(db_type,db_src);
-                   break;
-                 case DRMS_TYPE_LONGLONG:
-                   *(long long *)val = dbtype2longlong(db_type,db_src);
-                   break;
-                 case DRMS_TYPE_FLOAT:
-                   *(float *)val = dbtype2float(db_type,db_src);
-                   break;
-                 case DRMS_TYPE_DOUBLE:
-                   *(double *)val = dbtype2double(db_type,db_src);
-                   break;
-                 case DRMS_TYPE_TIME:
-                   *(TIME *)val = dbtype2double(db_type,db_src);
-                   break;
-                 case DRMS_TYPE_STRING:
-                   if (db_type ==  DB_STRING || db_type ==  DB_VARCHAR)
-                     *(char **)val = strdup((char *)db_src);
-                   else
-                   {
-		      int len = db_binary_default_width(db_type);
-                      *(char **)val = (char *)malloc(len);
-                      XASSERT(*(char **)val);
-		      dbtype2str(db_type, db_src, len, *(char **)val);
-                   }
-                   break;
-                 default:
-                   fprintf(stderr, "ERROR: Unhandled DRMS type %d\n",(int)type);
-                   XASSERT(0);
+       if (oneSet && strlen(oneSet) > 0)
+       {
+          if (settypes[iSet] == kRecordSetType_DRMS)
+          {
+             /* oneSet may have a segement specifier - strip that off and
+              * generate the HContainer_t that contains the requested segment
+              * names. */
+                stat = drms_recordset_query(env, oneSet, &where, &pkwhere, &npkwhere, &seriesname, &filter, &mixed, NULL, &firstlast, &pkwhereNFL, &recnumq);
+                if (stat)
+                {
                    goto failure;
-              } // switch
-         } // row 
-      } // col
-      if (seriesname) free(seriesname);
-      if (query) free(query);
-      if (where) free(where);
-      if (pkwhere) free(pkwhere);
-      if (npkwhere) free(npkwhere);
-       if (pkwhereNFL) hcon_destroy(&pkwhereNFL);
-      if (status) *status = DRMS_SUCCESS;
-      return(vectors);
-   } // bres
+                }
+
+                query = drms_query_string(env, 
+                                          seriesname, 
+                                          where, 
+                                          pkwhere,
+                                          npkwhere,
+                                          filter, 
+                                          mixed, 
+                                          DRMS_QUERY_FL, 
+                                          &unique, 
+                                          keylist, 
+                                          allvers[iSet] == 'y',
+                                          firstlast,
+                                          pkwhereNFL,
+                                          recnumq,
+                                          0);
+                if (!query)
+                {
+                   goto failure;
+                }
+                
+                /* query may contain more than one SQL command, but drms_query_bin does not 
+                 * support this. If this is the case, then the first command will be a command that
+                 * creates a temporary table (used by the second command). So, we need to separate the 
+                 * command, and issue the temp-table command separately. */
+                if (ParseAndExecTempTableSQL(env->session, &query))
+                {
+                   stat = DRMS_ERROR_QUERYFAILED;
+                   fprintf(stderr, "Failed in drms_record_getvector, query = '%s'\n",query);
+                   goto failure;
+                }
+                
+                bres = drms_query_bin(env->session,  query);
+                
+                if (bres)
+                {
+                   int col, row;
+                   int dims[2];
+                   dims[0] = keys = bres->num_cols;
+                   dims[1] = count = bres->num_rows;
+                   vectors = drms_array_create(type, 2, dims, NULL, &stat);
+                   if (stat) goto failure;
+                   drms_array2missing(vectors);
+                   for (col=0; col<keys; col++)
+                   {
+                      DB_Type_t db_type = bres->column[col].type;
+                      for (row=0; row<count; row++)
+                      {
+                         int8_t *val = (int8_t *)(vectors->data) + (count * col + row) * drms_sizeof(type);
+                         char *db_src = bres->column[col].data + row * bres->column[col].size;
+                         if (!bres->column[col].is_null[row])
+                           switch(type)
+                           {
+                              case DRMS_TYPE_CHAR:
+                                *(char *)val = dbtype2char(db_type,db_src);
+                                break;
+                              case DRMS_TYPE_SHORT:
+                                *(short *)val = dbtype2short(db_type,db_src);
+                                break;
+                              case DRMS_TYPE_INT:
+                                *(int *)val = dbtype2longlong(db_type,db_src);
+                                break;
+                              case DRMS_TYPE_LONGLONG:
+                                *(long long *)val = dbtype2longlong(db_type,db_src);
+                                break;
+                              case DRMS_TYPE_FLOAT:
+                                *(float *)val = dbtype2float(db_type,db_src);
+                                break;
+                              case DRMS_TYPE_DOUBLE:
+                                *(double *)val = dbtype2double(db_type,db_src);
+                                break;
+                              case DRMS_TYPE_TIME:
+                                *(TIME *)val = dbtype2double(db_type,db_src);
+                                break;
+                              case DRMS_TYPE_STRING:
+                                if (db_type ==  DB_STRING || db_type ==  DB_VARCHAR)
+                                  *(char **)val = strdup((char *)db_src);
+                                else
+                                {
+                                   int len = db_binary_default_width(db_type);
+                                   *(char **)val = (char *)malloc(len);
+                                   XASSERT(*(char **)val);
+                                   dbtype2str(db_type, db_src, len, *(char **)val);
+                                }
+                                break;
+                              default:
+                                fprintf(stderr, "ERROR: Unhandled DRMS type %d\n",(int)type);
+                                XASSERT(0);
+                                goto failure;
+                           } // switch
+                      } // row 
+                   } // col
+                   if (seriesname) free(seriesname);
+                   if (query) free(query);
+                   if (where) free(where);
+                   if (pkwhere) free(pkwhere);
+                   if (npkwhere) free(npkwhere);
+                   if (pkwhereNFL) hcon_destroy(&pkwhereNFL);
+                   if (status) *status = DRMS_SUCCESS;
+                   return(vectors);
+                } // bres
+          } // kRecordSetType_DRMS
+       } // oneSet
+    } // iSet - loop over sets.
+
+    FreeRecSetDescArr(&allvers, &sets, &settypes, &snames, &filts, nsets);
 
  failure:
    if (seriesname) free(seriesname);
@@ -12651,6 +12690,7 @@ DRMS_Array_t *drms_record_getvector(DRMS_Env_t *env,
    if (pkwhere) free(pkwhere);
    if (npkwhere) free(npkwhere);
     if (pkwhereNFL) hcon_destroy(&pkwhereNFL);
+    FreeRecSetDescArr(&allvers, &sets, &settypes, &snames, &filts, nsets);
    if (status) *status = stat;
    return(NULL);
 }

@@ -257,4 +257,6 @@ int drms_series_hastemptab(const char *query);
 char *drms_series_createPkeyList(DRMS_Env_t *env, const char *series, const char *prefix, const char *suffix, char *pkeyarr[], int *npkey, int *status);
 char *drms_series_createPkeyColList(DRMS_Env_t *env, const char *series, const char *prefix, const char *suffix, char *pkeyarr[], int *npkey, int *status);
 
+int16_t drms_series_getstagingretention(DRMS_SeriesInfo_t *si);
+int16_t drms_series_getnewsuretention(DRMS_SeriesInfo_t *si);
 #endif

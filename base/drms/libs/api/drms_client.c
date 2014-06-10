@@ -2363,9 +2363,65 @@ int drms_client_isproduser(DRMS_Env_t *env, int *status)
     return isproduser;
 }
 
+int drms_setretention(DRMS_Env_t *env, int16_t newRetention, int nsus, long long *sunums)
+{
+#ifndef DRMS_CLIENT
+    return drms_su_setretention(env, newRetention, nsus, sunums);
+#else
+    long long *sunumlist = NULL;
+    struct iovec *vec = NULL;
+    int count;
+    int isunum;
+    int istat;
+
+    istat = DRMS_SUCCESS;
+    
+    drms_send_commandcode(env->session->sockfd, DRMS_SETRETENTION);
+    
+    /* Eliminate SUNUMs with a value of -1. */
+    vec = calloc(sizeof(struct iovec), nsus);
+    XASSERT(vec);
+    sunumlist = calloc(sizeof(long long), nsus);
+    XASSERT(sunumlist);
+    
+    for (int isunum = 0, count = 0; isunum < nsus; i++)
+    {
+        oneSunum = sunums[isunum];
+        if (oneSunum > 0)
+        {
+            sunumlist[isunum] = htonll(oneSunum);
+            vec[isunum].iov_len = sizeof(sunumlist[isunum]);
+            vec[isunum].iov_base = &sunumlist[isunum];
+            count++;
+        }
+    }
+    
+    /* Send newRetention, count, and sunumlist to drms_server. */
+    
+    /* newRetention */
+    Writeshort(env->session->sockfd, newRetention);
+    
+    /* count */
+    Writeint(env->session->sockfd, count);
+    
+    /* pass count sunums */
+    Writevn(env->session->sockfd, vec, count);
+    
+    free(sunumlist);
+    sunumlist = NULL;
+    free(vec);
+    vec = NULL;
+    
+    /* Fetch status from socket. */
+    istat = Readint(env->session->sockfd);
+    
+    return istat;
+#endif
+}
+
 #ifdef DRMS_CLIENT
 
-sem_t *gShutdownsem = NULL; /* synchronization among signal thread, main thread, 
+sem_t *gShutdownsem = NULL; /* synchronization among signal thread, main thread,
                                sums thread, and server threads during shutdown */
 DRMS_Shutdown_State_t gShutdown; /* shudown state following receipt by DRMS of a signal that 
                                  * causes module termination */

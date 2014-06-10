@@ -1106,6 +1106,11 @@ void *drms_server_thread(void *arg)
       drms_server_getdbuser(env, sockfd);
       pthread_mutex_unlock(env->clientlock);
       break;
+    case DRMS_SETRETENTION:
+        pthread_mutex_lock(env->clientlock);
+        drms_server_setretention(env, sockfd);
+        pthread_mutex_unlock(env->clientlock);
+        break;
     default:
       fprintf(stderr,"Error: Unknown command code '%d'\n",command);
     }
@@ -1620,6 +1625,39 @@ int drms_server_getdbuser(DRMS_Env_t *env, int sockfd)
 {
    send_string(sockfd, env->session->db_handle->dbuser);
    return DRMS_SUCCESS;
+}
+
+/* Input (from the socket) is the new retention value (a 16-bit integer),
+ * the number of SUs whose retention values are being modied,
+ * and a list of the SUNUMs that identify the SUs.
+ * Output (to the socket) is the drms status of the retention-setting function (an integer). */
+int drms_server_setretention(DRMS_Env_t *env, int sockfd)
+{
+    int16_t newRetention = -1;
+    int num = -1;
+    int status;
+    long long *sunums = NULL;
+    int isu;
+    
+    newRetention = Readshort(sockfd);
+    num = Readint(sockfd);
+    sunums = (long long *)malloc(num * sizeof(long long));
+    
+    if (!sunums)
+    {
+        fprintf(stderr, "drms_server_setretention(): out of memory.\n");
+        return DRMS_ERROR_OUTOFMEMORY;
+    }
+    
+    for (isu = 0; isu < num; isu++)
+    {
+        sunums[isu] = Readlonglong(sockfd);
+    }
+    
+    status = drms_su_setretention(env, newRetention, num, sunums);
+    Writeint(sockfd, status);
+    
+    return status;
 }
 
 /* Server stub for drms_su_freeslot and drms_su_markstate. */

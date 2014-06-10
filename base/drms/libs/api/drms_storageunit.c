@@ -641,6 +641,7 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
   DRMS_SumRequest_t *request, *reply;
   int tryagain;
   int natts;
+  int16_t stagingRet = INT16_MIN;
 
   drms_lock_server(env);
 
@@ -671,47 +672,36 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
 
      request->dontwait = 0;
 
-     /* If the user doesn't override on the cmd-line, use the standard retention (some small negative value).
-      * If the user specifies a negative value on the cmd-line, use that.  If the user specifies
-      * a positive value on the cmd-line and the user owns this series, use that value.  But if the
-      * user doesn't own this series multiply the positive value by -1.
-      */
-      
-      /* Override STDRETENTION with the jsd retention time if the user has set the DRMS_JSDRETENTION main flag. */
-      if (env->jsdsgetret && su->seriesinfo)
+      /* Use the Sget retention value here. This is the upper half of the 32-bit retention value in su->seriesinfo->retention
+       * (actually the lower 15 bits of the upper 16 bits). This can be overriden by the value in env->retention (a positive
+       * 15-bit number - never negative). To tell SUMS that we want to set the retention to set this value, but only if
+       * the current retention value is smaller that this value, make the sign of this 15-bit number negative).
+       * If this value is 0, then use the STDRETENTION value.
+       */      
+      if (env->retention != INT16_MIN)
       {
-          request->tdays = su->seriesinfo->retention;
+          /* The user set the DRMS_RETENTION argument. It overrides all other ways of specifying the retention time. */
+          request->tdays = -1 * abs(env->retention); // env->retention should not be negative, but be careful.
+      }
+      else if ((stagingRet = drms_series_getstagingretention(su->seriesinfo)) != INT16_MIN)
+      {
+         /* Look at the lower 15 bits of the upper 16 bits of the series retention time, if the series info exists. It could 
+          * be that this function was called without knowing the series that contains the requested SU. */
+         if (stagingRet == 0)
+         {
+            /* If the staging retention time is 0, then use the STDRETENTION time. */
+            request->tdays = -1 * abs(STDRETENTION);
+         }
+         else
+         {
+            request->tdays = -1 * stagingRet;
+         }
       }
       else
       {
-          request->tdays = STDRETENTION;
+          /* The user did not set the DRMS_RETENTION argument, and we couldn't fetch the value from the database. */
+          request->tdays = -1 * abs(STDRETENTION);
       }
-      
-     if (request->tdays > 0)
-     {
-        /* Since STDRETENTION can be customized, don't allow the definition of a positive number */
-        request->tdays *= -1;
-     }
-
-     if (env->retention != INT_MIN) 
-     {
-         /* if su->seriesinfo->retention_perm == 1, then the user has permission to reduce retention. */
-        if (!su->seriesinfo || !su->seriesinfo->retention_perm)
-        {
-           if (env->retention > 0)
-           {
-              request->tdays = -1 * env->retention;
-           }
-           else if (env->retention < 0)
-           {
-              request->tdays = env->retention;
-           }
-        }
-        else
-        {
-           request->tdays = env->retention;
-        }
-     }
 
      /* Submit request to sums server thread. */
      tqueueAdd(env->sum_inbox, (long) pthread_self(), (char *)request);
@@ -892,6 +882,7 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
 }
 #endif
 
+
 /* Get the actual storage unit directory from SUMS. */
 #ifndef DRMS_CLIENT
 int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retrieve, int dontwait)
@@ -906,6 +897,8 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
   int workingn;
   int tryagain;
   int natts;
+  int16_t maxRet;
+  int16_t stagingRet = INT16_MIN;
 
   drms_lock_server(env);
 
@@ -919,9 +912,6 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
     }
   }
 
-  /* Since this affects more than one storage unit, in order to specify a positive 
-   * retention, must be owner of ALL series to which these storage units belong */
-  int isowner = 1;
   int isu;
   int iSUMSsunum;
   DRMS_StorageUnit_t *onesu = NULL;
@@ -932,10 +922,6 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
   for (isu = 0; isu < n; isu++)
   {
      onesu = su[isu];
-     if (!onesu->seriesinfo || !onesu->seriesinfo->retention_perm)
-     {
-        isowner = 0;
-     }
 
      /* Set all returned sudirs to empty strings - used as a flag to know what has been processed. */
      *(onesu->sudir) = '\0';
@@ -944,13 +930,20 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
   /* There is a maximum no. of SUs that can be requested from SUMS, MAXSUMREQCNT. So, loop. */
   int start = 0;
   int end = SUMIN(MAXSUMREQCNT, n); /* index of SU one past the last one to be processed */
-  int maxret;
 
   workingsus = su;
   workingn = n;
 
   tryagain = 1;
   natts = 1;
+  maxRet = -1;
+
+  if (env->retention != INT16_MIN)
+  {
+     /* The user set the DRMS_RETENTION argument. It overrides all other ways of specifying the retention time. */
+     maxRet = (int16_t)abs(env->retention); // env->retention should not be negative, but be careful.
+  }
+
   while (tryagain && natts < 3)
   {
      tryagain = 0;
@@ -958,8 +951,6 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
      /* Ask SUMS for ALL SUS in workingsus (in chunks of MAXSUMREQCNT) */
      while (start < workingn)
      {
-        maxret = -1;
-         
         /* create SUMS request (apparently, SUMS frees this request) */
         request = malloc(sizeof(DRMS_SumRequest_t));
         XASSERT(request);
@@ -967,74 +958,46 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
         request->opcode = DRMS_SUMGET;
         request->reqcnt = end - start;
          
-         if (env->jsdsgetret)
-         {
-             for (isu = start, iSUMSsunum = 0; isu < end; isu++, iSUMSsunum++) 
-             {
-                 request->sunum[iSUMSsunum] = workingsus[isu]->sunum;
-                 
-                 /* Find largest jsd retention time. We will use this when setting the retention time 
-                  * of SUs retrieved from tape. */
-                 if (workingsus[isu]->seriesinfo && workingsus[isu]->seriesinfo->retention > maxret)
+        for (isu = start, iSUMSsunum = 0; isu < end; isu++, iSUMSsunum++) 
+        {
+           request->sunum[iSUMSsunum] = workingsus[isu]->sunum;
+           if (maxRet == -1)
+           {
+              /* Look at the lower 15 bits of the upper 16 bits of the series retention time, if the series info exists. It could
+               * be that this function was called without knowing the series that contains the requested SU. */
+              stagingRet = drms_series_getstagingretention(workingsus[isu]->seriesinfo);
+              if (stagingRet != INT16_MIN)
+              {
+                 if (stagingRet > maxRet)
                  {
-                     maxret = workingsus[isu]->seriesinfo->retention;
+                    maxRet = stagingRet;
                  }
-             }
-         }
-         else
-         {
-             for (isu = start, iSUMSsunum = 0; isu < end; isu++, iSUMSsunum++) 
-             {
-                 request->sunum[iSUMSsunum] = workingsus[isu]->sunum;
-             }
-         }
+              }
+           }
+        }
         
         request->mode = NORETRIEVE + TOUCH;
         if (retrieve) 
           request->mode = RETRIEVE + TOUCH;
 
         request->dontwait = dontwait;
-
-        /* If the user doesn't override on the cmd-line, use the standard retention 
-         * (some small negative value).
-         * If the user specifies a negative value on the cmd-line, use that.  If the user specifies
-         * a positive value on the cmd-line and the user owns this series, use that value.  But if the
-         * user doesn't own this series multiply the positive value by -1.
+         
+        /* Use the Sget retention value here. This is the upper half of the 32-bit retention value in su->seriesinfo->retention
+         * (actually the lower 15 bits of the upper 16 bits). This can be overriden by the value in env->retention (a positive
+         * 15-bit number - never negative). To tell SUMS that we want to set the retention to set this value, but only if
+         * the current retention value is smaller that this value, make the sign of this 15-bit number negative).
+         * If this value is 0, then use the STDRETENTION value.
          */
-         
-         /* Override STDRETENTION with the jsd retention time if the user has set the DRMS_JSDRETENTION main flag. */
-         if (env->jsdsgetret && maxret > -1)
-         {
-             request->tdays = maxret;
-         }
-         else
-         {
-             request->tdays = STDRETENTION;
-         }
-         
-        if (request->tdays > 0)
+        if (maxRet != -1 && maxRet != 0)
         {
-           /* Since STDRETENTION can be customized, don't allow the definition of a positive number */
-           request->tdays *= -1;
+           /* Look at the lower 15 bits of the upper 16 bits of the series retention time, if the series info exists. It could
+            * be that this function was called without knowing the series that contains the requested SU. */
+           request->tdays = -1 * maxRet;
         }
-     
-        if (env->retention != INT_MIN) 
+        else
         {
-           if (!isowner)
-           {
-              if (env->retention > 0)
-              {
-                 request->tdays = -1 * env->retention;
-              }
-              else if (env->retention < 0)
-              {
-                 request->tdays = env->retention;
-              }
-           }
-           else
-           {
-              request->tdays = env->retention;
-           }
+           /* The user did not set the DRMS_RETENTION argument, and we couldn't fetch the value from the database. */
+           request->tdays = -1 * abs(STDRETENTION);
         }
 
         /* Submit request to sums server thread. */
@@ -1094,7 +1057,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
            {
               retrysus = list_llcreate(sizeof(DRMS_StorageUnit_t *), NULL);
 
-              for (isu = start, iSUMSsunum = 0; isu < end; isu++, iSUMSsunum++) 
+              for (isu = start, iSUMSsunum = 0; isu < end; isu++, iSUMSsunum++)
               {
                  if (strlen(reply->sudir[iSUMSsunum]) > 0)
                  {
@@ -1451,6 +1414,152 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
 #endif
 
 #ifndef DRMS_CLIENT
+int drms_su_setretention(DRMS_Env_t *env, int16_t newRetention, int nsus, long long *sunums)
+{
+    int drmsStatus;
+    int isu;
+    int start;
+    DRMS_SumRequest_t *request = NULL;
+    DRMS_SumRequest_t *reply = NULL;
+    int szChunk;
+    
+    drmsStatus = DRMS_SUCCESS;
+    
+    drms_lock_server(env);
+    
+    if (!env->sum_thread)
+    {
+        int libStat;
+        if (libStat = pthread_create(&env->sum_thread, NULL, &drms_sums_thread, (void *)env))
+        {
+            fprintf(stderr,"Thread creation failed: %d\n", libStat);
+            drmsStatus = DRMS_ERROR_CANTCREATETHREAD;
+        }
+    }
+    
+    if (drmsStatus == DRMS_SUCCESS)
+    {
+        HContainer_t *map = NULL;
+        int yep;
+        char key[128];
+        
+        map = hcon_create(sizeof(SUM_info_t *), 128, NULL, NULL, NULL, NULL, 0);
+        
+        if (!map)
+        {
+            drmsStatus = DRMS_ERROR_OUTOFMEMORY;
+        }
+        else
+        {
+            yep = 1;
+            start = 0;
+            
+            while (start < nsus)
+            {
+                /* create SUMS request (SUMS frees this request) */
+                request = malloc(sizeof(DRMS_SumRequest_t));
+                XASSERT(request);
+                
+                request->opcode = DRMS_SUMGET;
+                
+                for (isu = start, szChunk = 0; szChunk < MAXSUMREQCNT && isu < nsus; isu++)
+                {
+                    /* Some of these SUs may not even belong to the local SUMS. We don't care if that happens. We
+                     * want to modify the retention of local SUs only. */
+                    
+                    /* Do not send SUNUMs with a value of -1 to SUMS, and don't send duplicates. */
+                    snprintf(key, sizeof(key), "%llu", (unsigned long long)sunums[isu]); /* -1 converted to ULLONG_MAX. */
+                    if (sunums[isu] >= 0 && !hcon_member(map, key))
+                    {
+                        hcon_insert(map, key, &yep);
+                        request->sunum[szChunk] = sunums[isu];
+                        szChunk++;
+                    }
+                }
+                
+                request->reqcnt = szChunk;
+                
+                /* If a requested SU is offline, bring it online and set its retention. */
+                request->mode = RETRIEVE + TOUCH;
+                request->dontwait = 0;
+                /* newRetention can be positive or negative. A positive number will potentially result in a decrease of the
+                 * retention value. */
+                request->tdays = newRetention;
+                
+                /* Submit request to sums server thread. */
+                tqueueAdd(env->sum_inbox, (long) pthread_self(), (char *) request);
+                
+                /* Wait for reply. FIXME: add timeout. */
+                
+                /* If and only if user wants to wait for the reply, then return back
+                 * to user all SUDIRs found. */
+                /* Could take a while for SUMS to respond (it it has to fetch from tape),
+                 * so release env lock temporarily. */
+                drms_unlock_server(env);
+                tqueueDel(env->sum_outbox,  (long) pthread_self(), (char **)&reply);
+                drms_lock_server(env);
+                
+                if (reply->opcode != 0)
+                {
+                    if (reply->opcode == 3)
+                    {
+                        /* We waited over six hours for a tape fetch to complete, then we timed-out. */
+                        drmsStatus = DRMS_ERROR_SUMSTRYLATER;
+                    }
+                    else if (reply->opcode == -2)
+                    {
+                        fprintf(stderr, "Cannot access SUMS in this DRMS session - a tape read is pending.\n");
+                        drmsStatus = DRMS_ERROR_PENDINGTAPEREAD;
+                    }
+                    else if (reply->opcode == -3)
+                    {
+                        fprintf(stderr, "Failure setting sum-get-pending flag.\n");
+                        drmsStatus = DRMS_ERROR_SUMGET;
+                    }
+                    else if (reply->opcode == -4)
+                    {
+                        fprintf(stderr, "Failure UNsetting sum-get-pending flag.\n");
+                        drmsStatus = DRMS_ERROR_SUMGET;
+                    }
+                    else
+                    {
+                        fprintf(stderr, "SUM GET failed with error code %d.\n", reply->opcode);
+                        drmsStatus = DRMS_ERROR_SUMGET;
+                    }
+                }
+                else
+                {
+                    /* success setting new retention */
+                    
+                    /* free returned SUDIRs (which are not needed by this call) */
+                    if (reply->sudir)
+                    {
+                        for (isu = 0; isu < szChunk; isu++)
+                        {
+                            if (reply->sudir[isu])
+                            {
+                                free(reply->sudir[isu]);
+                            }
+                        }
+                    }
+                }
+                
+                free(reply);
+                
+                start += szChunk;
+            }
+            
+            hcon_destroy(&map);
+        }
+    }
+    
+    drms_unlock_server(env);
+    
+    return drmsStatus;
+}
+#endif
+
+#ifndef DRMS_CLIENT
 static void SUFreeInfo(const void *value)
 {
    SUM_info_t *tofree = *((SUM_info_t **)value);
@@ -1632,6 +1741,7 @@ int drms_commitunit(DRMS_Env_t *env, DRMS_StorageUnit_t *su)
   char filename[DRMS_MAXPATHLEN];
   int actualarchive = 0;
   int docommit = 0;
+  int16_t newSuRet = INT16_MIN;
 
   docommit = !EmptyDir(su->sudir, 0);
   if (docommit)
@@ -1686,17 +1796,32 @@ int drms_commitunit(DRMS_Env_t *env, DRMS_StorageUnit_t *su)
      else
        request->mode = TEMP + TOUCH;
 
-     /* If the user doesn't override on the cmd-line, start with the jsd retention.  Otherwise, 
-      * start with the cmd-line value.  It doesn't matter if the value is positive or negative 
-      * since only the series owner can create a record in the first place.
+     /* If the user doesn't override the retention time on the cmd-line, use the db new-su retention value.
+      * Since we are creating the SU for the first time, we should make the sign of the retention time sent 
+      * to SUMS positive.
       */
-     if (env->retention==INT_MIN) 
-     {  
-        request->tdays = su->seriesinfo->retention;
+     if (env->newsuretention != INT16_MIN) 
+     {
+        /* The user set the DRMS_NEWSURETENTION argument. It overrides all other ways of specifying the retention time. */
+        request->tdays = env->newsuretention;
+     }
+     else if ((newSuRet = drms_series_getnewsuretention(su->seriesinfo)) != INT16_MIN)
+     {
+        /* Look at the lower 15 bits of the lower 16 bits of the series retention time. */
+        if (newSuRet == 0)
+        {
+           /* If the staging retention time is 0, then use the STDRETENTION time. */
+           request->tdays = abs(STDRETENTION);
+        }
+        else
+        {
+           request->tdays = newSuRet;
+        }
      }
      else
      {
-        request->tdays = env->retention; 
+        /* The user did not set the DRMS_NEWSURETENTION argument, and we couldn't fetch the value from the database. */
+        request->tdays = abs(STDRETENTION);
      }
 
      request->sunum[0] = su->sunum;
@@ -1738,7 +1863,7 @@ static int CommitUnits(DRMS_Env_t *env,
                        int seriesArch,
                        int seriesUS,
                        int seriesTG,
-                       int seriesRet)
+                       int16_t seriesRet)
 {
    ListNode_t *node = NULL;
    DRMS_StorageUnit_t *sunit = NULL;
@@ -1854,18 +1979,8 @@ static int CommitUnits(DRMS_Env_t *env,
             request->mode = TEMP + TOUCH;
          }
 
-         /* If the user doesn't override on the cmd-line, start with the jsd retention.  Otherwise, 
-          * start with the cmd-line value.  It doesn't matter if the value is positive or negative 
-          * since only the series owner can create a record in the first place.
-          */
-         if (env->retention == INT_MIN) 
-         {  
-            request->tdays = seriesRet;
-         }
-         else
-         {
-            request->tdays = env->retention; 
-         }
+         /* The logic to determine the final retention time has already been performed in the calling function. */
+         request->tdays = (int)seriesRet;
 
          request->comment = NULL;
 
@@ -1930,6 +2045,9 @@ int drms_commit_all_units(DRMS_Env_t *env, int *archive, int *status)
   int nsus;
   LinkedList_t *sulist = NULL;
   DRMS_SeriesInfo_t *si = NULL;
+  int16_t newSuRetentionRaw = INT16_MIN;
+  int16_t newSuRetention = INT16_MIN;
+  int16_t maxNewSuRetention = INT16_MIN;
 
   XASSERT(env->session->db_direct==1);
   hiter_new(&hit_outer, &env->storageunit_cache);  
@@ -1969,6 +2087,35 @@ int drms_commit_all_units(DRMS_Env_t *env, int *archive, int *status)
        if (!si)
        {
           si = su->seriesinfo;
+
+          if (env->newsuretention != INT16_MIN)
+          {
+             /* The user set the DRMS_NEWSURETENTION argument. It overrides all other ways of specifying the retention time. */
+             newSuRetention = env->newsuretention;
+          }
+          else if ((newSuRetentionRaw = drms_series_getnewsuretention(si)) != INT16_MIN)
+          {
+             /* Look at the lower 15 bits of the lower 16 bits of the series retention time. */
+             if (newSuRetentionRaw == 0)
+             {
+                /* If the staging retention time is 0, then use the STDRETENTION time. */
+                newSuRetention = (int16_t)abs(STDRETENTION);
+             }
+             else
+             {
+                newSuRetention = newSuRetentionRaw;
+             }
+          }
+          else
+          {
+             /* The user did not set the DRMS_NEWSURETENTION argument, and we couldn't fetch the value from the database. */
+             newSuRetention = (int16_t)abs(STDRETENTION);
+          }
+
+          if (newSuRetention > maxNewSuRetention)
+          {
+             maxNewSuRetention = newSuRetention;
+          }
        }
 
       if ( su->mode == DRMS_READWRITE )	
@@ -1994,7 +2141,7 @@ int drms_commit_all_units(DRMS_Env_t *env, int *archive, int *status)
          * is an optimal batch size. */
         if (nsus == MAXSUMREQCNT)
         {
-           statint = CommitUnits(env, sulist, seriesName, si->archive, si->unitsize, si->tapegroup, si->retention);
+           statint = CommitUnits(env, sulist, seriesName, si->archive, si->unitsize, si->tapegroup, maxNewSuRetention);
            list_llfree(&sulist);
            nsus = 0;
 
@@ -2008,10 +2155,10 @@ int drms_commit_all_units(DRMS_Env_t *env, int *archive, int *status)
 
     hiter_free(&hit_inner);
 
-    /* May be some SUs in sulist not yet committed (because there are fewer than 64. */
+    /* May be some SUs in sulist not yet committed (because there are fewer than 64). */
     if (nsus > 0)
     {
-       statint = CommitUnits(env, sulist, seriesName, si->archive, si->unitsize, si->tapegroup, si->retention);
+       statint = CommitUnits(env, sulist, seriesName, si->archive, si->unitsize, si->tapegroup, maxNewSuRetention);
        list_llfree(&sulist);
        nsus = 0;
     }
@@ -2028,10 +2175,10 @@ int drms_commit_all_units(DRMS_Env_t *env, int *archive, int *status)
      *status = statint;
   }
 
-  if (env->retention==INT_MIN)
-    return DRMS_LOG_RETENTION;
-  else
-    return env->retention;
+  /* The retention-time value returned here will be used as the retention time for the SU created that 
+   * contains the DRMS log (-L flag). 
+   */
+  return maxNewSuRetention < DRMS_LOG_RETENTION ? DRMS_LOG_RETENTION : maxNewSuRetention;
 }
 #endif
 
@@ -2270,6 +2417,7 @@ int drms_su_commitsu(DRMS_Env_t *env,
   DRMS_Record_t *templaterec = NULL;
   int drmsst = DRMS_SUCCESS;
   int docommit = 0;
+  int16_t newSuRet = INT16_MIN;
 
   /* Don't commit a unit if its directory is empty */
   docommit = !EmptyDir(sudir, 0);
@@ -2312,17 +2460,32 @@ int drms_su_commitsu(DRMS_Env_t *env,
            request->mode = TEMP + TOUCH;
         }
 
-        /* If the user doesn't override on the cmd-line, start with the jsd retention.  Otherwise, 
-         * start with the cmd-line value.  It doesn't matter if the value is positive or negative 
-         * since only the series owner can create a record in the first place.
+        /* If the user doesn't override the retention time on the cmd-line, use the db new-su retention value.
+         * Since we are creating the SU for the first time, we should make the sign of the retention time sent
+         * to SUMS positive.
          */
-        if (env->retention == INT_MIN) 
-        {  
-           request->tdays = seriesinfo->retention;
+        if (env->newsuretention != INT16_MIN)
+        {
+           /* The user set the DRMS_NEWSURETENTION argument. It overrides all other ways of specifying the retention time. */
+           request->tdays = env->newsuretention;
+        }
+        else if ((newSuRet = drms_series_getnewsuretention(seriesinfo)) != INT16_MIN)
+        {
+           /* Look at the lower 15 bits of the lower 16 bits of the series retention time. */
+           if (newSuRet == 0)
+           {
+              /* If the staging retention time is 0, then use the STDRETENTION time. */
+              request->tdays = abs(STDRETENTION);
+           }
+           else
+           {
+              request->tdays = newSuRet;
+           }
         }
         else
         {
-           request->tdays = env->retention; 
+           /* The user did not set the DRMS_NEWSURETENTION argument, and we couldn't fetch the value from the database. */
+           request->tdays = abs(STDRETENTION);
         }
 
         tmp = strdup(sudir);

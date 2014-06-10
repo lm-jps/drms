@@ -85,11 +85,11 @@ int JSOCMAIN_Init(int argc,
    /* Parse command line parameters */
    snprintf(reservebuf, 
             sizeof(reservebuf), 
-            "%s,%s,%s,%s,%s,%s,%s", 
+            "%s,%s,%s,%s,%s,%s,%s,%s,%s",
             "L,Q,V,jsocmodver", 
             kARCHIVEARG,
             kRETENTIONARG,
-            kJsdRetention,
+            kNewSuRetention,
             kQUERYMEMARG,
             kSERVERWAITARG,
             kLoopConn,
@@ -388,8 +388,9 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
 
 pid_t drms_start_server (int verbose, int dolog)  {
   const char *dbhost, *dbuser, *dbpasswd, *dbname, *sessionns;
-  int retention, query_mem, server_wait;
-  int jsdretention;
+  int query_mem, server_wait;
+  int16_t retention;
+  int16_t newsuretention;
   int archive;
     int dbtimeout;
   int loopconn;
@@ -397,6 +398,9 @@ pid_t drms_start_server (int verbose, int dolog)  {
   char drms_session[DRMS_MAXPATHLEN];
   char drms_host[DRMS_MAXPATHLEN];
   char drms_port[DRMS_MAXPATHLEN];
+  int status = 0;
+    
+    
 	/* Get hostname, user, passwd and database name for establishing 
 				    a connection to the DRMS database server */
 
@@ -414,16 +418,64 @@ pid_t drms_start_server (int verbose, int dolog)  {
   if (drms_cmdparams_exists(&cmdparams, kARCHIVEARG)) {
      archive = drms_cmdparams_get_int(&cmdparams, kARCHIVEARG, NULL);
   }
-
-  retention = INT_MIN;
-  if (drms_cmdparams_exists(&cmdparams, kRETENTIONARG)) 
-     retention = drms_cmdparams_get_int(&cmdparams, kRETENTIONARG, NULL);
     
-  jsdretention = 0;
-  if (drms_cmdparams_exists(&cmdparams, kJsdRetention)) 
-  {
-      jsdretention = (drms_cmdparams_get_int(&cmdparams, kJsdRetention, NULL) != 0);
-  }
+    char errbuf[128];
+    
+    retention = INT16_MIN;
+    if (drms_cmdparams_exists(&cmdparams, kRETENTIONARG))
+    {
+        retention = drms_cmdparams_get_int16(&cmdparams, kRETENTIONARG, &status);
+        if (status != DRMS_SUCCESS)
+        {
+            if (status == DRMS_ERROR_INVALIDCMDARGCONV)
+            {
+                snprintf(errbuf, sizeof(errbuf), "The value for %s must be a 15-bit positive integer.", kRETENTIONARG);
+                fprintf(stderr, errbuf);
+            }
+            
+            snprintf(errbuf, sizeof(errbuf), "Invalid value for %s.", kRETENTIONARG);
+            fprintf(stderr, errbuf);
+            return 1;
+        }
+        else if (retention < 0)
+        {
+            snprintf(errbuf, sizeof(errbuf), "The value for %s must be a 15-bit positive integer.", kRETENTIONARG);
+            fprintf(stderr, errbuf);
+            return 1;
+        }
+        else
+        {
+            retention = (int16_t)(retention & 0x7FFF);
+        }
+    }
+    
+    newsuretention = INT16_MIN;
+    if (drms_cmdparams_exists(&cmdparams, kNewSuRetention))
+    {
+        newsuretention = drms_cmdparams_get_int16(&cmdparams, kNewSuRetention, &status);
+        if (status != DRMS_SUCCESS)
+        {
+            if (status == DRMS_ERROR_INVALIDCMDARGCONV)
+            {
+                snprintf(errbuf, sizeof(errbuf), "The value for %s must be a 15-bit positive integer.", kNewSuRetention);
+                fprintf(stderr, errbuf);
+            }
+            
+            snprintf(errbuf, sizeof(errbuf), "Invalid value for %s.", kNewSuRetention);
+            fprintf(stderr, errbuf);
+            return 1;
+        }
+        else if (newsuretention < 0)
+        {
+            snprintf(errbuf, sizeof(errbuf), "The value for %s must be a 15-bit positive integer.", kNewSuRetention);
+            fprintf(stderr, errbuf);
+            return 1;
+        }
+        else
+        {
+            newsuretention = (int16_t)(newsuretention & 0x7FFF);
+        }
+    }
 
   query_mem = 512;
   if (cmdparams_exists (&cmdparams, kQUERYMEMARG)) 
@@ -552,11 +604,10 @@ pid_t drms_start_server (int verbose, int dolog)  {
       argv[i] = malloc (DRMS_MAXNAMELEN*2);      
       sprintf (argv[i++], "%s=%d", kRETENTIONARG, retention);
     }
-    if (jsdretention)
+    if (newsuretention > 0)
     {
-        argv[i] = malloc(64);
-        snprintf(argv[i], 64, "--%s", kJsdRetention);
-        i++;
+        argv[i] = malloc(DRMS_MAXNAMELEN*2);
+        snprintf(argv[i++], DRMS_MAXNAMELEN*2, "%s=%d", kNewSuRetention, newsuretention);
     }
     if (query_mem != 512) {
       argv[i] = malloc (DRMS_MAXNAMELEN*2);
