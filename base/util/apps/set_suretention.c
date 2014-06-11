@@ -194,7 +194,7 @@ static int processChunk(DRMS_Env_t *env, int16_t newRetention, int nsus, long lo
 {
     if (nsus > 0 && sunums)
     {
-        return (drms_su_setretention(env, newRetention, nsus, sunums) != DRMS_SUCCESS);
+        return (drms_setretention(env, newRetention, nsus, sunums) != DRMS_SUCCESS);
     }
     else
     {
@@ -1062,7 +1062,7 @@ int DoIt(void)
         
         if (nRecs < 0)
         {
-            maxTailRecs = nRecs;
+            maxTailRecs = -1 * nRecs;
         }
         else if (nRecs > 0)
         {
