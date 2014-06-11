@@ -4743,6 +4743,9 @@ int drms_closeall_records(DRMS_Env_t *env, int action)
      if (status)
       break;
   }
+    
+    hiter_free(&hit);
+    
   return status;
 }
 
@@ -12612,76 +12615,85 @@ DRMS_Array_t *drms_record_getvector(DRMS_Env_t *env,
                 
                 if (bres)
                 {
-                   int col, row;
-                   int dims[2];
-                   dims[0] = keys = bres->num_cols;
-                   dims[1] = count = bres->num_rows;
-                   vectors = drms_array_create(type, 2, dims, NULL, &stat);
-                   if (stat) goto failure;
-                   drms_array2missing(vectors);
-                   for (col=0; col<keys; col++)
-                   {
-                      DB_Type_t db_type = bres->column[col].type;
-                      for (row=0; row<count; row++)
-                      {
-                         int8_t *val = (int8_t *)(vectors->data) + (count * col + row) * drms_sizeof(type);
-                         char *db_src = bres->column[col].data + row * bres->column[col].size;
-                         if (!bres->column[col].is_null[row])
-                           switch(type)
-                           {
-                              case DRMS_TYPE_CHAR:
-                                *(char *)val = dbtype2char(db_type,db_src);
-                                break;
-                              case DRMS_TYPE_SHORT:
-                                *(short *)val = dbtype2short(db_type,db_src);
-                                break;
-                              case DRMS_TYPE_INT:
-                                *(int *)val = dbtype2longlong(db_type,db_src);
-                                break;
-                              case DRMS_TYPE_LONGLONG:
-                                *(long long *)val = dbtype2longlong(db_type,db_src);
-                                break;
-                              case DRMS_TYPE_FLOAT:
-                                *(float *)val = dbtype2float(db_type,db_src);
-                                break;
-                              case DRMS_TYPE_DOUBLE:
-                                *(double *)val = dbtype2double(db_type,db_src);
-                                break;
-                              case DRMS_TYPE_TIME:
-                                *(TIME *)val = dbtype2double(db_type,db_src);
-                                break;
-                              case DRMS_TYPE_STRING:
-                                if (db_type ==  DB_STRING || db_type ==  DB_VARCHAR)
-                                  *(char **)val = strdup((char *)db_src);
-                                else
-                                {
-                                   int len = db_binary_default_width(db_type);
-                                   *(char **)val = (char *)malloc(len);
-                                   XASSERT(*(char **)val);
-                                   dbtype2str(db_type, db_src, len, *(char **)val);
-                                }
-                                break;
-                              default:
-                                fprintf(stderr, "ERROR: Unhandled DRMS type %d\n",(int)type);
-                                XASSERT(0);
-                                goto failure;
-                           } // switch
-                      } // row 
-                   } // col
-                   if (seriesname) free(seriesname);
-                   if (query) free(query);
-                   if (where) free(where);
-                   if (pkwhere) free(pkwhere);
-                   if (npkwhere) free(npkwhere);
-                   if (pkwhereNFL) hcon_destroy(&pkwhereNFL);
-                   if (status) *status = DRMS_SUCCESS;
-                   return(vectors);
+                    int col, row;
+                    int dims[2];
+                    dims[0] = keys = bres->num_cols;
+                    dims[1] = count = bres->num_rows;
+                    vectors = drms_array_create(type, 2, dims, NULL, &stat);
+                    if (stat) goto failure;
+                    drms_array2missing(vectors);
+                    for (col=0; col<keys; col++)
+                    {
+                        DB_Type_t db_type = bres->column[col].type;
+                        for (row=0; row<count; row++)
+                        {
+                            int8_t *val = (int8_t *)(vectors->data) + (count * col + row) * drms_sizeof(type);
+                            char *db_src = bres->column[col].data + row * bres->column[col].size;
+                            if (!bres->column[col].is_null[row])
+                                switch(type)
+                            {
+                                case DRMS_TYPE_CHAR:
+                                    *(char *)val = dbtype2char(db_type,db_src);
+                                    break;
+                                case DRMS_TYPE_SHORT:
+                                    *(short *)val = dbtype2short(db_type,db_src);
+                                    break;
+                                case DRMS_TYPE_INT:
+                                    *(int *)val = dbtype2longlong(db_type,db_src);
+                                    break;
+                                case DRMS_TYPE_LONGLONG:
+                                    *(long long *)val = dbtype2longlong(db_type,db_src);
+                                    break;
+                                case DRMS_TYPE_FLOAT:
+                                    *(float *)val = dbtype2float(db_type,db_src);
+                                    break;
+                                case DRMS_TYPE_DOUBLE:
+                                    *(double *)val = dbtype2double(db_type,db_src);
+                                    break;
+                                case DRMS_TYPE_TIME:
+                                    *(TIME *)val = dbtype2double(db_type,db_src);
+                                    break;
+                                case DRMS_TYPE_STRING:
+                                    if (db_type ==  DB_STRING || db_type ==  DB_VARCHAR)
+                                        *(char **)val = strdup((char *)db_src);
+                                    else
+                                    {
+                                        int len = db_binary_default_width(db_type);
+                                        *(char **)val = (char *)malloc(len);
+                                        XASSERT(*(char **)val);
+                                        dbtype2str(db_type, db_src, len, *(char **)val);
+                                    }
+                                    break;
+                                default:
+                                    fprintf(stderr, "ERROR: Unhandled DRMS type %d\n",(int)type);
+                                    XASSERT(0);
+                                    goto failure;
+                            } // switch
+                        } // row
+                    } // col
+                    if (seriesname) free(seriesname);
+                    if (query) free(query);
+                    if (where) free(where);
+                    if (pkwhere) free(pkwhere);
+                    if (npkwhere) free(npkwhere);
+                    if (pkwhereNFL) hcon_destroy(&pkwhereNFL);
+                    if (status) *status = DRMS_SUCCESS;
+                    
+                    if (firstlast)
+                    {
+                        hcon_destroy(&firstlast);
+                    }
+                    
+                    FreeRecSetDescArr(&allvers, &sets, &settypes, &snames, &filts, nsets);
+                    
+                    db_free_binary_result(bres);
+                    bres = NULL;
+                    
+                    return(vectors);
                 } // bres
           } // kRecordSetType_DRMS
        } // oneSet
     } // iSet - loop over sets.
-
-    FreeRecSetDescArr(&allvers, &sets, &settypes, &snames, &filts, nsets);
 
  failure:
    if (seriesname) free(seriesname);
@@ -12690,6 +12702,10 @@ DRMS_Array_t *drms_record_getvector(DRMS_Env_t *env,
    if (pkwhere) free(pkwhere);
    if (npkwhere) free(npkwhere);
     if (pkwhereNFL) hcon_destroy(&pkwhereNFL);
+    if (firstlast)
+    {
+        hcon_destroy(&firstlast);
+    }
     FreeRecSetDescArr(&allvers, &sets, &settypes, &snames, &filts, nsets);
    if (status) *status = stat;
    return(NULL);

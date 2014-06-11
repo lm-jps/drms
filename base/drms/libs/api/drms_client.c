@@ -98,161 +98,184 @@ static int GetDBMinVersion(DRMS_Session_t *session, char **versout)
 
 DRMS_Session_t *drms_connect(const char *host)
 {
-  struct sockaddr_in server;
-  struct hostent *he;
-  DRMS_Session_t *session;
-  int denied;
-  char *port = NULL;
-  char *hostname = NULL;
-  char *pport = NULL;
-  unsigned short portnum;
-  char *sudirrecv = NULL;
-  struct sockaddr *serverp = NULL;
-
-  if (host)
-  {
-     hostname = strdup(host);
-
-     /* extract port from host */
-     if ((pport = strchr(host, ':')) != NULL)
-     {
-        hostname[pport - host] = '\0';
-        port = strdup(pport + 1);
-     }
-     else
-     {
-        fprintf(stderr, "Port number missing from host.\n");
+    struct sockaddr_in server;
+    struct hostent *he;
+    DRMS_Session_t *session;
+    int denied;
+    char *port = NULL;
+    char *hostname = NULL;
+    char *pport = NULL;
+    unsigned short portnum;
+    char *sudirrecv = NULL;
+    struct sockaddr *serverp = NULL;
+    
+    if (host)
+    {
+        hostname = strdup(host);
+        
+        if (!hostname)
+        {
+            fprintf(stderr, "drms_connect(): Out of memory.\n");
+            goto bailout1;
+        }
+        
+        /* extract port from host */
+        if ((pport = strchr(host, ':')) != NULL)
+        {
+            hostname[pport - host] = '\0';
+            port = strdup(pport + 1);
+            
+            if (!port)
+            {
+                fprintf(stderr, "drms_connect(): Out of memory.\n");
+                goto bailout1;
+            }
+        }
+        else
+        {
+            fprintf(stderr, "Port number missing from host.\n");
+            goto bailout1;
+        }
+        
+        if (port)
+        {
+            sscanf(port, "%hu", &portnum);
+        }
+    }
+    
+    /* get the host info */
+    if ((he=gethostbyname(hostname)) == NULL)
+    {
+        herror("gethostbyname");
+        
+        if (port)
+        {
+            free(port);
+        }
+        if (hostname)
+        {
+            free(hostname);
+        }
+        
+        fprintf(stderr, "Error calling gethostbyname().\n");
+        return NULL;
+    }
+    
+    session = malloc(sizeof(DRMS_Session_t));
+    XASSERT(session);
+    session->db_direct = 0;
+    
+    /* set up the transport end point */
+    if ((session->sockfd = socket(AF_INET, SOCK_STREAM, 0)) == -1)
+    {
+        perror("socket call failed");
         goto bailout1;
-     }
-
-     if (port)
-     {
-        sscanf(port, "%hu", &portnum);
-     }
-  }
-
-  /* get the host info */
-  if ((he=gethostbyname(hostname)) == NULL) {  
-    herror("gethostbyname");
+    }
+    
+    {
+        int rcvbuf, sndbuf;
+        db_getsocketbufsize(session->sockfd, &sndbuf,&rcvbuf);
+#ifdef DEBUG
+        printf("Original socket buffer sizes: SO_SNDBUF = %d, SO_RCVBUF = %d\n",
+               sndbuf,rcvbuf);
+#endif
+        if (sndbuf<65536)
+        {
+            sndbuf = 65536/2;
+            db_setsocketbufsize(session->sockfd, sndbuf, rcvbuf/2);
+        }
+        db_getsocketbufsize(session->sockfd, &sndbuf,&rcvbuf);
+#ifdef DEBUG
+        printf("New socket buffer sizes: SO_SNDBUF = %d, SO_RCVBUF = %d\n",
+               sndbuf,rcvbuf);
+#endif
+    }
+    
+    memset(&server, 0, sizeof(server));
+    server.sin_family = AF_INET;     /* host byte order */
+    server.sin_port = htons(portnum); /* short, network byte order */
+    server.sin_addr = *((struct in_addr *)he->h_addr);
+    
+    serverp = (struct sockaddr *)&server;
+    /* connect the socket to the server's address */
+    if ( connect(session->sockfd, serverp, sizeof(struct sockaddr_in)) == -1 )
+    {
+        perror("connect");
+        fprintf(stderr,"Failed to connect to server, please check that host name, "
+                "port number and password are correct.\n");
+        goto bailout;
+    }
+    strncpy(session->hostname, hostname, DRMS_MAXHOSTNAME);
+    session->port = portnum;
+    /* Turn off Nagle's algorithm. */
+    /*
+     if (setsockopt(session->sockfd,  IPPROTO_TCP,
+     TCP_NODELAY,  (char *) &flag,
+     sizeof(int)) < 0)
+     return NULL;
+     */
+    
+    /* Receive anxiously anticipaqted reply from the server. If denied=1
+     we are doomed, but if denied=0 we are on our way to the green
+     pastures of DRMS. */
+    denied = Readint(session->sockfd);
+    if (denied)
+    {
+        fprintf(stderr, "drms_server didn't accept the attempt to connect with it.\n");
+        goto bailout;
+    }
+    session->clientid = Readint(session->sockfd);
+    session->sessionid = Readlonglong(session->sockfd);
+    session->sessionns = receive_string(session->sockfd);
+    session->sunum = Readlonglong(session->sockfd);
+    
+    /* Big pain in the ass - this is the SUDIR of the log directory. We don't always
+     * create such a directory, and the code checks for NULL session->sudir in many
+     * cases. But there is no way that the client (sock module) knows whether or
+     * not there is such an SUDIR in use by the server (drms_server), so we always
+     * have to send SOME string. The policy is: if drms_server has a log SUDIR, then
+     * send the path to that, otherwise, send the string "NOLOGSUDIR". Then in the
+     * client code, drop NOLOGSUIDR and set session->sudir to NULL.
+     */
+    sudirrecv = receive_string(session->sockfd);
+    
+    if (sudirrecv && strcasecmp(sudirrecv, kNOLOGSUDIR))
+    {
+        session->sudir = sudirrecv;
+    }
+    else
+    {
+        free(sudirrecv);
+        session->sudir = NULL;  
+    }
+    
+#ifdef DEBUG
+    printf("got sudir=%s\n",session->sudir);
+#endif
     if (port)
     {
-       free(port);
+        free(port);
     }
     if (hostname)
     {
-       free(hostname);
+        free(hostname);
     }
-
-    fprintf(stderr, "Error calling gethostbyname().\n");
-    return NULL;
-  }
-  
-  session = malloc(sizeof(DRMS_Session_t));
-  XASSERT(session);
-  session->db_direct = 0;
-
-  /* set up the transport end point */
-  if ( (session->sockfd = socket(AF_INET, SOCK_STREAM, 0)) == -1)
-  {
-    perror("socket call failed");
-    goto bailout1;
-  }
-
-  {
-    int rcvbuf, sndbuf;
-    db_getsocketbufsize(session->sockfd, &sndbuf,&rcvbuf);
-#ifdef DEBUG
-    printf("Original socket buffer sizes: SO_SNDBUF = %d, SO_RCVBUF = %d\n",
-	   sndbuf,rcvbuf);
-#endif
-    if (sndbuf<65536)
+    
+    return session;
+    
+bailout:
+    close(session->sockfd);
+bailout1:
+    free(session);
+    if (port)
     {
-      sndbuf = 65536/2;
-      db_setsocketbufsize(session->sockfd, sndbuf, rcvbuf/2);
+        free(port);
     }
-    db_getsocketbufsize(session->sockfd, &sndbuf,&rcvbuf);
-#ifdef DEBUG
-    printf("New socket buffer sizes: SO_SNDBUF = %d, SO_RCVBUF = %d\n",
-	   sndbuf,rcvbuf);
-#endif      
-  }
-
-  memset(&server, 0, sizeof(server));  
-  server.sin_family = AF_INET;     /* host byte order */
-  server.sin_port = htons(portnum); /* short, network byte order */
-  server.sin_addr = *((struct in_addr *)he->h_addr);
-
-  serverp = (struct sockaddr *)&server;
-  /* connect the socket to the server's address */
-  if ( connect(session->sockfd, serverp, sizeof(struct sockaddr_in)) == -1 )
-  {
-    perror("connect");
-    fprintf(stderr,"Failed to connect to server, please check that host name, "
-	    "port number and password are correct.\n");
-    goto bailout;
-  }
-  strncpy(session->hostname, hostname, DRMS_MAXHOSTNAME);
-  session->port = portnum;
-  /* Turn off Nagle's algorithm. */
-  /*
-  if (setsockopt(session->sockfd,  IPPROTO_TCP,    
-		 TCP_NODELAY,  (char *) &flag, 
-		 sizeof(int)) < 0)
+    if (hostname)
+    {
+        free(hostname);
+    }
     return NULL;
-*/
-
-  /* Receive anxiously anticipaqted reply from the server. If denied=1
-     we are doomed, but if denied=0 we are on our way to the green
-     pastures of DRMS. */
-  denied = Readint(session->sockfd);
-  if (denied)
-  {
-     fprintf(stderr, "drms_server didn't accept the attempt to connect with it.\n");
-     goto bailout;
-  }
-  session->clientid = Readint(session->sockfd);
-  session->sessionid = Readlonglong(session->sockfd);
-  session->sessionns = receive_string(session->sockfd);
-  session->sunum = Readlonglong(session->sockfd);
-
-  /* Big pain in the ass - this is the SUDIR of the log directory. We don't always 
-   * create such a directory, and the code checks for NULL session->sudir in many
-   * cases. But there is no way that the client (sock module) knows whether or
-   * not there is such an SUDIR in use by the server (drms_server), so we always
-   * have to send SOME string. The policy is: if drms_server has a log SUDIR, then
-   * send the path to that, otherwise, send the string "NOLOGSUDIR". Then in the 
-   * client code, drop NOLOGSUIDR and set session->sudir to NULL.
-   */
-  sudirrecv = receive_string(session->sockfd);
-
-  if (sudirrecv && strcasecmp(sudirrecv, kNOLOGSUDIR))
-  {
-     session->sudir = sudirrecv;
-  }
-  else
-  {
-     free(sudirrecv);
-     session->sudir = NULL;  
-  }
-
-#ifdef DEBUG
-  printf("got sudir=%s\n",session->sudir);
-#endif
-  return session;
-  
- bailout:
-  close(session->sockfd);
- bailout1:
-  free(session);
-  if (port)
-  {
-     free(port);
-  }
-  if (hostname)
-  {
-     free(hostname);
-  }
-  return NULL;
 }
 
 int drms_send_commandcode (int sockfd, int command) {
@@ -702,7 +725,7 @@ DB_Binary_Result_t **drms_query_bin_ntuple(DRMS_Session_t *session, const char *
 #else
     XASSERT(session->db_direct==0);
     drms_send_commandcode(session->sockfd, DRMS_BINQUERY_NTUPLE);
-    db_client_query_bin_ntuple(session->sockfd, stmnt, nelems, nargs, dbtypes, values);
+    return db_client_query_bin_ntuple(session->sockfd, stmnt, nelems, nargs, dbtypes, values);
 #endif
 }
 
@@ -2372,6 +2395,7 @@ int drms_setretention(DRMS_Env_t *env, int16_t newRetention, int nsus, long long
     struct iovec *vec = NULL;
     int count;
     int isunum;
+    long long oneSunum;
     int istat;
 
     istat = DRMS_SUCCESS;
@@ -2384,10 +2408,10 @@ int drms_setretention(DRMS_Env_t *env, int16_t newRetention, int nsus, long long
     sunumlist = calloc(sizeof(long long), nsus);
     XASSERT(sunumlist);
     
-    for (int isunum = 0, count = 0; isunum < nsus; i++)
+    for (isunum = 0, count = 0; isunum < nsus; isunum++)
     {
         oneSunum = sunums[isunum];
-        if (oneSunum > 0)
+        if (oneSunum >= 0)
         {
             sunumlist[isunum] = htonll(oneSunum);
             vec[isunum].iov_len = sizeof(sunumlist[isunum]);

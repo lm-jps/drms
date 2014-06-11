@@ -1477,6 +1477,8 @@ int drms_su_setretention(DRMS_Env_t *env, int16_t newRetention, int nsus, long l
                     }
                 }
                 
+                start += isu; /* for next while-loop iteration */
+                
                 request->reqcnt = szChunk;
                 
                 /* If a requested SU is offline, bring it online and set its retention. */
@@ -1545,8 +1547,6 @@ int drms_su_setretention(DRMS_Env_t *env, int16_t newRetention, int nsus, long l
                 }
                 
                 free(reply);
-                
-                start += szChunk;
             }
             
             hcon_destroy(&map);
@@ -2035,150 +2035,151 @@ static int CommitUnits(DRMS_Env_t *env,
 #ifndef DRMS_CLIENT
 int drms_commit_all_units(DRMS_Env_t *env, int *archive, int *status)
 {
-  int i;
-  HContainer_t *scon; 
-  HIterator_t hit_outer, hit_inner; 
-  DRMS_StorageUnit_t *su;
-  int statint = 0;
-  const char *seriesName = NULL;
-  DRMS_Record_t *recTemp = NULL;
-  int nsus;
-  LinkedList_t *sulist = NULL;
-  DRMS_SeriesInfo_t *si = NULL;
-  int16_t newSuRetentionRaw = INT16_MIN;
-  int16_t newSuRetention = INT16_MIN;
-  int16_t maxNewSuRetention = INT16_MIN;
-
-  XASSERT(env->session->db_direct==1);
-  hiter_new(&hit_outer, &env->storageunit_cache);  
-  if (archive)
-    *archive = 0;
-
-  nsus = 0;
-
-  while((scon = (HContainer_t *)hiter_extgetnext(&hit_outer, &seriesName)))
-  {
-     /* If ANY series has its storage units archived, and the caller
-      * has not set the archive flag on the cmd-line, set the return 
-      * archive flag. This will cause the session log to be archived 
-      * as well. */
-     if (archive && *archive == 0 && env->archive == INT_MIN)
-     {
-        /* Get the archive value from the series info */
-        recTemp = drms_template_record(env, seriesName, &statint);
-
-        if (statint != DRMS_SUCCESS)
-        {
-           break;
-        }
-
-        if (recTemp->seriesinfo->archive)
-        {
-           *archive = 1;
-        }
-     }
-
-     si = NULL; /* fetch series info on each outer iteration */
-
-     /* loops over SUs within a single series */
-    hiter_new(&hit_inner, scon);
-    while((su = (DRMS_StorageUnit_t *)hiter_getnext(&hit_inner)))
+    int i;
+    HContainer_t *scon;
+    HIterator_t hit_outer, hit_inner;
+    DRMS_StorageUnit_t *su;
+    int statint = 0;
+    const char *seriesName = NULL;
+    DRMS_Record_t *recTemp = NULL;
+    int nsus;
+    LinkedList_t *sulist = NULL;
+    DRMS_SeriesInfo_t *si = NULL;
+    int16_t newSuRetentionRaw = INT16_MIN;
+    int16_t newSuRetention = INT16_MIN;
+    int16_t maxNewSuRetention = INT16_MIN;
+    
+    XASSERT(env->session->db_direct==1);
+    hiter_new(&hit_outer, &env->storageunit_cache);
+    if (archive)
+        *archive = 0;
+    
+    nsus = 0;
+    
+    while((scon = (HContainer_t *)hiter_extgetnext(&hit_outer, &seriesName)))
     {
-       if (!si)
-       {
-          si = su->seriesinfo;
-
-          if (env->newsuretention != INT16_MIN)
-          {
-             /* The user set the DRMS_NEWSURETENTION argument. It overrides all other ways of specifying the retention time. */
-             newSuRetention = env->newsuretention;
-          }
-          else if ((newSuRetentionRaw = drms_series_getnewsuretention(si)) != INT16_MIN)
-          {
-             /* Look at the lower 15 bits of the lower 16 bits of the series retention time. */
-             if (newSuRetentionRaw == 0)
-             {
-                /* If the staging retention time is 0, then use the STDRETENTION time. */
-                newSuRetention = (int16_t)abs(STDRETENTION);
-             }
-             else
-             {
-                newSuRetention = newSuRetentionRaw;
-             }
-          }
-          else
-          {
-             /* The user did not set the DRMS_NEWSURETENTION argument, and we couldn't fetch the value from the database. */
-             newSuRetention = (int16_t)abs(STDRETENTION);
-          }
-
-          if (newSuRetention > maxNewSuRetention)
-          {
-             maxNewSuRetention = newSuRetention;
-          }
-       }
-
-      if ( su->mode == DRMS_READWRITE )	
-      {
-	/* See if this unit has any non-temporary, full slots. */
-	for (i=0; i<(su->seriesinfo->unitsize - su->nfree); i++)
-	{
-	  if (su->state[i] == DRMS_SLOT_FULL)
-	  {
-            if (!sulist)
+        /* If ANY series has its storage units archived, and the caller
+         * has not set the archive flag on the cmd-line, set the return
+         * archive flag. This will cause the session log to be archived
+         * as well. */
+        if (archive && *archive == 0 && env->archive == INT_MIN)
+        {
+            /* Get the archive value from the series info */
+            recTemp = drms_template_record(env, seriesName, &statint);
+            
+            if (statint != DRMS_SUCCESS)
             {
-               /* Don't deep free SUs - that is done elsewhere. */
-               sulist = list_llcreate(sizeof(DRMS_StorageUnit_t *), NULL);
+                break;
             }
-
-            list_llinserttail(sulist, &su);
-            nsus++;
-	    break;
-	  }
-	}
-
-        /* When SUMS batches, it uses keylist.c, which is inefficient. Empirically, 64
-         * is an optimal batch size. */
-        if (nsus == MAXSUMREQCNT)
-        {
-           statint = CommitUnits(env, sulist, seriesName, si->archive, si->unitsize, si->tapegroup, maxNewSuRetention);
-           list_llfree(&sulist);
-           nsus = 0;
-
-           if (statint != DRMS_SUCCESS)
-           {
-              break;
-           }
+            
+            if (recTemp->seriesinfo->archive)
+            {
+                *archive = 1;
+            }
         }
-      }
-    }
-
-    hiter_free(&hit_inner);
-
-    /* May be some SUs in sulist not yet committed (because there are fewer than 64). */
-    if (nsus > 0)
+        
+        si = NULL; /* fetch series info on each outer iteration */
+        maxNewSuRetention = INT16_MIN; /* reset for every series - take the max retention for all SUs within each series */
+        
+        /* loops over SUs within a single series */
+        hiter_new(&hit_inner, scon);
+        while((su = (DRMS_StorageUnit_t *)hiter_getnext(&hit_inner)))
+        {
+            if (!si)
+            {
+                si = su->seriesinfo;
+                
+                if (env->newsuretention != INT16_MIN)
+                {
+                    /* The user set the DRMS_NEWSURETENTION argument. It overrides all other ways of specifying the retention time. */
+                    newSuRetention = env->newsuretention;
+                }
+                else if ((newSuRetentionRaw = drms_series_getnewsuretention(si)) != INT16_MIN)
+                {
+                    /* Look at the lower 15 bits of the lower 16 bits of the series retention time. */
+                    if (newSuRetentionRaw == 0)
+                    {
+                        /* If the staging retention time is 0, then use the STDRETENTION time. */
+                        newSuRetention = (int16_t)abs(STDRETENTION);
+                    }
+                    else
+                    {
+                        newSuRetention = newSuRetentionRaw;
+                    }
+                }
+                else
+                {
+                    /* The user did not set the DRMS_NEWSURETENTION argument, and we couldn't fetch the value from the database. */
+                    newSuRetention = (int16_t)abs(STDRETENTION);
+                }
+                
+                if (newSuRetention > maxNewSuRetention)
+                {
+                    maxNewSuRetention = newSuRetention;
+                }
+            }
+            
+            if ( su->mode == DRMS_READWRITE )
+            {
+                /* See if this unit has any non-temporary, full slots. */
+                for (i=0; i<(su->seriesinfo->unitsize - su->nfree); i++)
+                {
+                    if (su->state[i] == DRMS_SLOT_FULL)
+                    {
+                        if (!sulist)
+                        {
+                            /* Don't deep free SUs - that is done elsewhere. */
+                            sulist = list_llcreate(sizeof(DRMS_StorageUnit_t *), NULL);
+                        }
+                        
+                        list_llinserttail(sulist, &su);
+                        nsus++;
+                        break;
+                    }
+                }
+                
+                /* When SUMS batches, it uses keylist.c, which is inefficient. Empirically, 64
+                 * is an optimal batch size. */
+                if (nsus == MAXSUMREQCNT)
+                {
+                    statint = CommitUnits(env, sulist, seriesName, si->archive, si->unitsize, si->tapegroup, maxNewSuRetention);
+                    list_llfree(&sulist);
+                    nsus = 0;
+                    
+                    if (statint != DRMS_SUCCESS)
+                    {
+                        break;
+                    }
+                }
+            }
+        }
+        
+        hiter_free(&hit_inner);
+        
+        /* May be some SUs in sulist not yet committed (because there are fewer than 64). */
+        if (nsus > 0)
+        {
+            statint = CommitUnits(env, sulist, seriesName, si->archive, si->unitsize, si->tapegroup, maxNewSuRetention);
+            list_llfree(&sulist);
+            nsus = 0;
+        }
+    } /* loop over series */
+    
+    hiter_free(&hit_outer);
+    
+    /* If the caller set the archive flag on the cmd-line, then override what the series' jsds say. */
+    if (archive && *archive == 0 && env->archive == 1)
+        *archive = 1;
+    
+    if (status)
     {
-       statint = CommitUnits(env, sulist, seriesName, si->archive, si->unitsize, si->tapegroup, maxNewSuRetention);
-       list_llfree(&sulist);
-       nsus = 0;
+        *status = statint;
     }
-  } /* loop over series */
-
-  hiter_free(&hit_outer);
-
-  /* If the caller set the archive flag on the cmd-line, then override what the series' jsds say. */
-  if (archive && *archive == 0 && env->archive == 1) 
-    *archive = 1;
-
-  if (status)
-  {
-     *status = statint;
-  }
-
-  /* The retention-time value returned here will be used as the retention time for the SU created that 
-   * contains the DRMS log (-L flag). 
-   */
-  return maxNewSuRetention < DRMS_LOG_RETENTION ? DRMS_LOG_RETENTION : maxNewSuRetention;
+    
+    /* The retention-time value returned here will be used as the retention time for the SU created that 
+     * contains the DRMS log (-L flag). 
+     */
+    return maxNewSuRetention < DRMS_LOG_RETENTION ? DRMS_LOG_RETENTION : maxNewSuRetention;
 }
 #endif
 
