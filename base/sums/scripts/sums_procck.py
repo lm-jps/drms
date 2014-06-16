@@ -24,11 +24,14 @@ RET_WRITEPID = 5
 RET_USER = 6
 RET_HOST = 7
 RET_KILLSUMS = 8
+RET_FILEIO = 9
 
 PID_FILE = 'sums.pidfile'
 
 def shutdown():
     rv = RET_SUCCESS
+    print('Shutting down SUMS...')
+    
     drmsParams = DRMSParams()
     if drmsParams is None:
         print('Cannot open DRMS params file.', file=sys.stderr)
@@ -36,6 +39,7 @@ def shutdown():
     else:
         try:
             sumsLogDir = getDrmsParam(drmsParams, 'SUMLOG_BASEDIR')
+            pidFile = sumsLogDir + '/' + PID_FILE
 
         except Exception as exc:
             if len(exc.args) != 2:
@@ -49,7 +53,7 @@ def shutdown():
                 rv = RET_DRMSPARAMS
 
         if rv == RET_SUCCESS:
-            actualProcs = readPIDFile(sumsLogDir + '/' + PID_FILE)
+            actualProcs = readPIDFile(pidFile)
             if actualProcs is not None:
                 # Kill each SUMS process. It looks like SUMS needs the SIGKILL signal to die.
                 for procName in actualProcs:
@@ -61,6 +65,15 @@ def shutdown():
                             print('Unable to kill SUMS process ' + procName + '(pid ' + str(pid) +').')
                             rv = RET_KILLSUMS
                             break
+
+    if rv == RET_SUCCESS:
+        print('Removing pidfile ' + pidFile)
+        try:
+            os.remove()
+        except IOError as exc:
+            type, value, traceback = sys.exc_info()
+            print('Unable to remove ' + "'" + value.filename + "'.", file=sys.stderr)
+            rv = RET_FILEIO
 
     sys.exit(rv)
 
@@ -88,7 +101,7 @@ def readPIDFile(pidFile):
                 if not regExpNotEmpty.search(line):
                     continue
                 matchObj = regExpValid.match(line)
-                # Skip invalid lines
+                # Skip invalid lines (and the line that contains the pid of this script - a line with only a pid).
                 if matchObj is None:
                     continue
                 
@@ -106,13 +119,15 @@ def readPIDFile(pidFile):
 def writePIDFile(pidFile, procData):
     try:
     	with open (pidFile, 'w') as fout:
+            # First write the pid of this process
+            pid = os.getpid()
+            print(str(pid), file=fout)
             for key, val in procData:
             	print(key + '    ' + val, file=fout)
 
     except IOError as exc:
         type, value, traceback = sys.exc_info()
         raise Exception('writePID', 'Unable to open ' + "'" + value.filename + "' for writing.", file=sys.stderr)
-
 
 def runCmd(cmdList):
     pid = -1
@@ -192,13 +207,16 @@ if __name__ == "__main__":
             latest = time.localtime()
 
         sumsLog = 'sum_svc_' + time.strftime('%Y.%m.%d.%H%M%S', latest) + '.log'
+        sumsRmLog = 'sum_rm_' + time.strftime('%Y.%m.%d.%H%M%S', latest) + '.log'
         if respawn:
             # Must suffix an 'R' to the log-file name.
             sumsLog = sumsLog + 'R'
+            sumsRmLog = sumsRmLog + 'R'
         
         print('Running on SUMS-server host ' + sumsServer + '.')
         print('Connection to SUMS DB ' + sumsDb + '.')
-        print('Using SUMS-log file ' + sumsLog + '.')        
+        print('Using SUMS-log file ' + sumsLog + '.')
+        print('Using SUMS-rm-log file ' + sumsRmLog + '.')
     except Exception as exc:
         if len(exc.args) != 2:
             raise # Re-raise
@@ -217,26 +235,28 @@ if __name__ == "__main__":
             rv = RET_HOST
 
     # Determine the set of processes that should be running, given nSums. The value of the dictionary key
-    # is the PID, which is unknown to begin with. An unknown PID is designated by a -1 value. As the
-    # PIDs are gleaned, the expectedProcs values will be updated.
-    expectedProcs = {'sum_svc':-1}
+    # is the log file to use when spawning the process.
+    expectedProcs = {'sum_svc':sumsLog}
 
     if nSums > 1:
-        expectedProcs['Sdelser'] = -1
+        expectedProcs['Sdelser'] = sumsLog
 
-        expectedProcs['Sinfo'] = -1
-        expectedProcs['Sput'] = -1
-        expectedProcs['Sget'] = -1
-        expectedProcs['Salloc'] = -1
-        expectedProcs['Sopen'] = -1
+        expectedProcs['Sinfo'] = sumsLog
+        expectedProcs['Sput'] = sumsLog
+        expectedProcs['Sget'] = sumsLog
+        expectedProcs['Salloc'] = sumsLog
+        expectedProcs['Sopen'] = sumsLog
         
         for iProc in range(1, nSums):
-            expectedProcs['Sinfo' + str(iProc)] = -1
-            expectedProcs['Sput' + str(iProc)] = -1
-            expectedProcs['Sget' + str(iProc)] = -1
-            expectedProcs['Salloc' + str(iProc)] = -1
-            expectedProcs['Sopen' + str(iProc)] = -1
-            
+            expectedProcs['Sinfo' + str(iProc)] = sumsLog
+            expectedProcs['Sput' + str(iProc)] = sumsLog
+            expectedProcs['Sget' + str(iProc)] = sumsLog
+            expectedProcs['Salloc' + str(iProc)] = sumsLog
+            expectedProcs['Sopen' + str(iProc)] = sumsLog
+
+    # sum_rm gets a special log
+    expectedProcs['sum_rm'] = sumsRmLog
+
     # This PID file contains the list of PIDs of the SUMS processes that were running the last time this
     # script completed. Each line in this file contains a process name, followed by the PID of that process.
     # Ensure that there is a line in this file for each expected process. If such a line exists, then ensure
@@ -246,7 +266,7 @@ if __name__ == "__main__":
     # Read the PID file into a dictionary.
     actualProcs = None
     if respawn:
-        actualProcs = readPIDFile(PID_FILE)
+        actualProcs = readPIDFile(sumsLogDir + '/' + PID_FILE)
 
     # Time to install the signal handler. If this program terminates after this point, then
     # we need to save the state of the actualProcs dictionary (which lists which SUMS
@@ -289,20 +309,20 @@ if __name__ == "__main__":
                         if not os.path.exists('/proc/' + str(pid)):
                             print('Process ' + procName + ' is not running.')
                             print('Starting process ' + procName + '.')
-                            pid = runCmd([procName, sumsDb, sumsLog])
+                            pid = runCmd([procName, sumsDb, expectedProcs[procName]])
                             # Save the PID in actualProcs so we can update the PID file.
                             actualProcs[procName] = pid
                     else:
                         # there is no record of the process in the PID file - spawn the service
                         print('Process ' + procName + ' is not running.')
                         print('Starting process ' + procName + '.')
-                        pid = runCmd([procName, sumsDb, sumsLog])
+                        pid = runCmd([procName, sumsDb, expectedProcs[procName]])
                         # Save the PID in actualProcs so we can update the PID file.
                         actualProcs[procName] = pid
             else:
                 # No pid file, or couldn't open existing pid file. Assume there are no SUMS processes running.
                 for procName in expectedProcs.keys():
-                    pid = runCmd([procName, sumsDb, sumsLog])
+                    pid = runCmd([procName, sumsDb, expectedProcs[procName]])
                     # Save the PID in actualProcs so we can update the PID file.
                     actualProcs[procName] = pid
 

@@ -7,6 +7,9 @@ use FindBin qw($RealBin);
 # use 5.010_000; # See ExtractVal() - if you don't want to upgrade to 5.10, uncomment lines in this routine.
 
 $| = 1;                 #flush output as we go
+
+use constant PID_FILE => "sums.pidfile"
+
 $mailflg = 1;
 $forceflg = 0;
 
@@ -89,6 +92,12 @@ $dbname = ExtractVal($def[0]);
 
 $DB = $dbname."_sums";
 
+@def = grep(/^#define SUMLOG_BASEDIR/, @servdefs);
+$logDir = ExtractVal($def[0])
+print "SUMS log dir is $logDir\n";
+
+$pidFile = $logDir . "/" . &PID_FILE;
+
 $PID = getppid;
 $LOGFILE = "/tmp/sum_stop.NetDRMS.$PID";
 open(LOG, ">$LOGFILE") || die "Can't open $LOGFILE: $!\n";
@@ -121,34 +130,66 @@ print "NOTE: This will stop sum_svc and related processes. Make sure you want to
   chomp($ID);
   if(!$ID) { $ID = "<none>"; }
   print LOG ">> $ID\n";
-SKIP:
-  @ps_prod = `ps -ef | grep $GREPPS`;
 
-  #All possible sums processes to stop
-  @spawn = (sum_svc, Sdelser, Sinfo, Sinfo1, Sinfo2, Sinfo3, Sinfo4, Sinfo5, Sinfo6, Sinfo7, Sput, Sput1, Sput2, Sput3, Sput4, Sput5, Sput6, Sput7, Sget, Sget1, Sget2, Sget3, Sget4, Sget5, Sget6, Sget7, Salloc, Salloc1, Salloc2, Salloc3, Salloc4, Salloc5, Salloc6, Salloc7, Sopen, Sopen1, Sopen2, Sopen3, Sopen4, Sopen5, Sopen6, Sopen7, sum_rm);
-
-  #first do sumck_M
-  @line = grep(/sumck_M/, @ps_prod);
-  $x = shift(@line);
-  ($a, $psid, $c) = split(/\s+/, $x);
-  print "Killing sumck_M with kill -9 $psid\n";
-  print LOG "Killing sumck_M with kill -9 $psid\n";
-  `kill -9 $psid`;
-
-  #Find if any sums process is still running.
-  #Assumes max of 8 sum process sets can be running.
-  while($p = shift(@spawn)) {
-    $name = "$p $DB";
-    @line = grep(/$name/, @ps_prod);
-    if(@line) {
-      $x = shift(@line);
-      ($a, $psid, $c) = split(/\s+/, $x);
-      print "Killing $p with kill -9 $psid\n";
-      print LOG "Killing $p with kill -9 $psid\n";
-      `kill -9 $psid`;
+    # To kill all SUMS processes, all you gotta do is send the SIGUSR1 signal to the sums_procck.py process.
+    # The pid of the sums_procck.py process for the current SUMS session is in the SUMS pidfile. One line
+    # contains just a number - that number is the pid.
+    $err = 0;
+    if (-e $pidFile)
+    {
+        if (open(PID_FILE, "<$pidFile"))
+        {
+            while ($line = <PID_FILE>)
+            {
+                if ($line =~ /^\s*(\d+)\s*$/)
+                {
+                    # found the pid
+                    $pid = $1;
+                    last;
+                }
+            }
+            close(PID_FILE);
+        }
+        else
+        {
+            $msg = "Unable to open pid file $pidFile. Exiting without stopping any SUMS processes.\n";
+            print STDERR $msg;
+            print LOG $msg;
+            $err = 1;
+        }
     }
-  }
+    else
+    {
+        $msg = "pid file $pidFile does not exist. SUMS is not running.\n";
+        print STDERR $msg;
+        print LOG $msg;
+        $err = 1;
+    }
 
+    if (!$err)
+    {
+        # send USR1 signal to sums_procck.py
+        kill('USR1', $pid);
+        
+        # I don't think there is a general way to wait, with a system call, for a process that is not a child. In this case, the process, if
+        # it successfully terminates will remove the pid file.
+        $count = 0;
+        while (-e $pidFile)
+        {
+            if ($count >= 20)
+            {
+                $msg = "Timed-out waiting for sums_procck.py (pid $pid) to exit.\n";
+                print STDERR $msg;
+                print LOG $msg;
+                $err = 1;
+                last;
+            }
+            
+            $count++;
+            sleep(1);
+        }
+
+    }
 #Now kill the tape_svc, etc on n02
 #`ssh d02.stanford.edu /home/production/cvs/JSOC/base/sums/scripts/sum_stop_d02_tape`;
 
@@ -156,9 +197,13 @@ SKIP:
 #print LOG "Removing lock file /usr/local/logs/soc/NOTAPEARC\n";
 #`/bin/rm -f /usr/local/logs/soc/NOTAPEARC`;
 
-print "SUM Stop NetDRMS Complete\n";
-print LOG "SUM Stop NetDRMS Complete\n";
+if (!$err)
+{
+    print "SUM Stop NetDRMS Complete\n";
+    print LOG "SUM Stop NetDRMS Complete\n";
+}
 close(LOG);
+
 #$mail = "Mail -s \"SUM Stop NetDRMS Complete\"";
 ##$to = "jsoc_users";
 #$to = "jim\@sun.stanford.edu";

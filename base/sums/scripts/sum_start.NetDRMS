@@ -9,6 +9,9 @@ use FindBin qw($RealBin);
 # use 5.010_000; # See ExtractVal() - if you don't want to upgrade to 5.10, uncomment lines in this routine.
 
 $| = 1;                 #flush output as we go
+
+use constant PID_FILE => "sums.pidfile"
+
 $mailflg = 1;
 $forceflg = 0;
 $forcearg = "";
@@ -99,6 +102,10 @@ $dbname = ExtractVal($def[0]);
 $DB = $dbname."_sums";
 print "SUMS db is $DB\n";
 
+@def = grep(/^#define SUMLOG_BASEDIR/, @servdefs);
+$logDir = ExtractVal($def[0])
+print "SUMS log dir is $logDir\n";
+
 $PID = getppid;
 $LOGFILE = "/tmp/sum_start.NetDRMS.$PID";
 open(LOG, ">$LOGFILE") || die "Can't open $LOGFILE: $!\n";
@@ -120,65 +127,16 @@ print LOG "sum_start.NetDRMS at $date\n\n";
 #print "The ps -ef for producttion is:\n@ps_prod\n";
 print LOG "The ps -ef for product is:\n@ps_prod\n";
 
-#Find if any sums process is still running. Set $active=1 if so.
-#Assumes max of 8 sum process sets can be running.
-$active = 0;
-$x = grep(/sum_rm $DB/, @ps_prod);
-if($x) {
-  $process = "sum_rm";
-  $active = 1;
-  goto CKEND;
-}
-$x = grep(/Sinfo $DB/, @ps_prod);
-$y = grep(/Sinfo[1,2,3,4,5,6,7] $DB/, @ps_prod);
-if($x || $y) {
-  $process = "Sinfo";
-  $active = 1;
-  goto CKEND;
-}
-$x = grep(/xsum_svc $DB/, @ps_prod);
-$y = grep(/xsum_svc -o $DB/, @ps_prod);
-if($x || $y) {
-  $process = "xsum_svc";
-  $active = 1;
-  goto CKEND;
-}
-$x = grep(/Sdelser $DB/, @ps_prod);
-if($x) {
-  $process = "Sdelser";
-  $active = 1;
-  goto CKEND;
-}
-$x = grep(/Sput $DB/, @ps_prod);
-$y = grep(/Sput[1,2,3,4,5,6,7] $DB/, @ps_prod);
-if($x || $y) {
-  $process = "Sput";
-  $active = 1;
-  goto CKEND;
-}
-$x = grep(/Sget $DB/, @ps_prod);
-$y = grep(/Sget[1,2,3,4,5,6,7] $DB/, @ps_prod);
-if($x || $y) {
-  $process = "Sget";
-  $active = 1;
-  goto CKEND;
-}
-$x = grep(/Salloc $DB/, @ps_prod);
-$y = grep(/Salloc[1,2,3,4,5,6,7] $DB/, @ps_prod);
-if($x || $y) {
-  $process = "Salloc";
-  $active = 1;
-  goto CKEND;
-}
-$x = grep(/Sopen $DB/, @ps_prod);
-$y = grep(/Sopen[1,2,3,4,5,6,7] $DB/, @ps_prod);
-if($x || $y) {
-  $process = "Sopen";
-  $active = 1;
-  goto CKEND;
-}
+# Find if any sums process is still running (by looking for the sums.pidfile file).
+# Set $active=1 if so.
 
-CKEND:
+$active = 0;
+
+$pidFile = $logDir . "/" . &PID_FILE;
+if (-e $pidFile)
+{
+    $active = 1;
+}
 
   if($active) {
     print "** NOTE: A $process process is still running\n";
@@ -194,6 +152,8 @@ CKEND:
         exit;
       }
     }
+      
+      # sum_stop.NetDRMS will shutdown all SUMS processes and remove the SUMS pidfile.
     if($mailflg) {
       $cmd = "sum_stop.NetDRMS $forcearg";
     }
@@ -206,52 +166,6 @@ CKEND:
     }
   }
 
-  #Now make an array for what to start for each $numsum
-  if($numsum == 1) {
-    @spawn = (sum_svc);
-  }
-  elsif ($numsum == 2) {
-    @spawn = (sum_svc, Sdelser, Sinfo, Sinfo1, Sput, Sput1, Sget, Sget1, Salloc, Salloc1, Sopen, Sopen1);
-  }
-  elsif ($numsum == 3) {
-    @spawn = (sum_svc, Sdelser, Sinfo, Sinfo1, Sinfo2, Sput, Sput1, Sput2, Sget, Sget1, Sget2, Salloc, Salloc1, Salloc2, Sopen, Sopen1, Sopen2);
-  }
-  elsif ($numsum == 4) {
-    @spawn = (sum_svc, Sdelser, Sinfo, Sinfo1, Sinfo2, Sinfo3, Sput, Sput1, Sput2, Sput3, Sget, Sget1, Sget2, Sget3, Salloc, Salloc1, Salloc2, Salloc3, Sopen, Sopen1, Sopen2, Sopen3);
-  }
-  elsif ($numsum == 5) {
-    @spawn = (sum_svc, Sdelser, Sinfo, Sinfo1, Sinfo2, Sinfo3, Sinfo4, Sput, Sput1, Sput2, Sput3, Sput4, Sget, Sget1, Sget2, Sget3, Sget4, Salloc, Salloc1, Salloc2, Salloc3, Salloc4, Sopen, Sopen1, Sopen2, Sopen3, Sopen4);
-  }
-  elsif ($numsum == 6) {
-    @spawn = (sum_svc, Sdelser, Sinfo, Sinfo1, Sinfo2, Sinfo3, Sinfo4, Sinfo5, Sput, Sput1, Sput2, Sput3, Sput4, Sput5, Sget, Sget1, Sget2, Sget3, Sget4, Sget5, Salloc, Salloc1, Salloc2, Salloc3, Salloc4, Salloc5, Sopen, Sopen1, Sopen2, Sopen3, Sopen4, Sopen5);
-  }
-  elsif ($numsum == 7) {
-    @spawn = (sum_svc, Sdelser, Sinfo, Sinfo1, Sinfo2, Sinfo3, Sinfo4, Sinfo5, Sinfo6, Sput, Sput1, Sput2, Sput3, Sput4, Sput5, Sput6, Sget, Sget1, Sget2, Sget3, Sget4, Sget5, Sget6, Salloc, Salloc1, Salloc2, Salloc3, Salloc4, Salloc5, Salloc6, Sopen, Sopen1, Sopen2, Sopen3, Sopen4, Sopen5, Sopen6);
-  }
-  elsif ($numsum == 8) {
-    @spawn = (sum_svc, Sdelser, Sinfo, Sinfo1, Sinfo2, Sinfo3, Sinfo4, Sinfo5, Sinfo6, Sinfo7, Sput, Sput1, Sput2, Sput3, Sput4, Sput5, Sput6, Sput7, Sget, Sget1, Sget2, Sget3, Sget4, Sget5, Sget6, Sget7, Salloc, Salloc1, Salloc2, Salloc3, Salloc4, Salloc5, Salloc6, Salloc7, Sopen, Sopen1, Sopen2, Sopen3, Sopen4, Sopen5, Sopen6, Sopen7);
-  }
-
-  print "** Now starting: sum_svc $DB\n";
-  print LOG "** Now starting: sum_svc $DB\n";
-  while($p = shift(@spawn)) {
-    $cmd = "$p $DB $sumlog &";
-    print "$cmd\n";
-    if(system($cmd)) {
-      print "Error: failure to spawn $p\n";
-      print "Abort sum_start.NetDRMS\n";
-      exit;
-    }
-  }
-  $p = "sum_rm";
-  $cmd = "$p $DB $sumrmlog &";
-  print "$cmd\n";
-  if(system($cmd)) {
-    print "Error: failure to spawn $p\n";
-    print "Abort sum_start.NetDRMS\n";
-    exit;
-  }
-
 
 #For tape_svc only
 #        $cmd = "ssh d02.stanford.edu sum_forker  $DB $date&";
@@ -259,11 +173,22 @@ CKEND:
 #          print "Error: failure on $cmd\n";
 #        }
 
+        print "** Now starting SUMS on $DB\n";
+        print LOG "** Now starting SUMS on $DB\n";
+
         #$cmd = "/home/production/cvs/JSOC/base/sums/scripts/sumck_ximM &";
-        $cmd = "sumck_M &";
-        if(system($cmd)) {
-          print "Error: failure on sumck_M\n";
+        # Since there is no SUMS pidfile, this script will launch all SUMS processes afresh, and create a pidfile.
+        $cmd = "sums_procck.py &";
+        $ret = system($cmd);
+        if ($ret == -1) 
+        {
+          print STDERR "Error: failed to run $cmd.\n";
         }
+        elsif ($ret & 127)
+        {
+            print STDERR "Error: $cmd died on unhandled signal " . $ret & 127 . "\n."
+        }
+        
         print "SUM NetDRMS Start Complete\n";
         print LOG "SUM NetDRMS Start Complete\n";
         close(LOG);
