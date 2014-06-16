@@ -132,8 +132,6 @@ def writePIDFile(pidFile, procData):
 def runCmd(cmdList):
     pid = -1
    
-    print('was going to run ' + ' '.join(cmdList))
-    sys.exit(1) 
     try:
         sp = subprocess.Popen(cmdList)
         pid = sp.pid
