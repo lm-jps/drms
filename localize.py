@@ -90,7 +90,7 @@ class DRMSParams:
 
 PY_FXNS_B = """    def get(self, name):
         if name in self.params:
-            return self.parms[name]
+            return self.params[name]
         else:
             return None
 """
