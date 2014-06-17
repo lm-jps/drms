@@ -537,6 +537,28 @@ void setup()
      }
   }
   fclose(fplog);
+
+#ifdef NETDRMS_BUILD
+  /* Write out, to a temp file, the parent PID and current-process PID so that the sums_procck.py script
+   * can check for a missing sum_rm process. This actually would be ignored by the JSOC build, but to be safe, we just won't
+   * do this, except for NetDRMS builds*/
+  pid_t parent = getppid();
+  pid_t child = getpid();
+  char pidSupp[PATH_MAX];
+  FILE *fptr = NULL;
+
+  snprintf(pidSupp, sizeof(pidSupp), "/tmp/pidSupp.%d.log", parent);
+  if ((fptr = fopen(pidSupp, "w")) == NULL)
+  {
+     write_log("sum_rm: Unable to open supplementary pid file %s.\n", pidSupp);
+     exit(1);
+  }
+
+  fprintf(fptr, "%d", child);
+  fclose(fptr);
+  fptr = NULL;
+#endif
+
   active = 0;
   DS_ConnectDB(dbname);		/* connect to DB for init */
   if(DS_PavailRequestEx())	/* get sum_partn_avail info in mem */

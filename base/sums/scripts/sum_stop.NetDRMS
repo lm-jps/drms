@@ -8,7 +8,7 @@ use FindBin qw($RealBin);
 
 $| = 1;                 #flush output as we go
 
-use constant PID_FILE => "sums.pidfile"
+use constant PID_FILE => "sums.pidfile";
 
 $mailflg = 1;
 $forceflg = 0;
@@ -93,7 +93,7 @@ $dbname = ExtractVal($def[0]);
 $DB = $dbname."_sums";
 
 @def = grep(/^#define SUMLOG_BASEDIR/, @servdefs);
-$logDir = ExtractVal($def[0])
+$logDir = ExtractVal($def[0]);
 print "SUMS log dir is $logDir\n";
 
 $pidFile = $logDir . "/" . &PID_FILE;
@@ -137,9 +137,9 @@ print "NOTE: This will stop sum_svc and related processes. Make sure you want to
     $err = 0;
     if (-e $pidFile)
     {
-        if (open(PID_FILE, "<$pidFile"))
+        if (open(PID_FILE_H, "<$pidFile"))
         {
-            while ($line = <PID_FILE>)
+            while ($line = <PID_FILE_H>)
             {
                 if ($line =~ /^\s*(\d+)\s*$/)
                 {
@@ -148,7 +148,7 @@ print "NOTE: This will stop sum_svc and related processes. Make sure you want to
                     last;
                 }
             }
-            close(PID_FILE);
+            close(PID_FILE_H);
         }
         else
         {
