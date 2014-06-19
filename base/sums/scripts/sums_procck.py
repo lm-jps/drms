@@ -76,7 +76,7 @@ def shutdown(*args):
                         # the process.
                         matchObj = regExp.match(procName)
                         if matchObj is None:
-                            killedPid, istat = os.waitpid(pid, os.WNOHANG)
+                            killedPid, istat = os.waitpid(pid, 0)
                             if killedPid == 0:
                                 print('Unable to kill SUMS process ' + procName + '(pid ' + str(pid) +').')
                                 rv = RET_KILLSUMS
@@ -180,6 +180,27 @@ def isRunning(procName, procData):
     
     if procName in procData or '[' + procName + ']' in procData:
         rv = os.path.exists('/proc/' + str(getPid(procName, procData)))
+
+    return rv
+
+def isDefunct(procName, procData):
+    rv = 0
+
+    if isRunning(procName, procData):
+        procFile = '/proc/' + str(getPid(procName, procData)) + '/status'
+        try:
+            with open(procFile, 'r') as fin:
+                regExp = re.compile(r'State:\s+(\w)\s+')
+                for line in fin:
+                    matchObj = regExp.match(line)
+                    if matchObj is not None:
+                        state = matchObj.group(1)
+                        if state == 'Z':
+                            rv = 1
+                        break
+        except IOError as exc:
+            print(exc.strerror, file=sys.stderr)
+            print('Unable to open proc file ' + procFile + '.', file=sys.stderr)
 
     return rv
 
@@ -349,28 +370,43 @@ if __name__ == "__main__":
 
     while (1):
         try:
-            # check to see if we are going to launch sum_svc
-            launchingSVC = False
-            if 'sum_svc' in expectedProcs and not isRunning('sum_svc', actualProcs):
-                launchingSVC = True
-
-            # if we are going to launch sum_svc, but sum_rm is still running, kill sum_rm since
-            # sum_svc is going to spawn sum_rm.
-            if launchingSVC and isRunning('sum_rm', actualProcs):
-                os.kill(getPid('sum_rm', actualProcs), signal.SIGKILL)
+            # If sum_rm is not running, or it is defunct, but sum_svc is running, we have to 
+            # kill sum_svc. Then in the expected procs loop below, if either sum_rm or sum_svc is
+            # expected, sum_svc will be relaunched (which will respawn sum_rm).
+            if 'sum_rm' in expectedProcs and (not isRunning('sum_rm', actualProcs) or isDefunct('sum_rm', actualProcs)) and isRunning('sum_svc', actualProcs):
+                print('Killing and restarting sum_svc to start missing sum_rm process.')
+                pid = getPid('sum_svc', actualProcs)
+                os.kill(pid, signal.SIGKILL)
+                killedPid, istat = os.waitpid(pid, 0)
+                print('killedPid ' + str(killedPid))
+                if killedPid == 0:
+                    raise Exception('killSVC', 'Unable to kill sum_svc process (pid ' + str(pid) +').')
                 delPid('sum_rm', actualProcs)
+                delPid('sum_svc', actualProcs)
 
-            # iterate through the expected procs to see if they are all running
+            # Iterate through the expected procs to see if they are all running.
             for procName in expectedProcs.keys():
-                if isRunning(procName, actualProcs):   
+                if isRunning(procName, actualProcs) and not isDefunct(procName, actualProcs):   
+                    continue
+                else:
+                    # Delete no-longing-running proc from list of running procs.
+                    delPid(procName, actualProcs)
+
+                    # If we are going to launch sum_svc, but sum_rm is still running, kill sum_rm since
+                    # sum_svc is going to spawn sum_rm. sums_procck.py is never the parent of sum_rm, do
+                    # do not wait for the process to die.
+                    if procName == 'sum_svc' and isRunning('sum_rm', actualProcs):
+                        pid = getPid('sum_rm', actualProcs)
+                        print('Killing orphaned sum_rm process (pid ' + str(pid) + '). When sum_svc restarts, it will spawn a new sum_rm.')
+                        os.kill(pid, signal.SIGKILL)
+                        delPid('sum_rm', actualProcs)
+
+                # We never spawn sum_rm directly, skip it. If sum_rm is not running, sum_svc will not be running either, so when sum_svc
+                # is processed in this loop, it will spawn sum_rm
+                if procName == 'sum_rm':
                     continue
 
-                # If we are spawning sum_svc, do not spawn sum_rm since the former
-                # forks the latter.
-                if procName == 'sum_rm' and launchingSVC:
-                    continue
-
-                # there is no record of the process in the PID file - spawn the service
+                # There is no record of the process in the PID file - spawn the service.
                 print('Process ' + procName + ' is not running.')
                 print('Starting process ' + procName + '.') 
                 pid = runCmd([procName, sumsDb, expectedProcs[procName]])
@@ -397,7 +433,7 @@ if __name__ == "__main__":
                     if sumRmPid is not None:
                         # The brackets surrounding the program name mean that sums_procck.py is
                         # not the parent of the program.
-                        actualProcs['[sum_rm]'] = sumRmPid
+                        actualProcs['[sum_rm]'] = int(sumRmPid)
                     else:
                         raise Exception('sumrmPid', 'Unable to obtain newly spawned sum_rm pid.')
 
@@ -418,6 +454,9 @@ if __name__ == "__main__":
             elif etype == 'sumrmPid':
                 print('Error getting sum_rm pid: ' + msg, file=sys.stderr)
                 rv = RET_SUMRMPID
+            elif etype == 'killSVC':
+               print('Error killing sum_svc: ' + msg, file=sys.stderr)
+               rv = RET_KILLSUMS
                 
         # save the pid file
         try:
@@ -435,7 +474,7 @@ if __name__ == "__main__":
                 rv = RET_WRITEPID
 
         # Pause, before checking again.
-        time.sleep(10)
+        time.sleep(1)
 
 sys.exit(rv)
 
