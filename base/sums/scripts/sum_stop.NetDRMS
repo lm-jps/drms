@@ -101,32 +101,32 @@ $mon2 = sprintf("%02d", $mon+1);
 $date = (1900 + $year).".".$mon2.".$mday2"._.$hour2.":$min2".":$sec2";
 print "\nsum_stop.NetDRMS at $date\n\n";
 print LOG "sum_stop.NetDRMS at $date\n\n";
-print "NOTE: This will stop sum_svc and related processes. Make sure you want to do this\n";
-
-#goto SKIP;
-  print "Enter reason for stop (terminate with single '.' or ^D):\n>> ";
-  print LOG "Enter reason for stop (terminate with single '.' or ^D):\n";
-  while(<STDIN>) {
-    chomp($_);
-    if($_ eq ".") { last; }
-    else {
-      print LOG ">> $_\n";
-      print ">> ";
-    }
-  }
-  print "Please identify yourself:\n>> ";
-  print LOG "Please identify yourself:\n";
-  $ID = <STDIN>;
-  chomp($ID);
-  if(!$ID) { $ID = "<none>"; }
-  print LOG ">> $ID\n";
-
+    
     # To kill all SUMS processes, all you gotta do is send the SIGUSR1 signal to the sums_procck.py process.
     # The pid of the sums_procck.py process for the current SUMS session is in the SUMS pidfile. One line
     # contains just a number - that number is the pid.
     $err = 0;
     if (-e $pidFile)
     {
+        print "NOTE: This will stop sum_svc and related processes. Make sure you want to do this\n";
+        print "Enter reason for stop (terminate with single '.' or ^D):\n>> ";
+        print LOG "Enter reason for stop (terminate with single '.' or ^D):\n";
+        while(<STDIN>) {
+            chomp($_);
+            if($_ eq ".") { last; }
+            else {
+                print LOG ">> $_\n";
+                print ">> ";
+            }
+        }
+
+        print "Please identify yourself:\n>> ";
+        print LOG "Please identify yourself:\n";
+        $ID = <STDIN>;
+        chomp($ID);
+        if(!$ID) { $ID = "<none>"; }
+        print LOG ">> $ID\n";
+
         if (open(PID_FILE_H, "<$pidFile"))
         {
             while ($line = <PID_FILE_H>)
@@ -180,12 +180,6 @@ print "NOTE: This will stop sum_svc and related processes. Make sure you want to
         }
 
     }
-#Now kill the tape_svc, etc on n02
-#`ssh d02.stanford.edu /home/production/cvs/JSOC/base/sums/scripts/sum_stop_d02_tape`;
-
-#print "Removing lock file /usr/local/logs/soc/NOTAPEARC\n";
-#print LOG "Removing lock file /usr/local/logs/soc/NOTAPEARC\n";
-#`/bin/rm -f /usr/local/logs/soc/NOTAPEARC`;
 
 if (!$err)
 {
@@ -193,12 +187,6 @@ if (!$err)
     print LOG "SUM Stop NetDRMS Complete\n";
 }
 close(LOG);
-
-#$mail = "Mail -s \"SUM Stop NetDRMS Complete\"";
-##$to = "jsoc_users";
-#$to = "jim\@sun.stanford.edu";
-#$cmd = "$mail $to < $MLOGFILE";
-#if($mailflg) { system $cmd; }
 
 sub ExtractVal
 {
