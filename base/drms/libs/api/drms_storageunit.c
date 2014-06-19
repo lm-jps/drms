@@ -17,11 +17,6 @@
 #endif
 
 #define SUMIN(a,b)  ((a) > (b) ? (b) : (a))
-#ifdef DRMS_DEFAULT_RETENTION
-  #define STDRETENTION DRMS_DEFAULT_RETENTION
-#else
-  #define STDRETENTION (-3)
-#endif
 
 //igor VSO HTTP request to JMD start
 #ifdef JMD_IS_INSTALLED
@@ -814,28 +809,26 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
                  
                  if (!drms_su_getexportURL(env, su->sunum, url, sizeof(url)))
                  {
-                    /* Call external program; doesn't return - must be in path */
-                    char cmd[PATH_MAX];
-                    sunumlist = (char *)malloc(kSUNUMLISTSIZE);
-                    memset(sunumlist, 0, kSUNUMLISTSIZE);
-                    
-                    listsize = kSUNUMLISTSIZE;
-                    snprintf(listbuf, 
-                             sizeof(listbuf), 
-                             "%s\\{%lld\\}",
-                             su->seriesinfo ? su->seriesinfo->seriesname : "unknown",
-                             (long long)su->sunum);
-                    sunumlist = base_strcatalloc(sunumlist, url, &listsize);
-                    sunumlist = base_strcatalloc(sunumlist, "=", &listsize);
-                    sunumlist = base_strcatalloc(sunumlist, listbuf, &listsize);
-                    snprintf(cmd, sizeof(cmd), "%s %s", kEXTREMOTESUMS, sunumlist);
-                    
-                    /* Careful with the $PATH env variable! The following call creates a new 
-                     * shell instance. If the path to remotesums_master.pl is not properly 
-                     * added to the $PATH variable via .cshrc or some other login script, 
-                     * then remotesums_master.pl will never be found. The parent will then 
-                     * unblock and fail to read an data from infd[0]. */
-                    execl("/bin/tcsh", "tcsh", "-c", cmd, (char *)0);
+                     /* Call external program; doesn't return - must be in path */
+                     sunumlist = (char *)malloc(kSUNUMLISTSIZE);
+                     memset(sunumlist, 0, kSUNUMLISTSIZE);
+                     
+                     listsize = kSUNUMLISTSIZE;
+                     snprintf(listbuf,
+                              sizeof(listbuf),
+                              "%s\{%lld\}",
+                              su->seriesinfo ? su->seriesinfo->seriesname : "unknown",
+                              (long long)su->sunum);
+                     sunumlist = base_strcatalloc(sunumlist, url, &listsize);
+                     sunumlist = base_strcatalloc(sunumlist, "=", &listsize);
+                     sunumlist = base_strcatalloc(sunumlist, listbuf, &listsize);
+                     
+                     /* Careful with the $PATH env variable! The following call creates a new
+                      * shell instance. If the path to remotesums_master.pl is not properly
+                      * added to the $PATH variable via .cshrc or some other login script,
+                      * then remotesums_master.pl will never be found. The parent will then
+                      * unblock and fail to read an data from infd[0]. */
+                     execlp(kEXTREMOTESUMS, kEXTREMOTESUMS, sunumlist, (char *)0);
                  }
               }
               else
@@ -1196,7 +1189,6 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
               HContainer_t *acont = NULL;
               SUList_t *alist = NULL;
               SUList_t *newlist = NULL;
-              char cmd[PATH_MAX];
               char *sunumlist = NULL;
               HIterator_t *hiturl = NULL;
               HIterator_t *hitsers = NULL;
@@ -1233,7 +1225,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
                           newlist->size = kSUNUMLISTSIZE;
                           memset(newlist->str, 0, kSUNUMLISTSIZE);
                           
-                          snprintf(listbuf, sizeof(listbuf), "%s=%s\\{%lld", url, sname, rsu->sunum);
+                          snprintf(listbuf, sizeof(listbuf), "%s=%s\{%lld", url, sname, rsu->sunum);
                           newlist->str = base_strcatalloc(newlist->str, listbuf, &(newlist->size));
                        }
                     }
@@ -1250,7 +1242,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
                        newlist->size = kSUNUMLISTSIZE;
                        memset(newlist->str, 0, kSUNUMLISTSIZE);
                        
-                       snprintf(listbuf, sizeof(listbuf), "%s=%s\\{%lld", url, sname, rsu->sunum);
+                       snprintf(listbuf, sizeof(listbuf), "%s=%s\{%lld", url, sname, rsu->sunum);
                        newlist->str = base_strcatalloc(newlist->str, listbuf, &(newlist->size));
                     }
                  }
@@ -1285,7 +1277,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
                        while ((alist = hiter_getnext(hitsers)) != NULL)
                        {
                           /* Must append the final '}' to all lists */
-                          alist->str = base_strcatalloc(alist->str, "\\}", &(alist->size));
+                          alist->str = base_strcatalloc(alist->str, "\}", &(alist->size));
                           
                           /* create a string that contains all sulists */
                           if (!firstsers)
@@ -1307,11 +1299,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
                  hiter_destroy(&hiturl);
               }
               
-              snprintf(cmd, sizeof(cmd), "%s %s", kEXTREMOTESUMS, sunumlist);
-              
-              // fprintf(stderr, "cmd is %s\n", cmd);
-              
-              execl("/bin/tcsh", "tcsh", "-c", cmd, (char *)0);
+              execlp(kEXTREMOTESUMS, kEXTREMOTESUMS, sunumlist, (char *)0);
               
               /* Execution never gets here. */
            }

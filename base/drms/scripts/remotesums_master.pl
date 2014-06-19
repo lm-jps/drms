@@ -55,7 +55,8 @@ my($kGETAPP) = "wget";
 my($kGETAPPFLAG) = "-q";
 my($kGETAPPOUT) = "/tmp/jsoc_export.$$";
 my($kGETAPPOFLAG) = "-O $kGETAPPOUT";
-my($kSIZECUTOFF) = 134217728; # 128MB
+my($kSIZECUTOFF) = 1073741824; # 1GB - increased from 128 MB for now. Eventually remotesums_master.pl will go away completely and at that point
+                               # we'll properly deal with async vs. sync transfers.
 my($kRSINGEST) = "remotesums_ingest";
 
 my($expURL);

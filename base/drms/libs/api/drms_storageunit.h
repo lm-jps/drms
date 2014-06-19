@@ -4,6 +4,12 @@
 #ifndef __DRMS_STORRAGEUNIT_H
 #define __DRMS_STORRAGEUNIT_H
 
+#ifdef DRMS_DEFAULT_RETENTION
+    #define STDRETENTION DRMS_DEFAULT_RETENTION
+#else
+    #define STDRETENTION (-3)
+#endif
+
 /* remotesums APIs */
 int drms_su_allocsu(DRMS_Env_t *env, 
                     uint64_t size, 

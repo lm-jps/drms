@@ -10,6 +10,7 @@
 static int getstring(char **inn, char *out, int maxlen);
 static int getvalstring(char **inn, char *out, int maxlen);
 /* static int getdouble(char **in, double *val, int parserline); */
+static int getshort(char **in, int16_t *val, int parserline);
 static int getint(char **in, int *val, int parserline);
 static inline int prefixmatch(char *token, const char *pattern);
 static int gettoken(char **in, char *copy, int maxlen, int parserline);
@@ -46,6 +47,7 @@ static int keywordname_isreserved(const char *name);
 /* Add macros so that getkeyword, et al, use the correct __LINE__ 
  * (otherwise, they use the line that getkeyword lives at */
 #define GETDOUBLE(p, v) getdouble(p, v, __LINE__)
+#define GETSHORT(p, v) getshort(p, v, __LINE__)
 #define GETINT(p, v) getint(p, v, __LINE__)
 #define GETTOKEN(p, c, m) gettoken(p, c, m,  __LINE__)
 #define GETVALTOKEN(p, t, c, m) getvaltoken(p, t, c, m, __LINE__)
@@ -462,6 +464,8 @@ static int parse_seriesinfo (char *desc, DRMS_Record_t *template)
     int len;
     char *start, *p, *q;
     int iStat = 0;
+    int16_t newSuRetention = 0;
+    int16_t stagingRetention = 0;
     
     /* Parse the description line by line, filling out the template struct. */
     start = desc;
@@ -518,7 +522,11 @@ static int parse_seriesinfo (char *desc, DRMS_Record_t *template)
         }
         else if (prefixmatch (p, "Retention"))
         {
-            TRY(GETINT (&q, &(template->seriesinfo->retention)))
+            TRY(GETSHORT(&q, &newSuRetention))
+        }
+        else if (prefixmatch (p, "StagingRetention"))
+        {
+            TRY(GETSHORT(&q, &stagingRetention))
         }
         else if (prefixmatch (p, "CreateShadow"))
         {
@@ -528,6 +536,8 @@ static int parse_seriesinfo (char *desc, DRMS_Record_t *template)
         
         len = getnextline (&start);
     }
+    
+    template->seriesinfo->retention = newSuRetention + (stagingRetention << 16);
     
     if (template->seriesinfo->archive != -1 && 
         template->seriesinfo->archive !=  0 && 
@@ -554,7 +564,8 @@ static int parse_seriesinfo (char *desc, DRMS_Record_t *template)
     printf("Archive = %d\n",template->seriesinfo->archive);
     printf("Unitsize = %d\n",template->seriesinfo->unitsize);
     printf("Tapegroup = %d\n",template->seriesinfo->tapegroup);
-    printf("Retention = %d\n",template->seriesinfo->retention);
+    printf("Retention = %hd\n", newSuRetention);
+    printf("StagingRetention = %hd\n", stagingRetention);
 #endif
     
     return iStat;
@@ -2438,26 +2449,72 @@ static int getvalstring(char **inn, char *out, int maxlen)
    return len;
 }
 
-static int getint(char **in, int *val, int parserline)
+int getshort(char **in, int16_t *val, int parserline)
 {
-  char *endptr;
-  
-  *val = (int)strtol(*in,&endptr,0);
-  if (*val==0 && endptr==*in )
-  {
-    fprintf(stderr,
-            "%s, line %d: The string '%s' on line %d of JSOC series descriptor is not an integer.\n",
-            __FILE__, 
-            parserline,
-            *in, 
-            lineno);
-    return 1;
-  }
-  else
-  {
-    *in = endptr;
-    return 0;
-  }
+    char *endptr;
+    long long ival;
+    
+    ival = (int)strtoll(*in, &endptr, 0);
+    if (ival == 0 && endptr == *in )
+    {
+        fprintf(stderr,
+                "%s, line %d: The string '%s' on line %d of JSOC series descriptor is not an integer.\n",
+                __FILE__,
+                parserline,
+                *in,
+                lineno);
+        return 1;
+    }
+    else if (ival < INT16_MIN || ival > INT16_MAX)
+    {
+        fprintf(stderr,
+                "%s, line %d: The string '%s' on line %d of JSOC series descriptor represents an out-of-range integer.\n",
+                __FILE__,
+                parserline,
+                *in,
+                lineno);
+        return 1;
+    }
+    else
+    {
+        *val = (int16_t)ival;
+        *in = endptr;
+        return 0;
+    }
+}
+
+int getint(char **in, int *val, int parserline)
+{
+    char *endptr;
+    long long ival;
+    
+    ival = (int)strtoll(*in, &endptr, 0);
+    if (ival == 0 && endptr == *in )
+    {
+        fprintf(stderr,
+                "%s, line %d: The string '%s' on line %d of JSOC series descriptor is not an integer.\n",
+                __FILE__,
+                parserline,
+                *in,
+                lineno);
+        return 1;
+    }
+    else if (ival < INT_MIN || ival > INT_MAX)
+    {
+        fprintf(stderr,
+                "%s, line %d: The string '%s' on line %d of JSOC series descriptor represents an out-of-range integer.\n",
+                __FILE__,
+                parserline,
+                *in,
+                lineno);
+        return 1;
+    }
+    else
+    {
+        *val = (int)ival;
+        *in = endptr;
+        return 0;
+    }
 }
 
 
@@ -2758,6 +2815,8 @@ void drms_jsd_printfromrec(DRMS_Record_t *rec) {
    char **extpkeys; 
    DRMS_Keyword_t *dbidxkw = NULL;
    const char *dbidxkwname = NULL;
+    int16_t newSuRet = INT16_MIN;
+    int16_t stagingRet = INT16_MIN;
 
    printf("#=====General Series Information=====\n");
    printf("%-*s\t%s\n",fwidth,"Seriesname:",rec->seriesinfo->seriesname);
@@ -2765,7 +2824,16 @@ void drms_jsd_printfromrec(DRMS_Record_t *rec) {
    printf("%-*s\t%s\n",fwidth,"Owner:",rec->seriesinfo->owner);
    printf("%-*s\t%d\n",fwidth,"Unitsize:",rec->seriesinfo->unitsize);
    printf("%-*s\t%d\n",fwidth,"Archive:",rec->seriesinfo->archive);
-   printf("%-*s\t%d\n",fwidth,"Retention:",rec->seriesinfo->retention);
+    
+    newSuRet = drms_series_getnewsuretention(rec->seriesinfo);
+    stagingRet = drms_series_getstagingretention(rec->seriesinfo);
+    printf("%-*s\t%hd\n", fwidth, "Retention:", newSuRet);
+    if (stagingRet == 0)
+    {
+        stagingRet = (int16_t)abs(STDRETENTION);
+    }
+    printf("%-*s\t%hd\n", fwidth, "StagingRetention:", stagingRet);
+    
    printf("%-*s\t%d\n",fwidth,"Tapegroup:",rec->seriesinfo->tapegroup);
    /*printf("%-*s\t%s\n",fwidth,"Version:",rec->seriesinfo->version);*/
 
