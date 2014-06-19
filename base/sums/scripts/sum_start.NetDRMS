@@ -117,9 +117,6 @@ $mday2 = sprintf("%02d", $mday);
 $mon2 = sprintf("%02d", $mon+1);
 # $year2 = sprintf("%02d", $year);
 $date = (1900 + $year).".".$mon2.".$mday2"._.$hour2.":$min2".":$sec2";
-$dtag = (1900 + $year).".".$mon2.".$mday2".".$hour2"."$min2"."$sec2"; #for log name
-$sumlog = "sum_svc_$dtag.log";
-$sumrmlog = "sum_rm_$dtag.log";
 print "sum_start.NetDRMS at $date\n\n";
 print LOG "sum_start.NetDRMS at $date\n\n";
 

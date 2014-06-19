@@ -81,16 +81,6 @@ if($user ne $sumsmanager) {
   print "You must be user $sumsmanager to run\n";
   exit;
 }
-@def = grep(/^#define SUMS_MANAGER_UID/, @servdefs);
-$sumsmanageruid = ExtractVal($def[0]);
-
-#print "SUMS_MANAGER_UID is $sumsmanageruid\n";
-$GREPPS = $sumsmanageruid;
-
-@def = grep(/^#define DBNAME/, @servdefs);
-$dbname = ExtractVal($def[0]);
-
-$DB = $dbname."_sums";
 
 @def = grep(/^#define SUMLOG_BASEDIR/, @servdefs);
 $logDir = ExtractVal($def[0]);
