@@ -19,7 +19,7 @@
 #define SUMIN(a,b)  ((a) > (b) ? (b) : (a))
 
 //igor VSO HTTP request to JMD start
-#ifdef JMD_IS_INSTALLED
+#if defined(JMD_IS_INSTALLED) && JMD_IS_INSTALLED
     #include <curl/curl.h>
     #include <curl/types.h>
     #include <curl/easy.h>
@@ -755,7 +755,7 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
             * that an empty dir denotes a remote SUNUM).
             */
 
-#ifdef JMD_IS_INSTALLED
+#if defined(JMD_IS_INSTALLED) && JMD_IS_INSTALLED
            //ISS VSO HTTP JMD START {
            struct POSTState ps;
            char *postrequeststr=NULL;
@@ -816,7 +816,7 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
                      listsize = kSUNUMLISTSIZE;
                      snprintf(listbuf,
                               sizeof(listbuf),
-                              "%s\{%lld\}",
+                              "%s{%lld}",
                               su->seriesinfo ? su->seriesinfo->seriesname : "unknown",
                               (long long)su->sunum);
                      sunumlist = base_strcatalloc(sunumlist, url, &listsize);
@@ -1094,10 +1094,10 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
       * and then retry. */
      if (natts < 2 && retrysus && list_llgetnitems(retrysus) > 0)
      {
-#ifdef JMD_IS_INSTALLED
+         ListNode_t *node = NULL;
+#if defined(JMD_IS_INSTALLED) && JMD_IS_INSTALLED
         //ISS VSO HTTP JMD START {
         /* iterate through each sunum */
-        ListNode_t *node = NULL;
         DRMS_StorageUnit_t *rsu = NULL;
 
         list_llreset(retrysus);
@@ -1225,7 +1225,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
                           newlist->size = kSUNUMLISTSIZE;
                           memset(newlist->str, 0, kSUNUMLISTSIZE);
                           
-                          snprintf(listbuf, sizeof(listbuf), "%s=%s\{%lld", url, sname, rsu->sunum);
+                          snprintf(listbuf, sizeof(listbuf), "%s=%s{%lld", url, sname, rsu->sunum);
                           newlist->str = base_strcatalloc(newlist->str, listbuf, &(newlist->size));
                        }
                     }
@@ -1242,7 +1242,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
                        newlist->size = kSUNUMLISTSIZE;
                        memset(newlist->str, 0, kSUNUMLISTSIZE);
                        
-                       snprintf(listbuf, sizeof(listbuf), "%s=%s\{%lld", url, sname, rsu->sunum);
+                       snprintf(listbuf, sizeof(listbuf), "%s=%s{%lld", url, sname, rsu->sunum);
                        newlist->str = base_strcatalloc(newlist->str, listbuf, &(newlist->size));
                     }
                  }
@@ -1277,7 +1277,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
                        while ((alist = hiter_getnext(hitsers)) != NULL)
                        {
                           /* Must append the final '}' to all lists */
-                          alist->str = base_strcatalloc(alist->str, "\}", &(alist->size));
+                          alist->str = base_strcatalloc(alist->str, "}", &(alist->size));
                           
                           /* create a string that contains all sulists */
                           if (!firstsers)
@@ -2585,7 +2585,7 @@ int drms_su_sumexport(DRMS_Env_t *env, SUMEXP_t *sumexpt)
    return drmsst;
 }
 
-#ifdef JMD_IS_INSTALLED
+#if defined(JMD_IS_INSTALLED) && JMD_IS_INSTALLED
 //igor ISS VSO HTTP request to JMD START {
 
 int send_POST_request(char * postrequeststr, curl_off_t postsize, struct POSTState *ps) 
