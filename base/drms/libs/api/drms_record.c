@@ -6266,13 +6266,13 @@ DRMS_RecordSet_t *callRetrieveRecsPreparedQuery(DRMS_Env_t *env, HContainer_t *m
         istat = DRMS_ERROR_OUTOFMEMORY;
     }
     
-    if (istat == DRMS_SUCCESS)
+    if (istat == DRMS_SUCCESS && rvMerge)
     {
         rvMerge->ss_currentrecs = (int *)malloc(sizeof(int));
         
-        /* Users should not use rvMerge (a record-set of linked records) directly, so all the ss_* fields do not matter, and we can consider the 
-         * record-set as originating from a single series (but in fact they could have derived from multiple series). The only ss_* field that 
-         * does matter is ss_currentrecs, which is used by drms_recordset_fetchnext() for iteration over the records. DRMS, not clients, 
+        /* Users should not use rvMerge (a record-set of linked records) directly, so all the ss_* fields do not matter, and we can consider the
+         * record-set as originating from a single series (but in fact they could have derived from multiple series). The only ss_* field that
+         * does matter is ss_currentrecs, which is used by drms_recordset_fetchnext() for iteration over the records. DRMS, not clients,
          * will use this function to iterate over records. */
         if (rvMerge->ss_currentrecs)
         {
