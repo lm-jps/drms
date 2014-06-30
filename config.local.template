@@ -118,8 +118,6 @@ SUMS_MULTIPLE_PARTNSETS      0
 # environment variables, or via editing of make_basic.mk
 AUTOSELCOMP (1)
 
-SUMS_DEBUG 0
-
 # SUMS Export - specify how to construct 4 arguments that represent the
 #   transfer program (e.g. scp), the user, the host, and the port to be used
 #   in a command line for fetching SUMS data from a server via sum_export_svc.
