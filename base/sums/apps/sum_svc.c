@@ -392,7 +392,8 @@ if(!strcmp(hostn, "dcs0") || !strcmp(hostn, "dcs1") || !strcmp(hostn, "dcs2") ||
       exit(1);
     }
   }
-  sleep(2);				/* let tape_svc start */
+  //sleep(2);				/* let tape_svc start */
+  sleep(10);				/* let tape_svc start */
   for(i=0; i < MAX_DRIVES; i++) { 	/* start all the driven_svc */
     if((pid = fork()) < 0) {
       write_log("***Can't fork(). errno=%d\n", errno);
