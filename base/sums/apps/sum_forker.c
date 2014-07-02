@@ -120,6 +120,7 @@ int main(int argc, char *argv[])
   char *args[8];
   char dsvcname[80], pgport[32], cmd[128];
 
+  printf("This is sum_forker\n");
   get_cmd(argc, argv);                  /* check the calling sequence */
   if(find_sum_rm() == -1) {
     printf("Fatal Error, quit\n");
@@ -140,7 +141,7 @@ int main(int argc, char *argv[])
   //  exit(1);
   //}
 
-
+  printf("sum_forker about to start tape_svc\n");
   if((pid = fork()) < 0) {
     printf("***Can't fork(). errno=%d\n", errno);
     exit(1);
@@ -173,7 +174,7 @@ int main(int argc, char *argv[])
       exit(1);
     }
   }
-  sleep(2);				/* let tape_svc start */
+  sleep(10);				/* let tape_svc start */
   for(i=0; i < MAX_DRIVES; i++) { 	/* start all the driven_svc */
     if((pid = fork()) < 0) {
       printf("***Can't fork(). errno=%d\n", errno);
