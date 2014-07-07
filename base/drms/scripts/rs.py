@@ -30,10 +30,12 @@
 #
 # rs.py API:
 #   status codes:
-#     'complete' - all requested SUs are online. All URL paths are returned in the HTTP response body.
-#     'pending'  - at least one requested SU was offline, but archived. Or the request is in jsoc.export_new, but
-#                  not yet in jsoc.export (in other words, processing of the request hasn't started yet).
-#     'error'    - there was some error (probably running jsoc_fetch) from which recovery is not possible.
+#     'complete'      - all requested SUs are online. All URL paths are returned in the HTTP response body.
+#     'pending'       - at least one requested SU was offline, but archived. Or the request is in jsoc.export_new, but
+#                       not yet in jsoc.export (in other words, processing of the request hasn't started yet).
+#     'errorArgs'     - a bad argument was provided to this script.
+#     'errorInteral'  - there was a problem calling an internal program.
+
 
 import sys
 import cgi
@@ -287,7 +289,7 @@ if __name__ == "__main__":
                 rootObj['status'] = 'pending'
                 rootObj['requestid'] = resp['requestid']
             else:
-                rootObj['status'] = 'errorCgi'
+                rootObj['status'] = 'errorInternal'
                 rootObj['statusMsg'] = 'Error calling jsoc_fetch.'
                 rootObj['requestid'] = resp['requestid']
 
