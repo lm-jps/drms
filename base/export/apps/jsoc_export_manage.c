@@ -2505,7 +2505,7 @@ static int GenProtoExpCmd(FILE *fptr,
     }
     else if (strncasecmp(protocol, protos[kProto_SuAsIs], strlen(protos[kProto_SuAsIs])) == 0)
     {
-        /* dataset has sunum=12345678. Strip off the "sunum=", which is not expected by jsoc_export_SU_as_is. */
+        /* dataset has sunums=12345678. Strip off the "sunums=", which is not expected by jsoc_export_SU_as_is. */
         char *dupe = NULL;
         char *sunumList = NULL;
         
@@ -2534,10 +2534,14 @@ static int GenProtoExpCmd(FILE *fptr,
                 GenErrChkCmd(fptr);
                 
                 /* print keyword values for as-is processing */
-                fprintf(fptr, "show_info JSOC_DBHOST=%s -ait ds='%s' n=%s > %s.keywords.txt\n",
-                        dbmainhost, dataset, RecordLimit, requestid);
+                fprintf(fptr, "show_info JSOC_DBHOST=%s -ait sunum='%s' n=%s > %s.keywords.txt\n",
+                        dbmainhost, sunumList, RecordLimit, requestid);
                 GenErrChkCmd(fptr);
             }
+            
+            free(dupe);
+            dupe = NULL;
+            sunumList = NULL;
         }
     }
     else
