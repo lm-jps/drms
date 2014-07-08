@@ -97,24 +97,26 @@
 
 enum Protocol_enum
 {
-   kProto_AsIs = 0,
-   kProto_FITS = 1,
-   kProto_MPEG = 2,
-   kProto_JPEG = 3,
-   kProto_PNG  = 4,
-   kProto_MP4  = 5
+    kProto_AsIs   = 0,
+    kProto_FITS   = 1,
+    kProto_MPEG   = 2,
+    kProto_JPEG   = 3,
+    kProto_PNG    = 4,
+    kProto_MP4    = 5,
+    kProto_SuAsIs = 6
 };
 
 typedef enum Protocol_enum Protocol_t;
 
 const char *protos[] =
 {
-   "as-is",
-   "fits",
-   "mpg", 
-   "jpg",
-   "png",
-   "mp4"
+    "as-is",
+    "fits",
+    "mpg",
+    "jpg",
+    "png",
+    "mp4",
+    "su-as-is"
 };
 
 struct ExpProcArg_struct
@@ -2450,67 +2452,79 @@ static int GenProtoExpCmd(FILE *fptr,
                           const char *filenamefmt,
                           const char *dbids)
 {
-   int rv = 0;
-
-   if (strncasecmp(protocol, protos[kProto_FITS], strlen(protos[kProto_FITS])) == 0)
-   {
-      rv = (GenExpFitsCmd(fptr, protocol, dbmainhost, requestid, dataset, RecordLimit, filenamefmt, method, dbids) != 0);
-   }
-   else if (strncasecmp(protocol, protos[kProto_MPEG], strlen(protos[kProto_MPEG])) == 0 ||
-            strncasecmp(protocol, protos[kProto_JPEG], strlen(protos[kProto_JPEG])) == 0 ||
-            strncasecmp(protocol, protos[kProto_PNG], strlen(protos[kProto_PNG])) == 0 ||
-            strncasecmp(protocol, protos[kProto_MP4], strlen(protos[kProto_MP4])) == 0)
-   {
-      char *dupe = strdup(protocol);
-      char *newproto = dupe;
-      char *pcomma=index(newproto,',');
-
-      if (pcomma)
-        *pcomma = '\0';
-
-      fprintf(fptr, "jsoc_export_as_images in='%s' reqid='%s' expversion='%s' n='%s' method='%s' outpath=$REQDIR ffmt='%s' cparms='%s'",
-              dataset, requestid, PACKLIST_VER, RecordLimit, method, filenamefmt, "cparms is not needed");
-
-      fprintf(fptr, " protocol='%s'", newproto);
-      while(pcomma)
-      {
-         newproto = pcomma+1;
-         pcomma=index(newproto,',');
-         if (pcomma)
-           *pcomma = '\0';
-         fprintf(fptr, " '%s'", newproto);
-      }
-      fprintf(fptr, "\n");
-
-      if (dupe)
-      {
-         free(dupe);
-      }
-   }
-   else if (strncasecmp(protocol, protos[kProto_AsIs], strlen(protos[kProto_AsIs])) == 0)
-   {
-      /* ART - multiple processing steps
-       * Always use record limit, since we can no longer make the export commands processing-specific. */
-      fprintf(fptr, "jsoc_export_as_is JSOC_DBHOST=%s ds='%s' n=%s requestid='%s' method='%s' protocol='%s' filenamefmt='%s'\n",
-              dbmainhost, dataset, RecordLimit, requestid, method, protos[kProto_AsIs], filenamefmt);
-
-      GenErrChkCmd(fptr);
-
-      /* print keyword values for as-is processing */
-      fprintf(fptr, "show_info JSOC_DBHOST=%s -ait ds='%s' n=%s > %s.keywords.txt\n",
-              dbmainhost, dataset, RecordLimit, requestid);
-      GenErrChkCmd(fptr);
-   }
-   else
-   {
-      /* Unknown protocol */
-      fprintf(stderr,
-              "XX jsoc_export_manage FAILURE; invalid protocol, requestid=%s, protocol=%s, method=%s\n",
-              requestid, protocol, method);
-      rv = 1;
-   }
-
-   return rv;
+    int rv = 0;
+    
+    if (strncasecmp(protocol, protos[kProto_FITS], strlen(protos[kProto_FITS])) == 0)
+    {
+        rv = (GenExpFitsCmd(fptr, protocol, dbmainhost, requestid, dataset, RecordLimit, filenamefmt, method, dbids) != 0);
+    }
+    else if (strncasecmp(protocol, protos[kProto_MPEG], strlen(protos[kProto_MPEG])) == 0 ||
+             strncasecmp(protocol, protos[kProto_JPEG], strlen(protos[kProto_JPEG])) == 0 ||
+             strncasecmp(protocol, protos[kProto_PNG], strlen(protos[kProto_PNG])) == 0 ||
+             strncasecmp(protocol, protos[kProto_MP4], strlen(protos[kProto_MP4])) == 0)
+    {
+        char *dupe = strdup(protocol);
+        char *newproto = dupe;
+        char *pcomma=index(newproto,',');
+        
+        if (pcomma)
+            *pcomma = '\0';
+        
+        fprintf(fptr, "jsoc_export_as_images in='%s' reqid='%s' expversion='%s' n='%s' method='%s' outpath=$REQDIR ffmt='%s' cparms='%s'",
+                dataset, requestid, PACKLIST_VER, RecordLimit, method, filenamefmt, "cparms is not needed");
+        
+        fprintf(fptr, " protocol='%s'", newproto);
+        while(pcomma)
+        {
+            newproto = pcomma+1;
+            pcomma=index(newproto,',');
+            if (pcomma)
+                *pcomma = '\0';
+            fprintf(fptr, " '%s'", newproto);
+        }
+        fprintf(fptr, "\n");
+        
+        if (dupe)
+        {
+            free(dupe);
+        }
+    }
+    else if (strncasecmp(protocol, protos[kProto_AsIs], strlen(protos[kProto_AsIs])) == 0)
+    {
+        /* ART - multiple processing steps
+         * Always use record limit, since we can no longer make the export commands processing-specific. */
+        fprintf(fptr, "jsoc_export_as_is JSOC_DBHOST=%s ds='%s' n=%s requestid='%s' method='%s' protocol='%s' filenamefmt='%s'\n",
+                dbmainhost, dataset, RecordLimit, requestid, method, protos[kProto_AsIs], filenamefmt);
+        
+        GenErrChkCmd(fptr);
+        
+        /* print keyword values for as-is processing */
+        fprintf(fptr, "show_info JSOC_DBHOST=%s -ait ds='%s' n=%s > %s.keywords.txt\n",
+                dbmainhost, dataset, RecordLimit, requestid);
+        GenErrChkCmd(fptr);
+    }
+    else if (strncasecmp(protocol, protos[kProto_SuAsIs], strlen(protos[kProto_SuAsIs])) == 0)
+    {
+        fprintf(fptr, "jsoc_export_SU_as_is JSOC_DBHOST=%s ds='%s' requestid='%s'\n",
+                dbmainhost, dataset, requestid);
+        
+        GenErrChkCmd(fptr);
+        
+        /* print keyword values for as-is processing */
+        fprintf(fptr, "show_info JSOC_DBHOST=%s -ait ds='%s' n=%s > %s.keywords.txt\n",
+                dbmainhost, dataset, RecordLimit, requestid);
+        GenErrChkCmd(fptr);
+    }
+    else
+    {
+        /* Unknown protocol */
+        fprintf(stderr,
+                "XX jsoc_export_manage FAILURE; invalid protocol, requestid=%s, protocol=%s, method=%s\n",
+                requestid, protocol, method);
+        rv = 1;
+    }
+    
+    return rv;
 }
 
 static void FreeDataSetKw(void *val)
@@ -2659,6 +2673,7 @@ int DoIt(void)
   char reqdir[DRMS_MAXPATHLEN];
   char command[DRMS_MAXPATHLEN];
   char *RecordLimit = NULL;
+  int doSuExport;
   long long size;
   TIME reqtime;
   TIME esttime;
@@ -2806,6 +2821,15 @@ int DoIt(void)
                                                                      * field is an int, so I think we just punt on this.
                                                                      */
           
+          if (strncmp(dataset, "sunums=", 7) == 0)
+          {
+              doSuExport = 1;
+          }
+          else
+          {
+              doSuExport = 0;
+          }
+          
       printf("New Request #%d/%d: %s, Status=%d, Processing=%s, DataSet=%s, Protocol=%s, Method=%s\n",
 	irec, exports_new->n, requestid, status, process, dataset, protocol, method);
       fflush(stdout);
@@ -2885,27 +2909,30 @@ int DoIt(void)
           
           /* Reject request if dataset contains a list of comma-separated record-set specifications. 
            * Currently, the code supports only a single record-set specification. */
-          if (ParseRecSetSpec(dataset, &snames, &filts, &nsets, &info))
+          if (!doSuExport)
           {
-              /* Can't parse, set this record's status to a failure status. */
-              /* export_log is the jsoc.export_new record. */
-              snprintf(msgbuf, sizeof(msgbuf), "Unable to parse the export record specification '%s'.", dataset);
-              ErrorOutExpRec(&export_rec, 4, msgbuf);
-              ErrorOutExpNewRec(exports_new, &export_log, irec, 4, msgbuf);
-              continue;
-          }
-          else if (nsets > 1)
-          {
-              /* The export system does not support comma-separated list of record specification. */
-              /* export_log is the jsoc.export_new record. */
-              snprintf(msgbuf, sizeof(msgbuf), "The export system does not currently support comma-separated lists of record-set specifications.");
-              ErrorOutExpRec(&export_rec, 4, msgbuf);
-              ErrorOutExpNewRec(exports_new, &export_log, irec, 4, msgbuf);
+              if (ParseRecSetSpec(dataset, &snames, &filts, &nsets, &info))
+              {
+                  /* Can't parse, set this record's status to a failure status. */
+                  /* export_log is the jsoc.export_new record. */
+                  snprintf(msgbuf, sizeof(msgbuf), "Unable to parse the export record specification '%s'.", dataset);
+                  ErrorOutExpRec(&export_rec, 4, msgbuf);
+                  ErrorOutExpNewRec(exports_new, &export_log, irec, 4, msgbuf);
+                  continue;
+              }
+              else if (nsets > 1)
+              {
+                  /* The export system does not support comma-separated list of record specification. */
+                  /* export_log is the jsoc.export_new record. */
+                  snprintf(msgbuf, sizeof(msgbuf), "The export system does not currently support comma-separated lists of record-set specifications.");
+                  ErrorOutExpRec(&export_rec, 4, msgbuf);
+                  ErrorOutExpNewRec(exports_new, &export_log, irec, 4, msgbuf);
+                  FreeRecSpecParts(&snames, &filts, nsets);
+                  continue;
+              }
+              
               FreeRecSpecParts(&snames, &filts, nsets);
-              continue;
           }
-          
-          FreeRecSpecParts(&snames, &filts, nsets);
           
   
       drms_record_directory(export_rec, reqdir, 1);
@@ -3060,11 +3087,14 @@ int DoIt(void)
            * It is connected to the db on dbexporthost. dbmainhost is the host
            * of the correct jsoc database. This function will ensure that
            * it talks to dbmainhost. */
-          if (ParseRecSetSpec(cdataset, &snames, &filts, &nsets, &info))
+          if (!doSuExport)
           {
-              snprintf(msgbuf, sizeof(msgbuf), "Invalid input series record-set query %s.", cdataset);
-              quit = 1;
-              break;
+              if (ParseRecSetSpec(cdataset, &snames, &filts, &nsets, &info))
+              {
+                  snprintf(msgbuf, sizeof(msgbuf), "Invalid input series record-set query %s.", cdataset);
+                  quit = 1;
+                  break;
+              }
           }
           
           /* If the record-set query is an @file or contains multiple sub-record-set queries. We currently
@@ -3126,11 +3156,14 @@ int DoIt(void)
            * It is connected to the db on dbexporthost. dbmainhost is the host
            * of the correct jsoc database. This function will ensure that
            * it talks to dbmainhost. */
-          if (ParseRecSetSpec(datasetout, &snames, &filts, &nsets, &info))
+          if (!doSuExport)
           {
-              snprintf(msgbuf, sizeof(msgbuf), "Invalid output series record-set query %s.", datasetout);
-              quit = 1;
-              break;
+              if (ParseRecSetSpec(datasetout, &snames, &filts, &nsets, &info))
+              {
+                  snprintf(msgbuf, sizeof(msgbuf), "Invalid output series record-set query %s.", datasetout);
+                  quit = 1;
+                  break;
+              }
           }
           
           /* If the record-set query is an @file or contains multiple sub-record-set queries. We currently
