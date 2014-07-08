@@ -2505,15 +2505,40 @@ static int GenProtoExpCmd(FILE *fptr,
     }
     else if (strncasecmp(protocol, protos[kProto_SuAsIs], strlen(protos[kProto_SuAsIs])) == 0)
     {
-        fprintf(fptr, "jsoc_export_SU_as_is JSOC_DBHOST=%s ds='%s' requestid='%s'\n",
-                dbmainhost, dataset, requestid);
+        /* dataset has sunum=12345678. Strip off the "sunum=", which is not expected by jsoc_export_SU_as_is. */
+        char *dupe = NULL;
+        char *sunumList = NULL;
         
-        GenErrChkCmd(fptr);
-        
-        /* print keyword values for as-is processing */
-        fprintf(fptr, "show_info JSOC_DBHOST=%s -ait ds='%s' n=%s > %s.keywords.txt\n",
-                dbmainhost, dataset, RecordLimit, requestid);
-        GenErrChkCmd(fptr);
+        dupe = strdup(dataset);
+        if (!dupe)
+        {
+            fprintf(stderr, "Out of memory.\n");
+            rv = 1;
+        }
+        else
+        {
+            sunumList = strchr(dupe, '=');
+            
+            if (!sunumList)
+            {
+                fprintf(stderr, "Bad format for DataSet column; should be 'sunum=...'.\n");
+                rv = 1;
+            }
+            else
+            {
+                sunumList++;
+                
+                fprintf(fptr, "jsoc_export_SU_as_is JSOC_DBHOST=%s ds='%s' requestid='%s'\n",
+                        dbmainhost, sunumList, requestid);
+                
+                GenErrChkCmd(fptr);
+                
+                /* print keyword values for as-is processing */
+                fprintf(fptr, "show_info JSOC_DBHOST=%s -ait ds='%s' n=%s > %s.keywords.txt\n",
+                        dbmainhost, dataset, RecordLimit, requestid);
+                GenErrChkCmd(fptr);
+            }
+        }
     }
     else
     {
