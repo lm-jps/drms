@@ -86,7 +86,8 @@
 #define kOpExpHistory	"exp_history"	// not used yet
 #define kUserHandle	"userhandle"    // user provided unique session handle
 
-#define kOptProtocolAsIs "as-is"	// Protocol option value for no change to fits files
+#define kOptProtocolAsIs   "as-is"	   // Protocol option value for no change to fits files
+#define kOptProtocolSuAsIs "su-as-is"  // Protocol option value for requesting as-is FITS paths for the exp_su operation
 
 #define kNotSpecified	"Not Specified"
 
@@ -1909,7 +1910,7 @@ int DoIt(void)
        JSONDIE("SUMS is down.");
     }
 
-    if (strcmp(method,"url_quick")==0 && strcmp(protocol,kOptProtocolAsIs)==0  && (all_online || dodataobj))
+    if (strcmp(method,"url_quick")==0 && (strcmp(protocol,kOptProtocolAsIs)==0 || strcmp(protocol,kOptProtocolSuAsIs)==0)  && (all_online || dodataobj))
       {
       if (dojson)
         {
@@ -2059,26 +2060,52 @@ check for requestor to be valid remote DRMS site
       }
     else
       requestorid = 0;
+        
+    if ( !requestid || !*requestid || strcmp(requestid, "none") == 0)
+        JSONDIE("Must have valid requestID - internal error.");
+        
+    if (strcmp(dsin, kNotSpecified) == 0 && (!sunumarr || sunumarr[0] < 0))
+        JSONDIE("Must have valid Recordset or SU set");
 
     // FORCE process to be su_export
-    process = "su_export";
-
+    char *dataSetCol = NULL;
+    size_t szDataSetCol = 512;
+    char numBuf[64];
+    char *processingCol = "n=0|no_op";
+        
+    dataSetCol = calloc(1, szDataSetCol);
+    if (!dataSetCol)
+    {
+        JSONDIE("Out of memory creating Processing string.");
+    }
+        
+    dataSetCol = base_strcatalloc(dataSetCol, "sunums=", &szDataSetCol);
+        
+    // Some SUs maybe online, but at least one is offline. Request that the export system process ALL SUs. This is slightly inefficient
+    // since SUMS will have to query its db again to get paths that we already have right now. But this is only a minor inefficiency,
+    // and it is much easier to send all SUs to the export system, so I think sending all SUs is justified. There should not be too many
+    // SUs in this request to fit on a jsoc_export_SU_as_is command line (rs.py will break-up a large request into smaller ones).
+        
+    for (isunum = 0; isunum < nsunums; isunum++)
+    {
+        if (isunum > 0)
+        {
+            dataSetCol = base_strcatalloc(dataSetCol, ",", &szDataSetCol);
+        }
+        
+        snprintf(numBuf, sizeof(numBuf), "%lld", ((long long signed int *)sunumarr)[isunum]);
+        dataSetCol = base_strcatalloc(dataSetCol, numBuf, &szDataSetCol);
+    }
+        
     // Create new record in export control series
     // This will be copied into the cluster-side series on first use.
-
-    if ( !requestid || !*requestid || strcmp(requestid, "none") == 0)
-      JSONDIE("Must have valid requestID - internal error.");
-
-    if (strcmp(dsin, kNotSpecified) == 0 && (!sunumarr || sunumarr[0] < 0))
-      JSONDIE("Must have valid Recordset or SU set");
-
-        /* jsoc.export_new */
+    /* jsoc.export_new */
     exprec = drms_create_record(drms_env, export_series, DRMS_PERMANENT, &status);
     if (!exprec)
       JSONDIE("Cant create new export control record");
     drms_setkey_string(exprec, "RequestID", requestid);
-    drms_setkey_string(exprec, "DataSet", dsin);
-    drms_setkey_string(exprec, "Processing", process);
+    drms_setkey_string(exprec, "DataSet", dataSetCol);
+    drms_setkey_string(exprec, "Processing", processingCol);
     drms_setkey_string(exprec, "Protocol", protocol);
     drms_setkey_string(exprec, "FilenameFmt", filenamefmt);
     drms_setkey_string(exprec, "Method", method);
@@ -2088,7 +2115,13 @@ check for requestor to be valid remote DRMS site
     drms_setkey_longlong(exprec, "Size", (int)size);
     drms_setkey_int(exprec, "Status", (testmode ? 12 : 2));
     drms_setkey_int(exprec, "Requestor", requestorid);
-    // drms_close_record(exprec, DRMS_INSERT_RECORD); 
+        
+    if (dataSetCol)
+    {
+        free(dataSetCol);
+        dataSetCol = NULL;
+    }
+    // drms_close_record(exprec, DRMS_INSERT_RECORD);
     } // end of exp_su
 
   /*  op == exp_request  */
@@ -2421,7 +2454,7 @@ check for requestor to be valid remote DRMS site
     size /= 1024*1024;
   
     // Exit if no records found
-    if ((strcmp(method,"url_quick")==0 && (strcmp(protocol,kOptProtocolAsIs)==0) || strcmp(protocol,"su")==0) && segcount == 0)
+    if ((strcmp(method,"url_quick")==0 && (strcmp(protocol,kOptProtocolAsIs)==0 || strcmp(protocol,kOptProtocolSuAsIs)==0) || strcmp(protocol,"su")==0) && segcount == 0)
       JSONDIE("There are no files in this RecordSet");
 
     // Return status==3 if request is too large.
@@ -2486,7 +2519,7 @@ check for requestor to be valid remote DRMS site
       }
 
     // Do quick export if possible
-    if ((strcmp(method,"url_quick")==0 && (strcmp(protocol,kOptProtocolAsIs)==0) || strcmp(protocol,"su")==0) && all_online)
+    if ((strcmp(method,"url_quick")==0 && (strcmp(protocol,kOptProtocolAsIs)==0 || strcmp(protocol,kOptProtocolSuAsIs)==0) || strcmp(protocol,"su")==0) && all_online)
       {
       if (0 && segcount == 1) // If only one file then do immediate delivery of that file.
         {
