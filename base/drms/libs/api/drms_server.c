@@ -41,7 +41,12 @@ int gSUMSbusy = 0;
 /* 0, unless a SIGPIPE signal was CAUGHT. */
 static volatile sig_atomic_t gGotPipe = 0;
 
-/* Container of pending SUM_get() requests, indexed by the SUM_t::uid. */
+/* Container of pending SUM_get() requests, indexed by the SUM_t::uid. An SU is pending
+ * if a SUM_get() was performed on it, causing an asynchronous tape read. The container
+ * actually contains one entry per sum_t (SUMS session). If a SUMS session is processing a 
+ * pending SUM_get() (i.e., tape read), then no further SUM_get() called can be made during 
+ * that session.
+ */
 HContainer_t *gSgPending = NULL;
 
 /******************* Main server thread(s) functions ************************/
@@ -3030,7 +3035,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
              * trying to find code that causes duplicate SUNUMs to be issued too, but in case we haven't found
              * all the places that cause this error, this block of code will prevent Sget() from crashing 
              * due to duplicate SUNUMs. */
-            fprintf(stderr, "SUMS thread: DRMS client called SUM_get() with a duplicate SUNUM (sums status = %d).\n", sum->status);
+            fprintf(stderr, "SUMS thread: SUM_get() failure. Terminating DRMS module.\n");
             nosums = 1;
             break;
         }

@@ -1106,182 +1106,193 @@ static void PrintKeyInfo(int *col, DRMS_Record_t *rec, char **keys, int nkeys, i
    }
 }
 
-static void PrintSegInfo(int *col, DRMS_Record_t *rec, char **segs, int nsegs, int linked_segs, int want_path, int want_path_noret, int keyword_list, int want_dims)
+static int PrintSegInfo(int *col, DRMS_Record_t *rec, char **segs, int nsegs, int linked_segs, int want_path, int want_path_noret, int keyword_list, int want_dims)
 {
-   int iseg;
-
-   /* now show desired segments */
-   for (iseg=0; iseg<nsegs; iseg++)
-   {
-      /* drms_segment_lookup() will follow links. So rec_seg_iseg->record ~= rec if                                                                                          
-       * the segment is a link. */
-      DRMS_Segment_t *rec_seg_iseg = drms_segment_lookup (rec, segs[iseg]);
-      if (rec_seg_iseg)
-      {
-         char fname[DRMS_MAXPATHLEN] = {0};
-         char path[DRMS_MAXPATHLEN] = {0};
-
-         if (rec_seg_iseg->info->protocol != DRMS_DSDS && rec_seg_iseg->info->protocol != DRMS_LOCAL)
-         {
-            if (want_path)
+    int iseg;
+    int stat;
+    
+    stat = DRMS_SUCCESS; /* This used to potentially return an error, but not now. */
+    
+    /* now show desired segments */
+    for (iseg=0; iseg<nsegs; iseg++)
+    {
+        /* drms_segment_lookup() will follow links. So rec_seg_iseg->record ~= rec if
+         * the segment is a link. */
+        DRMS_Segment_t *rec_seg_iseg = drms_segment_lookup (rec, segs[iseg]);
+        if (rec_seg_iseg)
+        {
+            char fname[DRMS_MAXPATHLEN] = {0};
+            char path[DRMS_MAXPATHLEN] = {0};
+            
+            if (rec_seg_iseg->info->protocol != DRMS_DSDS && rec_seg_iseg->info->protocol != DRMS_LOCAL)
             {
-               int stat;
-
-               // use segs rec to get linked record's path                                                                                                                       
-               if(want_path_noret) stat=drms_record_directory (rec_seg_iseg->record, path, 0);
-               else stat=drms_record_directory (rec_seg_iseg->record, path, 1);
-
-               if (stat) strcpy(path,"**_NO_sudir_**");
+                if (want_path)
+                {
+                    // use segs rec to get linked record's path
+                    // suinfo should exist - if want_path is set, then records were staged and all SU paths that are known have been fetched and put into suinfo->online_loc.
+                    if (rec_seg_iseg->record->suinfo)
+                    {
+                        snprintf(path, sizeof(path), "%s", rec_seg_iseg->record->suinfo->online_loc);
+                    }
+                    else
+                    {
+                        snprintf(path, sizeof(path), "%s", "**_NO_sudir_**");
+                    }
+                }
+                else
+                {
+                    // Empty string
+                }
+                
+                // I guess this is just be base name of the file (no path leading to directory containing the file).
+                strncpy(fname, rec_seg_iseg->filename, DRMS_MAXPATHLEN);
             }
             else
-              strcpy(path,"");
-
-            strncpy(fname, rec_seg_iseg->filename, DRMS_MAXPATHLEN);
-         }
-         else
-         {
-            char *tmp = strdup(rec_seg_iseg->filename);
-            char *sep = NULL;
-
-            if (tmp)
             {
-               if ((sep = strrchr(tmp, '/')) != NULL)
-               {
-                  *sep = '\0';
-                  snprintf(path, sizeof(path), "%s", tmp);
-                  snprintf(fname, sizeof(fname), "%s", sep + 1);
-               }
-               else
-               {
-                  snprintf(fname, sizeof(fname), "%s", tmp);
-               }
-
-               free(tmp);
+                char *tmp = strdup(rec_seg_iseg->filename);
+                char *sep = NULL;
+                
+                if (tmp)
+                {
+                    if ((sep = strrchr(tmp, '/')) != NULL)
+                    {
+                        *sep = '\0';
+                        snprintf(path, sizeof(path), "%s", tmp);
+                        snprintf(fname, sizeof(fname), "%s", sep + 1);
+                    }
+                    else
+                    {
+                        snprintf(fname, sizeof(fname), "%s", tmp);
+                    }
+                    
+                    free(tmp);
+                }
+                
+                if (!want_path)
+                {
+                    *path = '\0';
+                }
             }
-
-            if (!want_path)
-            {
-               *path = '\0';
-            }
-         }
-
-         if (keyword_list)
-           printf("%s=", segs[iseg]);
-         else
-           if ((*col)++)
-             printf("\t");
-         printf("%s%s%s", path, (want_path ? "/" : ""), fname);
-         if (keyword_list)
-           printf("\n");
-
-         if (want_dims)
-         {
-            int iaxis, naxis = rec_seg_iseg->info->naxis;
+            
             if (keyword_list)
-              printf("%s_info=",segs[iseg]);
+                printf("%s=", segs[iseg]);
             else
-              printf("\t");
-            if (rec_seg_iseg->info->islink)
-              sprintf("\"link to %s",rec_seg_iseg->info->linkname);
-            else
-            {
-               printf("\"%s, %s, ",  rec_seg_iseg->info->unit, drms_prot2str(rec_seg_iseg->info->protocol));
-               for (iaxis=0; iaxis<naxis; iaxis++)
-               {
-                  if (iaxis)
-                    printf("x");
-                  printf("%d",rec_seg_iseg->axis[iaxis]);
-               }
-               printf("\"");
-            }
+                if ((*col)++)
+                    printf("\t");
+            printf("%s%s%s", path, (want_path ? "/" : ""), fname);
             if (keyword_list)
-              printf("\n");
-         }
-      }
-      else
-      {
-         char *nosegmsg = "InvalidSegName";
-         DRMS_Segment_t *segment = hcon_lookup_lower(&rec->segments, segs[iseg]);
-         if (segment && segment->info->islink)
-           nosegmsg = "BadSegLink";
-         if (!keyword_list)
-           printf ("%s%s", ((*col)++ ? "\t" : ""), nosegmsg);
-         else
-           printf("%s=%s\n", segs[iseg], nosegmsg);
-      }
-   }
-
-   if (nsegs==0 && want_path)
-   {
-      char path[DRMS_MAXPATHLEN] = {0};
-
-      if (drms_record_numsegments(rec) <= 0)
-      {
-         snprintf(path,
-                  sizeof(path),
-                  "Record does not contain any segments - no record directory.");
-      }
+                printf("\n");
+            
+            if (want_dims)
+            {
+                int iaxis, naxis = rec_seg_iseg->info->naxis;
+                if (keyword_list)
+                    printf("%s_info=",segs[iseg]);
+                else
+                    printf("\t");
+                if (rec_seg_iseg->info->islink)
+                    sprintf("\"link to %s",rec_seg_iseg->info->linkname);
+                else
+                {
+                    printf("\"%s, %s, ",  rec_seg_iseg->info->unit, drms_prot2str(rec_seg_iseg->info->protocol));
+                    for (iaxis=0; iaxis<naxis; iaxis++)
+                    {
+                        if (iaxis)
+                            printf("x");
+                        printf("%d",rec_seg_iseg->axis[iaxis]);
+                    }
+                    printf("\"");
+                }
+                if (keyword_list)
+                    printf("\n");
+            }
+        }
+        else
+        {
+            char *nosegmsg = "InvalidSegName";
+            DRMS_Segment_t *segment = hcon_lookup_lower(&rec->segments, segs[iseg]);
+            if (segment && segment->info->islink)
+                nosegmsg = "BadSegLink";
+            if (!keyword_list)
+                printf ("%s%s", ((*col)++ ? "\t" : ""), nosegmsg);
+            else
+                printf("%s=%s\n", segs[iseg], nosegmsg);
+        }
+    }
+    
+    if (nsegs==0 && want_path)
+    {
+        char path[DRMS_MAXPATHLEN] = {0};
+        
+        if (drms_record_numsegments(rec) <= 0)
+        {
+            snprintf(path,
+                     sizeof(path),
+                     "Record does not contain any segments - no record directory.");
+        }
 #ifdef REVEALBUG
-      else if (nsegs == linked_segs)
-      {
-         printf("All segments are links - no record directory.");
-      }
+        else if (nsegs == linked_segs)
+        {
+            printf("All segments are links - no record directory.");
+        }
 #endif
-      else if (drms_record_isdsds(rec) || drms_record_islocal(rec))
-      {
-         /* Can get full path from segment filename.  But beware, there may be no                                                                                                
-          * datafile for a DSDS record.  */
-         DRMS_Segment_t *seg = drms_segment_lookupnum(rec, 0); /* Only 1 seg per DSDS */
-         if (*(seg->filename) == '\0')
-         {
-            /* No file for this DSDS record */
-            snprintf(path, sizeof(path), "Record has no data file.");
-         }
-         else
-         {
-            char *tmp = strdup(seg->filename);
-            char *sep = NULL;
-
-            if (tmp)
+        else if (drms_record_isdsds(rec) || drms_record_islocal(rec))
+        {
+            /* Can get full path from segment filename.  But beware, there may be no
+             * datafile for a DSDS record.  */
+            DRMS_Segment_t *seg = drms_segment_lookupnum(rec, 0); /* Only 1 seg per DSDS */
+            if (*(seg->filename) == '\0')
             {
-               if ((sep = strrchr(tmp, '/')) != NULL)
-               {
-                  *sep = '\0';
-                  snprintf(path, sizeof(path), "%s", tmp);
-               }
-               else
-               {
-                  snprintf(path, sizeof(path), "%s", tmp);
-               }
-
-               free(tmp);
+                /* No file for this DSDS record */
+                snprintf(path, sizeof(path), "Record has no data file.");
             }
-         }
-      }
-      else
-      {
-          int stat = 1;
-          
-          if (rec->su)
-          {
-              if(want_path_noret)
-                  stat=drms_record_directory (rec, path, 0);
-              else
-                  stat=drms_record_directory (rec, path, 1);
-          }
-          if (stat)
-              strcpy(path,"**_NO_sudir_**");
-      }
-
-      if (keyword_list)
-        printf("SUDIR=");
-      else
-        if ((*col)++)
-          printf("\t");
-      printf("%s", path);
-      if (keyword_list)
-        printf("\n");
-   }
+            else
+            {
+                char *tmp = strdup(seg->filename);
+                char *sep = NULL;
+                
+                if (tmp)
+                {
+                    if ((sep = strrchr(tmp, '/')) != NULL)
+                    {
+                        *sep = '\0';
+                        snprintf(path, sizeof(path), "%s", tmp);
+                    }
+                    else
+                    {
+                        snprintf(path, sizeof(path), "%s", tmp);
+                    }
+                    
+                    free(tmp);
+                }
+            }
+        }
+        else
+        {
+            if (rec->su)
+            {
+                if (rec->suinfo)
+                {
+                    snprintf(path, sizeof(path), "%s", rec->suinfo->online_loc);
+                }
+                else
+                {
+                    snprintf(path, sizeof(path), "%s", "**_NO_sudir_**");
+                }
+            }
+        }
+        
+        if (keyword_list)
+            printf("SUDIR=");
+        else
+            if ((*col)++)
+                printf("\t");
+        printf("%s", path);
+        if (keyword_list)
+            printf("\n");
+    }
+    
+    return stat;
 }
 
 static void PrintLnkInfo(int *col, DRMS_Record_t *rec, char **links, int nlinks, int keyword_list)
@@ -1332,6 +1343,7 @@ static void PrintLnkInfo(int *col, DRMS_Record_t *rec, char **links, int nlinks,
 static int PrintStuff(DRMS_Record_t *rec, const char *rsq, int keyword_list, int show_recnum, int show_sunum, int show_recordspec, int parseRS, int show_online, int show_retention, int show_archive, int show_tapeinfo, int show_size, int show_session, int want_path, int want_path_noret, int want_dims, char **keys, int nkeys, char **segs, int nsegs, int linked_segs, char **links, int nlinks, int nrecs, int nl)
 {
     int col;
+    int status = 0;
     
     col=0;
     if (keyword_list) /* if not in table mode, i.e. value per line mode then show record query for each rec */
@@ -1575,12 +1587,11 @@ static int PrintStuff(DRMS_Record_t *rec, const char *rsq, int keyword_list, int
     }
     
     PrintKeyInfo(&col, rec, keys, nkeys, keyword_list);
-    PrintSegInfo(&col, rec, segs, nsegs, linked_segs, want_path, want_path_noret, keyword_list, want_dims);
+    status = PrintSegInfo(&col, rec, segs, nsegs, linked_segs, want_path, want_path_noret, keyword_list, want_dims);
     PrintLnkInfo(&col, rec, links, nlinks, keyword_list);
     
     if (!keyword_list && !col)
     {
-        int status = 0;
         int count = 0;
 
         if (nrecs < 0)
@@ -1607,7 +1618,7 @@ static int PrintStuff(DRMS_Record_t *rec, const char *rsq, int keyword_list, int
                           show_retention || show_archive || show_tapeinfo || show_size || nkeys || nsegs || nlinks || want_path))
         printf ("\n");
     
-    return 0;
+    return status;
 }
 
 /* returns status == 0 on successs and non-zero on failure. */
@@ -1616,7 +1627,7 @@ static int RecordLoopCursor(DRMS_Env_t *env, const char *rsq, DRMS_RecordSet_t *
     /* rs->n is -1 - we won't know the total number of records until the loop terminates. */
     char key[128];
     SUM_info_t **ponesuinfo = NULL;
-    int status;
+    int status = 0;
     DRMS_RecChunking_t cstat = kRecChunking_None;
     int newchunk;
     int irec;
@@ -1711,7 +1722,7 @@ static int RecordLoopCursor(DRMS_Env_t *env, const char *rsq, DRMS_RecordSet_t *
             break;
         }
         
-        if (PrintStuff(rec, rsq, keyword_list, show_recnum, show_sunum, show_recordspec, parseRS, show_online, show_retention, show_archive, show_tapeinfo, show_size, show_session, want_path, want_path_noret, want_dims,keys, nkeys, segs, nsegs, linked_segs, links, nlinks, -1, irec != 0))
+        if ((status = PrintStuff(rec, rsq, keyword_list, show_recnum, show_sunum, show_recordspec, parseRS, show_online, show_retention, show_archive, show_tapeinfo, show_size, show_session, want_path, want_path_noret, want_dims,keys, nkeys, segs, nsegs, linked_segs, links, nlinks, -1, irec != 0)) != 0)
         {
             break;  
         }
@@ -1756,6 +1767,7 @@ static int RecordLoopNoCursor(DRMS_Env_t *env, DRMS_RecordSet_t *recordset, int 
     char *segs[1024] = {0};
     int nlinks = 0;
     char *links[1024];
+    int status = 0;
     
     if (recordset->n > 0)
     {
@@ -1795,7 +1807,7 @@ static int RecordLoopNoCursor(DRMS_Env_t *env, DRMS_RecordSet_t *recordset, int 
             }
         }
         
-        if (PrintStuff(rec, NULL, keyword_list, show_recnum, show_sunum, show_recordspec, parseRS, show_online, show_retention, show_archive, show_tapeinfo, show_size, show_session, want_path, want_path_noret, want_dims, keys, nkeys, segs, nsegs, linked_segs, links, nlinks, recordset->n, irec != 0))
+        if ((status = PrintStuff(rec, NULL, keyword_list, show_recnum, show_sunum, show_recordspec, parseRS, show_online, show_retention, show_archive, show_tapeinfo, show_size, show_session, want_path, want_path_noret, want_dims, keys, nkeys, segs, nsegs, linked_segs, links, nlinks, recordset->n, irec != 0)) != 0)
         {
             break;
         }
@@ -1810,7 +1822,7 @@ static int RecordLoopNoCursor(DRMS_Env_t *env, DRMS_RecordSet_t *recordset, int 
         }
     }
     
-    return DRMS_SUCCESS;
+    return status;
 }
 
 static void FreeParts(void *data)
