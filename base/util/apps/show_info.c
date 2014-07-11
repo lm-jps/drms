@@ -1130,22 +1130,14 @@ static int PrintSegInfo(int *col, DRMS_Record_t *rec, char **segs, int nsegs, in
                 {
                     // use segs rec to get linked record's path
                     // suinfo should exist - if want_path is set, then records were staged and all SU paths that are known have been fetched and put into suinfo->online_loc.
-                    if (rec_seg_iseg->record->suinfo)
-                    {
-                        snprintf(path, sizeof(path), "%s", rec_seg_iseg->record->suinfo->online_loc);
-                    }
-                    else if (rec_seg_iseg->record && rec_seg_iseg->record->su)
-                    {
-                        snprintf(path, sizeof(path), "%s", rec_seg_iseg->record->su->sudir);
-                    }
-                    else
-                    {
-                        snprintf(path, sizeof(path), "%s", "**_NO_sudir_**");
-                    }
+                    if(want_path_noret) stat=drms_record_directory (rec_seg_iseg->record, path, 0);
+                    else stat=drms_record_directory (rec_seg_iseg->record, path, 1);
+                    if (stat) strcpy(path,"**_NO_sudir_**");
                 }
                 else
                 {
                     // Empty string
+                    strcpy(path,"");
                 }
                 
                 // I guess this is just be base name of the file (no path leading to directory containing the file).
@@ -1275,15 +1267,14 @@ static int PrintSegInfo(int *col, DRMS_Record_t *rec, char **segs, int nsegs, in
         {
             if (rec->su)
             {
-                if (rec->suinfo)
-                {
-                    snprintf(path, sizeof(path), "%s", rec->suinfo->online_loc);
-                }
+                if(want_path_noret)
+                     stat=drms_record_directory (rec, path, 0);
                 else
-                {
-                    snprintf(path, sizeof(path), "%s", rec->su->sudir);
-                }
+                    stat=drms_record_directory (rec, path, 1);
             }
+            
+            if (stat)
+                strcpy(path,"**_NO_sudir_**");
         }
         
         if (keyword_list)
