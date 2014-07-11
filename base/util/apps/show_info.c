@@ -1134,6 +1134,10 @@ static int PrintSegInfo(int *col, DRMS_Record_t *rec, char **segs, int nsegs, in
                     {
                         snprintf(path, sizeof(path), "%s", rec_seg_iseg->record->suinfo->online_loc);
                     }
+                    else if (rec_seg_iseg->record && rec_seg_iseg->record->su)
+                    {
+                        snprintf(path, sizeof(path), "%s", rec_seg_iseg->record->su->sudir);
+                    }
                     else
                     {
                         snprintf(path, sizeof(path), "%s", "**_NO_sudir_**");
@@ -1277,7 +1281,7 @@ static int PrintSegInfo(int *col, DRMS_Record_t *rec, char **segs, int nsegs, in
                 }
                 else
                 {
-                    snprintf(path, sizeof(path), "%s", "**_NO_sudir_**");
+                    snprintf(path, sizeof(path), "%s", rec->su->sudir);
                 }
             }
         }
