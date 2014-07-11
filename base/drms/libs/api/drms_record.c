@@ -5368,20 +5368,21 @@ static DRMS_RecordSet_t *drms_retrieve_records_prepared_query(DRMS_Env_t *env, c
                                 drms_merge_record(rvMerge, rv->records[iRec]);
                                 rv->records[iRec] = NULL; /* Relinquish ownership to rvMerge. */
                             }
-                            
-                            drms_close_records(rv, DRMS_FREE_RECORD);
-                            
-                            db_free_binary_result(bres);
-                            pBres[iBres] = NULL; /* Might as well free now since no longer need this binary-result struct. Don't
-                                                  * wait for db_free_binary_result_tuple(), which happens later. Set the pointer
-                                                  * to the struct to NULL so that db_free_binary_result_tuple() does not attempt
-                                                  * a double-free. */
+
                         }
+                        
+                        drms_close_records(rv, DRMS_FREE_RECORD);
                     }
                     else
                     {
                         istat = DRMS_ERROR_OUTOFMEMORY;
                     }
+                    
+                    db_free_binary_result(bres);
+                    pBres[iBres] = NULL; /* Might as well free now since no longer need this binary-result struct. Don't
+                                          * wait for db_free_binary_result_tuple(), which happens later. Set the pointer
+                                          * to the struct to NULL so that db_free_binary_result_tuple() does not attempt
+                                          * a double-free. */
                 }
                 else
                 {
@@ -5461,7 +5462,7 @@ static DRMS_RecordSet_t *drms_retrieve_records_prepared_query(DRMS_Env_t *env, c
             }
         }
         
-        if (istat == DRMS_SUCCESS)
+        if (istat == DRMS_SUCCESS && rv)
         {
             /* Initialize subset information */
             rv->ss_n = 0;
@@ -6167,10 +6168,13 @@ DRMS_RecordSet_t *callRetrieveRecsPreparedQuery(DRMS_Env_t *env, HContainer_t *m
                     {
                         rv = drms_retrieve_records_prepared_query(env, seriesGet, templRec, sql, NULL, (unsigned int)nExe, NUM_ARGS, intype, (void **)argin, &istat);
                         
-                        istat = mergePreparedResults(&rvMerge, rv);
-                        if (istat != DRMS_SUCCESS)
+                        if (rv)
                         {
-                            break;
+                            istat = mergePreparedResults(&rvMerge, rv);
+                            if (istat != DRMS_SUCCESS)
+                            {
+                                break;
+                            }
                         }
                     }
                     
@@ -6234,13 +6238,15 @@ DRMS_RecordSet_t *callRetrieveRecsPreparedQuery(DRMS_Env_t *env, HContainer_t *m
                             
                             rvSupp = drms_retrieve_records_internal(env, seriesGet, NULL, NULL, NULL, 0, 0, NULL, sql, 0, 0, NULL, NULL, 0, 0, &istat);
                             
-                            istat = mergePreparedResults(&rvMerge, rvSupp);
-                            if (istat != DRMS_SUCCESS)
+                            if (rvSupp)
                             {
-                                break;
+                                istat = mergePreparedResults(&rvMerge, rvSupp);
+                                if (istat != DRMS_SUCCESS)
+                                {
+                                    break;
+                                }
                             }
                         }
-                        
                         
                         free(sql);
                         sql = NULL;
