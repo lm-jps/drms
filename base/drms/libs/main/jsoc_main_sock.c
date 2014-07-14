@@ -643,6 +643,16 @@ pid_t drms_start_server (int verbose, int dolog)  {
     for (; i < num_args; i++) {
       argv[i] = NULL;
     }
+      
+      if (verbose)
+      {
+          fprintf(stderr, "Calling drms_server with args:\n");
+          
+          for (i = 0; i < num_args; i++)
+          {
+              fprintf(stderr, "\t%s\n", argv[i]);
+          }
+      }
 
     if (execvp ("drms_server", argv) < 0) {
       printf ("drms_start_server failed to start server.\n");

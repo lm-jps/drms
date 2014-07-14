@@ -191,11 +191,12 @@ create_series describe_series delete_series modify_series show_info
 CmdParams_t cmdparams;
 
 ModuleArgs_t module_args[] = {
-  {ARG_INT, "DRMS_RETENTION", "-1"}, /* -1 == use default set in series definition. */
+  {ARG_INT, "DRMS_RETENTION", "-1"}, /* -1 == use default determined by JSD/libDRMS interation. */
+  {ARG_INT, "DRMS_NEWSURETENTION", "-1"}, /* -1 == use default from JSD. */
   {ARG_INT, "DRMS_ARCHIVE", "-9999"}, 
   {ARG_INT, "DRMS_QUERY_MEM", "512"}, 
   {ARG_INT, "DRMS_SERVER_WAIT", "1"},
-    {ARG_INT, kDBTimeOut, "-99"},
+  {ARG_INT, kDBTimeOut, "-99"},
   {ARG_STRING, kCENVFILE, kNOTSPECIFIED, "If set, write out to a file all C-shell commands that set the essential DRMS_* env variables."},
   {ARG_STRING, kSHENVFILE, kNOTSPECIFIED, "If set, write out to a file all bash-shell command that set the essential DRMS_* env variables."},
   {ARG_FLAG, kSELFSTARTFLAG, NULL, "Indicates that drms_server was started by a socket module."},
@@ -208,9 +209,6 @@ ModuleArgs_t module_args[] = {
   {ARG_FLAG, kLoopConnFlag, NULL, "Loop trying to connect to SUMS if SUMS isn't there."},
   {}
 };
-
-
-
 
 ModuleArgs_t *gModArgs = module_args;
 
@@ -326,6 +324,8 @@ int main (int argc, char *argv[]) {
   int selfstart = 0;
   time_t now;
   int infd[2];  /* child writes to this pipe, parent reads from it */
+  int16_t retention;
+  int16_t newsuretention;
 
   DRMS_Shutdown_State_t sdstate;
   int ans;
@@ -401,7 +401,72 @@ int main (int argc, char *argv[]) {
 
   env->archive	   = drms_cmdparams_get_int(&cmdparams, "DRMS_ARCHIVE", NULL);
   if (env->archive < -1 ) env->archive = INT_MIN;
-  env->retention   = drms_cmdparams_get_int(&cmdparams, "DRMS_RETENTION", NULL);
+    
+    retention = INT16_MIN;
+    char errbuf[128];
+    
+    if (drms_cmdparams_exists(&cmdparams, "DRMS_RETENTION") && drms_cmdparams_get_int(&cmdparams, "DRMS_RETENTION", NULL) != -1)
+    {
+        retention = drms_cmdparams_get_int16(&cmdparams, "DRMS_RETENTION", &status);
+        if (status != DRMS_SUCCESS)
+        {
+            if (status == DRMS_ERROR_INVALIDCMDARGCONV)
+            {
+                snprintf(errbuf, sizeof(errbuf), "The value for %s must be a 15-bit positive integer.", "DRMS_RETENTION");
+                fprintf(stderr, errbuf);
+            }
+            
+            snprintf(errbuf, sizeof(errbuf), "Invalid value for %s.", "DRMS_RETENTION");
+            fprintf(stderr, errbuf);
+            return 1;
+        }
+        else if (retention < 0)
+        {
+            snprintf(errbuf, sizeof(errbuf), "The value for %s must be a 15-bit positive integer.", "DRMS_RETENTION");
+            fprintf(stderr, errbuf);
+            return 1;
+        }
+        else
+        {
+            retention = (int16_t)(retention & 0x7FFF);
+        }
+    }
+
+    env->retention = retention;
+    
+    newsuretention = INT16_MIN;
+        fprintf(stderr, "prelim.\n");
+    if (drms_cmdparams_exists(&cmdparams, "DRMS_NEWSURETENTION") && drms_cmdparams_get_int(&cmdparams, "DRMS_NEWSURETENTION", NULL) != -1)
+    {
+        fprintf(stderr, "I should be here.\n");
+        newsuretention = drms_cmdparams_get_int16(&cmdparams, "DRMS_NEWSURETENTION", &status);
+        if (status != DRMS_SUCCESS)
+        {
+            if (status == DRMS_ERROR_INVALIDCMDARGCONV)
+            {
+                snprintf(errbuf, sizeof(errbuf), "The value for %s must be a 15-bit positive integer.", "DRMS_NEWSURETENTION");
+                fprintf(stderr, errbuf);
+            }
+            
+            snprintf(errbuf, sizeof(errbuf), "Invalid value for %s.", "DRMS_NEWSURETENTION");
+            fprintf(stderr, errbuf);
+            return 1;
+        }
+        else if (newsuretention < 0)
+        {
+            snprintf(errbuf, sizeof(errbuf), "The value for %s must be a 15-bit positive integer.", "DRMS_NEWSURETENTION");
+            fprintf(stderr, errbuf);
+            return 1;
+        }
+        else
+        {
+            newsuretention = (int16_t)(newsuretention & 0x7FFF);
+            fprintf(stderr, "New retention is %hu.\n", newsuretention);
+        }
+    }
+    
+    env->newsuretention = newsuretention;
+
     env->dbtimeout = drms_cmdparams_get_int(&cmdparams, kDBTimeOut, NULL);
     if (env->dbtimeout < 0)
     {

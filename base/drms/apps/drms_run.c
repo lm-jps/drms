@@ -15,6 +15,7 @@
 @code
 drms_run <drms_run script> [ <unnamed argument2> [ <unnamed argument3> [ ... ] ] ]
            [ to=<time out> ] [ DRMS_RETENTION=<days> ] [ drmslog=<drms_server log path> ] [ drmsrunlog=<output log>]
+           [ server=<path to server> ]
            [ -d ] [ -L ] [ -V | -v | --verbose ]
 @endcode
 
@@ -107,6 +108,7 @@ drms_run drmslog=/tmp/arta drmsrunlog=/tmp/arta -L poke_missing.csh ds=mdi.fd_V_
 #define kDRMSSERVERLOG "drmslog"
 #define kDRMSSERVERLOGDEF "/tmp"
 #define kDRMSRUNLOG "drmsrunlog"
+#define kSERVER "server"
 #define kNOTSPECIFIED "notspecified"
 
 #define kDELSCRIPTFLAG "d"
@@ -119,6 +121,8 @@ drms_run drmslog=/tmp/arta drmsrunlog=/tmp/arta -L poke_missing.csh ds=mdi.fd_V_
 #define kTIMEOUTDEF "15"
 #define kRETENTION "DRMS_RETENTION"
 #define kRETENTIONDEF "NoTsPeCiFiED"
+#define kNEWSURETENTION "DRMS_NEWSURETENTION"
+#define kNEWSURETENTIONDEF "NoTsPeCiFiED"
 
 
 enum RUNstat_enum
@@ -147,8 +151,10 @@ ModuleArgs_t module_args[] =
     */
    {ARG_STRING, kDRMSSERVERLOG, kDRMSSERVERLOGDEF, "The path to the drms_server log files."},
    {ARG_STRING, kDRMSRUNLOG, kNOTSPECIFIED, "The path to the drms_run log files."},
+   {ARG_STRING, kSERVER, "drms_server", "The path to the drms_server to run."},
    {ARG_DOUBLE, kTIMEOUT, kTIMEOUTDEF, "Time limit, in seconds, to find drms_server's environment file."},
-   {ARG_STRING, kRETENTION, kRETENTIONDEF, "Retention, in days, for all SUs created/fetched during DRMS session"},
+   {ARG_STRING, kRETENTION, kRETENTIONDEF, "Minimum retention, in days, for all SUs fetched during DRMS session."},
+   {ARG_STRING, kNEWSURETENTION, kNEWSURETENTIONDEF, "Retention, in days, for all SUs created during DRMS session."},
    {ARG_FLAG, kDELSCRIPTFLAG, NULL, "Indicates that the script file should be deleted after use."},
    {ARG_FLAG, kVERBOSEFLAGA, NULL, "Print diagnostic messages."},
    {ARG_FLAG, kVERBOSEFLAGB, NULL, "Print diagnostic messages."},
@@ -253,6 +259,7 @@ int main(int argc, char *argv[])
    char cmd[PATH_MAX];
    const char *script = NULL;
    const char *serverlog = NULL;
+   const char *server = NULL;
    const char *drmsrunlog = NULL;
    double timeout = 15;
    int delscr = 0;
@@ -321,6 +328,7 @@ int main(int argc, char *argv[])
    script = cmdparams_getarg(&cmdparams, 1);
    serverlog = cmdparams_get_str(&cmdparams, kDRMSSERVERLOG, NULL);
    drmsrunlog = cmdparams_get_str(&cmdparams, kDRMSRUNLOG, NULL);
+   server = cmdparams_get_str(&cmdparams, kSERVER, NULL);
    timeout = cmdparams_get_double(&cmdparams, kTIMEOUT, NULL);
    delscr = cmdparams_isflagset(&cmdparams, kDELSCRIPTFLAG);
    verbose = (cmdparams_isflagset(&cmdparams, kVERBOSEFLAGA) ||
@@ -626,6 +634,7 @@ int main(int argc, char *argv[])
       char tmp[128] = {0};
       int fd;
       const char *retention = NULL;
+      const char *newsuretention = NULL;
       char **drmsargs = NULL;
 
       snprintf(logfile, 
@@ -637,7 +646,7 @@ int main(int argc, char *argv[])
       drmsargs = (char **)calloc(128, sizeof(char *));
 
       iarg = 0;
-      drmsargs[iarg++] = strdup("drms_server");
+      drmsargs[iarg++] = strdup(server);
       drmsargs[iarg++] = strdup("-f");
 
       if (verbose)
@@ -678,6 +687,13 @@ int main(int argc, char *argv[])
          snprintf(tmp, sizeof(tmp), "DRMS_RETENTION=%s", retention);
          drmsargs[iarg++] = strdup(tmp);
       }
+       
+      newsuretention = cmdparams_get_str(&cmdparams, kNEWSURETENTION, NULL);
+      if (strcmp(newsuretention, kNEWSURETENTIONDEF) != 0)
+      {
+          snprintf(tmp, sizeof(tmp), "DRMS_NEWSURETENTION=%s", newsuretention);
+          drmsargs[iarg++] = strdup(tmp);
+      }
 
       fd = open(logfile, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
       dup2(fd, 1);
@@ -686,7 +702,7 @@ int main(int argc, char *argv[])
       /* If you use execlp, then the call would look something like 
        * execlp("drms_server", "drms_server", "-f", arg, (char *)0);
        */
-      execvp("drms_server", drmsargs);
+      execvp(server, drmsargs);
 
       /* does not return */
    }
