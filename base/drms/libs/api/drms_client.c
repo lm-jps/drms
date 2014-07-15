@@ -1229,10 +1229,31 @@ DRMS_StorageUnit_t *drms_getunit_internal(DRMS_Env_t *env, char *series,
        }
 #endif
 
-       if (!strlen(su->sudir)) {
-          hcon_remove(scon, hashkey);
-          su = NULL;      
-       }
+        if (!strlen(su->sudir))
+        {
+            /* This is causing problems. If we return a NULL SU, then there is nothing to prevent client code from calling this function again.
+             * Code that calls this function does so only if rec->su is NULL, and if we return NULL, rec->su becomes NULL, and this function
+             * will be called again, which will result in SUM_get() being called again. But we do not need to keep calling SUM_get(). Once 
+             * it has been called once, we know that there is no sudir, and we should remember that. If we do not remove the SU from
+             * the SU cache, then although this function will be called again, it doesn't have to call SUM_get(). The SU in the cache will
+             * have *su->sudir == '\0', so this function will return NULL, which will not change the semantics of this function. But it will
+             * also result in this function no longer calling SUM_get().
+             *
+             * ART - 2014.7.15
+             *
+             * hcon_remove(scon, hashkey);
+             */
+            
+            if (!retrieve)
+            {
+                /* Still want to remove the SU from the cache if it is possible that the SU is offline, but exists. That way if this function is
+                 * called with the retrieve flag set later, a SUM_get() (with the retrieve flag set) will be called, and the SU retrieved, if
+                 * it exists on tape. */
+                hcon_remove(scon, hashkey);
+            }
+            
+            su = NULL;
+        }
     } /* if (gotosums) */
    
     if (stat)
@@ -1242,7 +1263,16 @@ DRMS_StorageUnit_t *drms_getunit_internal(DRMS_Env_t *env, char *series,
     }
   }      
   else
-    stat = DRMS_SUCCESS;
+  {
+      /* If su->sudir is '\0', then there was a previous attempt to retrieve the SU from SUMS, but it didn't exist (either aged-off, or the SUNUM was
+       * invalid). We need to return NULL so indicate to the calling code that there is no SU. Calling code checks the su.
+       */
+      if (*su->sudir == '\0')
+      {
+          su = NULL;
+      }
+      stat = DRMS_SUCCESS;
+  }
  
  bailout:
   if (status)

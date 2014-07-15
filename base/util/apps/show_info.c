@@ -1129,9 +1129,46 @@ static int PrintSegInfo(int *col, DRMS_Record_t *rec, char **segs, int nsegs, in
                 if (want_path)
                 {
                     // use segs rec to get linked record's path
-                    // suinfo should exist - if want_path is set, then records were staged and all SU paths that are known have been fetched and put into suinfo->online_loc.
-                    if(want_path_noret) stat=drms_record_directory (rec_seg_iseg->record, path, 0);
-                    else stat=drms_record_directory (rec_seg_iseg->record, path, 1);
+                    // At this point, we already called drms_stage_records(). But if there was no SU associated with an SUNUM, and
+                    // the retrieve flag was set, then it used to be the case that no SU would be cached in the environment su cache.
+                    // In that case, another drms_record_directory() call would have resulted into another call to SUM_get().
+                    // But I changed that. Now the SU gets cached with an empty-string sudir. So, this
+                    // call to drms_record_directory() will no longer result in a call to SUM_get() being made. Instead, the
+                    // cached SU gets used (and the result is that "path" is the empty string). THIS ONLY APPLIES WHEN THE
+                    // retrieve FLAG IS SET.
+                    //
+                    // When the retrieve flag is not set, and there is no SU associated with an SUNUM, no SU gets cached. We
+                    // haven't really resolved the question of whether the SUNUM exists or not because we didn't ask SUMS
+                    // to fetch the SU if it was on tape. The code that decides whether or not to ask SUMS for an SU looks
+                    // at the SU cache - if there is no cached SU, then it asks SUMS to retrieve the SU. So if retrieve == 0, then
+                    // a call to drms_record_directory() will result in another SUM_get(), unnecessarily. Instead, don't
+                    // call drms_record_directory() if want_path_noret == true and the SU is not cached. Since we already called
+                    // drms_stage_records(), we know that the SU is offline, or doesn't exist. Just set the path to the empty string.
+                    //
+                    if (want_path_noret)
+                    {
+                        // retrieve == 0
+                        if (!rec_seg_iseg->record->su)
+                        {
+                            // SU is either offline or doesn't exist. Do not call SUM_get() - we already did that in drms_stage_records().
+                            *path = '\0';
+                            stat = DRMS_SUCCESS;
+                        }
+                        else
+                        {
+                            // The SU is online (and cached). drms_record_directory() will not call SUM_get().  Do not call SUM_get() -
+                            // we already did that in drms_stage_records().
+                            stat = drms_record_directory(rec_seg_iseg->record, path, 0);
+                        }
+                    }
+                    else
+                    {
+                        // Since we called drms_stage_records() with the retrieve flag, if rec_seg_iseg->record->su == NULL, then
+                        // an SU with *su->sudir == '\*' will have been cached, so there will be no SUM_get() called. Instead
+                        // path will be set to the empty string.
+                        stat = drms_record_directory(rec_seg_iseg->record, path, 1);
+                    }
+                    
                     if (stat) strcpy(path,"**_NO_sudir_**");
                 }
                 else
@@ -1267,6 +1304,8 @@ static int PrintSegInfo(int *col, DRMS_Record_t *rec, char **segs, int nsegs, in
         {
             if (rec->su)
             {
+                // The SU is online. We don't have to worry about the case where SUM_get() didn't attempt to fetch an offline SU. No
+                // SUM_get() call will be made (the SU was cached).
                 if(want_path_noret)
                      stat=drms_record_directory (rec, path, 0);
                 else
