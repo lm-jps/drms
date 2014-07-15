@@ -51,6 +51,7 @@ RET_INTERNALPROG = 2
 # Because this script has to run in an environment that has a trivial PATH environment variable, we need to hard-code some
 # things as much as I hate to.
 BIN_PATH = '/home/jsoc/cvs/Development/JSOC/bin/linux_x86_64'
+# BIN_PATH = '/home/arta/jsoctrees/JSOC/bin/linux_x86_64'
 SCP_USER = 'jsocexp'
 SCP_HOST = 'jsocport.stanford.edu'
 SCP_PORT = '55000'
@@ -69,8 +70,12 @@ def GetArgs(args):
     istat = False
     optD = {}
     
+    # Defaults.
     optD['requestid'] = None
     optD['sunums'] = None
+    optD['dbname'] = 'jsoc'
+    optD['dbhost'] = 'hmidb' # Can have port appended after a ':'
+    optD['dbuser'] = 'apache'
     
     try:
         # Try to get arguments with the cgi module. If that doesn't work, then fetch them from the command line.
@@ -88,6 +93,12 @@ def GetArgs(args):
                 elif key in ('s', 'sunums'):
                     # Split string on commas to get a list of SUNUMs to process
                     optD['sunums'] = val.split(',')
+                elif key in ('n', 'dbname'):
+                    optD['dbname'] = val
+                elif key in ('h', 'dbhost'):
+                    optD['dbhost'] = val
+                elif key in ('u', 'dbuser'):
+                    optD['dbuser'] = val
     
     except ValueError:
         optD['errMsg', getUsage()]
@@ -251,15 +262,15 @@ if __name__ == "__main__":
 
     if status == RET_SUCCESS:
         try:
-            if 'sunums' in optD:
+            if 'sunums' in optD and optD['sunums'] is not None:
                 # Call jsoc_fetch to obtain paths for the requested SUNUMs. If any SU is offline, then jsoc_fetch will
-                # initiate an as-is export request. In this case, jsoc_fetch will return a requestid that is given back to rsumsd.py, which
+                # initiate an su-as-is export request. In this case, jsoc_fetch will return a requestid that is given back to rsumsd.py, which
                 # will poll for completion of the export request.
-                resp = runJsocfetch(op='exp_su', method='url_quick', format='txt', proto='as-is', sunum=','.join(optD['sunums']))
+                resp = runJsocfetch(op='exp_su', method='url_quick', format='txt', protocol='su-as-is', sunum=','.join(optD['sunums']), JSOC_DBNAME=optD['dbname'], JSOC_DBHOST=optD['dbhost'], JSOC_DBUSER=optD['dbuser'])
             elif 'requestid' in optD:
-                # A previous run of rs.py started an as-is export request. Call jsoc_fetch to check if the export request
+                # A previous run of rs.py started an su-as-is export request. Call jsoc_fetch to check if the export request
                 # has completed.
-                resp = runJsocfetch(op='exp_status', requestid=rv['requestid'], format='txt')
+                resp = runJsocfetch(op='exp_status', requestid=optD['requestid'], format='txt')
 
         except Exception as exc:
             if len(exc.args) != 2:
