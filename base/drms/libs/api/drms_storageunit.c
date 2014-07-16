@@ -1465,7 +1465,7 @@ int drms_su_setretention(DRMS_Env_t *env, int16_t newRetention, int nsus, long l
                     }
                 }
                 
-                start += isu; /* for next while-loop iteration */
+                start += szChunk; /* for next while-loop iteration */
                 
                 request->reqcnt = szChunk;
                 
