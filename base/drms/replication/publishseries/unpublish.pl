@@ -16,6 +16,7 @@ use DBD::Pg;
 use JSON -support_by_pp;
 use Email::MIME;
 use Email::Sender::Simple qw(sendmail);
+use Data::Dumper;
 
 use constant kSuccess => 0;
 use constant kInvalidArg => 1;
@@ -121,11 +122,12 @@ if ($rv == &kSuccess)
            my($json);
            my($txt);
            
-           $sublistCmd = &kPubSubList . " cfg=$conf series=" . lc($series);
+           $sublistCmd = $cfg{'kPubSubList'} . " cfg=$conf series=" . lc($series);
            $rsp = `$sublistCmd`;
            $json = JSON->new->utf8;
            $txt = $json->decode($rsp);
            @insts = $txt->{nodelist}->{lc($series)};
+           print Dumper(@insts);
        }
        
        # Make sure we don't truly unpublish anything for now.
