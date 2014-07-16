@@ -122,7 +122,7 @@ if ($rv == &kSuccess)
            my($json);
            my($txt);
            
-           $sublistCmd = $cfg{'kPubSubList'} . " cfg=$conf series=" . lc($series);
+           $sublistCmd = $cfg{'kPubSubList'} . "-j cfg=$conf series=" . lc($series);
            print "running" . $sublistCmd . "\n";
            $rsp = `$sublistCmd`;
            $json = JSON->new->utf8;
