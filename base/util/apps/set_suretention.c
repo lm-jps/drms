@@ -1107,7 +1107,7 @@ int DoIt(void)
             int nsunum;
             long long *sunumList = NULL;
             
-            nsunum = cmdparams_get_int64arr(&cmdparams, SULIST, &((int64_t *)sunumList), &cpStat);
+            nsunum = cmdparams_get_int64arr(&cmdparams, SULIST, (int64_t **)&sunumList, &cpStat);
             
             if (cpStat == CMDPARAMS_SUCCESS)
             {
