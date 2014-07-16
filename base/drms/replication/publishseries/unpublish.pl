@@ -169,7 +169,7 @@ if ($rv == &kSuccess)
        
        if ($rv == &kSuccess)
        {
-           my(@instsArr) = @$insts
+           my(@instsArr) = @$insts;
            if ($#instsArr >= 0)
            {
                # Notify subscribers that their series was unpublished. This means that their subscription was dropped too.
