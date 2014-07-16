@@ -49,7 +49,8 @@ CFG_TABLE_NODE = 'node'
 # d         - In addition to a list of series, fetch series descriptions (and print them too, when printing series).
 # p         - Do not print list of published series (by default, this list is generated).
 # t         - If this flag is specified, then the output is formatted text. If not provided, then the
-#             output is json.
+#             output is html that contains a JSON object.
+# j         - Return pure JSON (no html headers).
 #
 # By default, a list of all published series is printed.
 #
@@ -100,6 +101,7 @@ def GetArgs(args):
     optD['descs'] = False
     optD['publist'] = False
     optD['nojson'] = False
+    optD['json'] = False
 
     if optD['source'] == 'cgi' or DEBUG_CGI:
         try:
@@ -120,6 +122,8 @@ def GetArgs(args):
                         optD['publist'] = True
                     elif key in ('t'):
                         optD['nojson'] = True
+                    elif key in ('j'):
+                        optD['json'] = True
                     elif key in ('i', 'insts'):
                         optD['insts'] = val.split(',') # a list
                     elif key in ('s', 'series'):
@@ -133,7 +137,8 @@ def GetArgs(args):
         parser = argparse.ArgumentParser()
         parser.add_argument('-d', '--descs', help="Print each series' description.", action='store_true')
         parser.add_argument('-p', '--publist', help='Print the list of published series.', action='store_true')
-        parser.add_argument('-t', '--text', help='Print output in text format (not JSON).', action='store_true')
+        parser.add_argument('-t', '--text', help='Print output in text format (not html containing JSON).', action='store_true')
+        parser.add_argument('-j', '--json', help='Return a JSON object.', action='store_true')
         parser.add_argument('cfg', help='[cfg=<configuration file>] The configuration file that contains information needed to locate database information.', nargs='?')
         parser.add_argument('insts', help='[insts=<institution list>] A comma-separated list of institutions. The series to which these institutions are printed.', nargs='?')
         parser.add_argument('series', help='[series=<series list>] A comma-separated list of series. The institutions subscribed to these series are printed.', nargs='?')
@@ -147,6 +152,8 @@ def GetArgs(args):
             optD['publist'] = True
         if args.text:
             optD['nojson'] = True
+        if args.json:
+            optD['json'] = True
 
         # The non-optional arguments are positional. It is possible that the caller could put the arguments for one argument into
         # the position for a different argument. Positional arguments are a nuisance. So we must parse the values of these three arguments
@@ -264,12 +271,13 @@ if __name__ == "__main__":
             listObj = {}
             insertJson(listObj, 'errMsg', msg)
             insertJson(rootObj, 'publist', listObj)
-            print('Content-type: application/json\n')
+            if 'json' not in optD or not optD['json']:
+                print('Content-type: application/json\n')
             print(json.dumps(rootObj))
             optD['source'] = 'form'
         elif etype == 'getArgsCmdline':
             print('Invalid arguments.')
-            print('Usage:\n  publist.y [ -h ] [ -d ] [ -p ] [ -t ] cfg=<configuration file> [ insts=<institution list> ] [ series=<series list> ] [ dbuser=<dbuser> ]')
+            print('Usage:\n  publist.y [ -h ] [ -d ] [ -p ] [ -t ] [ -j ] cfg=<configuration file> [ insts=<institution list> ] [ series=<series list> ] [ dbuser=<dbuser> ]')
             optD['source'] = 'cmdline'
             rv = RET_INVALIDARG
 
@@ -279,20 +287,22 @@ if rv == RET_SUCCESS:
     else:
         if optD['source'] == 'cmdline':
             print('Missing required argument, cfg=<configuration file>', file=sys.stderr)
-            print('Usage:\n  publist.y [ -h ] [ -d ] [ -p ] [ -t ] cfg=<configuration file> [ insts=<institution list> ] [ series=<series list> ] [ dbuser=<dbuser> ]')
+            print('Usage:\n  publist.y [ -h ] [ -d ] [ -p ] [ -t ] [ -j ] cfg=<configuration file> [ insts=<institution list> ] [ series=<series list> ] [ dbuser=<dbuser> ]')
             rv = RET_INVALIDARG
         else:
             rootObj = {}
             listObj = {}
             insertJson(listObj, 'errMsg', "Required argument 'cfg' missing.")
             insertJson(rootObj, 'publist', listObj)
-            print('Content-type: application/json\n')
+            if 'json' not in optD or not optD['json']:
+                print('Content-type: application/json\n')
             print(json.dumps(rootObj))
 
     if rv == RET_SUCCESS:
         descs = optD['descs']
         dispPubList = optD['publist']
         nojson = optD['nojson']
+        jsonobj = optD['json']
         insts = None
         series = None
         
@@ -453,7 +463,8 @@ if rv == RET_SUCCESS:
 
     if not nojson:
         # dump json to a string - don't forget that fracking newline! Boy did that stump me.
-        print('Content-type: application/json\n')
+        if not jsonobj:
+            print('Content-type: application/json\n')
         print(json.dumps(rootObj))
 
 if optD['source'] == 'cmdline':
