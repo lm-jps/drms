@@ -49,8 +49,9 @@
 #define kLogFileExpStatInt "/home/jsoc/exports/logs/fetchlogExpStatInt.txt"
 #define kLogFileExpStatExt "/home/jsoc/exports/logs/fetchlogExpStatExt.txt"
 
-#define MAX_EXPORT_SIZE 100000  // 100GB
-#define MAX_EXPORT_SIZE_UNCOMPRESSED 10000  // 10GB
+#define MAX_COMPRESSING_EXPORT_SIZE 1000000 // 1000GB
+#define MAX_STRAIGHT_EXPORT_SIZE 100000     // 100GB
+#define MAX_UNCOMPRESSING_EXPORT_SIZE 10000 // 10GB
 
 #define kExportSeries "jsoc.export"
 #define kExportSeriesNew "jsoc.export_new"
@@ -85,6 +86,7 @@
 #define kOpExpKinds	"exp_kinds"	// not used yet
 #define kOpExpHistory	"exp_history"	// not used yet
 #define kUserHandle	"userhandle"    // user provided unique session handle
+#define KArgSizeRatio "sizeratio"
 
 #define kOptProtocolAsIs   "as-is"	   // Protocol option value for no change to fits files
 #define kOptProtocolSuAsIs "su-as-is"  // Protocol option value for requesting as-is FITS paths for the exp_su operation
@@ -115,6 +117,7 @@ ModuleArgs_t module_args[] =
   {ARG_STRING, kArgMethod, "url", "return method"},
   {ARG_STRING, kArgFile, kNotSpecified, "uploaded file contents"},
   {ARG_STRING, kUserHandle, kNotSpecified, "User specified unique session ID"},
+  {ARG_FLOAT, KArgSizeRatio, "1.0", "For cut-out requests, this is the ratio between the number of cut-out pixels to the number of original-image pixels."},
   {ARG_FLAG, kArgTestmode, NULL, "if set, then creates new requests with status 12 (not 2)"},
   {ARG_FLAG, "h", "0", "help - show usage"},
   {ARG_STRING, "QUERY_STRING", kNotSpecified, "AJAX query from the web"},
@@ -958,6 +961,7 @@ int DoIt(void)
   const char *protocol;
   const char *filenamefmt;
   const char *userhandle;
+  float sizeRatio;
   const char *Server;
   const char *Remote_Address;
   char dbhost[DRMS_MAXHOSTNAME];
@@ -1070,6 +1074,7 @@ int DoIt(void)
             SetWebArg(req, kArgShipto, &webarglist, &webarglistsz);
             SetWebArg(req, kArgRequestorid, &webarglist, &webarglistsz);
             SetWebArg(req, kUserHandle, &webarglist, &webarglistsz);
+            SetWebArg(req, KArgSizeRatio, &webarglist, &webarglistsz);
             if (strncmp(cmdparams_get_str (&cmdparams, kArgDs, NULL),"*file*", 6) == 0);
             SetWebFileArg(req, kArgFile, &webarglist, &webarglistsz);
             SetWebArg(req, kArgTestmode, &webarglist, &webarglistsz);
@@ -1084,6 +1089,7 @@ int DoIt(void)
   requestid = cmdparams_get_str (&cmdparams, kArgRequestid, NULL);
   dsin = cmdparams_get_str (&cmdparams, kArgDs, NULL);
   userhandle = cmdparams_get_str (&cmdparams, kUserHandle, NULL);
+  sizeRatio = cmdparams_get_float(&cmdparams, KArgSizeRatio, NULL);
   Remote_Address = cmdparams_get_str(&cmdparams, "REMOTE_ADDR", NULL);
   Server = cmdparams_get_str(&cmdparams, "SERVER_NAME", NULL);
 
@@ -2137,6 +2143,7 @@ check for requestor to be valid remote DRMS site
     int filesize;
     DRMS_RecordSet_t *rs;
     int compressedStorage;
+    int compressedDownload;
     export_series = kExportSeriesNew;
         
     if (internal)
@@ -2333,7 +2340,9 @@ check for requestor to be valid remote DRMS site
         
       while (seg = drms_record_nextseg(rec, &segp, 0))
       {
-          /* If all segments being exported are stored uncompressed, note that. This will determine which payload limit is used. */
+          /* If all segments being exported are stored uncompressed, note that. This will determine which payload limit is used. Err on 
+           * the conservative side. The smaller data limits are used if data are stored compressed (and subsequently exported), so
+           * pretend the whole series comprises compressed data if a single segment is compressed. */
           if (compressedStorage == -1)
           {
               /* Determine this only for the first record */
@@ -2459,16 +2468,50 @@ check for requestor to be valid remote DRMS site
 
     // Return status==3 if request is too large.
 
-    /* Phil's change to limit export size when at least one segment will be written uncompressed 
-     * (it may be the case that the data were already uncompressed before export, in which case 
-     * no uncompression will happen). */
-
-    /* The original limit scheme doesn't work. We need to use MAX_EXPORT_SIZE_UNCOMPRESSED only if
-     * the data are stored compressed. If they are stored uncompressed, and the the user is requesting
-     * them uncompressed, then the MAX_EXPORT_SIZE limit should be used.
+    /* We want to cap the download payload size to 100G. If there is no change in compression status, then the maximum size of
+     * the stored file is 100 GB. But if a compressed file is going to be uncompressed, then downloaded, the maximum size of the
+     * stored file is 10 GB (we assume a 10:1 compression ratio). If an uncompressed file is going to be compressed, then downloaded,
+     * the maximum size of the stored file is 1000 GB (we assume a 10:1 compression ratio).
+     * 
+     *             downloaded
+     *           C            U
+     *  s
+     *  t
+     *  o   C    M            S
+     *  r
+     *  e   U    L            M
+     *  d
+     *
+     *
+     * C ==> Compressed
+     * U ==> Uncompressed
+     *
+     * L = large limit (1000 GB)
+     * M = medium limit (100 GB)
+     * S = small limit (10 GB)
+     *
      *  -ART
      */
-    if (size > (strstr(protocol, "**NONE**") && compressedStorage ? MAX_EXPORT_SIZE_UNCOMPRESSED : MAX_EXPORT_SIZE))
+        
+    long long sizeLimit; // Maximum size of STORED file.
+        
+    compressedDownload = (strstr(protocol, "**NONE**") == NULL);
+
+        
+    if (compressedStorage && !compressedDownload)
+    {
+        sizeLimit = MAX_UNCOMPRESSING_EXPORT_SIZE;
+    }
+    else if (!compressedStorage && compressedDownload)
+    {
+        sizeLimit = MAX_COMPRESSING_EXPORT_SIZE;
+    }
+    else
+    {
+        sizeLimit = MAX_STRAIGHT_EXPORT_SIZE;
+    }
+        
+    if (size > sizeLimit)
       {
       if (dojson)
         {
@@ -2490,7 +2533,7 @@ check for requestor to be valid remote DRMS site
         json_insert_pair_into_object(jroot, "count", json_new_number(numval));
         sprintf(numval, "%d", (int)size);
         json_insert_pair_into_object(jroot, "size", json_new_number(numval));
-        sprintf(numval,"Request exceeds max byte limit of %dMB", (strstr(protocol, "**NONE**") ? MAX_EXPORT_SIZE_UNCOMPRESSED : MAX_EXPORT_SIZE));
+        sprintf(numval,"Request exceeds max byte limit of %lldMB", sizeLimit);
         strval = string_to_json(numval);
         json_insert_pair_into_object(jroot, "error", json_new_string(strval));
         free(strval);
