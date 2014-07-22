@@ -2500,15 +2500,15 @@ check for requestor to be valid remote DRMS site
         
     if (compressedStorage && !compressedDownload)
     {
-        sizeLimit = MAX_UNCOMPRESSING_EXPORT_SIZE;
+        sizeLimit = MAX_UNCOMPRESSING_EXPORT_SIZE / sizeRatio;
     }
     else if (!compressedStorage && compressedDownload)
     {
-        sizeLimit = MAX_COMPRESSING_EXPORT_SIZE;
+        sizeLimit = MAX_COMPRESSING_EXPORT_SIZE / sizeRatio;
     }
     else
     {
-        sizeLimit = MAX_STRAIGHT_EXPORT_SIZE;
+        sizeLimit = MAX_STRAIGHT_EXPORT_SIZE / sizeRatio;
     }
         
     if (size > sizeLimit)
