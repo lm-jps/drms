@@ -51,7 +51,6 @@ RET_INTERNALPROG = 2
 # Because this script has to run in an environment that has a trivial PATH environment variable, we need to hard-code some
 # things as much as I hate to.
 BIN_PATH = '/home/jsoc/cvs/Development/JSOC/bin/linux_x86_64'
-# BIN_PATH = '/home/arta/jsoctrees/JSOC/bin/linux_x86_64'
 SCP_USER = 'jsocexp'
 SCP_HOST = 'jsocport.stanford.edu'
 SCP_PORT = '55000'
