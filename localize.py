@@ -545,7 +545,9 @@ def parseConfig(fin, keymap, addenda, defs, cDefs, mDefsGen, mDefsMake, projCfg,
                     # Must parse xml and use the project-specific information to populate the Rules.mk and target.mk files.
                     # Collect all xml lines for now, then process after file-read loop.
                     if xml is None:
-                        xml = line
+                        # The first time through this section, line is the config.local div, __PROJ__. Discard that.
+                        xml = ''
+                        continue
                     else:
                         xml += line
                 else:
@@ -589,7 +591,7 @@ def parseConfig(fin, keymap, addenda, defs, cDefs, mDefsGen, mDefsMake, projCfg,
         if not xml is None:
             # Process xml.
             projRules.extend(list(RULESPREFIX))
-            projTarget.extend(list(TARGETPREFIX))            
+            projTarget.extend(list(TARGETPREFIX))
             rv = processXML(xml, projRules, projTarget)
             projRules.extend(RULESSUFFIX)
 
