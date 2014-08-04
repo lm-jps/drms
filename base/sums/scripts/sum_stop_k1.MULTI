@@ -53,7 +53,7 @@ if(!defined($numsum) || !$numsum) {
 }
 #print "Number of SUM process sets to spawn = $numsum\n";
 
-maxnumsum = $cfg->get('SUM_MAXNUMSUM');
+$maxnumsum = $cfg->get('SUM_MAXNUMSUM');
 #print "Max number of SUM process can spawn = $maxnumsum\n";
 
 if($numsum == 0|| !defined($maxnumsum) || $numsum > $maxnumsum) {
