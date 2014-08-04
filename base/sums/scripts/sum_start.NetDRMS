@@ -6,7 +6,8 @@
 #
 
 use FindBin qw($RealBin);
-# use 5.010_000; # See ExtractVal() - if you don't want to upgrade to 5.10, uncomment lines in this routine.
+use lib "$RealBin/../../../localization";
+use drmsparams;
 
 $| = 1;                 #flush output as we go
 
@@ -34,48 +35,43 @@ if ($#ARGV >= 0)
    }
 }
 
-$wdpath = $RealBin;
+# Get localized parameter values.
+$cfg = new drmsparams();
 
-$ldir = "$wdpath/../../../include/localization.h";
-$sdir = "$wdpath/../../drms/apps/serverdefs.h";
-
-if(-e $ldir) {
-  $xdir = $ldir;
-  $localization = 1;
-}
-else {
-  $xdir = $sdir;
-  $localization = 0;
+if (!defined($cfg))
+{
+    print STDERR "ERROR: Cannot get DRMS parameters.\n";
+    exit(1);
 }
 
-@servdefs = `cat $xdir`;
-
-@def = grep(/^#define SUM_NUMSUM/, @servdefs);
-$numsum = ExtractVal($def[0]);
+$numsum = $cfg->get('SUM_NUMSUM');
 if(!defined($numsum) || !$numsum) {
-  print "ERROR: Can't get SUM_NUMSUM from $xdir\n";
+  print "ERROR: Can't get SUM_NUMSUM definition.\n";
   exit(1);
 }
 print "Number of SUM process sets to spawn = $numsum\n";
 
-@def = grep(/^#define SUM_MAXNUMSUM/, @servdefs);
-$maxnumsum = ExtractVal($def[0]);
+$maxnumsum = $cfg->get('SUM_MAXNUMSUM');
 print "Max number of SUM process can spawn = $maxnumsum\n";
-
 if($numsum == 0 || !defined($maxnumsum) || $numsum > $maxnumsum) {
-  print "**ERROR: in $xdir def for SUM_NUMSUM\n";
+  print "ERROR: in definition of SUM_NUMSUM\n";
   print "Number must be between 1 and $maxnumsum\n";
   exit;
 }
 
-@def = grep(/^#define SUMSERVER/, @servdefs);
-$sumserver = ExtractVal($def[0]);
+$sumserver = $cfg->get('SUMSERVER');
 
 $host = `hostname`;
 chomp($host);
 if(($pos = index($host, '.')) != -1) {
   $host = substr($host, 0, $pos);
 }
+
+if (($pos = index($sumserver, '.')) != -1)
+{
+    $sumserver = substr($sumserver, 0, $pos);
+}
+
 if($host ne $sumserver) {
   print "This can only be run on $sumserver.\n";
   exit;
@@ -84,26 +80,21 @@ if($host ne $sumserver) {
 $ENV{'SUMSERVER'} = $sumserver;      #make sure we stay in this machine
 print "SUMSERVER is $sumserver\n";
 
-@def = grep(/^#define SUMS_MANAGER/, @servdefs);
-$sumsmanager = ExtractVal($def[0]);
+
+$sumsmanager = $cfg->get('SUMS_MANAGER');
+
 print "SUMS_MANAGER is $sumsmanager\n";
 $user = $ENV{'USER'};
 if($user ne $sumsmanager) {
   print "You must be user $sumsmanager to run\n";
   exit;
 }
-@def = grep(/^#define SUMS_MANAGER_UID/, @servdefs);
-$sumsmanageruid = ExtractVal($def[0]);
-print "SUMS_MANAGER_UID is $sumsmanageruid\n";
-$GREPPS = $sumsmanageruid;
 
-@def = grep(/^#define DBNAME/, @servdefs);
-$dbname = ExtractVal($def[0]);
+$dbname = $cfg->get('DBNAME');
 $DB = $dbname."_sums";
 print "SUMS db is $DB\n";
 
-@def = grep(/^#define SUMLOG_BASEDIR/, @servdefs);
-$logDir = ExtractVal($def[0]);
+$logDir = $cfg->get('SUMLOG_BASEDIR');
 print "SUMS log dir is $logDir\n";
 
 $PID = getppid;
@@ -120,9 +111,6 @@ $date = (1900 + $year).".".$mon2.".$mday2"._.$hour2.":$min2".":$sec2";
 print "sum_start.NetDRMS at $date\n\n";
 print LOG "sum_start.NetDRMS at $date\n\n";
 
-@ps_prod = `ps -ef | grep $GREPPS`;
-#print "The ps -ef for producttion is:\n@ps_prod\n";
-print LOG "The ps -ef for product is:\n@ps_prod\n";
 
 # Find if any sums process is still running (by looking for the sums.pidfile file).
 # Set $active=1 if so.
@@ -163,17 +151,9 @@ if (-e $pidFile)
     }
   }
 
-
-#For tape_svc only
-#        $cmd = "ssh d02.stanford.edu sum_forker  $DB $date&";
-#        if(system($cmd)) {
-#          print "Error: failure on $cmd\n";
-#        }
-
         print "** Now starting SUMS on $DB\n";
         print LOG "** Now starting SUMS on $DB\n";
 
-        #$cmd = "/home/production/cvs/JSOC/base/sums/scripts/sumck_ximM &";
         # Since there is no SUMS pidfile, this script will launch all SUMS processes afresh, and create a pidfile.
         $cmd = "sums_procck.py &";
         $ret = system($cmd);
@@ -189,33 +169,4 @@ if (-e $pidFile)
         print "SUM NetDRMS Start Complete\n";
         print LOG "SUM NetDRMS Start Complete\n";
         close(LOG);
-#        $mail = "mail -s \"SUM xim MULTI Start Complete\"";
-#        #$to = "jsoc_users";
-#        $to = "jim\@sun.stanford.edu";
-#        $cmd = "$mail $to < $MLOGFILE";
-#        if($mailflg) { system $cmd; }
         exit;
-
-sub ExtractVal
-{
-   my($line) = $_[0];
-
-   # requires Perl version 5.10
-   #my($val) = ($line =~ /^#define\s+\S+\s+(?|\"([^\s\."]+)(\..*)?\"|([^\s\.]+)(\..*)?)\s*/)[0];
-
-   # alternate that will work on Perl version 5.8
-   #my($val);
-   #if ($line =~ /^#define\s+\S+\s+\"([^\s\."]+)(\..*)?\"/)
-   #{
-   #   $val = $1;
-   #}
-   #elsif ($line =~ /^#define\s+\S+\s+([^\s\.]+)(\..*)?\s*/)
-   #{
-   #   $val = $1;
-   #}
-
-   # Igor's regex
-   my($val) = ($line =~ /^#define\s+\S+\s+"?([^"\s\.]+)(\.(.*))?/);
-
-   return $val;
-}

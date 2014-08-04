@@ -4,7 +4,8 @@
 #
 
 use FindBin qw($RealBin);
-# use 5.010_000; # See ExtractVal() - if you don't want to upgrade to 5.10, uncomment lines in this routine.
+use lib "$RealBin/../../../localization";
+use drmsparams;
 
 $| = 1;                 #flush output as we go
 
@@ -30,60 +31,55 @@ if ($#ARGV >= 0)
    }
 }
 
-$wdpath = $RealBin;
-$ldir = "$wdpath/../../../include/localization.h";
-$sdir = "$wdpath/../../drms/apps/serverdefs.h";
+# Get localized parameter values.
+$cfg = new drmsparams();
 
-if(-e $ldir) {
-  $xdir = $ldir;
-  $localization = 1;
+if (!defined($cfg))
+{
+    print STDERR "ERROR: Cannot get DRMS parameters.\n";
+    exit(1);
 }
-else {
-  $xdir = $sdir;
-  $localization = 0;
-}
-@servdefs = `cat $xdir`;
-@def = grep(/^#define SUM_NUMSUM/, @servdefs);
-$numsum = ExtractVal($def[0]);
+
+$numsum = $cfg->get('SUM_NUMSUM');
 if(!defined($numsum) || !$numsum) {
-  print "ERROR: Can't get SUM_NUMSUM from $xdir\n";
-  exit(1);
+    print "ERROR: Can't get SUM_NUMSUM definition.\n";
+    exit(1);
 }
-#print "Number of SUM process sets to spawn = $numsum\n";
-@def = grep(/^#define SUM_MAXNUMSUM/, @servdefs);
-$maxnumsum = ExtractVal($def[0]);
-#print "Max number of SUM process can spawn = $maxnumsum\n";
 
+$maxnumsum = $cfg->get('SUM_MAXNUMSUM');
 if($numsum == 0 || !defined($maxnumsum) || $numsum > $maxnumsum) {
-  print "**ERROR: in $xdir def for SUM_NUMSUM\n";
-  print "Number must be between 1 and $maxnumsum\n";
-  exit;
+    print "ERROR: in definition of SUM_NUMSUM\n";
+    print "Number must be between 1 and $maxnumsum\n";
+    exit;
 }
 
-@def = grep(/^#define SUMSERVER/, @servdefs);
-$sumserver = ExtractVal($def[0]);
+$sumserver = $cfg->get('SUMSERVER');
 
 $host = `hostname`;
 chomp($host);
 if(($pos = index($host, '.')) != -1) {
   $host = substr($host, 0, $pos);
 }
+
+if (($pos = index($sumserver, '.')) != -1)
+{
+    $sumserver = substr($sumserver, 0, $pos);
+}
+
 if($host ne $sumserver) {
   print "This can only be run on $sumserver.\n";
   exit;
 }
-@def = grep(/^#define SUMS_MANAGER/, @servdefs);
-$sumsmanager = ExtractVal($def[0]);
 
-#print "SUMS_MANAGER is $sumsmanager\n";
+$sumsmanager = $cfg->get('SUMS_MANAGER');
+
 $user = $ENV{'USER'};
 if($user ne $sumsmanager) {
   print "You must be user $sumsmanager to run\n";
   exit;
 }
 
-@def = grep(/^#define SUMLOG_BASEDIR/, @servdefs);
-$logDir = ExtractVal($def[0]);
+$logDir = $cfg->get('SUMLOG_BASEDIR');
 print "SUMS log dir is $logDir\n";
 
 $pidFile = $logDir . "/" . &PID_FILE;
@@ -187,27 +183,3 @@ if (!$err)
     print LOG "SUM Stop NetDRMS Complete\n";
 }
 close(LOG);
-
-sub ExtractVal
-{
-   my($line) = $_[0];
-
-   # requires Perl version 5.10
-   #my($val) = ($line =~ /^#define\s+\S+\s+(?|\"([^\s\."]+)(\..*)?\"|([^\s\.]+)(\..*)?)\s*/)[0];
-
-   # alternate that will work on Perl version 5.8
-   #my($val);
-   #if ($line =~ /^#define\s+\S+\s+\"([^\s\."]+)(\..*)?\"/)
-   #{
-   #   $val = $1;
-   #}
-   #elsif ($line =~ /^#define\s+\S+\s+([^\s\.]+)(\..*)?\s*/)
-   #{
-   #   $val = $1;
-   #}
-
-   # Igor's regex
-   my($val) = ($line =~ /^#define\s+\S+\s+"?([^"\s\.]+)(\.(.*))?/);
-
-   return $val;
-}
