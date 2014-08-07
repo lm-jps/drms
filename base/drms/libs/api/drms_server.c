@@ -432,6 +432,7 @@ int drms_session_setwrite(DRMS_Env_t *env)
     {
         fprintf(stderr, "%d, %lld, %s, %lld, %s\n", env->session->readonly, env->session->sessionid, env->session->startTime, env->session->sunum, env->session->sudir);
         fprintf(stderr, "Attempting to set session mode to read-write, but mode is already read-write.\n");
+        drms_unlock_server(env);
         return DRMS_SUCCESS;
     }
     
