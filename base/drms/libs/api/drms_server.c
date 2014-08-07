@@ -611,19 +611,7 @@ int drms_session_setwrite(DRMS_Env_t *env)
             }
         }
     }
-    
-    if (rv == DRMS_SUCCESS)
-    {
-        /* Set the transaction mode to read-write. */
-        snprintf(stmt, sizeof(stmt), "SET TRANSACTION READ WRITE");
         
-        if (db_dms(env->session->db_handle, NULL, stmt))
-        {
-            fprintf(stderr, "Failed to set transaction mode to READ WRITE.\n");
-            rv = DRMS_ERROR_BADDBQUERY;
-        }
-    }
-    
     if (rv == DRMS_SUCCESS)
     {
         /* Set the environment's session readonly flag to false. */
