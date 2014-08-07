@@ -289,6 +289,10 @@ struct DRMS_Session_struct
   char hostname[DRMS_MAXHOSTNAME]; 
   unsigned short port;
   int sockfd;
+  int readonly; /* When a session starts, it will be readonly (readonly == 1). If a user wants to write to the db, 
+                 * then readonly is set to 0. */
+  char startTime[32]; /* A time string that indicates when the session was opened. Needed for the session-log record, should one 
+                       * get written. */
 };
 
 /** DRMS session struct reference */

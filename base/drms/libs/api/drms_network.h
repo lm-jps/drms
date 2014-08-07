@@ -82,6 +82,7 @@ int drms_query_tabexists(DRMS_Session_t *session, const char *ns, const char *ta
 int drms_series_isdbowner(DRMS_Env_t *env, const char *series, int *status);
 int drms_client_isproduser(DRMS_Env_t *env, int *status);
 int drms_setretention(DRMS_Env_t *env, int16_t newRetention, int nsus, long long *sunums);
+int drms_makewritable(DRMS_Env_t *env);
 
 #ifdef DRMS_CLIENT
 void drms_lock_client(DRMS_Env_t *env);
@@ -189,4 +190,5 @@ void *drms_signal_thread(void *arg);
 #define DRMS_GETDBUSER             (28)
 #define DRMS_BINQUERY_NTUPLE       (29)
 #define DRMS_SETRETENTION          (30)
+#define DRMS_MAKESESSIONWRITABLE   (31)
 #endif

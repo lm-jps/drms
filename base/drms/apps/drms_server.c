@@ -435,10 +435,9 @@ int main (int argc, char *argv[]) {
     env->retention = retention;
     
     newsuretention = INT16_MIN;
-        fprintf(stderr, "prelim.\n");
+
     if (drms_cmdparams_exists(&cmdparams, "DRMS_NEWSURETENTION") && drms_cmdparams_get_int(&cmdparams, "DRMS_NEWSURETENTION", NULL) != -1)
     {
-        fprintf(stderr, "I should be here.\n");
         newsuretention = drms_cmdparams_get_int16(&cmdparams, "DRMS_NEWSURETENTION", &status);
         if (status != DRMS_SUCCESS)
         {
@@ -645,19 +644,11 @@ int main (int argc, char *argv[]) {
                 "setenv DRMS_HOST %s;\n"
                 "setenv DRMS_PORT %hu;\n"
                 "setenv DRMS_PID %lu;\n"
-                "setenv DRMS_SESSIONID %lld;\n"
-                "setenv DRMS_SESSIONNS %s;\n"
-                "setenv DRMS_SUNUM %lld;\n"
-                "setenv DRMS_SUDIR %s;\n"
                 "setenv DRMSSESSION %s:%hu;\n",
                 env->session->hostname, 
                 env->session->port, 
                 (unsigned long)pid, 
-                env->session->sessionid,
-                env->session->sessionns,
-                env->session->sunum,
-                env->session->sudir ? env->session->sudir : "",
-                env->session->hostname, 
+                env->session->hostname,
                 env->session->port);
         fclose(fptr);
         time(&now);
@@ -675,19 +666,11 @@ int main (int argc, char *argv[]) {
                 "DRMS_HOST=%s; export DRMS_HOST;\n"
                 "DRMS_PORT=%hu; export DRMS_PORT;\n"
                 "DRMS_PID=%lu; export DRMS_PID;\n"
-                "DRMS_SESSIONID=%lld; export DRMS_SESSIONID;\n"
-                "DRMS_SESSIONNS=%s; export DRMS_SESSIONNS;\n"
-                "DRMS_SUNUM=%lld; export DRMS_SUNUM;\n"
-                "DRMS_SUDIR=%s; export DRMS_SUDIR;\n"
                 "DRMSSESSION=%s:%hu; export DRMSSESSION;\n",
                 env->session->hostname, 
                 env->session->port, 
                 (unsigned long)pid, 
-                env->session->sessionid,
-                env->session->sessionns,
-                env->session->sunum,
-                env->session->sudir ? env->session->sudir : "",
-                env->session->hostname, 
+                env->session->hostname,
                 env->session->port);
         fclose(fptr);
         time(&now);

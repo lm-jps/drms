@@ -2254,12 +2254,26 @@ DRMS_RecordSet_t *drms_create_records_fromtemplate(DRMS_Env_t *env, int n,
 
   CHECKNULL_STAT(env,status);
   CHECKNULL_STAT(template,status);
-  
+    
+   /* We are going to write to the database, so make our transaction writable, if possible (if the db user has an associated namespace with
+    * a drms_session table in it, then the transaction can be made writable). */
+   stat = drms_makewritable(env);
+    
+   if (stat != DRMS_SUCCESS)
+   {
+       if (status)
+       {
+           *status = stat;
+       }
+       
+       return NULL;
+   }
+    
   int summaryexists = -1;
   int canupdatesummaries = -1;
 
   int nnonlinkedsegs = 0;
-
+    
   /* Cache the summary-table check */
   if (!gSummcon)
   {
@@ -2755,6 +2769,20 @@ static DRMS_RecordSet_t *drms_clone_records_internal(DRMS_RecordSet_t *rs_in,
   CHECKNULL_STAT(rs_in->records,status);
   CHECKNULL_STAT(rs_in->records[0],status);
   env = rs_in->records[0]->env;
+    
+  /* We are going to write to the database, so make our transaction writable, if possible (if the db user has an associated namespace with
+   * a drms_session table in it, then the transaction can be made writable). */
+  stat = drms_makewritable(env);
+    
+  if (stat != DRMS_SUCCESS)
+  {
+      if (status)
+      {
+          *status = stat;
+      }
+      
+      return NULL;
+  }
   
   /* Allocate the outer record set structure. */
   rs_out = malloc(sizeof(DRMS_RecordSet_t));
@@ -4380,7 +4408,7 @@ void drms_free_records(DRMS_RecordSet_t *rs)
                              * followed from the original record. */
                             if (lrec && lrec->readonly && link->wasFollowed)
                             {
-                                /* Don't free records that are writeable - those were not opened in 
+                                /* Don't free records that are writable - those were not opened in
                                  * response to following links. */
                                 
                                 /* Gotta recurse, in case the linked record links to another record. */
@@ -4514,7 +4542,7 @@ void drms_free_records(DRMS_RecordSet_t *rs)
                                  * followed from the original record. */
                                 if (lrec && lrec->readonly && link->wasFollowed)
                                 {
-                                    /* Don't free records that are writeable - those were not opened in 
+                                    /* Don't free records that are writable - those were not opened in
                                      * response to following links. */
                                     
                                     /* Gotta recurse, in case the linked record links to another record. */

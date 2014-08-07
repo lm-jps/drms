@@ -96,6 +96,7 @@ static int GetDBMinVersion(DRMS_Session_t *session, char **versout)
     return rv;
 }
 
+/* socket-modules use this function. */
 DRMS_Session_t *drms_connect(const char *host)
 {
     struct sockaddr_in server;
@@ -301,166 +302,237 @@ int drms_send_commandcode_noecho (int sockfd, int command) {
 }  
 
 #ifndef DRMS_CLIENT
+/* server-modules use this function. */
 DRMS_Session_t *drms_connect_direct(const char *dbhost, const char *dbuser, 
 				    const char *dbpasswd, const char *dbname,
 				    const char *sessionns)
 {
-  DRMS_Session_t *session;
-
-  session = malloc(sizeof(DRMS_Session_t));
-  XASSERT(session);
-  memset(session, 0, sizeof(DRMS_Session_t));
-  session->db_direct = 1;
-
-  /* Set client variables to some null values. */
-  session->port = -1;
-  session->sockfd = -1;
-
-  /* Authenticate and connect to the database. */
-  if ((session->db_handle = db_connect(dbhost,dbuser,dbpasswd,dbname,1)) 
-      == NULL)
-  {
-    fprintf(stderr,"Couldn't connect to database.\n");
-    free(session);
-    session = NULL;
-  }
-  else if (0)
-  {
-     /* Print out some diagnostic information */
-  }
-    
-    /* Check the version of this module against the minimum version required by the DRMS database. */
+    DRMS_Session_t *session;
     char *minversion = NULL;
     char jsocversion[128];
+    char *defSessionNS = NULL;
     
-    if (!GetDBMinVersion(session, &minversion))
-    {        
-        /* No transaction to rollback. */
-        db_disconnect(&session->db_handle);
+    
+    session = malloc(sizeof(DRMS_Session_t));
+    XASSERT(session);
+    memset(session, 0, sizeof(DRMS_Session_t));
+    session->db_direct = 1;
+    
+    /* Set client variables to some null values. */
+    session->port = -1;
+    session->sockfd = -1;
+    
+    /* Authenticate and connect to the database. */
+    if ((session->db_handle = db_connect(dbhost, dbuser, dbpasswd, dbname, 1)) == NULL)
+    {
+        fprintf(stderr,"Couldn't connect to database.\n");
         free(session);
         session = NULL;
     }
-    else
+    else if (0)
     {
-        jsoc_getversion(jsocversion, sizeof(jsocversion), NULL);
-        
-        if (!base_isvers(jsocversion, minversion))
+        /* Print out some diagnostic information */
+    }
+    
+    /* Do not attempt to set the db transaction to READ ONLY at this point - there is no db transaction running. Do this
+     * whenever a new transaction is created (which is achived by call db_start_transaction()). */
+    
+    if (session)
+    {
+        /* Check the version of this module against the minimum version required by the DRMS database. */
+        if (!GetDBMinVersion(session, &minversion))
         {
-            char *schema = NULL;
-            char *table = NULL;
-            
-            /* Save some information about which executable was too old. */
-            if (get_namespace(DRMS_OLDCODETABLE, &schema, &table))
-            {
-                fprintf(stderr, "Out of memory in drms_connect_direct().\n");
-            }
-            else
-            {
-                /* If the old-code table doesn't exist, skip this. This is for finding people 
-                 * with old code. */
-                if (TableExists(session, schema, table))
-                {
-                    char binpath[PATH_MAX] = {0};
-                    char query[1024];
-                    struct timeval tv;
-                    char *date = NULL;
-                    int rowexists = 0;
-                    DB_Text_Result_t *qres = NULL;
-                    
-                    if (readlink("/proc/self/exe", binpath, sizeof(binpath)) == -1)
-                    {
-                        fprintf(stderr, "Cannot obtain path to running binary.\n");
-                    }
-                    else
-                    {
-                        /* Check for existence of a record for this binary. Update the 
-                         * date and version if the record does exist. */
-                        snprintf(query, sizeof(query), "SELECT path FROM %s WHERE path = '%s'", DRMS_OLDCODETABLE, binpath);
-                        
-                        if ((qres = drms_query_txt(session, query)) == NULL)
-                        {
-                            /* Error */
-                            fprintf(stderr, "Invalid database query: %s.\n", query);
-                        }
-                        else
-                        {
-                            rowexists = qres->num_rows > 0;
-                            db_free_text_result(qres);
-                            
-                            gettimeofday(&tv, NULL);
-                            date = ctime(&tv.tv_sec);
-                            
-                            if (rowexists)
-                            {
-                                /* Update */
-                                snprintf(query, sizeof(query), "UPDATE %s set date = '%s', version = '%s' WHERE path = '%s'", DRMS_OLDCODETABLE, date, jsocversion, binpath);
-                            }
-                            else
-                            {
-                                /* Fetch the version from the DB version table. */
-                                snprintf(query, sizeof(query), "INSERT INTO %s (path, date, version) VALUES ('%s', '%s', '%s')", DRMS_OLDCODETABLE, binpath, date, jsocversion);
-                            }
-                            
-                            if (drms_dms(session, NULL, query))
-                            {
-                                fprintf(stderr, "Invalid database query: %s.\n", query);
-                            }
-                        }
-                    }
-                }
-                
-                free(table);
-                free(schema);
-            }
-            
-            fprintf(stderr, "Your DRMS module/client code (version %s) is incompatible with the current version of DRMS (which requires version %s). Please update.\n", jsocversion, minversion);
             /* No transaction to rollback. */
             db_disconnect(&session->db_handle);
             free(session);
             session = NULL;
-            
-            
         }
-    }
-  
-    if (minversion)
-    {
-       free(minversion);
-    }
-
-    if (session)
-    {
-        if (sessionns) {
-            session->sessionns = strdup(sessionns);
-        } else {
-            // get the default session namespace
-            DB_Text_Result_t *tresult = NULL;
-            char query[1024];
+        else
+        {
+            jsoc_getversion(jsocversion, sizeof(jsocversion), NULL);
             
-            // test existance of sessionns table
-            sprintf(query, "select c.relname from pg_class c, pg_namespace n where n.oid = c.relnamespace and n.nspname='admin' and c.relname='sessionns'");
-            tresult = db_query_txt(session->db_handle, query);
-            if (tresult->num_rows) {
-                db_free_text_result(tresult);    
-                sprintf(query, "select sessionns from admin.sessionns where username='%s'", session->db_handle->dbuser);
-                tresult = db_query_txt(session->db_handle, query);
-                if (tresult->num_rows) {
-                    session->sessionns = strdup(tresult->field[0][0]);
-                } else {
-                    goto bailout;
+            if (!base_isvers(jsocversion, minversion))
+            {
+                char *schema = NULL;
+                char *table = NULL;
+                
+                /* Save some information about which executable was too old. */
+                if (get_namespace(DRMS_OLDCODETABLE, &schema, &table))
+                {
+                    fprintf(stderr, "Out of memory in drms_connect_direct().\n");
+                    free(session);
+                    session = NULL;
                 }
+                else
+                {
+                    /* If the old-code table doesn't exist, skip this. This is for finding people
+                     * with old code. */
+                    if (TableExists(session, schema, table))
+                    {
+                        char binpath[PATH_MAX] = {0};
+                        char query[1024];
+                        struct timeval tv;
+                        char *date = NULL;
+                        int rowexists = 0;
+                        DB_Text_Result_t *qres = NULL;
+                        
+                        if (readlink("/proc/self/exe", binpath, sizeof(binpath)) == -1)
+                        {
+                            fprintf(stderr, "Cannot obtain path to running binary.\n");
+                            free(session);
+                            session = NULL;
+                        }
+                        else
+                        {
+                            /* Check for existence of a record for this binary. Update the
+                             * date and version if the record does exist. */
+                            snprintf(query, sizeof(query), "SELECT path FROM %s WHERE path = '%s'", DRMS_OLDCODETABLE, binpath);
+                            
+                            if ((qres = drms_query_txt(session, query)) == NULL)
+                            {
+                                /* Error */
+                                fprintf(stderr, "Invalid database query: %s.\n", query);
+                                free(session);
+                                session = NULL;
+                            }
+                            else
+                            {
+                                rowexists = qres->num_rows > 0;
+                                db_free_text_result(qres);
+                                
+                                gettimeofday(&tv, NULL);
+                                date = ctime(&tv.tv_sec);
+                                
+                                if (rowexists)
+                                {
+                                    /* Update */
+                                    snprintf(query, sizeof(query), "UPDATE %s set date = '%s', version = '%s' WHERE path = '%s'", DRMS_OLDCODETABLE, date, jsocversion, binpath);
+                                }
+                                else
+                                {
+                                    /* Fetch the version from the DB version table. */
+                                    snprintf(query, sizeof(query), "INSERT INTO %s (path, date, version) VALUES ('%s', '%s', '%s')", DRMS_OLDCODETABLE, binpath, date, jsocversion);
+                                }
+                                
+                                if (drms_dms(session, NULL, query))
+                                {
+                                    fprintf(stderr, "Invalid database query: %s.\n", query);
+                                    free(session);
+                                    session = NULL;
+                                }
+                            }
+                        }
+                    }
+                    
+                    free(table);
+                    free(schema);
+                }
+                
+                fprintf(stderr, "Your DRMS module/client code (version %s) is incompatible with the current version of DRMS (which requires version %s). Please update.\n", jsocversion, minversion);
+                /* No transaction to rollback. */
+                db_disconnect(&session->db_handle);
+                free(session);
+                session = NULL;
             }
-            db_free_text_result(tresult);
-            return session;
-        bailout:
-            fprintf(stderr, "Can't get default session namespace\n");
-            free(session);
-            session = NULL;
-            db_free_text_result(tresult);
+        }
+        
+        if (minversion)
+        {
+            free(minversion);
         }
     }
     
-  return session;
+    if (session)
+    {
+        int istat = DRMS_SUCCESS;
+        int tabExists = 0;
+        DB_Text_Result_t *tresult = NULL;
+        char query[1024];
+        
+        if (sessionns && *sessionns)
+        {
+            /* sessionns comes from the jsoc_main cmd-line argument JSOC_SESSIONNS. If set, then the user is requesting that DRMS use
+             * the provided session namespace for the the session-log record.
+             */
+            defSessionNS = strdup(sessionns);
+        }
+        else
+        {
+            // get the default session namespace
+            tabExists = drms_query_tabexists(session, "admin", "sessionns", &istat);
+            
+            if (istat == DRMS_SUCCESS)
+            {
+                if (tabExists)
+                {
+                    sprintf(query, "SELECT sessionns FROM admin.sessionns WHERE username='%s'", session->db_handle->dbuser);
+                    tresult = db_query_txt(session->db_handle, query);
+                    
+                    if (tresult)
+                    {
+                        if (tresult->num_rows > 0)
+                        {
+                            defSessionNS = strdup(tresult->field[0][0]);
+                        }
+                        
+                        db_free_text_result(tresult);
+                        tresult = NULL;
+                    }
+                    else
+                    {
+                        fprintf(stderr, "Failed db query: %s.\n", query);
+                        free(session);
+                        session = NULL;
+                    }
+                }
+            }
+            else
+            {
+                fprintf(stderr, "Failed to check for admin.sessionns table existence.\n");
+                free(session);
+                session = NULL;
+            }
+        }
+        
+        if (session)
+        {
+            if (defSessionNS)
+            {
+                /* Check for the existence of the session table before setting session->sessionns with sessionns. */
+                tabExists = drms_query_tabexists(session, defSessionNS, DRMS_SESSION_TABLE, &istat);
+                
+                if (istat == DRMS_SUCCESS)
+                {
+                    if (tabExists)
+                    {
+                        session->sessionns = defSessionNS;
+                    }
+                    else
+                    {
+                        fprintf(stderr, "Session table %s.%s does not exist.\n", defSessionNS, DRMS_SESSION_TABLE);
+                        free(session);
+                        session = NULL;
+                    }
+                }
+                else
+                {
+                    fprintf(stderr, "Failed to check for %s.%s table existence.\n", defSessionNS, DRMS_SESSION_TABLE);
+                    free(session);
+                    session = NULL;
+                }
+            }
+        }
+    }
+    
+    if (session)
+    {
+        if (!session->sessionns)
+        {
+            session->sessionns = strdup("");
+        }
+    }
+    
+    return session;
 }
 #endif
 
@@ -2470,6 +2542,25 @@ int drms_setretention(DRMS_Env_t *env, int16_t newRetention, int nsus, long long
     istat = Readint(env->session->sockfd);
     
     return istat;
+#endif
+}
+
+int drms_makewritable(DRMS_Env_t *env)
+{
+#ifndef DRMS_CLIENT
+    return drms_session_setwrite(env);
+#else
+    int drmsStat = DRMS_SUCCESS;
+
+    drms_send_commandcode(env->session->sockfd, DRMS_MAKESESSIONWRITABLE);
+    
+    /* Get status - that's all we need to receive. */
+    drmsStat = Readint(env->session->sockfd);
+
+    if (drmsStat != DRMS_SUCCESS)
+    {
+       fprintf(stderr, "Unable to make transaction writable.\n");
+    }
 #endif
 }
 

@@ -280,12 +280,17 @@ int drms_server_begin_transaction(DRMS_Env_t *env) {
   }
   else
   {
-     /* drms_lock_server is a noop if env->drms_lock == NULL */
-     drms_lock_server(env);
-     env->transrunning = 1;
-     drms_unlock_server(env);
+      if (drms_session_setread(env) != DRMS_SUCCESS)
+      {
+          goto bailout;
+      }
       
-      /* Issue the statement_timeout statement, but only if env->dbtimeout is not 
+      /* drms_lock_server is a noop if env->drms_lock == NULL */
+      drms_lock_server(env);
+      env->transrunning = 1;
+      drms_unlock_server(env);
+      
+      /* Issue the statement_timeout statement, but only if env->dbtimeout is not
        * INT_MIN (the default). A default value implies a timeout is not desired. */
       if (env->dbtimeout != INT_MIN)
       {
@@ -362,6 +367,279 @@ void drms_server_end_transaction(DRMS_Env_t *env, int abort, int final) {
   }
 }
 
+int drms_session_setread(DRMS_Env_t *env)
+{
+    int rv = DRMS_SUCCESS;
+    char stmt[DRMS_MAXQUERYLEN];
+    
+    /* Lock environment - we will be changing this. */
+    drms_lock_server(env);
+    
+    if (env && env->session)
+    {
+        /* Start all DRMS sessions read only. If a user wants to write into the database, they need a namespace that has a drms_session table so
+         * a record can be inserted to track their read-write session. When such a user attempts to write to the database, session->readonly
+         * will be set to 0. */
+        env->session->readonly = 1;
+        
+        /* Set the transaction mode to read-only. */
+        snprintf(stmt, sizeof(stmt), "SET TRANSACTION READ ONLY");
+        
+        if (db_dms(env->session->db_handle, NULL, stmt))
+        {
+            fprintf(stderr, "Failed to set transaction mode to READ WRITE.\n");
+            rv = DRMS_ERROR_MODDBTRANS;
+        }
+    }
+    else
+    {
+        fprintf(stderr, "No session - cannot set it READ ONLY.\n");
+        rv = DRMS_ERROR_MODDBTRANS;
+    }
+    
+    drms_unlock_server(env);
+    
+    return rv;
+}
+
+int drms_session_setwrite(DRMS_Env_t *env)
+{
+    int rv = DRMS_SUCCESS;
+    char stmt[DRMS_MAXQUERYLEN];
+    pid_t pid;
+    struct passwd *pwd = NULL;
+    
+    /* Lock environment - we will be changing this. */
+    drms_lock_server(env);
+    
+    pid = getpid();
+    pwd = getpwuid(geteuid());
+    
+    /* Several things should be true if the session was started read-only:
+     * 1. env->session->readonly == 1. The sessionid sequence will NOT have been incremented.
+     * 2. env->session->sessionid == 0. 
+     * 3. There is no record in the ns.drms_session table. 
+     * 4. env->session->startTime is not "".
+     * 5. The SU for the session log files will not have been created (env->session->sunum == 0).
+     * 6. The current transaction mode will be read-only. I don't think there is a way to test for this. 
+     *      PostgreSQL does provide the "show transaction isolation level" command, but there does not
+     *      seem to be away to check the READ ONLY and READ WRITE flags. */
+    
+    if (env->session->readonly != 1 || env->session->sessionid != 0 || *env->session->startTime == '\0' || env->session->sunum != 0 || env->session->sudir != NULL)
+    {
+        fprintf(stderr, "Attempting to set session mode to read-write, but mode is already read-write.\n");
+        rv = DRMS_ERROR_MODDBTRANS;
+    }
+    else if (!env->session->sessionns || *env->session->sessionns == '\0')
+    {
+        /* No namespace for the session record. This server was started by a read-only user who has no associated namespace. Error out. */
+        fprintf(stderr, "User %s has read-only access to DRMS, but is attempting to modify the DRMS database.\n", env->session->db_handle->dbuser);
+        rv = DRMS_ERROR_MODDBTRANS;
+    }
+    else
+    {
+        /* Create the database connection for the DRMS-session logging. */
+        char hostbuf[1024];
+        
+        snprintf(hostbuf, sizeof(hostbuf), "%s:%s", env->session->db_handle->dbhost, env->session->db_handle->dbport);
+        
+        if ((env->session->stat_conn = db_connect(hostbuf, env->session->db_handle->dbuser, env->dbpasswd, env->session->db_handle->dbname, 1)) == NULL)
+        {
+            fprintf(stderr,"Error: Couldn't establish database connection for write-session logging.\n");
+            pthread_kill(env->signal_thread, SIGTERM);
+            rv = DRMS_ERROR_CANTCONNECTTODB;
+        }
+    }
+
+    if (rv == DRMS_SUCCESS)
+    {
+        /* Increment sessionid, and set in the environment. */
+        char *sn = malloc(sizeof(char) * strlen(env->session->sessionns) + 16);
+        
+        if (sn)
+        {
+            sprintf(sn, "%s.drms_sessionid", env->session->sessionns);
+            env->session->sessionid = db_sequence_getnext(env->session->stat_conn, sn);
+            free(sn);
+        }
+        else
+        {
+            fprintf(stderr, "drms_session_setwrite(): out of memory.\n");
+            rv = DRMS_ERROR_OUTOFMEMORY;
+        }
+    }
+    
+    if (rv == DRMS_SUCCESS)
+    {
+        if (env->dolog)
+        {
+            /* Create the SU to contain the log files. */
+            
+            /* Allocate a 1MB storage unit for log files. */
+            /* drms_su_alloc() can be slow when the dbase is busy */
+            int tg = 1; /* Use tapegroup 1 - SUMS maps this number to a sums partition set. */
+            long long sunum = -1;
+            int sumsStat = 0;
+            
+            /* Must release lock, cuz the sums thread will acquire it (in the wrapper around SUM_alloc()). */
+            drms_unlock_server(env);
+            sunum = drms_su_alloc(env, 1<<20, &env->session->sudir, &tg, &sumsStat);
+            drms_lock_server(env);
+            env->session->sunum = sunum;
+            
+            if (sumsStat)
+            {
+                fprintf(stderr,"SUMS failed to allocate a storage unit for the write-log files: %d.\n", sumsStat);
+                rv = DRMS_ERROR_SUMALLOC;
+            }
+        }
+    }
+    
+    if (rv == DRMS_SUCCESS)
+    {
+        /* Insert a record into the correct drms_session table. */
+        if (env->dolog)
+        {
+            char filename_e[DRMS_MAXPATHLEN];
+            char filename_o[DRMS_MAXPATHLEN];
+            
+            /* LOCALTIMESTAMP() prints the time the transaction started. However, the session-db-connection code does not explicitly
+             * start a transaction with BEGIN, so each db command will implicitly start a new transaction, then run the command, then
+             * commit the transaction. This implies that LOCALTIMESTAMP() will print the current time.
+             */
+            snprintf(stmt, DRMS_MAXQUERYLEN, "INSERT INTO %s."DRMS_SESSION_TABLE
+                     "(sessionid, hostname, port, pid, username, starttime, sunum, "
+                     "sudir, status, clients,lastcontact,sums_thread_status,jsoc_version) VALUES "
+                     "(?,?,?,?,?,?,?,?,'idle',0,LOCALTIMESTAMP(0),"
+                     "'starting', '%s(%d)')",
+                     env->session->sessionns,
+                     jsoc_version,
+                     jsoc_vers_num);
+            
+            if (db_dmsv(env->session->stat_conn, NULL, stmt, -1,
+                        DB_INT8, env->session->sessionid,
+                        DB_STRING, env->session->hostname,
+                        DB_INT4, (int)env->session->port,
+                        DB_INT4, (int)pid,
+                        DB_STRING, pwd->pw_name,
+                        DB_STRING, env->session->startTime,
+                        DB_INT8, env->session->sunum,
+                        DB_STRING, env->session->sudir))
+            {
+                fprintf(stderr,"Error: Couldn't register session.\n");
+                rv = DRMS_ERROR_BADDBQUERY;
+            }
+            
+            if (rv == DRMS_SUCCESS)
+            {
+                /* Redirect or "tee" stdout and stderr. Save the pointers to the existing stdout and stderr so they can be restored
+                 * when the server terminates. */
+                if (save_stdeo())
+                {
+                    fprintf(stderr, "Can't save stdout and stderr.\n");
+                    rv = DRMS_ERROR_MODDBTRANS;
+                }
+                else
+                {
+                    if (!env->quiet)
+                    {
+                        /* Tee output */
+                        CHECKSNPRINTF(snprintf(filename_e, DRMS_MAXPATHLEN, "%s/%s.stderr.gz", env->session->sudir, env->logfile_prefix), DRMS_MAXPATHLEN);
+                        CHECKSNPRINTF(snprintf(filename_o, DRMS_MAXPATHLEN, "%s/%s.stdout.gz", env->session->sudir, env->logfile_prefix), DRMS_MAXPATHLEN);
+                        
+                        if ((env->tee_pid = tee_stdio(filename_o, 0644, filename_e, 0644)) < 0)
+                        {
+                            pthread_kill(env->signal_thread, SIGTERM);
+                            rv = DRMS_ERROR_MODDBTRANS;
+                        }
+                    }
+                    else
+                    {
+                        /* Redirect output */
+                        CHECKSNPRINTF(snprintf(filename_e, DRMS_MAXPATHLEN, "%s/%s.stderr", env->session->sudir, env->logfile_prefix), DRMS_MAXPATHLEN);
+                        CHECKSNPRINTF(snprintf(filename_o, DRMS_MAXPATHLEN, "%s/%s.stdout", env->session->sudir, env->logfile_prefix), DRMS_MAXPATHLEN);
+                        
+                        if (redirect_stdio(filename_o, 0644, filename_e, 0644))
+                        {
+                            pthread_kill(env->signal_thread, SIGTERM);
+                            rv = DRMS_ERROR_MODDBTRANS;
+                        }
+                    }
+                }
+            }
+            
+            if (rv == DRMS_SUCCESS)
+            {
+                printf("DRMS server connected to database '%s' on host '%s' as user '%s'.\n",
+                       env->session->db_handle->dbname,
+                       env->session->db_handle->dbhost,
+                       env->session->db_handle->dbuser);
+                
+                printf("DRMS_HOST = %s\n"
+                       "DRMS_PORT = %hu\n"
+                       "DRMS_PID = %lu\n"
+                       "DRMS_SESSIONID = %lld\n"
+                       "DRMS_SESSIONNS = %s\n",
+                       env->session->hostname,
+                       env->session->port,
+                       (unsigned long)pid,
+                       env->session->sessionid,
+                       env->session->sessionns);
+                fflush(stdout);
+            }
+        }
+        else
+        {
+            /* LOCALTIMESTAMP() prints the time the transaction started. However, the session-db-connection code does not explicitly
+             * start a transaction with BEGIN, so each db command will implicitly start a new transaction, then run the command, then
+             * commit the transaction. This implies that LOCALTIMESTAMP() will print the current time.
+             */
+            snprintf(stmt, DRMS_MAXQUERYLEN, "INSERT INTO %s."DRMS_SESSION_TABLE
+                     "(sessionid, hostname, port, pid, username, starttime, "
+                     "status, clients,lastcontact,sums_thread_status,jsoc_version) VALUES "
+                     "(?,?,?,?,?,?,'idle',0,LOCALTIMESTAMP(0),"
+                     "'starting', '%s(%d)')",
+                     env->session->sessionns,
+                     jsoc_version,
+                     jsoc_vers_num);
+            
+            if (db_dmsv(env->session->stat_conn, NULL, stmt, -1,
+                        DB_INT8, env->session->sessionid,
+                        DB_STRING, env->session->hostname,
+                        DB_INT4, (int)env->session->port,
+                        DB_INT4, (int)pid,
+                        DB_STRING, pwd->pw_name,
+                        DB_STRING, env->session->startTime))
+            {
+                fprintf(stderr, "Error: Couldn't register session.\n");
+                rv = DRMS_ERROR_MODDBTRANS;
+            }
+        }
+    }
+    
+    if (rv == DRMS_SUCCESS)
+    {
+        /* Set the transaction mode to read-write. */
+        snprintf(stmt, sizeof(stmt), "SET TRANSACTION READ WRITE");
+        
+        if (db_dms(env->session->db_handle, NULL, stmt))
+        {
+            fprintf(stderr, "Failed to set transaction mode to READ WRITE.\n");
+            rv = DRMS_ERROR_BADDBQUERY;
+        }
+    }
+    
+    if (rv == DRMS_SUCCESS)
+    {
+        /* Set the environment's session readonly flag to false. */
+        env->session->readonly = 0;
+    }
+    
+    drms_unlock_server(env);
+    
+    return rv;
+}
+
 /* Get a new DRMS session ID from the database and insert a session 
    record in the drms_session_table table. */
 /* MUST HAVE CALLED drms_lock_server() before entering this function!! */
@@ -371,167 +649,32 @@ int drms_server_open_session(DRMS_Env_t *env)
   printf("In drms_server_open_session()\n");
 #endif
 
-  int status;
-  struct passwd *pwd = getpwuid(geteuid());
-
-  /* Register the session in the database. */
-  char hostbuf[1024];
-  snprintf(hostbuf, 
-           sizeof(hostbuf), 
-           "%s:%s", 
-           env->session->db_handle->dbhost, 
-           env->session->db_handle->dbport);
-
-  if ((env->session->stat_conn = db_connect(hostbuf,
-					    env->session->db_handle->dbuser,
-					    env->dbpasswd,
-					    env->session->db_handle->dbname,1)) == NULL)
-  {
-    fprintf(stderr,"Error: Couldn't establish stat_conn database connection.\n");
-    // Exit(1); - never call exit(), only the signal thread can do that.
-    // Instead, send a TERM signal to the signal thread.
-    pthread_kill(env->signal_thread, SIGTERM);
-  }
-
-  /* Get sessionid etc. */
-  char *sn = malloc(sizeof(char)*strlen(env->session->sessionns)+16);
-  sprintf(sn, "%s.drms_sessionid", env->session->sessionns);
-
-  env->session->sessionid = db_sequence_getnext(env->session->stat_conn, sn);
-  free(sn);
-
-  char stmt[DRMS_MAXQUERYLEN];
-
+  /* Save start time. If the user does a write to the db, then put this start time in the session-log DRMS record. */
+  time_t secs = time(NULL);
+  struct tm *ltime = localtime(&secs);
+  char tbuf[128];
+    
+  strftime(tbuf, sizeof(tbuf), "%Y-%m-%d %T", ltime);
+  snprintf(env->session->startTime, sizeof(env->session->startTime), "%s", tbuf);
   pid_t pid = getpid();
-
-  /* drms_server always creates a SU for the logfile */
-    if (env->dolog) 
-    {
-        /* Allocate a 1MB storage unit for log files. */
-        /* drms_su_alloc() can be slow when the dbase is busy */
-        int tg = 1; /* Use tapegroup 1 - SUMS maps this number to a sums partition set. */
-        long long sunum = -1;
-        
-        /* Must release lock, cuz the sums thread will acquire it (in the wrapper around
-         * SUM_alloc()). */
-        drms_unlock_server(env);
-        sunum = drms_su_alloc(env, 1<<20, &env->session->sudir, &tg, &status);
-        drms_lock_server(env);
-        env->session->sunum = sunum;
-        if (status)
-        {
-            fprintf(stderr,"Failed to allocate storage unit for log files: %d\n", 
-                    status);          
-            return 1;
-        }
-#ifdef DEBUG  
-        else
-        {
-            printf("Session ID = %lld, Log sunum = %lld, Log file directory = %s\n",
-                   env->session->sessionid,env->session->sunum,env->session->sudir);
-        }
-#endif
-    }
 
   if (!strcmp(env->logfile_prefix, "drms_server")) 
   {
      // this information is needed by modules that self-start a
      // drms_server process
-     printf("DRMS server connected to database '%s' on host '%s' as "
-            "user '%s'.\n",env->session->db_handle->dbname, 
+     printf("DRMS server connected to database '%s' on host '%s' as user '%s'.\n",
+            env->session->db_handle->dbname,
             env->session->db_handle->dbhost,
             env->session->db_handle->dbuser);
+      
      printf("DRMS_HOST = %s\n"
             "DRMS_PORT = %hu\n"
             "DRMS_PID = %lu\n"
-            "DRMS_SESSIONID = %lld\n"
-            "DRMS_SESSIONNS = %s\n"
-            "DRMS_SUNUM = %lld\n"
-            "DRMS_SUDIR = %s\n",
-            env->session->hostname, env->session->port, (unsigned long)pid, env->session->sessionid,
-            env->session->sessionns,
-            env->session->sunum,env->session->sudir);     
+            "__ENDSELFSTART__",
+            env->session->hostname,
+            env->session->port,
+            (unsigned long)pid);
      fflush(stdout);
-  }
-
-  if (save_stdeo()) {
-    printf("Can't save stdout and stderr\n");
-    return 1;
-  }
-
-  if (env->dolog) {
-
-    snprintf(stmt, DRMS_MAXQUERYLEN, "INSERT INTO %s."DRMS_SESSION_TABLE 
-	     "(sessionid, hostname, port, pid, username, starttime, sunum, "
-	     "sudir, status, clients,lastcontact,sums_thread_status,jsoc_version) VALUES "
-	     "(?,?,?,?,?,LOCALTIMESTAMP(0),?,?,'idle',0,LOCALTIMESTAMP(0),"
-	     "'starting', '%s(%d)')", env->session->sessionns, jsoc_version, jsoc_vers_num);
-
-    if (db_dmsv(env->session->stat_conn, NULL, stmt,
-		-1, DB_INT8, env->session->sessionid, 
-		DB_STRING, env->session->hostname, 
-		DB_INT4, (int)env->session->port, DB_INT4, (int)pid, 
-		DB_STRING, pwd->pw_name, DB_INT8, env->session->sunum, 
-		DB_STRING,env->session->sudir))
-      {
-	fprintf(stderr,"Error: Couldn't register session.\n");
-	return 1;
-      }
-
-    char filename_e[DRMS_MAXPATHLEN], filename_o[DRMS_MAXPATHLEN];
-    if (!env->quiet) {
-      /* Tee output */
-      CHECKSNPRINTF(snprintf(filename_e,DRMS_MAXPATHLEN, "%s/%s.stderr.gz", env->session->sudir, env->logfile_prefix), DRMS_MAXPATHLEN);
-      CHECKSNPRINTF(snprintf(filename_o,DRMS_MAXPATHLEN, "%s/%s.stdout.gz", env->session->sudir, env->logfile_prefix), DRMS_MAXPATHLEN);
-      if ((env->tee_pid = tee_stdio (filename_o, 0644, filename_e, 0644)) < 0)
-      {
-        // Exit(-1); - never call exit(), only the signal thread can do that.
-        // Instead, send a TERM signal to the signal thread.
-        pthread_kill(env->signal_thread, SIGTERM);
-      }
-    } else {
-      /* Redirect output */
-      CHECKSNPRINTF(snprintf(filename_e,DRMS_MAXPATHLEN, "%s/%s.stderr", env->session->sudir, env->logfile_prefix), DRMS_MAXPATHLEN);
-      CHECKSNPRINTF(snprintf(filename_o,DRMS_MAXPATHLEN, "%s/%s.stdout", env->session->sudir, env->logfile_prefix), DRMS_MAXPATHLEN);
-      if (redirect_stdio (filename_o, 0644, filename_e, 0644))
-      {
-         // Exit(-1); - never call exit(), only the signal thread can do that.
-         // Instead, send a TERM signal to the signal thread.
-         pthread_kill(env->signal_thread, SIGTERM);
-      }
-    }
-    printf("DRMS server connected to database '%s' on host '%s' as "
-	   "user '%s'.\n",env->session->db_handle->dbname, 
-	   env->session->db_handle->dbhost,
-	   env->session->db_handle->dbuser);
-    printf("DRMS_HOST = %s\n"
-	   "DRMS_PORT = %hu\n"
-	   "DRMS_PID = %lu\n"
-	   "DRMS_SESSIONID = %lld\n"
-	   "DRMS_SESSIONNS = %s\n"
-	   "DRMS_SUNUM = %lld\n"
-	   "DRMS_SUDIR = %s\n",
-	   env->session->hostname, env->session->port, 
-	   (unsigned long)pid, env->session->sessionid,
-	   env->session->sessionns,
-	   env->session->sunum,env->session->sudir);     
-    fflush(stdout);
-
-  } else {
-    snprintf(stmt, DRMS_MAXQUERYLEN, "INSERT INTO %s."DRMS_SESSION_TABLE 
-	     "(sessionid, hostname, port, pid, username, starttime, "
-	     "status, clients,lastcontact,sums_thread_status,jsoc_version) VALUES "
-	     "(?,?,?,?,?,LOCALTIMESTAMP(0),'idle',0,LOCALTIMESTAMP(0),"
-	     "'starting', '%s(%d)')", env->session->sessionns, jsoc_version, jsoc_vers_num);
-    if (db_dmsv(env->session->stat_conn, NULL, stmt,
-		-1, DB_INT8, env->session->sessionid,
-		DB_STRING, env->session->hostname, 
-		DB_INT4, (int)env->session->port, DB_INT4, (int)pid,
-		DB_STRING, pwd->pw_name))
-      {
-	fprintf(stderr,"Error: Couldn't register session.\n");
-	return 1;
-      }
   }
 
   return 0;
@@ -559,9 +702,16 @@ int drms_server_close_session(DRMS_Env_t *env, char *stat_str, int clients,
     waitpid(env->tee_pid, &status, 0);
     if (status) printf("Problem returning from tee\n");
   }
-  if (restore_stdeo()) {
-    printf("Can't restore stderr and stdout\n");
-  }
+    
+    /* stderr and stdout were redirected only if the user made the transaction read write. Do not attempt to restore
+     * these file descriptors otherwise. */
+    if (!env->session->readonly && env->dolog)
+    {
+        if (restore_stdeo())
+        {
+            printf("Can't restore stderr and stdout\n");
+        }
+    }
 
     if (env->session->sudir) {
         if ((dp = opendir(env->session->sudir)) == NULL) {
@@ -617,18 +767,24 @@ int drms_server_close_session(DRMS_Env_t *env, char *stat_str, int clients,
         free(su.seriesinfo);
     }
 
-  /* Set sessionid and insert an entry in the session table */
-  char stmt[1024];
-  sprintf(stmt, "UPDATE %s."DRMS_SESSION_TABLE
-	  " SET sudir=NULL,status=?,clients=?,lastcontact=LOCALTIMESTAMP(0),"
-	  "endtime=LOCALTIMESTAMP(0) WHERE sessionid=?", env->session->sessionns);
-  if (db_dmsv(env->session->stat_conn, NULL, stmt, 
-      -1, DB_STRING, stat_str, DB_INT4, clients,
-      DB_INT8, env->session->sessionid))
-  {
-    //    fprintf(stderr,"Error: Couldn't update session entry.\n");
-    return 1;
-  }
+    if (!env->session->readonly)
+    {
+        /* Set sessionid and insert an entry in the session table */
+        char stmt[1024];
+
+        sprintf(stmt, "UPDATE %s."DRMS_SESSION_TABLE
+                " SET sudir=NULL,status=?,clients=?,lastcontact=LOCALTIMESTAMP(0),"
+                "endtime=LOCALTIMESTAMP(0) WHERE sessionid=?", env->session->sessionns);
+        
+        if (db_dmsv(env->session->stat_conn, NULL, stmt, -1,
+                    DB_STRING, stat_str,
+                    DB_INT4, clients,
+                    DB_INT8, env->session->sessionid))
+        {
+            //    fprintf(stderr,"Error: Couldn't update session entry.\n");
+            return 1;
+        }
+    }
 
   return 0;
 }
@@ -918,6 +1074,11 @@ void *drms_server_thread(void *arg)
       fprintf(stderr,"thread %d: Couldn't start database transaction.\n",tnum);
       goto bail;
     }
+      
+      if (drms_session_setread(env) != DRMS_SUCCESS)
+      {
+          goto bail;
+      }
   }
 
 
@@ -943,7 +1104,17 @@ void *drms_server_thread(void *arg)
 	printf("thread %d: Executing DRMS_ROLLBACK.\n", tnum);
       pthread_mutex_lock(env->clientlock);
       status = db_rollback(db_handle);
-      db_start_transaction(db_handle);
+            
+      if (!status)
+      {
+          status = db_start_transaction(db_handle);
+      }
+         
+      if (!status)
+      {
+          status = drms_session_setread(env);
+      }
+
       pthread_mutex_unlock(env->clientlock);
       Writeint(sockfd, status);
       break;
@@ -952,7 +1123,17 @@ void *drms_server_thread(void *arg)
 	printf("thread %d: Executing DRMS_COMMIT.\n", tnum);
       pthread_mutex_lock(env->clientlock);
       status = db_commit(db_handle);
-      db_start_transaction(db_handle);
+            
+      if (!status)
+      {
+          status = db_start_transaction(db_handle);
+      }
+            
+      if (!status)
+      {
+          status = drms_session_setread(env);
+      }
+            
       pthread_mutex_unlock(env->clientlock);
       Writeint(sockfd, status);
       break;
@@ -1113,7 +1294,12 @@ void *drms_server_thread(void *arg)
       break;
     case DRMS_SETRETENTION:
         pthread_mutex_lock(env->clientlock);
-        drms_server_setretention(env, sockfd);
+        status = drms_server_setretention(env, sockfd);
+        pthread_mutex_unlock(env->clientlock);
+        break;
+    case DRMS_MAKESESSIONWRITABLE:
+        pthread_mutex_lock(env->clientlock);
+        status = drms_server_session_setwrite(env, sockfd);
         pthread_mutex_unlock(env->clientlock);
         break;
     default:
@@ -1174,20 +1360,35 @@ void *drms_server_thread(void *arg)
 
     if (disconnect && !status)
     {
-      if (env->verbose)
-	printf("thread %d: Performing COMMIT.\n",tnum);
-      if(db_commit(db_handle))
-	fprintf(stderr,"thread %d: COMMIT failed.\n",tnum);
+        if (env->verbose)
+            printf("thread %d: Performing COMMIT.\n",tnum);
+        if(db_commit(db_handle))
+            fprintf(stderr,"thread %d: COMMIT failed.\n",tnum);
     }
     else
     {
-      if (env->verbose)
-	printf("thread %d: Performing ROLLBACK.\n",tnum);
-      if(db_rollback(db_handle))
-	fprintf(stderr,"thread %d: ROLLBACK failed.\n",tnum);
+        if (env->verbose)
+            printf("thread %d: Performing ROLLBACK.\n",tnum);
+        if(db_rollback(db_handle))
+            fprintf(stderr,"thread %d: ROLLBACK failed.\n",tnum);
     }
+
     if(db_start_transaction(db_handle))
-      fprintf(stderr,"thread %d: START TRANSACTION failed.\n",tnum);
+    {
+        fprintf(stderr,"thread %d: START TRANSACTION failed.\n",tnum);
+    }
+    else
+    {
+        /* drms_session_setread() will lock the server, so unlock it here. */
+        drms_unlock_server(env);
+        if (drms_session_setread(env) != DRMS_SUCCESS)
+        {
+            /* I guess don't sweat it if there was an error setting READ ONLY. Just print an error message. */
+            fprintf(stderr, "thread %d: SET READ ONLY failed.\n", tnum);
+        }
+        drms_lock_server(env);
+    }
+
     drms_unlock_server(env);
   }
   else
@@ -1660,6 +1861,16 @@ int drms_server_setretention(DRMS_Env_t *env, int sockfd)
     }
     
     status = drms_su_setretention(env, newRetention, num, sunums);
+    Writeint(sockfd, status);
+    
+    return status;
+}
+
+int drms_server_session_setwrite(DRMS_Env_t *env, int sockfd)
+{
+    int status = DRMS_SUCCESS;
+    
+    status = drms_session_setwrite(env);
     Writeint(sockfd, status);
     
     return status;

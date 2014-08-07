@@ -2285,6 +2285,12 @@ int drms_insert_series(DRMS_Session_t *session, int update,
   createstmt = malloc(30000);
   XASSERT(createstmt);
 
+  /* Going to modify DRMS data. Make the transaction writable. */
+  if (drms_makewritable(template->env) != DRMS_SUCCESS)
+  {
+     goto failure;
+  }
+
   /* Make sure links have pidx's set. */
   if (drms_link_getpidx(template) != DRMS_SUCCESS)
   {
@@ -2849,33 +2855,48 @@ int drms_addkeys_toseries(DRMS_Env_t *env, const char *series, const char *spec,
     
     if (series && *series && spec && *spec)
     {
-        seriestemp = drms_template_record(env, series, &drmsstat);
-        
-        if (seriestemp && drmsstat == DRMS_SUCCESS)
+        drmsstat = drms_makewritable(env);
+
+        if (drmsstat == DRMS_SUCCESS)
         {
-            isrepl = drms_series_isreplicated(env, series);
+            seriestemp = drms_template_record(env, series, &drmsstat);
             
-            /* Parse spec with drms_parser code. This will return a container of DRMS_Keyword_t structs. */
-            keys = drms_parse_keyworddesc(env, spec, &drmsstat);
-            
-            if (keys && !drmsstat && hcon_size(keys) >= 1)
+            if (seriestemp && drmsstat == DRMS_SUCCESS)
             {
-                /* hirank is a 0-based rank. */
-                hirank = drms_series_gethighestkeyrank(env, series, &drmsstat);
-                if (drmsstat)
-                {
-                    hirank = -1;
-                    drmsstat = DRMS_SUCCESS;
-                }
+                isrepl = drms_series_isreplicated(env, series);
                 
-                if (isrepl) 
+                /* Parse spec with drms_parser code. This will return a container of DRMS_Keyword_t structs. */
+                keys = drms_parse_keyworddesc(env, spec, &drmsstat);
+                
+                if (keys && !drmsstat && hcon_size(keys) >= 1)
                 {
-                    szbuf = 1024;
-                    sqlbuf = calloc(1, szbuf);
-                    
-                    if (!sqlbuf)
+                    /* hirank is a 0-based rank. */
+                    hirank = drms_series_gethighestkeyrank(env, series, &drmsstat);
+                    if (drmsstat)
                     {
-                        drmsstat = DRMS_ERROR_OUTOFMEMORY;
+                        hirank = -1;
+                        drmsstat = DRMS_SUCCESS;
+                    }
+                    
+                    if (isrepl)
+                    {
+                        szbuf = 1024;
+                        sqlbuf = calloc(1, szbuf);
+                        
+                        if (!sqlbuf)
+                        {
+                            drmsstat = DRMS_ERROR_OUTOFMEMORY;
+                        }
+                        else
+                        {
+                            szalterbuf = 512;
+                            tblactionbuf = calloc(1, szalterbuf);
+                            
+                            if (!tblactionbuf)
+                            {
+                                drmsstat = DRMS_ERROR_OUTOFMEMORY;
+                            }
+                        }
                     }
                     else
                     {
@@ -2887,252 +2908,242 @@ int drms_addkeys_toseries(DRMS_Env_t *env, const char *series, const char *spec,
                             drmsstat = DRMS_ERROR_OUTOFMEMORY;
                         }
                     }
-                }
-                else
-                {
-                   szalterbuf = 512;
-                   tblactionbuf = calloc(1, szalterbuf);
-
-                   if (!tblactionbuf)
-                   {
-                      drmsstat = DRMS_ERROR_OUTOFMEMORY;
-                   }
-                }
-                
-                if (drmsstat == DRMS_SUCCESS)
-                {
-                    if (get_namespace(series, &ns, &tab))
-                    {
-                        drmsstat = DRMS_ERROR_OUTOFMEMORY;
-                    }
-                }
-                
-                if (drmsstat == DRMS_SUCCESS)
-                {
-                    /* Set the pointer from the key struct to the containing record. */
-                    hit = hiter_create(keys);
                     
-                    if (hit)
+                    if (drmsstat == DRMS_SUCCESS)
                     {
-                        first = 1;
-                        nkeys = 0;
-                        while((key = (DRMS_Keyword_t *)hiter_getnext(hit)) != NULL)
+                        if (get_namespace(series, &ns, &tab))
                         {
-                            /* First, ensure that the keyword to add does not already exist. */
-                            if (drms_keyword_lookup(seriestemp, key->info->name, 0))
+                            drmsstat = DRMS_ERROR_OUTOFMEMORY;
+                        }
+                    }
+                    
+                    if (drmsstat == DRMS_SUCCESS)
+                    {
+                        /* Set the pointer from the key struct to the containing record. */
+                        hit = hiter_create(keys);
+                        
+                        if (hit)
+                        {
+                            first = 1;
+                            nkeys = 0;
+                            while((key = (DRMS_Keyword_t *)hiter_getnext(hit)) != NULL)
                             {
-                                fprintf(stderr, "Cannot add keyword %s, skipping.\n", key->info->name);
-                                continue;
-                            }
-                            
-                            nkeys++;
-                            
-                            key->record = seriestemp;
-                            
-                            /* Set the keyword's rank. */
-                            
-                            /* Determine if this is an old series where the keyword rank was not inlcuded in the kwflags 
-                             * column of drms_keyword. If so, do not set the rank bits of the kwflags column. Otherwise, 
-                             * determine the rank of the highest-ranked keyword, and add one to that rank before setting
-                             * the kwflags column value. REMEMBER: the rank in the DRMS_Keyword_t struct is 0-based, but 
-                             * the rank in the kwflags column is 1-based. */
-                            if (hirank >= 0)
-                            {
-                                key->info->rank = hirank; /* 0-based */
-                                key->info->kwflags |= (hirank + 1) << 16; /* 1-based - goes directly into db. */
-                                hirank++;
-                            }
-                            else
-                            {
-                                key->info->rank = -1;
-                                key->info->kwflags &= 0x0000FFFF;
-                            }
-                            
-                            DetermineDefval(key, defval);
-                            
-                            /* Create the actual SQL. */
-                            
-                            /* ALTER TABLE action statement */
-                            /* Linked keywords and constant keywords have no associated columns int the series table. LINKS 
-                             * themmselves to have associated columns in the series table, but this function does not
-                             * add new links to series. */
-                            if (!key->info->islink && !drms_keyword_isconstant(key))
-                            {
-                                if (first)
+                                /* First, ensure that the keyword to add does not already exist. */
+                                if (drms_keyword_lookup(seriestemp, key->info->name, 0))
                                 {
-                                    first = 0;
+                                    fprintf(stderr, "Cannot add keyword %s, skipping.\n", key->info->name);
+                                    continue;
+                                }
+                                
+                                nkeys++;
+                                
+                                key->record = seriestemp;
+                                
+                                /* Set the keyword's rank. */
+                                
+                                /* Determine if this is an old series where the keyword rank was not inlcuded in the kwflags
+                                 * column of drms_keyword. If so, do not set the rank bits of the kwflags column. Otherwise,
+                                 * determine the rank of the highest-ranked keyword, and add one to that rank before setting
+                                 * the kwflags column value. REMEMBER: the rank in the DRMS_Keyword_t struct is 0-based, but
+                                 * the rank in the kwflags column is 1-based. */
+                                if (hirank >= 0)
+                                {
+                                    key->info->rank = hirank; /* 0-based */
+                                    key->info->kwflags |= (hirank + 1) << 16; /* 1-based - goes directly into db. */
+                                    hirank++;
                                 }
                                 else
                                 {
-                                    tblactionbuf = base_strcatalloc(tblactionbuf, ", ", &szalterbuf);
+                                    key->info->rank = -1;
+                                    key->info->kwflags &= 0x0000FFFF;
                                 }
                                 
-                                tblactionbuf = base_strcatalloc(tblactionbuf, "ADD COLUMN ", &szalterbuf);
-                                tblactionbuf = base_strcatalloc(tblactionbuf, key->info->name, &szalterbuf);
-                                tblactionbuf = base_strcatalloc(tblactionbuf, " ", &szalterbuf);
+                                DetermineDefval(key, defval);
                                 
-                                if (key->info->type == DRMS_TYPE_STRING)
-                                {
-                                    tblactionbuf = base_strcatalloc(tblactionbuf, db_stringtype_maxlen(4000), &szalterbuf);
-                                }
-                                else
-                                {
-                                    tblactionbuf = base_strcatalloc(tblactionbuf, db_type_string(drms2dbtype(key->info->type)), &szalterbuf);
-                                }
-                            }
-                            
-                            skipkey = 0;
-                            if (drms_keyword_getperseg(key))
-                            {
-                                len = strlen(key->info->name);
-                                if (strcmp(key->info->name + len - 4, "_000"))
-                                {
-                                    skipkey = 1;
-                                }
-                                else
-                                {
-                                    key->info->name[len - 4] = 0;
-                                    skipkey = 0;
-                                }
-                            }
-                            
-                            if (isrepl)
-                            {                                
-                                /* ns.drms_keyword insert statement */
-                                /* We add only a single row for a family of per-segment keywords. */
-                                                                
-                                if (!skipkey)
-                                {
-                                    sqlbuf = base_strcatalloc(sqlbuf, "INSERT INTO ", &szbuf);
-                                    sqlbuf = base_strcatalloc(sqlbuf, ns, &szbuf);
-                                    sqlbuf = base_strcatalloc(sqlbuf, ".", &szbuf);
-                                    sqlbuf = base_strcatalloc(sqlbuf, DRMS_MASTER_KEYWORD_TABLE, &szbuf);
-                                    sqlbuf = base_strcatalloc(sqlbuf, "(seriesname, keywordname, linkname, targetkeyw, type, defaultval, format, unit, description, islink, isconstant, persegment) VALUES (", &szbuf);
-                                    sqlbuf = base_strcatalloc(sqlbuf, "'", &szbuf);
-                                    sqlbuf = base_strcatalloc(sqlbuf, key->record->seriesinfo->seriesname, &szbuf);
-                                    sqlbuf = base_strcatalloc(sqlbuf, "','", &szbuf);
-                                    sqlbuf = base_strcatalloc(sqlbuf, key->info->name, &szbuf);
-                                    sqlbuf = base_strcatalloc(sqlbuf, "','", &szbuf);
-                                    sqlbuf = base_strcatalloc(sqlbuf, key->info->linkname, &szbuf);
-                                    sqlbuf = base_strcatalloc(sqlbuf, "','", &szbuf);
-                                    sqlbuf = base_strcatalloc(sqlbuf, key->info->target_key, &szbuf);
-                                    sqlbuf = base_strcatalloc(sqlbuf, "','", &szbuf);
-                                    sqlbuf = base_strcatalloc(sqlbuf, drms_type2str(key->info->type), &szbuf);
-                                    sqlbuf = base_strcatalloc(sqlbuf, "','", &szbuf);
-                                    sqlbuf = base_strcatalloc(sqlbuf, defval, &szbuf);
-                                    sqlbuf = base_strcatalloc(sqlbuf, "','", &szbuf);
-                                    sqlbuf = base_strcatalloc(sqlbuf, key->info->format, &szbuf);
-                                    sqlbuf = base_strcatalloc(sqlbuf, "','", &szbuf);
-                                    sqlbuf = base_strcatalloc(sqlbuf, key->info->unit, &szbuf);
-                                    sqlbuf = base_strcatalloc(sqlbuf, "','", &szbuf);
-                                    sqlbuf = base_strcatalloc(sqlbuf, key->info->description, &szbuf);
-                                    sqlbuf = base_strcatalloc(sqlbuf, "',", &szbuf);
-                                    sqlbuf = base_strcatalloc(sqlbuf, key->info->islink ? "1" : "0", &szbuf);
-                                    sqlbuf = base_strcatalloc(sqlbuf, ",", &szbuf);
-                                    snprintf(numbuf, sizeof(numbuf), "%d", (int)key->info->recscope);
-                                    sqlbuf = base_strcatalloc(sqlbuf, numbuf, &szbuf);
-                                    sqlbuf = base_strcatalloc(sqlbuf, ",", &szbuf);
-                                    snprintf(numbuf, sizeof(numbuf), "%d", key->info->kwflags);
-                                    sqlbuf = base_strcatalloc(sqlbuf, numbuf, &szbuf);
-                                    sqlbuf = base_strcatalloc(sqlbuf, ")\n", &szbuf);
-                                }
-                            }
-                            else
-                            {
-                                *sql = NULL;
+                                /* Create the actual SQL. */
                                 
-                                if (!skipkey)
+                                /* ALTER TABLE action statement */
+                                /* Linked keywords and constant keywords have no associated columns int the series table. LINKS
+                                 * themmselves to have associated columns in the series table, but this function does not
+                                 * add new links to series. */
+                                if (!key->info->islink && !drms_keyword_isconstant(key))
                                 {
-                                    char ibuf[2048];
-                                    snprintf(ibuf, sizeof(ibuf), "INSERT INTO %s." DRMS_MASTER_KEYWORD_TABLE
-                                             "(seriesname, keywordname, linkname, targetkeyw, type, "
-                                             "defaultval, format, unit, description, islink, "
-                                             "isconstant, persegment) values (?,?,?,?,?,?,?,?,?,?,?,?)", ns);
-
-                                    if (drms_dmsv(session, 
-                                                  NULL, 
-                                                  ibuf,
-                                                  -1,
-                                                  DB_STRING, key->record->seriesinfo->seriesname, 
-                                                  DB_STRING, key->info->name, 
-                                                  DB_STRING, key->info->linkname, 
-                                                  DB_STRING, key->info->target_key, 
-                                                  DB_STRING, drms_type2str(key->info->type), 
-                                                  DB_STRING, defval, 
-                                                  DB_STRING, key->info->format, 
-                                                  DB_STRING, key->info->unit,
-                                                  DB_STRING, key->info->description,
-                                                  DB_INT4, key->info->islink,
-                                                  DB_INT4, key->info->recscope, /* stored in the isconstant column of
-                                                                                 * drms_keyword. */
-                                                  DB_INT4, key->info->kwflags))
+                                    if (first)
                                     {
-                                        drmsstat = DRMS_ERROR_BADDBQUERY;
+                                        first = 0;
+                                    }
+                                    else
+                                    {
+                                        tblactionbuf = base_strcatalloc(tblactionbuf, ", ", &szalterbuf);
+                                    }
+                                    
+                                    tblactionbuf = base_strcatalloc(tblactionbuf, "ADD COLUMN ", &szalterbuf);
+                                    tblactionbuf = base_strcatalloc(tblactionbuf, key->info->name, &szalterbuf);
+                                    tblactionbuf = base_strcatalloc(tblactionbuf, " ", &szalterbuf);
+                                    
+                                    if (key->info->type == DRMS_TYPE_STRING)
+                                    {
+                                        tblactionbuf = base_strcatalloc(tblactionbuf, db_stringtype_maxlen(4000), &szalterbuf);
+                                    }
+                                    else
+                                    {
+                                        tblactionbuf = base_strcatalloc(tblactionbuf, db_type_string(drms2dbtype(key->info->type)), &szalterbuf);
                                     }
                                 }
-                            }
-                        } /* end while loop */
-                        
-                        if (drmsstat == DRMS_SUCCESS && nkeys > 0)
-                        {
-                            tblactionbuf = base_strcatalloc(tblactionbuf, "\n", &szalterbuf);
-                            
-                            szalterbuf = 2048;
-                            char *alterbuf = calloc(1, szalterbuf);
-                            
-                            if (alterbuf)
-                            {
-                                alterbuf = base_strcatalloc(alterbuf, "ALTER TABLE ", &szalterbuf);
-                                alterbuf = base_strcatalloc(alterbuf, series, &szalterbuf);
-                                alterbuf = base_strcatalloc(alterbuf, " ", &szalterbuf);
-                                alterbuf = base_strcatalloc(alterbuf, tblactionbuf, &szalterbuf);
+                                
+                                skipkey = 0;
+                                if (drms_keyword_getperseg(key))
+                                {
+                                    len = strlen(key->info->name);
+                                    if (strcmp(key->info->name + len - 4, "_000"))
+                                    {
+                                        skipkey = 1;
+                                    }
+                                    else
+                                    {
+                                        key->info->name[len - 4] = 0;
+                                        skipkey = 0;
+                                    }
+                                }
                                 
                                 if (isrepl)
                                 {
-                                    /* If the table is being replicated, then we just concatenate the 
-                                     * SQL that adds columns to the series table to the sqlbuf. */
-                                    sqlbuf = base_strcatalloc(sqlbuf, alterbuf, &szbuf);
+                                    /* ns.drms_keyword insert statement */
+                                    /* We add only a single row for a family of per-segment keywords. */
+                                    
+                                    if (!skipkey)
+                                    {
+                                        sqlbuf = base_strcatalloc(sqlbuf, "INSERT INTO ", &szbuf);
+                                        sqlbuf = base_strcatalloc(sqlbuf, ns, &szbuf);
+                                        sqlbuf = base_strcatalloc(sqlbuf, ".", &szbuf);
+                                        sqlbuf = base_strcatalloc(sqlbuf, DRMS_MASTER_KEYWORD_TABLE, &szbuf);
+                                        sqlbuf = base_strcatalloc(sqlbuf, "(seriesname, keywordname, linkname, targetkeyw, type, defaultval, format, unit, description, islink, isconstant, persegment) VALUES (", &szbuf);
+                                        sqlbuf = base_strcatalloc(sqlbuf, "'", &szbuf);
+                                        sqlbuf = base_strcatalloc(sqlbuf, key->record->seriesinfo->seriesname, &szbuf);
+                                        sqlbuf = base_strcatalloc(sqlbuf, "','", &szbuf);
+                                        sqlbuf = base_strcatalloc(sqlbuf, key->info->name, &szbuf);
+                                        sqlbuf = base_strcatalloc(sqlbuf, "','", &szbuf);
+                                        sqlbuf = base_strcatalloc(sqlbuf, key->info->linkname, &szbuf);
+                                        sqlbuf = base_strcatalloc(sqlbuf, "','", &szbuf);
+                                        sqlbuf = base_strcatalloc(sqlbuf, key->info->target_key, &szbuf);
+                                        sqlbuf = base_strcatalloc(sqlbuf, "','", &szbuf);
+                                        sqlbuf = base_strcatalloc(sqlbuf, drms_type2str(key->info->type), &szbuf);
+                                        sqlbuf = base_strcatalloc(sqlbuf, "','", &szbuf);
+                                        sqlbuf = base_strcatalloc(sqlbuf, defval, &szbuf);
+                                        sqlbuf = base_strcatalloc(sqlbuf, "','", &szbuf);
+                                        sqlbuf = base_strcatalloc(sqlbuf, key->info->format, &szbuf);
+                                        sqlbuf = base_strcatalloc(sqlbuf, "','", &szbuf);
+                                        sqlbuf = base_strcatalloc(sqlbuf, key->info->unit, &szbuf);
+                                        sqlbuf = base_strcatalloc(sqlbuf, "','", &szbuf);
+                                        sqlbuf = base_strcatalloc(sqlbuf, key->info->description, &szbuf);
+                                        sqlbuf = base_strcatalloc(sqlbuf, "',", &szbuf);
+                                        sqlbuf = base_strcatalloc(sqlbuf, key->info->islink ? "1" : "0", &szbuf);
+                                        sqlbuf = base_strcatalloc(sqlbuf, ",", &szbuf);
+                                        snprintf(numbuf, sizeof(numbuf), "%d", (int)key->info->recscope);
+                                        sqlbuf = base_strcatalloc(sqlbuf, numbuf, &szbuf);
+                                        sqlbuf = base_strcatalloc(sqlbuf, ",", &szbuf);
+                                        snprintf(numbuf, sizeof(numbuf), "%d", key->info->kwflags);
+                                        sqlbuf = base_strcatalloc(sqlbuf, numbuf, &szbuf);
+                                        sqlbuf = base_strcatalloc(sqlbuf, ")\n", &szbuf);
+                                    }
                                 }
                                 else
                                 {
-                                    /* If the table isn't being replicated, then we can go ahead and submit 
-                                     * the SQL query that adds columns to the series table. */
-                                    if (drms_dms(session, NULL, alterbuf))
+                                    *sql = NULL;
+                                    
+                                    if (!skipkey)
                                     {
-                                        drmsstat = DRMS_ERROR_BADDBQUERY;
+                                        char ibuf[2048];
+                                        snprintf(ibuf, sizeof(ibuf), "INSERT INTO %s." DRMS_MASTER_KEYWORD_TABLE
+                                                 "(seriesname, keywordname, linkname, targetkeyw, type, "
+                                                 "defaultval, format, unit, description, islink, "
+                                                 "isconstant, persegment) values (?,?,?,?,?,?,?,?,?,?,?,?)", ns);
+                                        
+                                        if (drms_dmsv(session,
+                                                      NULL,
+                                                      ibuf,
+                                                      -1,
+                                                      DB_STRING, key->record->seriesinfo->seriesname,
+                                                      DB_STRING, key->info->name,
+                                                      DB_STRING, key->info->linkname,
+                                                      DB_STRING, key->info->target_key,
+                                                      DB_STRING, drms_type2str(key->info->type),
+                                                      DB_STRING, defval,
+                                                      DB_STRING, key->info->format,
+                                                      DB_STRING, key->info->unit,
+                                                      DB_STRING, key->info->description,
+                                                      DB_INT4, key->info->islink,
+                                                      DB_INT4, key->info->recscope, /* stored in the isconstant column of
+                                                                                     * drms_keyword. */
+                                                      DB_INT4, key->info->kwflags))
+                                        {
+                                            drmsstat = DRMS_ERROR_BADDBQUERY;
+                                        }
                                     }
                                 }
+                            } /* end while loop */
+                            
+                            if (drmsstat == DRMS_SUCCESS && nkeys > 0)
+                            {
+                                tblactionbuf = base_strcatalloc(tblactionbuf, "\n", &szalterbuf);
                                 
-                                free(alterbuf);
-                                alterbuf = NULL;
+                                szalterbuf = 2048;
+                                char *alterbuf = calloc(1, szalterbuf);
+                                
+                                if (alterbuf)
+                                {
+                                    alterbuf = base_strcatalloc(alterbuf, "ALTER TABLE ", &szalterbuf);
+                                    alterbuf = base_strcatalloc(alterbuf, series, &szalterbuf);
+                                    alterbuf = base_strcatalloc(alterbuf, " ", &szalterbuf);
+                                    alterbuf = base_strcatalloc(alterbuf, tblactionbuf, &szalterbuf);
+                                    
+                                    if (isrepl)
+                                    {
+                                        /* If the table is being replicated, then we just concatenate the
+                                         * SQL that adds columns to the series table to the sqlbuf. */
+                                        sqlbuf = base_strcatalloc(sqlbuf, alterbuf, &szbuf);
+                                    }
+                                    else
+                                    {
+                                        /* If the table isn't being replicated, then we can go ahead and submit
+                                         * the SQL query that adds columns to the series table. */
+                                        if (drms_dms(session, NULL, alterbuf))
+                                        {
+                                            drmsstat = DRMS_ERROR_BADDBQUERY;
+                                        }
+                                    }
+                                    
+                                    free(alterbuf);
+                                    alterbuf = NULL;
+                                }
                             }
+                            
+                            hiter_destroy(&hit);
                         }
-                        
-                        hiter_destroy(&hit);
-                    }
-                    else
-                    {
-                        drmsstat = DRMS_ERROR_OUTOFMEMORY;
+                        else
+                        {
+                            drmsstat = DRMS_ERROR_OUTOFMEMORY;
+                        }
                     }
                 }
+                else
+                {
+                    fprintf(stderr, "Failed to parse keyword specification '%s'.\n", spec);
+                    drmsstat = DRMS_ERROR_BADJSD;
+                }
+                
+                if (keys)
+                {
+                    /* Free the keys container. This will deep-free any string values, but it will not free the info             
+                     * struct. */
+                    hcon_destroy(&keys);
+                }    
             }
             else
             {
-                fprintf(stderr, "Failed to parse keyword specification '%s'.\n", spec);
-                drmsstat = DRMS_ERROR_BADJSD;
+                fprintf(stderr, "Unable to obtain template record for series %s.\n", series);
+                drmsstat = DRMS_ERROR_UNKNOWNSERIES;
             }
-            
-            if (keys)
-            {
-                /* Free the keys container. This will deep-free any string values, but it will not free the info             
-                 * struct. */
-                hcon_destroy(&keys);
-            }    
-        }
-        else
-        {
-            fprintf(stderr, "Unable to obtain template record for series %s.\n", series);
-            drmsstat = DRMS_ERROR_UNKNOWNSERIES;
         }
     }
     else
@@ -3201,85 +3212,105 @@ int drms_dropkeys_fromseries(DRMS_Env_t *env, const char *series, char **keys, i
     
     if (series && *series && keys)
     {
-        session = env->session;
-        lcseries = strdup(series);
-        
-        if (lcseries)
+        drmsstat = drms_makewritable(env);
+
+        if (drmsstat == DRMS_SUCCESS)
         {
-            strtolower(lcseries);
-            get_namespace(lcseries, &ns, NULL);
+            session = env->session;
+            lcseries = strdup(series);
             
-            if (!ns)
+            if (lcseries)
             {
-                drmsstat = DRMS_ERROR_OUTOFMEMORY;
-            }
-            else
-            {
-                /* ACK! For each persegment keyword, there exist only the expanded keywords in the regular
-                 * series template. Use drms_create_jsdtemplate_record() instead to get the non-expanded
-                 * persegment keywords. */
-                seriestemp = drms_create_jsdtemplate_record(env, series, &drmsstat);
-            }
-        }
-        else
-        {
-            drmsstat = DRMS_ERROR_OUTOFMEMORY;
-        }
-        
-        if (seriestemp && drmsstat == DRMS_SUCCESS)
-        {
-            if (drms_series_isreplicated(env, series))
-            {
-                fprintf(stderr, "Cannot drop keywords from replicated series %s.\n", series);
-                drmsstat = DRMS_ERROR_CANTMODPUBSERIES;
-            }
-            else
-            {
-                szbuf = 1024;
-                sqlbuf = calloc(1, szbuf);
+                strtolower(lcseries);
+                get_namespace(lcseries, &ns, NULL);
                 
-                if (!sqlbuf)
+                if (!ns)
                 {
                     drmsstat = DRMS_ERROR_OUTOFMEMORY;
                 }
+                else
+                {
+                    /* ACK! For each persegment keyword, there exist only the expanded keywords in the regular
+                     * series template. Use drms_create_jsdtemplate_record() instead to get the non-expanded
+                     * persegment keywords. */
+                    seriestemp = drms_create_jsdtemplate_record(env, series, &drmsstat);
+                }
             }
-        }
-        
-        if (drmsstat == DRMS_SUCCESS)
-        {
-            for (ikey = 0, first = 1; ikey < nkeys; ikey++)
+            else
             {
-                keyname = keys[ikey];
-                
-                if (lckeyname)
+                drmsstat = DRMS_ERROR_OUTOFMEMORY;
+            }
+            
+            if (seriestemp && drmsstat == DRMS_SUCCESS)
+            {
+                if (drms_series_isreplicated(env, series))
                 {
-                    free(lckeyname);
+                    fprintf(stderr, "Cannot drop keywords from replicated series %s.\n", series);
+                    drmsstat = DRMS_ERROR_CANTMODPUBSERIES;
                 }
-                
-                lckeyname = strdup(keyname);
-                strtolower(lckeyname);
-                                
-                /* First, ensure that the keyword to drop actually exists. */
-                if ((key = drms_keyword_lookup(seriestemp, keyname, 0)) == NULL)
+                else
                 {
-                    fprintf(stderr, "Cannot drop keyword %s because it does not exist in series %s, skipping.\n", keyname, series);
-                    continue;
-                }
-                
-                /* ALTER TABLE action statement - drop keys from the series table. */
-                /* There are no columns in the series table for linked or constant keywords. */
-                if (!key->info->islink && !drms_keyword_isconstant(key))
-                {
-                    if (drms_keyword_getperseg(key))
+                    szbuf = 1024;
+                    sqlbuf = calloc(1, szbuf);
+                    
+                    if (!sqlbuf)
                     {
-                        char keybuf[DRMS_MAXKEYNAMELEN + 4];
-                        
-                        /* We need to drop multiple columns for each per-segment keyword. */
-                        nsegs = drms_record_numsegments(seriestemp);
-                        for (iseg = 0; iseg < nsegs; iseg++)
+                        drmsstat = DRMS_ERROR_OUTOFMEMORY;
+                    }
+                }
+            }
+            
+            if (drmsstat == DRMS_SUCCESS)
+            {
+                for (ikey = 0, first = 1; ikey < nkeys; ikey++)
+                {
+                    keyname = keys[ikey];
+                    
+                    if (lckeyname)
+                    {
+                        free(lckeyname);
+                    }
+                    
+                    lckeyname = strdup(keyname);
+                    strtolower(lckeyname);
+                    
+                    /* First, ensure that the keyword to drop actually exists. */
+                    if ((key = drms_keyword_lookup(seriestemp, keyname, 0)) == NULL)
+                    {
+                        fprintf(stderr, "Cannot drop keyword %s because it does not exist in series %s, skipping.\n", keyname, series);
+                        continue;
+                    }
+                    
+                    /* ALTER TABLE action statement - drop keys from the series table. */
+                    /* There are no columns in the series table for linked or constant keywords. */
+                    if (!key->info->islink && !drms_keyword_isconstant(key))
+                    {
+                        if (drms_keyword_getperseg(key))
                         {
-                            snprintf(keybuf, sizeof(keybuf), "%s_%03d", keyname, iseg);
+                            char keybuf[DRMS_MAXKEYNAMELEN + 4];
                             
+                            /* We need to drop multiple columns for each per-segment keyword. */
+                            nsegs = drms_record_numsegments(seriestemp);
+                            for (iseg = 0; iseg < nsegs; iseg++)
+                            {
+                                snprintf(keybuf, sizeof(keybuf), "%s_%03d", keyname, iseg);
+                                
+                                if (first)
+                                {
+                                    first = 0;
+                                }
+                                else
+                                {
+                                    sqlbuf = base_strcatalloc(sqlbuf, ", ", &szbuf);
+                                }
+                                
+                                /* If a db object depends on the column, then this SQL will fail. */
+                                sqlbuf = base_strcatalloc(sqlbuf, "DROP COLUMN ", &szbuf);
+                                sqlbuf = base_strcatalloc(sqlbuf, keybuf, &szbuf);
+                            }
+                        }
+                        else
+                        {
                             if (first)
                             {
                                 first = 0;
@@ -3291,75 +3322,60 @@ int drms_dropkeys_fromseries(DRMS_Env_t *env, const char *series, char **keys, i
                             
                             /* If a db object depends on the column, then this SQL will fail. */
                             sqlbuf = base_strcatalloc(sqlbuf, "DROP COLUMN ", &szbuf);
-                            sqlbuf = base_strcatalloc(sqlbuf, keybuf, &szbuf);
-                        }                    
-                    }
-                    else
-                    {
-                        if (first)
-                        {
-                            first = 0;
+                            sqlbuf = base_strcatalloc(sqlbuf, keyname, &szbuf);
                         }
-                        else
-                        {
-                            sqlbuf = base_strcatalloc(sqlbuf, ", ", &szbuf);
-                        }
-                        
-                        /* If a db object depends on the column, then this SQL will fail. */
-                        sqlbuf = base_strcatalloc(sqlbuf, "DROP COLUMN ", &szbuf);
-                        sqlbuf = base_strcatalloc(sqlbuf, keyname, &szbuf);
                     }
-                }
-                
-                snprintf(ibuf, sizeof(ibuf), "DELETE FROM %s." DRMS_MASTER_KEYWORD_TABLE
-                         " WHERE lower(seriesname) = '%s' AND lower(keywordname) = '%s'", ns, lcseries, lckeyname);
-                
-                if (drms_dms(session, NULL, ibuf))
-                {
-                    drmsstat = DRMS_ERROR_BADDBQUERY;
-                    break;
-                }
-            } /* key loop */
-            
-            if (lckeyname)
-            {
-                free(lckeyname);
-                lckeyname = NULL;
-            }
-            
-            /* Drop columns from the series table. */
-            if (sqlbuf && *sqlbuf)
-            {
-                size_t szalterbuf = 2048;
-                char *alterbuf = calloc(1, szalterbuf);
-                
-                if (alterbuf)
-                {
-                    alterbuf = base_strcatalloc(alterbuf, "ALTER TABLE ", &szalterbuf);
-                    alterbuf = base_strcatalloc(alterbuf, lcseries, &szalterbuf);
-                    alterbuf = base_strcatalloc(alterbuf, " ", &szalterbuf);
-                    alterbuf = base_strcatalloc(alterbuf, sqlbuf, &szalterbuf);
                     
-                    if (drms_dms(session, NULL, alterbuf))
+                    snprintf(ibuf, sizeof(ibuf), "DELETE FROM %s." DRMS_MASTER_KEYWORD_TABLE
+                             " WHERE lower(seriesname) = '%s' AND lower(keywordname) = '%s'", ns, lcseries, lckeyname);
+                    
+                    if (drms_dms(session, NULL, ibuf))
                     {
                         drmsstat = DRMS_ERROR_BADDBQUERY;
+                        break;
                     }
+                } /* key loop */
+                
+                if (lckeyname)
+                {
+                    free(lckeyname);
+                    lckeyname = NULL;
+                }
+                
+                /* Drop columns from the series table. */
+                if (sqlbuf && *sqlbuf)
+                {
+                    size_t szalterbuf = 2048;
+                    char *alterbuf = calloc(1, szalterbuf);
                     
-                    free(alterbuf);
-                    alterbuf = NULL;
+                    if (alterbuf)
+                    {
+                        alterbuf = base_strcatalloc(alterbuf, "ALTER TABLE ", &szalterbuf);
+                        alterbuf = base_strcatalloc(alterbuf, lcseries, &szalterbuf);
+                        alterbuf = base_strcatalloc(alterbuf, " ", &szalterbuf);
+                        alterbuf = base_strcatalloc(alterbuf, sqlbuf, &szalterbuf);
+                        
+                        if (drms_dms(session, NULL, alterbuf))
+                        {
+                            drmsstat = DRMS_ERROR_BADDBQUERY;
+                        }
+                        
+                        free(alterbuf);
+                        alterbuf = NULL;
+                    }
                 }
             }
-        }
-        
-        if (seriestemp)
-        {
-            drms_destroy_jsdtemplate_record(&seriestemp);
-        }
-        
-        if (lcseries)
-        {
-            free(lcseries);
-            lcseries = NULL;
+            
+            if (seriestemp)
+            {
+                drms_destroy_jsdtemplate_record(&seriestemp);
+            }
+            
+            if (lcseries)
+            {
+                free(lcseries);
+                lcseries = NULL;
+            }
         }
     }
     else
@@ -3391,6 +3407,13 @@ int drms_delete_series(DRMS_Env_t *env, const char *series, int cascade, int kee
   if (!env->session->db_direct && !env->selfstart)
   {
      fprintf(stderr, "Can't delete series if using drms_server. Please use a direct-connect modules, or a self-starting socket-connect module.\n");
+     goto bailout;
+  }
+
+  drmsstatus = drms_makewritable(env);
+
+  if (drmsstatus != DRMS_SUCCESS)
+  {
      goto bailout;
   }
 

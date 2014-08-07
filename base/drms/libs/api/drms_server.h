@@ -102,6 +102,8 @@ int drms_server_getdbuser(DRMS_Env_t *env, int sockfd);
 
 int drms_server_setretention(DRMS_Env_t *env, int sockfd);
 
+int drms_server_session_setwrite(DRMS_Env_t *env, int sockfd);
+
 /** \brief Server function for command code ::DRMS_ALLOC_RECNUM. */
 int drms_server_alloc_recnum(DRMS_Env_t *env, int sockfd);
 /** \brief Add recnums of transient records to templist for future removal */
@@ -137,4 +139,8 @@ rollback. Otherwise the current transaction will commit.
 future drms_server_begin_transaction() can be invoked. 
 */
 void drms_server_end_transaction(DRMS_Env_t *env, int abort, int final);
+
+int drms_session_setread(DRMS_Env_t *env);
+int drms_session_setwrite(DRMS_Env_t *env);
+
 #endif

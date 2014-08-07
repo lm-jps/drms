@@ -497,6 +497,15 @@ pid_t drms_start_server (int verbose, int dolog)  {
   int fd[2];
   pid_t	pid;
 
+    /* The pipe() sys call makes 2 file descriptors in each process. fd[0], which is present in both processes, can be read
+     * from by both processes. fd[1] can be written to by both processes. In this case, we want the socket-module to read
+     * from drms_server, so we want for the parent (socket module) to only read from the pipe, and we want the child (drms_server)
+     * to write to only write to the pipe. So, we close the parent's write end of the pipe (fd[1]), and we close the child's
+     * read end of the pipe (fd[0]).
+     *
+     * The select() sys call BLOCKs until one of the file descriptors in the set of file descriptors in readfd (which contains only 
+     * fd[0], the fd for reading from the pipe) is reading for reading from.
+     */
   if (pipe(fd) < 0) {
     perror("pipe error");
     return -1;
@@ -542,7 +551,7 @@ pid_t drms_start_server (int verbose, int dolog)  {
 	strcat(server_info, line);
       }
 /*       printf("%s\n-----\n", line); */
-    } while (!strstr(line, "DRMS_SUDIR"));
+    } while (!strstr(line, "__ENDSELFSTART__"));
     if (verbose) {
       write(STDOUT_FILENO, server_info, strlen(server_info));
     }

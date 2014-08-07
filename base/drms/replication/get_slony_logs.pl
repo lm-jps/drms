@@ -46,7 +46,7 @@ my $ingestion_path="";
 #### Get CONFIGURATION variables from $config_file
 if (!open(SETTINGS, "$config_file") ) {
     my $error = "Error cannot open config file [$config_file]\n";
-    print $error;
+    print STDERR $error;
     exit 1;
 }
 
