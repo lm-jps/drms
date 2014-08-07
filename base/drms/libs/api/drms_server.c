@@ -280,6 +280,11 @@ int drms_server_begin_transaction(DRMS_Env_t *env) {
   }
   else
   {
+      if (drms_session_setread(env) != DRMS_SUCCESS)
+      {
+          goto bailout;
+      }
+      
       /* drms_lock_server is a noop if env->drms_lock == NULL */
       drms_lock_server(env);
       env->transrunning = 1;
@@ -378,6 +383,8 @@ int drms_session_setread(DRMS_Env_t *env)
         env->session->readonly = 1;
         
         /* Set the transaction mode to read-only. */
+#if 0
+        /* This didn't work - read-only users still need the ability to write to the db. */
         snprintf(stmt, sizeof(stmt), "SET TRANSACTION READ ONLY");
         
         if (db_dms(env->session->db_handle, NULL, stmt))
@@ -385,6 +392,7 @@ int drms_session_setread(DRMS_Env_t *env)
             fprintf(stderr, "Failed to set transaction mode to READ WRITE.\n");
             rv = DRMS_ERROR_MODDBTRANS;
         }
+#endif
     }
     else
     {
@@ -611,7 +619,7 @@ int drms_session_setwrite(DRMS_Env_t *env)
             }
         }
     }
-        
+    
     if (rv == DRMS_SUCCESS)
     {
         /* Set the environment's session readonly flag to false. */
@@ -1057,6 +1065,11 @@ void *drms_server_thread(void *arg)
       fprintf(stderr,"thread %d: Couldn't start database transaction.\n",tnum);
       goto bail;
     }
+      
+      if (drms_session_setread(env) != DRMS_SUCCESS)
+      {
+          goto bail;
+      }
   }
 
 
@@ -1088,6 +1101,11 @@ void *drms_server_thread(void *arg)
           status = db_start_transaction(db_handle);
       }
          
+      if (!status)
+      {
+          status = drms_session_setread(env);
+      }
+            
       pthread_mutex_unlock(env->clientlock);
       Writeint(sockfd, status);
       break;
@@ -1100,6 +1118,11 @@ void *drms_server_thread(void *arg)
       if (!status)
       {
           status = db_start_transaction(db_handle);
+      }
+            
+      if (!status)
+      {
+          status = drms_session_setread(env);
       }
             
       pthread_mutex_unlock(env->clientlock);
@@ -1344,6 +1367,17 @@ void *drms_server_thread(void *arg)
     if(db_start_transaction(db_handle))
     {
         fprintf(stderr,"thread %d: START TRANSACTION failed.\n",tnum);
+    }
+    else
+    {
+        /* drms_session_setread() will lock the server, so unlock it here. */
+        drms_unlock_server(env);
+        if (drms_session_setread(env) != DRMS_SUCCESS)
+        {
+            /* I guess don't sweat it if there was an error setting READ ONLY. Just print an error message. */
+            fprintf(stderr, "thread %d: SET READ ONLY failed.\n", tnum);
+        }
+        drms_lock_server(env);
     }
 
     drms_unlock_server(env);
