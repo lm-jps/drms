@@ -280,11 +280,6 @@ int drms_server_begin_transaction(DRMS_Env_t *env) {
   }
   else
   {
-      if (drms_session_setread(env) != DRMS_SUCCESS)
-      {
-          goto bailout;
-      }
-      
       /* drms_lock_server is a noop if env->drms_lock == NULL */
       drms_lock_server(env);
       env->transrunning = 1;
@@ -1074,11 +1069,6 @@ void *drms_server_thread(void *arg)
       fprintf(stderr,"thread %d: Couldn't start database transaction.\n",tnum);
       goto bail;
     }
-      
-      if (drms_session_setread(env) != DRMS_SUCCESS)
-      {
-          goto bail;
-      }
   }
 
 
@@ -1110,11 +1100,6 @@ void *drms_server_thread(void *arg)
           status = db_start_transaction(db_handle);
       }
          
-      if (!status)
-      {
-          status = drms_session_setread(env);
-      }
-
       pthread_mutex_unlock(env->clientlock);
       Writeint(sockfd, status);
       break;
@@ -1127,11 +1112,6 @@ void *drms_server_thread(void *arg)
       if (!status)
       {
           status = db_start_transaction(db_handle);
-      }
-            
-      if (!status)
-      {
-          status = drms_session_setread(env);
       }
             
       pthread_mutex_unlock(env->clientlock);
@@ -1376,17 +1356,6 @@ void *drms_server_thread(void *arg)
     if(db_start_transaction(db_handle))
     {
         fprintf(stderr,"thread %d: START TRANSACTION failed.\n",tnum);
-    }
-    else
-    {
-        /* drms_session_setread() will lock the server, so unlock it here. */
-        drms_unlock_server(env);
-        if (drms_session_setread(env) != DRMS_SUCCESS)
-        {
-            /* I guess don't sweat it if there was an error setting READ ONLY. Just print an error message. */
-            fprintf(stderr, "thread %d: SET READ ONLY failed.\n", tnum);
-        }
-        drms_lock_server(env);
     }
 
     drms_unlock_server(env);
