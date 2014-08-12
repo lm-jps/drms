@@ -218,6 +218,33 @@ JMD_IS_INSTALLED                       0
 JMD_URL                       http://localhost:8080/JMD/JMD
 ###############################
 
+###############################
+# Parameters for remote sums - these parameters allow configuration of the remote-sums components
+
+# The database table that lists the remote sites, their site codes, and their base urls that provide access to the rs.py CGI.
+# Each site that provides SUs to other sites must have a rs.py CGI that provides the scp path to the site requesting the SUs.
+RS_SITE_TABLE                         drms.rs_sites
+
+# The database table used by rsumsd.py daemon running at the receiving site to track remote-site SU requests.
+RS_REQUEST_TABLE                      drms.rs_requests
+
+# The database table used by rsumsd.py daemon running at the receiving site to track SU downloads.
+RS_SU_TABLE                           drms.rs_sus
+
+# The name of the database that contains the three previous tables.
+RS_DBNAME                             mydb
+
+# The database host that contains the database identified by RS_DBNAME.
+RS_DBHOST                             host
+
+# The port on the database host used by rsumsd.py to access the database identified by RS_DBNAME.
+RS_DBPORT                             port
+
+# The (advisory) lockfile used by rsumsd.py to prevent multiple instances of rsumsd.py from running.
+RS_LOCKFILE                           /usr/share/drms/locks/remotesums.lck
+
+###############################
+
 __MAKE__
 
 # Third-party libraries required in order to make NetDRMS binaries. Specify

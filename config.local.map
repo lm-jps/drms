@@ -43,3 +43,10 @@ SUMRM_NORUN_START          q:SUMRM_NORUN_START
 SUMRM_NORUN_STOP           q:SUMRM_NORUN_STOP
 JMD_IS_INSTALLED           p:JMD_IS_INSTALLED
 JMD_URL                    q:JMD_URL
+RS_SITE_TABLE              q:RS_SITE_TABLE
+RS_REQUEST_TABLE           q:RS_REQUEST_TABLE
+RS_SU_TABLE                q:RS_SU_TABLE
+RS_DBNAME                  q:RS_DBNAME
+RS_DBHOST                  q:RS_DBHOST
+RS_DBPORT                  a:RS_DBPORT
+RS_LOCKFILE                q:RS_LOCKFILE
