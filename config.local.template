@@ -235,10 +235,10 @@ RS_SU_TABLE                           drms.rs_sus
 RS_DBNAME                             mydb
 
 # The database host that contains the database identified by RS_DBNAME.
-RS_DBHOST                             host
+RS_DBHOST                             localhost
 
 # The port on the database host used by rsumsd.py to access the database identified by RS_DBNAME.
-RS_DBPORT                             port
+RS_DBPORT                             5432
 
 # The (advisory) lockfile used by rsumsd.py to prevent multiple instances of rsumsd.py from running.
 RS_LOCKFILE                           /usr/share/drms/locks/remotesums.lck
