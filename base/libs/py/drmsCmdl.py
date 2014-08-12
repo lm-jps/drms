@@ -11,7 +11,9 @@ class CmdlParser(argparse.ArgumentParser):
         if 'prefix_chars' not in kwargs:
             # Can't put 'h' in here for some reason. It collides with the help argument.
             kwargs['prefix_chars'] = '-ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefgijklmnopqrstuvwxyz'
-        super().__init__(**kwargs)
+
+        # ACK! super() with no arguments is compatible with Py 3, not Py 2, in which case 1 argument is required.
+        super(CmdlParser, self).__init__(**kwargs)
         self.required = {}
         self.reqGroup = None
     
@@ -42,8 +44,9 @@ class CmdlParser(argparse.ArgumentParser):
                     argsMod.append(arg)
         else:
             argsMod = args
-        
-        return super().parse_args(argsMod, namespace)
+
+        # ACK! super() with no arguments is compatible with Py 3, not Py 2, in which case 1 argument is required.
+        return super(CmdlParser, self).parse_args(argsMod, namespace)
     
     def add_argument(self, *args, **kwargs):
         # Make sure the caller provided the 'dest' argument (in kwargs). This is the name of the property in the dictionary returned by parse_args().
@@ -59,8 +62,10 @@ class CmdlParser(argparse.ArgumentParser):
             self.required[kwargs['dest']] = True
             
             if self.reqGroup is None:
-                self.reqGroup = super().add_argument_group('required arguments')
+                # ACK! super() with no arguments is compatible with Py 3, not Py 2, in which case 1 argument is required.
+                self.reqGroup = super(CmdlParser, self).add_argument_group('required arguments')
             
             self.reqGroup.add_argument(*args, **kwargs)
         else:
-            super().add_argument(*args, **kwargs)
+            # ACK! super() with no arguments is compatible with Py 3, not Py 2, in which case 1 argument is required.
+            super(CmdlParser, self).add_argument(*args, **kwargs)
