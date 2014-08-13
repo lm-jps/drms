@@ -34,8 +34,14 @@ TGT_BIN	        := $(TGT_BIN) $(EXE_$(d)) $(MODEXE_SOCK_$(d))
 S_$(d)		:= $(notdir $(EXE_$(d)) $(MODEXE_SOCK_$(d)))
 
 # Local rules
+ifeq ($(CFITSIOH),$(LIBTARH))
+	TPARTYH	:= $(CFITSIOH)
+else
+	TPARTYH := $(CFITSIOH) $(LIBTARH)
+endif
+
 $(OBJ_$(d)):		$(SRCDIR)/$(d)/Rules.mk
-$(OBJ_$(d)):		CF_TGT := $(CF_TGT) $(CFITSIOH) $(LIBTARH) -I$(SRCDIR)/$(d)/../../libs/json -I$(SRCDIR)/$(d)/../libs/util
+$(OBJ_$(d)):		CF_TGT := $(CF_TGT) $(TPARTYH) -I$(SRCDIR)/$(d)/../../libs/json -I$(SRCDIR)/$(d)/../libs/util
 # DBMS is the POSTGRESQL macro needed so that jsoc_fetch can see db_int8_t
 $(OBJ_$(d)):		CF_TGT := $(CF_TGT) -DCDIR="\"$(SRCDIR)/$(d)\"" -D$(DBMS)
 

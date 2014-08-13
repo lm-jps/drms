@@ -172,7 +172,7 @@ MPI_PATH:AVX            /home/jsoc/avx/bin
 
 TAR_INCS:X86_64         /home/jsoc/include
 TAR_INCS:IA32           /home/jsoc/include
-TAR_INCS:AVX            /home/jsoc/include
+TAR_INCS:AVX            /home/jsoc/avx/include
 TAR_INCS:IA64           /home/jsoc/include
 
 TAR_LIBS:X86_64         /home/jsoc/lib/linux-x86_64
