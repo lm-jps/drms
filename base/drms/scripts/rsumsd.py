@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 
 from __future__ import print_function
 import sys
@@ -9,8 +9,18 @@ import filecmp
 import thread
 import psycopg2
 import threading
+import fcntl
+sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../include'))
+from drmsparams import DRMSParams
+sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../base/libs/py'))
 from drmsCmdl import CmdlParser
-from subprocess import check_output, CalledProcessError
+from drmsLock import DrmsLock
+
+from subprocess import check_output, CalledProcessError, Popen
+
+# This script runs as a daemon at the site that has requested an SU that does not belong to the site. It is responsible for contacting
+# the owning site and requesting the path to the desired SUs. The owning site must be running the rs.py CGI to respond to the requesting
+# site's request.
 
 # There are three database tables: 1., a DRMS site table, 2., a request table, and 3., an SU table. The site table (sitename, sitecode, baseurl) provides
 # the information needed to query the providing site for the information needed to scp the requested SUs to the requesting site. The URL to the cgi
@@ -42,17 +52,20 @@ from subprocess import check_output, CalledProcessError
 # for completion of all SUs. When that occurs, the status of the request record is set to 'C', indicating that the request is complete. The
 # drms_storageunit.c code will then call SUMS to get the newly created paths to the requested SUs.
 
-class SuTable():
+RET_SUCCESS = 0
+RET_INVALIDARGS = 1
+RET_LOCK = 2
 
+class SuTable:
     def __init__(self, cursor, tableName):
         self.cursor = cursor
         self.tableName = tableName
         self.suDict = {}
         
-    def setCursor(cursor):
+    def setCursor(self, cursor):
         self.cursor = cursor
 
-    def read():
+    def read(self):
         # sus(sunum, refcount, status, message)
         cmd = 'SELECT sunum, refcount, status FROM ' + self.tableName
     
@@ -67,7 +80,7 @@ class SuTable():
             self.suDict[record[0]]['refcount'] = record[1]
             self.suDict[record[0]]['status'] = record[2]
 
-    def write(sus):
+    def write(self, sus):
         # sus(sunum, refcount, status, message)
         try:
             cursor.execute('PREPARE preparedStatement AS INSERT INTO ' + suTable + ' VALUES($1, $2, $3, $4)')
@@ -77,7 +90,7 @@ class SuTable():
         except psycopg2.Error as exc:
             raise Exception('sql', exc.diag.message_primary, cmd)
 
-    def setStatus(sunum, code, msg):
+    def setStatus(self, sunum, code, msg):
         self.suDict[sunum]['status'] = code
         if msg is not None:
             self.suDict[sunum]['status'] = msg
@@ -171,22 +184,29 @@ class Downloader(threading.Thread):
         
         Downloader.lock.release()
 
+def getCfg(path):
+    pass
 
-def GetArgs(args):
+def getOption(val, default):
+    if val:
+        return val
+    else:
+        return default
+
+def getArgs(args):
     istat = False
     optD = {}
     
-    parser = CmdlParser(usage='%(prog)s [ -h ] cfg=<DRMS/SUMS configuration file> sutable=<storage unit table> reqtable=<request table> [ --dbname=<db name> ] [ --dbhost=<db host> ] [ --dbport=<db port> ]')
+    parser = CmdlParser(usage='%(prog)s [ -h ] sutable=<storage unit table> reqtable=<request table> [ --dbname=<db name> ] [ --dbhost=<db host> ] [ --dbport=<db port> ]')
     
-    # Required parameters.
-    parser.add_argument('c', 'cfg', '--cfg', help='', metavar='<configuration file>', dest='cfg', required=True)
-    parser.add_argument('s', 'sutable', '--sutable', help='The database table that contains records of the storage units being processed.', metavar='<storage unit table>', dest='sutable', required=True)
-    parser.add_argument('r', 'reqtable', '--reqtable', help='The database table that contains records of the SU-request being processed.', metavar='<request unit table>', dest='reqtable', required=True)
-    
-    # Optional parameters.
-    parser.add_argument('-N', '--dbname', help='The name of the database that contains the series table from which records are to be deleted.', metavar='<db name>', dest='dbname', default='jsoc')
-    parser.add_argument('-H', '--dbhost', help='The host machine of the database that contains the series table from which records are to be deleted.', metavar='<db host machine>', dest='dbhost', default='hmidb')
-    parser.add_argument('-P', '--dbport', help='The port on the host machine that is accepting connections for the database that contains the series table from which records are to be deleted.', metavar='<db host port>', dest='dbport', default='5432')
+    # Optional parameters - no default argument is provided, so the default is None, which will trigger the use of what exists in the configuration file
+    # (which is drmsparams.py).
+    parser.add_argument('n', 'sitetable', '--sitetable', help='The database table that contains records of the storage units being processed. If provided, overrides default specified in configuration file.', metavar='<site table>', dest='sitetable')
+    parser.add_argument('r', 'reqtable', '--reqtable', help='The database table that contains records of the SU-request being processed. If provided, overrides default specified in configuration file.', metavar='<request unit table>', dest='reqtable')
+    parser.add_argument('s', 'sutable', '--sutable', help='The database table that contains records of the storage units being processed. If provided, overrides default specified in configuration file.', metavar='<storage unit table>', dest='sutable')
+    parser.add_argument('-N', '--dbname', help='The name of the database that contains the series table from which records are to be deleted.', metavar='<db name>', dest='dbname')
+    parser.add_argument('-H', '--dbhost', help='The host machine of the database that contains the series table from which records are to be deleted.', metavar='<db host machine>', dest='dbhost')
+    parser.add_argument('-P', '--dbport', help='The port on the host machine that is accepting connections for the database that contains the series table from which records are to be deleted.', metavar='<db host port>', dest='dbport')
   
     try:
         args = parser.parse_args()
@@ -200,27 +220,49 @@ def GetArgs(args):
                 raise # Re-raise
                   
             print(msg, file=sys.stderr)
-            istat = False
+            istat = True
+            optD = None
               
         else:
             raise # Re-raise
   
     if not istat:
         try:
-            optD['cfg'] = args.cfg
-            optD['sutable'] = args.sutable
-            optD['reqtable'] = args.reqtable
-            optD['dbname'] = args.dbname
-            optD['dbhost'] = args.dbhost
-            optD['dbport'] = args.dbport
+            drmsParams = DRMSParams()
+            if drmsParams is None:
+                raise Exception('drmsParams', 'Unable to locate DRMS parameters file (drmsparams.py).')
+            
+            # Get configuration information.
+            optD['cfg'] = drmsParams
+            
+            # Override defaults.
+            optD['sitetable'] = getOption(args.sitetable, drmsParams.get('RS_SITE_TABLE'))
+            optD['reqtable'] = getOption(args.reqtable, drmsParams.get('RS_REQUEST_TABLE'))
+            optD['sutable'] = getOption(args.sutable, drmsParams.get('RS_SU_TABLE'))
+            optD['dbname'] = getOption(args.dbname, drmsParams.get('RS_DBNAME'))
+            optD['dbhost'] = getOption(args.dbhost, drmsParams.get('RS_DBHOST'))
+            optD['dbport'] = getOption(args.dbport, drmsParams.get('RS_DBPORT'))
+            optD['lockfile'] = getOption(None, drmsParams.get('RS_LOCKFILE'))
+    
+        except Exception as exc:
+            if len(exc.args) != 2:
+                raise # Re-raise
+        
+            etype = exc.args[0]
+            msg = exc.args[1]
+        
+            if etype == 'drmsParams':
+                print('Error reading DRMS parameters: ' + msg, file=sys.stderr)
+                istat = True
+                optD = None
     
         except KeyError as exc:
             type, value, traceback = sys.exc_info()
             print(exc.strerror, file=sys.stderr)
-            istat = False
+            istat = True
+            optD = None
     
     return optD
-
 
 def filterSunums(sunumList, sus, jfPath):
     rv = []
@@ -255,181 +297,200 @@ def filterSunums(sunumList, sus, jfPath):
     return rv
 
 def newDownload(cursor, url, sunumList):
-
+    pass
 
 # Process the SUs for the source site represented by url.
 # url - the URL (base URL plus cgi arguments, except for the sunum= argument) from which SU paths can be obtained.
 # sunums - a list of sorted SUNUMs to download.
 def processSU(dbconn, url, sunums):
-
     # Create the sunum= argument.
 
+    # Break-up large requests from a single URL into multiple smaller requests.
+    nElems = len(sunums[url])
+    iLastChunk = nElems / MAX_SUS
+
+    iChunk = 0
+    while iChunk <= iLastChunk:
+        if iLastChunk == iChunk:
+            end = nElems
+        else:
+            end = (ichunk + 1) * MAX_SUS - 1
+
+        sunumChunk = sunums[iChunk * MAX_SUS : end]
+
+        iChunk += 1
 
 
-
-# Break-up large requests from a single URL into multiple smaller requests.
-nElems = len(sunums[url])
-if nElems > MAX_SUS:
-    lastChunk = False
-else:
-    lastChunk = True
-
-while nElems > MAX_SUS or lastChunk:
-    sunumChunk = sunums[]
-    if lastChunk:
-        nElems = 0
-    else:
-        nElems -= MAX_SUS
-
+rv = RET_SUCCESS
 
 if __name__ == "__main__":
-    optD = {}
-
-    # Use a pid file to ensure that only a single instance is running.
+    optD = getArgs(sys.argv[1:])
+    if not optD:
+        rv = RET_INVALIDARGS
 
     if rv == RET_SUCCESS:
-        # Connect to the database
         try:
-            # The connection is NOT in autocommit mode. If changes need to be saved, then conn.commit() must be called.
-            with psycopg2.connect(database=optD['dbname'], user=optD['dbuser'], host=optD['dbhost'], port=optD['dbport']) as conn:
-                with conn.cursor() as cursor:
-                    reqTable = optD['reqtable']
-
-                    sites = None
-                    requests = None
-                    sus = None
-                    
-                    cmd = 'SELECT requestid, sunums, status FROM ' + reqTable
-                    try:
-                        cursor.execute(cmd)
+            pid = os.getpid()
             
-                    except psycopg2.Error as exc:
-                        raise Exception('sql', exc.diag.message_primary, cmd)
-            
-                    requests = cursor.fetchall()
-                    
-                    # Iterate through returned records. Need to split the requests into two lists: a list of new requests, and a list of
-                    # pending requests.
-                    newRequests = []
-                    pendingRequests = []
-                    for arequest in requests:
-                        if arequest[3] == 'N':
-                            newRequests.append[arequest]
-                        else:
-                            pendingRequests.append[arequest]
-                    
-                    siteUrls = {}
-                    siteSunums = {} # New sunum CGI requests to providers.
-                    
-                    # Process new requests
-                    if len(newRequests) > 0:
-                        # We will need to map SUNUMs to site base URLs, so load up the sites table.
-                        cmd = 'SELECT sitecode, baseurl FROM ' + siteTable
-                        try:
-                            cursor.execute(cmd)
+            with DrmsLock(optD['lockfile'], str(pid)) as lock:
+                sys.exit(1)
 
-                        except psycopg2.Error as exc:
-                            raise Exception('sql', exc.diag.message_primary, cmd)
-                            
-                        sites = cursor.fetchall()
-                            
-                        for asite in sites:
-                            code = asite[0]
-                            siteUrls[code] = asite[1]
-                         
-                        for arequest in newRequests:
-                            reqID = record[0]
-                            sunumsStr = record[1]
-                            reqStatus = record[2]
-                        
-                            sunumList = sunumsStr.split(',')
-                            
-                            chunker = Chunker(sunumList)
+                # Connect to the database
+                try:
+                    # The connection is NOT in autocommit mode. If changes need to be saved, then conn.commit() must be called.
+                    with psycopg2.connect(database=optD['dbname'], user=optD['dbuser'], host=optD['dbhost'], port=optD['dbport']) as conn:
+                        with conn.cursor() as cursor:
+                            reqTable = optD['reqtable']
+
+                            sites = None
+                            requests = None
+                            sus = None
+                    
+                            cmd = 'SELECT requestid, sunums, status FROM ' + reqTable
                             try:
-                                # Request from providers, but only if the SUNUM has not already been processed and is not currently being processed.
-                                for chunk in chunker:
-                                    sunumList = chunk.getItems()
-
-                                    # Filter out SUs that are being processed, or already online.
-                                    sunumListOffline = filterSunums(sunumList)
-                                
-                                    # Organize SUNUMs by owning site.
-                                    for asunum in sunumListOffline:
-                                        code = getSiteCode(asunum)
-                                        if code is not None:
-                                            url = siteUrls[code]
-                                            if url not in siteSunums:
-                                                siteSunums[url] = []
-                                    
-                                            siteSunums[url].append(asunum)
-                                        else:
-                                            # Could not obtain site code - error.
-                                            raise Exception('request', 'Error request ID ' + reqID + '. Unable to get site code for SUNUM ' + asunum + '.')
-
-                            except Exception as exc:
-                                if len(exc.args) != 2:
-                                    raise # Re-raise
-                                        
-                                etype = exc.args[0]
-                                msg = exc.args[1]
-                                        
-                                setReqStatus(reqID, 'E', 'Unable to get site code for SUNUM ' + asunum + '.')
-                                logError(etype, msg)
-                                continue # Onto next request.
-                                
-                            # Always set request's status to 'P'. This request will not be checked on until the next iteration of the main loop of
-                            # the daemon.
-                            setReqStatus(reqID, 'P', None)
-                                
-                            # We may have new requests for offline SUs that are not being processed already. Start processing those SUs.
-                            for url in siteSunums:
-                                # Sort SUNUMS.
-                                siteSunums[url].sort()
-                        
-                            # We gotta wait until there is a processing slot open before we can start downloading a new SU.
-                            newDownload(cursor, url, sunums[url])
-
-
+                                cursor.execute(cmd)
+            
+                            except psycopg2.Error as exc:
+                                raise Exception('sql', exc.diag.message_primary, cmd)
+            
+                            requests = cursor.fetchall()
                     
-                    
-                    
-                
-                    # Check on pending requests. Iterate through all SUs. If at least one is still being processed, then skip that request for now.
-                    # If all are complete or online, then set the request record's status to 'C', and at the same time decrement the refcount on the SU.
-                    # If the refcount becomes zero, then delete the SU's record from the SU table.
-                    if len(pendingRequests) > 0:
-                        requestPending = False
-                        for arequest in pendingRequests:
-                            reqID = record[0]
-                            sunumsStr = record[1]
-                            reqStatus = record[2]
-                    
-                            sunumList = sunumsStr.split(',')
-                        
-                        # Check for completion of the processing of the requested SUs.
-                        for asunum in sunumList:
-                            if sunumBeingProcessed(asunum):
-                                requestPending = True
-                                break
-    
-                        if not requestPending:
-                            # Set request's status to 'C', but first decrement the refcount on all SUs. If any SU's refcount reaches zero, then delete the SU record.
-                            if sus is None:
-                                sus = readSus()
-
-                            for asunum in sunumList:
-                                sus[asunum]['refcount'] = sus[asunum]['refcount'] - 1
-                                if sus[asunum]['refcount'] == 0:
-                                    del sus[asunum]
+                            # Iterate through returned records. Need to split the requests into two lists: a list of new requests, and a list of
+                            # pending requests.
+                            newRequests = []
+                            pendingRequests = []
                             
-                            setReqStatus(reqID, 'C', None)
+                            for arequest in requests:
+                                if arequest[3] == 'N':
+                                    newRequests.append[arequest]
+                                else:
+                                    pendingRequests.append[arequest]
+                    
+                            siteUrls = {}
+                            siteSunums = {} # New sunum CGI requests to providers.
+                    
+                            # Process new requests
+                            if len(newRequests) > 0:
+                                # We will need to map SUNUMs to site base URLs, so load up the sites table.
+                                cmd = 'SELECT sitecode, baseurl FROM ' + siteTable
+                                try:
+                                    cursor.execute(cmd)
+
+                                except psycopg2.Error as exc:
+                                    raise Exception('sql', exc.diag.message_primary, cmd)
+                                
+                                sites = cursor.fetchall()
+                                
+                                for asite in sites:
+                                    code = asite[0]
+                                    siteUrls[code] = asite[1]
+                             
+                                for arequest in newRequests:
+                                    reqID = record[0]
+                                    sunumsStr = record[1]
+                                    reqStatus = record[2]
+                            
+                                    sunumList = sunumsStr.split(',')
+                                
+                                    chunker = Chunker(sunumList)
+                                    
+                                    try:
+                                        # Request from providers, but only if the SUNUM has not already been processed and is not currently being processed.
+                                        for chunk in chunker:
+                                            sunumList = chunk.getItems()
+
+                                            # Filter out SUs that are being processed, or already online.
+                                            sunumListOffline = filterSunums(sunumList)
+                                    
+                                            # Organize SUNUMs by owning site.
+                                            for asunum in sunumListOffline:
+                                                code = getSiteCode(asunum)
+                                                if code is not None:
+                                                    url = siteUrls[code]
+                                                    if url not in siteSunums:
+                                                        siteSunums[url] = []
+                                        
+                                                    siteSunums[url].append(asunum)
+                                                else:
+                                                    # Could not obtain site code - error.
+                                                    raise Exception('sitecode', 'Error request ID ' + reqID + '. Unable to get site code for SUNUM ' + asunum + '.')
+
+                                    except Exception as exc:
+                                        if len(exc.args) != 2:
+                                            raise # Re-raise
+                                            
+                                        etype = exc.args[0]
+                                        msg = exc.args[1]
+
+                                        if etype == 'sitecode':
+                                            setReqStatus(reqID, 'E', 'Unable to get site code for SUNUM ' + asunum + '.')
+                                            logError(etype, msg)
+                                            continue # Onto next request.
+                                        else:
+                                            raise # Re-raise
+                                    
+                                    # Always set request's status to 'P'. This request will not be checked on until the next iteration of the main loop of
+                                    # the daemon.
+                                    setReqStatus(reqID, 'P', None)
+                                    
+                                    # We may have new requests for offline SUs that are not being processed already. Start processing those SUs.
+                                    for url in siteSunums:
+                                        # Sort SUNUMS.
+                                        siteSunums[url].sort()
+                            
+                                        # We gotta wait until there is a processing slot open before we can start downloading a new SU.
+                                        newDownload(cursor, url, siteSunums[url])
+
+                    
+                            # Check on pending requests. Iterate through all SUs. If at least one is still being processed, then skip that request for now.
+                            # If all are complete or online, then set the request record's status to 'C', and at the same time decrement the refcount on the SU.
+                            # If the refcount becomes zero, then delete the SU's record from the SU table.
+                            if len(pendingRequests) > 0:
+                                requestPending = False
+                                for arequest in pendingRequests:
+                                    reqID = record[0]
+                                    sunumsStr = record[1]
+                                    reqStatus = record[2]
+                        
+                                    sunumList = sunumsStr.split(',')
+                            
+                                    # Check for completion of the processing of the requested SUs.
+                                    for asunum in sunumList:
+                                        if sunumBeingProcessed(asunum):
+                                            requestPending = True
+                                            break
+        
+                                    if not requestPending:
+                                        # Set request's status to 'C', but first decrement the refcount on all SUs. If any SU's refcount reaches zero, then delete the SU record.
+                                        if sus is None:
+                                            sus = readSus()
+
+                                        for asunum in sunumList:
+                                            sus[asunum]['refcount'] = sus[asunum]['refcount'] - 1
+                                            if sus[asunum]['refcount'] == 0:
+                                                del sus[asunum]
+                                
+                                        setReqStatus(reqID, 'C', None)
 
 
 
-        except psycopg2.Error as exc:
-            # Closes the cursor and connection
-            print('Unable to connect to the database', file=sys.stderr)
-            print(exc.diag.message_primary, file=sys.stderr)
+                except psycopg2.Error as exc:
+                    # Closes the cursor and connection
+                    print('Unable to connect to the database', file=sys.stderr)
+                    print(exc.diag.message_primary, file=sys.stderr)
+        
+                    # No need to close cursor - leaving the with block does that.
+                    rv = RET_DBCONNECT
+
+        except Exception as exc:
+            if len(exc.args) != 2:
+                raise # Re-raise
     
-            # No need to close cursor - leaving the with block does that.
-            rv = RET_DBCONNECT
+            etype = exc.args[0]
+            msg = exc.args[1]
+    
+            if etype == 'drmsLock':
+                print('Error locking file: ' + lockFile + '\n' + msg, file=sys.stderr)
+                rv = RET_LOCK
+                      
+sys.exit(rv)
