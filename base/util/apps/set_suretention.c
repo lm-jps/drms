@@ -1,3 +1,83 @@
+
+
+/**
+\defgroup set_suretention set_suretention - Modify the retention time of storage units
+@ingroup drms_util
+
+\par Synopsis:
+\code
+ set_suretention -O sulist=<SUNUM 1>,<SUNUM 2>,<SUNUM 3>,... retention=<number of days>
+ set_suretention -O sulist=<file of SUNUMs>,... retention=<number of days>
+ set_suretention -bO sulist=<record-set specification>,... retention=<number of days> [ n=<max number of records> ]
+\endcode
+ 
+\details
+ 
+ <B>set_suretention</B> modifies the retention time of <I>existing</I> storage units in SUMS. It modifies neither the new-storage-unit retention
+ nor the staging retention values stored in a series' JSD. Therefore, the retention times of storage units created after set_suretention 
+ has been run will not be affected by the run of set_suretention. <B>set_suretention</B> can be used to either increase or decrease the 
+ retention of any storage unit.
+ 
+ There are three ways to specify the storage units to be modified. The caller can provide a comma-separated list of
+ <I>SUNUMs</I> in the <I>sulist</I> parameter. An SUNUM is a unique integer that identifies a single storage unit. The caller can also list the
+ SUNUMs in a file, and provide the path to the file in the <I>sulist</I> parameter. The SUNUMs must be white-space separated in this case.
+ Finally, the caller can provide a DRMS record-set specification in the <I>sulist</I> parameter. In this case, <B>set_suretention</B> will
+ resolve the specification into a set of DRMS records, and then obtain the SUNUMs of the storage units owned by those records.
+ The optional <I>n</I> parameter will limit the number of DRMS records. A negative value will result in the selection of the <I>last</I> abs(n) records
+ from the records identified by the record-set specification. A positive value will result in the selection of the <I>first</I> abs(n) records.
+ The <I>n</I> parameter is relevant only when the <I>sulist</I> value is a record-set specification.
+
+ The <I>retention</I> parameter contains a 15-bit integer that represents the number of days to which the storage units' retention should
+ be set. The modification is applied to all identified storage units.
+ 
+ The <I>b</I> flag slightly modifies the meaning of the DRMS record-set specification. If the flag is present, then the resulting set of
+ records selected will contain any obsolete DRMS-record versions too. This flag is relevant only when the <I>sulist</I> value is a record-set specification.
+ The <I>O</I> flag disables the database query time-out that otherwise exists. Without this flag, if the <B>set_suretention</B> call runs
+ longer than the default time-out value (10 minutes), then the module is terminated with an error.
+ 
+ IMPORTANT NOTE: The caller must be the owner of all DRMS series implied by the DRMS records selected. However, <B>set_suretention</B> will not exit
+ or error-out should the caller not own the affected series. Instead, the retention of the relevant storage units will remain unmodified.
+ 
+ \par Options:
+ 
+ \li <TT>-b: display results for obsolete DRMS records too (autobang).</TT>
+ \li <TT>-O: disable the default 10-minute database query time-out.</TT>
+ 
+ \par Examples:
+ 
+ <B>Example 1:</B>
+ To reduce the retention to zero days of the storage units for a set of records, including all obsolete versions of these records
+ (assuming the storage units of all these records currently have a retention time greater than 0):
+ \code
+ set_suretention -b sulist=hmi.M_45s[2012.05.12_23:50:15_TAI][2] retention=0
+ \endcode
+ 
+ <B>Example 2:</B>
+ To reduce the retention to zero days of a set of storage units, given a set of SUNUMs:
+ \code
+ set_suretention sulist=324851808,324851834,324858457 retention=0
+ \endcode
+
+ <B>Example 3:</B>
+ To reduce the retention to ten days of a set of storage units, given a text file containing a list of SUNUMs:
+ \code
+ set_suretention sulist=/tmp26/sulist.txt retention=10
+ 
+ maelstrom:/home/arta> cat /tmp/sulist.txt
+ 324851808
+ 324851834
+ 324858457
+ \endcode
+ 
+ <B>Example 4:</B>
+ To increase the retention to 10000 days of the storage units for a set of records (assuming the storage units of
+ all these records currently have a retention time less than 10000 days). NOTE: the storage units of obsolete record versions
+ are not affected:
+ \code
+ set_suretention sulist=hmi.M_45s[2012.05.12_23:50:15_TAI][2] retention=10000
+ \endcode
+*/
+
 #include <sys/types.h>
 #include <pwd.h>
 #include "jsoc_main.h"
