@@ -50,3 +50,5 @@ RS_DBNAME                  q:RS_DBNAME
 RS_DBHOST                  q:RS_DBHOST
 RS_DBPORT                  a:RS_DBPORT
 RS_LOCKFILE                q:RS_LOCKFILE
+RS_DLTIMEOUT               a:RS_DLTIMEOUT
+RS_MAXTHREADS              a:RS_MAXTHREADS
