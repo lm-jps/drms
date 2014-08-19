@@ -248,6 +248,10 @@ RS_DLTIMEOUT                          30
 
 # The maximum number of simultaneously storage unit downloads to process at once.
 RS_MAXTHREADS                         32
+
+# The path to executables run by the remote-sums system.
+RS_BINPATH                            /home/jsoc/cvs/Development/JSOC/bin/linux_x86_64
+
 ###############################
 
 __MAKE__
