@@ -237,6 +237,9 @@ RS_DBNAME                             mydb
 # The database host that contains the database identified by RS_DBNAME.
 RS_DBHOST                             localhost
 
+# The database user that manages remote sums programs.
+RS_DBUSER                             user
+
 # The port on the database host used by rsumsd.py to access the database identified by RS_DBNAME.
 RS_DBPORT                             5432
 
