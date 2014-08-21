@@ -12834,6 +12834,53 @@ DRMS_Segment_t *drms_record_nextseg(DRMS_Record_t *rec, HIterator_t **last, int 
    return segret;
 }
 
+/* Same as above, but return the original segment too (in the last parameter). */
+DRMS_Segment_t *drms_record_nextseg2(DRMS_Record_t *rec, HIterator_t **last, int followlink, DRMS_Segment_t **orig)
+{
+    DRMS_Segment_t *seg = NULL;
+    DRMS_Segment_t *segret = NULL;
+    HIterator_t *hit = NULL;
+    
+    if (last)
+    {
+        if (*last)
+        {
+            /* This is not the first time this function was called for the record */
+            hit = *last;
+        }
+        else
+        {
+            hit = *last = (HIterator_t *)malloc(sizeof(HIterator_t));
+            if (hit != NULL)
+            {
+                hiter_new_sort(hit, &(rec->segments), drms_segment_ranksort);
+            }
+        }
+        
+        seg = hiter_getnext(hit);
+        
+        if (seg && followlink)
+        {
+            /* Because of the way links are handled, must call drms_segment_lookup() to
+             * follow links */
+            segret = drms_segment_lookup(rec, seg->info->name);
+        }
+        else
+        {
+            segret = seg;
+        }
+        
+        if (orig)
+        {
+            *orig = seg;
+        }
+    }
+    
+    return segret;
+}
+
+
+
 /* Return keywords in rank order. */
 DRMS_Keyword_t *drms_record_nextkey(DRMS_Record_t *rec, HIterator_t **last, int followlink)
 {
