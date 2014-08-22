@@ -1,4 +1,5 @@
 DRMS_DATABASE              q:DBNAME
+WEB_DBUSER                 q:WEB_DBUSER
 DBSERVER_HOST              q:SERVER
 DRMS_DBPORT                q:DRMSPGPORT
 USER                       a:USER

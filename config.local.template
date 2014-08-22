@@ -15,6 +15,9 @@ LOCAL_CONFIG_SET	NO
 #   have the same name with "_sums" appended
 DRMS_DATABASE	mydb
 
+# The database user account that cgi programs access.
+WEB_DBUSER      apache
+
 # the host name of the default database server you will be accessing; you
 #   should include the internet domain (e.g. host.subnet.net) if the server is
 #   not on your subnet; but if it is on your subnet it may be better not to
