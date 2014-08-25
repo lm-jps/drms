@@ -23,7 +23,7 @@ q:SUMS_DB_HOST                  hmidb3
 q:SUMPGPORT                     5434
 a:DRMS_LOCAL_SITE_CODE          0x0000
 q:DBNAME                        jsoc
-
+q:WEB_DBUSER                    apache
 q:POSTGRES_ADMIN                postgres
 q:SUMS_MANAGER                  production
 # This seems like a bad idea to make the UID a parameter. Why not just convert the SUM_MANAGER value
@@ -65,7 +65,11 @@ q:RS_SU_TABLE                           drms.rs_sus
 q:RS_DBNAME                             jsoc
 q:RS_DBHOST                             hmidb
 a:RS_DBPORT                             5432
+q:RS_DBUSER                             production
 q:RS_LOCKFILE                           /home/jsoc/locks/remotesums.lck
+a:RS_DLTIMEOUT                          30
+a:RS_MAXTHREADS                         32
+a:RS_BINPATH                            /home/jsoc/cvs/Development/JSOC/bin/linux_x86_64
 
 __MAKE__
 # JSOC_SDP third-party libraries used by base
