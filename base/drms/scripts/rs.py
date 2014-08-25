@@ -1,7 +1,9 @@
-#!/home/jsoc/bin/linux_x86_64/activepython
+#!/usr/bin/env python
 
-# This CGI script runs at the SU provider (the server). It is called by rsumsd.py, which runs at the DRMS site (the client)
-# that does not own the requested SU.
+# This CGI script runs at the SU provider (the server). Each provider is required to implement a cgi named
+# rs.sh. Stanford provides an implementation - rs.py - which is wrapped by rs.sh at Stanford. Sites can
+# use rs.py, or they can make their own implementation if desired, but the wrapper must be named rs.sh.
+# rs.sh is called by rsumsd.py, which runs at the DRMS site (the client) that does not own the requested SU.
 
 # This CGI script returns URLs to the requested SUs. The caller provides a list of SUNUMs, and rs.py determines the
 # path to the identified SUs, returning one URL for each SU requested. If all SUs are online at the time that the
@@ -100,8 +102,7 @@ def GetArgs(args):
                     optD['dbuser'] = val
     
     except ValueError:
-        optD['errMsg', getUsage()]
-        raise Exception('badArgs', 'Invalid arguments.')
+        raise Exception('badArgs', 'Usage: ' + getUsage())
     
     if optD['requestid'] is None and optD['sunums'] is None:
         raise Exception('badArgs', 'Either requestid or sunums argument must be provided.')
