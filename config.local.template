@@ -252,6 +252,9 @@ RS_LOCKFILE                           /usr/share/drms/locks/remotesums.lck
 # The number of minutes after which a storage-unit download will time-out.
 RS_DLTIMEOUT                          30
 
+# The number of minutes after which a new remote-sums fetch will time-out if no download has yet started.
+RS_REQTIMEOUT                          5
+
 # The maximum number of simultaneously storage unit downloads to process at once.
 RS_MAXTHREADS                         32
 
