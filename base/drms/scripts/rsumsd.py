@@ -10,19 +10,24 @@ import thread
 import psycopg2
 import threading
 import fcntl
+import datetime
+import urllib
+import urllib2
+from copy import deepcopy
+import psycopg2
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../include'))
 from drmsparams import DRMSParams
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../base/libs/py'))
 from drmsCmdl import CmdlParser
 from drmsLock import DrmsLock
-
 from subprocess import check_output, CalledProcessError, Popen
 
 # This script runs as a daemon at the site that has requested an SU that does not belong to the site. It is responsible for contacting
 # the owning site and requesting the path to the desired SUs. The owning site must be running the rs.py CGI to respond to the requesting
 # site's request.
 
-# There are three database tables: 1., a DRMS site table, 2., a request table, and 3., an SU table. The site table (sitename, sitecode, baseurl) provides
+# There are three database tables: 1., a DRMS site table, 2., a request table, and 3., an SU table (sunum, starttime, status, errmsg)
+# The site table (sitename, sitecode, baseurl) provides
 # the information needed to query the providing site for the information needed to scp the requested SUs to the requesting site. The URL to the cgi
 # program that provides scp information is formed by appending "rs.py" to baseurl. There are two parameters for this cgi: 1., "requestid", and 2., "sunums".
 # During the initial request to the providing site, the requesting site will provide a requestid of "none", and a comma-separated list of SUNUMs
@@ -55,137 +60,547 @@ from subprocess import check_output, CalledProcessError, Popen
 RET_SUCCESS = 0
 RET_INVALIDARGS = 1
 RET_LOCK = 2
+RET_SUTABLE_READ = 3
+RET_REQTABLE_READ = 4
+RET_DBCOMMAND = 5
 
 class SuTable:
-    def __init__(self, cursor, tableName):
-        self.cursor = cursor
+    cursor = None
+                
+    def __init__(self, tableName, timeOut):
         self.tableName = tableName
+        self.timeOut = timeOut # A timedelta object - the length of time to wait for a download to complete.
+        self.lock = thread.allocate_lock()
         self.suDict = {}
-        
-    def setCursor(self, cursor):
-        self.cursor = cursor
+    
+    def __del__(self):
+        self.lock.release()
+    
+    @classmethod
+    def setCursor(cls, cursorIn):
+        cls.cursor = cursorIn
 
     def read(self):
-        # sus(sunum, refcount, status, message)
-        cmd = 'SELECT sunum, refcount, status FROM ' + self.tableName
+        # sus(sunum, starttime, refcount, status, errmsg)
+        cmd = 'SELECT sunum, starttime, refcount, status, errmsg FROM ' + self.tableName
     
         try:
-            self.cursor.execute(cmd)
+            cursor.execute(cmd)
     
         except psycopg2.Error as exc:
-            raise Exception('sql', exc.diag.message_primary, cmd)
+            raise Exception('sutableRead', exc.diag.message_primary)
     
         for record in cursor:
-            self.suDict[record[0]] = {}
-            self.suDict[record[0]]['refcount'] = record[1]
-            self.suDict[record[0]]['status'] = record[2]
+            sunumStr = record[0]
+            
+            self.suDict[sunumStr] = {}
+            self.suDict[sunumStr]['sunum'] = record[0]
+            # PG timestamps (with no time zone) return time strings like "1997-12-17 07:37:16"
+            self.suDict[sunumStr]['starttime'] = datetime.strptime(record[1], '%Y-%m-%d %T')
+            self.suDict[sunumStr]['refcount'] = record[2]
+            self.suDict[sunumStr]['status'] = record[3]
+            self.suDict[sunumStr]['errmsg'] = record[4]
+            self.suDict[sunumStr]['dirty'] = False
 
-    def write(self, sus):
-        # sus(sunum, refcount, status, message)
+    # This will never be used. Rows are written one at a time.
+    def write(self):
+        # sus(sunum, starttime, refcount, status, errmsg)
         try:
-            cursor.execute('PREPARE preparedStatement AS INSERT INTO ' + suTable + ' VALUES($1, $2, $3, $4)')
-            for key in sorted(sus.iterkeys()):
-                cursor.execute('EXECUTE preparedstatement (%s, %s, %s)', (key, sus[key]['refcount'], sus[key]['status']), sus[key]['msg'])
+            cursor.execute('PREPARE preparedStatement AS INSERT INTO ' + suTable + ' VALUES($1, $2, $3, $4, $5)')
+            for sunumStr in sorted(self.suDict.iterkeys()):
+                if self.suDict[sunumStr]['dirty']:
+                    cursor.execute('EXECUTE preparedstatement (%s, %s, %s, %s, %s)', (sunumStr, self.suDict[sunumStr]['starttime'], self.suDict[sunumStr]['refcount'], self.suDict[sunumStr]['status']), self.suDict[sunumStr]['errmsg'])
     
         except psycopg2.Error as exc:
-            raise Exception('sql', exc.diag.message_primary, cmd)
+            raise Exception('badSql', exc.diag.message_primary)
 
-    def setStatus(self, sunum, code, msg):
-        self.suDict[sunum]['status'] = code
-        if msg is not None:
-            self.suDict[sunum]['status'] = msg
+    # This will NOT commit database changes. You are generally going to want to do this as part of a larger db change. Commit the changes
+    # after all changes that form the atomic set of changes.
+    def updateDB(self, sunum=None):
+        if sunum:
+            # Update a single record.
+            sunumStr = str(sunum)
+            
+            if not sunumStr in self.suDict or not self.suDict[sunumStr]:
+                raise Exception('unknownSunum', 'No SU-table record exists for SU ' + sunumStr + '.')
+            
+            if self.suDict[sunumStr]['dirty']:
+                cmd = 'UPDATE ' + self.tableName + " SET starttime='" + self.suDict[sunumStr]['starttime'] + "', refcount=" + self.suDict[sunumStr]['refcount'] + ", status='" + self.suDict[sunumStr]['status'] + "', errmsg='" + self.suDict[sunumStr]['errmsg'] + "' WHERE sunum=" + sunumStr
+                
+                try:
+                    cursor.execute(cmd)
+            
+                except psycopg2.Error as exc:
+                    raise Exception('sutableWrite', exc.diag.message_primary)
+                
+                self.suDict[sunumStr]['dirty'] = False
         else:
-            self.suDict[sunum]['status'] = ''
+            # Update all dirty records.
+            for sunumStr in self.suDict:
+                if self.suDict[sunumStr]['dirty']:
+                    cmd = 'UPDATE ' + self.tableName + " SET starttime='" + self.suDict[sunumStr]['starttime'] + "', refcount=" + self.suDict[sunumStr]['refcount'] + ", status='" + self.suDict[sunumStr]['status'] + "', errmsg='" + self.suDict[sunumStr]['errmsg'] + "' WHERE sunum=" + sunumStr
+                    
+                    try:
+                        cursor.execute(cmd)
+                    
+                    except psycopg2.Error as exc:
+                        raise Exception('sutableWrite', exc.diag.message_primary)
+                    
+                    self.suDict[sunumStr]['dirty'] = False
+
+
+    # This will NOT commit database changes. You are generally going to want to do this as part of a larger db change. Commit the changes
+    # after all changes that form the atomic set of changes.
+    def deleteDB(self, sunums):
+        # Delete the in-memory cache of these sunums
+        for asunum in sunums:
+            sunumStr = str(asunum)
+            
+            if not sunumStr in self.suDict or not self.suDict[sunumStr]:
+                raise Exception('unknownSunum', 'No SU-table record exists for SU ' + sunumStr + '.')
+
+            del self.suDict[sunumStr]
+        
+        sunumLstStr = ','.join(sunums)
+    
+        cmd = 'DELETE FROM ' + self.tableName + ' WHERE sunum=' + sunumLstStr
+    
+        try:
+            cursor.execute(cmd)
+            
+        except psycopg2.Error as exc:
+            raise Exception('sutableWrite', exc.diag.message_primary)
+
+    def lock(self):
+        self.lock.aquire()
+    
+    def unlock(self):
+        self.lock.release()
+    
+    def insert(self, sunums):
+        for asunum in sunums:
+            sunumStr = str(asunum)
+        
+            if sunumStr in self.suDict:
+                raise Exception('knownSunum', 'SU-table record already exists for SU ' + sunumStr + '.')
+        
+            self.suDict[sunumStr] = {}
+            self.suDict[sunumsStr]['sunum'] = sunum
+            self.suDict[sunumStr]['starttime'] = datetime.now().strftime('%Y-%m-%d %T')
+            self.suDict[sunumStr]['refcount'] = 1
+            self.suDict[sunumStr]['status'] = 'P'
+            self.suDict[sunumStr]['errmsg'] = ''
+
+            # Set dirty flag
+            self.suDict[sunumStr]['dirty'] = True
+
+    def setStatus(self, sunums, code, msg=None):
+        for asunum in sunums:
+            sunumStr = str(asunum)
+        
+            if not sunumStr in self.suDict or not self.suDict[sunumStr]:
+                raise Exception('unknownSunum', 'No SU-table record exists for SU ' + sunumStr + '.')
+        
+            self.suDict[sunumStr]['status'] = code
+            if msg is not None:
+                self.suDict[sunumStr]['errmsg'] = msg
+            else:
+                self.suDict[sunumStr]['errmsg'] = ''
+
+            # Set dirty flag
+            self.suDict[sunumStr]['dirty'] = True
+
+    def setStarttime(self, sunum, starttime):
+        for asunum in sunums:
+            sunumStr = str(asunum)
+    
+            if not sunumStr in self.suDict or not self.suDict[sunumStr]:
+                raise Exception('unknownSunum', 'No SU-table record exists for SU ' + sunumStr + '.')
+            
+            self.suDict[sunumStr]['starttime'] = starttime.strftime('%Y-%m-%d %T')
+            
+            # Set dirty flag
+            self.suDict[sunumStr]['dirty'] = True
+
+    def decrementRefcount(self, sunums):
+        toDel = []
+        for asunum in sunums:
+            sunumStr = str(sunum)
+
+            if not sunumStr in self.suDict or not self.suDict[sunumStr]:
+                raise Exception('unknownSunum', 'No SU-table record exists for SU ' + sunumStr + '.')
+                    
+            self.suDict[sunumStr]['refcount'] -= 1
+            if self.suDict[sunumStr]['refcount'] == 0:
+                toDel.append(asunum)
+
+        self.deleteDB(toDel)
+
+    def get(self, sunums=None):
+        toRet = []
+        
+        if not sunums:
+            return self.suDict
+        
+        for asunum in sunums:
+            sunumStr = str(sunum)
+        
+            if not sunumStr in self.suDict or not self.suDict[sunumStr]:
+                raise Exception('unknownSunum', 'No SU-table record exists for SU ' + sunumStr + '.')
+
+            toRet.append(self.suDict[sunumStr])
+
+        return toRet
+
+    # Returns a dictionary of SU records.
+    def getPending(self):
+        pending = []
+        
+        for sunumStr in self.suDict.iterkeys()
+            if self.suDict[sunumStr]['status'] == 'P':
+                pending.append(self.suDict[sunumStr])
+            
+        return pending.sort(key=lambda(dict) : dict['sunum'])
+
+    def getTimeout(self):
+        return self.timeOut
+
+class ReqTable:
+    cursor = None
+    
+    def __init__(self, tableName, timeOut):
+        self.tableName = tableName
+        self.timeOut = timeOut
+        self.reqDict = {}
+    
+    @classmethod
+    def setCursor(cls, cursorIn):
+        cls.cursor = cursorIn
+    
+    def read(self):
+        # requests(requestid, starttime, sunums, status, errmsg)
+        cmd = 'SELECT requestid, starttime, sunums, status, errmsg FROM ' + self.tableName
+        
+        try:
+            cursor.execute(cmd)
+        
+        except psycopg2.Error as exc:
+            raise Exception('reqtableRead', exc.diag.message_primary, cmd)
+        
+        for record in cursor:
+            requestidStr = record[0]
+            
+            self.reqDict[requestidStr] = {}
+            self.reqDict[requestidStr]['requestid'] = record[0]
+            # PG timestamps (with no time zone) return time strings like "1997-12-17 07:37:16"
+            self.reqDict[requestidStr]['starttime'] = datetime.strptime(record[1], '%Y-%m-%d %T')
+            self.reqDict[requestidStr]['sunums'] = record[2].split(',')
+            self.reqDict[requestidStr]['status'] = record[3]
+            self.reqDict[requestidStr]['errmsg'] = record[4]
+            self.reqDict[requestidStr]['dirty'] = False
+
+    # This method finds 'N' records inserted since the last time it was run (or since the table was first read). It ignores
+    # all other changes to the database table (made from outside this program) that have happened. To read those changes,
+    # shut down this program, then make the changes, then start this program again.
+    def refresh(self):
+        if not cursor:
+            raise Exception('noCursor', 'Cannot refresh the requests table because no database cursor exists.')
+        
+        updatedTable = ReqTable(self.tableName, self.timeOut)
+        newRequests = updatedTable.getNew():
+
+        for arequest in newRequests:
+            try:
+                self.get((arequest['requestid']))
+            except Exception as exc:
+                if len(exc.args) != 2:
+                    raise # Re-raise
+
+                etype = exc.args[0]
+
+                if etype == 'unknownRequestid':
+                    # arequest is a request that has been added tot the request db table since the last time refresh was run.
+                    requestidStr = arequest['requestid']
+                    self.reqDict[requestidStr] = {}
+                    self.reqDict[requestidStr]['requestid'] = requestidStr # Strings are immutable, so copying the reference is ok.
+                    self.reqDict[requestidStr]['starttime'] = deepcopy(arequest['starttime'])
+                    self.reqDict[requestidStr]['sunums'] = deepcopy(arequest['sunums'])
+                    self.reqDict[requestidStr]['status'] = arequest['status']
+                    self.reqDict[requestidStr]['errmsg'] = arequest['errmsg']
+                    self.reqDict[requestidStr]['dirty'] = False
+                    
+                else:
+                    raise # Re-raise
+
+    # This will NOT commit database changes. You are generally going to want to do this as part of a larger db change. Commit the changes
+    # after all changes that form the atomic set of changes.
+    def updateDB(self, requestids=None):
+        if requestids:
+            # Update the specified records.
+            for arequestid in requestids:
+                requestidStr = str(requestid)
+            
+                if not requestidStr in self.reqDict or not self.reqDict[requestidStr]:
+                    raise Exception('unknownRequestid', 'No request-table record exists for ID ' + requestidStr + '.')
+                
+                if self.reqDict[requestidStr]['dirty']:
+                    cmd = 'UPDATE ' + self.tableName + " SET starttime='" + self.reqDict[requestidStr]['starttime'] + "', sunums=" + ','.join(self.reqDict[requestidStr]['sunums']) + ", status='" + self.reqDict[requestidStr]['status'] + "', errmsg='" + self.reqDict[requestidStr]['errmsg'] + "' WHERE requestid=" + requestidStr
+                    
+                    try:
+                        cursor.execute(cmd)
+                    
+                    except psycopg2.Error as exc:
+                        raise Exception('reqtableWrite', exc.diag.message_primary)
+                    
+                    self.reqDict[requestidStr]['dirty'] = False
+        else:
+            # Update all dirty records.
+            for requestidStr in self.reqDict:
+                if self.reqDict[requestidStr]['dirty']:
+                    cmd = 'UPDATE ' + self.tableName + " SET starttime='" + self.reqDict[requestidStr]['starttime'] + "', sunums=" + ','.join(self.reqDict[requestidStr]['sunums']) + ", status='" + self.reqDict[requestidStr]['status'] + "', errmsg='" + self.reqDict[requestidStr]['errmsg'] + "' WHERE requestid=" + requestidStr
+                    
+                    try:
+                        cursor.execute(cmd)
+                    
+                    except psycopg2.Error as exc:
+                        raise Exception('reqtableWrite', exc.diag.message_primary)
+                    
+                    self.reqDict[requestidStr]['dirty'] = False
+            
+
+    # This will NOT commit database changes. You are generally going to want to do this as part of a larger db change. Commit the changes
+    # after all changes that form the atomic set of changes.
+    def deleteDB(self, requestids):
+        for arequestid in requestids:
+            requestidStr = str(requestid)
+            
+            if not requestidStr in self.reqDict or not self.reqDict[requestidStr]:
+                raise Exception('unknownRequestid', 'No request-table record exists for ID ' + requestidStr + '.')
+
+            del self.reqDict[requestidStr]
+        
+        reqidLstStr = ','.join(requestids)
+        
+        cmd = 'DELETE FROM ' + self.tableName + ' WHERE requestid=' + reqidLstStr
+        
+        try:
+            cursor.execute(cmd)
+        
+        except psycopg2.Error as exc:
+            raise Exception('reqtableWrite', exc.diag.message_primary)
+        
+    def setStatus(self, requestids, code, msg=None):
+        for arequestid in requestids:
+            requestidStr = str(requestid)
+        
+            if not requestidStr in self.reqDict or not self.reqDict[requestidStr]:
+                raise Exception('unknownRequestid', 'No request-table record exists for ID ' + requestidStr + '.')
+            
+            self.reqDict[requestidStr]['status'] = code
+            if msg:
+                self.reqDict[requestidStr]['errmsg'] = msg
+            else:
+                self.reqDict[requestidStr]['errmsg'] = ''
+            
+            # Set dirty flag
+            self.reqDict[requestidStr]['dirty'] = True
+
+    def get(self, requestids=None):
+        toRet = []
+    
+        if not requestids:
+            return self.reqDict
+        
+        for arequestid in requestids:
+            requestidStr = str(requestid)
+            
+            if not requestidStr in self.reqDict or not self.reqDict[requestidStr]:
+                raise Exception('unknownRequestid', 'No request-table record exists for ID ' + requestidStr + '.')
+    
+            toRet.append(self.reqDict[requestidStr])
+    
+        return toRet
+
+    def getNew(self):
+        newLst = []
+        
+        for requestidStr in self.reqDict.iterkeys()
+            if self.reqDict[requestidStr]['status'] == 'N':
+                newLst.append(self.reqDict[requestidStr])
+        
+        # Sort by start time.
+        return newLst.sort(key=lambda(dict): dict['starttime'])
+
+    def getTodelete(self):
+        toDelete = []
+
+        for requestidStr in self.reqDict.iterkeys()
+        if self.reqDict[requestidStr]['status'] == 'D':
+            toDelete.append(self.reqDict[requestidStr])
+
+            return toDelete.sort(key=lambda(dict): dict['requestid'])
+
+    def getTimeout(self):
+        return self.timeOut
+
+# The site information is stored in a public database table at Stanford. It is accessible by all remote sites
+# with the sites.py cgi. To obtain information about all sites, the sites.py cgi is called with no parameters.
+# Otherwise, information about a single site can be obtained by by providing the site name to the 'site' argument.
+# The information is stored in drms.rs_sites on hmidb.
+class SiteTable:
+    def __init__(self):
+        self.siteDict = {}
+
+    def read(self):
+        url = 'http://jsoc.stanford.edu/cgi-bin/rssites.sh'
+        req = urllib2.Request(url)
+        response = urllib2.urlopen(req)
+        siteInfo = response.read()
+        
+        if siteInfo['status'] != 'success':
+            raise Exception('badCgi', "Failure calling cgi '" + url + "'.")
+
+        # siteInfo is a dictionary, keyed by site name. Each dictionary entry is a dictionay, with two keys: code and baseurl.
+        for asite in siteInfo.iterkeys():
+            if asite == 'status':
+                # Skip status.
+                continue
+            self.siteDict[asite] = {}
+            self.siteDict[asite]['name'] = asite
+            self.siteDict[asite]['code'] = siteInfo[asite][0]
+            self.siteDict[asite]['baseurl'] = siteInfo[asite][1]
+
+    @staticmethod
+    def getCode(sunum):
+        code = sunum >> 48
+        if code & 0xC000 != 0:
+            raise Exception('badSunum', 'The site-code value of SUNUM ' + sunum + ' is out of range (valid range is 0 to 16383).')
+
+        return code
+
+    def getURL(self, sunum):
+        code = SiteTable.getCode(sunum)
+        url = self.siteDict[str(code)]['baseurl']
+
+class Chunker(object):
+    def __init__(self, list, chSize):
+        self.chunks = []
+        iChunk = -1
+        nElem = 1
+        
+        for elem in self.list:
+            if iChunk == -1 or nElem % chSize == 0:
+                iChunk += 1
+                self.chunks[iChunk] = []
+    
+            self.chunks[iChunk].append(elem)
+            nElem += 1
+    
+    def __iter__(self):
+        return self.iterate()
+    
+    # Iterate through chunks.
+    def iterate(self):
+        i = 0
+        while i < len(self.chunks):
+            yield self.chunks[i]
+            i += 1
 
 
 # Downloads a single SU. Ingests it into SUMs (SUMS allows to ingestion of a single SU at a time only.). Updates
 # the SU table status for that SU.
 class Downloader(threading.Thread):
-    tSeq = 0
     tList = [] # A list of running thread IDs.
-    compSunum = -1 # The SUNUM of the SU just processed.
-    maxThreads = 16 # A constant.
+    maxThreads = 16 # Default. Can be overriden with the Downloader.setMaxThreads() method.
     eventMaxThreads = threading.Event() # Event fired when the number of threads decreases.
-    eventSunum = threading.Event() # Event fired when compSunum gets set to -1.
-    lock = threading.Lock() # Guard tList, compSunum, and tSeq guard.
+    lock = threading.Lock() # Guard tList.
 
-    def __init__(self, sunum, path, suTable, scpPort, scpUser, scpHost, binPath):
+    def __init__(self, sunum, path, sus, scpUser, scpHost, scpPort, binPath):
         threading.Thread.__init__(self)
-        Downloader.lock.acquire()
-        self.threadnum = Downloader.tSeq # Thread ID.
-        Downloader.tSeq += 1
-        Downloader.lock.release()
         self.sunum = sunum
         self.path = path
-        self.suTable = suTable
-        self.scpPort = scpPort
+        self.suTable = sus
         self.scpUser = scpUser
         self.scpHost = scpHost
+        self.scpPort = scpPort
         self.binPath = binPath
 
     def run(self):
         # Download the SU.
-        
-        # Don't forget to make the temporary directory first.
-        cmdList = ['scp', '-r', '-P', self.scpPort, self.scpUser + '@' + self.scpHost + ':' + self.path + '/*', '/tmp/.su' + str(self.sunum)]
         try:
-            check_call(cmdList)
-        except CalledProcessError as exc:
-            raise Exception('scp', "Command '" + ' '.join(cmdList) + "' returned non-zero status code " + str(exc.returncode))
+            # Don't forget to make the temporary directory first.
+            cmdList = ['scp', '-r', '-P', self.scpPort, self.scpUser + '@' + self.scpHost + ':' + self.path + '/*', '/tmp/.su' + str(self.sunum)]
+            try:
+                check_call(cmdList)
+            except CalledProcessError as exc:
+                raise Exception('scp', "Command '" + ' '.join(cmdList) + "' returned non-zero status code " + str(exc.returncode))
 
-        # Ingest the SUs into SUMS. size matters not...look at me...judge me by my size, do you?
-        cmdList = [binPath + '/vso_sum_alloc', 'sunum=' + str(self.sunum), 'size=1024']
-        try:
-            resp = check_output(cmdList)
-            output = resp.decode('utf-8')
-        except CalledProcessError as exc:
-            raise Exception('vso_sum_alloc', "Command '" + ' '.join(cmdList) + "' returned non-zero status code " + str(exc.returncode) + '.')
-        
-        regExp = re.compile(r'.+sudir:(\S+)')
-        matchObj = regExp.match(output)
-        if matchObj is not None:
-            sudir = matchObj.group(1)
-        else:
-            raise Exception('vso_sum_alloc', "Command '" + ' '.join(cmdList) + "' printed unexcepted output " + output + '.')
-        
-        cmdList = ['mv', '/tmp/.su' + str(self.sunum) + '/*', sudir]
-        try:
-            check_call(cmdList)
-        except CalledProcessError as exc:
-            raise Exception('mv', "Command '" + ' '.join(cmdList) + "' returned non-zero status code " + str(exc.returncode))
-        
-        # Remove temporary directory.
-        
-        # Update SU table. Set SU-table record status to 'C'.
-        suTable.setStatus(self.sunum, 'C', None)
-        
-        # This thread is about to terminate.
-        
-        # Each thread must block if compSunum != -1. compSunum == 1 ==> an SU just got downloaded, and
-        # we need to pass the SUNUM of the SU just downloaded to the main thread before any other
-        # thread can be allowed to terminate. We also need to check the class tList variable to update it.
-        # For both reasons, we must acquire the lock.
-        Downloader.lock.acquire()
-        
-        while Downloader.compSunum != -1:
-            Downloader.lock.release()
-            Downloader.eventSunum.wait()
+            # Ingest the SUs into SUMS. size matters not...look at me...judge me by my size, do you?
+            cmdList = [binPath + '/vso_sum_alloc', 'sunum=' + str(self.sunum), 'size=1024']
+            try:
+                resp = check_output(cmdList)
+                output = resp.decode('utf-8')
+            except CalledProcessError as exc:
+                raise Exception('vso_sum_alloc', "Command '" + ' '.join(cmdList) + "' returned non-zero status code " + str(exc.returncode) + '.')
+            
+            regExp = re.compile(r'.+sudir:(\S+)')
+            matchObj = regExp.match(output)
+            if matchObj is not None:
+                sudir = matchObj.group(1)
+            else:
+                raise Exception('vso_sum_alloc', "Command '" + ' '.join(cmdList) + "' printed unexcepted output " + output + '.')
+            
+            cmdList = ['mv', '/tmp/.su' + str(self.sunum) + '/*', sudir]
+            try:
+                check_call(cmdList)
+            except CalledProcessError as exc:
+                raise Exception('mv', "Command '" + ' '.join(cmdList) + "' returned non-zero status code " + str(exc.returncode))
+            
+            # Remove temporary directory.
+            
+            # Update SU table. Set SU-table record status to 'C'. Must first lock the SU table since we are modifying it. Also,
+            # the state may not be 'P' due to some problem cropping up in the meantime. Only set to 'C' if the state is 'P'.
+            suTable.lock()
+            if suTable.get(self.sunum)['status'] == 'P':
+                suTable.setStatus(self.sunum, 'C', None)
+                # Flush the change to disk.
+                suTable.updateDB()
+            suTable.unlock()
+            
+            # This thread is about to terminate.
+            
+            # We need to check the class tList variable to update it, so we need to acquire the lock.
             Downloader.lock.acquire()
-        
-        Downloader.tList.remove(self) # This thread is no longer one of the running threads.
-        if len(Downloader.tList) == Downloader.maxThreads - 1:
-            # Fire event so that main thread can add new SUs to the download queue.
-            Downloader.eventMaxThreads.set()
-            # Clear even so that main will block the next time it calls wait.
-            Downloader.eventMaxThreads.clear()
+            
+            Downloader.tList.remove(self) # This thread is no longer one of the running threads.
+            if len(Downloader.tList) == Downloader.maxThreads - 1:
+                # Fire event so that main thread can add new SUs to the download queue.
+                Downloader.eventMaxThreads.set()
+                # Clear event so that main will block the next time it calls wait.
+                Downloader.eventMaxThreads.clear()
+            
+            Downloader.lock.release()
+        except Exception as exc:
+            if len(exc.args) == 2:
+                type = exc[0]
+                msg = exc[1]
+            else:
+                raise
 
-        Downloader.compSunum = self.sunum
-
-        
+            if type == 'scp' or type == 'vso_sum_alloc' or type == 'mv':
+                sus.setStatus(asunum, 'E', 'Error downloading storage unit ' + str(self.sunum) + ': ' + msg + '.')
+    
+    @staticmethod
+    def newThread(sunum, path, sus, scpUser, scpHost, scpPort, binPath):
+        Downloader.lock.acquire()
+        dl = Downloader(sunum, path, sus, scpUser, scpHost, scpPort, binPath)
+        dl.tList.append(dl)
         Downloader.lock.release()
+        dl.start()
 
-def getCfg(path):
-    pass
+    @classmethod
+    def setMaxThreads(cls, maxThreads):
+        cls.maxThreads = maxThreads
 
 def getOption(val, default):
     if val:
@@ -193,20 +608,20 @@ def getOption(val, default):
     else:
         return default
 
-def getArgs(args):
+def getArgs():
     istat = False
     optD = {}
     
-    parser = CmdlParser(usage='%(prog)s [ -h ] sutable=<storage unit table> reqtable=<request table> [ --dbname=<db name> ] [ --dbhost=<db host> ] [ --dbport=<db port> ]')
+    parser = CmdlParser(usage='%(prog)s [ -h ] sutable=<storage unit table> reqtable=<request table> [ --dbname=<db name> ] [ --dbhost=<db host> ] [ --dbport=<db port> ] [ --binpath=<executable path> ]')
     
     # Optional parameters - no default argument is provided, so the default is None, which will trigger the use of what exists in the configuration file
     # (which is drmsparams.py).
-    parser.add_argument('n', 'sitetable', '--sitetable', help='The database table that contains records of the storage units being processed. If provided, overrides default specified in configuration file.', metavar='<site table>', dest='sitetable')
     parser.add_argument('r', 'reqtable', '--reqtable', help='The database table that contains records of the SU-request being processed. If provided, overrides default specified in configuration file.', metavar='<request unit table>', dest='reqtable')
     parser.add_argument('s', 'sutable', '--sutable', help='The database table that contains records of the storage units being processed. If provided, overrides default specified in configuration file.', metavar='<storage unit table>', dest='sutable')
     parser.add_argument('-N', '--dbname', help='The name of the database that contains the series table from which records are to be deleted.', metavar='<db name>', dest='dbname')
     parser.add_argument('-H', '--dbhost', help='The host machine of the database that contains the series table from which records are to be deleted.', metavar='<db host machine>', dest='dbhost')
     parser.add_argument('-P', '--dbport', help='The port on the host machine that is accepting connections for the database that contains the series table from which records are to be deleted.', metavar='<db host port>', dest='dbport')
+    parser.add_argument('-B', '--binpath', help='The path to executables run by this daemon (e.g., vso_sum_alloc, vso_sum_put).', metavar='<executable path>', dest='binpath')
   
     try:
         args = parser.parse_args()
@@ -236,13 +651,16 @@ def getArgs(args):
             optD['cfg'] = drmsParams
             
             # Override defaults.
-            optD['sitetable'] = getOption(args.sitetable, drmsParams.get('RS_SITE_TABLE'))
             optD['reqtable'] = getOption(args.reqtable, drmsParams.get('RS_REQUEST_TABLE'))
             optD['sutable'] = getOption(args.sutable, drmsParams.get('RS_SU_TABLE'))
             optD['dbname'] = getOption(args.dbname, drmsParams.get('RS_DBNAME'))
             optD['dbhost'] = getOption(args.dbhost, drmsParams.get('RS_DBHOST'))
             optD['dbport'] = getOption(args.dbport, drmsParams.get('RS_DBPORT'))
+            optD['binpath'] = getOption(args.binpath, drmsParams.get('RS_BINPATH'))
             optD['lockfile'] = getOption(None, drmsParams.get('RS_LOCKFILE'))
+            optD['dltimeout'] = getOption(None, drmsParams.get('RS_DLTIMEOUT'))
+            optD['reqtimeout'] = getOption(None, drmsParams.get('RS_REQTIMEOUT'))
+            optD['maxthreads'] = getOption(None, drmsParams.get('RS_MAXTHREADS'))
     
         except Exception as exc:
             if len(exc.args) != 2:
@@ -270,7 +688,7 @@ def filterSunums(sunumList, sus, jfPath):
     # Pass SUNUM only if it is offline and not being current processed.
     notBeingProcessed = [ sunum for sunum in sunumList if not sunum in sus ]
     if len(notBeingProcessed) > 0:
-        # There is not an efficient way to check for the SU being on/offline. But we can use jsoc_info (vs. show_info - jsoc_info returns
+        # There is not an efficient way to check for the SU being on/offline. But we can use jsoc_fetch (vs. show_info - jsoc_fetch returns
         # JSON, which is handy). And it also can be called in a mode where it does not trigger a SUM_get() - it uses SUM_infoEx():
         #   op=exp_su requestid=NOASYNCREQUEST sunum=123456789 format=json formatvar=dataobj method=url_quick protocol=as-is
         cmd = jfPath + ' op=exp_su requestid=NOASYNCREQUEST format=json formatvar=dataobj method=url_quick protocol=as-is sunum=' + ','.join(notBeingProcessed)
@@ -296,201 +714,356 @@ def filterSunums(sunumList, sus, jfPath):
 
     return rv
 
-def newDownload(cursor, url, sunumList):
-    pass
+def readTables(sus, requests, sites):
+    nAtts = 0
+    while True:
+        try:
+            sus.read()
+            break
+        except Exception as exc:
+            if len(exc.args) != 2:
+                raise # Re-raise
+            
+            etype = exc.args[0]
+
+            if etype == 'sutableRead':
+                if nAtts > 10:
+                    raise # Re-raise
+                nAtts += 1
+                time.sleep(2)
+                continue
+
+    nAtts = 0
+    while True:
+        try:
+            requests.read()
+            break
+        except Exception as exc:
+            if len(exc.args) != 2:
+                raise # Re-raise
+            
+            etype = exc.args[0]
+            
+            if etype == 'reqtableRead':
+                if nAtts > 10:
+                    raise # Re-raise
+                nAtts += 1
+                time.sleep(2)
+                continue
+
+
+    nAtts = 0
+    while True:
+        try:
+            sites.read()
+            break
+        except Exception as exc:
+            if len(exc.args) != 2:
+                raise # Re-raise
+            
+            etype = exc.args[0]
+            
+            if etype == 'badCgi':
+                if nAtts > 10:
+                    raise # Re-raise
+                nAtts += 1
+                time.sleep(2)
 
 # Process the SUs for the source site represented by url.
-# url - the URL (base URL plus cgi arguments, except for the sunum= argument) from which SU paths can be obtained.
+# url - the base URL to the rs.sh cgi (e.g., http://jsoc.stanford.edu/cgi-bin) from which SU paths can be obtained.
 # sunums - a list of sorted SUNUMs to download.
-def processSU(dbconn, url, sunums):
+# sus - the SU table object that represents the SU database table.
+# binPath - the local path to the binaries needed to ingest the downloaded SU into SUMS. This is mostly likely the path to
+#           the DRMS binaries (one binary needed is vso_sum_alloc)
+def processSUs(url, sunums, sus, binPath, insertRec=True):
+    rv = False
+    
+    # Get path to SUs by calling the rs.py cgi at the owning remote site (url identifies the remote site).
     # Create the sunum= argument.
+    sunumLst = ','.join(sunums)
+    values = {'requestid' : 'none', 'sunums' : sunumLst}
+    data = urllib.urlencode(values)
+    req = urllib2.Request(url, data)
+    response = urllib2.urlopen(req)
+    dlInfo = response.read()
+    
+    # Check status.
+    
+    paths = dlInfo['paths']
 
-    # Break-up large requests from a single URL into multiple smaller requests.
-    nElems = len(sunums[url])
-    iLastChunk = nElems / MAX_SUS
-
-    iChunk = 0
-    while iChunk <= iLastChunk:
-        if iLastChunk == iChunk:
-            end = nElems
+    # Start a download for each SU. If we cannot start the download for any reason, then set the SU status to 'E'.
+    for (asunum, path) in paths:
+        Downloader.lock.acquire()
+        if len(Downloader.tList) >= Downloader.maxThreads:
+            Downloader.lock.release()
+            Downloader.eventMaxThreads.wait()
         else:
-            end = (ichunk + 1) * MAX_SUS - 1
+            Downloader.lock.release()
+        
+        Downloader.newThread(asunum, path, sus, dlInfo['scpUser'], dlInfo['scpHost'], dlInfo['scpPort'], binPath)
 
-        sunumChunk = sunums[iChunk * MAX_SUS : end]
+        # Create a new SU-table record for each SU in the sus table (or update the starttime of an existing one).
+        if insertRec:
+            sus.insert(asunum)
+        else:
+            sus.setStarttime(asunum, datetime.now())
 
-        iChunk += 1
+    return rv
 
 
 rv = RET_SUCCESS
 
 if __name__ == "__main__":
-    optD = getArgs(sys.argv[1:])
-    if not optD:
-        rv = RET_INVALIDARGS
-
-    if rv == RET_SUCCESS:
-        try:
-            pid = os.getpid()
+    try:
+        optD = getArgs()
+        pid = os.getpid()
             
-            with DrmsLock(optD['lockfile'], str(pid)) as lock:
-                sys.exit(1)
+        with DrmsLock(optD['lockfile'], str(pid)) as lock:
+            sys.exit(1) # to be removed
 
-                # Connect to the database
-                try:
-                    # The connection is NOT in autocommit mode. If changes need to be saved, then conn.commit() must be called.
-                    with psycopg2.connect(database=optD['dbname'], user=optD['dbuser'], host=optD['dbhost'], port=optD['dbport']) as conn:
-                        with conn.cursor() as cursor:
-                            reqTable = optD['reqtable']
+            # Connect to the database
+            try:
+                # The connection is NOT in autocommit mode. If changes need to be saved, then conn.commit() must be called.
+                with psycopg2.connect(database=optD['dbname'], user=optD['dbuser'], host=optD['dbhost'], port=optD['dbport']) as conn:
+                    with conn.cursor() as cursor:
+                        suTable = optD['sutable']
+                        reqTable = optD['reqtable']
 
-                            sites = None
-                            requests = None
-                            sus = None
-                    
-                            cmd = 'SELECT requestid, sunums, status FROM ' + reqTable
-                            try:
-                                cursor.execute(cmd)
-            
-                            except psycopg2.Error as exc:
-                                raise Exception('sql', exc.diag.message_primary, cmd)
-            
-                            requests = cursor.fetchall()
-                    
-                            # Iterate through returned records. Need to split the requests into two lists: a list of new requests, and a list of
-                            # pending requests.
-                            newRequests = []
-                            pendingRequests = []
+                        sus = None
+                        requests = None
+                        sites = None
+
+                        # Read the storage-unit and request tables. Do this only once per daemon run. However, we save this table
+                        # information every iteration of the daemon loop, just in case a crash happens. After a crash, when
+                        # the daemon starts up, it will retrieve the latest saved information so the disruption will be minimal.
+                        # We will have to clean up any pending downloads since the threads managing those downloads will have
+                        # been lost, and we cannot trust that the downloads completed successfully (although they might have).
+                        # A fancier implementation would be some kind of download manager that can recover partially downloaded
+                        # storage units, but who has the time :)
+                        sus = SuTable(cursor, suTable, datetime.timedelta(minutes=optD['dltimeout']))
+                        requests = ReqTable(reqTable, datetime.timedelta(minutes=optD['reqtimeout']))
+                        sites = SiteTable()
+                        
+                        SuTable.setCursor(cursor)
+                        ReqTable.setCursor(cursor)
+
+                        # This function will try to read each table 10 times before giving up (and raising an exception).
+                        readTables(sus, requests, sites)
+
+                        # Set max number of threads we can process at once.
+                        Downloader.setMaxThreads(optD['maxthreads'])
+
+                        # Recover pending downloads that got disrupted from a daemon crash. All SU downloads that are in the pending
+                        # state at the time the tables are read were disrupted. There are no other threads running at this point.
+                        susPending = sus.getPending()
+                        for asu in susPending:
+                            siteURL = sites.getURL(asu['sunum'])
                             
-                            for arequest in requests:
-                                if arequest[3] == 'N':
-                                    newRequests.append[arequest]
-                                else:
-                                    pendingRequests.append[arequest]
-                    
-                            siteUrls = {}
-                            siteSunums = {} # New sunum CGI requests to providers.
-                    
-                            # Process new requests
-                            if len(newRequests) > 0:
-                                # We will need to map SUNUMs to site base URLs, so load up the sites table.
-                                cmd = 'SELECT sitecode, baseurl FROM ' + siteTable
-                                try:
-                                    cursor.execute(cmd)
+                            if siteURL not in siteSunums:
+                                siteSunums[siteURL] = []
 
-                                except psycopg2.Error as exc:
-                                    raise Exception('sql', exc.diag.message_primary, cmd)
-                                
-                                sites = cursor.fetchall()
-                                
-                                for asite in sites:
-                                    code = asite[0]
-                                    siteUrls[code] = asite[1]
-                             
-                                for arequest in newRequests:
-                                    reqID = record[0]
-                                    sunumsStr = record[1]
-                                    reqStatus = record[2]
+                            siteSunums[siteURL].append(asu['sunum'])
+
+                        # There is no need to acquire the SU-table lock. processSUs() will start new threads that can modify the
+                        # SU-record statuses, but by the time that happens, the main thread will be done reading those statuses.
+                        for url in siteSunums.iterkeys():
+                            if len(siteSunums[url]) > 0:
+                                # Chunk is a list of SUNUMs (up to 64 of them).
+                                chunker = Chunker(siteSunums[url].sort(), 64)
+                                for chunk in chunker:
+                                    # processSUs(..., insertRec=True) would attempt to insert a new record in the sus table for each SUNUM. By
+                                    # setting the last insertRec argument to False, we merely update the existing
+                                    # record's starttime value.
+                                    processSUs(url, chunk, sus, optD['binpath'], False)
+                    
+                    
+                        # I think this is how you make it possible to pass arguments to your signal handler - define the function
+                        # in the scope where the variables you want to use are visible. terminationHandler is a closure where
+                        # requests, sus, and cursor are defined.
+                        shutDown = False
+                        def terminationHandler(*args):
+                            print('Termination signal handler called. Saving the db-table caches.')
+                            shutDown = True
+
+                        signal.signal(signal.SIGINT, terminationHandler)
+                        
+                        # Start of main loop.
+                        while True and not shutDown:
+                            # Always lock the SU table first and do all processing that requires this lock first.
+                            sus.lock()
+                        
+                            # For each P SU in the SU table, see if it is time to time-out. susPending are ordered by SUNUM.
+                            # I guess we could process more than one SuTable, but for now, let's assume there is only one such
+                            # table.
+                            susPending = sus.getPending()
+                            for asu in susPending:
+                                timeNow = datetime.datetime.now()
+                                if timenow > asu['starttime'] + sus.getTimeout():
+                                    sus.setStatus(asu['sunum'], 'E', 'Download timed-out.')
+                        
+                            sus.updateDB()
+                        
+                            # Ignore SUs in the other states (C or E). These will be checked in other parts of the code.
                             
-                                    sunumList = sunumsStr.split(',')
+                            # For each 'P' request in the request table, check to see if the requested downloads have completed yet.
+                            reqsPending = requests.getPending()
+                            for arequest in reqsPending:
+                                done = True
+                                reqError = False
+                                sunums = arequest['sunums']
+                                for asunum in sunums:
+                                    if done == False and reqError == True:
+                                        break
+                                    asu = sus.get(asunum)
+                                    if asu['status'] == 'P':
+                                        done = False
+                                    elif asu['status'] == 'E':
+                                        reqErr = True
                                 
-                                    chunker = Chunker(sunumList)
-                                    
+                                if done:
+                                    # There are no pending downloads for this request. Set this request's status to 'C' or 'E', and decrement
+                                    # refcount on each SU.
+                                    if reqErr:
+                                        requests.setStatus(arequest['requestid'], 'E', 'Error downloading at least one SU.')
+                                    else:
+                                        requests.setStatus(arequest['requestid'], 'C')
+
+                                    # These next two calls can modify the db state! Put them in a transaction so that they form an atomic
+                                    # operation. We do not want an interruption to cause the first to happen, but not the second.
+                                    cursor.execute('BEGIN')
+                                    requests.updateDB()
+                                    sus.decrementRefcount(sunums)
+                                    cursor.execute('END')
+            
+                            # For each 'N' request in the request table, start a new set of downloads (if there is no download currently running -
+                            # i.e., no SU record) or increment the refcounts on the downloads (if there are downloads currently running - i.e.,
+                            # an SU record exists). But Before starting a new download, make sure that requested SU is not already online.
+                            # Due to race conditions, a request could have caused a download to occur needed by another request whose state is 'N'.
+                            requests.refresh() # Clients may have added requests to the queue.
+                            
+                            reqsNew = requests.getNew()
+                            for arequest in reqsNew:
+                                sunums = arequest['sunums']
+                                
+                                # Get all SU records for which a download is already in progress.
+                                unknown = []
+                                known = []
+                                for asunum in sunums:
                                     try:
-                                        # Request from providers, but only if the SUNUM has not already been processed and is not currently being processed.
-                                        for chunk in chunker:
-                                            sunumList = chunk.getItems()
-
-                                            # Filter out SUs that are being processed, or already online.
-                                            sunumListOffline = filterSunums(sunumList)
-                                    
-                                            # Organize SUNUMs by owning site.
-                                            for asunum in sunumListOffline:
-                                                code = getSiteCode(asunum)
-                                                if code is not None:
-                                                    url = siteUrls[code]
-                                                    if url not in siteSunums:
-                                                        siteSunums[url] = []
-                                        
-                                                    siteSunums[url].append(asunum)
-                                                else:
-                                                    # Could not obtain site code - error.
-                                                    raise Exception('sitecode', 'Error request ID ' + reqID + '. Unable to get site code for SUNUM ' + asunum + '.')
-
-                                    except Exception as exc:
+                                        asu = sus.get((asunum))
+                                    except Exception as esc:
                                         if len(exc.args) != 2:
                                             raise # Re-raise
                                             
                                         etype = exc.args[0]
                                         msg = exc.args[1]
-
-                                        if etype == 'sitecode':
-                                            setReqStatus(reqID, 'E', 'Unable to get site code for SUNUM ' + asunum + '.')
-                                            logError(etype, msg)
-                                            continue # Onto next request.
-                                        else:
-                                            raise # Re-raise
+                
+                                        if etype == 'unknownSunum':
+                                            unknown.append(asunum)
+                                            continue
+                                            
+                                    raise # Re-raise
                                     
-                                    # Always set request's status to 'P'. This request will not be checked on until the next iteration of the main loop of
-                                    # the daemon.
-                                    setReqStatus(reqID, 'P', None)
-                                    
-                                    # We may have new requests for offline SUs that are not being processed already. Start processing those SUs.
-                                    for url in siteSunums:
-                                        # Sort SUNUMS.
-                                        siteSunums[url].sort()
+                                    known.append(asunum)
                             
-                                        # We gotta wait until there is a processing slot open before we can start downloading a new SU.
-                                        newDownload(cursor, url, siteSunums[url])
-
-                    
-                            # Check on pending requests. Iterate through all SUs. If at least one is still being processed, then skip that request for now.
-                            # If all are complete or online, then set the request record's status to 'C', and at the same time decrement the refcount on the SU.
-                            # If the refcount becomes zero, then delete the SU's record from the SU table.
-                            if len(pendingRequests) > 0:
-                                requestPending = False
-                                for arequest in pendingRequests:
-                                    reqID = record[0]
-                                    sunumsStr = record[1]
-                                    reqStatus = record[2]
-                        
-                                    sunumList = sunumsStr.split(',')
-                            
-                                    # Check for completion of the processing of the requested SUs.
-                                    for asunum in sunumList:
-                                        if sunumBeingProcessed(asunum):
-                                            requestPending = True
-                                            break
-        
-                                    if not requestPending:
-                                        # Set request's status to 'C', but first decrement the refcount on all SUs. If any SU's refcount reaches zero, then delete the SU record.
-                                        if sus is None:
-                                            sus = readSus()
-
-                                        for asunum in sunumList:
-                                            sus[asunum]['refcount'] = sus[asunum]['refcount'] - 1
-                                            if sus[asunum]['refcount'] == 0:
-                                                del sus[asunum]
+                                # Increment the refcount on all SU records for the SUs being requested by the new request. This modifies the
+                                # sus object.
+                                sus.incrementRefcount(known)
                                 
-                                        setReqStatus(reqID, 'C', None)
+                                offlineSunums = SuTable.offline(unknown)
+                                
+                                dlsToStart = []
+                                toComplete = []
+                                for asunum in unknown:
+                                    if asunum in offlineSunums:
+                                        dlsToStart.append(asunum)
+                                    else:
+                                        toComplete.append(asunum)
+                                
+                                # Insert a new SU record for all unknown SUs that are already online. These calls modify the sus object.
+                                sus.insert(toComplete)
+                                sus.setStatus(toComplete, 'C')
+                                    
+                                # Start downloads for all unknown, offline SUs
+                                siteSunums = {}
+                                for asunum in dlsToStart:
+                                    siteURL = sites.getURL(asunum)
+                                    
+                                    if siteURL not in siteSunums:
+                                        siteSunums[siteURL] = []
+                                    
+                                    siteSunums[siteURL].append(asunum)
+                                    
+                                for url in siteSunums.iterkeys():
+                                    if len(siteSunums[url]) > 0:
+                                        # Chunk is a list of SUNUMs (up to 64 of them).
+                                        chunker = Chunker(siteSunums[url].sort(), 64)
+                                        for chunk in chunker:
+                                            # We want to always insert a record for each SU into the SU table. Do not provide the insertRec
+                                            # argument to do so. This call creates new SU-table records, so it modifies the sus object.
+                                            processSUs(url, chunk, sus, optD['binpath'])
+                                
+                                # The new request has been fully processed. Change its status from 'N' to 'P'.
+                                # This call modifies the requests object.
+                                requests.setStatus(arequest['requestid'], 'P')
 
+                                # At this point, both the requests and sus object have been modified, but have not been flushed to disk.
+                                # Flush them, but do this inside a transaction so that the first does not happen without the second.
+                                cursor.execute('BEGIN')
+                                sus.updateDB()
+                                requests.updateDB()
+                                cursor.execute('END')
 
-
-                except psycopg2.Error as exc:
-                    # Closes the cursor and connection
-                    print('Unable to connect to the database', file=sys.stderr)
-                    print(exc.diag.message_primary, file=sys.stderr)
+                            # Delete all request-table records whose state is 'D'.
+                            reqsToDelete = requests.getToDelete()
+                            requests.delete(reqsToDelete)
+                            
+                            sus.unlock()
+                            
+                            # Must poll for new requests to appear in requests table.
+                            sleep(1)
+                            # End of main loop.
+                        
+                        # Save the db state
+                        cursor.execute('BEGIN')
+                        sus.updateDB()
+                        requests.updateDB()
+                        cursor.execute('END')
         
-                    # No need to close cursor - leaving the with block does that.
-                    rv = RET_DBCONNECT
+            except psycopg2.DatabaseError as exc:
+                # Closes the cursor and connection
+                
+                # Man, there is no way to get an error message from any exception object that will provide any information why
+                # the connection failed.
+                print('Unable to connect to the database (no, I do not know why).', file=sys.stderr)
+    
+                # No need to close cursor - leaving the with block does that.
+                rv = RET_DBCONNECT
 
-        except Exception as exc:
-            if len(exc.args) != 2:
-                raise # Re-raise
-    
-            etype = exc.args[0]
-            msg = exc.args[1]
-    
-            if etype == 'drmsLock':
-                print('Error locking file: ' + lockFile + '\n' + msg, file=sys.stderr)
-                rv = RET_LOCK
-                      
+            except psycopg2.Error as exc:
+                # Handle database-command errors.
+                print(exc.diag.message_primary, file=sys.stderr)
+                rv = RET_DBCOMMAND
+
+        # Lock was released
+
+    except Exception as exc:
+        if len(exc.args) != 2:
+            raise # Re-raise
+        
+        etype = exc.args[0]
+        msg = exc.args[1]
+        
+        if etype == 'drmsLock':
+            print('Error locking file: ' + lockFile + '\n' + msg, file=sys.stderr)
+            rv = RET_LOCK
+        elif etype == 'sutableRead':
+            print('Unable to read storage-unit table: ' + msg)
+            rv = RET_SUTABLE_READ
+        elif etype == 'reqtableRead':
+            print('Unable to read storage-unit-request table: ' + msg)
+            rv = RET_REQTABLE_READ
+        else:
+            raise # Re-raise
+
 sys.exit(rv)
