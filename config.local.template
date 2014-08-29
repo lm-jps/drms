@@ -249,6 +249,9 @@ RS_DBPORT                             5432
 # The (advisory) lockfile used by rsumsd.py to prevent multiple instances of rsumsd.py from running.
 RS_LOCKFILE                           /usr/share/drms/locks/remotesums.lck
 
+# The directory in which remote-sums log files are written.
+RS_LOGDIR                             /usr/share/drms/logs/rsums
+
 # The number of minutes after which a storage-unit download will time-out.
 RS_DLTIMEOUT                          30
 
