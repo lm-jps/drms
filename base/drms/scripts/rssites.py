@@ -50,7 +50,7 @@ def GetArgs(args):
                 if key in ('name', 'n'):
                     optD['name'] = val.split(',')
                 elif key in ('c', 'code'):
-                    optD['code'] = val
+                    optD['code'] = val.split(',')
                 elif key in ('N', 'dbname'):
                     optD['dbname'] = val
                 elif key in ('H', 'dbhost'):
@@ -124,7 +124,9 @@ if __name__ == "__main__":
                     
                     if optD['name']:
                         cmd += ' WHERE name in (' + ', '.join("'" + elem + "'" for elem in optD['name']) + ')'
-                    
+                    elif optD['code']:
+                        cmd += ' WHERE code in (' + ', '.join("'" + elem + "'" for elem in optD['code']) + ')'
+                
                     try:
                         cursor.execute(cmd)
 
