@@ -23,10 +23,10 @@ from drmsparams import DRMSParams
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../base/libs/py'))
 from drmsCmdl import CmdlParser
 from drmsLock import DrmsLock
-from subprocess import check_output, CalledProcessError, Popen
+from subprocess import check_output, check_call, CalledProcessError, Popen
 
 # This script runs as a daemon at the site that has requested an SU that does not belong to the site. It is responsible for contacting
-# the owning site and requesting the path to the desired SUs. The owning site must be running the rs.py CGI to respond to the requesting
+# the owning site and requesting the path to the desired SUs. The owning site must be running the rs.sh CGI to respond to the requesting
 # site's request.
 
 # There are three database tables: 1., a DRMS site table, 2., a request table, and 3., an SU table (sunum, starttime, status, errmsg)
@@ -72,6 +72,8 @@ RET_LOGFILE = 8
 RET_OFFLINE = 9
 RET_UKNOWNREQUEST = 10
 RET_UKNOWNSU = 11
+RET_UKNOWNSITECODE = 12
+RET_DUPLICATESUNUM = 13
 
 LOG_FILE_BASE_NAME = 'rslog'
 
@@ -578,8 +580,10 @@ class ReqTable:
 # Otherwise, information about a single site can be obtained by by providing the site name to the 'site' argument.
 # The information is stored in drms.rs_sites on hmidb.
 class SiteTable:
-    def __init__(self):
-        self.siteDict = {}
+    def __init__(self, log):
+        self.log = log
+        self.siteDict = {} # Keyed by name.
+        self.siteMap = {} # Map from str(code) to name.
 
     def read(self):
         url = 'http://jsoc.stanford.edu/cgi-bin/rssites.sh'
@@ -602,6 +606,9 @@ class SiteTable:
             self.siteDict[asite]['name'] = asite
             self.siteDict[asite]['code'] = siteInfo[asite]['code']
             self.siteDict[asite]['baseurl'] = siteInfo[asite]['baseurl']
+            self.siteMap[str(self.siteDict[asite]['code'])] = asite
+
+            self.log.write(['Reading site info for ' + asite + ': code => ' + str(self.siteDict[asite]['code']) + ', baseurl => ' + self.siteDict[asite]['baseurl']])
 
     @staticmethod
     def getCode(sunum):
@@ -613,7 +620,13 @@ class SiteTable:
 
     def getURL(self, sunum):
         code = SiteTable.getCode(sunum)
-        url = self.siteDict[str(code)]['baseurl']
+        
+        if not str(code) in self.siteMap or not self.siteMap[str(code)]:
+            raise Exception('unknownSitecode', 'There is no site in the site table for code ' + str(code) + '.')
+        
+        name = self.siteMap[str(code)]
+        url = self.siteDict[name]['baseurl']
+        return url
 
 class Chunker(object):
     def __init__(self, list, chSize):
@@ -621,10 +634,10 @@ class Chunker(object):
         iChunk = -1
         nElem = 1
         
-        for elem in self.list:
+        for elem in list:
             if iChunk == -1 or nElem % chSize == 0:
                 iChunk += 1
-                self.chunks[iChunk] = []
+                self.chunks.append([])
     
             self.chunks[iChunk].append(elem)
             nElem += 1
@@ -659,17 +672,23 @@ class Downloader(threading.Thread):
         self.log = log
 
     def run(self):
-        log.write(['Downloading SU [scp -r -P ' + self.scpPort + ' ' + self.scpUser + '@' + self.scpHost + ':' + self.path + '/*' + '/tmp/.su' + str(self.sunum) + '.'])
+        dlDir = '/tmp/.su' + str(self.sunum)
+        
+        self.log.write(['Downloading SU [scp -r -P ' + self.scpPort + ' ' + self.scpUser + '@' + self.scpHost + ':' + self.path + '/* ' + dlDir])
         
         # Download the SU.
         try:
             # Don't forget to make the temporary directory first.
-            cmdList = ['scp', '-r', '-P', self.scpPort, self.scpUser + '@' + self.scpHost + ':' + self.path + '/*', '/tmp/.su' + str(self.sunum)]
+            self.log.write(['Creating temporary download directory ' + dlDir + '.'])
+            os.mkdir(dlDir)
+            
+            cmdList = ['scp', '-r', '-P', self.scpPort, self.scpUser + '@' + self.scpHost + ':' + self.path + '/*', dlDir]
             try:
                 check_call(cmdList)
             except CalledProcessError as exc:
                 raise Exception('scp', "Command '" + ' '.join(cmdList) + "' returned non-zero status code " + str(exc.returncode))
 
+            # ART - TEST; do not attempt to ingest into SUMS.
             if False:
                 # Ingest the SUs into SUMS. size matters not...look at me...judge me by my size, do you?
                 cmdList = [binPath + '/vso_sum_alloc', 'sunum=' + str(self.sunum), 'size=1024']
@@ -693,15 +712,24 @@ class Downloader(threading.Thread):
                     raise Exception('mv', "Command '" + ' '.join(cmdList) + "' returned non-zero status code " + str(exc.returncode))
             
             # Remove temporary directory.
+            # ART - TEST; need to uncomment this.
+            # os.rmdir(dlDir)
             
             # Update SU table. Set SU-table record status to 'C'. Must first lock the SU table since we are modifying it. Also,
             # the state may not be 'P' due to some problem cropping up in the meantime. Only set to 'C' if the state is 'P'.
-            suTable.acquireLock()
-            if suTable.get(self.sunum)['status'] == 'P':
-                suTable.setStatus([self.sunum], 'C', None)
-                # Flush the change to disk.
-                suTable.updateDB()
-            suTable.releaseLock()
+            try:
+                self.suTable.acquireLock()
+                su = self.suTable.get([self.sunum])
+                if su[0]['status'] == 'P':
+                    self.log.write(['Setting SU ' + str(self.sunum) + ' status to complete.'])
+                    self.suTable.setStatus([self.sunum], 'C', None)
+                    # Flush the change to disk.
+                    self.suTable.updateDB()
+            except:
+                # Always release lock.
+                pass
+            
+            self.suTable.releaseLock()
             
             # This thread is about to terminate.
             
@@ -727,9 +755,9 @@ class Downloader(threading.Thread):
                 sus.setStatus(self.sunum, 'E', 'Error downloading storage unit ' + str(self.sunum) + ': ' + msg + '.')
     
     @staticmethod
-    def newThread(sunum, path, sus, scpUser, scpHost, scpPort, binPath):
+    def newThread(sunum, path, sus, scpUser, scpHost, scpPort, binPath, log):
         Downloader.lock.acquire()
-        dl = Downloader(sunum, path, sus, scpUser, scpHost, scpPort, binPath)
+        dl = Downloader(sunum, path, sus, scpUser, scpHost, scpPort, binPath, log)
         dl.tList.append(dl)
         Downloader.lock.release()
         dl.start()
@@ -916,20 +944,25 @@ def readTables(sus, requests, sites):
 # sus - the SU table object that represents the SU database table.
 # binPath - the local path to the binaries needed to ingest the downloaded SU into SUMS. This is mostly likely the path to
 #           the DRMS binaries (one binary needed is vso_sum_alloc)
-def processSUs(url, sunums, sus, binPath, insertRec=True):
+def processSUs(url, sunums, sus, binPath, log, insertRec=True):
     rv = False
     
-    # Get path to SUs by calling the rs.py cgi at the owning remote site (url identifies the remote site).
+    # Get path to SUs by calling the rs.sh cgi at the owning remote site (url identifies the remote site).
     # Create the sunum= argument.
-    sunumLst = ','.join(sunums)
+    sunumLst = ','.join(str(asunum) for asunum in sunums)
     values = {'requestid' : 'none', 'sunums' : sunumLst}
     data = urllib.urlencode(values)
-    req = urllib2.Request(url, data)
+    log.write(['Requesting paths for SUNUMs ' + sunumLst + '. URL is ' + url + '/rs.sh' + '?' + data])
+    req = urllib2.Request(url + '/rs.sh', data)
     response = urllib2.urlopen(req)
-    dlInfo = response.read()
+    dlInfoStr = response.read()
     
-    # Check status.
+    # ART - Check status.
     
+    
+    
+    dlInfo = json.loads(dlInfoStr)
+
     paths = dlInfo['paths']
 
     # Start a download for each SU. If we cannot start the download for any reason, then set the SU status to 'E'.
@@ -941,11 +974,11 @@ def processSUs(url, sunums, sus, binPath, insertRec=True):
         else:
             Downloader.lock.release()
         
-        Downloader.newThread(asunum, path, sus, dlInfo['scpUser'], dlInfo['scpHost'], dlInfo['scpPort'], binPath)
+        Downloader.newThread(asunum, path, sus, dlInfo['scpUser'], dlInfo['scpHost'], dlInfo['scpPort'], binPath, log)
 
         # Create a new SU-table record for each SU in the sus table (or update the starttime of an existing one).
         if insertRec:
-            sus.insert(asunum)
+            sus.insert([asunum])
         else:
             sus.setStarttime(asunum, datetime.now())
 
@@ -983,7 +1016,7 @@ if __name__ == "__main__":
                         # storage units, but who has the time :)
                         sus = SuTable(suTable, timedelta(minutes=optD['dltimeout']), rslog)
                         requests = ReqTable(reqTable, timedelta(minutes=optD['reqtimeout']))
-                        sites = SiteTable()
+                        sites = SiteTable(rslog)
                         
                         SuTable.setCursor(cursor)
                         ReqTable.setCursor(cursor)
@@ -1018,7 +1051,7 @@ if __name__ == "__main__":
                                     # processSUs(..., insertRec=True) would attempt to insert a new record in the sus table for each SUNUM. By
                                     # setting the last insertRec argument to False, we merely update the existing
                                     # record's starttime value.
-                                    processSUs(url, chunk, sus, optD['binpath'], False)
+                                    processSUs(url, chunk, sus, optD['binpath'], rslog, False)
                     
                         # I think this is how you make it possible to pass arguments to your signal handler - define the function
                         # in the scope where the variables you want to use are visible. terminator is a closure where
@@ -1044,8 +1077,8 @@ if __name__ == "__main__":
                             # table.
                             susPending = sus.getPending()
                             for asu in susPending:
-                                timeNow = datetime.now()
-                                if timenow > asu['starttime'] + sus.getTimeout():
+                                timeNow = datetime.now(asu['starttime'].tzinfo)
+                                if timeNow > asu['starttime'] + sus.getTimeout():
                                     rslog.write('Download of SUNUM ' + str(asu['sunum']) + ' timed-out.')
                                     sus.setStatus([asu['sunum']], 'E', 'Download timed-out.')
                         
@@ -1134,6 +1167,9 @@ if __name__ == "__main__":
                                 
                                 offlineSunums = SuTable.offline(unknown, optD['binpath'], rslog)
                                 
+                                # ART - TEST; force all unknown to offline so we can start downloads.
+                                offlineSunums = [asunum for asunum in unknown]
+                                
                                 dlsToStart = []
                                 toComplete = []
                                 for asunum in unknown:
@@ -1164,7 +1200,7 @@ if __name__ == "__main__":
                                         for chunk in chunker:
                                             # We want to always insert a record for each SU into the SU table. Do not provide the insertRec
                                             # argument to do so. This call creates new SU-table records, so it modifies the sus object.
-                                            processSUs(url, chunk, sus, optD['binpath'])
+                                            processSUs(url, chunk, sus, optD['binpath'], rslog)
                                 
                                 # The new request has been fully processed. Change its status from 'N' to 'P'.
                                 # This call modifies the requests object.
@@ -1252,6 +1288,12 @@ if __name__ == "__main__":
         elif etype == 'noReference':
             rslog.write([msg])
             rv = RET_UKNOWNSU
+        elif etype == 'unknownSitecode':
+            rslog.write([msg])
+            rv = RET_UKNOWNSITECODE
+        elif etype == 'knownSunum':
+            rslog.write([msg])
+            rv = RET_DUPLICATESUNUM
         else:
             rslog.write(['Unhandled exception. Remote-sums daemon is exiting. Rolling back uncommitted database changes. '])
             raise # Re-raise
