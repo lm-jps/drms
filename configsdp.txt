@@ -67,9 +67,11 @@ q:RS_DBHOST                             hmidb
 a:RS_DBPORT                             5432
 q:RS_DBUSER                             production
 q:RS_LOCKFILE                           /home/jsoc/locks/remotesums.lck
+q:RS_LOGDIR                             /home/jsoc/jsoclogs/rsums
 a:RS_DLTIMEOUT                          30
+a:RS_REQTIMEOUT                          5
 a:RS_MAXTHREADS                         32
-a:RS_BINPATH                            /home/jsoc/cvs/Development/JSOC/bin/linux_x86_64
+q:RS_BINPATH                            /home/jsoc/cvs/Development/JSOC/bin/linux_x86_64
 
 __MAKE__
 # JSOC_SDP third-party libraries used by base
