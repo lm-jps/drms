@@ -387,7 +387,10 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
 	     /*  drms_start_server - mimics initial code in drms_run script  */
 
 pid_t drms_start_server (int verbose, int dolog)  {
-  const char *dbhost, *dbuser, *dbpasswd, *dbname, *sessionns;
+    const char *dbhost;
+    char *dbuser, *dbpasswd, *dbname, *sessionns;
+    char *dbport = NULL;
+    char dbHostAndPort[64];
   int query_mem, server_wait;
   int16_t retention;
   int16_t newsuretention;
@@ -404,8 +407,62 @@ pid_t drms_start_server (int verbose, int dolog)  {
 	/* Get hostname, user, passwd and database name for establishing 
 				    a connection to the DRMS database server */
 
+    /* SERVER does not contain port information. Yet when dbhost is used in db_connect(), that function
+     * parses the value looking for an optional port number. So if you didn't provide the JSOC_DBHOST
+     * then there was no way to connect to the db with a port other than the default port that the
+     * db listens on for incoming connections (which is usually 5432).
+     *
+     * I changed this so that masterlists uses the DRMSPGPORT macro to define the port to connect to.
+     * If by chance somebody has appeneded the port number to the server name in SERVER, and that
+     * conflicts with the value in DRMSPGPORT, then DRMSPGPORT wins, and a warning message is printed.
+     *
+     * --ART (2014.08.20)
+     */
+
   if ((dbhost = cmdparams_get_str (&cmdparams, "JSOC_DBHOST", NULL)) == NULL)
-    dbhost =  SERVER;
+    {
+        const char *sep = NULL;
+        
+        dbhost =  SERVER;
+        dbport = DRMSPGPORT;
+        
+        /* Check for conflicting port numbers. */
+        if ((sep = strchr(dbhost, ':')) != NULL)
+        {
+            if (strcmp(sep + 1, dbport) != 0)
+            {
+                char *tmpBuf = strdup(dbhost);
+                
+                if (tmpBuf)
+                {
+                    tmpBuf[sep - dbhost] = '\0';
+                    fprintf(stderr, "WARNING: the port number in the SERVER localization parameter (%s) and in DRMSPGPORT (%s) conflict.\nThe DRMSPGPORT value will be used.\n", sep + 1, DRMSPGPORT);
+                    
+                    snprintf(dbHostAndPort, sizeof(dbHostAndPort), "%s:%s", tmpBuf, dbport);
+                    free(tmpBuf);
+                    tmpBuf = NULL;
+                }
+                else
+                {
+                    fprintf(stderr, "Out of memory.\n");
+                    return 1;
+                }
+            }
+            else
+            {
+                snprintf(dbHostAndPort, sizeof(dbHostAndPort), "%s", dbhost);
+            }
+        }
+        else
+        {
+            snprintf(dbHostAndPort, sizeof(dbHostAndPort), "%s:%s", dbhost, dbport);
+        }
+    }
+    else
+    {
+        snprintf(dbHostAndPort, sizeof(dbHostAndPort), "%s", dbhost);
+    }
+    
   if ((dbname = cmdparams_get_str (&cmdparams, "JSOC_DBNAME", NULL)) == NULL)
     dbname = DBNAME;
   if ((dbuser = cmdparams_get_str (&cmdparams, "JSOC_DBUSER", NULL)) == NULL)
@@ -589,8 +646,8 @@ pid_t drms_start_server (int verbose, int dolog)  {
       argv[i++] = strdup ("-V");
     if (dolog) 
       argv[i++] = strdup ("-L");
-    argv[i] = malloc (strlen (dbhost)+DRMS_MAXNAMELEN);
-    sprintf (argv[i++], "JSOC_DBHOST=%s", dbhost);
+    argv[i] = malloc (strlen (dbHostAndPort)+DRMS_MAXNAMELEN);
+    sprintf (argv[i++], "JSOC_DBHOST=%s", dbHostAndPort);
     argv[i] = malloc (strlen (dbname)+DRMS_MAXNAMELEN);
     sprintf (argv[i++], "JSOC_DBNAME=%s", dbname);
     if (dbuser) {

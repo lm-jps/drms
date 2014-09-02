@@ -315,7 +315,10 @@ int main (int argc, char *argv[]) {
   DRMS_ThreadInfo_t *tinfo;
   DB_Handle_t *db_handle;
   pid_t pid=0;
-  char *dbhost, *dbuser, *dbpasswd, *dbname, *sessionns;
+    const char *dbhost;
+    char *dbuser, *dbpasswd, *dbname, *sessionns;
+    char *dbport = NULL;
+    char dbHostAndPort[64];
   char drms_server[] = "drms_server";
   char *cenvfileprefix = NULL; 
   char *shenvfileprefix = NULL; 
@@ -364,8 +367,63 @@ int main (int argc, char *argv[]) {
 
   /* Get hostname, user, passwd and database name for establishing 
      a connection to the DRMS database server. */
+    
+    /* SERVER does not contain port information. Yet when dbhost is used in db_connect(), that function
+     * parses the value looking for an optional port number. So if you didn't provide the JSOC_DBHOST
+     * then there was no way to connect to the db with a port other than the default port that the
+     * db listens on for incoming connections (which is usually 5432).
+     *
+     * I changed this so that masterlists uses the DRMSPGPORT macro to define the port to connect to.
+     * If by chance somebody has appeneded the port number to the server name in SERVER, and that
+     * conflicts with the value in DRMSPGPORT, then DRMSPGPORT wins, and a warning message is printed.
+     *
+     * --ART (2014.08.20)
+     */
+    
   if ((dbhost = cmdparams_get_str(&cmdparams, "JSOC_DBHOST", NULL)) == NULL)
-    dbhost =  SERVER;
+    {
+        const char *sep = NULL;
+        
+        dbhost =  SERVER;
+        dbport = DRMSPGPORT;
+        
+        /* Check for conflicting port numbers. */
+        if ((sep = strchr(dbhost, ':')) != NULL)
+        {
+            if (strcmp(sep + 1, dbport) != 0)
+            {
+                char *tmpBuf = strdup(dbhost);
+                
+                if (tmpBuf)
+                {
+                    tmpBuf[sep - dbhost] = '\0';
+                    fprintf(stderr, "WARNING: the port number in the SERVER localization parameter (%s) and in DRMSPGPORT (%s) conflict.\nThe DRMSPGPORT value will be used.\n", sep + 1, DRMSPGPORT);
+                    
+                    snprintf(dbHostAndPort, sizeof(dbHostAndPort), "%s:%s", tmpBuf, dbport);
+                    free(tmpBuf);
+                    tmpBuf = NULL;
+                }
+                else
+                {
+                    fprintf(stderr, "Out of memory.\n");
+                    return 1;
+                }
+            }
+            else
+            {
+                snprintf(dbHostAndPort, sizeof(dbHostAndPort), "%s", dbhost);
+            }
+        }
+        else
+        {
+            snprintf(dbHostAndPort, sizeof(dbHostAndPort), "%s:%s", dbhost, dbport);
+        }
+    }
+    else
+    {
+        snprintf(dbHostAndPort, sizeof(dbHostAndPort), "%s", dbhost);
+    }
+
   if ((dbname = cmdparams_get_str(&cmdparams, "JSOC_DBNAME", NULL)) == NULL)
     dbname = DBNAME;
   if ((dbuser = cmdparams_get_str(&cmdparams, "JSOC_DBUSER", NULL)) == NULL)
@@ -382,7 +440,7 @@ int main (int argc, char *argv[]) {
 
   /* Initialize server's own DRMS environment and connect to 
      DRMS database server. */
-  if ((env = drms_open(dbhost,dbuser,dbpasswd,dbname,sessionns)) == NULL)
+  if ((env = drms_open(dbHostAndPort, dbuser,dbpasswd,dbname,sessionns)) == NULL)
   {
     fprintf(stderr,"Failure during server initialization.\n");
     return 1;
@@ -394,9 +452,10 @@ int main (int argc, char *argv[]) {
   db_handle = env->session->db_handle;
 
   printf("env->session->db_direct = %d\n",env->session->db_direct );
-  printf("DRMS server connected to database '%s' on host '%s' as "
+  printf("DRMS server connected to database '%s' on host '%s' and port '%s' as "
 	 "user '%s'.\n",env->session->db_handle->dbname, 
 	 env->session->db_handle->dbhost,
+     env->session->db_handle->dbport,
 	 env->session->db_handle->dbuser);
 
   env->archive	   = drms_cmdparams_get_int(&cmdparams, "DRMS_ARCHIVE", NULL);

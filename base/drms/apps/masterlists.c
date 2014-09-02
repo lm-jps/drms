@@ -45,7 +45,10 @@ ModuleArgs_t *gModArgs = module_args;
 int main(int argc, char **argv) {
   DB_Handle_t *db_handle;
   char stmt[8000]={0}, *p;
-  char *dbhost, *dbuser, *dbpasswd, *dbname, *namespace, *nsgrp;
+    const char *dbhost;
+    char *dbuser, *dbpasswd, *dbname, *namespace, *nsgrp;
+    char *dbport = NULL;
+    char dbHostAndPort[64];
   DB_Text_Result_t *qres;
   char *tn[] = {"drms_keyword", "drms_link", "drms_segment", "drms_series"};
   int guest = 0;
@@ -57,8 +60,64 @@ int main(int argc, char **argv) {
  
   /* Get hostname, user, passwd and database name for establishing 
      a connection to the DRMS database server. */
+    
+    /* SERVER does not contain port information. Yet when dbhost is used in db_connect(), that function
+     * parses the value looking for an optional port number. So if you didn't provide the JSOC_DBHOST
+     * then there was no way to connect to the db with a port other than the default port that the
+     * db listens on for incoming connections (which is usually 5432).
+     *
+     * I changed this so that masterlists uses the DRMSPGPORT macro to define the port to connect to.
+     * If by chance somebody has appeneded the port number to the server name in SERVER, and that
+     * conflicts with the value in DRMSPGPORT, then DRMSPGPORT wins, and a warning message is printed.
+     *
+     * --ART (2014.08.20)
+     */
+    
   if ((dbhost = cmdparams_get_str(&cmdparams, "JSOC_DBHOST", NULL)) == NULL)
-    dbhost =  SERVER;
+    {
+        const char *sep = NULL;
+        
+        dbhost =  SERVER;
+        dbport = DRMSPGPORT;
+        
+        /* Check for conflicting port numbers. */
+        if ((sep = strchr(dbhost, ':')) != NULL)
+        {
+            if (strcmp(sep + 1, dbport) != 0)
+            {
+                char *tmpBuf = strdup(dbhost);
+                
+                if (tmpBuf)
+                {
+                    tmpBuf[sep - dbhost] = '\0';
+                    fprintf(stderr, "WARNING: the port number in the SERVER localization parameter (%s) and in DRMSPGPORT (%s) conflict.\nThe DRMSPGPORT value will be used.\n", sep + 1, DRMSPGPORT);
+                    
+                    snprintf(dbHostAndPort, sizeof(dbHostAndPort), "%s:%s", tmpBuf, dbport);
+                    free(tmpBuf);
+                    tmpBuf = NULL;
+                }
+                else
+                {
+                    fprintf(stderr, "Out of memory.\n");
+                    goto failure;
+                }
+            }
+            else
+            {
+                snprintf(dbHostAndPort, sizeof(dbHostAndPort), "%s", dbhost);
+            }
+        }
+        else
+        {
+            snprintf(dbHostAndPort, sizeof(dbHostAndPort), "%s:%s", dbhost, dbport);
+        }
+    }
+    else
+    {
+        snprintf(dbHostAndPort, sizeof(dbHostAndPort), "%s", dbhost);
+    }
+    
+    
   if ((dbname = cmdparams_get_str(&cmdparams, "JSOC_DBNAME", NULL)) == NULL)
     dbname = DBNAME;
   if ((dbuser = cmdparams_get_str(&cmdparams, "dbuser", NULL)) == NULL) {
@@ -112,12 +171,12 @@ int main(int argc, char **argv) {
   }
 
   dbpasswd = getpass ("Please type the password for database user \"postgres\":");
-  if ((db_handle = db_connect (dbhost,"postgres",dbpasswd,dbname,0)) == NULL) {
+  if ((db_handle = db_connect (dbHostAndPort,"postgres",dbpasswd,dbname,0)) == NULL) {
     fprintf (stderr, "Failure to connect to DB server.\n");
     return 1;
   }
-  printf("Connected to database '%s' on host '%s' as "
-	 "user '%s'.\n",db_handle->dbname, db_handle->dbhost,
+  printf("Connected to database '%s' on host '%s' and port '%s' as "
+	 "user '%s'.\n",db_handle->dbname, db_handle->dbhost, db_handle->dbport,
 	 db_handle->dbuser);
 
   if (db_isolation_level (db_handle, DB_TRANS_SERIALIZABLE) ) {
