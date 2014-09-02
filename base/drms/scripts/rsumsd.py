@@ -10,7 +10,7 @@ import thread
 import psycopg2
 import threading
 import fcntl
-import datetime
+from datetime import datetime, timedelta
 import urllib
 import urllib2
 import json
@@ -68,15 +68,51 @@ RET_SUTABLE_WRITE = 4
 RET_REQTABLE_READ = 5
 RET_REQTABLE_WRITE = 6
 RET_DBCOMMAND = 7
+RET_LOGFILE = 8
+RET_OFFLINE = 9
+RET_UKNOWNREQUEST = 10
+RET_UKNOWNSU = 11
+
+LOG_FILE_BASE_NAME = 'rslog'
+
+class Log:
+    def __init__(self, logPath, baseFileName):
+        now = datetime.now().strftime('%Y%m%d')
+        fileName = baseFileName + '_' + now + '.txt'
+        self.fileName = os.path.join(logPath, fileName)
+        try:
+            # If path doesn't exist, create it. Since we are running as the production rs user, ownership will be fine.
+            if not os.path.isdir(logPath):
+                os.mkdir(logPath)
+            
+            fobj = open(self.fileName, 'a')
+        except IOError as exc:
+            type, value, traceback = sys.exc_info()
+            raise Exception('badLogfile', 'Unable to open ' + "'" + value.filename + "'.")
+
+        self.fobj = fobj
+
+    def __del__(self):
+        self.fobj.close()
+
+    def write(self, text):
+        try:
+            lines = ['[' + datetime.now().strftime('%Y-%m-%d %T') + '] ' + line + '\n' for line in text]
+            self.fobj.writelines(lines)
+            self.fobj.flush()
+        except IOError as exc:
+            type, value, traceback = sys.exc_info()
+            raise Exception('badLogwrite', 'Unable to write to ' + value.filename + '.')
 
 class SuTable:
     cursor = None
                 
-    def __init__(self, tableName, timeOut):
+    def __init__(self, tableName, timeOut, log):
         self.tableName = tableName
         self.timeOut = timeOut # A timedelta object - the length of time to wait for a download to complete.
         self.lock = thread.allocate_lock()
         self.locked = False
+        self.log = log
         self.suDict = {}
     
     def __del__(self):
@@ -98,16 +134,17 @@ class SuTable:
             raise Exception('sutableRead', exc.diag.message_primary)
     
         for record in cursor:
-            sunumStr = record[0]
+            sunumStr = str(record[0])
             
             self.suDict[sunumStr] = {}
             self.suDict[sunumStr]['sunum'] = record[0]
-            # PG timestamps (with no time zone) return time strings like "1997-12-17 07:37:16"
-            self.suDict[sunumStr]['starttime'] = datetime.strptime(record[1], '%Y-%m-%d %T')
+            # Whoa! pyscopg returns timestamps as datetime.datetime objects already!
+            self.suDict[sunumStr]['starttime'] = record[1]
             self.suDict[sunumStr]['refcount'] = record[2]
             self.suDict[sunumStr]['status'] = record[3]
             self.suDict[sunumStr]['errmsg'] = record[4]
             self.suDict[sunumStr]['dirty'] = False
+            self.suDict[sunumStr]['new'] = False
 
     # This will never be used. Rows are written one at a time.
     def write(self):
@@ -116,7 +153,7 @@ class SuTable:
             cursor.execute('PREPARE preparedStatement AS INSERT INTO ' + suTable + ' VALUES($1, $2, $3, $4, $5)')
             for sunumStr in sorted(self.suDict.iterkeys()):
                 if self.suDict[sunumStr]['dirty']:
-                    cursor.execute('EXECUTE preparedstatement (%s, %s, %s, %s, %s)', (sunumStr, self.suDict[sunumStr]['starttime'], self.suDict[sunumStr]['refcount'], self.suDict[sunumStr]['status']), self.suDict[sunumStr]['errmsg'])
+                    cursor.execute('EXECUTE preparedstatement (%s, %s, %s, %s, %s)', (sunumStr, self.suDict[sunumStr]['starttime'], str(self.suDict[sunumStr]['refcount']), self.suDict[sunumStr]['status']), self.suDict[sunumStr]['errmsg'])
     
         except psycopg2.Error as exc:
             raise Exception('badSql', exc.diag.message_primary)
@@ -132,7 +169,12 @@ class SuTable:
                 raise Exception('unknownSunum', 'No SU-table record exists for SU ' + sunumStr + '.')
             
             if self.suDict[sunumStr]['dirty']:
-                cmd = 'UPDATE ' + self.tableName + " SET starttime='" + self.suDict[sunumStr]['starttime'] + "', refcount=" + self.suDict[sunumStr]['refcount'] + ", status='" + self.suDict[sunumStr]['status'] + "', errmsg='" + self.suDict[sunumStr]['errmsg'] + "' WHERE sunum=" + sunumStr
+                if self.suDict[sunumStr]['new'] == True:
+                    cmd = 'INSERT INTO ' + self.tableName + '(sunum, starttime, refcount, status, errmsg) VALUES(' + sunumStr + ",'" + self.suDict[sunumStr]['starttime'].strftime('%Y-%m-%d %T') + "', " + str(self.suDict[sunumStr]['refcount']) + ", '" + self.suDict[sunumStr]['status'] + "', '" + self.suDict[sunumStr]['errmsg'] + "')"
+                else:
+                    cmd = 'UPDATE ' + self.tableName + " SET starttime='" + self.suDict[sunumStr]['starttime'].strftime('%Y-%m-%d %T') + "', refcount=" + str(self.suDict[sunumStr]['refcount']) + ", status='" + self.suDict[sunumStr]['status'] + "', errmsg='" + self.suDict[sunumStr]['errmsg'] + "' WHERE sunum=" + sunumStr
+                
+                self.log.write(['Updating SU db table: ' + cmd])
                 
                 try:
                     cursor.execute(cmd)
@@ -141,11 +183,17 @@ class SuTable:
                     raise Exception('sutableWrite', exc.diag.message_primary)
                 
                 self.suDict[sunumStr]['dirty'] = False
+                self.suDict[sunumStr]['new'] = False
         else:
             # Update all dirty records.
             for sunumStr in self.suDict:
                 if self.suDict[sunumStr]['dirty']:
-                    cmd = 'UPDATE ' + self.tableName + " SET starttime='" + self.suDict[sunumStr]['starttime'] + "', refcount=" + self.suDict[sunumStr]['refcount'] + ", status='" + self.suDict[sunumStr]['status'] + "', errmsg='" + self.suDict[sunumStr]['errmsg'] + "' WHERE sunum=" + sunumStr
+                    if self.suDict[sunumStr]['new'] == True:
+                        cmd = 'INSERT INTO ' + self.tableName + '(sunum, starttime, refcount, status, errmsg) VALUES(' + sunumStr + ",'" + self.suDict[sunumStr]['starttime'].strftime('%Y-%m-%d %T') + "', " + str(self.suDict[sunumStr]['refcount']) + ", '" + self.suDict[sunumStr]['status'] + "', '" + self.suDict[sunumStr]['errmsg'] + "')"
+                    else:
+                        cmd = 'UPDATE ' + self.tableName + " SET starttime='" + self.suDict[sunumStr]['starttime'].strftime('%Y-%m-%d %T') + "', refcount=" + str(self.suDict[sunumStr]['refcount']) + ", status='" + self.suDict[sunumStr]['status'] + "', errmsg='" + self.suDict[sunumStr]['errmsg'] + "' WHERE sunum=" + sunumStr
+                    
+                    self.log.write(['Updating SU db table: ' + cmd])
                     
                     try:
                         cursor.execute(cmd)
@@ -154,7 +202,7 @@ class SuTable:
                         raise Exception('sutableWrite', exc.diag.message_primary)
                     
                     self.suDict[sunumStr]['dirty'] = False
-
+                    self.suDict[sunumStr]['new'] = False
 
     # This will NOT commit database changes. You are generally going to want to do this as part of a larger db change. Commit the changes
     # after all changes that form the atomic set of changes.
@@ -169,7 +217,7 @@ class SuTable:
 
                 del self.suDict[sunumStr]
             
-            sunumLstStr = ','.join(sunums)
+            sunumLstStr = ','.join([str(asunum) for asunum in sunums])
         
             cmd = 'DELETE FROM ' + self.tableName + ' WHERE sunum=' + sunumLstStr
         
@@ -196,14 +244,17 @@ class SuTable:
                 raise Exception('knownSunum', 'SU-table record already exists for SU ' + sunumStr + '.')
         
             self.suDict[sunumStr] = {}
-            self.suDict[sunumsStr]['sunum'] = sunum
-            self.suDict[sunumStr]['starttime'] = datetime.now().strftime('%Y-%m-%d %T')
+            self.suDict[sunumStr]['sunum'] = asunum
+            self.suDict[sunumStr]['starttime'] = datetime.now()
             self.suDict[sunumStr]['refcount'] = 1
             self.suDict[sunumStr]['status'] = 'P'
             self.suDict[sunumStr]['errmsg'] = ''
 
             # Set dirty flag
             self.suDict[sunumStr]['dirty'] = True
+
+            # Set the new flag (so that the record will be INSERTed into the SU database table instead of UPDATEd).
+            self.suDict[sunumStr]['new'] = True
 
     def setStatus(self, sunums, code, msg=None):
         for asunum in sunums:
@@ -228,18 +279,29 @@ class SuTable:
             if not sunumStr in self.suDict or not self.suDict[sunumStr]:
                 raise Exception('unknownSunum', 'No SU-table record exists for SU ' + sunumStr + '.')
             
-            self.suDict[sunumStr]['starttime'] = starttime.strftime('%Y-%m-%d %T')
+            self.suDict[sunumStr]['starttime'] = starttime
             
             # Set dirty flag
             self.suDict[sunumStr]['dirty'] = True
+    def incrementRefcount(self, sunums):
+        for asunum in sunums:
+            sunumStr = str(sunum)
+            
+            if not sunumStr in self.suDict or not self.suDict[sunumStr]:
+                raise Exception('unknownSunum', 'No SU-table record exists for SU ' + sunumStr + '.')
+            
+            self.suDict[sunumStr]['refcount'] += 1
 
     def decrementRefcount(self, sunums):
         toDel = []
         for asunum in sunums:
-            sunumStr = str(sunum)
+            sunumStr = str(asunum)
 
             if not sunumStr in self.suDict or not self.suDict[sunumStr]:
                 raise Exception('unknownSunum', 'No SU-table record exists for SU ' + sunumStr + '.')
+            
+            if self.suDict[sunumStr]['refcount'] == 0:
+                raise Exception('noReference', 'Cannot decrement refcount on unreferenced SU record ' + sunumStr + '.')
                     
             self.suDict[sunumStr]['refcount'] -= 1
             if self.suDict[sunumStr]['refcount'] == 0:
@@ -254,7 +316,7 @@ class SuTable:
             return self.suDict
         
         for asunum in sunums:
-            sunumStr = str(sunum)
+            sunumStr = str(asunum)
         
             if not sunumStr in self.suDict or not self.suDict[sunumStr]:
                 raise Exception('unknownSunum', 'No SU-table record exists for SU ' + sunumStr + '.')
@@ -279,6 +341,44 @@ class SuTable:
     def getTimeout(self):
         return self.timeOut
 
+    @classmethod
+    def offline(cls, sunums, binPath, log):
+        # There is not an efficient way to check for the SU being on/offline. But we can use jsoc_fetch (vs. show_info - jsoc_fetch returns
+        # JSON, which is handy). And it also can be called in a mode where it does not trigger a SUM_get() - it uses SUM_infoAns():
+        #   op=exp_su requestid=NOASYNCREQUEST sunum=123456789 format=json formatvar=dataobj method=url_quick protocol=as-is
+        cmd = [binPath + '/jsoc_fetch', 'op=exp_su', 'requestid=NOASYNCREQUEST', 'format=json', 'formatvar=dataobj', 'method=url_quick', 'protocol=as-is', 'sunum=' + ','.join([str(asunum) for asunum in sunums])]
+        log.write(['Checking online disposition: ' + ' '.join(cmd)])
+        
+        try:
+            resp = check_output(cmd)
+            output = resp.decode('utf-8')
+            lines = output.split('\n')
+        
+        except ValueError:
+            raise Exception('findOffline', "Unable to run command: '" + ' '.join(cmd) + "'.")
+        except CalledProcessError as exc:
+            raise Exception('findOffline', "Command '" + ' '.join(cmd) + "' returned non-zero status code " + str(exc.returncode))
+        
+        jsonRsp = []
+        offline = []
+        
+        # output is not strictly JSON. There is an HTTP header we need to remove.
+        regExp = re.compile(r'Content-type')
+        for line in lines:
+            if len(line) == 0:
+                continue
+            match = regExp.match(line)
+            if match:
+                continue
+            jsonRsp.append(line)
+        
+        jsonObj = json.loads(''.join(jsonRsp))
+        for sunum in jsonObj['data']:
+            if jsonObj['data'][sunum]['sustatus'] == 'N':
+                offline.append(sunum)
+        
+        return offline
+
 class ReqTable:
     cursor = None
     
@@ -302,13 +402,13 @@ class ReqTable:
             raise Exception('reqtableRead', exc.diag.message_primary, cmd)
         
         for record in cursor:
-            requestidStr = record[0]
-            
+            requestidStr = str(record[0])
+
             self.reqDict[requestidStr] = {}
             self.reqDict[requestidStr]['requestid'] = record[0]
-            # PG timestamps (with no time zone) return time strings like "1997-12-17 07:37:16"
-            self.reqDict[requestidStr]['starttime'] = datetime.strptime(record[1], '%Y-%m-%d %T')
-            self.reqDict[requestidStr]['sunums'] = record[2].split(',')
+            # Whoa! pyscopg returns timestamps as datetime.datetime objects already!
+            self.reqDict[requestidStr]['starttime'] = record[1]
+            self.reqDict[requestidStr]['sunums'] = [int(asunum) for asunum in record[2].split(',')]
             self.reqDict[requestidStr]['status'] = record[3]
             self.reqDict[requestidStr]['errmsg'] = record[4]
             self.reqDict[requestidStr]['dirty'] = False
@@ -358,7 +458,7 @@ class ReqTable:
                     raise Exception('unknownRequestid', 'No request-table record exists for ID ' + requestidStr + '.')
                 
                 if self.reqDict[requestidStr]['dirty']:
-                    cmd = 'UPDATE ' + self.tableName + " SET starttime='" + self.reqDict[requestidStr]['starttime'] + "', sunums=" + ','.join(self.reqDict[requestidStr]['sunums']) + ", status='" + self.reqDict[requestidStr]['status'] + "', errmsg='" + self.reqDict[requestidStr]['errmsg'] + "' WHERE requestid=" + requestidStr
+                    cmd = 'UPDATE ' + self.tableName + " SET starttime='" + self.reqDict[requestidStr]['starttime'].strftime('%Y-%m-%d %T') + "', sunums=" + ','.join(self.reqDict[requestidStr]['sunums']) + ", status='" + self.reqDict[requestidStr]['status'] + "', errmsg='" + self.reqDict[requestidStr]['errmsg'] + "' WHERE requestid=" + requestidStr
                     
                     try:
                         cursor.execute(cmd)
@@ -371,7 +471,7 @@ class ReqTable:
             # Update all dirty records.
             for requestidStr in self.reqDict:
                 if self.reqDict[requestidStr]['dirty']:
-                    cmd = 'UPDATE ' + self.tableName + " SET starttime='" + self.reqDict[requestidStr]['starttime'] + "', sunums=" + ','.join(self.reqDict[requestidStr]['sunums']) + ", status='" + self.reqDict[requestidStr]['status'] + "', errmsg='" + self.reqDict[requestidStr]['errmsg'] + "' WHERE requestid=" + requestidStr
+                    cmd = 'UPDATE ' + self.tableName + " SET starttime='" + self.reqDict[requestidStr]['starttime'].strftime('%Y-%m-%d %T') + "', sunums='" + ','.join([str(asunum) for asunum in self.reqDict[requestidStr]['sunums']]) + "', status='" + self.reqDict[requestidStr]['status'] + "', errmsg='" + self.reqDict[requestidStr]['errmsg'] + "' WHERE requestid='" + requestidStr + "'"
                     
                     try:
                         cursor.execute(cmd)
@@ -380,7 +480,6 @@ class ReqTable:
                         raise Exception('reqtableWrite', exc.diag.message_primary)
                     
                     self.reqDict[requestidStr]['dirty'] = False
-            
 
     # This will NOT commit database changes. You are generally going to want to do this as part of a larger db change. Commit the changes
     # after all changes that form the atomic set of changes.
@@ -406,7 +505,7 @@ class ReqTable:
         
     def setStatus(self, requestids, code, msg=None):
         for arequestid in requestids:
-            requestidStr = str(requestid)
+            requestidStr = str(arequestid)
         
             if not requestidStr in self.reqDict or not self.reqDict[requestidStr]:
                 raise Exception('unknownRequestid', 'No request-table record exists for ID ' + requestidStr + '.')
@@ -444,7 +543,7 @@ class ReqTable:
                 pendLst.append(self.reqDict[requestidStr])
     
         # Sort by start time. Sorts in place - and returns None.
-        pendLst.sort(key=lambda(dict): dict['starttime'])
+        pendLst.sort(key=lambda(dict): dict['starttime'].strftime('%Y-%m-%d %T'))
             
         return pendLst
     
@@ -456,7 +555,7 @@ class ReqTable:
                 newLst.append(self.reqDict[requestidStr])
         
         # Sort by start time. Sorts in place - and returns None.
-        newLst.sort(key=lambda(dict): dict['starttime'])
+        newLst.sort(key=lambda(dict): dict['starttime'].strftime('%Y-%m-%d %T'))
 
         return newLst
 
@@ -540,7 +639,6 @@ class Chunker(object):
             yield self.chunks[i]
             i += 1
 
-
 # Downloads a single SU. Ingests it into SUMs (SUMS allows to ingestion of a single SU at a time only.). Updates
 # the SU table status for that SU.
 class Downloader(threading.Thread):
@@ -549,7 +647,7 @@ class Downloader(threading.Thread):
     eventMaxThreads = threading.Event() # Event fired when the number of threads decreases.
     lock = threading.Lock() # Guard tList.
 
-    def __init__(self, sunum, path, sus, scpUser, scpHost, scpPort, binPath):
+    def __init__(self, sunum, path, sus, scpUser, scpHost, scpPort, binPath, log):
         threading.Thread.__init__(self)
         self.sunum = sunum
         self.path = path
@@ -558,8 +656,11 @@ class Downloader(threading.Thread):
         self.scpHost = scpHost
         self.scpPort = scpPort
         self.binPath = binPath
+        self.log = log
 
     def run(self):
+        log.write(['Downloading SU [scp -r -P ' + self.scpPort + ' ' + self.scpUser + '@' + self.scpHost + ':' + self.path + '/*' + '/tmp/.su' + str(self.sunum) + '.'])
+        
         # Download the SU.
         try:
             # Don't forget to make the temporary directory first.
@@ -569,26 +670,27 @@ class Downloader(threading.Thread):
             except CalledProcessError as exc:
                 raise Exception('scp', "Command '" + ' '.join(cmdList) + "' returned non-zero status code " + str(exc.returncode))
 
-            # Ingest the SUs into SUMS. size matters not...look at me...judge me by my size, do you?
-            cmdList = [binPath + '/vso_sum_alloc', 'sunum=' + str(self.sunum), 'size=1024']
-            try:
-                resp = check_output(cmdList)
-                output = resp.decode('utf-8')
-            except CalledProcessError as exc:
-                raise Exception('vso_sum_alloc', "Command '" + ' '.join(cmdList) + "' returned non-zero status code " + str(exc.returncode) + '.')
-            
-            regExp = re.compile(r'.+sudir:(\S+)')
-            matchObj = regExp.match(output)
-            if matchObj is not None:
-                sudir = matchObj.group(1)
-            else:
-                raise Exception('vso_sum_alloc', "Command '" + ' '.join(cmdList) + "' printed unexcepted output " + output + '.')
-            
-            cmdList = ['mv', '/tmp/.su' + str(self.sunum) + '/*', sudir]
-            try:
-                check_call(cmdList)
-            except CalledProcessError as exc:
-                raise Exception('mv', "Command '" + ' '.join(cmdList) + "' returned non-zero status code " + str(exc.returncode))
+            if False:
+                # Ingest the SUs into SUMS. size matters not...look at me...judge me by my size, do you?
+                cmdList = [binPath + '/vso_sum_alloc', 'sunum=' + str(self.sunum), 'size=1024']
+                try:
+                    resp = check_output(cmdList)
+                    output = resp.decode('utf-8')
+                except CalledProcessError as exc:
+                    raise Exception('vso_sum_alloc', "Command '" + ' '.join(cmdList) + "' returned non-zero status code " + str(exc.returncode) + '.')
+                
+                regExp = re.compile(r'.+sudir:(\S+)')
+                matchObj = regExp.match(output)
+                if matchObj is not None:
+                    sudir = matchObj.group(1)
+                else:
+                    raise Exception('vso_sum_alloc', "Command '" + ' '.join(cmdList) + "' printed unexcepted output " + output + '.')
+                
+                cmdList = ['mv', '/tmp/.su' + str(self.sunum) + '/*', sudir]
+                try:
+                    check_call(cmdList)
+                except CalledProcessError as exc:
+                    raise Exception('mv', "Command '" + ' '.join(cmdList) + "' returned non-zero status code " + str(exc.returncode))
             
             # Remove temporary directory.
             
@@ -596,7 +698,7 @@ class Downloader(threading.Thread):
             # the state may not be 'P' due to some problem cropping up in the meantime. Only set to 'C' if the state is 'P'.
             suTable.acquireLock()
             if suTable.get(self.sunum)['status'] == 'P':
-                suTable.setStatus(self.sunum, 'C', None)
+                suTable.setStatus([self.sunum], 'C', None)
                 # Flush the change to disk.
                 suTable.updateDB()
             suTable.releaseLock()
@@ -622,7 +724,7 @@ class Downloader(threading.Thread):
                 raise
 
             if type == 'scp' or type == 'vso_sum_alloc' or type == 'mv':
-                sus.setStatus(asunum, 'E', 'Error downloading storage unit ' + str(self.sunum) + ': ' + msg + '.')
+                sus.setStatus(self.sunum, 'E', 'Error downloading storage unit ' + str(self.sunum) + ': ' + msg + '.')
     
     @staticmethod
     def newThread(sunum, path, sus, scpUser, scpHost, scpPort, binPath):
@@ -646,7 +748,7 @@ def getArgs():
     istat = False
     optD = {}
     
-    parser = CmdlParser(usage='%(prog)s [ -h ] sutable=<storage unit table> reqtable=<request table> [ --dbname=<db name> ] [ --dbhost=<db host> ] [ --dbport=<db port> ] [ --binpath=<executable path> ]')
+    parser = CmdlParser(usage='%(prog)s [ -h ] [ sutable=<storage unit table> ] [ reqtable=<request table> ] [ --dbname=<db name> ] [ --dbhost=<db host> ] [ --dbport=<db port> ] [ --binpath=<executable path> ] [ --logfile=<base log-file name> ]')
     
     # Optional parameters - no default argument is provided, so the default is None, which will trigger the use of what exists in the configuration file
     # (which is drmsparams.py).
@@ -656,8 +758,9 @@ def getArgs():
     parser.add_argument('-U', '--dbuser', help='The name of the database user account.', metavar='<db user>', dest='dbuser')
     parser.add_argument('-H', '--dbhost', help='The host machine of the database that contains the series table from which records are to be deleted.', metavar='<db host machine>', dest='dbhost')
     parser.add_argument('-P', '--dbport', help='The port on the host machine that is accepting connections for the database that contains the series table from which records are to be deleted.', metavar='<db host port>', dest='dbport')
-    parser.add_argument('-B', '--binpath', help='The path to executables run by this daemon (e.g., vso_sum_alloc, vso_sum_put).', metavar='<executable path>', dest='binpath')
-  
+    parser.add_argument('-b', '--binpath', help='The path to executables run by this daemon (e.g., vso_sum_alloc, vso_sum_put).', metavar='<executable path>', dest='binpath')
+    parser.add_argument('-l', '--logfile', help='The base file name to use for logs.', metavar='<base file name>', dest='logfile')
+    
     try:
         args = parser.parse_args()
           
@@ -697,6 +800,8 @@ def getArgs():
             optD['dltimeout'] = int(getOption(None, drmsParams.get('RS_DLTIMEOUT')))
             optD['reqtimeout'] = int(getOption(None, drmsParams.get('RS_REQTIMEOUT')))
             optD['maxthreads'] = int(getOption(None, drmsParams.get('RS_MAXTHREADS')))
+            optD['logdir'] = getOption(None, drmsParams.get('RS_LOGDIR'))
+            optD['logfile'] = getOption(args.logfile, LOG_FILE_BASE_NAME)
     
         except Exception as exc:
             if len(exc.args) != 2:
@@ -855,6 +960,7 @@ if __name__ == "__main__":
         pid = os.getpid()
             
         with DrmsLock(optD['lockfile'], str(pid)) as lock:
+            rslog = Log(optD['logdir'], optD['logfile'])
 
             # Connect to the database
             try:
@@ -875,8 +981,8 @@ if __name__ == "__main__":
                         # been lost, and we cannot trust that the downloads completed successfully (although they might have).
                         # A fancier implementation would be some kind of download manager that can recover partially downloaded
                         # storage units, but who has the time :)
-                        sus = SuTable(suTable, datetime.timedelta(minutes=optD['dltimeout']))
-                        requests = ReqTable(reqTable, datetime.timedelta(minutes=optD['reqtimeout']))
+                        sus = SuTable(suTable, timedelta(minutes=optD['dltimeout']), rslog)
+                        requests = ReqTable(reqTable, timedelta(minutes=optD['reqtimeout']))
                         sites = SiteTable()
                         
                         SuTable.setCursor(cursor)
@@ -920,8 +1026,9 @@ if __name__ == "__main__":
                         shutDown = False
                         def terminator(*args):
                             global shutDown
+                            global rslog
                             
-                            print('Termination signal handler called. Saving the db-table caches.')
+                            rslog.write(['Termination signal handler called. Saving the db-table caches.'])
                             shutDown = True
 
                         signal.signal(signal.SIGINT, terminator)
@@ -937,11 +1044,14 @@ if __name__ == "__main__":
                             # table.
                             susPending = sus.getPending()
                             for asu in susPending:
-                                timeNow = datetime.datetime.now()
+                                timeNow = datetime.now()
                                 if timenow > asu['starttime'] + sus.getTimeout():
-                                    sus.setStatus(asu['sunum'], 'E', 'Download timed-out.')
+                                    rslog.write('Download of SUNUM ' + str(asu['sunum']) + ' timed-out.')
+                                    sus.setStatus([asu['sunum']], 'E', 'Download timed-out.')
                         
+                            cursor.execute('BEGIN')
                             sus.updateDB()
+                            cursor.execute('END')
                         
                             # Ignore SUs in the other states (C or E). These will be checked in other parts of the code.
                             
@@ -954,19 +1064,21 @@ if __name__ == "__main__":
                                 for asunum in sunums:
                                     if done == False and reqError == True:
                                         break
-                                    asu = sus.get(asunum)
-                                    if asu['status'] == 'P':
+                                    asu = sus.get([asunum])
+                                    if asu[0]['status'] == 'P':
                                         done = False
-                                    elif asu['status'] == 'E':
-                                        reqErr = True
+                                    elif asu[0]['status'] == 'E':
+                                        reqError = True
                                 
                                 if done:
                                     # There are no pending downloads for this request. Set this request's status to 'C' or 'E', and decrement
                                     # refcount on each SU.
-                                    if reqErr:
-                                        requests.setStatus(arequest['requestid'], 'E', 'Error downloading at least one SU.')
+                                    if reqError:
+                                        rslog.write(['Request number ' + str(arequest['requestid']) + ' errored-out.'])
+                                        requests.setStatus([arequest['requestid']], 'E', 'Error downloading at least one SU.')
                                     else:
-                                        requests.setStatus(arequest['requestid'], 'C')
+                                        rslog.write(['Request number ' + str(arequest['requestid']) + ' completed successfully.'])
+                                        requests.setStatus([arequest['requestid']], 'C')
 
                                     # These next two calls can modify the db state! Put them in a transaction so that they form an atomic
                                     # operation. We do not want an interruption to cause the first to happen, but not the second.
@@ -983,15 +1095,25 @@ if __name__ == "__main__":
                             
                             reqsNew = requests.getNew()
                             for arequest in reqsNew:
+                                timeNow = datetime.now(arequest['starttime'].tzinfo)
+                                if timeNow > arequest['starttime'] + requests.getTimeout():
+                                    rslog.write(['Request number ' + str(arequest['requestid']) + ' timed-out.'])
+                                    requests.setStatus([arequest['requestid']], 'E', 'Request timed-out.')
+                                    cursor.execute('BEGIN')
+                                    requests.updateDB()
+                                    cursor.execute('END')
+                                    continue
+                                
                                 sunums = arequest['sunums']
+                                rslog.write(['Found a new download request, id ' + str(arequest['requestid']) + ' for SUNUMs ' + ','.join([str(asunum) for asunum in sunums]) + '.'])
                                 
                                 # Get all SU records for which a download is already in progress.
                                 unknown = []
                                 known = []
                                 for asunum in sunums:
                                     try:
-                                        asu = sus.get((asunum))
-                                    except Exception as esc:
+                                        asu = sus.get([asunum])
+                                    except Exception as exc:
                                         if len(exc.args) != 2:
                                             raise # Re-raise
                                             
@@ -1010,7 +1132,7 @@ if __name__ == "__main__":
                                 # sus object.
                                 sus.incrementRefcount(known)
                                 
-                                offlineSunums = SuTable.offline(unknown)
+                                offlineSunums = SuTable.offline(unknown, optD['binpath'], rslog)
                                 
                                 dlsToStart = []
                                 toComplete = []
@@ -1046,7 +1168,7 @@ if __name__ == "__main__":
                                 
                                 # The new request has been fully processed. Change its status from 'N' to 'P'.
                                 # This call modifies the requests object.
-                                requests.setStatus(arequest['requestid'], 'P')
+                                requests.setStatus([arequest['requestid']], 'P')
 
                                 # At this point, both the requests and sus object have been modified, but have not been flushed to disk.
                                 # Flush them, but do this inside a transaction so that the first does not happen without the second.
@@ -1067,7 +1189,7 @@ if __name__ == "__main__":
                             # End of main loop.
                         
                         # Save the db state when exiting.
-                        print('Remote-sums daemon is exiting. Saving database tables.')
+                        rslog.write(['Remote-sums daemon is exiting. Saving database tables.'])
                         cursor.execute('BEGIN')
                         sus.updateDB()
                         requests.updateDB()
@@ -1098,21 +1220,40 @@ if __name__ == "__main__":
         msg = exc.args[1]
         
         if etype == 'drmsLock':
-            print('Error locking file: ' + lockFile + '\n' + msg, file=sys.stderr)
+            rslog.write(['Error locking file: ' + lockFile + '\n' + msg])
             rv = RET_LOCK
         elif etype == 'sutableRead':
-            print('Unable to read from storage-unit table: ' + msg)
+            rslog.write(['Unable to read from storage-unit table: ' + msg])
             rv = RET_SUTABLE_READ
         elif etype == 'sutableWrite':
-            print('Unable to write to storage-unit table: ' + msg)
+            rslog.write(['Unable to write to storage-unit table: ' + msg])
             rv = RET_SUTABLE_WRITE
         elif etype == 'reqtableRead':
-            print('Unable to read from storage-unit-request table: ' + msg)
+            rslog.write(['Unable to read from storage-unit-request table: ' + msg])
             rv = RET_REQTABLE_READ
         elif etype == 'reqtableWrite':
-            print('Unable to write to storage-unit-request table: ' + msg)
+            rslog.write(['Unable to write to storage-unit-request table: ' + msg])
             rv = RET_REQTABLE_WRITE
+        elif etype == 'badLogfile':
+            rslog.write(['Cannot access log file: ' + msg])
+            rv = RET_LOGFILE
+        elif etype == 'badLogwrite':
+            rslog.write(['Cannot access log file: ' + msg])
+            rv = RET_LOGFILE
+        elif etype == 'findOffline':
+            rslog.write(['Cannot determine online disposition: ' + msg])
+            rv = RET_OFFLINE
+        elif etype == 'unknownRequestid':
+            rslog.write(['Oops! ' + msg])
+            rv = RET_UKNOWNREQUEST
+        elif etype == 'unknownSunum':
+            rslog.write(['Oops! ' + msg])
+            rv = RET_UKNOWNSU
+        elif etype == 'noReference':
+            rslog.write([msg])
+            rv = RET_UKNOWNSU
         else:
+            rslog.write(['Unhandled exception. Remote-sums daemon is exiting. Rolling back uncommitted database changes. '])
             raise # Re-raise
 
 sys.exit(rv)
