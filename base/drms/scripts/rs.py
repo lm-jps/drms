@@ -13,13 +13,13 @@
 # in the 'paths' array for each SU requested. In this case, rs.py returns a 'status' property of 'complete'. If at least
 # one SU requested is offline, then rs.py will request SUMS to asynchronously retrieve the requested SUs from tape and put
 # them online. In addition to rs.py returning a 'status' property of 'pending', it also returns a 'requestid' property to the caller
-# that contains a string that uniquely identifies the set of requested SUs. The caller must then periodically call rs.py
-# with a requestid argument that contains this request ID. Each call of rs.py will cause the script to check for
+# that contains a string that uniquely identifies the set of requested SUs. The caller must then periodically call rs.sh (which
+# (calls rs.py) with a requestid argument that contains this request ID. Each call of rs.py will cause the script to check for
 # the completion of the retrieval of the SUs. If the request is not complete, rs.py returns a 'status' property of 'pending'
 # and a 'requestid' with the same request ID provided in the request. If the request is complete, then rs.py returns
 # a 'status' property of 'complete' and it returns the 'paths' array as described above.
 #
-# A useable path will be returned in the 'paths' array for each requested SU that results in an online SU. If a
+# A useable path will be returned in the 'paths' array for each requested SU that results in an online SU. If
 # an invalid SUNUM is provided, then the second element of the 'paths' array will be null. If a valid SUNUM is
 # provided, but the SU is offline and not archived and cannot be retrieved, then the second element of the
 # 'paths' array element will be the empty string. If a null or empty string is returned, the caller should not
