@@ -717,33 +717,31 @@ class Downloader(threading.Thread):
             
             # Update SU table. Set SU-table record status to 'C'. Must first lock the SU table since we are modifying it. Also,
             # the state may not be 'P' due to some problem cropping up in the meantime. Only set to 'C' if the state is 'P'.
+            self.suTable.acquireLock()
             try:
-                self.suTable.acquireLock()
                 su = self.suTable.get([self.sunum])
                 if su[0]['status'] == 'P':
                     self.log.write(['Setting SU ' + str(self.sunum) + ' status to complete.'])
                     self.suTable.setStatus([self.sunum], 'C', None)
                     # Flush the change to disk.
                     self.suTable.updateDB()
-            except:
+            finally:
                 # Always release lock.
-                pass
-            
-            self.suTable.releaseLock()
+                self.suTable.releaseLock()
             
             # This thread is about to terminate.
             
             # We need to check the class tList variable to update it, so we need to acquire the lock.
             Downloader.lock.acquire()
-            
-            Downloader.tList.remove(self) # This thread is no longer one of the running threads.
-            if len(Downloader.tList) == Downloader.maxThreads - 1:
-                # Fire event so that main thread can add new SUs to the download queue.
-                Downloader.eventMaxThreads.set()
-                # Clear event so that main will block the next time it calls wait.
-                Downloader.eventMaxThreads.clear()
-            
-            Downloader.lock.release()
+            try:
+                Downloader.tList.remove(self) # This thread is no longer one of the running threads.
+                if len(Downloader.tList) == Downloader.maxThreads - 1:
+                    # Fire event so that main thread can add new SUs to the download queue.
+                    Downloader.eventMaxThreads.set()
+                    # Clear event so that main will block the next time it calls wait.
+                    Downloader.eventMaxThreads.clear()
+            finally:
+                Downloader.lock.release()
         except Exception as exc:
             if len(exc.args) == 2:
                 type = exc[0]
@@ -757,9 +755,11 @@ class Downloader(threading.Thread):
     @staticmethod
     def newThread(sunum, path, sus, scpUser, scpHost, scpPort, binPath, log):
         Downloader.lock.acquire()
-        dl = Downloader(sunum, path, sus, scpUser, scpHost, scpPort, binPath, log)
-        dl.tList.append(dl)
-        Downloader.lock.release()
+        try:
+            dl = Downloader(sunum, path, sus, scpUser, scpHost, scpPort, binPath, log)
+            dl.tList.append(dl)
+        finally:
+            Downloader.lock.release()
         dl.start()
 
     @classmethod
@@ -968,12 +968,16 @@ def processSUs(url, sunums, sus, binPath, log, insertRec=True):
     # Start a download for each SU. If we cannot start the download for any reason, then set the SU status to 'E'.
     for (asunum, path) in paths:
         Downloader.lock.acquire()
-        if len(Downloader.tList) >= Downloader.maxThreads:
-            Downloader.lock.release()
-            Downloader.eventMaxThreads.wait()
-        else:
+        doWait = False
+        try:
+            if len(Downloader.tList) >= Downloader.maxThreads:
+                doWait = True
+        finally:
             Downloader.lock.release()
         
+        if doWait:
+            Downloader.eventMaxThreads.wait()
+
         Downloader.newThread(asunum, path, sus, dlInfo['scpUser'], dlInfo['scpHost'], dlInfo['scpPort'], binPath, log)
 
         # Create a new SU-table record for each SU in the sus table (or update the starttime of an existing one).
@@ -1071,154 +1075,155 @@ if __name__ == "__main__":
                         while True and not shutDown:
                             # Always lock the SU table first and do all processing that requires this lock first.
                             sus.acquireLock()
-                        
-                            # For each P SU in the SU table, see if it is time to time-out. susPending are ordered by SUNUM.
-                            # I guess we could process more than one SuTable, but for now, let's assume there is only one such
-                            # table.
-                            susPending = sus.getPending()
-                            for asu in susPending:
-                                timeNow = datetime.now(asu['starttime'].tzinfo)
-                                if timeNow > asu['starttime'] + sus.getTimeout():
-                                    rslog.write('Download of SUNUM ' + str(asu['sunum']) + ' timed-out.')
-                                    sus.setStatus([asu['sunum']], 'E', 'Download timed-out.')
-                        
-                            cursor.execute('BEGIN')
-                            sus.updateDB()
-                            cursor.execute('END')
-                        
-                            # Ignore SUs in the other states (C or E). These will be checked in other parts of the code.
+                            try:
+                                # For each P SU in the SU table, see if it is time to time-out. susPending are ordered by SUNUM.
+                                # I guess we could process more than one SuTable, but for now, let's assume there is only one such
+                                # table.
+                                susPending = sus.getPending()
+                                for asu in susPending:
+                                    timeNow = datetime.now(asu['starttime'].tzinfo)
+                                    if timeNow > asu['starttime'] + sus.getTimeout():
+                                        rslog.write('Download of SUNUM ' + str(asu['sunum']) + ' timed-out.')
+                                        sus.setStatus([asu['sunum']], 'E', 'Download timed-out.')
                             
-                            # For each 'P' request in the request table, check to see if the requested downloads have completed yet.
-                            reqsPending = requests.getPending()
-                            for arequest in reqsPending:
-                                done = True
-                                reqError = False
-                                sunums = arequest['sunums']
-                                for asunum in sunums:
-                                    if done == False and reqError == True:
-                                        break
-                                    asu = sus.get([asunum])
-                                    if asu[0]['status'] == 'P':
-                                        done = False
-                                    elif asu[0]['status'] == 'E':
-                                        reqError = True
-                                
-                                if done:
-                                    # There are no pending downloads for this request. Set this request's status to 'C' or 'E', and decrement
-                                    # refcount on each SU.
-                                    if reqError:
-                                        rslog.write(['Request number ' + str(arequest['requestid']) + ' errored-out.'])
-                                        requests.setStatus([arequest['requestid']], 'E', 'Error downloading at least one SU.')
-                                    else:
-                                        rslog.write(['Request number ' + str(arequest['requestid']) + ' completed successfully.'])
-                                        requests.setStatus([arequest['requestid']], 'C')
-
-                                    # These next two calls can modify the db state! Put them in a transaction so that they form an atomic
-                                    # operation. We do not want an interruption to cause the first to happen, but not the second.
-                                    cursor.execute('BEGIN')
-                                    requests.updateDB()
-                                    sus.decrementRefcount(sunums)
-                                    cursor.execute('END')
-            
-                            # For each 'N' request in the request table, start a new set of downloads (if there is no download currently running -
-                            # i.e., no SU record) or increment the refcounts on the downloads (if there are downloads currently running - i.e.,
-                            # an SU record exists). But Before starting a new download, make sure that requested SU is not already online.
-                            # Due to race conditions, a request could have caused a download to occur needed by another request whose state is 'N'.
-                            requests.refresh() # Clients may have added requests to the queue.
-                            
-                            reqsNew = requests.getNew()
-                            for arequest in reqsNew:
-                                timeNow = datetime.now(arequest['starttime'].tzinfo)
-                                if timeNow > arequest['starttime'] + requests.getTimeout():
-                                    rslog.write(['Request number ' + str(arequest['requestid']) + ' timed-out.'])
-                                    requests.setStatus([arequest['requestid']], 'E', 'Request timed-out.')
-                                    cursor.execute('BEGIN')
-                                    requests.updateDB()
-                                    cursor.execute('END')
-                                    continue
-                                
-                                sunums = arequest['sunums']
-                                rslog.write(['Found a new download request, id ' + str(arequest['requestid']) + ' for SUNUMs ' + ','.join([str(asunum) for asunum in sunums]) + '.'])
-                                
-                                # Get all SU records for which a download is already in progress.
-                                unknown = []
-                                known = []
-                                for asunum in sunums:
-                                    try:
-                                        asu = sus.get([asunum])
-                                    except Exception as exc:
-                                        if len(exc.args) != 2:
-                                            raise # Re-raise
-                                            
-                                        etype = exc.args[0]
-                                        msg = exc.args[1]
-                
-                                        if etype == 'unknownSunum':
-                                            unknown.append(asunum)
-                                            continue
-                                            
-                                    raise # Re-raise
-                                    
-                                    known.append(asunum)
-                            
-                                # Increment the refcount on all SU records for the SUs being requested by the new request. This modifies the
-                                # sus object.
-                                sus.incrementRefcount(known)
-                                
-                                offlineSunums = SuTable.offline(unknown, optD['binpath'], rslog)
-                                
-                                # ART - TEST; force all unknown to offline so we can start downloads.
-                                offlineSunums = [asunum for asunum in unknown]
-                                
-                                dlsToStart = []
-                                toComplete = []
-                                for asunum in unknown:
-                                    if asunum in offlineSunums:
-                                        dlsToStart.append(asunum)
-                                    else:
-                                        toComplete.append(asunum)
-                                
-                                # Insert a new SU record for all unknown SUs that are already online. These calls modify the sus object.
-                                sus.insert(toComplete)
-                                sus.setStatus(toComplete, 'C')
-                                    
-                                # Start downloads for all unknown, offline SUs
-                                siteSunums = {}
-                                for asunum in dlsToStart:
-                                    siteURL = sites.getURL(asunum)
-                                    
-                                    if siteURL not in siteSunums:
-                                        siteSunums[siteURL] = []
-                                    
-                                    siteSunums[siteURL].append(asunum)
-                                    
-                                for url in siteSunums.iterkeys():
-                                    if len(siteSunums[url]) > 0:
-                                        # Chunk is a list of SUNUMs (up to 64 of them).
-                                        siteSunums[url].sort()
-                                        chunker = Chunker(siteSunums[url], 64)
-                                        for chunk in chunker:
-                                            # We want to always insert a record for each SU into the SU table. Do not provide the insertRec
-                                            # argument to do so. This call creates new SU-table records, so it modifies the sus object.
-                                            processSUs(url, chunk, sus, optD['binpath'], rslog)
-                                
-                                # The new request has been fully processed. Change its status from 'N' to 'P'.
-                                # This call modifies the requests object.
-                                requests.setStatus([arequest['requestid']], 'P')
-
-                                # At this point, both the requests and sus object have been modified, but have not been flushed to disk.
-                                # Flush them, but do this inside a transaction so that the first does not happen without the second.
                                 cursor.execute('BEGIN')
                                 sus.updateDB()
-                                requests.updateDB()
                                 cursor.execute('END')
-
-                            # Delete all request-table records whose state is 'D'. It doesn't matter if this operation gets interrupted. If
-                            # that happens, then these delete-pending records will be deleted the next time this code runs uninterrupted.
-                            reqsToDelete = requests.getDelete()
-                            requests.deleteDB(reqsToDelete)
                             
-                            sus.releaseLock()
+                                # Ignore SUs in the other states (C or E). These will be checked in other parts of the code.
+                                
+                                # For each 'P' request in the request table, check to see if the requested downloads have completed yet.
+                                reqsPending = requests.getPending()
+                                for arequest in reqsPending:
+                                    done = True
+                                    reqError = False
+                                    sunums = arequest['sunums']
+                                    for asunum in sunums:
+                                        if done == False and reqError == True:
+                                            break
+                                        asu = sus.get([asunum])
+                                        if asu[0]['status'] == 'P':
+                                            done = False
+                                        elif asu[0]['status'] == 'E':
+                                            reqError = True
+                                    
+                                    if done:
+                                        # There are no pending downloads for this request. Set this request's status to 'C' or 'E', and decrement
+                                        # refcount on each SU.
+                                        if reqError:
+                                            rslog.write(['Request number ' + str(arequest['requestid']) + ' errored-out.'])
+                                            requests.setStatus([arequest['requestid']], 'E', 'Error downloading at least one SU.')
+                                        else:
+                                            rslog.write(['Request number ' + str(arequest['requestid']) + ' completed successfully.'])
+                                            requests.setStatus([arequest['requestid']], 'C')
+
+                                        # These next two calls can modify the db state! Put them in a transaction so that they form an atomic
+                                        # operation. We do not want an interruption to cause the first to happen, but not the second.
+                                        cursor.execute('BEGIN')
+                                        requests.updateDB()
+                                        sus.decrementRefcount(sunums)
+                                        cursor.execute('END')
+                
+                                # For each 'N' request in the request table, start a new set of downloads (if there is no download currently running -
+                                # i.e., no SU record) or increment the refcounts on the downloads (if there are downloads currently running - i.e.,
+                                # an SU record exists). But Before starting a new download, make sure that requested SU is not already online.
+                                # Due to race conditions, a request could have caused a download to occur needed by another request whose state is 'N'.
+                                requests.refresh() # Clients may have added requests to the queue.
+                                
+                                reqsNew = requests.getNew()
+                                for arequest in reqsNew:
+                                    timeNow = datetime.now(arequest['starttime'].tzinfo)
+                                    if timeNow > arequest['starttime'] + requests.getTimeout():
+                                        rslog.write(['Request number ' + str(arequest['requestid']) + ' timed-out.'])
+                                        requests.setStatus([arequest['requestid']], 'E', 'Request timed-out.')
+                                        cursor.execute('BEGIN')
+                                        requests.updateDB()
+                                        cursor.execute('END')
+                                        continue
+                                    
+                                    sunums = arequest['sunums']
+                                    rslog.write(['Found a new download request, id ' + str(arequest['requestid']) + ' for SUNUMs ' + ','.join([str(asunum) for asunum in sunums]) + '.'])
+                                    
+                                    # Get all SU records for which a download is already in progress.
+                                    unknown = []
+                                    known = []
+                                    for asunum in sunums:
+                                        try:
+                                            asu = sus.get([asunum])
+                                        except Exception as exc:
+                                            if len(exc.args) != 2:
+                                                raise # Re-raise
+                                                
+                                            etype = exc.args[0]
+                                            msg = exc.args[1]
+                    
+                                            if etype == 'unknownSunum':
+                                                unknown.append(asunum)
+                                                continue
+                                                
+                                        raise # Re-raise
+                                        
+                                        known.append(asunum)
+                                
+                                    # Increment the refcount on all SU records for the SUs being requested by the new request. This modifies the
+                                    # sus object.
+                                    sus.incrementRefcount(known)
+                                    
+                                    offlineSunums = SuTable.offline(unknown, optD['binpath'], rslog)
+                                    
+                                    # ART - TEST; force all unknown to offline so we can start downloads.
+                                    offlineSunums = [asunum for asunum in unknown]
+                                    
+                                    dlsToStart = []
+                                    toComplete = []
+                                    for asunum in unknown:
+                                        if asunum in offlineSunums:
+                                            dlsToStart.append(asunum)
+                                        else:
+                                            toComplete.append(asunum)
+                                    
+                                    # Insert a new SU record for all unknown SUs that are already online. These calls modify the sus object.
+                                    sus.insert(toComplete)
+                                    sus.setStatus(toComplete, 'C')
+                                        
+                                    # Start downloads for all unknown, offline SUs
+                                    siteSunums = {}
+                                    for asunum in dlsToStart:
+                                        siteURL = sites.getURL(asunum)
+                                        
+                                        if siteURL not in siteSunums:
+                                            siteSunums[siteURL] = []
+                                        
+                                        siteSunums[siteURL].append(asunum)
+                                        
+                                    for url in siteSunums.iterkeys():
+                                        if len(siteSunums[url]) > 0:
+                                            # Chunk is a list of SUNUMs (up to 64 of them).
+                                            siteSunums[url].sort()
+                                            chunker = Chunker(siteSunums[url], 64)
+                                            for chunk in chunker:
+                                                # We want to always insert a record for each SU into the SU table. Do not provide the insertRec
+                                                # argument to do so. This call creates new SU-table records, so it modifies the sus object.
+                                                processSUs(url, chunk, sus, optD['binpath'], rslog)
+                                    
+                                    # The new request has been fully processed. Change its status from 'N' to 'P'.
+                                    # This call modifies the requests object.
+                                    requests.setStatus([arequest['requestid']], 'P')
+
+                                    # At this point, both the requests and sus object have been modified, but have not been flushed to disk.
+                                    # Flush them, but do this inside a transaction so that the first does not happen without the second.
+                                    cursor.execute('BEGIN')
+                                    sus.updateDB()
+                                    requests.updateDB()
+                                    cursor.execute('END')
+
+                                # Delete all request-table records whose state is 'D'. It doesn't matter if this operation gets interrupted. If
+                                # that happens, then these delete-pending records will be deleted the next time this code runs uninterrupted.
+                                reqsToDelete = requests.getDelete()
+                                requests.deleteDB(reqsToDelete)
+                            finally:
+                                # Always release the lock, even if an unhandled exception crops up.
+                                sus.releaseLock()
                             
                             # Must poll for new requests to appear in requests table.
                             time.sleep(1)
