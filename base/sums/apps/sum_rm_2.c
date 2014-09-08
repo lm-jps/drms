@@ -313,6 +313,8 @@ int stat_storage()
         if(max_free_set_current[i] < max_free_set_need[i]) { //del some stuff
           updated = 1;
           df_del = max_free_set_need[i] - max_free_set_current[i];
+          // Always try to delete at least 1% of total space
+          if (df_del < 0.01 * df_total) df_del = 0.01 * df_total;
           printk("%s Attempt to del %e bytes\n", pptr->name, df_del);
           DS_RmDoX(pptr->name, df_del); 
         }
@@ -511,14 +513,15 @@ void setup()
       signal(SIGTERM, sighandler);
   signal(SIGUSR1, &usr1_sig);   //handle a signal 16 sent by sum_rm_stop
 
-  /* if another "sum_rm DB" is running, abort */
+/****************Elim 11Aug2014 by jim********************************
+  // if another "sum_rm DB" is running, abort
   sprintf(lfile, "/tmp/sum_rm.%d.log", pid);
   sprintf(target, " sum_rm %s", dbname);
-/* !!!TEMP********/
+// !!!TEMP
   sprintf(gfile, "/tmp/cmdgrep.%d.log", pid);
   sprintf(cmd, "ps -ef | grep \"%s\" 1> %s", target, gfile);
   system(cmd);
-/****END TMP *****/
+//!!END TMP
   sprintf(cmd, "cat %s | wc -l 1> %s", gfile, lfile);
   write_log("cmd: %s\n", cmd);
   if(system(cmd)) {
@@ -529,14 +532,15 @@ void setup()
     write_log("sum_rm: Can't open cmd log file %s\n", lfile);
     exit(1);
   }
-  while(fgets(line, 128, fplog)) {       /* get ps lines */
+  while(fgets(line, 128, fplog)) {       // get ps lines
      i = atoi(line);
-     if(i > 3)	{		/* count the sh and grep cmd too */
+     if(i > 3)	{		// count the sh and grep cmd too
        write_log("Can't run more than 1 sum_rm for db=%s\n", dbname);
        exit(1);
      }
   }
   fclose(fplog);
+******************************************************************/
 
 #ifdef NETDRMS_BUILD
   /* Write out, to a temp file, the parent PID and current-process PID so that the sums_procck.py script

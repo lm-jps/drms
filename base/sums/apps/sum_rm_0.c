@@ -91,6 +91,7 @@ struct tm *t_ptr;
 char datestr[32];
 char *dptr;
 int soi_errno = NO_ERROR;
+int usr1_sig_flag = 0;
 int logvers = 0;
 
 //indexes into ptab for this sum_rm_n
@@ -160,21 +161,32 @@ void sighandler(sig)
       signal(SIGALRM, sighandler);
 }
 
+/* User signal 1 is sent by user production calling a sum_rm_stop.
+*/
+void usr1_sig(int sig)
+{
+  write_log("%s usr1_sig received by sum_rm_0\n", datestring());
+  write_log("sum_rm_0 will exit at its next opportunity\n");
+  usr1_sig_flag = 1;
+  if(!active) {
+      write_log("%s sum_rm_0 exit from usr1_sig\n", datestring());
+      exit(0);
+  }
+}
+
 /* Called when get a SIGALRM every sleep_sec seconds.
 */
 void alrm_sig(int sig)
 {
   FILE *tstfp;
   char cmd[MAX_STR];
-    
-    /* Careful - if norunflg initializes to something other than 0, then sum_rm will never clean any partitions. 
-     * It must be the case that the compiler initializes this to 0 (but if the compiler ever changes...). We
-     * should probably intialize this to 0.
-     *   -ART
-     */
   int norunflg, update;
   double bytesdeleted, availstore;
 
+  if(usr1_sig_flag) {
+    write_log("%s sum_rm_0 exit\n", datestring());
+    exit(0);
+  }
   if((tstfp=fopen(NEWLOG_FILE, "r"))) {	//close current log & start new one
     write_log("sum_rm_0: Close this log %d\n", logvers);
     fclose(tstfp);
@@ -242,6 +254,10 @@ int stat_storage()
   //for(i=0; i<11; i++) {		//for sum_rm_0 do 1st 11 partitions
 
   for(j=0; j<MAX_PART-1; j++) {	//for sum_rm_0 partitions
+    if(usr1_sig_flag) {
+      write_log("%s sum_rm_0 exit from usr1_sig\n", datestring());
+      exit(0);
+    }
     i = ixptab[j];		//index into ptab
     if(i == -1) break;
     pptr=(PART *)&ptab[i];
@@ -299,6 +315,8 @@ int stat_storage()
         if(max_free_set_current[i] < max_free_set_need[i]) { //del some stuff
           updated = 1;
           df_del = max_free_set_need[i] - max_free_set_current[i];
+	  // Always try to delete at least 1% of total space
+	  if (df_del < 0.01 * df_total) df_del = 0.01 * df_total;
           printk("%s Attempt to del %e bytes\n", pptr->name, df_del);
           DS_RmDoX(pptr->name, df_del); 
         }
@@ -495,15 +513,17 @@ void setup()
       signal(SIGINT, sighandler);
   if (signal(SIGTERM, SIG_IGN) != SIG_IGN)
       signal(SIGTERM, sighandler);
+  signal(SIGUSR1, &usr1_sig);   //handle a signal 16 sent by sum_rm_stop
 
-  /* if another "sum_rm DB" is running, abort */
+/****************Elim 11Aug2014 by jim********************************
+  // if another "sum_rm DB" is running, abort
   sprintf(lfile, "/tmp/sum_rm.%d.log", pid);
   sprintf(target, " sum_rm %s", dbname);
-/* !!!TEMP********/
+// !!!TEMP
   sprintf(gfile, "/tmp/cmdgrep.%d.log", pid);
   sprintf(cmd, "ps -ef | grep \"%s\" 1> %s", target, gfile);
   system(cmd);
-/****END TMP *****/
+//!!END TMP
   sprintf(cmd, "cat %s | wc -l 1> %s", gfile, lfile);
   write_log("cmd: %s\n", cmd);
   if(system(cmd)) {
@@ -514,19 +534,20 @@ void setup()
     write_log("sum_rm: Can't open cmd log file %s\n", lfile);
     exit(1);
   }
-  while(fgets(line, 128, fplog)) {       /* get ps lines */
+  while(fgets(line, 128, fplog)) {       // get ps lines
      i = atoi(line);
-     if(i > 3)	{		/* count the sh and grep cmd too */
+     if(i > 3)	{		// count the sh and grep cmd too
        write_log("Can't run more than 1 sum_rm for db=%s\n", dbname);
        exit(1);
      }
   }
   fclose(fplog);
+******************************************************************/
 
 #ifdef NETDRMS_BUILD
   /* Write out, to a temp file, the parent PID and current-process PID so that the sums_procck.py script
-   * can check for a missing sum_rm process. This actually would be ignored by the JSOC build, but to be safe, we just won't
-   * do this, except for NetDRMS builds*/
+ *    * can check for a missing sum_rm process. This actually would be ignored by the JSOC build, but to be safe, we just won't
+ *       * do this, except for NetDRMS builds*/
   pid_t parent = getppid();
   pid_t child = getpid();
   char pidSupp[PATH_MAX];
