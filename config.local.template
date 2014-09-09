@@ -264,6 +264,15 @@ RS_MAXTHREADS                         32
 # The path to executables run by the remote-sums system.
 RS_BINPATH                            /home/jsoc/cvs/Development/JSOC/bin/linux_x86_64
 
+# The file that contains a list of internal series that are accessible to external users.
+WL_FILE                               /web/jsoc/htdocs/whitelist.txt
+
+# The database table that is used as a cache for selecting database information.
+WL_DBTABLE                            drms.whitelist
+
+# The database table that contains a list of all DRMS series.
+ALLSERIES                             drms.allseries
+
 ###############################
 
 __MAKE__

@@ -57,3 +57,6 @@ RS_DLTIMEOUT               a:RS_DLTIMEOUT
 RS_REQTIMEOUT              a:RS_DLTIMEOUT
 RS_MAXTHREADS              a:RS_MAXTHREADS
 RS_BINPATH                 q:RS_BINPATH
+WL_FILE                    q:WL_FILE
+WL_DBTABLE                 q:WL_DBTABLE
+ALLSERIES                  q:ALLSERIES
