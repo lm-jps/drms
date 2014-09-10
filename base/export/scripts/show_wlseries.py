@@ -1,7 +1,9 @@
-#!/home/jsoc/bin/linux_x86_64/activepython
+#!/usr/bin/env python
 
 # Displays a list of all series in the database specified by the dbhost argument. If the host is not our internal host, then
 # this script will also list the white-listed series in the internal host.
+
+from __future__ import print_function
 
 import sys
 import os.path
@@ -11,61 +13,46 @@ import re
 import json
 import cgi
 import psycopg2
+sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../include'))
+from drmsparams import DRMSParams
+sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../base/libs/py'))
+from drmsCmdl import CmdlParser
 
-# Debug flag
+
+# Debug flag.
 DEBUG_CGI = False
 
-# Return codes
+# Return codes for cmd-line run.
 RET_SUCCESS = 0
-RET_INVALIDARG = 1
-RET_DBCONNECT = 2
+RET_BADARGS = 1
+RET_DRMSPARAMS = 2
+RET_BADFILTER = 3
+RET_DBCONNECT = 4
+RET_UNKNOWNRUNTYPE = 5
+RET_SQL = 6
+RET_WHITELIST = 7
 
 def getUsage():
-    return 'show_wlseries.py intdsn=<internal-db dsn> [ extdsn=<external-db dsn> wltab=<white-list table> ] [ filter=<series name filter> ]\n\n  (where dsn=dbname:<db name>;dbhost=<hostname>;dbport=<port number>[;dbuser=<PG user>])'
+    return 'show_wlseries.py dbserver=<db server> [ filter=<DRMS regular expression> ] [ dbmergeport=<db port> ] [ dbmergename=<db name> ] [ dbmergeuser=<db user> ] [ wlfile=<white-list text file> ]'
 
-def parseArg(options, args, arg, regexp, isList, etype):
-    if not arg is None:
-        matchobj = regexp.match(arg)
-        if not(matchobj is None):
-            # Ensure that the name of the argument is legitimate.
-            if args is None or matchobj.group(1) in args:
-                if isList:
-                    options[matchobj.group(1)] = matchobj.group(2).split(',')
-                else:
-                    options[matchobj.group(1)] = matchobj.group(2)
-            else:
-                raise Exception(etype, 'Arguments \'' + matchobj.group(1) + '\' not recognized.')
-        else:
-            raise Exception(etype, 'Invalid argument format ' + arg + '.')
+def getOption(val, default):
+    if val:
+        return val
+    else:
+        return default
 
-def parseDSN(dsnStr, etype):
-    dsnD = {}
-    if not dsnStr is None:
-        regexp = re.compile(r"(\S+)=(\S+)")
-        dsnArr = dsnStr.split(';')
-        for elem in dsnArr:
-            parseArg(dsnD, None, elem, regexp, False, etype)
-
-    if not 'dbname' in dsnD or not 'dbhost' in dsnD or not 'dbport' in dsnD:
-        raise Exception(etype, 'Invalid dsn: ' + dsnStr)
-
-    if not 'dbuser' in dsnD:
-        dsnD['dbuser'] = pwd.getpwuid(os.getuid())[0]
-
-    return dsnD
-
-def GetArgs(args):
-    istat = bool(0)
+def getArgs(args, drmsParams):
+    istat = False
     optD = {}
     etype = ''
     
     # Use REQUEST_URI as surrogate for the invocation coming from a CGI request.
     if os.getenv('REQUEST_URI'):
         optD['source'] = 'cgi'
-        etype = 'getArgsCgi'
     else:
-        optD['source'] = 'cmdline'
-        etype = 'getArgsCmdline'
+        optD['source'] = 'cl'
+
+    optD['filter'] = None
     
     if optD['source'] == 'cgi' or DEBUG_CGI:
         try:
@@ -75,54 +62,77 @@ def GetArgs(args):
             if arguments:
                 for key in arguments.keys():
                     val = arguments.getvalue(key)
-                    if key in ('f', 'filter'):
+                    
+                    if key in ('s', 'dbserver'):
+                        optD['dbserver'] = val
+                    elif key in ('f', 'filter'):
                         optD['filter'] = val
-                    elif key in ('i', 'intdsn'):
-                        optD[''] = val
-                    elif key in ('e', 'extdsn'):
-                        optD[''] = val
-                    elif key in ('w', 'wltab'):
-                        optD[''] = val
+                    elif key in ('H', 'dbmergehost'):
+                        optD['dbhost'] = val
+                    elif key in ('P', 'dbmergeport'):
+                        optD['dbport'] = val
+                    elif key in ('N', 'dbmergename'):
+                        optD['dbname'] = val
+                    elif key in ('U', 'dbmergeuser'):
+                        optD['dbuser'] = val
+                    elif key in ('w', 'wlfile'):
+                        optD['wlfile'] = val
 
-        except ValueError:
-            insertJson(rootObj, 'errMsg', getUsage())
-            raise Exception(etype, 'Invalid arguments.')
+            optD['dbhost'] = getOption(optD['dbhost'], drmsParams.get('SERVER'))
+            optD['dbport'] = int(getOption(optD['dbport'], drmsParams.get('DRMSPGPORT')))
+            optD['dbname'] = getOption(optD['dbname'], drmsParams.get('DBNAME'))
+            optD['dbuser'] = getOption(optD['dbuser'], pwd.getpwuid(os.getuid())[0])
+            optD['wlfile'] = getOption(optD['wlfile'], drmsParams.get('WL_FILE'))
+
+            # Enforce requirements.
+            if not 'dbserver' in optD:
+                raise Exception('getArgsCgi', 'cgi', 'Missing required argument ' + "'dbserver'.")
+        except ValueError as exc:
+            raise Exception('getArgs', 'cgi', 'Invalid arguments.')
+        except KeyError as exc:
+            raise Exception('drmsArgs', 'cgi', 'Undefined DRMS parameter.\n' + exc.strerror)
     else:
-        # Try this argparse stuff.
-        parser = argparse.ArgumentParser()
-        parser.add_argument('filter', help='[filter=<regexp>] A regular expression identifying series to search for.', nargs='?')
-        parser.add_argument('intdsn', help='[intdsn=<internal dsn>] A semicolon-separated string of parameters that identifies the internal database instance.', nargs='?')
-        parser.add_argument('extdsn', help='[extdsn=<external dsn>] A semicolon-separated string of parameters that identifies the external database instance.', nargs='?')
-        parser.add_argument('wltab', help='[wltab=<white-list table>] The database table in the internal database that enumerates the white-listed series.', nargs='?')
-        args = parser.parse_args()
+        try:
+            parser = CmdlParser(usage='%(prog)s [ -h ] dbserver=<db server> [ --filter=<DRMS regular expression> ] [ --dbmergeport=<db port> ] [ --dbmergename=<db name> ] [ --dbmergeuser=<db user> ] [--wlfile=<white-list text file> ]')
         
-        # The non-optional arguments are positional. It is possible that the caller could put the arguments for one argument into
-        # the position for a different argument. Positional arguments are a nuisance. So we must parse the values of these three arguments
-        # and get the name of the arguments from the LHS of the equal sign.
-        regexp = re.compile(r"([^\s=]+)\s*=\s*(\S.*)")
-        parseArg(optD, args, args.filter, regexp, False, etype)
-        parseArg(optD, args, args.intdsn, regexp, False, etype)
-        parseArg(optD, args, args.extdsn, regexp, False, etype)
-        parseArg(optD, args, args.wltab, regexp, False, etype)
+            # Required
+            parser.add_argument('s', 'dbserver', '--dbserver', help='The machine hosting the database that serves DRMS data series names.', metavar='<db host>', dest='dbserver', required=True)
+
+            # Optional
+            parser.add_argument('-f', '--filter', help='The DRMS-style regular expression to filter series.', metavar='<regexp>', dest='filter')
+            parser.add_argument('-H', '--dbmergehost', help='The port on the machine hosting DRMS data series names.', metavar='<db host port>', dest='dbhost')
+            parser.add_argument('-P', '--dbmergeport', help='The port on the machine hosting DRMS data series names.', metavar='<db host port>', dest='dbport')
+            parser.add_argument('-N', '--dbmergename', help='The name of the database serving DRMS series names.', metavar='<db name>', dest='dbname')
+            parser.add_argument('-U', '--dbmergeuser', help='The user to log-in to the serving database as.', metavar='<db user>', dest='dbuser')
+            parser.add_argument('-w', '--wlfile', help='The text file containing the definitive list of internal series accessible via the external web site.', metavar='<white-list file>', dest='wlfile')
+        
+            args = parser.parse_args()
+        except Exception as exc:
+            if len(exc.args) != 3:
+                raise # Re-raise
+
+            etype = exc.args[0]
+            msg = exc.args[1]
+
+            if etype == 'CmdlParser-ArgUnrecognized' or etype == 'CmdlParser-ArgBadformat' or etype == 'CmdlParser':
+                raise Exception('getArgsCmdline', 'cl', 'Unable to parse command-line arguments.')
+            else:
+                raise # Re-raise.
+
+        # Override defaults.
+        try:
+            optD['dbserver'] = args.dbserver # Required arguments are always available.
+            optD['filter'] = getOption(args.filter, None)
+            optD['dbhost'] = getOption(args.dbhost, drmsParams.get('SERVER'))
+            optD['dbport'] = int(getOption(args.dbport, drmsParams.get('DRMSPGPORT')))
+            optD['dbname'] = getOption(args.dbname, drmsParams.get('DBNAME'))
+            optD['dbuser'] = getOption(args.dbuser, pwd.getpwuid(os.getuid())[0])
+            optD['wlfile'] = getOption(args.wlfile, drmsParams.get('WL_FILE'))
+        except KeyError as exc:
+            raise Exception('drmsArgs', 'cl', 'Undefined DRMS parameter.\n' + exc.strerror)
     
-    # Make sure all required arguments are present.
-    if not 'intdsn' in optD:
-        raise Exception(etype, 'Missing required argument: intdsn.')
-    elif 'extdsn' in optD and 'wltab' not in optD:
-        raise Exception(etype, 'Missing required argument: wltab.')
-
-    # Parse both dsns.
-    optD['intdsn'] = parseDSN(optD['intdsn'], etype)
-    if 'extdsn' in optD:
-        optD['extdsn'] = parseDSN(optD['extdsn'], etype)
-    else:
-        optD['extdsn'] = None
-
-    # If any optional arguments were not present, set them to None in the options dictionary.
-    if not 'filter' in optD:
-        optD['filter'] = None
-    if not 'wltab' in optD:
-        optD['wltab'] = None
+    # Get configuration information.
+    optD['cfg'] = drmsParams
 
     return optD
 
@@ -138,7 +148,6 @@ def parseFilter(filterStr):
         remainder = matchobj.group(1)
         print('really')
     else:
-        print('bummer ' + filterStr)
         exclude = False
         remainder = filterStr
 
@@ -165,7 +174,7 @@ def parseFilter(filterStr):
     matchobj = regexp.match(remainder)
     if matchobj is not None:
         # Bad syntax
-        raise Exception('parseFilter', 'Invaid filter ' + filterStr)
+        raise Exception('parseFilter', optD['source'], 'Invaid filter ' + filterStr)
 
     filter = (namespace, exclude, regexpStr)
 
@@ -176,42 +185,43 @@ rv = RET_SUCCESS
 # Parse arguments
 if __name__ == "__main__":
     optD = {}
-    try:
-        optD = GetArgs(sys.argv[1:])
-        if optD is None:
-            # Return JSON just in case this script was initiated by web.
-            raise Exception('getArgsCgi', 'No arguments provided.')
+    rootObj = {}
+    seriesListObj = []
+    errmsg = ''
     
-    except Exception as exc:
-        if len(exc.args) != 2:
-            raise # Re-raise
-        
-        etype = exc.args[0]
-        msg = exc.args[1]
-        
-        if etype == 'getArgsCgi':
-            rootObj = {}
-            listObj = []
-            insertJson(rootObj, 'seriesList', listObj) # An array
-            insertJson(rootObj, 'errMsg', msg) # A string
-
-            print('Content-type: application/json\n')
-            print(json.dumps(rootObj))
-            optD['source'] = 'cgi'
-        elif etype == 'getArgsCmdline':
-            print(msg)
-            print('Usage:\n  ' + getUsage())
-            optD['source'] = 'cmdline'
-            rv = RET_INVALIDARG
-        else:
-            raise # Re-raise
-
-if rv == RET_SUCCESS:
-    # Connect to the database
     try:
+        drmsParams = DRMSParams()
+        if drmsParams is None:
+            if os.getenv('REQUEST_URI'):
+                rtype = 'cgi'
+            else:
+                rtype = 'cl'
+            raise Exception('drmsParams', rtype, 'Unable to locate DRMS parameters file (drmsparams.py).')
+                
+        optD = getArgs(sys.argv[1:], drmsParams)
+
+        # To use the whitelist feature, the DRMS site must have an allseries table (which combines the series from the internal and
+        # external databases when the user wants the list of series accessible from the external site).
+        if not drmsParams.getBool('WL_HASWL'):
+            raise Exception('whitelist', optD['source'], 'This DRMS does not support series whitelists.')
+
+        # Connect to the database
         # The connection is NOT in autocommit mode. If changes need to be saved, then conn.commit() must be called.
-        with psycopg2.connect(database=optD['intdsn']['dbname'], user=optD['intdsn']['dbuser'], host=optD['intdsn']['dbhost'], port=optD['intdsn']['dbport']) as conn:
+        with psycopg2.connect(database=optD['dbname'], user=optD['dbuser'], host=optD['dbhost'], port=optD['dbport']) as conn:
             with conn.cursor() as cursor:
+                # The definitive list of white-listed series is kept in a text file. But we need that information in the database so
+                # we can do the filtering in the db. So, we update the database with this information before we do anything else.
+                with open(optD['wlfile'], 'r') as fin:
+                    try:
+                        cursor.copy_from(fin, 'drms.whitelist', columns=('seriesname',))
+                    except psycopg2.Error as exc:
+                        raise Exception('whitelist', optD['source'], 'Error reading white-list file ' + optD['wlfile'] + '.\n' + exc.diag.message_primary)
+
+                if optD['dbserver'] == drmsParams.get('SERVER'):
+                    internalUser = True
+                else:
+                    internalUser = False
+        
                 # The filter is an extended POSIX regular expression, optionally preceded by the word NOT.
                 # filter is a tuple. The first element is a namespace (if not None, then search in this namespace only).
                 # The second is a boolean. If True, then the filter specifies which series to exclude. If False,
@@ -220,60 +230,176 @@ if rv == RET_SUCCESS:
                 # selects series to print. This element can be None, in which case all series are printed.
                 if optD['filter'] is not None:
                     filter = parseFilter(optD['filter'])
+                    
+                    # filter[0] is a namespace (or None).
+                    # filter[1] is either True (exclude specified series from result) or False (include specified series).
+                    # filter[2] is a regexp (or None).
+                    
                     if filter[1]:
                         matchOp = '!~*'
                     else:
                         matchOp = '~*'
-                
-                    if filter[2] is None:
-                        cmd = 'SELECT seriesname FROM drms_series()'
-                    else:
-                        if filter[0] is not None and not filter[1]:
-                            cmd = 'SELECT seriesname FROM ' + filter[0] + '.drms_series WHERE seriesname ' + matchOp + " '" + filter[2] + "'"
+                    
+                    if internalUser:
+                        # The whitelist is irrelevant for internal users.
+                        if filter[0]:
+                            # An internal user has specfied a namespace. Use ns.drms_series().
+                            if filter[2]:
+                                # There is a filter on the series within the namespace.
+                                cmd = 'SELECT seriesname FROM ' + filter[0] + '.drms_series WHERE seriesname ' + matchOp + " '" + filter[2] + "'"
+                            else:
+                                # There is no filter on the series within the namespace.
+                                cmd = 'SELECT seriesname FROM ' + filter[0] + '.drms_series'
                         else:
-                            print('here')
-                            cmd = 'SELECT seriesname FROM drms_series() WHERE seriesname ' + matchOp + " '" + filter[2] + "'"
-                            print(cmd)
-                                
+                            # An internal user has NOT specified a namespace. Use allseries table (which must exist).
+                            if filter[2]:
+                                # No namespace, use allseries, there is a filter on the series.
+                                cmd = "SELECT seriesname FROM drms.allseries WHERE dbhost='" + optD['dbhost'] + "' AND seriesname " + matchOp + " '" + filter[2] + "'"
+                            else:
+                                # No namespace, use allseries, there is NO filter on the series.
+                                cmd = "SELECT seriesname FROM drms.allseries WHERE dbhost='" + optD['dbhost'] + "'"
+                    else:
+                        # The series information originates from the internal database, in the allseries table. This must be
+                        # joined with the whitelist.
+                        if filter[0] or filter[2]:
+                            # The user has specified a filter, so they are asking for a subset of the records in the joined table.
+                            # Add to the where clause.
+                            if filter[0] and filter[2]:
+                                regExp = filter[0] + '.' + filter[2]
+                            elif filter[0]:
+                                regExp = filter[0]
+                            else:
+                                regExp = filter[2]
+                            
+                            cmd = "SELECT A.seriesname INTO TEMPORARY TABLE wlmerge FROM drms.allseries AS A, drms.whitelist AS W WHERE A.seriesname = W.seriesname AND A.dbhost='" + optD['dbhost'] + "' AND A.seriesname " + matchOp + " '" + regExp + "';"
+                            cmd += "INSERT INTO wlmerge(seriesname) SELECT seriesname FROM drms.allseries WHERE dbhost='" + optD['dbserver'] + "' AND seriesname " + matchOp + " '" + regExp + "';"
+                        else:
+                            # The user has not specified a filter, so they are asking for all series.
+                            cmd = "SELECT A.seriesname INTO TEMPORARY TABLE wlmerge FROM drms.allseries AS A, drms.whitelist AS W WHERE A.seriesname = W.seriesname AND A.dbhost='" + optD['dbhost'] + "';"
+                            cmd += "INSERT INTO wlmerge(seriesname) SELECT seriesname FROM drms.allseries WHERE dbhost='" + optD['dbserver'] + "';"
+
+                        cmd += 'SELECT seriesname FROM wlmerge'
                 else:
-                    cmd = 'SELECT seriesname FROM drms_series()'
+                    # No filter was specfied at all.
+                    if internalUser:
+                        # The whitelist is irrelevant for internal users.
+                        # No namespace, use allseries, there is NO filter on the series.
+                        cmd = "SELECT seriesname FROM drms.allseries WHERE dbhost='" + optD['dbhost'] + "'"
+                    else:
+                        cmd = "SELECT A.seriesname INTO TEMPORARY TABLE wlmerge FROM drms.allseries AS A, drms.whitelist AS W WHERE A.seriesname = W.seriesname AND A.dbhost='" + optD['dbhost'] + "';"
+                        cmd += "INSERT INTO wlmerge(seriesname) SELECT seriesname FROM drms.allseries WHERE dbhost='" + optD['dbserver'] + "';"
+                        cmd += 'SELECT seriesname FROM wlmerge'
+
+                cmd += ' ORDER BY seriesname'
 
                 try:
                     cursor.execute(cmd)
-
                 except psycopg2.Error as exc:
-                    raise Exception('sql', exc.diag.message_primary, cmd)
+                    raise Exception('sql', optD['source'], exc.diag.message_primary + ': ' + cmd)
 
-                for record in cursor:
-                    print(record[0])
+                try:
+                    if optD['source'] == 'cl':
+                        for record in cursor:
+                            print(record[0])
+                    else:
+                        for record in cursor:
+                            seriesListObj.append(record[0])
+                except psycopg2.Error as exc:
+                    raise Exception('sql', optD['source'], exc.diag.message_primary)
 
+                # Make sure that we always delete all records from the white-list table for the next use.
+                # Depending on what this does to db vacuum (and how it works), we might need to re-consider how to do this.
+                # Maybe all of this is kept in client memory so we never even touch the database? Who knows.
+                #
+                # If there is an exception that prevents this DELETE statement from running, then the insertion into
+                # the whitelist table is also rolledback.
+                cmd = 'DELETE FROM drms.whitelist'
+
+                try:
+                    cursor.execute(cmd)
+                except psycopg2.Error as exc:
+                    raise Exception('sql', optD['source'], exc.diag.message_primary + ': ' + cmd)
     except psycopg2.Error as exc:
-        # Closes the cursor and connection
-        print('Unable to connect to the database', file=sys.stderr)
-        print(exc.diag.message_primary, file=sys.stderr)
+        # Closes the cursor and connection.
+        # If we are here, we know that optD['source'] exists.
+        if optD['source'] == 'cgi':
+            rtype = 'cgi'
+            msg = 'Unable to connect to the database.'
+            seriesListObj = []
+        else:
+            rtype = 'cl'
+            msg = 'Unable to connect to the database.\n' + exc.diag.message_primary
+            rv = RET_DBCONNECT
 
+        if rtype == 'cgi':
+            errMsg += msg
+        else:
+            print(msg, file=sys.stderr)
         # No need to close cursor - leaving the with block does that.
-        rv = RET_DBCONNECT
-
     except Exception as exc:
-        if len(exc.args) != 2:
+        if len(exc.args) != 3:
+            msg = 'Unhandled exception.'
             raise # Re-raise
         
-        etype = exc.args[0]
-        msg = exc.args[1]
+        etype, rtype, msg = exc.args
 
-        if etype == 'parseFilter':
-            if optD['source'] == 'cgi':
-                rootObj = {}
-                listObj = []
-                insertJson(rootObj, 'seriesList', listObj) # An array
-                insertJson(rootObj, 'errMsg', msg) # A string
-            
-                print('Content-type: application/json\n')
-                print(json.dumps(rootObj))
-            elif optD['source'] == 'cmdline':
-                print(msg, file=sys.stderr)
-            else:
-                raise # Re-raise
+        if rtype == 'cgi':
+            etype = etype + 'CGI'
+            seriesListObj = []
+        elif rtype == 'cl':
+            etype = etype + 'CL'
         else:
+            # The finally clause will print msg before sys.exit() is called.
+            msg += 'Unknown run type.'
+            sys.exit(RET_UNKNOWNRUNTYPE)
+
+        if etype == 'getArgsCGI':
+            # Nothing extra for now. Could append to msg.
+            pass
+        elif etype == 'getArgsCL':
+            msg += '\nUsage:\n  ' + getUsage()
+            errMsg += msg
+            rv = RET_BADARGS
+        elif etype == 'drmsArgsCGI':
+            # Nothing extra for now. Could append to msg.
+            pass
+        elif etype == 'drmsArgsCL':
+            rv = RET_DRMSPARAMS
+        elif etype == 'parseFilterCGI':
+            # Nothing extra for now. Could append to msg.
+            pass
+        elif etype == 'parseFilterCL':
+            rv = RET_BADFILTER
+        elif etype == 'sqlCGI':
+            # Nothing extra for now. Could append to msg.
+            pass
+        elif etype == 'sqlCL':
+            rv = RET_SQL
+        elif etype == 'whitelistCGI':
+            # Nothing extra for now. Could append to msg.
+            pass
+        elif etype == 'whitelistCL':
+            rv = RET_WHITELIST
+        elif rtype == 'cl':
             raise # Re-raise
+        else:
+            # We created the error message for 'errMsg' already.
+            pass
+
+        if rtype == 'cgi':
+            errMsg += msg
+        else:
+            print(msg, file=sys.stderr)
+
+    if optD['source'] == 'cgi':
+        insertJson(rootObj, 'errMsg', errMsg) # A string
+        insertJson(rootObj, 'seriesList', seriesListObj)
+        print('Content-type: application/json\n')
+        print(json.dumps(rootObj))
+        sys.exit(0)
+    else:
+        sys.exit(rv)
+
+
+
+
