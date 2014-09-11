@@ -1263,6 +1263,9 @@ if __name__ == "__main__":
         if etype == 'drmsLock':
             rslog.write(['Error locking file: ' + lockFile + '\n' + msg])
             rv = RET_LOCK
+        elif etype == 'CmdlParser-ArgUnrecognized' or etype == 'CmdlParser-ArgBadformat':
+            rslog.write([msg])
+            rv = RET_INVALIDARGS
         elif etype == 'sutableRead':
             rslog.write(['Unable to read from storage-unit table: ' + msg])
             rv = RET_SUTABLE_READ
