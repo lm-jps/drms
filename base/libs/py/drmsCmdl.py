@@ -59,7 +59,8 @@ class CmdlParser(argparse.ArgumentParser):
         # Keep track of required arguments. A user who provides an argument that starts with a '-' is providing an optional
         # argument. If the option's keyname matches a reqiured argument's keyname, this is an error.
         if 'required' in kwargs and kwargs['required'] == True:
-            self.required[kwargs['dest']] = True
+            for arg in args:
+                self.required[arg] = True
             
             if self.reqGroup is None:
                 # ACK! super() with no arguments is compatible with Py 3, not Py 2, in which case 1 argument is required.
