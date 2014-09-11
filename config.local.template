@@ -270,10 +270,6 @@ WL_HASWL                              0
 # The file that contains a list of internal series that are accessible to external users.
 WL_FILE                               /usr/share/drms/whitelist.txt
 
-# If 1, then this DRMS has a db table in SERVER that contains a list of all series defined in all databases.
-# If WL_HASWL == 1, then DRMS_HASALLSERIES must be 1 also.
-DRMS_HASALLSERIES                     1
-
 ###############################
 
 __MAKE__
