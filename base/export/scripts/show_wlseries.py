@@ -3,6 +3,16 @@
 # Displays a list of all series in the database specified by the dbhost argument. If the host is not our internal host, then
 # this script will also list the white-listed series in the internal host.
 
+# {
+#    "seriesList":
+#     [
+#        {"su_arta.Ic_45s": {"primeIndex": ["T_REC", "CAMERA"], "description": "continuum intensities with a cadence of 45 seconds."}},
+#        {"su_arta.Ld_45s": {"primeIndex": ["T_REC", "CAMERA"], "description": "linedepths with a cadence of 45 seconds."}},
+#        ...
+#     ],
+#    "errMsg": ""
+# }      
+
 from __future__ import print_function
 
 import sys
@@ -33,7 +43,7 @@ RET_SQL = 6
 RET_WHITELIST = 7
 
 def getUsage():
-    return 'show_wlseries.py dbserver=<db server> [ filter=<DRMS regular expression> ] [ dbmergeport=<db port> ] [ dbmergename=<db name> ] [ dbmergeuser=<db user> ] [ wlfile=<white-list text file> ]'
+    return 'show_wlseries.py [ n=1 ] server=<db server> [ filter=<DRMS regular expression> ] [ dbmergeport=<db port> ] [ dbmergename=<db name> ] [ dbmergeuser=<db user> ] [ wlfile=<white-list text file> ]'
 
 def getOption(val, default):
     if val:
@@ -47,14 +57,21 @@ def getArgs(args, drmsParams):
     etype = ''
     
     # Use REQUEST_URI as surrogate for the invocation coming from a CGI request.
-    if os.getenv('REQUEST_URI'):
+    if os.getenv('REQUEST_URI') or DEBUG_CGI:
         optD['source'] = 'cgi'
     else:
         optD['source'] = 'cl'
 
     optD['filter'] = None
     
-    if optD['source'] == 'cgi' or DEBUG_CGI:
+    if optD['source'] == 'cgi':
+        optD['noheader'] = None
+        optD['dbhost'] = None
+        optD['dbport'] = None
+        optD['dbname'] = None
+        optD['dbuser'] = None
+        optD['wlfile'] = None
+        
         try:
             # Try to get arguments with the cgi module. If that doesn't work, then fetch them from the command line.
             arguments = cgi.FieldStorage()
@@ -62,8 +79,10 @@ def getArgs(args, drmsParams):
             if arguments:
                 for key in arguments.keys():
                     val = arguments.getvalue(key)
-                    
-                    if key in ('s', 'dbserver'):
+
+                    if key in ('n', 'noheader'):
+                        optD['noheader'] = val
+                    elif key in ('s', 'server'):
                         optD['dbserver'] = val
                     elif key in ('f', 'filter'):
                         optD['filter'] = val
@@ -78,6 +97,7 @@ def getArgs(args, drmsParams):
                     elif key in ('w', 'wlfile'):
                         optD['wlfile'] = val
 
+            optD['noheader'] = bool(getOption(optD['noheader'], False))
             optD['dbhost'] = getOption(optD['dbhost'], drmsParams.get('SERVER'))
             optD['dbport'] = int(getOption(optD['dbport'], drmsParams.get('DRMSPGPORT')))
             optD['dbname'] = getOption(optD['dbname'], drmsParams.get('DBNAME'))
@@ -93,12 +113,13 @@ def getArgs(args, drmsParams):
             raise Exception('drmsArgs', 'cgi', 'Undefined DRMS parameter.\n' + exc.strerror)
     else:
         try:
-            parser = CmdlParser(usage='%(prog)s [ -h ] dbserver=<db server> [ --filter=<DRMS regular expression> ] [ --dbmergeport=<db port> ] [ --dbmergename=<db name> ] [ --dbmergeuser=<db user> ] [--wlfile=<white-list text file> ]')
+            parser = CmdlParser(usage='%(prog)s [ -hn ] dbserver=<db server> [ --filter=<DRMS regular expression> ] [ --dbmergeport=<db port> ] [ --dbmergename=<db name> ] [ --dbmergeuser=<db user> ] [--wlfile=<white-list text file> ]')
         
             # Required
-            parser.add_argument('s', 'dbserver', '--dbserver', help='The machine hosting the database that serves DRMS data series names.', metavar='<db host>', dest='dbserver', required=True)
+            parser.add_argument('s', 'server', '--server', help='The machine hosting the database that serves DRMS data series names.', metavar='<db host>', dest='dbserver', required=True)
 
             # Optional
+            parser.add_argument('-n', '--noheader', help='Supress the HTML header (cgi runs only).', dest='noheader', action='store_true', default=False)
             parser.add_argument('-f', '--filter', help='The DRMS-style regular expression to filter series.', metavar='<regexp>', dest='filter')
             parser.add_argument('-H', '--dbmergehost', help='The port on the machine hosting DRMS data series names.', metavar='<db host port>', dest='dbhost')
             parser.add_argument('-P', '--dbmergeport', help='The port on the machine hosting DRMS data series names.', metavar='<db host port>', dest='dbport')
@@ -108,7 +129,7 @@ def getArgs(args, drmsParams):
         
             args = parser.parse_args()
         except Exception as exc:
-            if len(exc.args) != 3:
+            if len(exc.args) != 2:
                 raise # Re-raise
 
             etype = exc.args[0]
@@ -121,6 +142,7 @@ def getArgs(args, drmsParams):
 
         # Override defaults.
         try:
+            optD['noheader'] = getOption(args.noheader, False)
             optD['dbserver'] = args.dbserver # Required arguments are always available.
             optD['filter'] = getOption(args.filter, None)
             optD['dbhost'] = getOption(args.dbhost, drmsParams.get('SERVER'))
@@ -146,13 +168,12 @@ def parseFilter(filterStr):
     if matchobj is not None:
         exclude = True
         remainder = matchobj.group(1)
-        print('really')
     else:
         exclude = False
         remainder = filterStr
 
     # Look for a namespace.
-    regexp = re.compile(r"\s*(\S+)(\.\S+)(.*)")
+    regexp = re.compile(r"\s*(\w+)(\.\S+)(.*)")
     matchobj = regexp.match(remainder)
     if matchobj is not None:
         namespace = matchobj.group(1)
@@ -186,8 +207,8 @@ rv = RET_SUCCESS
 if __name__ == "__main__":
     optD = {}
     rootObj = {}
-    seriesListObj = []
-    errmsg = ''
+    seriesListArr = []
+    errMsg = ''
     
     try:
         drmsParams = DRMSParams()
@@ -246,18 +267,18 @@ if __name__ == "__main__":
                             # An internal user has specfied a namespace. Use ns.drms_series().
                             if filter[2]:
                                 # There is a filter on the series within the namespace.
-                                cmd = 'SELECT seriesname FROM ' + filter[0] + '.drms_series WHERE seriesname ' + matchOp + " '" + filter[2] + "'"
+                                cmd = 'SELECT seriesname, primary_idx, description FROM ' + filter[0] + '.drms_series WHERE seriesname ' + matchOp + " '" + filter[2] + "'"
                             else:
                                 # There is no filter on the series within the namespace.
-                                cmd = 'SELECT seriesname FROM ' + filter[0] + '.drms_series'
+                                cmd = 'SELECT seriesname, primary_idx, description FROM ' + filter[0] + '.drms_series'
                         else:
                             # An internal user has NOT specified a namespace. Use allseries table (which must exist).
                             if filter[2]:
                                 # No namespace, use allseries, there is a filter on the series.
-                                cmd = "SELECT seriesname FROM drms.allseries WHERE dbhost='" + optD['dbhost'] + "' AND seriesname " + matchOp + " '" + filter[2] + "'"
+                                cmd = "SELECT seriesname, primary_idx, description FROM drms.allseries WHERE dbhost='" + optD['dbhost'] + "' AND seriesname " + matchOp + " '" + filter[2] + "'"
                             else:
                                 # No namespace, use allseries, there is NO filter on the series.
-                                cmd = "SELECT seriesname FROM drms.allseries WHERE dbhost='" + optD['dbhost'] + "'"
+                                cmd = "SELECT seriesname, primary_idx, description FROM drms.allseries WHERE dbhost='" + optD['dbhost'] + "'"
                     else:
                         # The series information originates from the internal database, in the allseries table. This must be
                         # joined with the whitelist.
@@ -271,24 +292,24 @@ if __name__ == "__main__":
                             else:
                                 regExp = filter[2]
                             
-                            cmd = "SELECT A.seriesname INTO TEMPORARY TABLE wlmerge FROM drms.allseries AS A, drms.whitelist AS W WHERE A.seriesname = W.seriesname AND A.dbhost='" + optD['dbhost'] + "' AND A.seriesname " + matchOp + " '" + regExp + "';"
-                            cmd += "INSERT INTO wlmerge(seriesname) SELECT seriesname FROM drms.allseries WHERE dbhost='" + optD['dbserver'] + "' AND seriesname " + matchOp + " '" + regExp + "';"
+                            cmd = "SELECT A.seriesname, A.primary_idx, A.description INTO TEMPORARY TABLE wlmerge FROM drms.allseries AS A, drms.whitelist AS W WHERE A.seriesname = W.seriesname AND A.dbhost='" + optD['dbhost'] + "' AND A.seriesname " + matchOp + " '" + regExp + "';"
+                            cmd += "INSERT INTO wlmerge(seriesname, primary_idx, description) SELECT seriesname, primary_idx, description FROM drms.allseries WHERE dbhost='" + optD['dbserver'] + "' AND seriesname " + matchOp + " '" + regExp + "';"
                         else:
                             # The user has not specified a filter, so they are asking for all series.
-                            cmd = "SELECT A.seriesname INTO TEMPORARY TABLE wlmerge FROM drms.allseries AS A, drms.whitelist AS W WHERE A.seriesname = W.seriesname AND A.dbhost='" + optD['dbhost'] + "';"
-                            cmd += "INSERT INTO wlmerge(seriesname) SELECT seriesname FROM drms.allseries WHERE dbhost='" + optD['dbserver'] + "';"
+                            cmd = "SELECT A.seriesname, A.primary_idx, A.description INTO TEMPORARY TABLE wlmerge FROM drms.allseries AS A, drms.whitelist AS W WHERE A.seriesname = W.seriesname AND A.dbhost='" + optD['dbhost'] + "';"
+                            cmd += "INSERT INTO wlmerge(seriesname, primary_idx, description) SELECT seriesname, primary_idx, description FROM drms.allseries WHERE dbhost='" + optD['dbserver'] + "';"
 
-                        cmd += 'SELECT seriesname FROM wlmerge'
+                        cmd += 'SELECT seriesname, primary_idx, description FROM wlmerge'
                 else:
                     # No filter was specfied at all.
                     if internalUser:
                         # The whitelist is irrelevant for internal users.
                         # No namespace, use allseries, there is NO filter on the series.
-                        cmd = "SELECT seriesname FROM drms.allseries WHERE dbhost='" + optD['dbhost'] + "'"
+                        cmd = "SELECT seriesname, primary_idx, description FROM drms.allseries WHERE dbhost='" + optD['dbhost'] + "'"
                     else:
-                        cmd = "SELECT A.seriesname INTO TEMPORARY TABLE wlmerge FROM drms.allseries AS A, drms.whitelist AS W WHERE A.seriesname = W.seriesname AND A.dbhost='" + optD['dbhost'] + "';"
-                        cmd += "INSERT INTO wlmerge(seriesname) SELECT seriesname FROM drms.allseries WHERE dbhost='" + optD['dbserver'] + "';"
-                        cmd += 'SELECT seriesname FROM wlmerge'
+                        cmd = "SELECT A.seriesname, A.primary_idx, A.description INTO TEMPORARY TABLE wlmerge FROM drms.allseries AS A, drms.whitelist AS W WHERE A.seriesname = W.seriesname AND A.dbhost='" + optD['dbhost'] + "';"
+                        cmd += "INSERT INTO wlmerge(seriesname, primary_idx, description) SELECT seriesname, primary_idx, description FROM drms.allseries WHERE dbhost='" + optD['dbserver'] + "';"
+                        cmd += 'SELECT seriesname, primary_idx, description FROM wlmerge'
 
                 cmd += ' ORDER BY seriesname'
 
@@ -303,7 +324,13 @@ if __name__ == "__main__":
                             print(record[0])
                     else:
                         for record in cursor:
-                            seriesListObj.append(record[0])
+                            seriesObj = {}
+                            seriesObj[record[0]] = {}
+
+                            # Parse the primary_idx string into array elements.
+                            seriesObj[record[0]]['primeIndex'] = record[1].split(',')
+                            seriesObj[record[0]]['description'] = record[2]
+                            seriesListArr.append(seriesObj)
                 except psycopg2.Error as exc:
                     raise Exception('sql', optD['source'], exc.diag.message_primary)
 
@@ -325,7 +352,7 @@ if __name__ == "__main__":
         if optD['source'] == 'cgi':
             rtype = 'cgi'
             msg = 'Unable to connect to the database.'
-            seriesListObj = []
+            seriesListArr = []
         else:
             rtype = 'cl'
             msg = 'Unable to connect to the database.\n' + exc.diag.message_primary
@@ -345,7 +372,7 @@ if __name__ == "__main__":
 
         if rtype == 'cgi':
             etype = etype + 'CGI'
-            seriesListObj = []
+            seriesListArr = []
         elif rtype == 'cl':
             etype = etype + 'CL'
         else:
@@ -393,13 +420,11 @@ if __name__ == "__main__":
 
     if optD['source'] == 'cgi':
         insertJson(rootObj, 'errMsg', errMsg) # A string
-        insertJson(rootObj, 'seriesList', seriesListObj)
-        print('Content-type: application/json\n')
+        insertJson(rootObj, 'seriesList', seriesListArr)
+        if not optD['noheader']:
+            print('Content-type: application/json\n')
         print(json.dumps(rootObj))
         sys.exit(0)
     else:
         sys.exit(rv)
-
-
-
 
