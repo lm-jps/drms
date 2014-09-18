@@ -6,8 +6,8 @@
 # {
 #    "seriesList":
 #     [
-#        {"su_arta.Ic_45s": {"primeIndex": ["T_REC", "CAMERA"], "description": "continuum intensities with a cadence of 45 seconds."}},
-#        {"su_arta.Ld_45s": {"primeIndex": ["T_REC", "CAMERA"], "description": "linedepths with a cadence of 45 seconds."}},
+#        {"su_arta.Ic_45s": {"infoDB" : "hmidb", "primeIndex": ["T_REC", "CAMERA"], "description": "continuum intensities with a cadence of 45 seconds."}},
+#        {"su_arta.Ld_45s": {"infoDB" : "hmidb", "primeIndex": ["T_REC", "CAMERA"], "description": "linedepths with a cadence of 45 seconds."}},
 #        ...
 #     ],
 #    "errMsg": ""
@@ -116,12 +116,12 @@ def getArgs(args, drmsParams):
             parser = CmdlParser(usage='%(prog)s [ -hn ] dbserver=<db server> [ --filter=<DRMS regular expression> ] [ --dbmergeport=<db port> ] [ --dbmergename=<db name> ] [ --dbmergeuser=<db user> ] [--wlfile=<white-list text file> ]')
         
             # Required
-            parser.add_argument('s', 'server', '--server', help='The machine hosting the database that serves DRMS data series names.', metavar='<db host>', dest='dbserver', required=True)
+            parser.add_argument('s', 'server', '--server', help='The machine hosting the database that serves DRMS data series names.', metavar='<db server>', dest='dbserver', required=True)
 
             # Optional
             parser.add_argument('-n', '--noheader', help='Supress the HTML header (cgi runs only).', dest='noheader', action='store_true', default=False)
             parser.add_argument('-f', '--filter', help='The DRMS-style regular expression to filter series.', metavar='<regexp>', dest='filter')
-            parser.add_argument('-H', '--dbmergehost', help='The port on the machine hosting DRMS data series names.', metavar='<db host port>', dest='dbhost')
+            parser.add_argument('-H', '--dbmergehost', help='The machine hosting DRMS data series names.', metavar='<db host port>', dest='dbhost')
             parser.add_argument('-P', '--dbmergeport', help='The port on the machine hosting DRMS data series names.', metavar='<db host port>', dest='dbport')
             parser.add_argument('-N', '--dbmergename', help='The name of the database serving DRMS series names.', metavar='<db name>', dest='dbname')
             parser.add_argument('-U', '--dbmergeuser', help='The user to log-in to the serving database as.', metavar='<db user>', dest='dbuser')
@@ -173,11 +173,11 @@ def parseFilter(filterStr):
         remainder = filterStr
 
     # Look for a namespace.
-    regexp = re.compile(r"\s*(\w+)(\.\S+)(.*)")
+    regexp = re.compile(r"\s*(\w+)\.(\S*)(.*)")
     matchobj = regexp.match(remainder)
     if matchobj is not None:
         namespace = matchobj.group(1)
-        regexpStr = namespace + matchobj.group(2)
+        regexpStr = matchobj.group(2)
         remainder = matchobj.group(3)
     else:
         namespace = None
@@ -267,18 +267,18 @@ if __name__ == "__main__":
                             # An internal user has specfied a namespace. Use ns.drms_series().
                             if filter[2]:
                                 # There is a filter on the series within the namespace.
-                                cmd = 'SELECT seriesname, primary_idx, description FROM ' + filter[0] + '.drms_series WHERE seriesname ' + matchOp + " '" + filter[2] + "'"
+                                cmd = "SELECT seriesname, '" + optD['dbhost'] + "' AS dbhost, primary_idx, description FROM " + filter[0] + '.drms_series WHERE seriesname ' + matchOp + " '" + filter[0] + '.' + filter[2] + "'"
                             else:
                                 # There is no filter on the series within the namespace.
-                                cmd = 'SELECT seriesname, primary_idx, description FROM ' + filter[0] + '.drms_series'
+                                cmd = "SELECT seriesname, '" + optD['dbhost'] + "' AS dbhost, primary_idx, description FROM " + filter[0] + '.drms_series'
                         else:
                             # An internal user has NOT specified a namespace. Use allseries table (which must exist).
                             if filter[2]:
                                 # No namespace, use allseries, there is a filter on the series.
-                                cmd = "SELECT seriesname, primary_idx, description FROM drms.allseries WHERE dbhost='" + optD['dbhost'] + "' AND seriesname " + matchOp + " '" + filter[2] + "'"
+                                cmd = "SELECT seriesname, dbhost, primary_idx, description FROM drms.allseries WHERE dbhost='" + optD['dbhost'] + "' AND seriesname " + matchOp + " '" + filter[2] + "'"
                             else:
                                 # No namespace, use allseries, there is NO filter on the series.
-                                cmd = "SELECT seriesname, primary_idx, description FROM drms.allseries WHERE dbhost='" + optD['dbhost'] + "'"
+                                cmd = "SELECT seriesname, dbhost, primary_idx, description FROM drms.allseries WHERE dbhost='" + optD['dbhost'] + "'"
                     else:
                         # The series information originates from the internal database, in the allseries table. This must be
                         # joined with the whitelist.
@@ -292,24 +292,24 @@ if __name__ == "__main__":
                             else:
                                 regExp = filter[2]
                             
-                            cmd = "SELECT A.seriesname, A.primary_idx, A.description INTO TEMPORARY TABLE wlmerge FROM drms.allseries AS A, drms.whitelist AS W WHERE A.seriesname = W.seriesname AND A.dbhost='" + optD['dbhost'] + "' AND A.seriesname " + matchOp + " '" + regExp + "';"
-                            cmd += "INSERT INTO wlmerge(seriesname, primary_idx, description) SELECT seriesname, primary_idx, description FROM drms.allseries WHERE dbhost='" + optD['dbserver'] + "' AND seriesname " + matchOp + " '" + regExp + "';"
+                            cmd = "SELECT A.seriesname, A.dbhost, A.primary_idx, A.description INTO TEMPORARY TABLE wlmerge FROM drms.allseries AS A, drms.whitelist AS W WHERE A.seriesname = W.seriesname AND A.dbhost='" + optD['dbhost'] + "' AND A.seriesname " + matchOp + " '" + regExp + "';"
+                            cmd += "INSERT INTO wlmerge(seriesname, dbhost, primary_idx, description) SELECT seriesname, dbhost, primary_idx, description FROM drms.allseries WHERE dbhost='" + optD['dbserver'] + "' AND seriesname " + matchOp + " '" + regExp + "';"
                         else:
                             # The user has not specified a filter, so they are asking for all series.
-                            cmd = "SELECT A.seriesname, A.primary_idx, A.description INTO TEMPORARY TABLE wlmerge FROM drms.allseries AS A, drms.whitelist AS W WHERE A.seriesname = W.seriesname AND A.dbhost='" + optD['dbhost'] + "';"
-                            cmd += "INSERT INTO wlmerge(seriesname, primary_idx, description) SELECT seriesname, primary_idx, description FROM drms.allseries WHERE dbhost='" + optD['dbserver'] + "';"
+                            cmd = "SELECT A.seriesname, A.dbhost, A.primary_idx, A.description INTO TEMPORARY TABLE wlmerge FROM drms.allseries AS A, drms.whitelist AS W WHERE A.seriesname = W.seriesname AND A.dbhost='" + optD['dbhost'] + "';"
+                            cmd += "INSERT INTO wlmerge(seriesname, dbhost, primary_idx, description) SELECT seriesname, primary_idx, description FROM drms.allseries WHERE dbhost='" + optD['dbserver'] + "';"
 
-                        cmd += 'SELECT seriesname, primary_idx, description FROM wlmerge'
+                        cmd += 'SELECT seriesname, dbhost, primary_idx, description FROM wlmerge'
                 else:
                     # No filter was specfied at all.
                     if internalUser:
                         # The whitelist is irrelevant for internal users.
                         # No namespace, use allseries, there is NO filter on the series.
-                        cmd = "SELECT seriesname, primary_idx, description FROM drms.allseries WHERE dbhost='" + optD['dbhost'] + "'"
+                        cmd = "SELECT seriesname, dbhost, primary_idx, description FROM drms.allseries WHERE dbhost='" + optD['dbhost'] + "'"
                     else:
-                        cmd = "SELECT A.seriesname, A.primary_idx, A.description INTO TEMPORARY TABLE wlmerge FROM drms.allseries AS A, drms.whitelist AS W WHERE A.seriesname = W.seriesname AND A.dbhost='" + optD['dbhost'] + "';"
-                        cmd += "INSERT INTO wlmerge(seriesname, primary_idx, description) SELECT seriesname, primary_idx, description FROM drms.allseries WHERE dbhost='" + optD['dbserver'] + "';"
-                        cmd += 'SELECT seriesname, primary_idx, description FROM wlmerge'
+                        cmd = "SELECT A.seriesname, A.dbhost, A.primary_idx, A.description INTO TEMPORARY TABLE wlmerge FROM drms.allseries AS A, drms.whitelist AS W WHERE A.seriesname = W.seriesname AND A.dbhost='" + optD['dbhost'] + "';"
+                        cmd += "INSERT INTO wlmerge(seriesname, dbhost, primary_idx, description) SELECT seriesname, dbhost, primary_idx, description FROM drms.allseries WHERE dbhost='" + optD['dbserver'] + "';"
+                        cmd += 'SELECT seriesname, dbhost, primary_idx, description FROM wlmerge'
 
                 cmd += ' ORDER BY seriesname'
 
@@ -328,8 +328,9 @@ if __name__ == "__main__":
                             seriesObj[record[0]] = {}
 
                             # Parse the primary_idx string into array elements.
-                            seriesObj[record[0]]['primeIndex'] = record[1].split(',')
-                            seriesObj[record[0]]['description'] = record[2]
+                            seriesObj[record[0]]['infoDB'] = record[1]
+                            seriesObj[record[0]]['primeIndex'] = record[2].split(',')
+                            seriesObj[record[0]]['description'] = record[3]
                             seriesListArr.append(seriesObj)
                 except psycopg2.Error as exc:
                     raise Exception('sql', optD['source'], exc.diag.message_primary)
