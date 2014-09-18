@@ -18,7 +18,7 @@ CEXE		:= $(CEXE) $(CEXE_$(d))
 MODEXE_JSON_$(d)	:= $(addprefix $(d)/, rawingest)
 JSON_OBJ_$(d)		:= $(MODEXE_JSON_$(d):%=%.o) 
 
-MODEXE_$(d)	:= $(addprefix $(d)/, drms_query drms_log createtabstructure createns accessreplogs drms_addkeys drms_dropkeys createshadow dropshadow drms_parsekeys) $(MODEXE_JSON_$(d))
+MODEXE_$(d)	:= $(addprefix $(d)/, drms_query drms_log createtabstructure createns accessreplogs drms_addkeys drms_dropkeys createshadow dropshadow drms_parsekeys drms_parserecset) $(MODEXE_JSON_$(d))
 MODEXE		:= $(MODEXE) $(MODEXE_$(d))
 MODEXE_SOCK_$(d)	:= $(addprefix $(d)/, drms_log_sock)
 MODEXE_SOCK	:= $(MODEXE_SOCK) $(MODEXE_SOCK_$(d))
@@ -42,13 +42,13 @@ SUMS_BIN	:= $(SUMS_BIN) $(MODEXE_SUMS_$(d)) $(CEXE_SUMS_$(d))
 S_$(d)		:= $(notdir $(EXE_$(d)) $(MODEXE_SOCK_$(d)) $(MODEXE_SUMS_$(d)))
 
 # Local rules
-$(OBJ_$(d)):	CF_TGT := $(CF_$(d)) -I$(SRCDIR)/$(d)/../../libs/json
+$(OBJ_$(d)):	CF_TGT := $(CF_$(d)) -I$(SRCDIR)/$(d)/../../libs/json -I$(SRCDIR)/$(d)/../../libs/qdecoder
 $(OBJ_$(d)):	$(SRCDIR)/$(d)/Rules.mk
 
 $(JSON_OBJ_$(d)): CF_TGT := $(CF_TGT) -I$(SRCDIR)/$(d)/../../libs/jsmn $(CFITSIOH)
 $(MODEXE_JSON_$(d)):	$(LIBJSMN)
 
-$(MODEXE_$(d)): $(LIBJSON)
+$(MODEXE_$(d)): $(LIBJSON) $(LIBQDECODER)
 
 # Shortcuts
 .PHONY:	$(S_$(d))

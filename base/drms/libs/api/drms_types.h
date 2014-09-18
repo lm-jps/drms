@@ -536,6 +536,19 @@ typedef enum DRMS_RecordSetType_struct
    kRecordSetType_DSDSPort
 } DRMS_RecordSetType_t;
 
+#ifndef DRMS_TYPES_C
+    extern char *drms_type_recsetnames[];
+#else
+    char *drms_type_recsetnames[] =
+    {
+       "drms",
+       "dsds",
+       "vot",
+       "plainfile",
+       "dsdsport"
+    };
+#endif
+
 /** \brief DRMS-Record-set container */
 struct DRMS_RecordSet_struct
 {
