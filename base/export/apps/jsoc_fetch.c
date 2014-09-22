@@ -74,6 +74,7 @@
 #define kArgRequestorid	"requestorid"
 #define kArgFile	"file"
 #define kArgTestmode    "t"
+#define kArgPassthrough "p"
 #define kOpSeriesList	"series_list"	// show_series
 #define kOpSeriesStruct	"series_struct"	// jsoc_info, series structure, ike show_info -l -s
 #define kOpRsSummary	"rs_summary"	// jsoc_info, recordset summary, like show_info -c
@@ -119,6 +120,7 @@ ModuleArgs_t module_args[] =
   {ARG_STRING, kUserHandle, kNotSpecified, "User specified unique session ID"},
   {ARG_FLOAT, KArgSizeRatio, "1.0", "For cut-out requests, this is the ratio between the number of cut-out pixels to the number of original-image pixels."},
   {ARG_FLAG, kArgTestmode, NULL, "if set, then creates new requests with status 12 (not 2)"},
+  {ARG_FLAG, kArgPassthrough, NULL, "if set, then inserts an X into the request ID to denote that the request originated from an external user, but was executed on the internal database."},
   {ARG_FLAG, "h", "0", "help - show usage"},
   {ARG_STRING, "QUERY_STRING", kNotSpecified, "AJAX query from the web"},
   {ARG_STRING, "REMOTE_ADDR", "0.0.0.0", "Remote IP address"},
@@ -966,6 +968,7 @@ int DoIt(void)
   const char *Remote_Address;
   char dbhost[DRMS_MAXHOSTNAME];
   int testmode = 0;
+  int passthrough = 0;
   char *errorreply;
   int64_t *sunumarr = NULL; /* array of 64-bit sunums provided in the'sunum=...' argument. */
   int nsunums;
@@ -1078,6 +1081,7 @@ int DoIt(void)
             if (strncmp(cmdparams_get_str (&cmdparams, kArgDs, NULL),"*file*", 6) == 0);
             SetWebFileArg(req, kArgFile, &webarglist, &webarglistsz);
             SetWebArg(req, kArgTestmode, &webarglist, &webarglistsz);
+            SetWebArg(req, kArgPassthrough, &webarglist, &webarglistsz);
             
             qEntryFree(req); 
         }
@@ -1137,6 +1141,7 @@ int DoIt(void)
     userhandle = "";
 
   testmode = (TESTMODE || cmdparams_isflagset(&cmdparams, kArgTestmode));
+  passthrough = cmdparams_isflagset(&cmdparams, kArgPassthrough);
 
   dodataobj = strcmp(formatvar, "dataobj") == 0;
   dojson = strcmp(format, "json") == 0;
@@ -2628,8 +2633,18 @@ check for requestor to be valid remote DRMS site
      if (fscanf(fp, "%s", new_requestid) != 1)
        JSONDIE("Cant get new RequestID");
      pclose(fp);
-     if (strcmp(dbhost, "hmidb") == 0)
-       strcat(new_requestid, "_IN");
+     if (strcmp(dbhost, SERVER) == 0)
+     {
+        if (passthrough)
+        {
+           /* Denote a pass-through export by inserting an X in the request ID. We need to distinguish this type of export 
+            * from an internal export (even though use the internal database) because the export web page needs to distinguish
+            * them. */
+           strcat(new_requestid, "_X");
+        }
+
+        strcat(new_requestid, "_IN");
+     }
      }
      requestid = new_requestid;
 
