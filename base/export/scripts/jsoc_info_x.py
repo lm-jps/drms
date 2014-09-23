@@ -32,6 +32,10 @@ try:
             val = arguments.getvalue(key)
             
             if key in ('s', 'series'):
+                # If the caller provides the series argument twice, then val will be a list, not a string. Raise an exception if that
+                # happens (a list has no split method).
+                if type(val) is list:
+                    raise Exception('invalidArgs', 'The series argument appears more than once in the argument list.')
                 optD['series'] = val.split(',')
             else:
                 # Save all arguments so we can pass them onto the jsoc_info binary.
@@ -39,7 +43,7 @@ try:
 
     # Enforce requirements.
     if not 'series' in optD:
-        raise Exception('getArgs', 'Missing required argument ' + "'series'.")
+        raise Exception('invalidArgs', 'Missing required argument ' + "'series'.")
 
     drmsParams = DRMSParams()
 
@@ -81,8 +85,8 @@ except Exception as exc:
     else:
         if exc.args[0] == 'drmsParams':
             err = 'drmsParams'
-        elif exc.args[0] == 'getArgs':
-            err = 'missingArgs'
+        elif exc.args[0] == 'invalidArgs':
+            err = 'invalidArgs'
         elif exc.args[0] == 'noPrivs':
             err = 'permDenied'
         else:
