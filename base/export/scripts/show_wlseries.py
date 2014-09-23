@@ -55,9 +55,19 @@ def getArgs(args, drmsParams):
     istat = False
     optD = {}
     etype = ''
+    useCGI = False
     
+    # Ack - A disaster of Hellerian proportions. We want to determine the method of argument parsing chosen by the user, but in order to select a method the user
+    # must set an argument! Sigh.
+    optD['debug'] = False
+    for arg in args:
+        if arg in ('-d', '--debug'):
+            useCGI = True
+            optD['debug'] = True
+            break
+
     # Use REQUEST_URI as surrogate for the invocation coming from a CGI request.
-    if os.getenv('REQUEST_URI') or DEBUG_CGI:
+    if os.getenv('REQUEST_URI') or DEBUG_CGI or useCGI:
         optD['source'] = 'cgi'
     else:
         optD['source'] = 'cl'
@@ -119,6 +129,7 @@ def getArgs(args, drmsParams):
             parser.add_argument('s', 'server', '--server', help='The machine hosting the database that serves DRMS data series names.', metavar='<db server>', dest='dbserver', required=True)
 
             # Optional
+            parser.add_argument('-d', '--debug', help='Run in CGI mode, and print helpful diagnostics.).', dest='debug', action='store_true', default=False)
             parser.add_argument('-n', '--noheader', help='Supress the HTML header (cgi runs only).', dest='noheader', action='store_true', default=False)
             parser.add_argument('-f', '--filter', help='The DRMS-style regular expression to filter series.', metavar='<regexp>', dest='filter')
             parser.add_argument('-H', '--dbmergehost', help='The machine hosting DRMS data series names.', metavar='<db host port>', dest='dbhost')
@@ -142,6 +153,7 @@ def getArgs(args, drmsParams):
 
         # Override defaults.
         try:
+            # optD['debug'] = getOption(args.debug, False)
             optD['noheader'] = getOption(args.noheader, False)
             optD['dbserver'] = args.dbserver # Required arguments are always available.
             optD['filter'] = getOption(args.filter, None)
@@ -312,6 +324,10 @@ if __name__ == "__main__":
                         cmd += 'SELECT seriesname, dbhost, primary_idx, description FROM wlmerge'
 
                 cmd += ' ORDER BY seriesname'
+                
+                if optD['debug']:
+                    print('db cmd:')
+                    print(cmd)
 
                 try:
                     cursor.execute(cmd)
