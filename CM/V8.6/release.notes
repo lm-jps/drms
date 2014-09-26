@@ -1,0 +1,85 @@
+                       Release Notes JSOC V8.6        26SEP2014
+                       -----------------------        ---------
+
+
+A release is a set of binary and text files, each having a specific version. The release itself is
+also versioned to facilitate the identification of the release. For example, release 1.3 may 
+contain fileA#1.8, fileB#1.2, and fileC#2.2 and release 1.4 may contain fileA#2.5, fileB#2.1, 
+and fileC#2.9. JSOC releases are similarly versioned and contain a set of such files.  JSOC release
+code is guaranteed to compile on cluster nodes (e.g., n04 and solar3).  At the time of the 
+creation of the release, the versions of each file will be very recent - most will be the
+"head" versions. The set of files is stable. They have been tested and verified to work properly
+on the supported systems. As time passes, newer versions of files will be committed to the 
+code repository and there is no guarantee that these changes will not destabilize JSOC 
+(i.e., they may cause JSOC to no longer compile or execute properly).  
+
+There are several ways to use this release.  If you wish to simply use pre-built
+binaries, you can use the production binaries, which are located at 
+/home/jsoc/cvs/Development/JSOC (The release binaries are actually in
+/home/jsoc/cvs/JSOC, but as our production code changes more quickly
+than releases are generated, we put critical fixes in the
+"Development" tree. To be sure you use code that has been built with
+these critical fixes, you'll need to use the "Development" tree. As
+time passes our production code will stabilize. When that happens, you should use
+/home/jsoc/cvs/JSOC. But for now, you should use the "Development"
+tree.). Every time a release is created, the binaries in this location get updated
+by the jsoc user. To use these binaries, you can run them directly, 
+"/home/jsoc/cvs/JSOC/Development/bin/linux_x86_64/show_info -j hmi.M_45s", 
+for example. Or you can put /home/jsoc/cvs/JSOC/Development/bin/linux_x86_64 in 
+your path environment variable.
+
+If instead you want to work with stable source files, then you must have a local copy (e.g., 
+in your home directory) of the source code in the CVS code repository. You must "build" or "make" 
+the code this local code before it can be used. You will want to work with a local copy if you 
+plan on making changes to the repository files (i.e., you plan on doing development). Changes you 
+make to your local copy are not visible to other users until you commit those changes back to the 
+CVS repository.  
+
+Obtaining the Release
+---------------------
+To update your working directory to this release, or to check-out this release anew, 
+please visit http://jsoc.stanford.edu/jsocwiki/CvsInit (please see the section entitled
+Update Your Existing Working Directory ("Sandbox")). Please keep in mind that
+users may have modified files since the release was created, so use of the 
+scripts documented in the web page may result in a working directory whose
+content is not identical to the release.  
+
+Additional Info
+---------------
+Use the Apache CVS gui to see diffs between file revisions. For example, go to http://jsoc2.stanford.edu/cvs/JSOC/base/drms/
+and click on the name in the File column and then click on "diffs to previous #" to see the diffs.
+
+Changes since previous release (V8.5 - June 23, 2014)
+----------------------------------------------------------
+
+NEW FEATURES:
++ No longer is a DRMS session database record created, unless the running module writes to the DRMS database. When a function that writes to the db is called, the session record is created on-demand.
++ We now allow "read-only" use of DRMS. Previously, it was required that a database user had an associated database namespace so that we could log their activity in a session log in the namespace. But now, a user without an associated namespace can use DRMS (as long as they do not attempt to write to DRMS). The upshot is that we do not need to run masterlists for every user of DRMS (which makes the ns.drms_* tables in their namespace), nor do we need to even create a database account for every user. Users can run under a read-only guest database account.
++ Added several new localization parameters that allow configuration of the upcoming remote-sums upgrade (which did not quite make it into this release).
++ Removed the SUMS_DEBUG localization parameter (from the configuration-file template) that got accidentally added to the set of localization parameters.
++ Added a CGI that parses record-set queries (initially used by the remote-sums code, but also used by a couple of other programs now).
++ Enhanced the efficiency of show_info so that it does not call SUM_get() multiple times for the same SU.
++ Modified jsoc_rebin so that it handles data series with more than one DRMS segment.
++ A mail message is now sent to affected sites when a series is unpublished.
++ Added support for as-is SU exports to the export system. Now if a caller requests SUs by SUNUM, and those SUs are offline, the export system will retrieve them and then complete the export request.
++ jsoc_fetch has a new sizeratio parameter that is used by the export system when it truncates large export payloads. The sizeratio value allows the export system to compensate for requests that ask for a cut-out from a larger image. The payload used to be calculated from the sizes of the full images, but with the sizeratio parameter, it is now calculated from the sizes of the cut-outs.
++ Added some new scripts/CGIs for the upcoming web-interface pass-through feature. This feature will allow external access to sanctioned internal DRMS series via the public website.
++ Added a file-locking feature to our Python libraries.
++ Re-vamped the NetDRMS SUMS start and stop scripts. They no longer use the ps command to determine which SUMS procs are running and need to be killed. Instead, when the SUMS procs are launched, their PIDs are saved into a PID file, and when the stop script runs, it terminates all procs whose PIDs are in the PID file.
++ The ingest_dsds_to_drms module was upgraded to support limb_figure data.
++ Added linux_avx targets for the JSOC lev0 project.
++ Added a new limbfit module: lrwrp_ann.
++ The mag team provided a new module to generate Mr and Mlos dailyupdate synoptic maps: mrmlosdailysynframe.
++ The mag team provided a new module to generate Mr and Mlos dailyupdate synoptic maps from nrt data: mrmlosdailysynframe_nrt.
+
+DEFECTS FIXED:
++ Fixed a bug in the JSOC Python command-line-parsing library. It was indexing bookkeeping information about each arg by the arg's internal name, not the name that appears on the command line. But it turns out that the search for the bookkeeping information is by command-line name.
++ Several projects had been using x86_64 headers for their avx builds. Fixed those projects.
++ drms_server had not been properly handling the DRMS_RETENTION and DRMS_NEWSURETENTION command-line arguments. As a result, the environment retention parameter was defaulting to -1, instead of the INT16_MIN value it should have been defaulting to. The result was that the retention for new SUs was being set to abs(-1), and SUs were disappearing quickly.
++ The DRMSPGPORT localized parameter was being ignored at remote sites. Before this was fixed, the only way to set the db port was through the host:port notation. Now DRMSPGPORT will be used for the port designation, unless host:port is used, in which case the port on the RHS of the ':' will be used.
++ Fixed a segmentation fault in the DRMS code that auto-follows links.
++ Fixed several SUMS scripts that were using the existence of localization.h to distinguish JSOC from a NetDRMS (but localization.h exists in both types of builds).
++ An array overflow was fixed in the code that creates the small lev0 images (both hmi and aia).
++ The avx make for the HARP processing modules was #including the wrong version of CFITIO header. Fixed.
++ A sign error in the horizontal component of lorentz force in a sharps library function was fixed.
++ Various production movie-making code was updated to work on avx machines.
