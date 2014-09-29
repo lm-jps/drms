@@ -5,7 +5,7 @@ psql -h hmidb -p 5432 jsoc -U production -c "CREATE TABLE drms.allseries(dbhost 
 psql -h hmidb -p 5432 jsoc -U production -c "ALTER TABLE drms.allseries ADD CONSTRAINT allseries_pkey PRIMARY KEY (dbhost, dbport, dbname, seriesname)"
 psql -h hmidb -p 5432 jsoc -U production -c "CREATE INDEX allseries_dbhost on drms.allseries(dbhost)"
 psql -h hmidb -p 5432 jsoc -U production -c "CREATE INDEX allseries_seriesname on drms.allseries(seriesname)"
-psql -h hmidb -p 5432 jsoc -U production -c "GRANT SELECT ON drms.allseries TO PUBLIC"
+psql -h hmidb -p 5432 jsoc -U production -c "GRANT SELECT,INSERT,DELETE ON drms.allseries TO PUBLIC"
 
 # Copy all the series data from the master drms_series tables to the allseries table:
 psql -h hmidb -p 5432 jsoc -U production -c "INSERT INTO drms.allseries(dbhost, dbport, dbname, seriesname, author, owner, unitsize, archive, retention, tapegroup, primary_idx, created, description, dbidx, version) SELECT 'hmidb', '5432', 'jsoc', seriesname, author, owner, unitsize, archive, retention, tapegroup, primary_idx, created, description, dbidx, version FROM drms_series()"
