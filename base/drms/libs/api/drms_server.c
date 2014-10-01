@@ -241,22 +241,48 @@ void drms_server_setsd(DRMS_Shutdown_State_t st)
 
 int drms_server_authenticate(int sockfd, DRMS_Env_t *env, int clientid)
 {
-  int status = 0;
-  int tmp[5],*t;
-  long long ltmp[2];
-  struct iovec vec[8],*v;
-  /* Send session information to the client. */
-  t=tmp; v=vec;
-  net_packint(status, t++, v++);
-  net_packint(clientid, t++, v++);
-  net_packlonglong(env->session->sessionid, &ltmp[0], v++);
-  net_packstring(env->session->sessionns, t++, v);
-  v += 2;
-  net_packlonglong(env->session->sunum, &ltmp[1], v++);
-  net_packstring(env->session->sudir ? env->session->sudir : kNOLOGSUDIR, t, v);
-  Writevn(sockfd, vec, 8);
+    int status = 0;
+    int tmp[8],*t;
+    long long ltmp[2];
+    struct iovec vec[16],*v;
+    int port = -1;
+    char *endptr = NULL;
+    long long ival = 0;
+    
+    /* Send session information to the client. */
+    t=tmp; v=vec;
+    net_packint(status, t++, v++);
+    net_packint(clientid, t++, v++);
+    net_packlonglong(env->session->sessionid, &ltmp[0], v++);
+    net_packstring(env->session->sessionns, t++, v);
+    v += 2; /* It looks like strings use up two vecs - one for the string length, and one for the string itself. */
+    net_packlonglong(env->session->sunum, &ltmp[1], v++);
+    net_packstring(env->session->sudir ? env->session->sudir : kNOLOGSUDIR, t++, v);
+    v += 2;
+    
+    /* Send dbhost, dbport, dbname, dbuser. */
+    net_packstring(env->session->db_handle->dbhost, t++, v);
+    v += 2;
 
-  return status;
+    /* The port is stored as a string (it would be better to store it as an int), so convert it to an interger before sending it
+     * to the client. */
+    ival = strtoll(env->session->db_handle->dbport, &endptr, 10);
+    if (ival != 0 || endptr != env->session->db_handle->dbport)
+    {
+        port = (int)ival;
+    }
+    
+    net_packint(port, t++, v++);
+    
+    net_packstring(env->session->db_handle->dbname, t++, v);
+    v += 2;
+    
+    net_packstring(env->session->db_handle->dbuser, t++, v);
+    v += 2;
+    
+    Writevn(sockfd, vec, 15);
+    
+    return status;
 }
 
 /* Assumes that drms_open() already called (but doesn't check for that). Also

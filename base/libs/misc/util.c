@@ -919,43 +919,85 @@ int base_cleanup_register(const char *key, BASE_Cleanup_t *cu)
 
 int base_cleanup_go(const char *explicit)
 {
-   int error = 0;
-   BASE_Cleanup_t *cu = NULL;
-
-   if (gCleanup)
-   {
-      if (explicit && *explicit)
-      {
-         cu = hcon_lookup(gCleanup, explicit);
-
-         if (cu)
-         {
-            (*(cu->free))(cu->item);
-            hcon_remove(gCleanup, explicit);
-         }
-         else
-         {
-            error = 1;
-         }
-      }
-      else
-      {
-         /* clean all up */
-         HIterator_t *hiter = hiter_create(gCleanup);
-         const char *keyname = NULL;
-
-         while ((cu = hiter_extgetnext(hiter, &keyname)) != NULL)
-         {
-            (*(cu->free))(cu->item);
-            /* I think I can do this - remove one while iterating */
-            hcon_remove(gCleanup, keyname);
-         }
-
-         hiter_destroy(&hiter);
-      }
-   }
-
-   return error;
+    int error = 0;
+    BASE_Cleanup_t *cu = NULL;
+    
+    if (gCleanup)
+    {
+        if (explicit && *explicit)
+        {
+            cu = hcon_lookup(gCleanup, explicit);
+            
+            if (cu)
+            {
+                (*(cu->free))(cu->item);
+                hcon_remove(gCleanup, explicit);
+            }
+            else
+            {
+                error = 1;
+            }
+        }
+        else
+        {
+            /* clean all up */
+            HIterator_t *hiter = hiter_create(gCleanup);
+            const char *keyname = NULL;
+            char **toRemove = NULL;
+            int ielem;
+            int ntotal;
+            
+            ntotal = gCleanup->num_total;
+            
+            if (gCleanup && ntotal > 0)
+            {
+                toRemove = calloc(gCleanup->num_total, sizeof(char *));
+            }
+            
+            if (toRemove)
+            {
+                ielem = 0;
+                while ((cu = hiter_extgetnext(hiter, &keyname)) != NULL)
+                {
+                    (*(cu->free))(cu->item);
+                    /* I think I can do this - remove one while iterating
+                     * no you can't. */
+                    /* hcon_remove(gCleanup, keyname); */
+                    toRemove[ielem] = strdup(keyname);
+                    if (!toRemove[ielem])
+                    {
+                        fprintf(stderr, "Out of memory in base_cleanup_go().\n");
+                        error = 1;
+                        break;
+                    }
+                    
+                    ielem++;
+                }
+                
+                for (ielem = 0; ielem < ntotal; ielem++)
+                {
+                    if (toRemove[ielem])
+                    {
+                        hcon_remove(gCleanup, toRemove[ielem]);
+                        free(toRemove[ielem]);
+                        toRemove[ielem] = NULL;
+                    }
+                }
+                
+                free(toRemove);
+                toRemove = NULL;
+            }
+            else
+            {
+                fprintf(stderr, "Out of memory in base_cleanup_go().\n");
+                error = 1;
+            }
+            
+            hiter_destroy(&hiter);
+        }
+    }
+    
+    return error;
 }
 
 void base_cleanup_term()

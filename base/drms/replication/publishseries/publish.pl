@@ -11,6 +11,8 @@ use lib "$Bin/..";
 use toolbox qw(GetCfg);
 use DBI;
 use DBD::Pg;
+use lib "$RealBin/../../../localization";
+use drmsparams;
 
 use constant kSuccess => 0;
 use constant kInvalidArg => 1;
@@ -19,6 +21,8 @@ use constant kInvalidSQL => 3;
 use constant kRunCmd => 4;
 use constant kFileIO => 5;
 use constant kSlonikFailed => 6;
+use constant kSeriesNotFound => 7;
+use constant kDrmsParams => 8;
 
 $| = 1; # autoflush
 
@@ -26,6 +30,7 @@ $| = 1; # autoflush
 my($conf);
 my($series);
 my($schema);
+my($drmsParams);
 my($oksub);
 my($table);
 my($ns);
@@ -63,6 +68,17 @@ else
    }
 
    ($schema, $table) = ($series =~ /(\S+)\.(\S+)/);
+}
+
+if ($rv == &kSuccess)
+{
+    $drmsParams = new drmsparams();
+    
+    if (!defined($drmsParams))
+    {
+        print STDERR "ERROR: Cannot get DRMS parameters.\n";
+        $rv = &kDrmsParams;
+    }
 }
 
 if ($rv == kSuccess)
@@ -259,6 +275,7 @@ if ($rv == kSuccess)
          {
             my($script);
             my(@scriptarr);
+            my(@seriesInfo);
 
             # I guess I have to open this file and read the contents and pass them to the slave db
             if (open(SCRIPT, "<$sqlpath"))
@@ -277,7 +294,40 @@ if ($rv == kSuccess)
                }
                else
                {
-                  print "Successfully created series '$series' on slave db, continuing...\n";
+                   print "Successfully created series '$series' on slave db, continuing...\n";
+                   
+                   my($wl) = undef;
+                   
+                   $wl = $drmsParams->get('WL_HASWL');
+                   
+                   if (defined($wl) && $wl)
+                   {
+                       # Add series to drms.allseries. The machine hosting the db is in the DRMS parameter SERVER (port - DRMSPGPORT,
+                       # dbname - DBNAME). The all-series series is assumed to be named 'drms.allseries'.
+                       print "Getting series info for series $series...\n";
+                       @seriesInfo = GetSeriesInfo($dbhost, $dbport, $dbhame, $series);
+                       
+                       if ($#seriesInfo >= 0)
+                       {
+                           my($info) = join(',', @seriesInfo);
+                           print "Got info: $info\n";
+                           
+                           if (RunCmd("$cfg{kScriptDir}/updateAllSeries.py op=insert --info='$info'", 1) != 0)
+                           {
+                               print STDERR "Failure to insert series '$series' into drms.alleries.\n";
+                               $rv = &kRunCmd;
+                           }
+                           else
+                           {
+                               print "Successfully ran updateAllSeries.py.\n";
+                           }
+                       }
+                       else
+                       {
+                           print "Failed to get series info.\n";
+                           $rv = &kSeriesNotFound;
+                       }
+                   }
                }
             }
             else
@@ -631,4 +681,42 @@ sub PropagatedToSlave
    }
 
    return $rv;
+}
+
+sub GetSeriesInfo
+{
+    my($series) = shift;
+    my($dbhost) = shift;
+    my($dbport) = shift;
+    my($dbname) = shift;
+    my($serieslc) = lc($series);
+    my(@rv) = ();
+    
+    $stmnt = "SELECT seriesname, author, owner, unitsize, archive, retention, tapegroup, primary_idx, created, description, dbidx, version FROM drms_series() WHERE lower(seriesname) = '" . $serieslc . "'";
+    
+    print "Executing SQL ==> $stmnt\n";
+    $rrows = $$rdbh->selectall_arrayref($stmnt, undef);
+    
+    if (NoErr($rrows, $rdbh, $stmnt))
+    {
+        my(@rows) = @$rrows;
+
+        if ($#rows == 0)
+        {
+            # Series exists.
+            # Each element is a reference to an array - gotta dereference and this sucks.
+            @rv = ($dbhost, $dbport, $dbname, $rows[0]->[0], $rows[0]->[1], $rows[0]->[2], $rows[0]->[3], $rows[0]->[4], $rows[0]->[5], $rows[0]->[6], $rows[0]->[7] , $rows[0]->[8], $rows[0]->[9], $rows[0]->[10], $rows[0]->[11]);
+        }
+        else
+        {
+            # Series does not exist (or there is more than one entry in drms_series() for the series, which is bad).
+            print STDERR "Series $series does not exist.\n";
+        }
+    }
+    else
+    {
+        print STDERR "Error executing SQL ==> $stmnt\n";
+    }
+
+    return @rv;
 }

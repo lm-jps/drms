@@ -128,9 +128,9 @@ if __name__ == "__main__":
                 
                 if optD['op'] == 'insert':
                     infoStr = ','.join(optD['info'])
-                    cmd = 'INSERT INTO drms.allseries_test(dbhost, dbport, dbname, seriesname, author, owner, unitsize, archive, retention, tapegroup, primary_idx, created, description, dbidx, version) VALUES (' + infoStr + ')'
+                    cmd = 'INSERT INTO drms.allseries(dbhost, dbport, dbname, seriesname, author, owner, unitsize, archive, retention, tapegroup, primary_idx, created, description, dbidx, version) VALUES (' + infoStr + ')'
                 else:
-                    cmd = "DELETE FROM drms.allseries_test WHERE dbhost='" + optD['seriesdbhost'] + "' AND dbport=" + str(optD['seriesdbport']) + " AND dbname='" + optD['seriesdbname'] + "' AND seriesname='" + optD['series'] + "'"
+                    cmd = "DELETE FROM drms.allseries WHERE dbhost='" + optD['seriesdbhost'] + "' AND dbport=" + str(optD['seriesdbport']) + " AND dbname='" + optD['seriesdbname'] + "' AND seriesname='" + optD['series'] + "'"
                 try:
                     cursor.execute(cmd)
                 except psycopg2.Error as exc:

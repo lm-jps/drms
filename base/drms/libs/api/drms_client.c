@@ -250,6 +250,39 @@ DRMS_Session_t *drms_connect(const char *host)
         session->sudir = NULL;  
     }
     
+    /* Receive database-connection information (the connection from drms_server to the database). */
+    char *tmp = NULL;
+    
+    /* dbhost */
+    tmp = receive_string(session->sockfd);
+    if (tmp)
+    {
+        snprintf(session->dbhost, sizeof(session->dbhost), "%s", tmp);
+        free(tmp);
+        tmp = NULL;
+    }
+    
+    /* dbport */
+    session->dbport = Readint(session->sockfd);
+    
+    /* dbname */
+    tmp = receive_string(session->sockfd);
+    if (tmp)
+    {
+        snprintf(session->dbname, sizeof(session->dbname), "%s", tmp);
+        free(tmp);
+        tmp = NULL;
+    }
+    
+    /* dbname */
+    tmp = receive_string(session->sockfd);
+    if (tmp)
+    {
+        snprintf(session->dbuser, sizeof(session->dbuser), "%s", tmp);
+        free(tmp);
+        tmp = NULL;
+    }
+    
 #ifdef DEBUG
     printf("got sudir=%s\n",session->sudir);
 #endif
