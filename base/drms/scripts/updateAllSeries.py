@@ -58,7 +58,7 @@ def getArgs(drmsParams):
     optD['seriesdbhost'] = args.seriesdbhost
     optD['seriesdbport'] = args.seriesdbport
     optD['seriesdbname'] = args.seriesdbname
-    optD['series'] = args.series
+    optD['series'] = args.series.lower()
     optD['info'] = args.info
 
     if optD['op'] == 'insert':
@@ -134,7 +134,7 @@ if __name__ == "__main__":
                     infoStr = ','.join(optD['info'])
                     cmd = 'INSERT INTO drms.allseries_test(dbhost, dbport, dbname, seriesname, author, owner, unitsize, archive, retention, tapegroup, primary_idx, created, description, dbidx, version) VALUES (' + infoStr + ')'
                 else:
-                    cmd = "DELETE FROM drms.allseries_test WHERE dbhost='" + optD['seriesdbhost'] + "' AND dbport=" + str(optD['seriesdbport']) + " AND dbname='" + optD['seriesdbname'] + "' AND seriesname='" + optD['series'] + "'"
+                    cmd = "DELETE FROM drms.allseries_test WHERE dbhost='" + optD['seriesdbhost'] + "' AND dbport=" + str(optD['seriesdbport']) + " AND dbname='" + optD['seriesdbname'] + "' AND lower(seriesname)='" + optD['series'] + "'"
                 try:
                     cursor.execute(cmd)
                 except psycopg2.Error as exc:
