@@ -6,13 +6,13 @@ use FileHandle;
 use File::Copy;
 use IO::Dir;
 use Fcntl ':flock';
-use FindBin qw($Bin);
-use lib "$Bin/..";
+use FindBin qw($RealBin);
+use lib "$RealBin/..";
 use toolbox qw(GetCfg);
 use DBI;
 use DBD::Pg;
 use URI::Escape;
-use lib "$RealBin/../../../localization";
+use lib "$RealBin/../../../../localization";
 use drmsparams;
 
 use constant kSuccess => 0;
@@ -288,6 +288,7 @@ if ($rv == kSuccess)
                print "Executing SQL ==> $script\n";
 
                $res = $sdbh->do($script);
+
                if (!NoErr($res, \$sdbh, $script))
                {
                   print "Failure creating series '$series' on slave db.\n";
@@ -306,14 +307,14 @@ if ($rv == kSuccess)
                        # Add series to drms.allseries. The machine hosting the db is in the DRMS parameter SERVER (port - DRMSPGPORT,
                        # dbname - DBNAME). The all-series series is assumed to be named 'drms.allseries'.
                        print "Getting series info for series $series...\n";
-                       @seriesInfo = GetSeriesInfo(\$mdbh, $dbhost, $dbport, $dbhame, $series);
+                       @seriesInfo = GetSeriesInfo(\$mdbh, $cfg{'MASTERHOSTNAME'}, $cfg{'MASTERPORT'}, $cfg{'MASTERDBNAME'}, $series);
                        
                        if ($#seriesInfo >= 0)
                        {
                            my($info) = join(',', @seriesInfo);
                            print "Got info: $info\n";
                            
-                           if (RunCmd("$cfg{kScriptDir}/updateAllSeries.py op=insert --info='$info'", 1) != 0)
+                           if (RunCmd($drmsParams->get('BIN_PY') . " $cfg{kScriptDir}/updateAllSeries.py op=insert --info='$info'", 1) != 0)
                            {
                                print STDERR "Failure to insert series '$series' into drms.alleries.\n";
                                $rv = &kRunCmd;
@@ -450,9 +451,10 @@ sub RunCmd
    my($doit) = $_[1];
    my($ret) = 0;
 
+   print "Running '$cmd'.\n";
+
    if ($doit)
    {
-      print "Running '$cmd'.\n";
       system($cmd);
 
       if ($? == -1)
@@ -686,11 +688,7 @@ sub PropagatedToSlave
 
 sub GetSeriesInfo
 {
-    my($rdbh) = $_[0];
-    my($series) = shift;
-    my($dbhost) = shift;
-    my($dbport) = shift;
-    my($dbname) = shift;
+    my($rdbh, $dbhost, $dbport, $dbname, $series) = @_;
     my($serieslc) = lc($series);
     my(@rv) = ();
     
@@ -707,7 +705,7 @@ sub GetSeriesInfo
         {
             # Series exists.
             # Each element is a reference to an array - gotta dereference.
-            my(@cleaned) = cleanUpMess(@$rows[0]);
+            my(@cleaned) = cleanUpMess(@{$rows[0]});
 
             @rv = ($dbhost, $dbport, $dbname, @cleaned);
         }
