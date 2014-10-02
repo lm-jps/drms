@@ -270,6 +270,8 @@ WL_HASWL                              0
 # The file that contains a list of internal series that are accessible to external users.
 WL_FILE                               /usr/share/drms/whitelist.txt
 
+# The paths to various binaries.
+BIN_PY                                /usr/bin/python
 ###############################
 
 __MAKE__
