@@ -306,7 +306,7 @@ if ($rv == kSuccess)
                        # Add series to drms.allseries. The machine hosting the db is in the DRMS parameter SERVER (port - DRMSPGPORT,
                        # dbname - DBNAME). The all-series series is assumed to be named 'drms.allseries'.
                        print "Getting series info for series $series...\n";
-                       @seriesInfo = GetSeriesInfo($dbhost, $dbport, $dbhame, $series);
+                       @seriesInfo = GetSeriesInfo(\$mdbh, $dbhost, $dbport, $dbhame, $series);
                        
                        if ($#seriesInfo >= 0)
                        {
@@ -686,6 +686,7 @@ sub PropagatedToSlave
 
 sub GetSeriesInfo
 {
+    my($rdbh) = $_[0];
     my($series) = shift;
     my($dbhost) = shift;
     my($dbport) = shift;
