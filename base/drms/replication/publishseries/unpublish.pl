@@ -17,6 +17,8 @@ use JSON -support_by_pp;
 use Email::MIME;
 use Email::Sender::Simple qw(sendmail);
 use Data::Dumper;
+use lib "$RealBin/../../../localization";
+use drmsparams;
 
 use constant kSuccess => 0;
 use constant kInvalidArg => 1;
@@ -24,6 +26,8 @@ use constant kSlonikFailed => 2;
 use constant kInvalidSQL => 3;
 use constant kDelSeriesFailed => 4;
 use constant kEditLstFailed => 5;
+use constant kDrmsParams => 6;
+use constant kRunCmd => 7;
 
 use constant kLockFile => "gentables.txt";
 
@@ -34,6 +38,7 @@ my($conf);
 my($series);
 my($schema);
 my($table);
+my($drmsParams);
 my($ns);
 my($tab);
 my($rv);
@@ -66,6 +71,17 @@ else
    }
 
    ($schema, $table) = ($series =~ /(\S+)\.(\S+)/);
+}
+
+if ($rv == &kSuccess)
+{
+    $drmsParams = new drmsparams();
+
+    if (!defined($drmsParams))
+    {
+        print STDERR "ERROR: Cannot get DRMS parameters.\n";
+        $rv = &kDrmsParams;
+    }
 }
 
 if ($rv == &kSuccess)
@@ -235,10 +251,12 @@ if ($rv == &kSuccess)
 
              if ($rv == &kSuccess)
              {
-                if (DeleteSeries(\$slavedbh, $schema, $table, 1) != 0)
-                {
-                   $rv = &kDelSeriesFailed;
-                }
+                 my($wl) = $drmsParams->get('WL_HASWL');
+
+                 if (DeleteSeries(\$slavedbh, (defined($wl) && $wl), $cfg{'SLAVEHOSTNAME'}, $cfg{'SLAVEPORT'}, $cfg{'SLAVEDBNAME'}, $schema, $table, $cfg{'kScriptDir'}, 1) != 0)
+                 {
+                     $rv = &kDelSeriesFailed;
+                 }
              }
 
              $slavedbh->disconnect();
@@ -372,9 +390,14 @@ sub RunCmd
 sub DeleteSeries
 {
    my($rdbh) = $_[0];
-   my($schema) = $_[1];
-   my($table) = $_[2];
-   my($doit) = $_[3];
+   my($hasWL) = $_[1];
+   my($dbhost) = $_[2];
+   my($dbport) = $_[3];
+   my($dbname) = $_[4];
+   my($schema) = $_[5];
+   my($table) = $_[6];
+   my($scriptDir) = $_[7];
+   my($doit) = $_[8];
    my($rv);
    my($stmnt);
    my($res);
@@ -450,6 +473,22 @@ sub DeleteSeries
          $res = $$rdbh->do($stmnt);
          $rv = !NoErr($res, $rdbh, $stmnt);
       }
+   }
+
+   # Do'h! Need to also drop the series from the drms.allseries table (if it exists).
+   if ($rv == 0 && $hasWL)
+   {
+       my($series) = lc($schema) . "\." . lc($table);
+
+       if (RunCmd("$scriptDir/updateAllSeries.py op=delete --dbhost=$dbhost --dbport=$dbport --dbname=$dbname --series=$series", $doit) != 0)
+       {
+           print STDERR "Failure to delete series '$series' from drms.alleries.\n";
+           $rv = &kRunCmd;
+       }
+       else
+       {
+           print "Successfully ran updateAllSeries.py.\n";
+       }
    }
 
    return $rv;
