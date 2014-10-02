@@ -73,7 +73,7 @@ q:RS_BINPATH                            /home/jsoc/cvs/Development/JSOC/bin/linu
 a:WL_HASWL                              1
 q:WL_FILE                               /web/jsoc/htdocs/whitelist.txt
 # Bin paths
-q:BIN_PY                                /home/jsoc/bin/linux_x86_64/activepython
+q:BIN_PY                                /home/jsoc/bin/linux_x86_64/activepython27
 
 __MAKE__
 # JSOC_SDP third-party libraries used by base
