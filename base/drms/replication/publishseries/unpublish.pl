@@ -9,7 +9,7 @@ use FindBin qw($RealBin);
 use lib "$RealBin/..";
 use toolbox qw(GetCfg);
 # For modifying the subscription config and lst tables.
-use lib "$Bin/../subscribe_manage";
+use lib "$RealBin/../subscribe_manage";
 use subtablemgr;
 use DBI;
 use DBD::Pg;
