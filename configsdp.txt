@@ -26,9 +26,6 @@ q:DBNAME                        jsoc
 q:WEB_DBUSER                    apache
 q:POSTGRES_ADMIN                postgres
 q:SUMS_MANAGER                  production
-# This seems like a bad idea to make the UID a parameter. Why not just convert the SUM_MANAGER value
-# to a UID when needed? If the UID of the SUM_MANAGER changes, we have to change the UID here.
-q:SUMS_MANAGER_UID              388
 q:SUMS_GROUP                    SOI
 q:SUMLOG_BASEDIR                /usr/local/logs/SUM
 q:SUMBIN_BASEDIR                /usr/local/bin
