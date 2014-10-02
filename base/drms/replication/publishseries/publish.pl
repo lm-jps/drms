@@ -11,6 +11,7 @@ use lib "$Bin/..";
 use toolbox qw(GetCfg);
 use DBI;
 use DBD::Pg;
+use URI::Escape;
 use lib "$RealBin/../../../localization";
 use drmsparams;
 
@@ -704,8 +705,10 @@ sub GetSeriesInfo
         if ($#rows == 0)
         {
             # Series exists.
-            # Each element is a reference to an array - gotta dereference and this sucks.
-            @rv = ($dbhost, $dbport, $dbname, $rows[0]->[0], $rows[0]->[1], $rows[0]->[2], $rows[0]->[3], $rows[0]->[4], $rows[0]->[5], $rows[0]->[6], $rows[0]->[7] , $rows[0]->[8], $rows[0]->[9], $rows[0]->[10], $rows[0]->[11]);
+            # Each element is a reference to an array - gotta dereference.
+            my(@cleaned) = cleanUpMess(@$rows[0]);
+
+            @rv = ($dbhost, $dbport, $dbname, @cleaned);
         }
         else
         {
@@ -716,6 +719,21 @@ sub GetSeriesInfo
     else
     {
         print STDERR "Error executing SQL ==> $stmnt\n";
+    }
+
+    return @rv;
+}
+
+# URI encode each column's content so we can combine the contents into a comma-separated list and send 
+# that list to a program via a command line.
+sub cleanUpMess
+{
+    my(@input) = @_;
+    my(@rv) = ();
+
+    foreach (@input)
+    {
+        push(@rv, uri_escape($_));
     }
 
     return @rv;

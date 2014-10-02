@@ -9,6 +9,7 @@ import pwd
 import re
 import json
 import cgi
+import urllib
 import psycopg2
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../include'))
 from drmsparams import DRMSParams
@@ -32,7 +33,7 @@ def getArgs(drmsParams):
         parser.add_argument('o', 'op', '--op', help='The operation to perform on the allseries, either "insert" or "delete".', metavar='<operation>', dest='op', required=True)
         
         # Optional
-        parser.add_argument('-i', '--info', help='The series information if the operation is "insert". The information must be a comma-separated list of strings.', metavar='<info>', dest='info')
+        parser.add_argument('-i', '--info', help='The series information if the operation is "insert". The information must be a comma-separated list of URI-encoded strings.', metavar='<info>', dest='info')
         parser.add_argument('-H', '--dbhost', help='The host of the series to delete from the allseries table if the operation is "delete".', metavar='<dbhost>', dest='seriesdbhost')
         parser.add_argument('-P', '--dbport', help='The port on the host of the series to delete from the allseries table if the operation is "delete".', metavar='<dbport>', dest='seriesdbport')
         parser.add_argument('-D', '--dbname', help='The name of the database containing the series to delete from the allseries table if the operation is "delete".', metavar='<dbname>', dest='seriesdbname')
@@ -63,7 +64,10 @@ def getArgs(drmsParams):
     if optD['op'] == 'insert':
         if optD['info']:
             # The caller has to put the info in the right order.
-            cols = args.info.split(',')
+            encCols = args.info.split(',')
+
+            # The fields are URI-encoded.
+            cols = [ urllib.unquote(item) for item in encCols ]
             
             if len(cols) != 15:
                 raise Exception('badArgs', 'Incorrect number of fields in the info argument.')
@@ -79,10 +83,10 @@ def getArgs(drmsParams):
             optD['info'].append(cols[7])           # archive (integer)
             optD['info'].append(cols[8])           # retention (integer)
             optD['info'].append(cols[9])           # tapegroup (integer)
-            optD['info'].append("'" + cols[10].replace('|', ',') + "'") # primary_idx (text)
+            optD['info'].append("'" + cols[10] + "'") # primary_idx (text)
             optD['info'].append("'" + cols[11] + "'") # created (text)
             optD['info'].append("'" + cols[12] + "'") # description (text)
-            optD['info'].append("'" + cols[13].replace('|', ',') + "'") # dbidx (text)
+            optD['info'].append("'" + cols[13] + "'") # dbidx (text)
             optD['info'].append("'" + cols[14] + "'") # version (text)
         else:
             raise Exception('badArgs', 'Missing required argument for insert operation: info.')
@@ -128,9 +132,9 @@ if __name__ == "__main__":
                 
                 if optD['op'] == 'insert':
                     infoStr = ','.join(optD['info'])
-                    cmd = 'INSERT INTO drms.allseries(dbhost, dbport, dbname, seriesname, author, owner, unitsize, archive, retention, tapegroup, primary_idx, created, description, dbidx, version) VALUES (' + infoStr + ')'
+                    cmd = 'INSERT INTO drms.allseries_test(dbhost, dbport, dbname, seriesname, author, owner, unitsize, archive, retention, tapegroup, primary_idx, created, description, dbidx, version) VALUES (' + infoStr + ')'
                 else:
-                    cmd = "DELETE FROM drms.allseries WHERE dbhost='" + optD['seriesdbhost'] + "' AND dbport=" + str(optD['seriesdbport']) + " AND dbname='" + optD['seriesdbname'] + "' AND seriesname='" + optD['series'] + "'"
+                    cmd = "DELETE FROM drms.allseries_test WHERE dbhost='" + optD['seriesdbhost'] + "' AND dbport=" + str(optD['seriesdbport']) + " AND dbname='" + optD['seriesdbname'] + "' AND seriesname='" + optD['series'] + "'"
                 try:
                     cursor.execute(cmd)
                 except psycopg2.Error as exc:
