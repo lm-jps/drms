@@ -5,8 +5,8 @@ use File::Copy;
 use File::Spec;
 use IO::Dir;
 use Fcntl ':flock';
-use FindBin qw($Bin);
-use lib "$Bin/..";
+use FindBin qw($RealBin);
+use lib "$RealBin/..";
 use toolbox qw(GetCfg);
 # For modifying the subscription config and lst tables.
 use lib "$Bin/../subscribe_manage";
@@ -17,7 +17,7 @@ use JSON -support_by_pp;
 use Email::MIME;
 use Email::Sender::Simple qw(sendmail);
 use Data::Dumper;
-use lib "$RealBin/../../../localization";
+use lib "$RealBin/../../../../localization";
 use drmsparams;
 
 use constant kSuccess => 0;
