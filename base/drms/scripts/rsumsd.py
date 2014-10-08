@@ -780,8 +780,8 @@ def getArgs():
     
     # Optional parameters - no default argument is provided, so the default is None, which will trigger the use of what exists in the configuration file
     # (which is drmsparams.py).
-    parser.add_argument('r', 'reqtable', '--reqtable', help='The database table that contains records of the SU-request being processed. If provided, overrides default specified in configuration file.', metavar='<request unit table>', dest='reqtable')
-    parser.add_argument('s', 'sutable', '--sutable', help='The database table that contains records of the storage units being processed. If provided, overrides default specified in configuration file.', metavar='<storage unit table>', dest='sutable')
+    parser.add_argument('r', '--reqtable', help='The database table that contains records of the SU-request being processed. If provided, overrides default specified in configuration file.', metavar='<request unit table>', dest='reqtable')
+    parser.add_argument('s', '--sutable', help='The database table that contains records of the storage units being processed. If provided, overrides default specified in configuration file.', metavar='<storage unit table>', dest='sutable')
     parser.add_argument('-N', '--dbname', help='The name of the database that contains the series table from which records are to be deleted.', metavar='<db name>', dest='dbname')
     parser.add_argument('-U', '--dbuser', help='The name of the database user account.', metavar='<db user>', dest='dbuser')
     parser.add_argument('-H', '--dbhost', help='The host machine of the database that contains the series table from which records are to be deleted.', metavar='<db host machine>', dest='dbhost')
