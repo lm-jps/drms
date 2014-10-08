@@ -54,7 +54,7 @@ RS_DBUSER                  q:RS_DBUSER
 RS_LOCKFILE                q:RS_LOCKFILE
 RS_LOGDIR                  q:RS_LOGDIR
 RS_DLTIMEOUT               a:RS_DLTIMEOUT
-RS_REQTIMEOUT              a:RS_DLTIMEOUT
+RS_REQTIMEOUT              a:RS_REQTIMEOUT
 RS_MAXTHREADS              a:RS_MAXTHREADS
 RS_BINPATH                 q:RS_BINPATH
 WL_HASWL                   a:WL_HASWL
