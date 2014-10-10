@@ -871,6 +871,17 @@ class ProviderPoller(threading.Thread):
             # Start a download for each SU. If we cannot start the download for any reason, then set the SU status to 'E'.
             paths = dlInfo['paths']
             for (asunum, path) in paths:
+                if not path:
+                    # A path of None means that the SUNUM was invalid. We want to set the SU status to 'E'.
+                    sus.setStatus([asunum], 'E', 'SU ' + str(asunum) + ' is not valid at providing site.')
+                    continue
+                elif path == '':
+                    # An empty-string path means that the SUNUM was valid, but that the SU referred to was offline, and could not
+                    # be placed back online - it is not archived.
+                    # ART - I need to figure out how to place the SUNUM in SUMS so that its archive flag is N (not archived).
+                    sus.setStatus([asunum], 'C', 'SU ' + str(asunum) + ' refers to an offline SU valid at the providing site that was not archived. It cannot be downloaded.')
+                    continue
+
                 while True:
                     Downloader.lock.acquire()
                     try:
@@ -885,11 +896,21 @@ class ProviderPoller(threading.Thread):
                     # We woke up, but we do not know if there are any open threads in the thread pool. Loop and check
                     # tList again.
 
+            # For each SU that was requested, but for which no path was given in the response, create an SU-table record with an error status.
+            pathInResp = dict([ (str(asunum), True) for (asunum, path) in paths ])
+            for asunum in sunums:
+                if str(asunum) not in pathInResp:
+                    if insertRec:
+                        sus.insert([asunum])
+                    else:
+                        sus.setStarttime([asunum], datetime.now())
+
+                    sus.setStatus([asunum], 'E', 'Providing site cannot provide a path for SU ' + str(asunum) + '.')
+
     @staticmethod
     def newThread(url, requestID, sus, binPath, log):
         poller = ProviderPoller(url, requestID, sus, binPath, log)
         poller.start()
-
 
 def getOption(val, default):
     if val:
@@ -1048,6 +1069,17 @@ def processSUs(url, sunums, sus, binPath, log, insertRec=True):
             else:
                 sus.setStarttime([asunum], datetime.now())
 
+            if not path:
+                # A path of None means that the SUNUM was invalid. We want to set the SU status to 'E'.
+                sus.setStatus([asunum], 'E', 'SU ' + str(asunum) + ' is not valid at providing site.')
+                continue
+            elif path == '':
+                # An empty-string path means that the SUNUM was valid, but that the SU referred to was offline, and could not
+                # be placed back online - it is not archived. 
+                # ART - I need to figure out how to place the SUNUM in SUMS so that its archive flag is N (not archived).
+                sus.setStatus([asunum], 'C', 'SU ' + str(asunum) + ' refers to an offline SU valid at the providing site that was not archived. It cannot be downloaded.')
+                continue
+
             while True:
                 Downloader.lock.acquire()
                 try:
@@ -1130,7 +1162,9 @@ if __name__ == "__main__":
                         # been lost, and we cannot trust that the downloads completed successfully (although they might have).
                         # A fancier implementation would be some kind of download manager that can recover partially downloaded
                         # storage units, but who has the time :)
+                        rslog.write(['Setting download-timeout to ' + str(optD['dltimeout']) + ' minutes.'])
                         sus = SuTable(suTable, timedelta(minutes=optD['dltimeout']), rslog)
+                        rslog.write(['Setting request-timeout to ' + str(optD['reqtimeout']) + ' minutes.'])
                         requests = ReqTable(reqTable, timedelta(minutes=optD['reqtimeout']), rslog)
                         sites = SiteTable(rslog)
                         
@@ -1212,22 +1246,26 @@ if __name__ == "__main__":
                                     reqError = False
                                     sunums = arequest['sunums']
                                     for asunum in sunums:
-                                        if done == False and reqError == True:
+                                        if reqError == True:
                                             break
                                         asu = sus.get([asunum])
                                         if asu[0]['status'] == 'P':
+                                            rslog.write(['Download of SU ' + str(asu[0]['sunum'])  + ' is pending.'])
                                             done = False
                                         elif asu[0]['status'] == 'E':
+                                            rslog.write(['Download of SU ' + str(asu[0]['sunum'])  + ' has errored-out.'])
                                             reqError = True
+                                        else:
+                                            rslog.write(['Download of SU ' + str(asu[0]['sunum'])  + ' has completed.'])
                                     
                                     if done:
                                         # There are no pending downloads for this request. Set this request's status to 'C' or 'E', and decrement
                                         # refcount on each SU.
                                         if reqError:
-                                            rslog.write(['Request number ' + str(arequest['requestid']) + ' errored-out.'])
+                                            rslog.write(['Request number ' + str(arequest['requestid']) + ' for SUNUM(s) ' + ','.join([ str(asunum) for asunum in arequest['sunums'] ]) + ' errored-out.'])
                                             requests.setStatus([arequest['requestid']], 'E', 'Error downloading at least one SU.')
                                         else:
-                                            rslog.write(['Request number ' + str(arequest['requestid']) + ' completed successfully.'])
+                                            rslog.write(['Request number ' + str(arequest['requestid']) + ' for SUNUM(s) ' + ','.join([ str(asunum) for asunum in arequest['sunums'] ]) + ' completed successfully.'])
                                             requests.setStatus([arequest['requestid']], 'C')
 
                                         # These next two calls can modify the db state! Put them in a transaction so that they form an atomic
