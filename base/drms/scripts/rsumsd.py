@@ -67,13 +67,14 @@ RET_SUTABLE_READ = 3
 RET_SUTABLE_WRITE = 4
 RET_REQTABLE_READ = 5
 RET_REQTABLE_WRITE = 6
-RET_DBCOMMAND = 7
-RET_LOGFILE = 8
-RET_OFFLINE = 9
-RET_UKNOWNREQUEST = 10
-RET_UKNOWNSU = 11
-RET_UKNOWNSITECODE = 12
-RET_DUPLICATESUNUM = 13
+RET_SITETABLE_LOAD = 7
+RET_DBCOMMAND = 8
+RET_LOGFILE = 9
+RET_OFFLINE = 10
+RET_UKNOWNREQUEST = 12
+RET_UKNOWNSU = 12
+RET_UKNOWNSITECODE = 13
+RET_DUPLICATESUNUM = 14
 
 LOG_FILE_BASE_NAME = 'rslog'
 
@@ -82,20 +83,25 @@ class Log:
         now = datetime.now().strftime('%Y%m%d')
         fileName = baseFileName + '_' + now + '.txt'
         self.fileName = os.path.join(logPath, fileName)
+        self.fobj = None
+        
         try:
             # If path doesn't exist, create it. Since we are running as the production rs user, ownership will be fine.
             if not os.path.isdir(logPath):
                 os.mkdir(logPath)
-            
             fobj = open(self.fileName, 'a')
+        except OSError as exc:
+            type, value, traceback = sys.exc_info()
+            raise Exception('badLogfile', 'Unable to access ' + "'" + value.filename + "'.")
         except IOError as exc:
             type, value, traceback = sys.exc_info()
             raise Exception('badLogfile', 'Unable to open ' + "'" + value.filename + "'.")
-
+        
         self.fobj = fobj
 
     def __del__(self):
-        self.fobj.close()
+	if self.fobj:
+            self.fobj.close()
 
     def write(self, text):
         try:
@@ -147,6 +153,28 @@ class SuTable:
             self.suDict[sunumStr]['errmsg'] = record[4]
             self.suDict[sunumStr]['dirty'] = False
             self.suDict[sunumStr]['new'] = False
+
+    def tryRead(self):
+        nAtts = 0
+        while True:
+            try:
+                self.read()
+                break
+            except Exception as exc:
+                if len(exc.args) != 2:
+                    raise # Re-raise
+
+                etype = exc.args[0]
+
+                if etype == 'sutableRead':
+                    if nAtts > 10:
+                        raise # Re-raise
+                else:
+                    raise
+
+            nAtts += 1
+            time.sleep(1)
+
 
     # This will never be used. Rows are written one at a time.
     def write(self):
@@ -274,7 +302,7 @@ class SuTable:
             # Set dirty flag
             self.suDict[sunumStr]['dirty'] = True
 
-    def setStarttime(self, sunum, starttime):
+    def setStarttime(self, sunums, starttime):
         for asunum in sunums:
             sunumStr = str(asunum)
     
@@ -376,7 +404,9 @@ class SuTable:
         
         jsonObj = json.loads(''.join(jsonRsp))
         for sunum in jsonObj['data']:
-            if jsonObj['data'][sunum]['sustatus'] == 'N':
+            # sustatus could be 'I' (the local SUMS knows nothing about this SU) or 'Y' (it is in the SUMS db, and it is online). It cannot be 'N' or 'X'
+            # because if it were retrievable from tape, it would have been retrieved instead of finding its way into the requests table.
+            if jsonObj['data'][sunum]['sustatus'] == 'I':
                 offline.append(sunum)
         
         return offline
@@ -384,9 +414,10 @@ class SuTable:
 class ReqTable:
     cursor = None
     
-    def __init__(self, tableName, timeOut):
+    def __init__(self, tableName, timeOut, log):
         self.tableName = tableName
         self.timeOut = timeOut
+        self.log = log
         self.reqDict = {}
     
     @classmethod
@@ -415,6 +446,27 @@ class ReqTable:
             self.reqDict[requestidStr]['errmsg'] = record[4]
             self.reqDict[requestidStr]['dirty'] = False
 
+    def tryRead(self):
+        nAtts = 0
+        while True:
+            try:
+                self.read()
+                break
+            except Exception as exc:
+                if len(exc.args) != 2:
+                    raise # Re-raise
+
+                etype = exc.args[0]
+
+                if etype == 'reqtableRead':
+                    if nAtts > 10:
+                        raise # Re-raise
+                else:
+                    raise
+
+            nAtts += 1
+            time.sleep(1)
+
     # This method finds 'N' records inserted since the last time it was run (or since the table was first read). It ignores
     # all other changes to the database table (made from outside this program) that have happened. To read those changes,
     # shut down this program, then make the changes, then start this program again.
@@ -422,12 +474,13 @@ class ReqTable:
         if not cursor:
             raise Exception('noCursor', 'Cannot refresh the requests table because no database cursor exists.')
         
-        updatedTable = ReqTable(self.tableName, self.timeOut)
+        updatedTable = ReqTable(self.tableName, self.timeOut, self.log)
+        updatedTable.tryRead()
         newRequests = updatedTable.getNew()
 
         for arequest in newRequests:
             try:
-                self.get((arequest['requestid']))
+                self.get([arequest['requestid']])
             except Exception as exc:
                 if len(exc.args) != 2:
                     raise # Re-raise
@@ -436,7 +489,10 @@ class ReqTable:
 
                 if etype == 'unknownRequestid':
                     # arequest is a request that has been added tot the request db table since the last time refresh was run.
-                    requestidStr = arequest['requestid']
+                    requestidStr = str(arequest['requestid'])
+
+                    self.log.write(['Got new request ' + requestidStr + '.'])
+
                     self.reqDict[requestidStr] = {}
                     self.reqDict[requestidStr]['requestid'] = requestidStr # Strings are immutable, so copying the reference is ok.
                     self.reqDict[requestidStr]['starttime'] = deepcopy(arequest['starttime'])
@@ -525,10 +581,10 @@ class ReqTable:
         toRet = []
     
         if not requestids:
-            return self.reqDict
+            return [ self.reqDict[key] for (key, val) in self.reqDict.items() ]
         
         for arequestid in requestids:
-            requestidStr = str(requestid)
+            requestidStr = str(arequestid)
             
             if not requestidStr in self.reqDict or not self.reqDict[requestidStr]:
                 raise Exception('unknownRequestid', 'No request-table record exists for ID ' + requestidStr + '.')
@@ -595,7 +651,7 @@ class SiteTable:
         siteInfo = json.loads(siteInfoStr)
         
         if siteInfo['status'] != 'success':
-            raise Exception('badCgi', "Failure calling cgi '" + url + "'.")
+            raise Exception('sitetableRead', "Failure calling cgi '" + url + "'.")
 
         # siteInfo is a dictionary, keyed by site name. Each dictionary entry is a dictionay, with two keys: code and baseurl.
         for asite in siteInfo.iterkeys():
@@ -609,6 +665,27 @@ class SiteTable:
             self.siteMap[str(self.siteDict[asite]['code'])] = asite
 
             self.log.write(['Reading site info for ' + asite + ': code => ' + str(self.siteDict[asite]['code']) + ', baseurl => ' + self.siteDict[asite]['baseurl']])
+
+    def tryRead(self):
+        nAtts = 0
+        while True:
+            try:
+                self.read()
+                break
+            except Exception as exc:
+                if len(exc.args) != 2:
+                    raise # Re-raise
+
+                etype = exc.args[0]
+
+                if etype == 'sitetableRead':
+                    if nAtts > 10:
+                        raise # Re-raise
+                else:
+                    raise
+
+            nAtts += 1
+            time.sleep(1)
 
     @staticmethod
     def getCode(sunum):
@@ -710,7 +787,9 @@ class Downloader(threading.Thread):
                     check_call(cmdList)
                 except CalledProcessError as exc:
                     raise Exception('mv', "Command '" + ' '.join(cmdList) + "' returned non-zero status code " + str(exc.returncode))
-            
+
+                cmdList = [binPath + '/vso_sum_put', 'sunum=' + str(self.sunum), 'seriesname=', 'sudir=', 'retention=']
+ 
             # Remove temporary directory.
             # ART - TEST; need to uncomment this.
             # os.rmdir(dlDir)
@@ -750,21 +829,67 @@ class Downloader(threading.Thread):
                 raise
 
             if type == 'scp' or type == 'vso_sum_alloc' or type == 'mv':
-                sus.setStatus(self.sunum, 'E', 'Error downloading storage unit ' + str(self.sunum) + ': ' + msg + '.')
-    
+                sus.setStatus([self.sunum], 'E', 'Error downloading storage unit ' + str(self.sunum) + ': ' + msg + '.')
+   
+    # Must acquire Downloader lock BEFORE calling newThread() since newThread() will append to tList (the Downloader threads will delete from tList as they complete).
     @staticmethod
     def newThread(sunum, path, sus, scpUser, scpHost, scpPort, binPath, log):
-        Downloader.lock.acquire()
-        try:
-            dl = Downloader(sunum, path, sus, scpUser, scpHost, scpPort, binPath, log)
-            dl.tList.append(dl)
-        finally:
-            Downloader.lock.release()
+        dl = Downloader(sunum, path, sus, scpUser, scpHost, scpPort, binPath, log)
+        dl.tList.append(dl)
         dl.start()
 
     @classmethod
     def setMaxThreads(cls, maxThreads):
         cls.maxThreads = maxThreads
+
+class ProviderPoller(threading.Thread):
+    def __init__(url, requestID, sus, binPath, log):
+        threading.Thread.__init__(self)
+        self.url = url
+        self.requestID = requestID
+        self.suTable = sus
+        self.binPath = binPath
+        self.log = log
+        self.start = datetime.now()
+        self.timeOut = sus.getTimeout()
+
+    def run(self):
+        values = {'requestid' : self.requestID, 'sunums' : 'none'}
+        data = urllib.urlencode(values)
+
+        while dlInfo['status'] == 'pending':
+            if datetime.now(self.start.tzinfo) > self.start + self.timeOut:
+                break
+            log.write(['Checking on request ' + dlInfo['requestid'] + '.'])
+            response = urllib2.urlopen(req)
+            dlInfoStr = response.read()
+            dlInfo = json.loads(dlInfoStr)
+            time.sleep(1)
+        if dlInfo['status'] != 'complete':
+            err = True
+        else:
+            # Start a download for each SU. If we cannot start the download for any reason, then set the SU status to 'E'.
+            paths = dlInfo['paths']
+            for (asunum, path) in paths:
+                while True:
+                    Downloader.lock.acquire()
+                    try:
+                        if len(Downloader.tList) < Downloader.maxThreads:
+                            log.write(['Instantiating a Downloader for SU ' + asunum + '.'])
+                            Downloader.newThread(asunum, path, sus, dlInfo['scpUser'], dlInfo['scpHost'], dlInfo['scpPort'], binPath, log)
+                            break # The finally clause will ensure the Downloader lock is released.
+                    finally:
+                        Downloader.lock.release()
+
+                    Downloader.eventMaxThreads.wait()
+                    # We woke up, but we do not know if there are any open threads in the thread pool. Loop and check
+                    # tList again.
+
+    @staticmethod
+    def newThread(url, requestID, sus, binPath, log):
+        poller = ProviderPoller(url, requestID, sus, binPath, log)
+        poller.start()
+
 
 def getOption(val, default):
     if val:
@@ -884,59 +1009,14 @@ def filterSunums(sunumList, sus, jfPath):
     return rv
 
 def readTables(sus, requests, sites):
-    nAtts = 0
-    while True:
-        try:
-            sus.read()
-            break
-        except Exception as exc:
-            if len(exc.args) != 2:
-                raise # Re-raise
-            
-            etype = exc.args[0]
+    if sus:
+        sus.tryRead()
 
-            if etype == 'sutableRead':
-                if nAtts > 10:
-                    raise # Re-raise
-                nAtts += 1
-                time.sleep(2)
-                continue
-
-    nAtts = 0
-    while True:
-        try:
-            requests.read()
-            break
-        except Exception as exc:
-            if len(exc.args) != 2:
-                raise # Re-raise
-            
-            etype = exc.args[0]
-            
-            if etype == 'reqtableRead':
-                if nAtts > 10:
-                    raise # Re-raise
-                nAtts += 1
-                time.sleep(2)
-                continue
-
-
-    nAtts = 0
-    while True:
-        try:
-            sites.read()
-            break
-        except Exception as exc:
-            if len(exc.args) != 2:
-                raise # Re-raise
-            
-            etype = exc.args[0]
-            
-            if etype == 'badCgi':
-                if nAtts > 10:
-                    raise # Re-raise
-                nAtts += 1
-                time.sleep(2)
+    if requests:
+        requests.tryRead()
+    
+    if sites:
+        sites.tryRead()
 
 # Process the SUs for the source site represented by url.
 # url - the base URL to the rs.sh cgi (e.g., http://jsoc.stanford.edu/cgi-bin) from which SU paths can be obtained.
@@ -945,8 +1025,6 @@ def readTables(sus, requests, sites):
 # binPath - the local path to the binaries needed to ingest the downloaded SU into SUMS. This is mostly likely the path to
 #           the DRMS binaries (one binary needed is vso_sum_alloc)
 def processSUs(url, sunums, sus, binPath, log, insertRec=True):
-    rv = False
-    
     # Get path to SUs by calling the rs.sh cgi at the owning remote site (url identifies the remote site).
     # Create the sunum= argument.
     sunumLst = ','.join(str(asunum) for asunum in sunums)
@@ -956,37 +1034,68 @@ def processSUs(url, sunums, sus, binPath, log, insertRec=True):
     req = urllib2.Request(url + '/rs.sh', data)
     response = urllib2.urlopen(req)
     dlInfoStr = response.read()
-    
-    # ART - Check status.
-    
-    
-    
     dlInfo = json.loads(dlInfoStr)
 
-    paths = dlInfo['paths']
+    if dlInfo['status'] == 'complete':
+        # All of the requested SUs are online at the providing site.
+        paths = dlInfo['paths']
 
-    # Start a download for each SU. If we cannot start the download for any reason, then set the SU status to 'E'.
-    for (asunum, path) in paths:
-        Downloader.lock.acquire()
-        doWait = False
-        try:
-            if len(Downloader.tList) >= Downloader.maxThreads:
-                doWait = True
-        finally:
-            Downloader.lock.release()
-        
-        if doWait:
-            Downloader.eventMaxThreads.wait()
+        # Start a download for each SU. If we cannot start the download for any reason, then set the SU status to 'E'.
+        for (asunum, path) in paths:
+            # Create a new SU-table record for each SU in the sus table (or update the starttime of an existing one).
+            if insertRec:
+                sus.insert([asunum])
+            else:
+                sus.setStarttime([asunum], datetime.now())
 
-        Downloader.newThread(asunum, path, sus, dlInfo['scpUser'], dlInfo['scpHost'], dlInfo['scpPort'], binPath, log)
+            while True:
+                Downloader.lock.acquire()
+                try:
+                    if len(Downloader.tList) < Downloader.maxThreads:
+                        log.write(['Instantiating a Downloader for SU ' + asunum + '.'])
+                        Downloader.newThread(asunum, path, sus, dlInfo['scpUser'], dlInfo['scpHost'], dlInfo['scpPort'], binPath, log)
+                        break # The finally clause will ensure the Downloader lock is released.
+                finally:
+                    Downloader.lock.release()
 
-        # Create a new SU-table record for each SU in the sus table (or update the starttime of an existing one).
+                Downloader.eventMaxThreads.wait()
+                # We woke up, but we do not know if there are any open threads in the thread pool. Loop and check
+                # tList again.
+
+        # For each SU that was requested, but for which no path was given in the response, create an SU-table record with an error status.
+        pathInResp = dict([ (str(asunum), True) for (asunum, path) in paths ])
+        for asunum in sunums:
+            if str(asunum) not in pathInResp:
+                if insertRec:
+                    sus.insert([asunum])
+                else:
+                    sus.setStarttime([asunum], datetime.now())
+
+                sus.setStatus([asunum], 'E', 'Providing site cannot provide a path for SU ' + str(asunum) + '.')
+    elif dlInfo['status'] == 'pending':
+        # One or more of the requested SUs is offline. Poll until they are ready. Ideally we wouldn't block the main
+        # thread here, waiting for the SUs to be available. We could spawn a thread to poll, freeing up the main
+        # thread to continue with other requests. But in the interest of time, just poll for now. Must acquire
+        # su-table lock when it is finally time to start downloads.
+        log.write(['Request includes one or more SUs that are offline at the providing site. Waiting for providing site to put them online.'])
+
+        # Create a new SU-table record for each SU in the sus table (or update the starttime of an existing one). This will
+        # result in an SU-table record with a status of pending.
         if insertRec:
-            sus.insert([asunum])
+            sus.insert([sunums])
         else:
-            sus.setStarttime(asunum, datetime.now())
+            sus.setStarttime([sunums], datetime.now())
 
-    return rv
+        ProviderPoller.newThread(url, dlInfo['requestid'], sus, binPath, log)
+    else:
+        # Error of some kind.
+        # Insert SU records with a status of 'E' or update the status to 'E' of the existing SU records.
+        if insertRec:
+            sus.insert(sunums)
+        else:
+            sus.setStarttime(sunums, datetime.now())
+
+        sus.setStatus(sunums, 'E', 'Unable to obtain paths from providing site.\n' + dlInfo['statusMsg'] + '.')
 
 
 rv = RET_SUCCESS
@@ -999,10 +1108,13 @@ if __name__ == "__main__":
         with DrmsLock(optD['lockfile'], str(pid)) as lock:
             rslog = Log(optD['logdir'], optD['logfile'])
 
+            rslog.write(['Starting up daemon.']) 
+            rslog.write(['Obtained script file lock.'])
             # Connect to the database
             try:
                 # The connection is NOT in autocommit mode. If changes need to be saved, then conn.commit() must be called.
                 with psycopg2.connect(database=optD['dbname'], user=optD['dbuser'], host=optD['dbhost'], port=optD['dbport']) as conn:
+                    rslog.write(['Connected to database ' + optD['dbname'] + ' on ' + optD['dbhost'] + ':' + str(optD['dbport']) + ' as user ' + optD['dbuser']])
                     with conn.cursor() as cursor:
                         suTable = optD['sutable']
                         reqTable = optD['reqtable']
@@ -1019,7 +1131,7 @@ if __name__ == "__main__":
                         # A fancier implementation would be some kind of download manager that can recover partially downloaded
                         # storage units, but who has the time :)
                         sus = SuTable(suTable, timedelta(minutes=optD['dltimeout']), rslog)
-                        requests = ReqTable(reqTable, timedelta(minutes=optD['reqtimeout']))
+                        requests = ReqTable(reqTable, timedelta(minutes=optD['reqtimeout']), rslog)
                         sites = SiteTable(rslog)
                         
                         SuTable.setCursor(cursor)
@@ -1037,6 +1149,7 @@ if __name__ == "__main__":
                         
                         siteSunums = {}
                         for asu in susPending:
+                            rslog.write[('Recovering interrupted download for SUNUM ' + str(su['sunum'])) + '.']
                             siteURL = sites.getURL(asu['sunum'])
                             
                             if siteURL not in siteSunums:
@@ -1083,7 +1196,7 @@ if __name__ == "__main__":
                                 for asu in susPending:
                                     timeNow = datetime.now(asu['starttime'].tzinfo)
                                     if timeNow > asu['starttime'] + sus.getTimeout():
-                                        rslog.write('Download of SUNUM ' + str(asu['sunum']) + ' timed-out.')
+                                        rslog.write(['Download of SUNUM ' + str(asu['sunum']) + ' timed-out.'])
                                         sus.setStatus([asu['sunum']], 'E', 'Download timed-out.')
                             
                                 cursor.execute('BEGIN')
@@ -1150,6 +1263,8 @@ if __name__ == "__main__":
                                     for asunum in sunums:
                                         try:
                                             asu = sus.get([asunum])
+                                            rslog.write(['A download for SU ' + asunum + ' is already in progress.'])
+                                            known.append(asunum)
                                         except Exception as exc:
                                             if len(exc.args) != 2:
                                                 raise # Re-raise
@@ -1159,27 +1274,22 @@ if __name__ == "__main__":
                     
                                             if etype == 'unknownSunum':
                                                 unknown.append(asunum)
-                                                continue
-                                                
-                                        raise # Re-raise
-                                        
-                                        known.append(asunum)
-                                
+ 
                                     # Increment the refcount on all SU records for the SUs being requested by the new request. This modifies the
                                     # sus object.
                                     sus.incrementRefcount(known)
                                     
                                     offlineSunums = SuTable.offline(unknown, optD['binpath'], rslog)
-                                    
-                                    # ART - TEST; force all unknown to offline so we can start downloads.
-                                    offlineSunums = [asunum for asunum in unknown]
+                                    offlineSunumsDict = dict([ (str(asunum), True) for asunum in offlineSunums ])
                                     
                                     dlsToStart = []
                                     toComplete = []
                                     for asunum in unknown:
-                                        if asunum in offlineSunums:
+                                        if str(asunum) in offlineSunumsDict:
+                                            rslog.write(['SU ' + str(asunum) + ' is offline - will start a download'])
                                             dlsToStart.append(asunum)
                                         else:
+                                            rslog.write(['SU ' + str(asunum) + ' is online already - will NOT start a download.'])
                                             toComplete.append(asunum)
                                     
                                     # Insert a new SU record for all unknown SUs that are already online. These calls modify the sus object.
@@ -1259,13 +1369,16 @@ if __name__ == "__main__":
         
         etype = exc.args[0]
         msg = exc.args[1]
-        
+       
         if etype == 'drmsLock':
             rslog.write(['Error locking file: ' + lockFile + '\n' + msg])
             rv = RET_LOCK
         elif etype == 'CmdlParser-ArgUnrecognized' or etype == 'CmdlParser-ArgBadformat':
             rslog.write([msg])
             rv = RET_INVALIDARGS
+        elif etype == 'sitetableRead':
+            rslog.write(['Unable to load site table: ' + msg])
+            rv = RET_SITETABLE_LOAD
         elif etype == 'sutableRead':
             rslog.write(['Unable to read from storage-unit table: ' + msg])
             rv = RET_SUTABLE_READ
@@ -1279,10 +1392,10 @@ if __name__ == "__main__":
             rslog.write(['Unable to write to storage-unit-request table: ' + msg])
             rv = RET_REQTABLE_WRITE
         elif etype == 'badLogfile':
-            rslog.write(['Cannot access log file: ' + msg])
+            print(['Cannot access log file: ' + msg], file=sys.stderr)
             rv = RET_LOGFILE
         elif etype == 'badLogwrite':
-            rslog.write(['Cannot access log file: ' + msg])
+            print(['Cannot access log file: ' + msg], file=sys.stderr)
             rv = RET_LOGFILE
         elif etype == 'findOffline':
             rslog.write(['Cannot determine online disposition: ' + msg])
