@@ -153,21 +153,27 @@ def runJsocfetch(**kwargs):
         # private database table - jsoc.export).
         excRaised = True
         jfRetCode = exc.returncode
+        
+        # There may or may not be output in exc.output, which is a byte string.
+        if exc.output:
+            output = exc.output.decode('utf-8')
+
     finally:
         regExp = re.compile(r'\s*status\s*=\s*(\d+)', re.IGNORECASE)
         
-        # Parse out the status field.
-        outputList = output.splitlines()
+        if output:
+            # Parse out the status field.
+            outputList = output.splitlines()
 
-        for line in outputList:
-            matchObj = regExp.match(line)
-            if matchObj is not None:
-                jfStatus = int(matchObj.group(1))
-                break
+            for line in outputList:
+                matchObj = regExp.match(line)
+                if matchObj is not None:
+                    jfStatus = int(matchObj.group(1))
+                    break
 
         if excRaised:
             # Check jfStatus (if you can).
-            if not jfStatus or jfStatus != 6:
+            if not output or not jfStatus or jfStatus != 6:
                 raise Exception('jfetch', "Command '" + ' '.join(cmd) + "' returned non-zero status code " + str(jfRetCode))
 
     if jfStatus is None:
