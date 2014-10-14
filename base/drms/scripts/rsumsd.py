@@ -17,6 +17,7 @@ import json
 import signal
 import time
 from copy import deepcopy
+import shutil
 import psycopg2
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../include'))
 from drmsparams import DRMSParams
@@ -756,6 +757,9 @@ class Downloader(threading.Thread):
         # Download the SU.
         try:
             # Don't forget to make the temporary directory first.
+            if os.path.exists(dlDir):
+                self.log.write(['Removing stale temporary directory ' + dlDir + '.'])
+                shutil.rmtree(dlDir)
             self.log.write(['Creating temporary download directory ' + dlDir + '.'])
             os.mkdir(dlDir)
             
@@ -764,6 +768,8 @@ class Downloader(threading.Thread):
                 check_call(cmdList)
             except CalledProcessError as exc:
                 raise Exception('scp', "Command '" + ' '.join(cmdList) + "' returned non-zero status code " + str(exc.returncode))
+
+            self.log.write(['scp command succeeded.'])
 
             # ART - TEST; do not attempt to ingest into SUMS.
             if False:
@@ -830,6 +836,8 @@ class Downloader(threading.Thread):
 
             if type == 'scp' or type == 'vso_sum_alloc' or type == 'mv':
                 sus.setStatus([self.sunum], 'E', 'Error downloading storage unit ' + str(self.sunum) + ': ' + msg + '.')
+            else:
+                raise
    
     # Must acquire Downloader lock BEFORE calling newThread() since newThread() will append to tList (the Downloader threads will delete from tList as they complete).
     @staticmethod
@@ -843,11 +851,12 @@ class Downloader(threading.Thread):
         cls.maxThreads = maxThreads
 
 class ProviderPoller(threading.Thread):
-    def __init__(url, requestID, sus, binPath, log):
+    def __init__(url, requestID, sus, reqTable, binPath, log):
         threading.Thread.__init__(self)
         self.url = url
         self.requestID = requestID
         self.suTable = sus
+        self.reqTable = reqTable
         self.binPath = binPath
         self.log = log
         self.start = datetime.now()
@@ -859,57 +868,71 @@ class ProviderPoller(threading.Thread):
 
         while dlInfo['status'] == 'pending':
             if datetime.now(self.start.tzinfo) > self.start + self.timeOut:
+                # The providing site has not completed the export, and the time-out has elapsed. Give up.
+                
                 break
             log.write(['Checking on request ' + dlInfo['requestid'] + '.'])
             response = urllib2.urlopen(req)
             dlInfoStr = response.read()
             dlInfo = json.loads(dlInfoStr)
             time.sleep(1)
-        if dlInfo['status'] != 'complete':
-            err = True
-        else:
-            # Start a download for each SU. If we cannot start the download for any reason, then set the SU status to 'E'.
-            paths = dlInfo['paths']
-            for (asunum, path) in paths:
-                if not path:
-                    # A path of None means that the SUNUM was invalid. We want to set the SU status to 'E'.
-                    sus.setStatus([asunum], 'E', 'SU ' + str(asunum) + ' is not valid at providing site.')
-                    continue
-                elif path == '':
-                    # An empty-string path means that the SUNUM was valid, but that the SU referred to was offline, and could not
-                    # be placed back online - it is not archived.
-                    # ART - I need to figure out how to place the SUNUM in SUMS so that its archive flag is N (not archived).
-                    sus.setStatus([asunum], 'C', 'SU ' + str(asunum) + ' refers to an offline SU valid at the providing site that was not archived. It cannot be downloaded.')
-                    continue
 
-                while True:
-                    Downloader.lock.acquire()
-                    try:
-                        if len(Downloader.tList) < Downloader.maxThreads:
-                            log.write(['Instantiating a Downloader for SU ' + asunum + '.'])
-                            Downloader.newThread(asunum, path, sus, dlInfo['scpUser'], dlInfo['scpHost'], dlInfo['scpPort'], binPath, log)
-                            break # The finally clause will ensure the Downloader lock is released.
-                    finally:
-                        Downloader.lock.release()
+        # We must acquire the SU-table lock since we will be updating the status fields for individual SUs. 
 
-                    Downloader.eventMaxThreads.wait()
-                    # We woke up, but we do not know if there are any open threads in the thread pool. Loop and check
-                    # tList again.
+        self.suTable.acquireLock()
+        try: 
+            if dlInfo['status'] != 'complete':
+                # Set all SU records to 'E' (rsumds.py timed-out waiting for the SUs to be ready at the providing site).
+                # Get request record.
+                request = self.reqTable.get([self.requestID])
+                sunums = request[0]['sunums']
+                sus.setStatus(sunums, 'E', 'Timed-out waiting for providing site to return paths to requested SUs (' + ','.join([ str(asunum) for asunum in sunums ]) + ') for request ' + str(self.requestID) + '.') 
+            else:
+                # Start a download for each SU. If we cannot start the download for any reason, then set the SU status to 'E'.
+                paths = dlInfo['paths']
+                for (asunum, path) in paths:
+                    if not path:
+                        # A path of None means that the SUNUM was invalid. We want to set the SU status to 'E'.
+                        sus.setStatus([asunum], 'E', 'SU ' + str(asunum) + ' is not valid at providing site.')
+                        continue
+                    elif path == '':
+                        # An empty-string path means that the SUNUM was valid, but that the SU referred to was offline, and could not
+                        # be placed back online - it is not archived.
+                        # ART - I need to figure out how to place the SUNUM in SUMS so that its archive flag is N (not archived).
+                        sus.setStatus([asunum], 'C', 'SU ' + str(asunum) + ' refers to an offline SU valid at the providing site that was not archived. It cannot be downloaded.')
+                        continue
 
-            # For each SU that was requested, but for which no path was given in the response, create an SU-table record with an error status.
-            pathInResp = dict([ (str(asunum), True) for (asunum, path) in paths ])
-            for asunum in sunums:
-                if str(asunum) not in pathInResp:
-                    if insertRec:
-                        sus.insert([asunum])
-                    else:
-                        sus.setStarttime([asunum], datetime.now())
+                    while True:
+                        Downloader.lock.acquire()
+                        try:
+                            if len(Downloader.tList) < Downloader.maxThreads:
+                                self.log.write(['Instantiating a Downloader for SU ' + asunum + '.'])
+                                Downloader.newThread(asunum, path, sus, dlInfo['scpUser'], dlInfo['scpHost'], dlInfo['scpPort'], binPath, log)
+                                break # The finally clause will ensure the Downloader lock is released.
+                        finally:
+                            Downloader.lock.release()
 
-                    sus.setStatus([asunum], 'E', 'Providing site cannot provide a path for SU ' + str(asunum) + '.')
+                        Downloader.eventMaxThreads.wait()
+                        # We woke up, but we do not know if there are any open threads in the thread pool. Loop and check
+                        # tList again.
+        except Exception as exc:
+            if len(exc.args) != 2:
+                raise
+
+            type = exc[0]
+
+            if type == 'unknownRequestid':
+                # Just let this thread terminate. The request was lost and there is no ReqTable record to update and set the status code to 'E'.
+                self.log.write(['Lost request ' + str(self.requestID) + '. Terminating polling thread.']) 
+            else:
+                raise
+        finally:
+            # Always release lock.
+            self.suTable.releaseLock()
 
     @staticmethod
-    def newThread(url, requestID, sus, binPath, log):
-        poller = ProviderPoller(url, requestID, sus, binPath, log)
+    def newThread(url, requestID, sus, reqTable, binPath, log):
+        poller = ProviderPoller(url, requestID, sus, reqTable, binPath, log)
         poller.start()
 
 def getOption(val, default):
@@ -1045,10 +1068,40 @@ def readTables(sus, requests, sites):
 # sus - the SU table object that represents the SU database table.
 # binPath - the local path to the binaries needed to ingest the downloaded SU into SUMS. This is mostly likely the path to
 #           the DRMS binaries (one binary needed is vso_sum_alloc)
-def processSUs(url, sunums, sus, binPath, log, insertRec=True):
+# log - the log to write messages to.
+# reprocess - the SUs identified are all being reprocessed. They all have a status of 'P' in the SU table. There was
+#             some interruption that caused the download to be lost.
+def processSUs(url, sunums, sus, reqTable, binPath, log, reprocess=False):
     # Get path to SUs by calling the rs.sh cgi at the owning remote site (url identifies the remote site).
     # Create the sunum= argument.
-    sunumLst = ','.join(str(asunum) for asunum in sunums)
+
+    # Skip any SUs that have already been processed. Pending SUs are OK to restart, however. It may be the case
+    # that rsumds.py was interrupted during a download, in which case, we want to re-download the SU.
+    workingSunums = []
+    for asunum in sunums:
+        try:
+            su = sus.get([asunum])
+            if su[0]['status'] == 'P':
+                if not reprocess:
+                    # Accidental attempt to reprocess an SU whose processing has already started.
+                    raise Exception('accidentalRepro', 'An accidental attempt to reprocess pending SU ' + str(asunum) + ' occurred.')
+                workingSunums.append(asunum)
+                # Reset start time.
+                sus.setStarttime([asunum], datetime.now())
+        except Exception as exc:
+            if len(exc.args) != 2:
+                raise # Re-raise
+
+            etype = exc.args[0]
+
+            if etype != 'unknownSunum':
+                raise
+
+            workingSunums.append(asunum)
+            # Create a new SU table record for this SU.
+            sus.insert([asunum])
+
+    sunumLst = ','.join(str(asunum) for asunum in workingSunums)
     values = {'requestid' : 'none', 'sunums' : sunumLst}
     data = urllib.urlencode(values)
     log.write(['Requesting paths for SUNUMs ' + sunumLst + '. URL is ' + url + '/rs.sh' + '?' + data])
@@ -1063,12 +1116,6 @@ def processSUs(url, sunums, sus, binPath, log, insertRec=True):
 
         # Start a download for each SU. If we cannot start the download for any reason, then set the SU status to 'E'.
         for (asunum, path) in paths:
-            # Create a new SU-table record for each SU in the sus table (or update the starttime of an existing one).
-            if insertRec:
-                sus.insert([asunum])
-            else:
-                sus.setStarttime([asunum], datetime.now())
-
             if not path:
                 # A path of None means that the SUNUM was invalid. We want to set the SU status to 'E'.
                 sus.setStatus([asunum], 'E', 'SU ' + str(asunum) + ' is not valid at providing site.')
@@ -1094,15 +1141,10 @@ def processSUs(url, sunums, sus, binPath, log, insertRec=True):
                 # We woke up, but we do not know if there are any open threads in the thread pool. Loop and check
                 # tList again.
 
-        # For each SU that was requested, but for which no path was given in the response, create an SU-table record with an error status.
+        # For each SU that was requested, but for which no path was given in the response, update its SU-table record with an error status.
         pathInResp = dict([ (str(asunum), True) for (asunum, path) in paths ])
-        for asunum in sunums:
+        for asunum in workingSunums:
             if str(asunum) not in pathInResp:
-                if insertRec:
-                    sus.insert([asunum])
-                else:
-                    sus.setStarttime([asunum], datetime.now())
-
                 sus.setStatus([asunum], 'E', 'Providing site cannot provide a path for SU ' + str(asunum) + '.')
     elif dlInfo['status'] == 'pending':
         # One or more of the requested SUs is offline. Poll until they are ready. Ideally we wouldn't block the main
@@ -1111,23 +1153,11 @@ def processSUs(url, sunums, sus, binPath, log, insertRec=True):
         # su-table lock when it is finally time to start downloads.
         log.write(['Request includes one or more SUs that are offline at the providing site. Waiting for providing site to put them online.'])
 
-        # Create a new SU-table record for each SU in the sus table (or update the starttime of an existing one). This will
-        # result in an SU-table record with a status of pending.
-        if insertRec:
-            sus.insert([sunums])
-        else:
-            sus.setStarttime([sunums], datetime.now())
-
-        ProviderPoller.newThread(url, dlInfo['requestid'], sus, binPath, log)
+        ProviderPoller.newThread(url, dlInfo['requestid'], sus, reqTable, binPath, log)
     else:
         # Error of some kind.
-        # Insert SU records with a status of 'E' or update the status to 'E' of the existing SU records.
-        if insertRec:
-            sus.insert(sunums)
-        else:
-            sus.setStarttime(sunums, datetime.now())
-
-        sus.setStatus(sunums, 'E', 'Unable to obtain paths from providing site.\n' + dlInfo['statusMsg'] + '.')
+        # Update the SU-table status of the SUs to 'E'.
+        sus.setStatus(workingSunums, 'E', 'Unable to obtain paths from providing site.\n' + dlInfo['statusMsg'] + '.')
 
 
 rv = RET_SUCCESS
@@ -1183,7 +1213,7 @@ if __name__ == "__main__":
                         
                         siteSunums = {}
                         for asu in susPending:
-                            rslog.write[('Recovering interrupted download for SUNUM ' + str(su['sunum'])) + '.']
+                            rslog.write(['Recovering interrupted download for SUNUM ' + str(asu['sunum']) + '.'])
                             siteURL = sites.getURL(asu['sunum'])
                             
                             if siteURL not in siteSunums:
@@ -1199,10 +1229,22 @@ if __name__ == "__main__":
                                 siteSunums[url].sort()
                                 chunker = Chunker(siteSunums[url], 64)
                                 for chunk in chunker:
-                                    # processSUs(..., insertRec=True) would attempt to insert a new record in the sus table for each SUNUM. By
-                                    # setting the last insertRec argument to False, we merely update the existing
+                                    # processSUs(..., reprocess=False) would attempt to insert a new record in the sus table for each SUNUM. By
+                                    # setting the last reprocess argument to True, we merely update the existing
                                     # record's starttime value.
-                                    processSUs(url, chunk, sus, optD['binpath'], rslog, False)
+                                    try:
+                                        processSUs(url, chunk, sus, requests, optD['binpath'], rslog, True)
+
+                                    except Exception as exc:
+                                        if len(exc.args) != 2:
+                                            raise # Re-raise
+
+                                        etype = exc.args[0]
+                                        msg = exc.args[1]
+
+                                        # Do not die - just reject reprocess attempt of the request. Eventually, the downloads will time-out, and the 
+                                        # status of the request will be marked 'E'.
+                                        rslog.write(['Failed to reprocess SUs ' + ','.join([ str(asunum) for asunum in chunk ]) + '.'])
                     
                         # I think this is how you make it possible to pass arguments to your signal handler - define the function
                         # in the scope where the variables you want to use are visible. terminator is a closure where
@@ -1352,7 +1394,7 @@ if __name__ == "__main__":
                                             for chunk in chunker:
                                                 # We want to always insert a record for each SU into the SU table. Do not provide the insertRec
                                                 # argument to do so. This call creates new SU-table records, so it modifies the sus object.
-                                                processSUs(url, chunk, sus, optD['binpath'], rslog)
+                                                processSUs(url, chunk, sus, requests, optD['binpath'], rslog)
                                     
                                     # The new request has been fully processed. Change its status from 'N' to 'P'.
                                     # This call modifies the requests object.
