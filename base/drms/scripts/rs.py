@@ -131,9 +131,8 @@ def GetArgs(args):
 #   'I' - The SU is invalid (it is unknown by SUMS).
 def runJsocfetch(**kwargs):
     rv = {}
-    reraise = False
-    jfRetCode = 0
-    
+    excRaised = False
+    jfStatus = None
     cmd = [BIN_PATH + '/jsoc_fetch']
     for key in kwargs:
         arg = key + '=' + kwargs[key]
@@ -152,13 +151,9 @@ def runJsocfetch(**kwargs):
     except CalledProcessError as exc:
         # jsoc_fetch returns 1 when the status is 6 (when it cannot find the request ID because it hasn't propagated to the
         # private database table - jsoc.export).
-        if exc.returncode != 6:
-            reraise = True
-            jfRetCode = exc.returncode
+        excRaised = True
+        jfRetCode = exc.returncode
     finally:
-        if reraise:
-            raise Exception('jfetch', "Command '" + ' '.join(cmd) + "' returned non-zero status code " + str(jfRetCode))
-        
         regExp = re.compile(r'\s*status\s*=\s*(\d+)', re.IGNORECASE)
         
         # Parse out the status field.
@@ -169,6 +164,11 @@ def runJsocfetch(**kwargs):
             if matchObj is not None:
                 jfStatus = int(matchObj.group(1))
                 break
+
+        if excRaised:
+            # Check jfStatus (if you can).
+            if not jfStatus or jfStatus != 6:
+                raise Exception('jfetch', "Command '" + ' '.join(cmd) + "' returned non-zero status code " + str(jfRetCode))
 
     if jfStatus is None:
         raise Exception('jfetch', 'Unexpected jsoc_fetch output - status field is missing.')
