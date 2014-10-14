@@ -260,11 +260,13 @@ class SuTable:
 
     def acquireLock(self):
         self.lock.acquire()
+        # self.log.write(['Acquired SU-Table lock.'])
         self.locked = True
     
     def releaseLock(self):
         if self.locked:
             self.lock.release()
+            # self.log.write(['Released SU-Table lock.'])
             self.locked = False
     
     def insert(self, sunums):
@@ -475,35 +477,11 @@ class ReqTable:
         if not cursor:
             raise Exception('noCursor', 'Cannot refresh the requests table because no database cursor exists.')
         
-        updatedTable = ReqTable(self.tableName, self.timeOut, self.log)
-        updatedTable.tryRead()
-        newRequests = updatedTable.getNew()
-
-        for arequest in newRequests:
-            try:
-                self.get([arequest['requestid']])
-            except Exception as exc:
-                if len(exc.args) != 2:
-                    raise # Re-raise
-
-                etype = exc.args[0]
-
-                if etype == 'unknownRequestid':
-                    # arequest is a request that has been added tot the request db table since the last time refresh was run.
-                    requestidStr = str(arequest['requestid'])
-
-                    self.log.write(['Got new request ' + requestidStr + '.'])
-
-                    self.reqDict[requestidStr] = {}
-                    self.reqDict[requestidStr]['requestid'] = requestidStr # Strings are immutable, so copying the reference is ok.
-                    self.reqDict[requestidStr]['starttime'] = deepcopy(arequest['starttime'])
-                    self.reqDict[requestidStr]['sunums'] = deepcopy(arequest['sunums'])
-                    self.reqDict[requestidStr]['status'] = arequest['status']
-                    self.reqDict[requestidStr]['errmsg'] = arequest['errmsg']
-                    self.reqDict[requestidStr]['dirty'] = False
-                    
-                else:
-                    raise # Re-raise
+        # Delete existing items from self.
+        self.reqDict = {}
+        
+        # Read the table from the database anew.
+        self.tryRead()
 
     # This will NOT commit database changes. You are generally going to want to do this as part of a larger db change. Commit the changes
     # after all changes that form the atomic set of changes.
@@ -802,8 +780,10 @@ class Downloader(threading.Thread):
             
             # Update SU table. Set SU-table record status to 'C'. Must first lock the SU table since we are modifying it. Also,
             # the state may not be 'P' due to some problem cropping up in the meantime. Only set to 'C' if the state is 'P'.
-            self.suTable.acquireLock()
             try:
+                self.log.write(['Class Downloader acquiring SU-table lock for SU ' + str(self.sunum) + '.'])            
+                self.suTable.acquireLock()
+                
                 su = self.suTable.get([self.sunum])
                 if su[0]['status'] == 'P':
                     self.log.write(['Setting SU ' + str(self.sunum) + ' status to complete.'])
@@ -812,13 +792,15 @@ class Downloader(threading.Thread):
                     self.suTable.updateDB()
             finally:
                 # Always release lock.
+                self.log.write(['Class Downloader releasing SU-table lock for SU ' + str(self.sunum) + '.'])
                 self.suTable.releaseLock()
             
             # This thread is about to terminate.
             
             # We need to check the class tList variable to update it, so we need to acquire the lock.
-            Downloader.lock.acquire()
-            try:
+            try:            
+                Downloader.lock.acquire()
+                self.log.write(['Class Downloader acquired Downloader lock for SU ' + str(self.sunum) + '.']) 
                 Downloader.tList.remove(self) # This thread is no longer one of the running threads.
                 if len(Downloader.tList) == Downloader.maxThreads - 1:
                     # Fire event so that main thread can add new SUs to the download queue.
@@ -827,6 +809,7 @@ class Downloader(threading.Thread):
                     Downloader.eventMaxThreads.clear()
             finally:
                 Downloader.lock.release()
+                self.log.write(['Class Downloader released Downloader lock for SU ' + str(self.sunum) + '.'])
         except Exception as exc:
             if len(exc.args) == 2:
                 type = exc[0]
@@ -836,6 +819,8 @@ class Downloader(threading.Thread):
 
             if type == 'scp' or type == 'vso_sum_alloc' or type == 'mv':
                 sus.setStatus([self.sunum], 'E', 'Error downloading storage unit ' + str(self.sunum) + ': ' + msg + '.')
+                # Flush the change to disk.
+                self.suTable.updateDB()
             else:
                 raise
    
@@ -851,7 +836,7 @@ class Downloader(threading.Thread):
         cls.maxThreads = maxThreads
 
 class ProviderPoller(threading.Thread):
-    def __init__(url, requestID, sus, reqTable, binPath, log):
+    def __init__(self, url, requestID, sus, reqTable, binPath, log):
         threading.Thread.__init__(self)
         self.url = url
         self.requestID = requestID
@@ -859,19 +844,21 @@ class ProviderPoller(threading.Thread):
         self.reqTable = reqTable
         self.binPath = binPath
         self.log = log
-        self.start = datetime.now()
+        self.startTime = datetime.now() # Cool bug. This used ot be self.start. But the parent object has a method named 'start' The effect was to override the method with an attribute.
         self.timeOut = sus.getTimeout()
 
     def run(self):
         values = {'requestid' : self.requestID, 'sunums' : 'none'}
         data = urllib.urlencode(values)
 
+        dlInfo = {}
+        dlInfo['status'] = 'pending'
         while dlInfo['status'] == 'pending':
-            if datetime.now(self.start.tzinfo) > self.start + self.timeOut:
+            if datetime.now(self.startTime.tzinfo) > self.startTime + self.timeOut:
                 # The providing site has not completed the export, and the time-out has elapsed. Give up.
                 
                 break
-            log.write(['Checking on request ' + dlInfo['requestid'] + '.'])
+            self.log.write(['Checking on request ' + self.requestID + '.'])
             response = urllib2.urlopen(req)
             dlInfoStr = response.read()
             dlInfo = json.loads(dlInfoStr)
@@ -886,20 +873,23 @@ class ProviderPoller(threading.Thread):
                 # Get request record.
                 request = self.reqTable.get([self.requestID])
                 sunums = request[0]['sunums']
-                sus.setStatus(sunums, 'E', 'Timed-out waiting for providing site to return paths to requested SUs (' + ','.join([ str(asunum) for asunum in sunums ]) + ') for request ' + str(self.requestID) + '.') 
+                self.suTable.setStatus(sunums, 'E', 'Timed-out waiting for providing site to return paths to requested SUs (' + ','.join([ str(asunum) for asunum in sunums ]) + ') for request ' + str(self.requestID) + '.')
+
+                # Flush the change to disk.
+                self.suTable.updateDB()
             else:
                 # Start a download for each SU. If we cannot start the download for any reason, then set the SU status to 'E'.
                 paths = dlInfo['paths']
                 for (asunum, path) in paths:
                     if not path:
                         # A path of None means that the SUNUM was invalid. We want to set the SU status to 'E'.
-                        sus.setStatus([asunum], 'E', 'SU ' + str(asunum) + ' is not valid at providing site.')
+                        self.suTable.setStatus([asunum], 'E', 'SU ' + str(asunum) + ' is not valid at providing site.')
                         continue
                     elif path == '':
                         # An empty-string path means that the SUNUM was valid, but that the SU referred to was offline, and could not
                         # be placed back online - it is not archived.
                         # ART - I need to figure out how to place the SUNUM in SUMS so that its archive flag is N (not archived).
-                        sus.setStatus([asunum], 'C', 'SU ' + str(asunum) + ' refers to an offline SU valid at the providing site that was not archived. It cannot be downloaded.')
+                        self.suTable.setStatus([asunum], 'C', 'SU ' + str(asunum) + ' refers to an offline SU valid at the providing site that was not archived. It cannot be downloaded.')
                         continue
 
                     while True:
@@ -915,6 +905,9 @@ class ProviderPoller(threading.Thread):
                         Downloader.eventMaxThreads.wait()
                         # We woke up, but we do not know if there are any open threads in the thread pool. Loop and check
                         # tList again.
+                
+                # Flush the change to disk.
+                self.suTable.updateDB()
         except Exception as exc:
             if len(exc.args) != 2:
                 raise
@@ -1322,8 +1315,8 @@ if __name__ == "__main__":
                                 # an SU record exists). But Before starting a new download, make sure that requested SU is not already online.
                                 # Due to race conditions, a request could have caused a download to occur needed by another request whose state is 'N'.
                                 requests.refresh() # Clients may have added requests to the queue.
-                                
                                 reqsNew = requests.getNew()
+
                                 for arequest in reqsNew:
                                     timeNow = datetime.now(arequest['starttime'].tzinfo)
                                     if timeNow > arequest['starttime'] + requests.getTimeout():
