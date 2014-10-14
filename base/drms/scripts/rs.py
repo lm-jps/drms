@@ -131,6 +131,7 @@ def GetArgs(args):
 #   'I' - The SU is invalid (it is unknown by SUMS).
 def runJsocfetch(**kwargs):
     rv = {}
+    reraise = False
     
     cmd = [BIN_PATH + '/jsoc_fetch']
     for key in kwargs:
@@ -138,22 +139,34 @@ def runJsocfetch(**kwargs):
         cmd.append(arg)
 
     try:
+        # Here's the skinny. jsoc_fetch can return 1, even when the output is valid (e.g, jsoc_fetch request status == 6). But check_output(),
+        # which is the only easy way to capture stdout, will raise an error if jsoc_fetch returns 1. So we have to do some
+        # additional processing if check_output() raises. If status is 6, then DO NOT RERAISE. Instead, fall through to the code below
+        # that processes the output of jsoc_fetch.
         resp = check_output(cmd)
         output = resp.decode('utf-8')
 
     except ValueError:
         raise Exception('jfetch', "Unable to run command: '" + ' '.join(cmd) + "'.")
     except CalledProcessError as exc:
-        raise Exception('jfetch', "Command '" + ' '.join(cmd) + "' returned non-zero status code " + str(exc.returncode))
+        # jsoc_fetch returns 1 when the status is 6 (when it cannot find the request ID because it hasn't propagated to the
+        # private database table - jsoc.export).
+        if exc.returncode != 6:
+            reraise = True
+    finally:
+        if reraise:
+            raise Exception('jfetch', "Command '" + ' '.join(cmd) + "' returned non-zero status code " + str(exc.returncode))
+        
+        regExp = re.compile(r'\s*status\s*=\s*(\d+)', re.IGNORECASE)
+        
+        # Parse out the status field.
+        outputList = output.splitlines()
 
-    # Parse out the status field.
-    outputList = output.splitlines()
-    regExp = re.compile(r'\s*status\s*=\s*(\d+)', re.IGNORECASE)
-    for line in outputList:
-        matchObj = regExp.match(line)
-        if matchObj is not None:
-            jfStatus = int(matchObj.group(1))
-            break
+        for line in outputList:
+            matchObj = regExp.match(line)
+            if matchObj is not None:
+                jfStatus = int(matchObj.group(1))
+                break
 
     if jfStatus is None:
         raise Exception('jfetch', 'Unexpected jsoc_fetch output - status field is missing.')
