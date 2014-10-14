@@ -132,6 +132,7 @@ def GetArgs(args):
 def runJsocfetch(**kwargs):
     rv = {}
     reraise = False
+    jfRetCode = 0
     
     cmd = [BIN_PATH + '/jsoc_fetch']
     for key in kwargs:
@@ -153,9 +154,10 @@ def runJsocfetch(**kwargs):
         # private database table - jsoc.export).
         if exc.returncode != 6:
             reraise = True
+            jfRetCode = exc.returncode
     finally:
         if reraise:
-            raise Exception('jfetch', "Command '" + ' '.join(cmd) + "' returned non-zero status code " + str(exc.returncode))
+            raise Exception('jfetch', "Command '" + ' '.join(cmd) + "' returned non-zero status code " + str(jfRetCode))
         
         regExp = re.compile(r'\s*status\s*=\s*(\d+)', re.IGNORECASE)
         
