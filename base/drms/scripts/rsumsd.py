@@ -154,6 +154,7 @@ class SuTable:
             self.suDict[sunumStr]['errmsg'] = record[4]
             self.suDict[sunumStr]['dirty'] = False
             self.suDict[sunumStr]['new'] = False
+            self.suDict[sunumStr]['polling'] = False
 
     def tryRead(self):
         nAtts = 0
@@ -288,6 +289,9 @@ class SuTable:
 
             # Set the new flag (so that the record will be INSERTed into the SU database table instead of UPDATEd).
             self.suDict[sunumStr]['new'] = True
+
+            # The polling flag is set only while we are waiting for a providing site to give us paths for SUs.
+            self.suDict[sunumStr]['polling'] = False
 
     def setStatus(self, sunums, code, msg=None):
         for asunum in sunums:
@@ -851,41 +855,98 @@ class ProviderPoller(threading.Thread):
     def run(self):
         values = {'requestid' : self.requestID, 'sunums' : 'none'}
         data = urllib.urlencode(values)
+        errMsg = None
+        timeToLog = True
+        loopN = 0
+
+        try:
+            # Set the in-memory ProviderPoller flag for all sunums in this request.
+            self.suTable.acquireLock()
+            for asunum in self.sunums:
+                try:
+                    asu = self.suTable.get([asunum])
+                    asu[0]['polling'] = True
+                except Exception as exc:
+                    if len(exc.args) != 2:
+                        raise # Re-raise
+
+                    etype = exc.args[0]
+
+                    if etype != 'unknownSunum':
+                        raise
+        finally:
+            self.suTable.releaseLock()
 
         dlInfo = {}
         dlInfo['status'] = 'pending'
-        while dlInfo['status'] == 'pending':
+        while True:
             if datetime.now(self.startTime.tzinfo) > self.startTime + self.timeOut:
                 # The providing site has not completed the export, and the time-out has elapsed. Give up.
-                
+                errMsg = 'Timed-out waiting for providing site to return paths to requested SUs (' + ','.join([ str(asunum) for asunum in self.sunums ]) + ') - provider request ' + self.requestID + '.'
                 break
-            self.log.write(['Checking on request to provider (provider request ' + self.requestID + ').'])
-            self.log.write(['URL is ' + self.url + '/rs.sh' + '?' + data])
+
+            if timeToLog:
+                self.log.write(['Checking on request to provider (provider request ' + self.requestID + ').'])
+                self.log.write(['URL is ' + self.url + '/rs.sh' + '?' + data])
+
             req = urllib2.Request(self.url + '/rs.sh', data)
             response = urllib2.urlopen(req)
             dlInfoStr = response.read()
             dlInfo = json.loads(dlInfoStr)
-            self.log.write(['Provider returns status ' + dlInfo['status'] + '.'])
+
+            if timeToLog:
+                self.log.write(['Provider returns status ' + dlInfo['status'] + '.'])
+
+            if dlInfo['status'] != 'pending':
+                break;
+
             time.sleep(1)
+            loopN += 1
+            
+            # Log every 5 seconds.
+            timeToLog = (loopN % 5 == 0)
+
+        # We might not have printed to log.
+        if not errMsg and not timeToLog:
+            self.log.write(['Checking on request to provider (provider request ' + self.requestID + ').'])
+            self.log.write(['URL is ' + self.url + '/rs.sh' + '?' + data])
+            self.log.write(['Provider returns status ' + dlInfo['status'] + '.'])
 
         # We must acquire the SU-table lock since we will be updating the status fields for individual SUs. 
+        try:
+            self.suTable.acquireLock()
 
-        self.suTable.acquireLock()
-        try: 
+            # We are done polling, remove the polling flag.
+            for asunum in self.sunums:
+                try:
+                    asu = self.suTable.get([asunum])
+                    asu[0]['polling'] = False
+                except Exception as exc:
+                    if len(exc.args) != 2:
+                        raise # Re-raise
+
+                    etype = exc.args[0]
+
+                    if etype != 'unknownSunum':
+                        raise
+ 
             if dlInfo['status'] != 'complete':
                 # Set all SU records to 'E' (rsumds.py timed-out waiting for the SUs to be ready at the providing site).
-                sunums = self.sunums
-                self.suTable.setStatus(sunums, 'E', 'Timed-out waiting for providing site to return paths to requested SUs (' + ','.join([ str(asunum) for asunum in sunums ]) + ') - provider request ' + self.requestID + '.')
+                if not errMsg:
+                    errMsg = 'The providing site failed to return paths to requests SUs.'
+                self.suTable.setStatus(self.sunums, 'E', errMsg)
 
                 # Flush the change to disk.
                 self.suTable.updateDB()
             else:
                 # Start a download for each SU. If we cannot start the download for any reason, then set the SU status to 'E'.
+                self.log.write(['The SU paths are ready.'])
                 paths = dlInfo['paths']
+
                 for (asunum, path) in paths:
                     if not path:
                         # A path of None means that the SUNUM was invalid. We want to set the SU status to 'E'.
-                        self.suTable.setStatus([asunum], 'E', 'SU ' + str(asunum) + ' is not valid at providing site.')
+                        self.suTable.setStatus([asunum], 'E', 'SU ' + str(asunum) + ' is not valid at the providing site.')
                         continue
                     elif path == '':
                         # An empty-string path means that the SUNUM was valid, but that the SU referred to was offline, and could not
@@ -1110,7 +1171,7 @@ def processSUs(url, sunums, sus, reqTable, binPath, log, reprocess=False):
         for (asunum, path) in paths:
             if not path:
                 # A path of None means that the SUNUM was invalid. We want to set the SU status to 'E'.
-                sus.setStatus([asunum], 'E', 'SU ' + str(asunum) + ' is not valid at providing site.')
+                sus.setStatus([asunum], 'E', 'SU ' + str(asunum) + ' is not valid at the providing site.')
                 continue
             elif path == '':
                 # An empty-string path means that the SUNUM was valid, but that the SU referred to was offline, and could not
@@ -1253,6 +1314,7 @@ if __name__ == "__main__":
                         signal.signal(signal.SIGTERM, terminator)
                         
                         # Start of main loop.
+                        loopN = 0
                         while True and not shutDown:
                             # Always lock the SU table first and do all processing that requires this lock first.
                             sus.acquireLock()
@@ -1274,20 +1336,28 @@ if __name__ == "__main__":
                                 # Ignore SUs in the other states (C or E). These will be checked in other parts of the code.
                                 
                                 # For each 'P' request in the request table, check to see if the requested downloads have completed yet.
+
+                                # Log every 5 seconds.
+                                timeToLog = (loopN % 5 == 0)
+
                                 reqsPending = requests.getPending()
                                 for arequest in reqsPending:
                                     done = True
                                     reqError = False
                                     sunums = arequest['sunums']
+                                    errMsg = ''
+
                                     for asunum in sunums:
                                         if reqError == True:
                                             break
                                         asu = sus.get([asunum])
                                         if asu[0]['status'] == 'P':
-                                            rslog.write(['Download of SU ' + str(asu[0]['sunum'])  + ' is pending.'])
+                                            if (not asu[0]['polling']) or timeToLog:
+                                                rslog.write(['Download of SU ' + str(asu[0]['sunum'])  + ' is pending.'])
                                             done = False
                                         elif asu[0]['status'] == 'E':
                                             rslog.write(['Download of SU ' + str(asu[0]['sunum'])  + ' has errored-out.'])
+                                            errMsg = asu[0]['errmsg']
                                             reqError = True
                                         else:
                                             rslog.write(['Download of SU ' + str(asu[0]['sunum'])  + ' has completed.'])
@@ -1297,7 +1367,7 @@ if __name__ == "__main__":
                                         # refcount on each SU.
                                         if reqError:
                                             rslog.write(['Request number ' + str(arequest['requestid']) + ' for SUNUM(s) ' + ','.join([ str(asunum) for asunum in arequest['sunums'] ]) + ' errored-out.'])
-                                            requests.setStatus([arequest['requestid']], 'E', 'Error downloading at least one SU.')
+                                            requests.setStatus([arequest['requestid']], 'E', errMsg)
                                         else:
                                             rslog.write(['Request number ' + str(arequest['requestid']) + ' for SUNUM(s) ' + ','.join([ str(asunum) for asunum in arequest['sunums'] ]) + ' completed successfully.'])
                                             requests.setStatus([arequest['requestid']], 'C')
@@ -1409,6 +1479,7 @@ if __name__ == "__main__":
                             
                             # Must poll for new requests to appear in requests table.
                             time.sleep(1)
+                            loopN += 1
                             # End of main loop.
                         
                         # Save the db state when exiting.
