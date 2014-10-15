@@ -836,10 +836,11 @@ class Downloader(threading.Thread):
         cls.maxThreads = maxThreads
 
 class ProviderPoller(threading.Thread):
-    def __init__(self, url, requestID, sus, reqTable, binPath, log):
+    def __init__(self, url, requestID, sunums, sus, reqTable, binPath, log):
         threading.Thread.__init__(self)
         self.url = url
-        self.requestID = requestID
+        self.requestID = requestID # The provider request ID.
+        self.sunums = sunums # The sunums requested from provider (under request ID self.requestID).
         self.suTable = sus
         self.reqTable = reqTable
         self.binPath = binPath
@@ -858,10 +859,13 @@ class ProviderPoller(threading.Thread):
                 # The providing site has not completed the export, and the time-out has elapsed. Give up.
                 
                 break
-            self.log.write(['Checking on request ' + self.requestID + '.'])
+            self.log.write(['Checking on request to provider (provider request ' + self.requestID + ').'])
+            self.log.write(['URL is ' + self.url + '/rs.sh' + '?' + data])
+            req = urllib2.Request(self.url + '/rs.sh', data)
             response = urllib2.urlopen(req)
             dlInfoStr = response.read()
             dlInfo = json.loads(dlInfoStr)
+            self.log.write(['Provider returns status ' + dlInfo['status'] + '.'])
             time.sleep(1)
 
         # We must acquire the SU-table lock since we will be updating the status fields for individual SUs. 
@@ -870,10 +874,8 @@ class ProviderPoller(threading.Thread):
         try: 
             if dlInfo['status'] != 'complete':
                 # Set all SU records to 'E' (rsumds.py timed-out waiting for the SUs to be ready at the providing site).
-                # Get request record.
-                request = self.reqTable.get([self.requestID])
-                sunums = request[0]['sunums']
-                self.suTable.setStatus(sunums, 'E', 'Timed-out waiting for providing site to return paths to requested SUs (' + ','.join([ str(asunum) for asunum in sunums ]) + ') for request ' + str(self.requestID) + '.')
+                sunums = self.sunums
+                self.suTable.setStatus(sunums, 'E', 'Timed-out waiting for providing site to return paths to requested SUs (' + ','.join([ str(asunum) for asunum in sunums ]) + ') - provider request ' + self.requestID + '.')
 
                 # Flush the change to disk.
                 self.suTable.updateDB()
@@ -897,7 +899,7 @@ class ProviderPoller(threading.Thread):
                         try:
                             if len(Downloader.tList) < Downloader.maxThreads:
                                 self.log.write(['Instantiating a Downloader for SU ' + asunum + '.'])
-                                Downloader.newThread(asunum, path, sus, dlInfo['scpUser'], dlInfo['scpHost'], dlInfo['scpPort'], binPath, log)
+                                Downloader.newThread(asunum, path, self.suTable, dlInfo['scpUser'], dlInfo['scpHost'], dlInfo['scpPort'], self.binPath, self.log)
                                 break # The finally clause will ensure the Downloader lock is released.
                         finally:
                             Downloader.lock.release()
@@ -914,18 +916,15 @@ class ProviderPoller(threading.Thread):
 
             type = exc[0]
 
-            if type == 'unknownRequestid':
-                # Just let this thread terminate. The request was lost and there is no ReqTable record to update and set the status code to 'E'.
-                self.log.write(['Lost request ' + str(self.requestID) + '. Terminating polling thread.']) 
-            else:
-                raise
+            # Eventually I will figure out which exceptions to handle.
+            raise
         finally:
             # Always release lock.
             self.suTable.releaseLock()
 
     @staticmethod
-    def newThread(url, requestID, sus, reqTable, binPath, log):
-        poller = ProviderPoller(url, requestID, sus, reqTable, binPath, log)
+    def newThread(url, requestID, sunums, sus, reqTable, binPath, log):
+        poller = ProviderPoller(url, requestID, sunums, sus, reqTable, binPath, log)
         poller.start()
 
 def getOption(val, default):
@@ -1146,7 +1145,7 @@ def processSUs(url, sunums, sus, reqTable, binPath, log, reprocess=False):
         # su-table lock when it is finally time to start downloads.
         log.write(['Request includes one or more SUs that are offline at the providing site. Waiting for providing site to put them online.'])
 
-        ProviderPoller.newThread(url, dlInfo['requestid'], sus, reqTable, binPath, log)
+        ProviderPoller.newThread(url, dlInfo['requestid'], workingSunums, sus, reqTable, binPath, log)
     else:
         # Error of some kind.
         # Update the SU-table status of the SUs to 'E'.
@@ -1336,7 +1335,7 @@ if __name__ == "__main__":
                                     for asunum in sunums:
                                         try:
                                             asu = sus.get([asunum])
-                                            rslog.write(['A download for SU ' + asunum + ' is already in progress.'])
+                                            rslog.write(['A download for SU ' + str(asunum )+ ' is already in progress.'])
                                             known.append(asunum)
                                         except Exception as exc:
                                             if len(exc.args) != 2:
