@@ -738,6 +738,20 @@ class Downloader(threading.Thread):
         
         # Download the SU.
         try:
+            try:
+                self.log.write(['Class Downloader acquiring SU-table lock for SU ' + str(self.sunum) + '.'])
+                self.suTable.acquireLock()
+
+                su = self.suTable.get([self.sunum])
+
+                # Check for download error or completion
+                if su[0]['status'] != 'P':
+                    raise Exception('downloader', 'SU ' + str(su[0]['sunum']) + ' not pending.')
+            finally:
+                # Always release lock.
+                self.log.write(['Class Downloader releasing SU-table lock for SU ' + str(self.sunum) + '.'])
+                self.suTable.releaseLock()
+
             # Don't forget to make the temporary directory first.
             if os.path.exists(dlDir):
                 self.log.write(['Removing stale temporary directory ' + dlDir + '.'])
@@ -747,9 +761,49 @@ class Downloader(threading.Thread):
             
             cmdList = ['scp', '-r', '-P', self.scpPort, self.scpUser + '@' + self.scpHost + ':' + self.path + '/*', dlDir]
             try:
-                check_call(cmdList)
-            except CalledProcessError as exc:
-                raise Exception('scp', "Command '" + ' '.join(cmdList) + "' returned non-zero status code " + str(exc.returncode))
+                # check_call(cmdList)
+                # The scp process will inherit stdin, stdout, and stderr from this script.
+                proc = Popen(cmdList)
+            except OSError as exc:
+                raise Exception('scp', "Cannot run command '" + ' '.join(cmdList) + "' ")
+            except ValueError as exc:
+                raise Exception('scp', "scp command '" + ' '.join(cmdList) + "' called with invalid arguments.")
+
+            # Poll for completion
+            while True:
+                try:
+                    self.log.write(['Class Downloader acquiring SU-table lock for SU ' + str(self.sunum) + '.'])
+                    self.suTable.acquireLock()
+                    su = self.suTable.get([self.sunum])
+
+                    # Check for download error or completion
+                    if su[0]['status'] != 'P':
+                        raise Exception('downloader', 'SU ' + str(su[0]['sunum']) + ' not pending.')
+
+                    # Check for download time-out.
+                    timeNow = datetime.now(su[0]['starttime'].tzinfo)
+                    if timeNow > su[0]['starttime'] + self.suTable.getTimeout():
+                        self.log.write(['Download of SUNUM ' + str(su[0]['sunum']) + ' timed-out.'])
+                        sus.setStatus([su[0]['sunum']], 'E', 'Download timed-out.')        
+                        # Flush the change to disk.
+                        self.suTable.updateDB()                
+                        raise Exception('downloader', 'Timed-out.')
+
+                finally:
+                    # Always release lock.
+                    self.log.write(['Class Downloader releasing SU-table lock for SU ' + str(self.sunum) + '.'])
+                    self.suTable.releaseLock()
+
+                # The Python documentation is confusing at best. I think we have to look at the proc.returncode attribute
+                # to determine if the child process has completed. None means it hasn't. If the value is not None, then 
+                # the child process has terminated, and the value is the child process's return code.
+                proc.poll()
+                if proc.returncode is not None:
+                    if proc.returncode != 0:
+                        raise Exception('scp', 'Command "' + ' '.join(cmdList) + '" returned non-zero status code ' + str(proc.returncode)) 
+                    break
+
+                time.sleep(1)
 
             self.log.write(['scp command succeeded.'])
 
@@ -798,22 +852,6 @@ class Downloader(threading.Thread):
                 # Always release lock.
                 self.log.write(['Class Downloader releasing SU-table lock for SU ' + str(self.sunum) + '.'])
                 self.suTable.releaseLock()
-            
-            # This thread is about to terminate.
-            
-            # We need to check the class tList variable to update it, so we need to acquire the lock.
-            try:            
-                Downloader.lock.acquire()
-                self.log.write(['Class Downloader acquired Downloader lock for SU ' + str(self.sunum) + '.']) 
-                Downloader.tList.remove(self) # This thread is no longer one of the running threads.
-                if len(Downloader.tList) == Downloader.maxThreads - 1:
-                    # Fire event so that main thread can add new SUs to the download queue.
-                    Downloader.eventMaxThreads.set()
-                    # Clear event so that main will block the next time it calls wait.
-                    Downloader.eventMaxThreads.clear()
-            finally:
-                Downloader.lock.release()
-                self.log.write(['Class Downloader released Downloader lock for SU ' + str(self.sunum) + '.'])
         except Exception as exc:
             if len(exc.args) == 2:
                 type = exc[0]
@@ -822,12 +860,37 @@ class Downloader(threading.Thread):
                 raise
 
             if type == 'scp' or type == 'vso_sum_alloc' or type == 'mv':
-                sus.setStatus([self.sunum], 'E', 'Error downloading storage unit ' + str(self.sunum) + ': ' + msg + '.')
-                # Flush the change to disk.
-                self.suTable.updateDB()
+                try:
+                    sus.setStatus([self.sunum], 'E', 'Error downloading storage unit ' + str(self.sunum) + ': ' + msg + '.')
+                    # Flush the change to disk.
+                    self.suTable.updateDB()
+                except Exception:
+                    # Catch everything and just let the thread pass away peacefully.
+                    pass
+            elif type == 'unknownSunum':
+                self.log.write(['Cannot download SU. No SU record.' + msg])
+            elif type == 'downloader':
+                self.log.write([msg])
             else:
                 raise
-   
+  
+        # This thread is about to terminate. 
+        # We need to check the class tList variable to update it, so we need to acquire the lock.
+        try:
+            Downloader.lock.acquire()
+            self.log.write(['Class Downloader acquired Downloader lock for SU ' + str(self.sunum) + '.'])
+            Downloader.tList.remove(self) # This thread is no longer one of the running threads.
+            if len(Downloader.tList) == Downloader.maxThreads - 1:
+                # Fire event so that main thread can add new SUs to the download queue.
+                self.log.write(['OK to start new download threads.'])
+                Downloader.eventMaxThreads.set()
+                # Clear event so that main will block the next time it calls wait.
+                Downloader.eventMaxThreads.clear()
+        finally:
+            Downloader.lock.release()
+            self.log.write(['Class Downloader released Downloader lock for SU ' + str(self.sunum) + '.'])
+
+
     # Must acquire Downloader lock BEFORE calling newThread() since newThread() will append to tList (the Downloader threads will delete from tList as they complete).
     @staticmethod
     def newThread(sunum, path, sus, scpUser, scpHost, scpPort, binPath, log):
@@ -1124,7 +1187,8 @@ def readTables(sus, requests, sites):
 # log - the log to write messages to.
 # reprocess - the SUs identified are all being reprocessed. They all have a status of 'P' in the SU table. There was
 #             some interruption that caused the download to be lost.
-def processSUs(url, sunums, sus, reqTable, binPath, log, reprocess=False):
+# reset - reset the processing start time for each SU. Ignored, unless reprocess is true
+def processSUs(url, sunums, sus, reqTable, binPath, log, reprocess=False, reset=False):
     # Get path to SUs by calling the rs.sh cgi at the owning remote site (url identifies the remote site).
     # Create the sunum= argument.
 
@@ -1140,7 +1204,8 @@ def processSUs(url, sunums, sus, reqTable, binPath, log, reprocess=False):
                     raise Exception('accidentalRepro', 'An accidental attempt to reprocess pending SU ' + str(asunum) + ' occurred.')
                 workingSunums.append(asunum)
                 # Reset start time.
-                sus.setStarttime([asunum], datetime.now())
+                if reset:
+                    sus.setStarttime([asunum], datetime.now())
         except Exception as exc:
             if len(exc.args) != 2:
                 raise # Re-raise
@@ -1266,6 +1331,13 @@ if __name__ == "__main__":
                         
                         siteSunums = {}
                         for asu in susPending:
+                            timeNow = datetime.now(asu['starttime'].tzinfo)
+                            if timeNow > asu['starttime'] + sus.getTimeout():
+                                # Set SU status to 'E'.
+                                rslog.write(['Download of SUNUM ' + str(asu['sunum']) + ' timed-out.'])
+                                sus.setStatus([asu['sunum']], 'E', 'Download timed-out.')
+                                continue
+
                             rslog.write(['Recovering interrupted download for SUNUM ' + str(asu['sunum']) + '.'])
                             siteURL = sites.getURL(asu['sunum'])
                             
@@ -1273,6 +1345,8 @@ if __name__ == "__main__":
                                 siteSunums[siteURL] = []
 
                             siteSunums[siteURL].append(asu['sunum'])
+
+                        sus.updateDB()
 
                         # There is no need to acquire the SU-table lock. processSUs() will start new threads that can modify the
                         # SU-record statuses, but by the time that happens, the main thread will be done reading those statuses.
@@ -1283,8 +1357,8 @@ if __name__ == "__main__":
                                 chunker = Chunker(siteSunums[url], 64)
                                 for chunk in chunker:
                                     # processSUs(..., reprocess=False) would attempt to insert a new record in the sus table for each SUNUM. By
-                                    # setting the last reprocess argument to True, we merely update the existing
-                                    # record's starttime value.
+                                    # setting the last reprocess argument to True, we do not insert a new record, but instead continue to use
+                                    # the existing record. 
                                     try:
                                         processSUs(url, chunk, sus, requests, optD['binpath'], rslog, True)
 
@@ -1321,12 +1395,14 @@ if __name__ == "__main__":
                             try:
                                 # For each P SU in the SU table, see if it is time to time-out. susPending are ordered by SUNUM.
                                 # I guess we could process more than one SuTable, but for now, let's assume there is only one such
-                                # table.
+                                # table. The Downloader thread normally handles time-outs, but if the thread croaks and leaves 
+                                # the SU pending, then the following code handles the time-out.
                                 susPending = sus.getPending()
                                 for asu in susPending:
                                     timeNow = datetime.now(asu['starttime'].tzinfo)
                                     if timeNow > asu['starttime'] + sus.getTimeout():
                                         rslog.write(['Download of SUNUM ' + str(asu['sunum']) + ' timed-out.'])
+                                        # Kill the Downloader thread (if it exists).
                                         sus.setStatus([asu['sunum']], 'E', 'Download timed-out.')
                             
                                 cursor.execute('BEGIN')
@@ -1480,6 +1556,9 @@ if __name__ == "__main__":
                             # Must poll for new requests to appear in requests table.
                             time.sleep(1)
                             loopN += 1
+                            # I wonder if Python throws an exception if loopN rolls-over. Does it roll-over at the 32-bit or 64-bit boundary? 
+                            if loopN >= 0x7FFFFFFF:
+                                loopN = 0
                             # End of main loop.
                         
                         # Save the db state when exiting.
