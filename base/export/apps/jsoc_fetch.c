@@ -648,8 +648,34 @@ static void WriteLog(const char *logpath, const char *format, ...)
     FILE **pfptr = NULL;
     int lockfd;
     struct stat stbuf;
-    int mustchmodlck = (stat(kLockFile, &stbuf) != 0);
-    int mustchmodlog = (stat(logpath, &stbuf) != 0);
+    int mustchmodlck = 0;
+    int mustchmodlog = 0;
+    
+    if (stat(kLockFile, &stbuf) != 0)
+    {
+        /* If file doesn't exist (it might not, since this code can run at non-JSOC sites, but it contains JSOC-specific things), 
+         * then simply do not write log. */
+        return;
+    }
+    else
+    {
+        if ((stbuf.st_mode & (S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH)) != (S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH))
+        mustchmodlck = 1;
+    }
+    
+    if (stat(logpath, &stbuf) != 0)
+    {
+        /* If file doesn't exist (it might not, since this code can run at non-JSOC sites, but it contains JSOC-specific things),
+         * then simply do not write log. */
+        return;
+    }
+    else
+    {
+        if ((stbuf.st_mode & (S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH)) != (S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH))
+        {
+            mustchmodlog = 1;
+        }
+    }
     
     if (!gLogs)
     {
@@ -1281,6 +1307,7 @@ int DoIt(void)
         int dontFilter;
         char timeValStr[256];
         char *endptr = NULL;
+        int doFetchBlock = 0;
         int istat = DRMS_SUCCESS;
         
         seriesSunums = hcon_create(sizeof(LinkedList_t *), DRMS_MAXSERIESNAMELEN, (void (*)(const void *value))list_llfree, NULL, NULL, NULL, 0);
@@ -1295,6 +1322,15 @@ int DoIt(void)
         }
         
         if (istat == DRMS_SUCCESS)
+        {
+            /* Disable fetch block if there is no su_production.fetchblock table. */
+            if (drms_query_tabexists(drms_env->session, "su_production", "fetchblock", &istat))
+            {
+                doFetchBlock = 1;
+            }
+        }
+        
+        if (istat == DRMS_SUCCESS && doFetchBlock)
         {
             for (isunum = 0; isunum < nsunums; isunum++)
             {
@@ -1406,7 +1442,7 @@ int DoIt(void)
         }
         
         /* Each sunumList now contains a list of UNSORTED sunums for a single series series. Loop over series (iterate over seriesSunums). */
-        if (istat == DRMS_SUCCESS)
+        if (istat == DRMS_SUCCESS && doFetchBlock)
         {
             int nSeriesSunums = 0;
             size_t stsz;
@@ -1869,18 +1905,18 @@ int DoIt(void)
             *onlinestat = 'Y';
             }
          if (strcmp(sinfo->online_status,"N")==0 || expire < 3)
-            {  // need to stage or reset retention time
-            all_online = 0;
-
-            if (strcmp(sinfo->archive_status, "N") == 0)
-               {
-               *onlinestat = 'X';
-               }
-            else
-               {
-               *onlinestat = 'N';
-               }
-            }
+         {  // need to stage or reset retention time
+             if (strcmp(sinfo->archive_status, "N") == 0)
+             {
+                 *onlinestat = 'X';
+             }
+             else
+             {
+                 *onlinestat = 'N';
+                 /* Don't set status of offline, unless there is at least one SU that is offline that can be brought back online. */
+                 all_online = 0;
+             }
+         }
 
          sunums[count] = sunum;
          paths[count] = strdup(supath);
