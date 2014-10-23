@@ -709,12 +709,6 @@ int drms_server_close_session(DRMS_Env_t *env, char *stat_str, int clients,
   struct dirent *dirp;
   int emptydir = 1;
 
-  /* Flush output to logfile. */
-  fflush(stdout);
-  fflush(stderr);
-  close(STDERR_FILENO);
-  close(STDOUT_FILENO);
-
   if (env->tee_pid > 0) {
     int status = 0;
     waitpid(env->tee_pid, &status, 0);
@@ -725,6 +719,12 @@ int drms_server_close_session(DRMS_Env_t *env, char *stat_str, int clients,
      * these file descriptors otherwise. */
     if (!env->session->readonly && env->dolog)
     {
+        /* Flush output to logfile. */
+        fflush(stdout);
+        fflush(stderr);
+        close(STDERR_FILENO);
+        close(STDOUT_FILENO);
+
         if (restore_stdeo())
         {
             printf("Can't restore stderr and stdout\n");
@@ -2702,7 +2702,7 @@ void *drms_sums_thread(void *arg)
   if (connected && sum)
   {
     /* Disconnect from SUMS. */
-     sumscallret = MakeSumsCall(env, DRMS_SUMCLOSE, &sum, printf);
+     sumscallret = MakeSumsCall(env, DRMS_SUMCLOSE, &sum, printkerr);
      if (sumscallret == kBrokenPipe)
      {
         fprintf(stderr, "Unable to call SUM_close(); broken pipe; not retrying.\n");
@@ -2966,7 +2966,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
        /* PERFORMANCE BOTTLENECK */
        /* drms_su_alloc() can be slow when the dbase is busy - this is due to 
         * SUM_open() calls backing up. */
-       reply->opcode = MakeSumsCall(env, DRMS_SUMALLOC, &sum, printf);
+       reply->opcode = MakeSumsCall(env, DRMS_SUMALLOC, &sum, printkerr);
 
        if (reply->opcode != 0)
        {
@@ -3073,7 +3073,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
             sum->dsix_ptr[i] = request->sunum[i];
         
         /* Make RPC call to the SUM server. */
-        reply->opcode = MakeSumsCall(env, DRMS_SUMGET, &sum, printf);
+        reply->opcode = MakeSumsCall(env, DRMS_SUMGET, &sum, printkerr);
 
 #ifdef DEBUG
         printf("SUM thread: SUM_get returned %d\n",reply->opcode);
@@ -3194,7 +3194,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
                      *
                      * If sum_svc has crashed or restarted, then SUM_open() needs to be called again. Otherwise, if
                      * tape_svc or driveX_svc has crashed or restarted, then SUM_get() needs to be called again. */
-                    sumnoop = SUM_nop(sum, printf);
+                    sumnoop = SUM_nop(sum, printkerr);
                     
                     if (env->verbose)
                     {
@@ -3270,7 +3270,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
         }
         else if (reply->opcode != 0)
         {
-            sumnoop = SUM_nop(sum, printf);
+            sumnoop = SUM_nop(sum, printkerr);
             sumscrashed = (sumnoop == 4 || reply->opcode == kBrokenPipe);
             if (sumnoop >= 4 || reply->opcode == kBrokenPipe)
             {
@@ -3418,7 +3418,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
        }
 
        /* Make RPC call to the SUM server. */
-       reply->opcode = MakeSumsCall(env, DRMS_SUMPUT, &sum, printf);
+       reply->opcode = MakeSumsCall(env, DRMS_SUMPUT, &sum, printkerr);
 
        if (reply->opcode != 0)
        {
@@ -3506,7 +3506,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
                     }
                 }
 
-                reply->opcode = MakeSumsCall(env, DRMS_SUMDELETESERIES, NULL, printf, fpath, series);
+                reply->opcode = MakeSumsCall(env, DRMS_SUMDELETESERIES, NULL, printkerr, fpath, series);
 
                 if (reply->opcode != 0)
                 {
@@ -3612,7 +3612,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
        }
 
        /* Make RPC call to the SUM server. */
-       reply->opcode = MakeSumsCall(env, DRMS_SUMALLOC2, &sum, printf, request->sunum[0]);
+       reply->opcode = MakeSumsCall(env, DRMS_SUMALLOC2, &sum, printkerr, request->sunum[0]);
 
        if (reply->opcode != 0)
        {
@@ -3747,7 +3747,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
           sum->sinfo = NULL;
 
           /* Make RPC call to the SUM server. */
-          reply->opcode = MakeSumsCall(env, DRMS_SUMINFO, &sum, printf, dxarray, isunum);
+          reply->opcode = MakeSumsCall(env, DRMS_SUMINFO, &sum, printkerr, dxarray, isunum);
       
           if (reply->opcode != 0)
           {
