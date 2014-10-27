@@ -261,10 +261,32 @@ if (singleNameSpace)
   }
 else
   {
-  if (printinfo || want_JSON)
-    sprintf(query, "select seriesname, primary_idx, description from %s() order by seriesname", DRMS_MASTER_SERIES_TABLE);
-  else
-    sprintf(query, "select seriesname from %s() order by seriesname", DRMS_MASTER_SERIES_TABLE);
+     int hasWl = 0;
+
+#if WL_HASWL
+     hasWl = 1;
+#endif
+     if (hasWl &&
+         ((drms_env->session->db_direct && strcmp(SERVER, drms_env->session->db_handle->dbhost) == 0) ||
+          (!drms_env->session->db_direct && strcmp(SERVER, drms_env->session->hostname) == 0)))
+     {
+        /* We are connected to the database that has the white-list table of merged series information. And we need to query on all series, so use drms.allseries. */
+        if (printinfo || want_JSON)
+        {
+           snprintf(query, sizeof(query), "SELECT seriesname, primary_idx, description FROM drms.allseries ORDER BY seriesname");
+        }
+        else
+        {
+           snprintf(query, sizeof(query), "SELECT seriesname FROM drms.allseries ORDER BY seriesname");
+        }
+     }
+     else
+     {
+        if (printinfo || want_JSON)
+          sprintf(query, "select seriesname, primary_idx, description from %s() order by seriesname", DRMS_MASTER_SERIES_TABLE);
+        else
+          sprintf(query, "select seriesname from %s() order by seriesname", DRMS_MASTER_SERIES_TABLE);
+     }
   }
 
 if ( (qres = drms_query_txt(drms_env->session, query)) == NULL)
