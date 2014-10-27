@@ -3,9 +3,11 @@
 #include <dirent.h>
 #include "drms.h"
 #include "drms_priv.h"
+#include "db.h"
 #include "xmem.h"
 #include "util.h"
 #include "list.h"
+#include "printk.h"
 
 #ifdef DRMS_CLIENT
 #define DEFS_CLIENT
@@ -630,6 +632,370 @@ int drms_su_newslots_nosums(DRMS_Env_t *env, int n, char *series,
 /* Get the actual storage unit directory from SUMS. */
 /* The su may NOT have seriesinfo (this function could be called with only an SUNUM known) */
 #ifndef DRMS_CLIENT
+struct DRMS_RsHandle_struct
+{
+    DB_Handle_t *dbh;
+    char *requestsTable;
+    char *seqTable;
+};
+
+typedef struct DRMS_RsHandle_struct DRMS_RsHandle_t;
+
+static DRMS_RsHandle_t *crankUpRemoteSums(DRMS_Env_t *env, int *status)
+{
+    int rsStatus = DRMS_SUCCESS;
+    char *nspace = NULL;
+    char *table = NULL;
+    char hostPort[128] = {0};
+    char seqTable[128] = {0};
+    DRMS_RsHandle_t *handle = NULL;
+    DRMS_RsHandle_t *rv = NULL;
+    
+    
+    /* The remote-sums components must be present if the JMD is not installed. Ensure this is the case. */
+    
+    /* Create handle. */
+    handle = calloc(1, sizeof(DRMS_RsHandle_t));
+    if (!handle)
+    {
+        rsStatus = DRMS_ERROR_OUTOFMEMORY;
+    }
+    
+    /* requests table */
+    if (!rsStatus)
+    {
+        if (get_namespace(RS_REQUEST_TABLE, &nspace, &table))
+        {
+            rsStatus = DRMS_ERROR_OUTOFMEMORY;
+        }
+        else
+        {
+            if (!drms_query_tabexists(env->session, nspace, table, &rsStatus))
+            {
+                printkerr("Cannot locate remote-sums requests table %s.\n", RS_REQUEST_TABLE);
+                rsStatus = DRMS_ERROR_REMOTESUMS_MISSING;
+            }
+            else
+            {
+                handle->requestsTable = strdup(RS_REQUEST_TABLE);
+                if (!handle->requestsTable)
+                {
+                    rsStatus = DRMS_ERROR_OUTOFMEMORY;
+                }
+            }
+        }
+    }
+    
+    /* requests table sequence */
+    if (!rsStatus)
+    {
+        snprintf(seqTable, sizeof(seqTable), "%s_seq", table);
+        if (!drms_query_tabexists(env->session, nspace, seqTable, &rsStatus))
+        {
+            printkerr("Cannot locate remote-sums requests table sequence table %s_seq.\n", RS_REQUEST_TABLE);
+            rsStatus = DRMS_ERROR_REMOTESUMS_MISSING;
+        }
+        else
+        {
+            handle->seqTable = strdup(seqTable);
+            if (!handle->seqTable)
+            {
+                rsStatus = DRMS_ERROR_OUTOFMEMORY;
+            }
+        }
+    }
+    
+    /* rsumsd.py */
+    if (!rsStatus)
+    {
+        /* The lockfile must be present, it must have the rsumsd.py PID in it, and the PID must exist (/proc/<pid> must exist).
+         * I miss Python. */
+        struct stat stBuf;
+        FILE *fptr = NULL;
+        
+        if (stat(RS_LOCKFILE, &stBuf) || !S_ISREG(stBuf.st_mode))
+        {
+            printkerr("rsumsd.py is not running - cannot find PID file %s.\n", RS_LOCKFILE);
+            rsStatus = DRMS_ERROR_REMOTESUMS_MISSING;
+        }
+        else
+        {
+            /* Extract the PID from the file. */
+            fptr = fopen(RS_LOCKFILE, "r");
+            if (!fptr)
+            {
+                printkerr("Cannot open remote-sums PID file %s.\n", RS_LOCKFILE);
+                rsStatus = DRMS_ERROR_REMOTESUMS_MISSING;
+            }
+            else
+            {
+                char lineBuf[LINE_MAX];
+                
+                /* Will truncate the line after LINE_MAX - 1 chars, so the PID string must be short. */
+                if (!fgets(lineBuf, sizeof(lineBuf), fptr))
+                {
+                    printkerr("remote-sums PID file %s is missing PID.\n", RS_LOCKFILE);
+                    rsStatus = DRMS_ERROR_REMOTESUMS_MISSING;
+                }
+                else
+                {
+                    char procBuf[PATH_MAX];
+                    
+                    /* Assume linux! */
+                    if (lineBuf[strlen(lineBuf) - 1] == '\n')
+                    {
+                        lineBuf[strlen(lineBuf) - 1] = '\0';
+                    }
+                    
+                    snprintf(procBuf, sizeof(procBuf), "/proc/%s", lineBuf);
+                    /* Now check for the existence of this DIRECTORY. */
+                    if (stat(procBuf, &stBuf) || !S_ISDIR(stBuf.st_mode))
+                    {
+                        printkerr("rsumsd.py is not running - cannot find running process %s.\n", procBuf);
+                        rsStatus = DRMS_ERROR_REMOTESUMS_MISSING;
+                    }
+                }
+                
+                /* FINALLY! */
+                fclose(fptr);
+            }
+        }
+    }
+    
+    if (!rsStatus)
+    {
+        snprintf(hostPort, sizeof(hostPort), "%s:%d", RS_DBHOST, RS_DBPORT);
+        
+        if ((handle->dbh = db_connect(hostPort, env->session->db_handle->dbuser, NULL, RS_DBNAME, 1)) == NULL)
+        {
+            printkerr("Couldn't connect to remote-sums database (host=%s, user=%s, db=%s).\n", hostPort, env->session->db_handle->dbuser, RS_DBNAME);
+            rsStatus = DRMS_ERROR_REMOTESUMS_MISSING;
+        }
+    }
+    
+    if (!rsStatus)
+    {
+        rv = handle;
+    }
+    
+    if (nspace)
+    {
+        free(nspace);
+    }
+    
+    if (table)
+    {
+        free(table);
+    }
+    
+    if (status)
+    {
+        *status = rsStatus;
+    }
+    
+    return rv;
+}
+
+static void shutDownRemoteSums(DRMS_RsHandle_t **pHandle)
+{
+    if (pHandle)
+    {
+        DRMS_RsHandle_t *handle = *pHandle;
+        
+        if (handle)
+        {
+            if (handle->seqTable)
+            {
+                free(handle->seqTable);
+                handle->seqTable = NULL;
+            }
+            
+            if (handle->requestsTable)
+            {
+                free(handle->requestsTable);
+                handle->requestsTable = NULL;
+            }
+            
+            if (handle->dbh)
+            {
+                db_disconnect(&handle->dbh);
+            }
+            
+            free(handle);
+        }
+        
+        *pHandle = NULL;
+    }
+}
+
+static int processRemoteSums(DRMS_RsHandle_t *handle, int64_t *sunums, unsigned int nsunums)
+{
+    int rsStatus = DRMS_SUCCESS;
+    char idBuf[128];
+    
+    if (!rsStatus)
+    {
+        /* Insert a new request record into the rsumsd.py request table. Requests look like:
+         *
+         *   INSERT into drms.rs_requests(requestid, starttime, sunums, status, errmsg) VALUES (10, '2014-10-31 08:00', '545196869,545196870,545196871', 'N', '')
+         */
+        
+        /* Make string out of the array of SUNUMs. */
+        char *sunumList = NULL;
+        size_t szList = 128;
+        
+        sunumList = calloc(szList, sizeof(char));
+        
+        if (!sunumList)
+        {
+            rsStatus = DRMS_ERROR_OUTOFMEMORY;
+        }
+        else
+        {
+            int iSunum;
+            char numBuf[64];
+            
+            for (iSunum = 0; iSunum < nsunums; iSunum++)
+            {
+                if (sunums[iSunum] >= 0)
+                {
+                    if (iSunum > 0)
+                    {
+                        sunumList = base_strcatalloc(sunumList, ",", &szList);
+                    }
+                    
+                    snprintf(numBuf, sizeof(numBuf), "%lld", (long long)(sunums[iSunum]));
+                    sunumList = base_strcatalloc(sunumList, numBuf, &szList);
+                }
+            }
+            
+            if (strlen(sunumList) > 0)
+            {
+                /* Needs to big enough to operate on a chunk of SUNUMs (up to 512 of them). */
+                char *cmd = NULL;
+                size_t szCmd;
+                
+                szCmd = strlen(sunumList) + 256;
+                cmd = calloc(szCmd, sizeof(char));
+                
+                if (!cmd)
+                {
+                    rsStatus = DRMS_ERROR_OUTOFMEMORY;
+                }
+                else
+                {
+                    /* Get request ID. */
+                    long long nextID;
+                    
+                    /* Must make a NEW db connection since the remote-sums tables may live in a different database. Have to
+                     * combine the host and port. This is the correct way to obtain the user name - this code is only available
+                     * to server (non-socket-module) code. */
+                    if (!handle || !handle->seqTable || !handle->requestsTable || !handle->dbh)
+                    {
+                        printkerr("Invalid remote-sums handle.\n");
+                        rsStatus = DRMS_ERROR_REMOTESUMS_MISSING;
+                    }
+                    else
+                    {
+                        nextID = db_sequence_getnext(handle->dbh, handle->seqTable);
+                        snprintf(idBuf, sizeof(idBuf), "%lld", nextID);
+                        
+                        cmd = base_strcatalloc(cmd, "INSERT INTO ", &szCmd);
+                        cmd = base_strcatalloc(cmd, handle->requestsTable, &szCmd);
+                        cmd = base_strcatalloc(cmd, "(requestid, starttime, sunums, status, errmsg) VALUES (", &szCmd);
+                        cmd = base_strcatalloc(cmd, idBuf, &szCmd);
+                        /* Use the localtimestamp() function for the starttime column. */
+                        cmd = base_strcatalloc(cmd, ", localtimestamp(0), '", &szCmd);
+                        cmd = base_strcatalloc(cmd, sunumList, &szCmd);
+                        cmd = base_strcatalloc(cmd, "', 'N', ''", &szCmd);
+                        
+                        /* Execute the SQL. */
+                        if (db_dms(handle->dbh, NULL, cmd))
+                        {
+                            printkerr("Failure inserting record for new remote-sums request: %s.\n", cmd);
+                            rsStatus = DRMS_ERROR_REMOTESUMS_REQUEST;
+                        }
+                    }
+                    
+                    free(cmd);
+                }
+            }
+            
+            free(sunumList);
+        }
+    }
+    
+    if (!rsStatus)
+    {
+        char dbCmd[256];
+        DB_Text_Result_t *dbRes = NULL;
+        const char *reqStatus = NULL;
+        const char *reqErrmsg = NULL;
+        time_t timeStart;
+        
+        /* Poll for results from rsumds.py. Time-out in case rsumsd.py disappears. rsumsd.py has its own time-out for request processing, but
+         * if it disappears, then this client will run forever. */
+        timeStart = time(NULL);
+        while (1)
+        {
+            /* Time-out after 12 hours. */
+            if (time(NULL) > timeStart + 12 * 60 * 60)
+            {
+                rsStatus = DRMS_REMOTESUMS_TRYLATER;
+                break;
+            }
+            
+            /* Read request record from database using handle->dbh. */
+            snprintf(dbCmd, sizeof(dbCmd), "SELECT status,errmsg FROM %s WHERE requestid = %s", handle->requestsTable, idBuf);
+            dbRes = db_query_txt(handle->dbh, dbCmd);
+            
+            if (dbRes && dbRes->num_rows == 1 && dbRes->num_cols == 2)
+            {
+                /* rsumsd.py finished processing the request. */
+                reqStatus = dbRes->field[0][0];
+                reqErrmsg = dbRes->field[0][1];
+                
+                if (*reqStatus != 'N')
+                {
+                    if (*reqStatus == 'E')
+                    {
+                        printkerr(reqErrmsg);
+                        rsStatus = DRMS_ERROR_REMOTESUMS_REQUEST;
+                    }
+                    
+                    /* Delete request from the requests table. */
+                    snprintf(dbCmd, sizeof(dbCmd), "DELETE FROM %s WHERE requestid = %s", handle->requestsTable, idBuf);
+                    
+                    /* Execute the SQL. */
+                    if (db_dms(handle->dbh, NULL, dbCmd))
+                    {
+                        printkerr("Failure deleting record for completed remote-sums request: %s.\n", dbCmd);
+                        rsStatus = DRMS_ERROR_REMOTESUMS_REQUEST;
+                    }
+                    
+                    break;
+                }
+            }
+            else
+            {
+                printkerr("Error checking on remote-sums request %s.\n", idBuf);
+                rsStatus = DRMS_ERROR_REMOTESUMS_REQUEST;
+                break;
+            }
+            
+            if (dbRes)
+            {
+                db_free_text_result(dbRes);
+                dbRes = NULL;
+            }
+            
+            sleep(1);
+        }
+    }
+    
+    return rsStatus;
+}
+
 int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
 {  
   int sustatus = DRMS_SUCCESS;
@@ -742,7 +1108,7 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
            snprintf(su->sudir, sizeof(su->sudir), "%s", reply->sudir[0]);
            free(reply->sudir[0]);
         }
-        else if (retrieve && natts < 2 && drms_su_isremotesu(su->sunum))
+        else if (retrieve && natts < 2 && su->sunum >= 0 && drms_su_isremotesu(su->sunum))
         {
            /* This sudir is 
             * POSSIBLY owned by a remote sums.  We invoke remote
@@ -787,81 +1153,61 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
            }
            //ISS VSO HTTP JMD END }
 #else
-           /* Begin remotesums_master.pl*/
-           {
-              int infd[2];  /* child writes to this pipe */
-              char rbuf[128]; /* expecting ascii for 0 or 1 */
-              
-              pipe(infd);
-              
-              if(!fork())
-              {
-                 char url[DRMS_MAXPATHLEN];
-                 char *sunumlist = NULL;
-                 size_t listsize;
-                 char listbuf[128];
-                 
-                 /* child - writes to pipe */
-                 close(infd[0]); /* close fd to read end of pipe */
-                 dup2(infd[1], 1);  /* redirect stdout to write end of pipe */
-                 close(infd[1]); /* close fd to write end of pipe; okay since stdout now points to 
-                                  * write end of pipe */
-                 
-                 if (!drms_su_getexportURL(env, su->sunum, url, sizeof(url)))
-                 {
-                     /* Call external program; doesn't return - must be in path */
-                     sunumlist = (char *)malloc(kSUNUMLISTSIZE);
-                     memset(sunumlist, 0, kSUNUMLISTSIZE);
-                     
-                     listsize = kSUNUMLISTSIZE;
-                     snprintf(listbuf,
-                              sizeof(listbuf),
-                              "%s{%lld}",
-                              su->seriesinfo ? su->seriesinfo->seriesname : "unknown",
-                              (long long)su->sunum);
-                     sunumlist = base_strcatalloc(sunumlist, url, &listsize);
-                     sunumlist = base_strcatalloc(sunumlist, "=", &listsize);
-                     sunumlist = base_strcatalloc(sunumlist, listbuf, &listsize);
-                     
-                     /* Careful with the $PATH env variable! The following call creates a new
-                      * shell instance. If the path to remotesums_master.pl is not properly
-                      * added to the $PATH variable via .cshrc or some other login script,
-                      * then remotesums_master.pl will never be found. The parent will then
-                      * unblock and fail to read an data from infd[0]. */
-                     execlp(kEXTREMOTESUMS, kEXTREMOTESUMS, sunumlist, (char *)0);
-                 }
-              }
-              else
-              {
-                 /* parent - reads from pipe */
-                 close(infd[1]); /* close fd to write end of pipe */
-                 
-                 /* Read results from external program - either 0 (don't try again) or 1 (try again) */
-                 if (read(infd[0], rbuf, sizeof(rbuf)) > 0)
-                 {
-                    sscanf(rbuf, "%d", &tryagain);
+            /* Begin remote sums. */
+            {
+                int64_t *sunums = NULL;
+                sunums = calloc(1, sizeof(int64_t));
+                DRMS_RsHandle_t *rsHandle = NULL;
+                
+                if (!sunums)
+                {
+                    sustatus = DRMS_ERROR_OUTOFMEMORY;
+                    tryagain = 0;
+                }
+                else
+                {
+                    sunums[0] = su->sunum;
+                    rsHandle = crankUpRemoteSums(env, &sustatus);
                     
-                    if (tryagain == 0)
+                    if (!sustatus && rsHandle)
                     {
-                       sustatus = DRMS_REMOTESUMS_TRYLATER;
+                        sustatus = processRemoteSums(rsHandle, sunums, 1);
+                        
+                        if (!sustatus)
+                        {
+                            tryagain = 1; /* This causes the SUM_get() to be retried. */
+                        }
+                        else
+                        {
+                            tryagain = 0;
+                        }
                     }
-                    else if (tryagain == -1)
+                    else
                     {
-                       /* error running remotesums_master.pl */
-                       sustatus = DRMS_ERROR_REMOTESUMSMASTER;
-                       tryagain = 0;
-                       fprintf(stderr, "Master remote SUMS script did not run properly.\n");
+                        if (!sustatus)
+                        {
+                            sustatus = DRMS_ERROR_REMOTESUMS_INITIALIZATION;
+                        }
+                        
+                        tryagain = 0;
                     }
-                 }
-                 else
-                 {
-                    fprintf(stderr, "Master remote SUMS script did not run properly.\n");
-                 }
-                 
-                 close(infd[0]);
-              } /* End remotesums_master.pl */
-           }
+                    
+                    if (rsHandle)
+                    {
+                        shutDownRemoteSums(&rsHandle);
+                    }
+                    
+                    free(sunums);
+                    sunums = NULL;
+                }
+            }
 #endif /* JMD_IS_INSTALLED */
+        }
+        else
+        {
+            /* Some kind of problem with the sunum - set the sudir field to '\0'. This should already be the case,
+             * but make sure. */
+            (su->sudir)[0] = '\0';
         }
      }
 
@@ -1060,7 +1406,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
                             reply->sudir[iSUMSsunum], 
                             DRMS_MAXPATHLEN);
                  }
-                 else if (retrieve && natts < 2 && drms_su_isremotesu(workingsus[isu]->sunum))
+                 else if (retrieve && natts < 2 && workingsus[isu]->sunum >= 0 && drms_su_isremotesu(workingsus[isu]->sunum))
                  {
                     /* Count the sudirs that are empty string.  Each of these is 
                      * POSSIBLY owned by a remote sums.  We invoke remote
@@ -1077,6 +1423,12 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
                                                                                     * processing
                                                                                     */
                     list_llinserttail(retrysus, &(workingsus[isu]));
+                 }
+                 else
+                 {
+                     /* Some kind of problem with the sunum - set the sudir field to '\0'. This should already be the case, 
+                      * but make sure. */
+                     (workingsus[isu]->sudir)[0] = '\0';
                  }
 
                  free(reply->sudir[iSUMSsunum]);
@@ -1166,199 +1518,109 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
         }
         //ISS VSO HTTP JMD END }
 #else
-        /* Begin remotesums_master.pl*/
-        {
-           int infd[2];  /* child writes to this pipe */
-           char rbuf[128]; /* expecting ascii for 0 or 1 */
-           
-           pipe(infd);
-           
-           if(!fork())
-           {
-              /* child - writes to pipe */
-              close(infd[0]); /* close fd to read end of pipe */
-              dup2(infd[1], 1);  /* redirect stdout to write end of pipe */
-              close(infd[1]); /* close fd to write end of pipe; okay since stdout now points to 
-                               * write end of pipe */
-              
-              /* iterate through each sunum */
-              DRMS_StorageUnit_t *rsu = NULL;
-              HContainer_t *sulists = hcon_create(sizeof(HContainer_t), 128, NULL, NULL, NULL, NULL, 0);
-              char listbuf[128];
-              char url[DRMS_MAXPATHLEN];
-              HContainer_t *acont = NULL;
-              SUList_t *alist = NULL;
-              SUList_t *newlist = NULL;
-              char *sunumlist = NULL;
-              HIterator_t *hiturl = NULL;
-              HIterator_t *hitsers = NULL;
-              
-              int firsturl;
-              int firstsers;
-              size_t listsize;
-              list_llreset(retrysus);
-              
-              while ((node = list_llnext(retrysus)) != NULL)
-              {
-                 rsu = *((DRMS_StorageUnit_t **)(node->data));
-                 char *sname = rsu->seriesinfo ? rsu->seriesinfo->seriesname : "unknown";
-                 if (!drms_su_getexportURL(env, rsu->sunum, url, sizeof(url)))
-                 {
-                    /* Each exportURL contains one or more series, and each series contains
-                     * one or more SUNUMs. So sulists is a container of (expURLs, series container), and
-                     * series container is a container of (series, sulist) */
-                    
-                    /* see if a list for rsunum already exists. */
-                    if ((acont = hcon_lookup(sulists, url)) != NULL)
-                    {
-                       /* Got the (url, series cont) container; look for series name. */
-                       if ((alist = hcon_lookup(acont, sname)) != NULL)
-                       {
-                          /* alist is the sname-specific sulist; append this sunum */
-                          snprintf(listbuf, sizeof(listbuf), ",%lld", rsu->sunum);
-                          alist->str = base_strcatalloc(alist->str, listbuf, &(alist->size)); 
-                       }
-                       else
-                       {
-                          newlist = hcon_allocslot(acont, sname);
-                          newlist->str = malloc(kSUNUMLISTSIZE);
-                          newlist->size = kSUNUMLISTSIZE;
-                          memset(newlist->str, 0, kSUNUMLISTSIZE);
-                          
-                          snprintf(listbuf, sizeof(listbuf), "%s=%s{%lld", url, sname, rsu->sunum);
-                          newlist->str = base_strcatalloc(newlist->str, listbuf, &(newlist->size));
-                       }
-                    }
-                    else
-                    {
-                       /* Create a new (series, sulist) container */
-                       HContainer_t *newcont = hcon_allocslot(sulists, url);
-                       hcon_init(newcont, sizeof(SUList_t), DRMS_MAXSERIESNAMELEN, NULL, NULL);
-                       
-                       /* create a new list and add rsunum to it */
-                       newlist = hcon_allocslot(newcont, sname);
-                       
-                       newlist->str = malloc(kSUNUMLISTSIZE);
-                       newlist->size = kSUNUMLISTSIZE;
-                       memset(newlist->str, 0, kSUNUMLISTSIZE);
-                       
-                       snprintf(listbuf, sizeof(listbuf), "%s=%s{%lld", url, sname, rsu->sunum);
-                       newlist->str = base_strcatalloc(newlist->str, listbuf, &(newlist->size));
-                    }
-                 }
-              }
-              
-              /* Call external program; doesn't return - must be in path */
-              sunumlist = (char *)malloc(kSUNUMLISTSIZE);
-              memset(sunumlist, 0, kSUNUMLISTSIZE);
-              
-              /* Make the lists of SUNUMs - one for each export URL */
-              listsize = kSUNUMLISTSIZE;
-              firsturl = 1;
-              firstsers = 1;
-              hiturl = hiter_create(sulists);
-              
-              if (hiturl)
-              {
-                 while ((acont = hiter_getnext(hiturl)) != NULL)
-                 {
-                    if (!firsturl)
-                    {
-                       sunumlist = base_strcatalloc(sunumlist, "#", &listsize);
-                    }
-                    else
-                    {
-                       firsturl = 0;
-                    }
-                    
-                    hitsers = hiter_create(acont);
-                    if (hitsers)
-                    {
-                       while ((alist = hiter_getnext(hitsers)) != NULL)
-                       {
-                          /* Must append the final '}' to all lists */
-                          alist->str = base_strcatalloc(alist->str, "}", &(alist->size));
-                          
-                          /* create a string that contains all sulists */
-                          if (!firstsers)
-                          {
-                             sunumlist = base_strcatalloc(sunumlist, "&", &listsize);
-                          }
-                          else
-                          {
-                             firstsers = 0;
-                          }
-                          
-                          sunumlist = base_strcatalloc(sunumlist, alist->str, &listsize);
-                       }
-                       
-                       hiter_destroy(&hitsers);
-                    }
-                 }
+         /* Remote SUMS */
+         {
+             int64_t *sunums = NULL;
+             DRMS_RsHandle_t *rsHandle = NULL;
+             DRMS_StorageUnit_t *rsu = NULL;
+             
+             nretrySUNUMS = list_llgetnitems(retrysus);
+             sunums = calloc(SUMIN(MAXSUMREQCNT, nretrySUNUMS), sizeof(int64_t));
+             
+             if (!sunums)
+             {
+                 sustatus = DRMS_ERROR_OUTOFMEMORY;
+                 tryagain = 0;
+             }
+             else
+             {
+                 rsHandle = crankUpRemoteSums(env, &sustatus);
                  
-                 hiter_destroy(&hiturl);
-              }
-              
-              execlp(kEXTREMOTESUMS, kEXTREMOTESUMS, sunumlist, (char *)0);
-              
-              /* Execution never gets here. */
-           }
-           else
-           {
-              /* parent - reads from pipe */
-              close(infd[1]); /* close fd to write end of pipe */
-              
-              /* Read results from external program - either 0 (don't try again) or 1 (try again) */
-              if (read(infd[0], rbuf, sizeof(rbuf)) > 0)
-              {
-                 sscanf(rbuf, "%d", &tryagain);
-                 
-                 if (tryagain == 0)
+                 if (!sustatus && rsHandle)
                  {
-                    sustatus = DRMS_REMOTESUMS_TRYLATER;
-                 }
-                 else if (tryagain == -1)
-                 {
-                    /* error running remotesums_master.pl */
-                    sustatus = DRMS_ERROR_REMOTESUMSMASTER;
-                    tryagain = 0;
-                    fprintf(stderr, "Master remote SUMS script did not run properly.\n");
+                     /* Iterate through SUs. We have to chunk them before calling processRemoteSums(). */
+                     for (list_llreset(retrysus), isu = 0, iSUMSsunum = 0; ((node = list_llnext(retrysus)) != NULL); isu++)
+                     {
+                         rsu = *((DRMS_StorageUnit_t **)(node->data));
+                         sunums[iSUMSsunum++] = rsu->sunum;
+                         
+                         if (iSUMSsunum > 0 && (iSUMSsunum % MAXSUMREQCNT == 0 || isu == nretrySUNUMS - 1))
+                         {
+                             /* if isu == nretrySUNUMS - 1, then about to exit loop. */
+                             sustatus = processRemoteSums(rsHandle, sunums, iSUMSsunum);
+                             free(sunums);
+                             sunums = NULL;
+                             
+                             iSUMSsunum = 0;
+                             
+                             if (sustatus)
+                             {
+                                 break;
+                             }
+                             
+                             if (isu < nretrySUNUMS - 1)
+                             {
+                                 sunums = calloc(SUMIN(MAXSUMREQCNT, nretrySUNUMS - isu - 1), sizeof(int64_t));
+                                 
+                                 if (!sunums)
+                                 {
+                                     sustatus = DRMS_ERROR_OUTOFMEMORY;
+                                     break;
+                                 }
+                             }
+                         }
+                     }
                  }
                  else
                  {
-                    /* remotesums_master.pl worked - need to call SUM_get() one more time
-                     * with SUNUMS that failed originally */
-                    nretrySUNUMS = list_llgetnitems(retrysus);
-                    
-                    start = 0;
-                    /* index of SU one past the last one to be processed */
-                    end = SUMIN(MAXSUMREQCNT, nretrySUNUMS); 
-                    rsumssus = (DRMS_StorageUnit_t **)malloc(sizeof(DRMS_StorageUnit_t *) * nretrySUNUMS);
-                    
-                    isu = 0;
-                    while (node = list_llgethead(retrysus))
-                    {
-                       onesu = (DRMS_StorageUnit_t *)malloc(sizeof(DRMS_StorageUnit_t));
-                       onesu->sunum = (*(DRMS_StorageUnit_t **)(node->data))->sunum;
-                       *(onesu->sudir) = '\0';
-                       rsumssus[isu] = onesu;
-                       isu++;
-                       list_llremove(retrysus, node);
-                       list_llfreenode(&node);
-                    }
-                    
-                    if (retrysus)
-                    {
-                       list_llfree(&retrysus);
-                    }
-                    
-                    workingsus = rsumssus;
-                    workingn = nretrySUNUMS;
-                    natts++;
+                     if (!sustatus)
+                     {
+                         sustatus = DRMS_ERROR_REMOTESUMS_INITIALIZATION;
+                     }
                  }
-              }
-           } /* end parent*/
-        }
+                 
+                 if (rsHandle)
+                 {
+                     shutDownRemoteSums(&rsHandle);
+                 }
+                 
+                 if (!sustatus)
+                 {
+                     /* The remote-sums request was successfully processed. Retry all the SUs tagged for retry. */
+                     tryagain = 1;
+                     
+                     start = 0;
+                     /* index of SU one past the last one to be processed */
+                     end = SUMIN(MAXSUMREQCNT, nretrySUNUMS);
+                     rsumssus = (DRMS_StorageUnit_t **)malloc(sizeof(DRMS_StorageUnit_t *) * nretrySUNUMS);
+                     
+                     isu = 0;
+                     while (node = list_llgethead(retrysus))
+                     {
+                         onesu = (DRMS_StorageUnit_t *)malloc(sizeof(DRMS_StorageUnit_t));
+                         onesu->sunum = (*(DRMS_StorageUnit_t **)(node->data))->sunum;
+                         *(onesu->sudir) = '\0';
+                         rsumssus[isu] = onesu;
+                         isu++;
+                         list_llremove(retrysus, node);
+                         list_llfreenode(&node);
+                     }
+                     
+                     if (retrysus)
+                     {
+                         list_llfree(&retrysus);
+                     }
+                     
+                     workingsus = rsumssus;
+                     workingn = nretrySUNUMS;
+                     natts++;
+                 }
+                 else
+                 {
+                     tryagain = 0;
+                 }
+             }
+         }
 #endif /* JMD_IS_INSTALLED */
      } /* code to set up parent/child and call remotesums_master.pl */
   } /* while - retry */
