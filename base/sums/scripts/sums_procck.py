@@ -92,12 +92,11 @@ def shutdown(*args):
         sys.stdout.flush()
         try:
             os.remove(pidFile)
-        except IOError as exc:
-            type, value, traceback = sys.exc_info()
-            print('Unable to remove ' + "'" + value.filename + "'.", file=sys.stderr)
+        except OSError as exc:
+            print('Unable to remove ' + "'" + exc.filename + "'.", file=sys.stderr)
             rv = RET_FILEIO
 
-        print('Exiting process via shutdown() with return value ' + rv + '.')
+        print('Exiting process via shutdown() with return value ' + str(rv) + '.')
         sys.stdout.flush()
         sys.exit(rv)
     else:
