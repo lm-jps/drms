@@ -70,6 +70,7 @@ def shutdown(*args):
                         # I implemented a signal handler to catch SIGUSR1, SIGINT, AND SIGTERM that then
                         # killed sum_rm and waited for it to die (which would be the right thing to do).
                         print('Killing ' + procName + '(pid ' + str(pid) + ').')                    
+                        sys.stdout.flush()
                         os.kill(pid, signal.SIGKILL)
 
                         # Wait for the process to die, but only if sums_procck.py is the parent of
@@ -80,10 +81,12 @@ def shutdown(*args):
                             if killedPid == 0:
                                 print('Unable to kill SUMS process ' + procName + '(pid ' + str(pid) +').')
                                 rv = RET_KILLSUMS
+                                sys.stdout.flush()
                                 break
 
     if rv == RET_SUCCESS:
         print('Removing pidfile ' + pidFile)
+        sys.stdout.flush()
         try:
             os.remove(pidFile)
         except IOError as exc:
@@ -91,7 +94,12 @@ def shutdown(*args):
             print('Unable to remove ' + "'" + value.filename + "'.", file=sys.stderr)
             rv = RET_FILEIO
 
-    sys.exit(rv)
+        print('Exiting process via shutdown() with return value ' + rv + '.')
+        sys.stdout.flush()
+        sys.exit(rv)
+    else:
+        print('Failed to shutdown properly.')
+        sys.stdout.flush()
 
 def getDrmsParam(drmsParams, name):
     param = drmsParams.get(name)
@@ -285,6 +293,7 @@ if __name__ == "__main__":
         print('Connection to SUMS DB ' + sumsDb + '.')
         print('Using SUMS-log file ' + sumsLog + '.')
         print('Using SUMS-rm-log file ' + sumsRmLog + '.')
+        sys.stdout.flush()
     except Exception as exc:
         if len(exc.args) != 2:
             raise # Re-raise
@@ -408,7 +417,8 @@ if __name__ == "__main__":
 
                 # There is no record of the process in the PID file - spawn the service.
                 print('Process ' + procName + ' is not running.')
-                print('Starting process ' + procName + '.') 
+                print('Starting process ' + procName + '.')
+                sys.stdout.flush() 
                 pid = runCmd([procName, sumsDb, expectedProcs[procName]])
                 # Save the PID in actualProcs so we can update the PID file.
                 actualProcs[procName] = pid
