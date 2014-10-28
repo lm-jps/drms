@@ -142,7 +142,7 @@ int main(int argc, char **argv)
 	    state = 2;
           // special line for keywords
           if (protocol == kPROTOCOL_as_is)
-            sprintf(protocolbuf, "%s/%s.keywords.txt", dir, requestid);
+            sprintf(protocolbuf, "%s%s.keywords.txt", dir, requestid);
           else
             sprintf(protocolbuf, "**IN FITS FILES**");
 	  namestr = string_to_json("keywords");
@@ -154,7 +154,7 @@ int main(int argc, char **argv)
           // special line for tarfiles
           if (method_tar)
             {
-            sprintf(tarfile, "%s/%s.tar", dir, requestid);
+            sprintf(tarfile, "%s%s.tar", dir, requestid);
 	    namestr = string_to_json("tarfile");
             valstr = string_to_json(tarfile);
 	    json_insert_pair_into_object(jroot, namestr, json_new_string(valstr));
@@ -260,7 +260,7 @@ int main(int argc, char **argv)
 	  fprintf(index_html, "<tr><td>%s</td><td>%s</td></tr>\n", name, val);
         else
           {
-	  fprintf(index_html, "<tr><td>%s</td><td><A HREF=\"%s/%s/%s\">%s</A></td></tr>\n",
+	  fprintf(index_html, "<tr><td>%s</td><td><A HREF=\"%s%s/%s\">%s</A></td></tr>\n",
             name, (method_ftp ? FTP_SERVER : HTTP_SERVER), dir, val, val);
           }
 	break;
