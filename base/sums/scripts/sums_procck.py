@@ -74,11 +74,14 @@ def shutdown(*args):
                         os.kill(pid, signal.SIGKILL)
 
                         # Wait for the process to die, but only if sums_procck.py is the parent of
-                        # the process.
+                        # the process. Procnames that are not enclosed by square brackets are children.
                         matchObj = regExp.match(procName)
                         if matchObj is None:
                             killedPid, istat = os.waitpid(pid, 0)
-                            if killedPid == 0:
+
+                            # Ensure the process is dead. We cannot determine that from looking at the return value
+                            # from waitpid. Instead, use the isRunning() function.
+                            if isRunning(procName, actualProcs): 
                                 print('Unable to kill SUMS process ' + procName + '(pid ' + str(pid) +').')
                                 rv = RET_KILLSUMS
                                 sys.stdout.flush()
