@@ -142,7 +142,7 @@ int main(int argc, char **argv)
 	    state = 2;
           // special line for keywords
           if (protocol == kPROTOCOL_as_is)
-            sprintf(protocolbuf, "%s%s.keywords.txt", dir, requestid);
+            sprintf(protocolbuf, "%s/%s.keywords.txt", dir, requestid);
           else
             sprintf(protocolbuf, "**IN FITS FILES**");
 	  namestr = string_to_json("keywords");
@@ -154,7 +154,7 @@ int main(int argc, char **argv)
           // special line for tarfiles
           if (method_tar)
             {
-            sprintf(tarfile, "%s%s.tar", dir, requestid);
+            sprintf(tarfile, "%s/%s.tar", dir, requestid);
 	    namestr = string_to_json("tarfile");
             valstr = string_to_json(tarfile);
 	    json_insert_pair_into_object(jroot, namestr, json_new_string(valstr));
@@ -195,7 +195,16 @@ int main(int argc, char **argv)
         // check for special actions on some keywords
 	// save dir for use in data section
 	if (strcmp(name, "dir") == 0)
-	  strncpy(dir, val, 1000);
+        {
+           strncpy(dir, val, 1000);
+
+           // linux/unix only!
+           if (dir[strlen(dir) - 1] == '/')
+           {
+              dir[strlen(dir) - 1] = '\0';
+           }
+        }
+
 	// save requestid 
 	if (strcmp(name, "requestid") == 0)
 	  strncpy(requestid, val, 1000);
