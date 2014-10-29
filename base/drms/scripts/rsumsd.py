@@ -720,10 +720,11 @@ class Downloader(threading.Thread):
     eventMaxThreads = threading.Event() # Event fired when the number of threads decreases.
     lock = threading.Lock() # Guard tList.
 
-    def __init__(self, sunum, path, sus, scpUser, scpHost, scpPort, binPath, log):
+    def __init__(self, sunum, path, series, sus, scpUser, scpHost, scpPort, binPath, log):
         threading.Thread.__init__(self)
         self.sunum = sunum
         self.path = path
+        self.series = series
         self.suTable = sus
         self.scpUser = scpUser
         self.scpHost = scpHost
@@ -830,7 +831,7 @@ class Downloader(threading.Thread):
                 except CalledProcessError as exc:
                     raise Exception('mv', "Command '" + ' '.join(cmdList) + "' returned non-zero status code " + str(exc.returncode))
 
-                cmdList = [binPath + '/vso_sum_put', 'sunum=' + str(self.sunum), 'seriesname=', 'sudir=', 'retention=']
+                cmdList = [binPath + '/vso_sum_put', 'sunum=' + str(self.sunum), 'seriesname=' + self.series, 'sudir=' + sudir, 'retention=']
  
             # Remove temporary directory.
             # ART - TEST; need to uncomment this.
@@ -893,8 +894,8 @@ class Downloader(threading.Thread):
 
     # Must acquire Downloader lock BEFORE calling newThread() since newThread() will append to tList (the Downloader threads will delete from tList as they complete).
     @staticmethod
-    def newThread(sunum, path, sus, scpUser, scpHost, scpPort, binPath, log):
-        dl = Downloader(sunum, path, sus, scpUser, scpHost, scpPort, binPath, log)
+    def newThread(sunum, path, series, sus, scpUser, scpHost, scpPort, binPath, log):
+        dl = Downloader(sunum, path, series, sus, scpUser, scpHost, scpPort, binPath, log)
         dl.tList.append(dl)
         dl.start()
 
@@ -1006,7 +1007,7 @@ class ProviderPoller(threading.Thread):
                 self.log.write(['The SU paths are ready.'])
                 paths = dlInfo['paths']
 
-                for (asunum, path) in paths:
+                for (asunum, path, series) in paths:
                     if not path:
                         # A path of None means that the SUNUM was invalid. We want to set the SU status to 'E'.
                         self.suTable.setStatus([asunum], 'E', 'SU ' + str(asunum) + ' is not valid at the providing site.')
@@ -1023,7 +1024,7 @@ class ProviderPoller(threading.Thread):
                         try:
                             if len(Downloader.tList) < Downloader.maxThreads:
                                 self.log.write(['Instantiating a Downloader for SU ' + asunum + '.'])
-                                Downloader.newThread(asunum, path, self.suTable, dlInfo['scpUser'], dlInfo['scpHost'], dlInfo['scpPort'], self.binPath, self.log)
+                                Downloader.newThread(asunum, path, series, self.suTable, dlInfo['scpUser'], dlInfo['scpHost'], dlInfo['scpPort'], self.binPath, self.log)
                                 break # The finally clause will ensure the Downloader lock is released.
                         finally:
                             Downloader.lock.release()
@@ -1233,7 +1234,7 @@ def processSUs(url, sunums, sus, reqTable, binPath, log, reprocess=False, reset=
         paths = dlInfo['paths']
 
         # Start a download for each SU. If we cannot start the download for any reason, then set the SU status to 'E'.
-        for (asunum, path) in paths:
+        for (asunum, path, series) in paths:
             if not path:
                 # A path of None means that the SUNUM was invalid. We want to set the SU status to 'E'.
                 sus.setStatus([asunum], 'E', 'SU ' + str(asunum) + ' is not valid at the providing site.')
@@ -1250,7 +1251,7 @@ def processSUs(url, sunums, sus, reqTable, binPath, log, reprocess=False, reset=
                 try:
                     if len(Downloader.tList) < Downloader.maxThreads:
                         log.write(['Instantiating a Downloader for SU ' + asunum + '.'])
-                        Downloader.newThread(asunum, path, sus, dlInfo['scpUser'], dlInfo['scpHost'], dlInfo['scpPort'], binPath, log)
+                        Downloader.newThread(asunum, path, series, sus, dlInfo['scpUser'], dlInfo['scpHost'], dlInfo['scpPort'], binPath, log)
                         break # The finally clause will ensure the Downloader lock is released.
                 finally:
                     Downloader.lock.release()
@@ -1260,7 +1261,7 @@ def processSUs(url, sunums, sus, reqTable, binPath, log, reprocess=False, reset=
                 # tList again.
 
         # For each SU that was requested, but for which no path was given in the response, update its SU-table record with an error status.
-        pathInResp = dict([ (str(asunum), True) for (asunum, path) in paths ])
+        pathInResp = dict([ (str(asunum), True) for (asunum, path, series) in paths ])
         for asunum in workingSunums:
             if str(asunum) not in pathInResp:
                 sus.setStatus([asunum], 'E', 'Providing site cannot provide a path for SU ' + str(asunum) + '.')
