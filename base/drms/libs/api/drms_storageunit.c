@@ -697,7 +697,10 @@ static DRMS_RsHandle_t *crankUpRemoteSums(DRMS_Env_t *env, int *status)
         }
         else
         {
-            handle->seqTable = strdup(seqTable);
+            char tBuf[128];
+
+            snprintf(tBuf, sizeof(tBuf), "%s.%s", nspace, seqTable);
+            handle->seqTable = strdup(tBuf);
             if (!handle->seqTable)
             {
                 rsStatus = DRMS_ERROR_OUTOFMEMORY;
@@ -897,7 +900,8 @@ static int processRemoteSums(DRMS_RsHandle_t *handle, int64_t *sunums, unsigned 
                     }
                     else
                     {
-                        nextID = db_sequence_getnext(handle->dbh, handle->seqTable);
+                        /* You actually provide the parent table, not the sequence table, to db_sequence_getnext(). */
+                        nextID = db_sequence_getnext(handle->dbh, handle->requestsTable);
                         snprintf(idBuf, sizeof(idBuf), "%lld", nextID);
                         
                         cmd = base_strcatalloc(cmd, "INSERT INTO ", &szCmd);
@@ -907,7 +911,7 @@ static int processRemoteSums(DRMS_RsHandle_t *handle, int64_t *sunums, unsigned 
                         /* Use the localtimestamp() function for the starttime column. */
                         cmd = base_strcatalloc(cmd, ", localtimestamp(0), '", &szCmd);
                         cmd = base_strcatalloc(cmd, sunumList, &szCmd);
-                        cmd = base_strcatalloc(cmd, "', 'N', ''", &szCmd);
+                        cmd = base_strcatalloc(cmd, "', 'N', '')", &szCmd);
                         
                         /* Execute the SQL. */
                         if (db_dms(handle->dbh, NULL, cmd))

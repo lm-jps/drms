@@ -22,7 +22,8 @@ class DrmsLock(object):
             
             # Write the content into the file.
             fobj.write(content)
-            
+            fobj.flush()
+
             # Save the lock file information.
             rObj.lockFile = fileName
             rObj.fileObj = fobj
