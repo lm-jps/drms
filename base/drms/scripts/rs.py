@@ -192,7 +192,7 @@ def runJsocfetch(**kwargs):
         rv['paths'] = []
         rv['status'] = 'pathsReady'
         regExpData = re.compile(r'\s*#\s+data', re.IGNORECASE)
-        regExpDataLine = re.compile(r'\s*(\d+)\s+\S+\s+(\S+)\s+(\S)')
+        regExpDataLine = re.compile(r'\s*(\d+)\s+(\S+)\s+(\S+)\s+(\S)')
         
         # Parse out paths frmom the jsoc_fetch output. If the SU is valid, but offline and cannot be retrieved,
         # then we still want to tell the client site to add an entry in its SUMS for the SU, even though the SU
@@ -215,10 +215,10 @@ def runJsocfetch(**kwargs):
             matchObj = regExpDataLine.match(line)
             if matchObj is not None:
                 sunum = matchObj.group(1)
-                suStatus = matchObj.group(3)
+                suStatus = matchObj.group(4)
                 
                 if suStatus.lower() == 'y':
-                    path = matchObj.group(2)
+                    path = matchObj.group(3)
                 elif suStatus.lower() == 'x':
                     path = ''
                 elif suStatus.lower() == 'i':
