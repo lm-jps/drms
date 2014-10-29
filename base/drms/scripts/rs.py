@@ -215,6 +215,7 @@ def runJsocfetch(**kwargs):
             matchObj = regExpDataLine.match(line)
             if matchObj is not None:
                 sunum = matchObj.group(1)
+                series = matchObj.group(2)
                 suStatus = matchObj.group(4)
                 
                 if suStatus.lower() == 'y':
@@ -224,7 +225,7 @@ def runJsocfetch(**kwargs):
                 elif suStatus.lower() == 'i':
                     path = None
             
-            rv['paths'].append([sunum, path])
+                rv['paths'].append([sunum, path, series])
     elif jfStatus == 1 or jfStatus == 2 or jfStatus == 12:
         # jsoc_fetch started an asynchronous export request. Tell the caller to poll.
         regExp = re.compile(r'\s*requestid\s*=\s*(.+)', re.IGNORECASE)
