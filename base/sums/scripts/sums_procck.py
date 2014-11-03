@@ -275,8 +275,8 @@ if __name__ == "__main__":
                 if fnmatch.fnmatch(file, 'sum_svc_*'):
                     matchObj = regExp.match(file)
                     if matchObj is not None:
-                        timeTuple = (matchObj.group(1), matchObj.group(2), matchObj.group(3), matchObj.group(4), matchObj.group(5), matchObj.group(6))
-                        if latest is None or  mktime(timeTuple) > mktime(latest):
+                        timeTuple = time.strptime(matchObj.group(1) + ' ' + matchObj.group(2) + ' ' + matchObj.group(3) + ' ' + matchObj.group(4) + ' ' + matchObj.group(5) + ' ' + matchObj.group(6), '%Y %m %d %H %M %S')
+                        if latest is None or time.mktime(timeTuple) > time.mktime(latest):
                             latest = timeTuple
 
         if latest is None:
