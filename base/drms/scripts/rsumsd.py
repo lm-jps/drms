@@ -828,9 +828,9 @@ class Downloader(threading.Thread):
                 # The scp process will inherit stdin, stdout, and stderr from this script.
                 proc = Popen(cmdList)
             except OSError as exc:
-                raise Exception('scp', "Cannot run command '" + ' '.join(cmdList) + "' ")
+                raise Exception('scpSU', "Cannot run command '" + ' '.join(cmdList) + "' ")
             except ValueError as exc:
-                raise Exception('scp', "scp command '" + ' '.join(cmdList) + "' called with invalid arguments.")
+                raise Exception('scpSU', "scp command '" + ' '.join(cmdList) + "' called with invalid arguments.")
 
             # Poll for completion
             while True:
@@ -867,42 +867,63 @@ class Downloader(threading.Thread):
                 proc.poll()
                 if proc.returncode is not None:
                     if proc.returncode != 0:
-                        raise Exception('scp', 'Command "' + ' '.join(cmdList) + '" returned non-zero status code ' + str(proc.returncode)) 
+                        raise Exception('scpSU', 'Command "' + ' '.join(cmdList) + '" returned non-zero status code ' + str(proc.returncode)) 
                     break
 
                 time.sleep(1)
 
             self.log.write(['scp command succeeded.'])
 
-            # ART - TEST; do not attempt to ingest into SUMS.
-            if False:
-                # Ingest the SUs into SUMS. size matters not...look at me...judge me by my size, do you?
-                cmdList = [self.binPath + '/vso_sum_alloc', 'sunum=' + str(self.sunum), 'size=1024']
-                try:
-                    resp = check_output(cmdList)
-                    output = resp.decode('utf-8')
-                except CalledProcessError as exc:
-                    raise Exception('vso_sum_alloc', "Command '" + ' '.join(cmdList) + "' returned non-zero status code " + str(exc.returncode) + '.')
-                
-                regExp = re.compile(r'.+sudir:(\S+)')
-                matchObj = regExp.match(output)
-                if matchObj is not None:
-                    sudir = matchObj.group(1)
-                else:
-                    raise Exception('vso_sum_alloc', "Command '" + ' '.join(cmdList) + "' printed unexcepted output " + output + '.')
-                
-                cmdList = ['mv', '/tmp/.su' + str(self.sunum) + '/*', sudir]
-                try:
-                    check_call(cmdList)
-                except CalledProcessError as exc:
-                    raise Exception('mv', "Command '" + ' '.join(cmdList) + "' returned non-zero status code " + str(exc.returncode))
+            # Ingest the SUs into SUMS. size matters not...look at me...judge me by my size, do you?
+            cmdList = [self.binPath + '/vso_sum_alloc', 'sunum=' + str(self.sunum), 'size=1024']
+            self.log.write(['Allocating a new SU: ' + ' '.join(cmdList)])
 
-                cmdList = [self.binPath + '/vso_sum_put', 'sunum=' + str(self.sunum), 'seriesname=' + self.series, 'sudir=' + sudir, 'retention=' + str(self.retention)]
+            try:
+                resp = check_output(cmdList)
+                output = resp.decode('utf-8')
+            except CalledProcessError as exc:
+                raise Exception('sumsAlloc', 'Command returned non-zero status code ' + str(exc.returncode) + ': ' + ' '.join(cmdList) + '.')
+                
+            regExp = re.compile(r'.+sudir:(\S+)')
+            matchObj = regExp.match(output)
+            if matchObj is not None:
+                sudir = matchObj.group(1)
+            else:
+                raise Exception('sumsAlloc', 'Command printed unexpected output ' + output + ': '+ ' '.join(cmdList) + '.')
+
+            self.log.write(['SU allocation succeeded.'])
+
+            files = os.listdir('/tmp/.su' + str(self.sunum))
+            self.log.write(['Moving downloaded SU content in /tmp/.su' + str(self.sunum) + ' into allocated SU (' + sudir  + ').'])
+
+            try:
+                for afile in files:
+                    src = os.path.join('/tmp/.su' + str(self.sunum), afile)
+                    shutil.move(src, sudir)
+            except shutil.Error as exc: 
+                raise Exception('mvSU', 'Unable to move SU file ' + afile + ' into SUdir ' + sudir + '.')
+
+            self.log.write(['Move of SU content succeeded.'])
+
+            cmdList = [self.binPath + '/vso_sum_put', 'sunum=' + str(self.sunum), 'seriesname=' + self.series, 'sudir=' + sudir, 'retention=' + str(self.retention)]
+            self.log.write(['Committing SU to SUMS database.'])
+
+            try:
+                resp = check_call(cmdList)
+            except CalledProcessError as exc:
+                raise Exception('sumsPut', 'Command returned non-zero status code ' + str(exc.returncode) + ': '+ ' '.join(cmdList) + '.')
  
+            self.log.write(['Commit of SU succeeded.'])
+
             # Remove temporary directory.
-            # ART - TEST; need to uncomment this.
-            # os.rmdir(dlDir)
-            
+            self.log.write(['Removing temporary download directory ' + dlDir + '.'])
+            try:
+                os.rmdir(dlDir)
+            except OSError as exc:
+                raise Exception('rmTmpSU', exc.strerror)
+           
+            self.log.write(['Removal of temporary directory succeeded.'])
+ 
             # Update SU table. Set SU-table record status to 'C'. Must first lock the SU table since we are modifying it. Also,
             # the state may not be 'P' due to some problem cropping up in the meantime. Only set to 'C' if the state is 'P'.
             try:
@@ -926,7 +947,7 @@ class Downloader(threading.Thread):
             else:
                 raise
 
-            if type == 'scp' or type == 'vso_sum_alloc' or type == 'mv':
+            if type == 'scpSU' or type == 'sumsAlloc' or type == 'mvSU' or type == 'sumsPut' or type == 'rmTmpSU':
                 try:
                     sus.setStatus([self.sunum], 'E', 'Error downloading storage unit ' + str(self.sunum) + ': ' + msg + '.')
                     # Flush the change to disk.

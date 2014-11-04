@@ -966,24 +966,15 @@ static int processRemoteSums(DRMS_RsHandle_t *handle, int64_t *sunums, unsigned 
                 reqStatus = dbRes->field[0][0];
                 reqErrmsg = dbRes->field[0][1];
                 
-                if (*reqStatus != 'N')
+                if (*reqStatus == 'E')
                 {
-                    if (*reqStatus == 'E')
-                    {
-                        printkerr(reqErrmsg);
-                        rsStatus = DRMS_ERROR_REMOTESUMS_REQUEST;
-                    }
+                    printkerr(reqErrmsg);
+                    rsStatus = DRMS_ERROR_REMOTESUMS_REQUEST;
                     
-                    /* Delete request from the requests table. */
-                    snprintf(dbCmd, sizeof(dbCmd), "DELETE FROM %s WHERE requestid = %s", handle->requestsTable, idBuf);
-                    
-                    /* Execute the SQL. */
-                    if (db_dms(handle->dbh, NULL, dbCmd))
-                    {
-                        printkerr("Failure deleting record for completed remote-sums request: %s.\n", dbCmd);
-                        rsStatus = DRMS_ERROR_REMOTESUMS_REQUEST;
-                    }
-                    
+                    break;
+                }
+                else if (*reqStatus == 'C')
+                {
                     break;
                 }
             }
@@ -1001,6 +992,22 @@ static int processRemoteSums(DRMS_RsHandle_t *handle, int64_t *sunums, unsigned 
             }
             
             sleep(1);
+        }
+
+        if (dbRes)
+        {
+            db_free_text_result(dbRes);
+            dbRes = NULL;
+        }
+
+        /* Delete request from the requests table. */
+        snprintf(dbCmd, sizeof(dbCmd), "DELETE FROM %s WHERE requestid = %s", handle->requestsTable, idBuf);
+
+        /* Execute the SQL. */
+        if (db_dms(handle->dbh, NULL, dbCmd))
+        {
+            printkerr("Failure deleting record for completed remote-sums request: %s.\n", dbCmd);
+            rsStatus = DRMS_ERROR_REMOTESUMS_REQUEST;
         }
     }
     
