@@ -341,7 +341,7 @@ class SuTable:
             self.suDict[sunumStr]['dirty'] = True
     def incrementRefcount(self, sunums):
         for asunum in sunums:
-            sunumStr = str(sunum)
+            sunumStr = str(asunum)
             
             if not sunumStr in self.suDict or not self.suDict[sunumStr]:
                 raise Exception('unknownSunum', '(incrementRefcount) No SU-table record exists for SU ' + sunumStr + '.')
@@ -402,40 +402,41 @@ class SuTable:
         # There is not an efficient way to check for the SU being on/offline. But we can use jsoc_fetch (vs. show_info - jsoc_fetch returns
         # JSON, which is handy). And it also can be called in a mode where it does not trigger a SUM_get() - it uses SUM_infoAns():
         #   op=exp_su requestid=NOASYNCREQUEST sunum=123456789 format=json formatvar=dataobj method=url_quick protocol=as-is
-        cmd = [binPath + '/jsoc_fetch', 'op=exp_su', 'requestid=NOASYNCREQUEST', 'format=json', 'formatvar=dataobj', 'method=url_quick', 'protocol=as-is', 'sunum=' + ','.join([str(asunum) for asunum in sunums])]
-        log.write(['Checking online disposition: ' + ' '.join(cmd)])
+        rv = []        
+
+        if len(sunums) > 0:
+            cmd = [binPath + '/jsoc_fetch', 'op=exp_su', 'requestid=NOASYNCREQUEST', 'format=json', 'formatvar=dataobj', 'method=url_quick', 'protocol=as-is', 'sunum=' + ','.join([str(asunum) for asunum in sunums])]
+            log.write(['Checking online disposition: ' + ' '.join(cmd)])
         
-        try:
-            resp = check_output(cmd)
-            output = resp.decode('utf-8')
-            lines = output.split('\n')
+            try:
+                resp = check_output(cmd)
+                output = resp.decode('utf-8')
+                lines = output.split('\n')
         
-        except ValueError:
-            raise Exception('findOffline', "Unable to run command: '" + ' '.join(cmd) + "'.")
-        except CalledProcessError as exc:
-            raise Exception('findOffline', "Command '" + ' '.join(cmd) + "' returned non-zero status code " + str(exc.returncode))
+            except ValueError:
+                raise Exception('findOffline', "Unable to run command: '" + ' '.join(cmd) + "'.")
+            except CalledProcessError as exc:
+                raise Exception('findOffline', "Command '" + ' '.join(cmd) + "' returned non-zero status code " + str(exc.returncode))
         
-        jsonRsp = []
-        offline = []
+            jsonRsp = []
         
-        # output is not strictly JSON. There is an HTTP header we need to remove.
-        regExp = re.compile(r'Content-type')
-        for line in lines:
-            if len(line) == 0:
-                continue
-            match = regExp.match(line)
-            if match:
-                continue
-            jsonRsp.append(line)
+            # output is not strictly JSON. There is an HTTP header we need to remove.
+            regExp = re.compile(r'Content-type')
+            for line in lines:
+                if len(line) == 0:
+                    continue
+                match = regExp.match(line)
+                if match:
+                    continue
+                jsonRsp.append(line)
         
-        jsonObj = json.loads(''.join(jsonRsp))
-        for sunum in jsonObj['data']:
-            # sustatus could be 'I' (the local SUMS knows nothing about this SU) or 'Y' (it is in the SUMS db, and it is online). It cannot be 'N' or 'X'
-            # because if it were retrievable from tape, it would have been retrieved instead of finding its way into the requests table.
-            if jsonObj['data'][sunum]['sustatus'] == 'I':
-                offline.append(sunum)
-        
-        return offline
+            jsonObj = json.loads(''.join(jsonRsp))
+            for sunum in jsonObj['data']:
+                # sustatus could be 'I' (the local SUMS knows nothing about this SU) or 'Y' (it is in the SUMS db, and it is online). It cannot be 'N' or 'X'
+                # because if it were retrievable from tape, it would have been retrieved instead of finding its way into the requests table.
+                if jsonObj['data'][sunum]['sustatus'] == 'I':
+                    rv.append(sunum)
+        return rv
 
 class ReqTable:
     cursor = None
@@ -1589,7 +1590,7 @@ if __name__ == "__main__":
                                     for asunum in sunums:
                                         try:
                                             asu = sus.get([asunum])
-                                            rslog.write(['A download for SU ' + str(asunum )+ ' is already in progress.'])
+                                            rslog.write(['A download for SU ' + str(asunum)+ ' is already in progress.'])
                                             known.append(asunum)
                                         except Exception as exc:
                                             if len(exc.args) != 2:
