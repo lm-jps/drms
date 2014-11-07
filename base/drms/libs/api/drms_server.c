@@ -709,6 +709,10 @@ int drms_server_close_session(DRMS_Env_t *env, char *stat_str, int clients,
   struct dirent *dirp;
   int emptydir = 1;
 
+  /* Flush output to logfile. */
+  fflush(stdout);
+  fflush(stderr);
+
   if (env->tee_pid > 0) {
     int status = 0;
     waitpid(env->tee_pid, &status, 0);
@@ -719,9 +723,11 @@ int drms_server_close_session(DRMS_Env_t *env, char *stat_str, int clients,
      * these file descriptors otherwise. */
     if (!env->session->readonly && env->dolog)
     {
-        /* Flush output to logfile. */
+        /* Flush output to logfile - just in case. */
         fflush(stdout);
         fflush(stderr);
+
+        /* We are going to restore stdout and stderr (they are redirected to files right now), so close the files first. */
         close(STDERR_FILENO);
         close(STDOUT_FILENO);
 
