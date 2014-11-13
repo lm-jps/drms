@@ -342,7 +342,7 @@ static int sunumSort(const void *he1, const void *he2)
 }
 
 /* If data is not NULL, then add the SUNUMs to the cache first. Do NOT return the next SUNUM, just
- * in case the caller might want to add SUNUMs from different sources by multipled calls to the 
+ * in case the caller might want to add SUNUMs from different sources by multiple calls to the 
  * function. Otherwise, return the next SUNUM in the cache.
  *
  * If called with data != NULL, then a return value of -1 indicates an error, and 0 indicates success. If called with
@@ -406,11 +406,10 @@ static long long getNextOwnedSunum(DRMS_Env_t *env, SUSR_Cache_t **cache, long l
                         {
                             if (*info[isunum]->online_loc == '\0')
                             {
-                                /* Invalid SUNUM (e.g., SU aged-off and was not archived, SUNUM was invalid, etc. )*/
-                                fprintf(stderr, "Invalid sunum: %llu.\n", (unsigned long long)info[isunum]->sunum); /* uint_64t is a bad type. It is
-                                                                                                                     * long, not long long. */
-                                rv = -1;
-                                break;
+                                /* Invalid SUNUM (e.g., SU aged-off and was not archived, SUNUM was invalid, etc. ). Continue with next SUNUM. */
+                                fprintf(stderr, "WARNING: Invalid sunum: %llu.\n", (unsigned long long)info[isunum]->sunum); /* uint_64t is a bad type. It is
+                                                                                                                              * long, not long long. */
+                                continue;
                             }
 
                             sunum = info[isunum]->sunum;
