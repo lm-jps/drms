@@ -2381,17 +2381,6 @@ check for requestor to be valid remote DRMS site
         
       while (seg = drms_record_nextseg(rec, &segp, 0))
       {
-          /* If all segments being exported are stored uncompressed, note that. This will determine which payload limit is used. Err on 
-           * the conservative side. The smaller data limits are used if data are stored compressed (and subsequently exported), so
-           * pretend the whole series comprises compressed data if a single segment is compressed. */
-          if (compressedStorage == -1)
-          {
-              /* Determine this only for the first record */
-              if (strstr(seg->cparms, "compress"))
-              {
-                  compressedStorage = 1;
-              }
-          }
           /* If this is a linked segment, then follow the link. */
           if (seg->info->islink)
           {
@@ -2425,6 +2414,18 @@ check for requestor to be valid remote DRMS site
           {
               tSeg = seg;
               segrec = seg->record;
+          }
+
+          /* If all segments being exported are stored uncompressed, note that. This will determine which payload limit is used. Err on
+           * the conservative side. The smaller data limits are used if data are stored compressed (and subsequently exported), so
+           * pretend the whole series comprises compressed data if a single segment is compressed. */
+          if (compressedStorage == -1)
+          {
+             /* Determine this only for the first record */
+             if (strstr(tSeg->cparms, "compress"))
+             {
+                compressedStorage = 1;
+             }
           }
 
           sinfo = segrec->suinfo;
