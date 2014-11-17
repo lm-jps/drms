@@ -864,11 +864,21 @@ int fitsexport_mapexport_tofile2(DRMS_Segment_t *seg,
 
                  /* Simply copy the file from the segment's data-file path
                   * to fileout, no keywords to worry about. */
-                 if (CopyFile(filename, realfileout, &ioerr) != stbuf.st_size)
-                 {
-                    fprintf(stderr, "Unable to export file '%s' to '%s'.\n", filename, realfileout);
-                    status = DRMS_ERROR_FILECOPY;
-                 }
+                  
+                  /* filename could be a directory. If that is the case, then copy the entire tree to realfileout. Art made a change 
+                   * to exputl_mk_expfilename() so that if a generic segment has no seg->filename to use for realfileout, then 
+                   * one is made from <su dir>/<slot dir>/<seg name>. He also changed CopyFile() to handle tree copies. */
+                  if (CopyFile(filename, realfileout, &ioerr) != stbuf.st_size)
+                  {
+                      if (!S_ISDIR(stbuf.st_mode))
+                      {
+                          /* For a directory, CopyFile will return the number of bytes of all the files copied within the directory at any level.
+                           * This will not match stbuf.st_size, the size of the directory, which is 0.
+                           */
+                          fprintf(stderr, "Unable to export file '%s' to '%s'.\n", filename, realfileout);
+                          status = DRMS_ERROR_FILECOPY;
+                      }
+                  }
               }
               break;
             default:

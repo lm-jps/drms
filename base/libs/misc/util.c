@@ -872,6 +872,54 @@ size_t CopyFile(const char *src, const char *dst, int *ioerr)
             fclose(fptrD);
          }
       }
+       else if (S_ISDIR(stbuf.st_mode))
+       {
+           /* Recursively copy the files in the directory. */
+           if (mkdir(dst, 0777))
+           {
+               fprintf(stderr, "Could not create output directory '%s'.\n", dst);
+               err = 1;
+           }
+           else
+           {
+               int nfiles = 0;
+               int ifile;
+               struct dirent **fileList = NULL;
+               struct dirent *entry = NULL;
+               char srcFile[PATH_MAX];
+               char dstFile[PATH_MAX];
+               
+               nfiles = scandir(src, &fileList, NULL, NULL);
+               
+               for (ifile = 0 ; ifile < nfiles; ifile++)
+               {
+                   entry = fileList[ifile];
+                   
+                   if (entry != NULL)
+                   {
+                       char *oneFile = entry->d_name;
+                       
+                       if (strcmp(oneFile, ".") != 0 && strcmp(oneFile, "..") != 0)
+                       {
+                           /* Recursive call. */
+                           snprintf(srcFile, sizeof(srcFile), "%s/%s", src, oneFile);
+                           snprintf(dstFile, sizeof(dstFile), "%s/%s", dst, oneFile);
+                           nbytesW = CopyFile(srcFile, dstFile, ioerr);
+                           nbytesTotal += nbytesW;
+                       }
+
+                       free(entry);
+                       entry = NULL;
+                   }
+               }
+               
+               if (fileList)
+               {
+                   free(fileList);
+                   fileList = NULL;
+               }
+           }
+       }
    }
    else
    {

@@ -119,6 +119,12 @@ ExpUtlStat_t exputl_mk_expfilename(DRMS_Segment_t *srcseg,
                {
                   val = srcseg->filename;
                }
+                
+                if (!val || !*val)
+                {
+                    /* Use the segment name, just like drms_segment_filename() does. */
+                    val = srcseg->info->name;
+                }
             }
             // At this point the keyname is a normal keyword name.
             else if (layout) // use user provided format to print keyword.  User must be careful.
