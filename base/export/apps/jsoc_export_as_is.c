@@ -212,7 +212,7 @@ int DoIt(void)
       continue;
 
     /* now get desired segments */
-    int segmissing; /* If the segment file does not exist, then this is 1, otherwise it is 0. */
+
     DRMS_Segment_t *tgtseg = NULL; /* target seg, if the source seg is a linked seg. */
     for (iseg=0; iseg<nsegs; iseg++) 
       {
@@ -240,15 +240,17 @@ int DoIt(void)
          strncpy(path, recpath, DRMS_MAXPATHLEN);
          strncat(path, "/", DRMS_MAXPATHLEN);
          strncat(path, rec_seg_iseg->filename, DRMS_MAXPATHLEN);
-
-         segmissing = 0;
       }
-      else
-      {
-         segmissing = 1;
-      }
+          else
+          {
+              /* It could be the case that the record was created without saving the seg->filename. In that case, we default to
+               * using the segment name as the file name. */
+              strncpy(path, recpath, DRMS_MAXPATHLEN);
+              strncat(path, "/", DRMS_MAXPATHLEN);
+              strncat(path, rec_seg_iseg->info->name, DRMS_MAXPATHLEN);
+          }
 
-      if (segmissing == 0 && stat(path, &filestat) == 0) // only make links for existing files!
+      if (stat(path, &filestat) == 0) // only make links for existing files!
         { 
         if (S_ISDIR(filestat.st_mode))
           { // Segment is directory, get size == for now == use system "du"
