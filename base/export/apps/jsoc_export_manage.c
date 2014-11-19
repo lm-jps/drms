@@ -2399,8 +2399,8 @@ static int GenExpFitsCmd(FILE *fptr,
       /* ART - multiple processing steps
        * Always use record limit, since we can no longer make the export commands processing-specific. */
       fprintf(fptr, "jsoc_export_as_fits JSOC_DBHOST=%s reqid='%s' expversion=%s rsquery='%s' n=%s path=$REQDIR ffmt='%s' "
-              "method='%s' protocol='%s' cparms='%s' %s\n",
-              dbmainhost, requestid, PACKLIST_VER, dataset, RecordLimit, filenamefmt, method, protos[kProto_FITS], cparms, dbids);
+              "method='%s' protocol='%s' %s\n",
+              dbmainhost, requestid, PACKLIST_VER, dataset, RecordLimit, filenamefmt, method, protos[kProto_FITS], dbids);
 
       GenErrChkCmd(fptr);
    }
