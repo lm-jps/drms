@@ -37,7 +37,9 @@
 #include <sys/file.h>
 #include <regex.h>
 
-#define kDefRegexp       "JSOC_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_[0-9]+(_IN)?"
+#define kDefRegexp         "JSOC_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_[0-9]+(_IN)?"
+
+#define DUP_EXPORT_WINDOW  24 // hours
 
 // Log files
 #define kLockFile          "/home/jsoc/exports/tmp/lock.txt"
@@ -757,7 +759,7 @@ static void WriteLog(const char *logpath, const char *format, ...)
     }
 }
 
-json_insert_runtime(json_t *jroot, double StartTime)
+void json_insert_runtime(json_t *jroot, double StartTime)
   {
   char runtime[100];
   double EndTime;
@@ -799,55 +801,6 @@ static void report_summary(const char *host,
   WriteLog(logfile, "n=%d\t",n);
   WriteLog(logfile, "status=%d\n",status);
   }
-
-static void FreeRecSpecParts(char ***snames, char ***filts, int nitems)
-{
-    if (snames)
-    {
-        int iname;
-        char **snameArr = *snames;
-        
-        if (snameArr)
-        {
-            for (iname = 0; iname < nitems; iname++)
-            {
-                char *oneSname = snameArr[iname];
-                
-                if (oneSname)
-                {
-                    free(oneSname);
-                }
-            }
-            
-            free(snameArr);
-        }
-        
-        *snames = NULL;
-    }
-    
-    if (filts)
-    {
-        int iname;
-        char **filtsArr = *filts;
-        
-        if (filtsArr)
-        {
-            for (iname = 0; iname < nitems; iname++)
-            {
-                char *oneFilt = filtsArr[iname];
-                
-                if (oneFilt)
-                {
-                    free(oneFilt);
-                }
-            }
-            
-            free(filtsArr);
-        }
-        
-        *filts = NULL;
-    }
-}
 
 static void LogReqInfo(const char *fname, 
                        int fileupload, 
@@ -969,13 +922,99 @@ int dieRoll(int range)
    return JFMin((int)floor(((double)randVal / RAND_MAX) * range) + 1, range);
 }
 
+/* Caller owns the returned string. */
+/* If an error occurs, we treat this as if there is no duplicate record. The new request will start a full export. */
+static char *GetExistReqID(DRMS_Env_t *env, const char *dsquery, const char *filenamefmt, const char *process, const char *protocol, const char *method, int window, TIME *timeToCompletion, int *expSize)
+{
+    char *id = NULL;
+    char cmd[DRMS_MAXQUERYLEN];
+    TIME beginWindow = 0;
+    DB_Text_Result_t *tres = NULL;
+    long long status;
+    long long sunum;
+    SUM_info_t *infostruct = NULL;
+    char *end = NULL;
+    int istat;
+    
+    istat = DRMS_SUCCESS;
+    
+    beginWindow = timenow() - window * 60 * 60;
+    
+    /* Look at only one DRMS record. Once this code is all working, then there will not be more than one identical export in the time window that ends
+     * with the current time. If we find an existing identical export, but somebody has deleted the SU for it, then this function will not
+     * find an existing export and the new export will be processed. And then if there is a third attempt to perform an identical export,
+     * the previous export will be used, and the third attempt will be skipped. So, there is always just one valid identical export, at most, 
+     * in the specified time window. */
+    snprintf(cmd, sizeof(cmd), "SELECT requestid, filenamefmt, processing, protocol, method, sunum, esttime, size, status FROM %s WHERE recnum = (SELECT max(recnum) AS recnum FROM %s WHERE requestid = (SELECT requestid FROM %s WHERE reqtime > %lf AND dataset ILIKE '%%%s%%' ORDER BY requestid DESC LIMIT 1))", kExportSeries, kExportSeries, kExportSeries, beginWindow, dsquery);
+    
+    if ((tres = drms_query_txt(drms_env->session, cmd)) != NULL && tres->num_rows == 1 && tres->num_cols == 9)
+    {
+        /* Make sure status is 0 (complete), or 1 (pending). */
+        status = strtoll(tres->field[0][8], &end, 10);
+        
+        if (end != tres->field[0][8] && (status == 0 || status == 1))
+        {
+            if (strcasecmp(tres->field[0][1], filenamefmt) == 0 && strcasecmp(tres->field[0][2], process) == 0 && strcasecmp(tres->field[0][3], protocol) == 0 && strcasecmp(tres->field[0][4], method) == 0)
+            {
+                /* Make sure that the SU is online. */
+                sunum = strtoll(tres->field[0][5], &end, 10);
+                
+                if (end != tres->field[0][5] && sunum >= 0 && sunum != LLONG_MAX)
+                {
+                    /* We parsed at least some part of the sunum value, there is an associated SU, and we did not underflow or overflow. */
+                    
+                    /* This function runs in the op == exp_request branch of code in DoIt(). drms_getsuinfo() has never been called in that branch,
+                     * so call it here. */
+                    istat = drms_getsuinfo(env, &sunum, 1, &infostruct);
+                    
+                    if (istat == DRMS_SUCCESS && infostruct)
+                    {
+                        if (*(infostruct->online_loc) != '\0' && *(infostruct->online_status) == 'Y')
+                        {
+                            /* SUMS recognizes the SUNUM as valid, and the SU is online. */
+                            *timeToCompletion = strtod(tres->field[0][6], &end);
+                            
+                            if (end == tres->field[0][6] || *timeToCompletion == HUGE_VAL || *timeToCompletion == -HUGE_VAL)
+                            {
+                                *timeToCompletion = DRMS_MISSING_TIME;
+                            }
+                            
+                            *expSize = strtoll(tres->field[0][7], &end, 10);
+                            
+                            if (end == tres->field[0][7] || *expSize < INT_MIN || *expSize > INT_MAX)
+                            {
+                                *expSize = DRMS_MISSING_INT;
+                            }
+                            
+                            id = strdup(tres->field[0][0]);
+                        }
+                    }
+                    
+                    if (infostruct)
+                    {
+                        free(infostruct);
+                        infostruct = NULL;
+                    }
+                }
+            }
+        }
+    }
+
+    if (tres)
+    {
+        db_free_text_result(tres);
+        tres = NULL;
+    }
+    
+    return id;
+}
+
 /* Module main function. */
 int DoIt(void)
 {
 						/* Get command line arguments */
   const char *op;
   const char *dsin;
-  char *dslog = NULL;
   const char *seglist;
   const char *requestid = NULL;
   const char *process;
@@ -2250,42 +2289,7 @@ check for requestor to be valid remote DRMS site
       }
     else // normal request, check for embedded segment list
       {
-          char mbuf[1024];
-          
-          // Check for series existence. The jsoc_fetch cgi can be used outside of the 
-          // exportdata.html context, in which case there is no check for series existence
-          // before we reach this point in code. Let's catch bad-series errors here
-          // so we can tell the user that they're trying to export a non-existent 
-          // series.
-          char *allvers = NULL;
-          char **sets = NULL;
-          DRMS_RecordSetType_t *settypes = NULL; /* a maximum doesn't make sense */
-          char **snames = NULL;
-          char **filts = NULL;
-          int nsets = 0;
-          DRMS_RecQueryInfo_t rsinfo; /* Filled in by parser as it encounters elements. */
-          int iset;
-          
-          if (drms_record_parserecsetspec(dsquery, &allvers, &sets, &settypes, &snames, &filts, &nsets, &rsinfo) == DRMS_SUCCESS)
-          { 
-              for (iset = 0; iset < nsets; iset++)
-              {
-                  
-                  if (!drms_series_exists(drms_env, snames[iset], &status))
-                  {
-                      snprintf(mbuf, sizeof(mbuf), "Cannot export series '%s' - it does not exist.\n", snames[iset]);
-                      JSONDIE(mbuf);
-                  }
-              }
-          }
-          else
-          {
-              snprintf(mbuf, sizeof(mbuf), "Bad record-set query '%s'.\n", dsquery);
-              JSONDIE(mbuf);
-          }
-          
-          FreeRecSpecParts(&snames, &filts, nsets);
-          
+          /* This block ensures that the record-set query has a DRMS filter. It adds an empty filter if need be. */
       if (index(dsquery,'[') == NULL)
         {
         char *cb = index(dsquery, '{');
@@ -2309,30 +2313,177 @@ check for requestor to be valid remote DRMS site
         }
       if ((p=index(dsquery,'{')) != NULL && strncmp(p+1, "**ALL**", 7) == 0)
         *p = '\0';
-      }
+      } /* normal request */
+        
+        // Check for series existence. The jsoc_fetch cgi can be used outside of the
+        // exportdata.html context, in which case there is no check for series existence
+        // before we reach this point in code. Let's catch bad-series errors here
+        // so we can tell the user that they're trying to export a non-existent
+        // series.
+        char mbuf[1024];
+        char *allvers = NULL;
+        char **sets = NULL;
+        DRMS_RecordSetType_t *settypes = NULL; /* a maximum doesn't make sense */
+        char **snames = NULL;
+        char **filts = NULL;
+        int nsets = 0;
+        DRMS_RecQueryInfo_t rsinfo; /* Filled in by parser as it encounters elements. */
+        int iset;
+        
+        if (drms_record_parserecsetspec(dsquery, &allvers, &sets, &settypes, &snames, &filts, &nsets, &rsinfo) == DRMS_SUCCESS)
+        {
+            for (iset = 0; iset < nsets; iset++)
+            {
+                if (!drms_series_exists(drms_env, snames[iset], &status))
+                {
+                    snprintf(mbuf, sizeof(mbuf), "Cannot export series '%s' - it does not exist.\n", snames[iset]);
+                    JSONDIE(mbuf);
+                }
+            }
+        }
+        else
+        {
+            snprintf(mbuf, sizeof(mbuf), "Bad record-set query '%s'.\n", dsquery);
+            JSONDIE(mbuf);
+        }
 
     if (rcountlimit == 0)
-      //      rs = drms_open_recordset(drms_env, dsquery, &status);
-      rs = drms_open_records(drms_env, dsquery, &status);
-      // temporarily reverting to drms_open_records until I can fix the problem with
-      // not passing a segment-list to drms_open_recordset().
-    else // rcountlimit specified via "n=" parameter in process field.
-      rs = drms_open_nrecords (drms_env, dsquery, rcountlimit, &status);
+    {
+        rs = drms_open_records(drms_env, dsquery, &status);
+    }
+    else
+    {
+        // rcountlimit specified via "n=" parameter in process field.
+        rs = drms_open_nrecords (drms_env, dsquery, rcountlimit, &status);
+    }
 
     if (!rs)
-        {
+    {
         int tmpstatus = status;
         rcount = drms_count_records(drms_env, dsquery, &status);
         if (status == 0)
-          { // open_records failed but query is OK so probably too many records for memory limit.
-          char errmsg[100];
-          sprintf(errmsg,"%d is too many records in one request.",rcount);
-	  JSONDIE2("Can not open RecordSet ",errmsg);
-          }
-        status = tmpstatus;
-	JSONDIE2("Can not open RecordSet, bad query or too many records: ",dsquery);
+        {
+            // open_records failed but query is OK so probably too many records for memory limit.
+            char errmsg[100];
+            
+            sprintf(errmsg, "%d is too many records in one request.", rcount);
+            drms_record_freerecsetspecarr(&allvers, &sets, &settypes, &snames, &filts, nsets);
+            JSONDIE2("Can not open RecordSet ",errmsg);
         }
+        status = tmpstatus;
+        drms_record_freerecsetspecarr(&allvers, &sets, &settypes, &snames, &filts, nsets);
+        JSONDIE2("Can not open RecordSet, bad query or too many records: ", dsquery);
+    }
+
     rcount = rs->n;
+        
+        /* Check for duplicate exports within the last DUP_EXPORT_WINDOW hours. If a duplicate is found, then simply return the
+         * request ID to the caller. Use the most recent duplicate. */
+        
+        /* As far as I can tell, the format parameter is not used by jsoc_fetch all at. And formatvar is used to to set dodataobj
+         * only. And dodataobj isn't something used to identify the set of data being exported. To be a duplicate
+         * export, this new export request's record-set, export-file-name format, protocol, and method have to match
+         * the same parameters of an existing export. The SU for the existing export also must still be on disk. */
+        
+        /* existRec is in jsoc.export, not jsoc.export_new! */
+        char *existReqID = NULL;
+        TIME timeToCompletion;
+        int expSize;
+
+        existReqID = GetExistReqID(drms_env, dsquery, filenamefmt, process, protocol, method, DUP_EXPORT_WINDOW, &timeToCompletion, &expSize);
+        
+        /* We need rcount before we can return duplicate-export information back to the caller. */
+        if (existReqID)
+        {
+            char numBuf[64];
+            char *jsonStr = NULL;
+            char *jsonText = NULL;
+            json_t *jroot = NULL;
+            TIME waitTime = 0;
+            
+            if (dojson)
+            {
+                jroot = json_new_object();
+                
+                if (!jroot)
+                {
+                    JSONDIE("Out of memory.");
+                }
+                
+                sprintf(numBuf, "%d", testmode ? 12 : 2);
+                json_insert_pair_into_object(jroot, "status", json_new_number(numBuf));
+                
+                jsonStr = string_to_json((char *)existReqID);
+                json_insert_pair_into_object(jroot, kArgRequestid, json_new_string(jsonStr));
+                free(jsonStr);
+                
+                jsonStr = string_to_json((char *)method);
+                json_insert_pair_into_object(jroot, kArgMethod, json_new_string(jsonStr));
+                free(jsonStr);
+                
+                jsonStr = string_to_json((char *)protocol);
+                json_insert_pair_into_object(jroot, kArgProtocol, json_new_string(jsonStr));
+                free(jsonStr);
+                
+                waitTime = timeToCompletion - timenow();
+                if (waitTime < 0)
+                {
+                    waitTime = 0;
+                }
+                
+                sprintf(numBuf, "%1.0lf",  waitTime);
+                json_insert_pair_into_object(jroot, "wait", json_new_number(numBuf));
+                
+                sprintf(numBuf, "%d", rcount);
+                json_insert_pair_into_object(jroot, "rcount", json_new_number(numBuf));
+                
+                sprintf(numBuf, "%d", expSize);
+                json_insert_pair_into_object(jroot, "size", json_new_number(numBuf));
+                
+                json_tree_to_string(jroot, &jsonText);
+                
+                json_free_value(&jroot);
+                
+                if (fileupload)
+                {
+                    // The returned json should be in the implied <body> tag for iframe requests.
+                    printf("Content-type: text/html\n\n");
+                }
+                else
+                {
+                    printf("Content-type: application/json\n\n");
+                }
+                
+                if (jsonText)
+                {
+                    printf("%s\n", jsonText);
+                    free(jsonText);
+                }
+            }
+            else
+            {
+                printf("Content-type: text/plain\n\n");
+                printf("# JSOC Data Export Not Ready.\n");
+                printf("status=%d\n", testmode ? 12 : 2);
+                printf("requestid=%s\n", existReqID);
+                printf("method=%s\n", method);
+                printf("protocol=%s\n", protocol);
+                printf("wait=%f\n", timeToCompletion);
+                printf("size=%d\n", expSize);
+            }
+            
+            fflush(stdout);
+            
+            CleanUp(&sunumarr, &infostructs, &webarglist, series, paths, sustatus, susize, arrsize, userhandle);
+            free(existReqID);
+            existReqID = NULL;
+            drms_record_freerecsetspecarr(&allvers, &sets, &settypes, &snames, &filts, nsets);
+            drms_close_records(rs, DRMS_FREE_RECORD);
+            return(0);
+        }
+        
+        drms_record_freerecsetspecarr(&allvers, &sets, &settypes, &snames, &filts, nsets);
+        
     drms_stage_records(rs, 0, 0);
         
         /* drms_record_getinfo() will now fill-in the rec->suinfo for all recs in rs, PLUS all
@@ -2435,7 +2586,7 @@ check for requestor to be valid remote DRMS site
               /* There was a request for an sunum of -1. */
               all_online = 0;
           }
-          else if (sinfo->online_loc == '\0')
+          else if (*(sinfo->online_loc) == '\0')
           {
              fprintf(stderr, "JSOC_FETCH Bad sunum %lld for recnum %s:%lld in RecordSet: %s\n", segrec->sunum, segrec->seriesinfo->seriesname, segrec->recnum, dsquery);
               // no longer die here, leave it to the export process to deal with missing segments
@@ -2499,7 +2650,11 @@ check for requestor to be valid remote DRMS site
       }
 
       if (segp)
-        free(segp); 
+      {
+          hiter_free(segp);
+          free(segp);
+          segp = NULL;
+      }
       } // record loop
     if (size > 0 && size < 1024*1024) size = 1024*1024;
     size /= 1024*1024;
@@ -2958,7 +3113,6 @@ JSONDIE("Re-Export requests temporarily disabled.");
     // export_series is jsoc.export_new; no need to call drms_open_records(), exprec is already available
 
   status     = drms_getkey_int(exprec, "Status", NULL);
-  dslog      = drms_getkey_string(exprec, "DataSet", NULL); /* not used */
   process = drms_getkey_string(exprec, "Processing", NULL);
   protocol   = drms_getkey_string(exprec, "Protocol", NULL);
   filenamefmt = drms_getkey_string(exprec, "FilenameFmt", NULL);
@@ -3121,11 +3275,15 @@ JSONDIE("Re-Export requests temporarily disabled.");
           free(strval);
           }
         json_tree_to_string(jroot,&json);
+        json_free_value(&jroot);
+        
         if (fileupload)  // The returned json should be in the implied <body> tag for iframe requests.
   	  printf("Content-type: text/html\n\n");
         else
           printf("Content-type: application/json\n\n");
 	printf("%s\n",json);
+        free(json);
+        json = NULL;
 	}
       else
         {
