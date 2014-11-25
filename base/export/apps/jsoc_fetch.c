@@ -666,18 +666,42 @@ static void WriteLog(const char *logpath, const char *format, ...)
         mustchmodlck = 1;
     }
     
-    if (stat(logpath, &stbuf) != 0)
-    {
-        /* If file doesn't exist (it might not, since this code can run at non-JSOC sites, but it contains JSOC-specific things),
-         * then simply do not write log. */
-        return;
-    }
-    else
+    if (stat(logpath, &stbuf) == 0)
     {
         if ((stbuf.st_mode & (S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH)) != (S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH))
         {
             mustchmodlog = 1;
         }
+    }
+    else
+    {
+       /* If the reason we cannot see the log file is that the parent directory is missing, then simply do not write the log file. */
+       char *dname = NULL;
+       char *path = strdup(logpath);
+
+       if (path)
+       {
+          dname = dirname(path);
+          if (dname)
+          {
+             if (stat(dname, &stbuf) != 0)
+             {
+                /* Parent directory does not exist. */
+                return;
+             }
+          }
+          else
+          {
+             return;
+          }
+
+          free(path);
+       }
+       else
+       {
+          fprintf(stderr, "Out of memory.\n");
+          return;
+       }
     }
     
     if (!gLogs)
