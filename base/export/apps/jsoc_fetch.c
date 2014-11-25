@@ -300,8 +300,9 @@ int quick_export_rs( json_t *jroot, DRMS_RecordSet_t *rs, int online,  long long
 
 TIME timenow()
   {
-  TIME UNIX_epoch = -220924792.000; /* 1970.01.01_00:00:00_UTC */
-  TIME now = (double)time(NULL) + UNIX_epoch;
+  // TIME UNIX_epoch = -220924792.000; /* 1970.01.01_00:00:00_UTC */
+  // TIME now = (double)time(NULL) + UNIX_epoch;
+  TIME now = CURRENT_SYSTEM_TIME;
   return(now);
   }
 
@@ -809,7 +810,8 @@ static void LogReqInfo(const char *fname,
                        const char *requestid, 
                        const char *dbhost,
                        int from_web,
-                       const char *webarglist)
+                       const char *webarglist,
+                       TIME fetch_time)
   {
   /* Before opening the log file, acquire a lock. Not only will this allow multiple jsoc_fetchs to 
    * write to the same log, but it will facilitate synchronization with code that manages compression
@@ -818,7 +820,7 @@ static void LogReqInfo(const char *fname,
   char nowtxt[100];
       char localnowtxt[128];
 
-  sprint_ut(nowtxt, timenow());
+  sprint_ut(nowtxt, fetch_time);
       LocalTime(localnowtxt, sizeof(localnowtxt));
   WriteLog(fname, "*****%s\n   PID=%d\n   %s\n   op=%s\n   in=%s\n   RequestID=%s\n   DBHOST=%s\n   REMOTE_ADDR=%s\n",
            localnowtxt, getpid(), nowtxt, op, dsin, requestid, dbhost, getenv("REMOTE_ADDR"));
@@ -1042,7 +1044,7 @@ int DoIt(void)
   int rcountlimit = 0;
   TIME reqtime;
   TIME esttime;
-  TIME now = timenow();
+  TIME fetch_time = timenow();
   double waittime;
   char *web_query;
   int from_web,status;
@@ -1252,7 +1254,7 @@ int DoIt(void)
     }
 
         /* requestid is not provided via the command-line for kOpExpSu. */
-    LogReqInfo(lfname, fileupload, op, dsin, requestid, dbhost, from_web, webarglist);
+    LogReqInfo(lfname, fileupload, op, dsin, requestid, dbhost, from_web, webarglist, fetch_time);
 
         /* jsoc.export_new */
     export_series = kExportSeriesNew;
@@ -1939,7 +1941,7 @@ int DoIt(void)
             char sutime[50];
             sscanf(sinfo->effective_date,"%4d%2d%2d%2d%2d", &y,&m,&d,&hr,&mn);
             sprintf(sutime, "%4d.%02d.%02d_%02d:%02d", y,m,d,hr,mn);
-            expire = (sscan_time(sutime) - now)/86400.0;
+            expire = (sscan_time(sutime) - fetch_time)/86400.0;
             snprintf(supath, sizeof(supath), "%s", sinfo->online_loc);
             *onlinestat = 'Y';
             }
@@ -2126,7 +2128,7 @@ int DoIt(void)
       FILE *exportlog;
       sprintf(exportlogfile, "/home/jsoc/exports/tmp/%s.reqlog", requestid);
       exportlog = fopen(exportlogfile, "a");
-      sprint_ut(timebuf, now);
+      sprint_ut(timebuf, fetch_time);
       fprintf(exportlog,"XXXX New SU request started at %s\n", timebuf);
       fprintf(exportlog,"REMOTE_ADDR=%s\nHTTP_REFERER=%s\nREQUEST_METHOD=%s\nQUERY_STRING=%s\n",
          getenv("REMOTE_ADDR"), getenv("HTTP_REFERER"), getenv("REQUEST_METHOD"), getenv("QUERY_STRING"));
@@ -2196,8 +2198,8 @@ check for requestor to be valid remote DRMS site
     drms_setkey_string(exprec, "FilenameFmt", filenamefmt);
     drms_setkey_string(exprec, "Method", method);
     drms_setkey_string(exprec, "Format", format);
-    drms_setkey_time(exprec, "ReqTime", now);
-    drms_setkey_time(exprec, "EstTime", now+10); // Crude guess for now
+    drms_setkey_time(exprec, "ReqTime", fetch_time);
+    drms_setkey_time(exprec, "EstTime", fetch_time+10); // Crude guess for now
     drms_setkey_longlong(exprec, "Size", (int)size);
     drms_setkey_int(exprec, "Status", (testmode ? 12 : 2));
     drms_setkey_int(exprec, "Requestor", requestorid);
@@ -2236,7 +2238,7 @@ check for requestor to be valid remote DRMS site
     }
         
         /* requestid was not provided on the command-line. It is created near the end of this code block. */
-    LogReqInfo(lfname, fileupload, op, dsin, requestid, dbhost, from_web, webarglist);
+    LogReqInfo(lfname, fileupload, op, dsin, requestid, dbhost, from_web, webarglist, fetch_time);
 
     size=0;
     strncpy(dsquery,dsin,DRMS_MAXQUERYLEN);
@@ -2391,8 +2393,8 @@ check for requestor to be valid remote DRMS site
         int expSize;
 
         existReqID = GetExistReqID(drms_env, dsquery, filenamefmt, process, protocol, method, DUP_EXPORT_WINDOW, &timeToCompletion, &expSize);
-        
-        /* We need rcount before we can return duplicate-export information back to the caller. */
+
+	/* We need rcount before we can return duplicate-export information back to the caller. */
         if (existReqID)
         {
             char numBuf[64];
@@ -2848,7 +2850,7 @@ check for requestor to be valid remote DRMS site
       FILE *exportlog;
       sprintf(exportlogfile, "/home/jsoc/exports/tmp/%s.reqlog", requestid);
       exportlog = fopen(exportlogfile, "w");
-      sprint_ut(timebuf, now);
+      sprint_ut(timebuf, fetch_time);
       fprintf(exportlog,"XXXX New export request started at %s\n", timebuf);
       fprintf(exportlog,"REMOTE_ADDR=%s\nHTTP_REFERER=%s\nREQUEST_METHOD=%s\nQUERY_STRING=%s\n",
          getenv("REMOTE_ADDR"), getenv("HTTP_REFERER"), getenv("REQUEST_METHOD"), getenv("QUERY_STRING"));
@@ -2891,8 +2893,8 @@ check for requestor to be valid remote DRMS site
                 else
                     drms_setkey_string(requestor_rec, "Notify", notify);
                 drms_setkey_string(requestor_rec, "ShipTo", shipto);
-                drms_setkey_time(requestor_rec, "FirstTime", now);
-                drms_setkey_time(requestor_rec, "UpdateTime", now);
+                drms_setkey_time(requestor_rec, "FirstTime", fetch_time);
+                drms_setkey_time(requestor_rec, "UpdateTime", fetch_time);
                 drms_close_record(requestor_rec, DRMS_INSERT_RECORD);
             
 #ifdef IN_MY_DREAMS
@@ -2926,8 +2928,8 @@ check for requestor to be valid remote DRMS site
      drms_setkey_string(exprec, "FilenameFmt", filenamefmt);
      drms_setkey_string(exprec, "Method", method);
      drms_setkey_string(exprec, "Format", format);
-     drms_setkey_time(exprec, "ReqTime", now);
-     drms_setkey_time(exprec, "EstTime", now+10); // Crude guess for now
+     drms_setkey_time(exprec, "ReqTime", fetch_time);
+     drms_setkey_time(exprec, "EstTime", fetch_time+10); // Crude guess for now
      drms_setkey_longlong(exprec, "Size", (int)size);
      drms_setkey_int(exprec, "Status", (testmode ? 12 : 2));
      drms_setkey_int(exprec, "Requestor", requestorid);
@@ -2951,7 +2953,7 @@ check for requestor to be valid remote DRMS site
       FILE *exportlog;
       sprintf(exportlogfile, "/home/jsoc/exports/tmp/%s.reqlog", requestid);
       exportlog = fopen(exportlogfile, "a");
-      sprint_ut(timebuf, now);
+      sprint_ut(timebuf, fetch_time);
       fprintf(exportlog,"XXX New repeat request started at %s\n", timebuf);
       fprintf(exportlog,"REMOTE_ADDR=%s\nHTTP_REFERER=%s\nREQUEST_METHOD=%s\nQUERY_STRING=%s\n",
          getenv("REMOTE_ADDR"), getenv("HTTP_REFERER"), getenv("REQUEST_METHOD"), getenv("QUERY_STRING"));
@@ -2993,8 +2995,8 @@ JSONDIE("Re-Export requests temporarily disabled.");
         drms_setkey_string(requestor_rec, "Requestor", "NA");
         drms_setkey_string(requestor_rec, "Notify", notify);
         drms_setkey_string(requestor_rec, "ShipTo", "NA");
-        drms_setkey_time(requestor_rec, "FirstTime", now);
-        drms_setkey_time(requestor_rec, "UpdateTime", now);
+        drms_setkey_time(requestor_rec, "FirstTime", fetch_time);
+        drms_setkey_time(requestor_rec, "UpdateTime", fetch_time);
         drms_close_record(requestor_rec, DRMS_INSERT_RECORD);
         }
       else
@@ -3017,7 +3019,7 @@ JSONDIE("Re-Export requests temporarily disabled.");
           drms_setkey_int(exprec, "Status", 2);
           if (requestorid)
               drms_setkey_int(exprec, "Requestor", requestorid);
-          drms_setkey_time(exprec, "ReqTime", now);
+          drms_setkey_time(exprec, "ReqTime", fetch_time);
           // drms_close_records(RsClone, DRMS_INSERT_RECORD);
           drms_close_records(exports, DRMS_FREE_RECORD);
       }
@@ -3078,7 +3080,7 @@ JSONDIE("Re-Export requests temporarily disabled.");
             lfname = kLogFileExpStatExt;            
         }
         
-        LogReqInfo(lfname, fileupload, op, dsin, requestid, dbhost, from_web, webarglist);
+        LogReqInfo(lfname, fileupload, op, dsin, requestid, dbhost, from_web, webarglist, fetch_time);
         
         // Must check jsoc.export, NOT jsoc.export_new.
         sprintf(status_query, "%s[%s]", kExportSeries, requestid);
@@ -3133,12 +3135,12 @@ JSONDIE("Re-Export requests temporarily disabled.");
             break;
     case 1:
             errorreply = NULL;
-            waittime = esttime - now;
+            waittime = esttime - fetch_time;
             break;
     case 12:
     case 2:
             errorreply = NULL;
-            waittime = esttime - now;
+            waittime = esttime - fetch_time;
             break;
     case 3:
             errorreply = "Request too large";
