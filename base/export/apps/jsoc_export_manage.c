@@ -3370,7 +3370,7 @@ int DoIt(void)
 
       // DONE, Standard exit here only if no errors above
       // set status=done and mark this version of the export record permanent
-      fprintf(fp, "set DoneTime = `date -u '+%Y.%m.%d_%H:%M:%S_UT'`\n");
+      fprintf(fp, "set DoneTime = `date -u '+%%Y.%%m.%%d_%%H:%%M:%%S_UT'`\n");
       fprintf(fp, "set_info_sock JSOC_DBHOST=%s ds='jsoc.export[%s]' Status=0 ExpTime=$DoneTime\n", dbexporthost, requestid);
                   // copy the drms_run log file
       fprintf(fp, "cp /home/jsoc/exports/tmp/%s.runlog ./%s.runlog \n", requestid, requestid);
