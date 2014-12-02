@@ -16,7 +16,9 @@ tape_svc_obj_$(d)	:= $(addprefix $(d)/, tape_svc_proc.o tapeutil.o tape_inventor
 tapearc_obj_$(d)	:= $(addprefix $(d)/, padata.o)
 
 CF_TGT_$(d)	:= -O0 -Wno-parentheses -fno-strict-aliasing
-ADD_TGT_$(d) := -DSUMT120 -DSUMNOAO
+# ART - We haven't used SUMT120 in years. Let's make the default what we use at Stanford (since nobody else even uses our tape system/code).
+# ADD_TGT_$(d) := -DSUMT120 -DSUMNOAO
+ADD_TGT_$(d) := -DSUMT950
 
 ifeq ($(HOST),dcs0.jsoc.Stanford.EDU)
 	ADD_TGT_$(d) := -DSUMDC -DDCS0
