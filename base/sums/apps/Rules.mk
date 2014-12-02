@@ -36,6 +36,10 @@ endif
 ifeq ($(HOST),d02.Stanford.EDU)
 	ADD_TGT_$(d) := -DSUMT950
 endif
+# ART - clean-up tapearc build. We build tapearcX from tapearcX.c on k1, and we run SUMS on k1. We do not use tapearc[0-8].c or tapearc.c any more.
+ifeq ($(HOST),k1.stanford.edu)
+        ADD_TGT_$(d) := -DSUMT950
+endif
 #treat j1 like d02 (j1 now running sum_svc)
 ifeq ($(HOST),j1)
 	ADD_TGT_$(d) := -DSUMT950
@@ -52,6 +56,8 @@ XSUMSVC_$(d)	:=
 ifneq ($(SUMS_TAPE_AVAILABLE), 0)
 TAPESVC_$(d)	:= $(d)/tape_svc
 TARCINFO_$(d)	:= $(d)/tapearcinfo
+# ART - add tapearcX. This will be made from tapearcX.o, which will be compiled from tapearcX.c with the make system's $(COMP) compiler.
+TAPEARCX_$(d)   := $(addprefix $(d)/, tapearcX)
 endif
 BINTGT_$(d)     := $(addprefix $(d)/, sumget sum_rm sum_rm_0 sum_rm_1 sum_rm_2 impexp exportclosed md5filter sum_adv sum_export_svc sum_export jmtx sum_chmown)
 
@@ -69,15 +75,15 @@ endif
 TGT_$(d)        := $(BINTGT_$(d)) $(BINTGT_2_$(d)) $(BINTGT_3_$(d))
 
 # SUMS_BIN contains a list of applications that get built when 'make sums' is invoked
-SUMS_BIN	:= $(SUMS_BIN) $(TGT_$(d)) $(XSUMSVC_$(d)) $(MULTI_SUMS_$(d))
+SUMS_BIN	:= $(SUMS_BIN) $(TGT_$(d)) $(XSUMSVC_$(d)) $(TAPESVC_$(d)) $(TARCINFO_$(d)) $(TAPEARCX_$(d)) $(MULTI_SUMS_$(d))
 
-OBJ_$(d)	:= $(sum_svc_comm_obj_$(d)) $(sum_svc_obj_$(d)) $(xsum_svc_obj_$(d)) $(tape_svc_obj_$(d)) $(tapearc_obj_$(d)) $(TGT_$(d):%=%.o) $(XSUMSVC_$(d):%=%.o) $(TAPESVC_$(d):%=%.o) $(TARCINFO_$(d):%:%.o) $(MULTI_SUMS_$(d):%=%.o)
+OBJ_$(d)	:= $(sum_svc_comm_obj_$(d)) $(sum_svc_obj_$(d)) $(xsum_svc_obj_$(d)) $(tape_svc_obj_$(d)) $(tapearc_obj_$(d)) $(TGT_$(d):%=%.o) $(XSUMSVC_$(d):%=%.o) $(TAPESVC_$(d):%=%.o) $(TARCINFO_$(d):%:%.o) $(TAPEARCX_$(d):%:%.o) $(MULTI_SUMS_$(d):%=%.o)
 
 DEP_$(d)	:= $(OBJ_$(d):%=%.d)
 
-CLEAN		:= $(CLEAN) $(OBJ_$(d)) $(TGT_$(d)) $(XSUMSVC_$(d)) $(TAPESVC_$(d)) $(TARCINFO_$(d)) $(DEP_$(d)) $(MULTI_SUMS_$(d))
+CLEAN		:= $(CLEAN) $(OBJ_$(d)) $(TGT_$(d)) $(XSUMSVC_$(d)) $(TAPESVC_$(d)) $(TARCINFO_$(d)) $(TAPEARCX_$(d)) $(DEP_$(d)) $(MULTI_SUMS_$(d))
 
-S_$(d)		:= $(notdir $(TGT_$(d)) $(XSUMSVC_$(d)) $(TAPESVC_$(d)) $(TARCINFO_$(d)) $(MULTI_SUMS_$(d)))
+S_$(d)		:= $(notdir $(TGT_$(d)) $(XSUMSVC_$(d)) $(TAPESVC_$(d)) $(TARCINFO_$(d)) $(TAPEARCX_$(d)) $(MULTI_SUMS_$(d)))
 
 # Local rules
 $(OBJ_$(d)):	$(SRCDIR)/$(d)/Rules.mk
@@ -135,6 +141,12 @@ $(TAPESVC_$(d)):   %:	%.o $(tape_svc_obj_$(d)) $(LIBSUM) $(LIBSUMSAPI) $(SUMSICC
 
 $(TARCINFO_$(d)):	LL_TGT :=  $(LL_TGT) $(LL_TGT_$(d))
 $(TARCINFO_$(d)):   %:	%.o $(tapearc_obj_$(d)) $(LIBSUM) $(LIBSUMSAPI) $(SUMSICCLIBS_$(d)) $(LIBMISC) $(LIBDSTRUCT)
+			$(SUMSLINK)
+			$(SLBIN)
+
+# ART - add tapearcX to the build.
+$(TAPEARCX_$(d)):	LL_TGT :=  $(LL_TGT) $(LL_TGT_$(d))
+$(TAPEARCX_$(d)):   %:  %.o $(tapearc_obj_$(d)) $(LIBSUM) $(LIBSUMSAPI) $(SUMSICCLIBS_$(d)) $(LIBMISC) $(LIBDSTRUCT)
 			$(SUMSLINK)
 			$(SLBIN)
 
