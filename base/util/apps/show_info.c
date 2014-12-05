@@ -899,7 +899,7 @@ static int PrintHeader(DRMS_Env_t *env, const char* series, const char *keylist,
     for (iseg = 0; iseg<*nsegs; iseg++)
     {
         DRMS_Segment_t *seg = hcon_lookup_lower(&rec->segments, segs[iseg]);
-        if (seg->info->islink)
+        if (seg && seg->info && seg->info->islink)
             (*linked_segs)++;
     }
     
