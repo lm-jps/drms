@@ -184,7 +184,7 @@ if __name__ == "__main__":
     rootObj['status'] = rv
     rootObj['msg'] = msg
 
-    print('Content-type: application/json\n')
+    # Do not print application/json here. This script may be called outside of a CGI context.
     print(json.dumps(rootObj))
 
     # Always return 0. If there was an error, an error code (the 'status' property) and message (the 'statusMsg' property) goes in the returned HTML.
