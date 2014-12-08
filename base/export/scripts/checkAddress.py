@@ -38,7 +38,6 @@ def SendMail(localName, domainName, confirmation):
         server.sendmail(fromAddr, toAddrs, msg)
         server.quit()
     except Exception as exc:
-        raise
         # If any exception happened, then the email message was not received.
         raise Exception('emailBadrecipient', 'Unable to send email message to address to confirm address.', RV_ERROR_MAIL)
 
@@ -70,12 +69,12 @@ if __name__ == "__main__":
                 else:
                     raise Exception('caArgs', 'Unrecognized program argument ' + key + '.', RV_ERROR_ARGS)
     
-        if 'dbuser' not in optD:
-            optD['dbuser'] = pwd.getpwuid(os.getuid())[0]
-
         drmsParams = DRMSParams()
         if drmsParams is None:
             raise Exception('drmsParams', 'Unable to locate DRMS parameters file (drmsparams.py).', RV_ERROR_PARAMS)
+
+        if 'dbuser' not in optD:
+            optD['dbuser'] = drmsParams.get('WEB_DBUSER')
 
         localName, domainName = optD['address'].split('@')
 
@@ -121,6 +120,9 @@ if __name__ == "__main__":
 
                                 cmd = 'INSERT INTO ' + optD['domaintab'] + '(domainid, domainname) VALUES(' + str(domainid) + ", '" + domainName.lower() + "')"
                                 cursor.execute(cmd)
+                            else:
+                                # The domain does exist.
+                                domainid = rows[0][0]
                     
                             # Insert a row into the addresses table.
                             starttime = datetime.now().strftime('%Y-%m-%d %T')
