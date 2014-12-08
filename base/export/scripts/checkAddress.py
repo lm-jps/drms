@@ -9,6 +9,7 @@ from __future__ import print_function
 import sys
 import os
 import pwd
+import re
 import uuid
 from datetime import datetime
 import smtplib
@@ -20,10 +21,11 @@ from drmsparams import DRMSParams
 
 # Return values
 RV_ERROR = -1
-RV_ERROR_MAIL = -2
-RV_ERROR_PARAMS = -3
-RV_ERROR_DBCMD = -4
-RV_ERROR_DBCONNECT = -5
+RV_ERROR_ARGS = -2
+RV_ERROR_MAIL = -3
+RV_ERROR_PARAMS = -4
+RV_ERROR_DBCMD = -5
+RV_ERROR_DBCONNECT = -6
 RV_REGISTRATIONPENDING = 1
 RV_REGISTEREDADDRESS = 2
 
@@ -65,10 +67,20 @@ if __name__ == "__main__":
                 elif key in ('domaintab'):
                     optD['domaintab'] = val
                 elif key in ('dbuser'):
-                    optD['dbuser'] = val
+                    optD['dbuser'] = val # The only option argument
                 else:
                     raise Exception('caArgs', 'Unrecognized program argument ' + key + '.', RV_ERROR_ARGS)
     
+        # Ensure required arguments are present.
+        if 'address' not in optD or 'addresstab' not in optD or 'domaintab' not in optD:
+            raise Exception('caArgs', 'Missing required argument.', RV_ERROR_ARGS)
+    
+        # Do a quick validation on the email address.
+        regExp = re.compile(r'\s*[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,6}')
+        matchObj = regExp.match(optD['address'])
+        if matchObj is None:
+            raise Exception('caArgs', 'Not a valid email address.', RV_ERROR_ARGS)
+
         drmsParams = DRMSParams()
         if drmsParams is None:
             raise Exception('drmsParams', 'Unable to locate DRMS parameters file (drmsparams.py).', RV_ERROR_PARAMS)
