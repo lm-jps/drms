@@ -1164,12 +1164,17 @@ static int PrintSegInfo(int *col, DRMS_Record_t *rec, char **segs, int nsegs, in
                     else
                     {
                         // Since we called drms_stage_records() with the retrieve flag, if rec_seg_iseg->record->su == NULL, then
-                        // an SU with *su->sudir == '\*' will have been cached, so there will be no SUM_get() called. Instead
+                        // an SU with *su->sudir == '\0' will have been cached, so there will be no SUM_get() called. Instead
                         // path will be set to the empty string.
                         stat = drms_record_directory(rec_seg_iseg->record, path, 1);
                     }
                     
-                    if (stat) strcpy(path,"**_NO_sudir_**");
+                    if (stat || *path == '\0') 
+                    {
+                       // If there is no path, that means that the SU is offline or doesn't exit and retrieve == 0, or the SU doesn't
+                       // exist and retrieve == 1.
+                       strcpy(path,"**_NO_sudir_**");
+                    }
                 }
                 else
                 {
@@ -1177,7 +1182,7 @@ static int PrintSegInfo(int *col, DRMS_Record_t *rec, char **segs, int nsegs, in
                     strcpy(path,"");
                 }
                 
-                // I guess this is just be base name of the file (no path leading to directory containing the file).
+                // I guess this is just the base name of the file (no path leading to directory containing the file).
                 strncpy(fname, rec_seg_iseg->filename, DRMS_MAXPATHLEN);
             }
             else
@@ -1310,10 +1315,13 @@ static int PrintSegInfo(int *col, DRMS_Record_t *rec, char **segs, int nsegs, in
                      stat=drms_record_directory (rec, path, 0);
                 else
                     stat=drms_record_directory (rec, path, 1);
+                if (stat)
+                  strcpy(path,"**_NO_sudir_**");
             }
-            
-            if (stat)
-                strcpy(path,"**_NO_sudir_**");
+            else
+            {
+               strcpy(path,"**_NO_sudir_**");
+            }
         }
         
         if (keyword_list)
