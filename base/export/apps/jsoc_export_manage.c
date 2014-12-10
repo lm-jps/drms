@@ -582,7 +582,32 @@ static void make_qsub_call(char *requestid, /* like JSOC_20120906_199_IN*/
   fprintf(fp, "  if ($WAITCOUNT <= 0) then\n    set DRMS_ERROR = -1\n    break\n  endif\n");
   fprintf(fp, "  sleep 1\nend \n");
       
-  fprintf(fp, "set Notify=%s\n", (notify ? notify : "0"));
+  /* Reject email addresses with spaces and quotes in them (they are invalid any way). */
+  char notifyStr[512] = {0};
+  int ich;
+
+  if (notify)
+  {
+     for (ich = 0; ich < strlen(notify); ich++)
+     {
+        if (notify[ich] == '\'' || notify[ich] == '"' || notify[ich] == ' ' || notify[ich] == '\t')
+        {
+           snprintf(notifyStr, sizeof(notifyStr), "0");
+           break;
+        }
+     }
+
+     if (!*notifyStr)
+     {
+        snprintf(notifyStr, sizeof(notifyStr), notify);
+     }
+  }
+  else
+  {
+     snprintf(notifyStr, sizeof(notifyStr), "0");
+  }
+
+  fprintf(fp, "set Notify=%s\n", notifyStr);
   fprintf(fp, "set REQDIR = `show_info JSOC_DBHOST=%s -q -p 'jsoc.export[%s]' %s`\n", dbexporthost, requestid, dbids);
   fprintf(fp, "if ($DRMS_ERROR) then\n");
       fprintf(fp, "  set_info -C JSOC_DBHOST=%s  ds='jsoc.export[%s]' Status=4 %s\n", dbexporthost, requestid, dbids);
