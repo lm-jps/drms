@@ -65,6 +65,8 @@ if __name__ == "__main__":
         # via STDIN, and they will no longer be available to any program called by this script.
         arguments = cgi.FieldStorage()
         
+        optD['checkonly'] = False
+        
         if arguments:
             for key in arguments.keys():
                 val = arguments.getvalue(key)
@@ -79,9 +81,7 @@ if __name__ == "__main__":
                     optD['dbuser'] = val
                 elif key in ('checkonly'):
                     if int(val) == 1:
-                        optD['checkonly'] = True
-                    else:
-                        optD['checkonly'] = False
+                        optD['checkonly'] = True        
                 else:
                     raise Exception('caArgs', 'Unrecognized program argument ' + key + '.', RV_ERROR_ARGS)
     
