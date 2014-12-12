@@ -5,6 +5,13 @@
 # by simply running on the command line with a single argument that is equivalent to an HTTP GET parameter string
 # (e.g., address=gimli@mithril.com&addresstab=jsoc.export_addresses&domaintab=jsoc.export_addressdomains).
 
+# Parameters:
+#   address (required) - The email address to check or register.
+#   addresstab (required) - The database table containing all registered (or registration-pending) email addresses.
+#   domaintab (required) - The database table containing all email domains.
+#   dbuser (optional) - The database account to be used when connecting to the database. The default is the value of the WEB_DBUSER parameter in DRMSParams.
+#   checkonly (optional) - If set to 1, then no attept is made to register an unregistered email. In this case, if no error occurs then the possible return status codes are RV_REGISTEREDADDRESS, RV_REGISTRATIONPENDING, or RV_UNREGISTEREDADDRESS. The default is False (unknown addresses are registered).
+
 from __future__ import print_function
 import sys
 import os
@@ -29,6 +36,8 @@ RV_ERROR_DBCONNECT = -6
 RV_REGISTRATIONINITIATED = 1
 RV_REGISTEREDADDRESS = 2
 RV_REGISTRATIONPENDING = 3
+RV_UNREGISTEREDADDRESS = 4
+
 def SendMail(localName, domainName, confirmation):
     subject = 'CONFIRM EXPORT ADDRESS [' + str(confirmation) + ']'
     fromAddr = 'jsoc@solarpost.stanford.edu'
@@ -67,7 +76,12 @@ if __name__ == "__main__":
                 elif key in ('domaintab'):
                     optD['domaintab'] = val
                 elif key in ('dbuser'):
-                    optD['dbuser'] = val # The only option argument
+                    optD['dbuser'] = val
+                elif key in ('checkonly'):
+                    if int(val) == 1:
+                        optD['checkonly'] = True
+                    else:
+                        optD['checkonly'] = False
                 else:
                     raise Exception('caArgs', 'Unrecognized program argument ' + key + '.', RV_ERROR_ARGS)
     
@@ -105,48 +119,54 @@ if __name__ == "__main__":
                         raise Exception('dbCmd', exc.diag.message_primary, RV_ERROR_DBCMD)
                     
                     if len(rows) == 0:
-                        # Email address is not in our database. Register it.
-                        # Send an email message out with a new confirmation code.
-                        confirmation = uuid.uuid4()
-                        SendMail(localName, domainName, confirmation)
-                
-                        # Insert a row in the domain table, if the domain does not exist.
-                        cmd = 'SELECT domainid FROM ' + optD['domaintab'] + " WHERE lower(domainname) = '" + domainName.lower() + "'"
-                        
-                        try:
-                            cursor.execute(cmd)
-                            rows = cursor.fetchall()
-                            if len(rows) > 1:
-                                raise Exception('dbCorruption', 'Unexpected number of rows returned: ' + cmd + '.', RV_ERROR_DBCMD)
+                        # Email address is not in our database. 
+                        if optD['checkonly']:
+                            # Do not initiate registration.
+                            rv = RV_UNREGISTEREDADDRESS
+                            msg = 'Email address has neither been vaidated nor registered.'
+                        else:
+                            # Register it.
+                            confirmation = uuid.uuid4()
+                            # Send an email message out with a new confirmation code.
+                            SendMail(localName, domainName, confirmation)
                     
-                            if len(rows) == 0:
-                                # The domain does not exist. Add the domain.
-                                # Get next item in sequence.
-                                cmd = "SELECT nextval('" + optD['domaintab'] + "_seq')"
+                            # Insert a row in the domain table, if the domain does not exist.
+                            cmd = 'SELECT domainid FROM ' + optD['domaintab'] + " WHERE lower(domainname) = '" + domainName.lower() + "'"
+                            
+                            try:
                                 cursor.execute(cmd)
                                 rows = cursor.fetchall()
                                 if len(rows) > 1:
                                     raise Exception('dbCorruption', 'Unexpected number of rows returned: ' + cmd + '.', RV_ERROR_DBCMD)
-                                
-                                domainid = rows[0][0]
+                        
+                                if len(rows) == 0:
+                                    # The domain does not exist. Add the domain.
+                                    # Get next item in sequence.
+                                    cmd = "SELECT nextval('" + optD['domaintab'] + "_seq')"
+                                    cursor.execute(cmd)
+                                    rows = cursor.fetchall()
+                                    if len(rows) > 1:
+                                        raise Exception('dbCorruption', 'Unexpected number of rows returned: ' + cmd + '.', RV_ERROR_DBCMD)
+                                    
+                                    domainid = rows[0][0]
 
-                                cmd = 'INSERT INTO ' + optD['domaintab'] + '(domainid, domainname) VALUES(' + str(domainid) + ", '" + domainName.lower() + "')"
+                                    cmd = 'INSERT INTO ' + optD['domaintab'] + '(domainid, domainname) VALUES(' + str(domainid) + ", '" + domainName.lower() + "')"
+                                    cursor.execute(cmd)
+                                else:
+                                    # The domain does exist.
+                                    domainid = rows[0][0]
+                        
+                                # Insert a row into the addresses table.
+                                starttime = datetime.now().strftime('%Y-%m-%d %T')
+            
+                                cmd = 'INSERT INTO ' + optD['addresstab'] + "(localname, domainid, confirmation, starttime) VALUES('" + localName + "', " + str(domainid) + ", '" + str(confirmation) + "', '" + starttime + "')"
                                 cursor.execute(cmd)
-                            else:
-                                # The domain does exist.
-                                domainid = rows[0][0]
+                            except psycopg2.Error as exc:
+                                # Handle database-command errors.
+                                raise Exception('dbCmd', exc.diag.message_primary, RV_ERROR_DBCMD)
                     
-                            # Insert a row into the addresses table.
-                            starttime = datetime.now().strftime('%Y-%m-%d %T')
-        
-                            cmd = 'INSERT INTO ' + optD['addresstab'] + "(localname, domainid, confirmation, starttime) VALUES('" + localName + "', " + str(domainid) + ", '" + str(confirmation) + "', '" + starttime + "')"
-                            cursor.execute(cmd)
-                        except psycopg2.Error as exc:
-                            # Handle database-command errors.
-                            raise Exception('dbCmd', exc.diag.message_primary, RV_ERROR_DBCMD)
-                
-                        rv = RV_REGISTRATIONINITIATED
-                        msg = 'Email address is not registered. Starting registration process. You will receive an email address from user jsoc. Please reply to this email message without modifying the subject. The body will be ignored.'
+                            rv = RV_REGISTRATIONINITIATED
+                            msg = 'Email address is not registered. Starting registration process. You will receive an email address from user jsoc. Please reply to this email message without modifying the subject. The body will be ignored.'
                     else:
                         # Email address is in our database. Check to see if registration is pending.
                         confirmation = rows[0][0]
