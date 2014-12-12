@@ -82,9 +82,9 @@ if __name__ == "__main__":
                 elif key in ('checkonly'):
                     if int(val) == 1:
                         optD['checkonly'] = True
-                else:
-                    raise Exception('caArgs', 'Unrecognized program argument ' + key + '.', RV_ERROR_ARGS)
-    
+                # Do not worry about extraneous arguments. I had to add a 'sleep' argument to the shell wrapper, but I do not
+                # know how to strip arguments in shell.
+
         # Ensure required arguments are present.
         if 'address' not in optD or 'addresstab' not in optD or 'domaintab' not in optD:
             raise Exception('caArgs', 'Missing required argument.', RV_ERROR_ARGS)
