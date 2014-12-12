@@ -26,9 +26,9 @@ RV_ERROR_MAIL = -3
 RV_ERROR_PARAMS = -4
 RV_ERROR_DBCMD = -5
 RV_ERROR_DBCONNECT = -6
-RV_REGISTRATIONPENDING = 1
+RV_REGISTRATIONINITIATED = 1
 RV_REGISTEREDADDRESS = 2
-
+RV_REGISTRATIONPENDING = 3
 def SendMail(localName, domainName, confirmation):
     subject = 'CONFIRM EXPORT ADDRESS [' + str(confirmation) + ']'
     fromAddr = 'jsoc@solarpost.stanford.edu'
@@ -145,7 +145,7 @@ if __name__ == "__main__":
                             # Handle database-command errors.
                             raise Exception('dbCmd', exc.diag.message_primary, RV_ERROR_DBCMD)
                 
-                        rv = RV_REGISTRATIONPENDING
+                        rv = RV_REGISTRATIONINITIATED
                         msg = 'Email address is not registered. Starting registration process. You will receive an email address from user jsoc. Please reply to this email message without modifying the subject. The body will be ignored.'
                     else:
                         # Email address is in our database. Check to see if registration is pending.
@@ -177,7 +177,7 @@ if __name__ == "__main__":
         else:
             raise # Re-raise
 
-    if rv != RV_REGISTEREDADDRESS and rv != RV_REGISTRATIONPENDING:
+    if rv != RV_REGISTRATIONINITIATED and rv != RV_REGISTEREDADDRESS and rv != RV_REGISTRATIONPENDING:
         if msg is None:
             msg = 'Unknown error'
 
