@@ -19,7 +19,7 @@ import pwd
 import re
 import uuid
 from datetime import datetime
-from urlparse import unquote
+from urllib import unquote
 import smtplib
 import cgi
 import json
@@ -85,6 +85,9 @@ if __name__ == "__main__":
                         optD['checkonly'] = True
                 # Do not worry about extraneous arguments. I had to add a 'sleep' argument to the shell wrapper, but I do not
                 # know how to strip arguments in shell.
+                
+                print('add is ' + optD['address'])
+                sys.exit(1)
 
         # Ensure required arguments are present.
         if 'address' not in optD or 'addresstab' not in optD or 'domaintab' not in optD:
