@@ -19,6 +19,7 @@ import pwd
 import re
 import uuid
 from datetime import datetime
+from urlparse import unquote
 import smtplib
 import cgi
 import json
@@ -72,7 +73,7 @@ if __name__ == "__main__":
                 val = arguments.getvalue(key)
                 
                 if key in ('address'):
-                    optD['address'] = val
+                    optD['address'] = unquote(val)
                 elif key in ('addresstab'):
                     optD['addresstab'] = val
                 elif key in ('domaintab'):
