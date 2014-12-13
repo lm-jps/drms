@@ -84,10 +84,7 @@ if __name__ == "__main__":
                     if int(val) == 1:
                         optD['checkonly'] = True
                 # Do not worry about extraneous arguments. I had to add a 'sleep' argument to the shell wrapper, but I do not
-                # know how to strip arguments in shell.
-                
-                print('add is ' + optD['address'])
-                sys.exit(1)
+                # know how to strip arguments in shell.                
 
         # Ensure required arguments are present.
         if 'address' not in optD or 'addresstab' not in optD or 'domaintab' not in optD:
