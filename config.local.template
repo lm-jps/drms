@@ -272,6 +272,7 @@ WL_FILE                               /usr/share/drms/whitelist.txt
 
 # The paths to various binaries.
 BIN_EXPORT                            /home/jsoc/cvs/Development/JSOC/bin
+SCRIPTS_EXPORT                        /home/jsoc/cvs/Development/JSOC/scripts
 BIN_PY                                /usr/bin/python
 ###############################
 

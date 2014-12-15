@@ -60,4 +60,5 @@ RS_BINPATH                 q:RS_BINPATH
 WL_HASWL                   a:WL_HASWL
 WL_FILE                    q:WL_FILE
 BIN_EXPORT                 q:BIN_EXPORT
+SCRIPTS_EXPORT                 q:SCRIPTS_EXPORT
 BIN_PY                     q:BIN_PY
