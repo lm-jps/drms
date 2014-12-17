@@ -1750,7 +1750,15 @@ int drms_su_setretention(DRMS_Env_t *env, int16_t newRetention, int nsus, long l
                 request->reqcnt = szChunk;
                 
                 /* If a requested SU is offline, bring it online and set its retention. */
-                request->mode = RETRIEVE + TOUCH;
+                if (newRetention != 0)
+                {
+                    request->mode = RETRIEVE + TOUCH;
+                }
+                else
+                {
+                    request->mode = NORETRIEVE + TOUCH;
+                }
+
                 request->dontwait = 0;
                 /* newRetention can be positive or negative. A positive number will potentially result in a decrease of the
                  * retention value. */
