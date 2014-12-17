@@ -64,6 +64,10 @@ if __name__ == "__main__":
         
         # Should be invoked as an HTTP POST. If this script is invoked via HTTP POST, then FieldStorage() will consume the arguments passed
         # via STDIN, and they will no longer be available to any program called by this script.
+    
+        # I think I finally figured it out. cgi.FieldStorage() uses the REQUEST_METHOD environment variable to determine if the 
+        # arguments are from STDIN or in QUERY_STRING (if it exists) / sys.argv[1]. If REQUEST_METHOD is not set, then it gets
+        # the args from QUERY_STRING/sys.argv[1]. If REQUEST_METHOD is set, then it uses stdin.
         arguments = cgi.FieldStorage()
         
         optD['checkonly'] = False
@@ -71,7 +75,7 @@ if __name__ == "__main__":
         if arguments:
             for key in arguments.keys():
                 val = arguments.getvalue(key)
-                
+
                 if key in ('address'):
                     optD['address'] = unquote(val)
                 elif key in ('addresstab'):
@@ -89,7 +93,7 @@ if __name__ == "__main__":
         # Ensure required arguments are present.
         if 'address' not in optD or 'addresstab' not in optD or 'domaintab' not in optD:
             raise Exception('caArgs', 'Missing required argument.', RV_ERROR_ARGS)
-    
+
         # Do a quick validation on the email address.
         regExp = re.compile(r'\s*[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,6}')
         matchObj = regExp.match(optD['address'])
