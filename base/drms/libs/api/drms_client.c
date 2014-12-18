@@ -2461,14 +2461,18 @@ int drms_client_isproduser(DRMS_Env_t *env, int *status)
         }
         else
         {
-            tabexists = TableExists(env->session, schema, table);
-            
-            if (tabexists == -1)
+            snprintf(query, sizeof(query), "SELECT n.nspname, c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = '%s' AND c.relname = '%s';", schema, table);
+            if ((qres = db_query_txt(dbh, query)) != NULL)
             {
-                fprintf(stderr, "Unexpected database response to query '%s'.\n", query);
-                istat = DRMS_ERROR_BADDBQUERY;
+                if (qres->num_rows > 0)
+                {
+                   tabexists = 1;
+                }
+
+                db_free_text_result(qres);
+                qres = NULL;
             }
-            
+
             free(schema);
             free(table);
         }
