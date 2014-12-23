@@ -971,6 +971,13 @@ static char *GetExistReqID(DRMS_Env_t *env, const char *dsquery, const char *fil
      * find an existing export and the new export will be processed. And then if there is a third attempt to perform an identical export,
      * the previous export will be used, and the third attempt will be skipped. So, there is always just one valid identical export, at most, 
      * in the specified time window. */
+
+    /* Check for the allowed forms of final record all of which are not repeated requests in most cases.  Allow these. */
+    char *bracket = strchr(dsquery, '[');
+    if (bracket && (strncmp(bracket,"[$]",3) == 0 || strncmp(bracket, "[:$]",4) == 0 || strncmp(bracket,"[:#$]",5) == 0))
+        return id;
+
+    
     snprintf(cmd, sizeof(cmd), "SELECT requestid, filenamefmt, processing, protocol, method, sunum, esttime, size, status FROM %s WHERE recnum = (SELECT max(recnum) AS recnum FROM %s WHERE requestid = (SELECT requestid FROM %s WHERE reqtime > %lf AND dataset ILIKE '%%%s%%' ORDER BY requestid DESC LIMIT 1))", kExportSeries, kExportSeries, kExportSeries, beginWindow, dsquery);
     
     if ((tres = drms_query_txt(drms_env->session, cmd)) != NULL && tres->num_rows == 1 && tres->num_cols == 9)
