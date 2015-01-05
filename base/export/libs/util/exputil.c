@@ -333,3 +333,203 @@ ExpUtlStat_t exputl_mk_expfilename(DRMS_Segment_t *srcseg,
 
    return ret;
 }
+
+// Code from jsoc_manage_cgibin_handles. It is not easy to choose x86_64 vs. avx in a CGI context, and jsoc_info had assumed everything was x86_64.
+// Instead, port the code here (there wasn't that much of it) so that jsoc_info has access to the needed functions built for the correct
+// architecture.
+#define HANDLE_FILE "/home/jsoc/exports/Web_request_handles"
+
+static FILE *lock_open(const char *filename)
+{
+    int sleeps;
+    char lockfile[1024];
+
+    snprintf(lockfile, sizeof(lockfile), "%s.lck", filename);
+    
+    FILE *fp = fopen(lockfile, "w");
+    if (!fp)
+    {
+        fprintf(stderr, "Failed to open file for locking %s.\n", lockfile);
+        return NULL;
+    }
+    
+    for (sleeps=0; lockf(fileno(fp), F_TLOCK, 0); sleeps++)
+    {
+        if (sleeps >= 300)
+        {
+            fprintf(stderr,"Lock on %s failed.\n", lockfile);
+            return NULL;
+        }
+        sleep(1);
+    }
+    
+    return(fp);
+}
+
+static lock_close(FILE *fp)
+{
+    lockf(fileno(fp), F_ULOCK, 0);
+    fclose(fp);
+}
+
+ExpUtlStat_t exputl_manage_cgibin_handles_add_proc_handle(const char *file, const char *handle, pid_t pid)
+{
+    FILE *fp = NULL;
+    FILE *fp_lock = NULL;
+    
+    fp_lock = lock_open(file);
+    if (!fp_lock)
+    {
+        return kExpUtlStat_ManageHandles;
+    }
+    
+    fp = fopen(file, "a");
+    if (!fp)
+    {
+        fprintf(stderr, "Failed to open %s file.\n", file);
+        return kExpUtlStat_ManageHandles;
+    }
+    
+    fprintf(fp, "%s\t%d\n", handle, pid);
+    fclose(fp);
+    lock_close(fp_lock);
+    return kExpUtlStat_Success;
+}
+
+char *exputl_manage_cgibin_handles_lookup_proc_handle(const char *file, const char *handle)
+{
+    FILE *fp = NULL;
+    FILE *fp_lock = NULL;
+    char PID[128];
+    char HANDLE[128];
+    char *pid = NULL;
+    
+    fp_lock = lock_open(file);
+    if (!fp_lock)
+    {
+        return NULL;
+    }
+    
+    fp = fopen(file, "r");
+    if (!fp)
+    {
+        fprintf(stderr, "Failed to open %s file.\n", file);
+        return NULL;
+    }
+    
+    while (fscanf(fp, "%s\t%s\n", HANDLE, PID) == 2)
+    {
+        if (strcmp(handle, HANDLE) == 0)
+        {
+            pid = strdup(PID);
+            break;
+        }
+    }
+    
+    fclose(fp);
+    lock_close(fp_lock);
+    return pid;
+}
+
+ExpUtlStat_t exputl_manage_cgibin_handles_delete_proc_handle(const char *file, const char *handle)
+{
+    FILE *fp = NULL;
+    FILE *fp_lock = NULL;
+    char cmd[1024];
+    
+    fp_lock = lock_open(file);
+    if (!fp_lock)
+    {
+        return kExpUtlStat_ManageHandles;
+    }
+    
+    sprintf(cmd, "ed -s %s <<END\ng/^%s\t/d\nwq\nEND\n", file, handle);
+    system(cmd);
+    lock_close(fp_lock);
+    return kExpUtlStat_Success;
+}
+
+ExpUtlStat_t exputl_manage_cgibin_handles_edit_proc_handles(const char *file)
+{
+    FILE *fp = NULL;
+    FILE *fp_lock = NULL;
+    char cmd[1024];
+    
+    fp_lock = lock_open(file);
+    if (!fp_lock)
+    {
+        return kExpUtlStat_ManageHandles;
+    }
+    
+    sprintf(cmd, "vi %s\n", file);
+    system(cmd);
+    lock_close(fp_lock);
+    return kExpUtlStat_Success;
+}
+
+ExpUtlStat_t exputl_manage_cgibin_handles(const char *op, const char *handle, pid_t pid, const char *file)
+{
+    int op_add = 0;
+    int op_delete = 0;
+    int op_edit = 0;
+    int op_lookup = 0;
+
+    if (!op)
+    {
+        fprintf(stderr, "No operation provided.\n");
+        return kExpUtlStat_ManageHandles;
+    }
+    else if (strlen(op) != 1)
+    {
+        fprintf(stderr, "Invalid operation: %s\n", op);
+        return kExpUtlStat_ManageHandles;
+    }
+    else
+    {
+        if (!file || *file == '\0')
+        {
+            file = HANDLE_FILE;
+        }
+        
+        op_add = (*op == 'a');
+        op_delete = (*op == 'd');
+        op_edit = (*op == 'e');
+        op_lookup = (*op == 'l');
+        
+        if (!op_edit && !handle)
+        {
+            fprintf(stderr, "handle must be provided.\n");
+            return kExpUtlStat_ManageHandles;
+        }
+        
+        if (op_add)
+        {
+            return exputl_manage_cgibin_handles_add_proc_handle(file, handle, pid);
+        }
+        
+        if (op_lookup)
+        {
+            char *pid = exputl_manage_cgibin_handles_lookup_proc_handle(file, handle);
+            
+            if (pid)
+            {
+                printf("%s\n", pid);
+            }
+            
+            fflush(stdout);
+            return kExpUtlStat_Success;
+        }
+        
+        if (op_delete)
+        {
+            return exputl_manage_cgibin_handles_delete_proc_handle(file, handle);
+        }
+        
+        if (op_edit)
+        {
+            return exputl_manage_cgibin_handles_edit_proc_handles(file);
+        }
+    }
+    
+    return kExpUtlStat_Success;
+}
