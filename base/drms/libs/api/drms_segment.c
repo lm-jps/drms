@@ -2715,3 +2715,68 @@ int drms_segment_segsmatch(const DRMS_Segment_t *s1, const DRMS_Segment_t *s2)
    return ret;
 }
 
+static DRMS_Segment_t *TemplateSegFollowLink(DRMS_Segment_t *srcseg, int depth, int *statret)
+{
+    int status = DRMS_SUCCESS;
+    DRMS_Link_t *link = NULL;
+    DRMS_Record_t *linktempl = NULL;
+    DRMS_Segment_t *tgtseg = NULL;
+    
+    /* Fetch link struct. */
+    link = (DRMS_Link_t *)hcon_lookup_lower(&srcseg->record->links, srcseg->info->linkname);
+    if (link)
+    {
+        linktempl = drms_template_record(srcseg->record->env, link->info->target_series, &status);
+        
+        if (linktempl)
+        {
+            tgtseg = (DRMS_Segment_t *)hcon_lookup_lower(&linktempl->segments, srcseg->info->target_seg);
+            
+            if (tgtseg)
+            {
+                if (tgtseg->info->islink)
+                {
+                    if (depth < DRMS_MAXLINKDEPTH)
+                    {
+                        tgtseg = TemplateSegFollowLink(tgtseg, depth + 1, statret);
+                    }
+                    else
+                    {
+                        fprintf(stderr,
+                                "WARNING: Max link depth exceeded for segment '%s' in series '%s'.\n",
+                                srcseg->info->name,
+                                link->info->target_series);
+                    }
+                }
+            }
+            else
+            {
+                if (statret)
+                {
+                    *statret = DRMS_ERROR_UNKNOWNSEGMENT;
+                }
+            }
+        }
+        else
+        {
+            if (statret)
+            {
+                *statret = DRMS_ERROR_UNKNOWNSERIES;
+            }
+        }
+    }
+    else
+    {
+        if (statret)
+        {
+            *statret = DRMS_ERROR_UNKNOWNLINK;
+        }
+    }
+    
+    return tgtseg;
+}
+
+DRMS_Segment_t *drms_template_segment_followlink(DRMS_Segment_t *srcseg, int *statret)
+{
+    return TemplateSegFollowLink(srcseg, 0, statret);
+}

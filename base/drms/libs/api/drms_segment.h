@@ -477,6 +477,8 @@ static inline int drms_segment_ranksort(const void *he1, const void *he2)
    return (s1->info->segnum < s2->info->segnum) ? -1 : (s1->info->segnum > s2->info->segnum ? 1 : 0);
 }
 
+DRMS_Segment_t *drms_template_segment_followlink(DRMS_Segment_t *srcseg, int *statret);
+
 #endif
 
 
