@@ -79,6 +79,7 @@ show_info
 #include <sys/types.h>
 #include <unistd.h>
 #include "printk.h"
+#include "exputil.h"
 
 static char x2c (char *what)
   {
@@ -180,6 +181,7 @@ ModuleArgs_t module_args[] =
   {ARG_STRING, "link", "Not Specified", "<comma delimited linkname list>, links or special values: **ALL**, **NONE**"},
   {ARG_STRING, "seg", "Not Specified", "<comma delimited segment list>, segnames or special values: **ALL**, **NONE** "},
   {ARG_STRING, "userhandle", "Not Specified", "Unique request identifier to allow possible user kill of this program."},
+    {ARG_FLAG, "l", NULL, "Follow links to linked segments."},
   {ARG_INT, "n", "0", "RecordSet Limit"},
   {ARG_FLAG, "h", "0", "help - show usage"},
   {ARG_FLAG, "R", "0", "Show record query"},
@@ -297,7 +299,7 @@ char * string_to_json(char *in)
   }
 
 
-static void list_series_info(DRMS_Env_t *drms_env, DRMS_Record_t *rec, json_t *jroot)
+static void list_series_info(DRMS_Env_t *drms_env, DRMS_Record_t *rec, json_t *jroot, int followLinks)
   {
   DRMS_Keyword_t *key;
   DRMS_Segment_t *seg;
@@ -489,11 +491,25 @@ if (DEBUG) fprintf(stderr," done with keywords, start segments\n");
        }
 
       while ((seg = drms_record_nextseg(rec, &last, 0)))
-      { /* segment name, units, protocol, dims, description */
+      {
+          if (followLinks)
+          {
+              /* Since rec is a template record, cannot follow links in the ordinary manner. Use this function - it finds the template
+               * segment of the series linked to. */
+              int lnkstat = DRMS_SUCCESS;
+              
+              seg = drms_template_segment_followlink(seg, &lnkstat);
+              if (lnkstat)
+              {
+                  continue;
+              }
+          }
+          
+          /* segment name, units, protocol, dims, description */
       json_t *seginfo = json_new_object();
       int naxis = seg->info->naxis;
       json_insert_pair_into_object(seginfo, "name", json_new_string(seg->info->name));
-      if (seg->info->islink)
+      if (!followLinks && seg->info->islink)
 	    {
             char linkinfo[DRMS_MAXNAMELEN+10];
 	    sprintf(linkinfo, "link via %s", seg->info->linkname);
@@ -701,21 +717,18 @@ if (status != JSON_OK) fprintf(stderr, "json_insert_pair_into_object, status=%d,
   return 0;
   }
 
-# define MANAGE_HANDLES "/home/jsoc/cvs/Development/JSOC/bin/linux_x86_64/jsoc_manage_cgibin_handles"
-
 manage_userhandle(int register_handle, const char *handle)
   {
   char cmd[1024];
   if (register_handle) // add handle and PID to current processing table
     {
     long PID = getpid();
-    sprintf(cmd,"%s -a handle=%s pid=%ld", MANAGE_HANDLES, handle, PID);
-    system(cmd);
+        
+        exputl_manage_cgibin_handles("a", handle, PID, NULL);
     }
   else if (handle && *handle) // remove handle from current processing table
     {
-    sprintf(cmd,"%s -d handle=%s", MANAGE_HANDLES, handle);
-    system(cmd);
+        exputl_manage_cgibin_handles("d", handle, -1, NULL);
     }
   }
 
@@ -831,6 +844,7 @@ int DoIt(void)
   const char *Remote_Address;
   const char *Server;
   const char *userhandle;
+      int followLinks = 0;
   int from_web, keys_listed, segs_listed, links_listed;
   int max_recs = 0;
   struct timeval thistv;
@@ -878,6 +892,7 @@ int DoIt(void)
   segs_listed = strcmp (seglist, "Not Specified");
   links_listed = strcmp (linklist, "Not Specified");
   userhandle = cmdparams_get_str (&cmdparams, "userhandle", NULL);
+      followLinks = cmdparams_isflagset(&cmdparams, "l");
   Remote_Address = cmdparams_get_str(&cmdparams, "REMOTE_ADDR", NULL);
   Server = cmdparams_get_str(&cmdparams, "SERVER_NAME", NULL);
 
@@ -922,7 +937,7 @@ wantowner = cmdparams_get_int (&cmdparams, "o", NULL);
             JSONDIE("series not found");
         
     jroot = json_new_object();
-    list_series_info(drms_env, rec, jroot);
+    list_series_info(drms_env, rec, jroot, followLinks);
     if (get_series_stats(rec, jroot) == DRMS_ERROR_QUERYFAILED)
     {
        const char *emsg = DB_GetErrmsg(drms_env->session->db_handle);
@@ -1211,7 +1226,22 @@ wantowner = cmdparams_get_int (&cmdparams, "o", NULL);
           HIterator_t *last = NULL;
 
           while ((seg = drms_record_nextseg(template, &last, 0)))
-            segs[nsegs++] = strdup (seg->info->name);
+          {
+              if (followLinks)
+              {
+                  /* Since rec is a template record, cannot follow links in the ordinary manner. Use this function - it finds the template
+                   * segment of the series linked to. */
+                  int lnkstat = DRMS_SUCCESS;
+                  
+                  seg = drms_template_segment_followlink(seg, &lnkstat);
+                  if (lnkstat)
+                  {
+                      continue;
+                  }
+              }
+              
+              segs[nsegs++] = strdup (seg->info->name);
+          }
 
           if (last)
           {
