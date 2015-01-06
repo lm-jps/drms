@@ -490,8 +490,12 @@ if (DEBUG) fprintf(stderr," done with keywords, start segments\n");
           hiter_destroy(&last);
        }
 
+      DRMS_Segment_t *oseg = NULL; /* Original seg. */
+        
       while ((seg = drms_record_nextseg(rec, &last, 0)))
       {
+          oseg = seg;
+          
           if (followLinks)
           {
               /* Since rec is a template record, cannot follow links in the ordinary manner. Use this function - it finds the template
@@ -508,7 +512,9 @@ if (DEBUG) fprintf(stderr," done with keywords, start segments\n");
           /* segment name, units, protocol, dims, description */
       json_t *seginfo = json_new_object();
       int naxis = seg->info->naxis;
-      json_insert_pair_into_object(seginfo, "name", json_new_string(seg->info->name));
+          
+      /* ART - Use original segment name (I'm not certain if this is the right name to use). */
+      json_insert_pair_into_object(seginfo, "name", json_new_string(oseg->info->name));
       if (!followLinks && seg->info->islink)
 	    {
             char linkinfo[DRMS_MAXNAMELEN+10];
@@ -1224,9 +1230,12 @@ wantowner = cmdparams_get_int (&cmdparams, "o", NULL);
 	  {
           DRMS_Segment_t *seg;
           HIterator_t *last = NULL;
+          DRMS_Segment_t *oseg = NULL;
 
           while ((seg = drms_record_nextseg(template, &last, 0)))
           {
+              oseg = seg; /* Original seg. */
+              
               if (followLinks)
               {
                   /* Since rec is a template record, cannot follow links in the ordinary manner. Use this function - it finds the template
@@ -1240,7 +1249,8 @@ wantowner = cmdparams_get_int (&cmdparams, "o", NULL);
                   }
               }
               
-              segs[nsegs++] = strdup (seg->info->name);
+              /* ART - Use original segment name (I'm not certain if this is the right name to use). */
+              segs[nsegs++] = strdup (oseg->info->name);
           }
 
           if (last)
