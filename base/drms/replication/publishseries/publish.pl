@@ -305,9 +305,11 @@ if ($rv == kSuccess)
                    if (defined($wl) && $wl)
                    {
                        # Add series to drms.allseries. The machine hosting the db is in the DRMS parameter SERVER (port - DRMSPGPORT,
-                       # dbname - DBNAME). The all-series series is assumed to be named 'drms.allseries'.
+                       # dbname - DBNAME). updateAllSeries.py will connect using these parameters. The all-series series is 
+                       # assumed to be named 'drms.allseries'. The db host, port, and name sento to updateAllSeries.py must be for the
+                       # slave db (since that is where we are creating a series during publication).
                        print "Getting series info for series $series...\n";
-                       @seriesInfo = GetSeriesInfo(\$mdbh, $cfg{'MASTERHOSTNAME'}, $cfg{'MASTERPORT'}, $cfg{'MASTERDBNAME'}, $series);
+                       @seriesInfo = GetSeriesInfo(\$mdbh, $cfg{'SLAVEHOSTNAME'}, $cfg{'SLAVEPORT'}, $cfg{'SLAVEDBNAME'}, $series);
                        
                        if ($#seriesInfo >= 0)
                        {

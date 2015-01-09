@@ -58,7 +58,10 @@ def getArgs(drmsParams):
     optD['seriesdbhost'] = args.seriesdbhost
     optD['seriesdbport'] = args.seriesdbport
     optD['seriesdbname'] = args.seriesdbname
-    optD['series'] = args.series.lower()
+    if 'series' in optD:
+        optD['series'] = args.series.lower()
+    else:
+        optD['series'] = None
     optD['info'] = args.info
 
     if optD['op'] == 'insert':
