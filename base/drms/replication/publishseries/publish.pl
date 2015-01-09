@@ -316,7 +316,7 @@ if ($rv == kSuccess)
                            
                            if (RunCmd($drmsParams->get('BIN_PY') . " $cfg{kScriptDir}/updateAllSeries.py op=insert --info='$info'", 1) != 0)
                            {
-                               print STDERR "Failure to insert series '$series' into drms.alleries.\n";
+                               print STDERR "Failure to insert series '$series' into drms.allseries.\n";
                                $rv = &kRunCmd;
                            }
                            else
