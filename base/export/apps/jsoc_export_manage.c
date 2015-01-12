@@ -2367,8 +2367,8 @@ static int GenExpFitsCmd(FILE *fptr,
       /* ART - multiple processing steps
        * Always use record limit, since we can no longer make the export commands processing-specific. */
       fprintf(fptr, "jsoc_export_as_fits JSOC_DBHOST=%s reqid='%s' expversion=%s rsquery='%s' n=%s path=$REQDIR ffmt='%s' "
-              "method='%s' protocol='%s' %s\n",
-              dbmainhost, requestid, PACKLIST_VER, dataset, RecordLimit, filenamefmt, method, protos[kProto_FITS], dbids);
+              "method='%s' protocol='%s' cparms='%s' %s\n",
+              dbmainhost, requestid, PACKLIST_VER, dataset, RecordLimit, filenamefmt, method, protos[kProto_FITS], cparms, dbids);
 
       GenErrChkCmd(fptr);
    }
@@ -3383,7 +3383,7 @@ int DoIt(void)
             fprintf(fp, "tar  chf ../%s.tar ./\n", requestid);
             fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
             /* Delete all files, except for the manifest files and the scripts, in the current directory (the slot dir). */
-            fprintf(fp, "find . -not -path . -not -name '%s.*' -not -name 'index.*' -print0 | xargs -0 -L 32 rm -rf\n", requestid);
+            fprintf(fp, "find . -not -path . -not -name '%s.*' -not -name 'index.*' -print0 | xargs -0 -L 32 rm -f\n", requestid);
             fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
             /* Move the tar file from the parent SU dir to the current directory (the slot dir). */
             fprintf(fp, "mv ../%s.tar .\n", requestid);

@@ -90,10 +90,10 @@ sub usage {
 }
 
 $host = `hostname -s`; chomp($host);
-if(!grep(/$host/, @allowhost)) {
-  print "Can only be run on host with dcs[0,1] mounts: @allowhost\n";
-  exit(0);
-}
+#if(!grep(/$host/, @allowhost)) {
+#  print "Can only be run on host with dcs[0,1] mounts: @allowhost\n";
+#  exit(0);
+#}
 
 while ($ARGV[0] =~ /^-/) {
   $_ = shift;
@@ -583,7 +583,7 @@ else {
 #!!TBD: use fsns instead of $orddate  NO! YES!
 #Note: did it by date and not fsn and never backfilled the prev day, so
 #change back to fsn. 19Jan2011
-$moddate = `/home/jsoc/cvs/Development/JSOC/bin/linux_x86_64/time_convert s=$sec`;
+$moddate = `time_convert s=$sec`;
 $pos = index($moddate, '_');
 $mdate = substr($moddate, 0, $pos);
 
@@ -630,7 +630,7 @@ else {
   print "**NG can't process definitive lev1 for $instru $orddate\n";
   $mail = "Mail -s \"Can't process def lev1 for $instru $orddate\"";
         #$to = "lev0_user";
-        $to = "jim";    #!!TEMP
+        $to = "thailand";    #!!TEMP
         $msg = "TEMP";
         $cmd = "echo \"Def lev1 preconditions not meet\" | $mail $to";
         system $cmd;
