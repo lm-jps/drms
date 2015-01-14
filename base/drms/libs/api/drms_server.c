@@ -715,7 +715,17 @@ int drms_server_close_session(DRMS_Env_t *env, char *stat_str, int clients,
 
   if (env->tee_pid > 0) {
     int status = 0;
+
+    /* STDOUT_FILENO and STDERR_FILENO point to two pipes that are read by a child process that got created by the tee code. This child process 
+     * writes to both the stdout/stderr streams AND the two log files created by the -L DRMS module flag. We must close these pipes, which will
+     * cause the child to terminate. Then waitpid() will return. */
+    close(STDERR_FILENO);
+    close(STDOUT_FILENO);
+
     waitpid(env->tee_pid, &status, 0);
+
+    /* ART - I think this is a bug, printing to stdout. I think there is no stdout (the write end of the tee pipe) at this point, because we just 
+     * closed it. But I'm not sure. */
     if (status) printf("Problem returning from tee\n");
   }
     
@@ -723,14 +733,6 @@ int drms_server_close_session(DRMS_Env_t *env, char *stat_str, int clients,
      * these file descriptors otherwise. */
     if (!env->session->readonly && env->dolog)
     {
-        /* Flush output to logfile - just in case. */
-        fflush(stdout);
-        fflush(stderr);
-
-        /* We are going to restore stdout and stderr (they are redirected to files right now), so close the files first. */
-        close(STDERR_FILENO);
-        close(STDOUT_FILENO);
-
         if (restore_stdeo())
         {
             printf("Can't restore stderr and stdout\n");
