@@ -268,16 +268,33 @@ else
 #endif
      if (hasWl &&
          ((drms_env->session->db_direct && strcmp(SERVER, drms_env->session->db_handle->dbhost) == 0) ||
-          (!drms_env->session->db_direct && strcmp(SERVER, drms_env->session->hostname) == 0)))
+          (!drms_env->session->db_direct && strcmp(SERVER, drms_env->session->dbhost) == 0)))
      {
-        /* We are connected to the database that has the white-list table of merged series information. And we need to query on all series, so use drms.allseries. */
-        if (printinfo || want_JSON)
+        char dbhost[DRMS_MAXHOSTNAME];
+        char dbport[64];
+        char dbname[64];
+
+        if (drms_env->session->db_direct)
         {
-           snprintf(query, sizeof(query), "SELECT seriesname, primary_idx, description FROM drms.allseries ORDER BY seriesname");
+           snprintf(dbhost, sizeof(dbhost), "%s", drms_env->session->db_handle->dbhost);
+           snprintf(dbport, sizeof(dbport), "%s", drms_env->session->db_handle->dbport);
+           snprintf(dbname, sizeof(dbname), "%s", drms_env->session->db_handle->dbname);
         }
         else
         {
-           snprintf(query, sizeof(query), "SELECT seriesname FROM drms.allseries ORDER BY seriesname");
+           snprintf(dbhost, sizeof(dbhost), "%s", drms_env->session->dbhost);
+           snprintf(dbport, sizeof(dbport), "%d", drms_env->session->dbport);
+           snprintf(dbname, sizeof(dbname), "%s", drms_env->session->dbname);
+        }
+
+        /* We are connected to the database that has the white-list table of merged series information. And we need to query on all series, so use drms.allseries. */
+        if (printinfo || want_JSON)
+        {
+           snprintf(query, sizeof(query), "SELECT seriesname, primary_idx, description FROM drms.allseries WHERE dbhost='%s' AND dbport=%s AND dbname='%s' ORDER BY seriesname", dbhost, dbport, dbname);
+        }
+        else
+        {
+           snprintf(query, sizeof(query), "SELECT seriesname FROM drms.allseries WHERE dbhost='%s' AND dbport=%s AND dbname='%s' ORDER BY seriesname", dbhost, dbport, dbname);
         }
      }
      else
