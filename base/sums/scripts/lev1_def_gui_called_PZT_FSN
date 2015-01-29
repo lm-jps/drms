@@ -346,11 +346,11 @@ if($OKfile && $OKhkdayfile && $OKfdsorbit && $OKnogofile && $OKff && $OKmp && $O
   $lastfsncosmic = $lastfsn - 96;	#new 19Nov2010. Change vrbl 2/28/2011
 
   if($hmiaiaflg) { 
-    $cmd = "time build_lev1_mgr mode=fsn instru=aia dsin=$DSINAIA dsout=$DSOUTAIA bfsn=$firstfsn efsn=$lastfsn numqsub=8 logfile=/usr/local/logs/lev1/build_lev1_mgr_aia.$utcdate.log";
+    $cmd = "time build_lev1_mgr mode=fsn instru=aia dsin=$DSINAIA dsout=$DSOUTAIA bfsn=$firstfsn efsn=$lastfsn numqsub=3 logfile=/usr/local/logs/lev1/build_lev1_mgr_aia.$utcdate.log";
   }
   else { 
     #!!TEMP increase numqsub from default 16 to 32
-    $cmd = "time build_lev1_mgr mode=fsn instru=hmi dsin=$DSINHMI dsout=$DSOUTHMI bfsn=$firstfsn efsn=$lastfsn numqsub=4 logfile=/usr/local/logs/lev1/build_lev1_mgr_hmi.$utcdate.log";
+    $cmd = "time build_lev1_mgr mode=fsn instru=hmi dsin=$DSINHMI dsout=$DSOUTHMI bfsn=$firstfsn efsn=$lastfsn numqsub=2 logfile=/usr/local/logs/lev1/build_lev1_mgr_hmi.$utcdate.log";
   }
   print "$cmd\n";
   if($EXECUTE) {
