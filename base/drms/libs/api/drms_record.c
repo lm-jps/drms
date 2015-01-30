@@ -9644,42 +9644,42 @@ static int DSElem_IsComment(const char **c)
  * Returns 1 if found a non-ws char before NULL, 0 otherwise. */
 static int DSElem_SkipWS(char **c)
 {
-   if (**c == '\0')
-   {
-      return 0;
-   }
-   else if (!DSElem_IsWS((const char **)c))
-   {
-      return 1;
-   }
-   else
-   {
-      char *pC = *c;
-
-      while (*pC)
-      {
-	 const char *pWS = kDSElemParseWS;
-
-	 while (*pWS)
-	 {
-	    if (*pC == *pWS)
-	    {
-	       pC++;
-	       break;
-	    }
-
-	    pWS++;
-	 }
-
-	 if (!(*pWS))
-	 {
-	    *c = pC;
-	    return 1;
-	 }
-      }
-
-      return 0;
-   }
+    if (**c == '\0')
+    {
+        return 0;
+    }
+    else if (!DSElem_IsWS((const char **)c))
+    {
+        return 1;
+    }
+    else
+    {
+        char *pC = *c;
+        
+        while (*pC)
+        {
+            const char *pWS = kDSElemParseWS;
+            
+            while (*pWS)
+            {
+                if (*pC == *pWS)
+                {
+                    pC++;
+                    break;
+                }
+                
+                pWS++;
+            }
+            
+            if (*pWS)
+            {
+                *c = pC;
+                return 1;
+            }
+        }
+        
+        return 0;
+    }
 }
 
 static int DSElem_SkipComment(char **c)
