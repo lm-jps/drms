@@ -6,6 +6,8 @@ import os
 import re
 from subprocess import check_output, check_call, CalledProcessError
 import smtplib
+sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../base/libs/py'))
+from drmsCmdl import CmdlParser
 
 # Hard code a bunch of stuff since I don't have time to do this correctly.
 PROD_ROOTDIR = '/home/jsoc/cvs/Development'
@@ -40,7 +42,7 @@ class Chdir:
         else:
             return 1
 
-def SendMail(localName, domainName, details):
+def sendMail(localName, domainName, details):
     subject = 'Production Binary Tree Check'
     fromAddr = 'jsoc@solarpost.stanford.edu'
     toAddrs = [ localName + '@' + domainName ]
@@ -54,6 +56,35 @@ def SendMail(localName, domainName, details):
         # If any exception happened, then the email message was not received.
         raise Exception('emailBadrecipient', 'Unable to send email message.', RV_ERROR_MAIL)
 
+def getArgs():
+    optD = {}
+
+    try:
+        parser = CmdlParser(usage='%(prog)s [ -h ] [ -m | --mail ]')
+
+        # Optional
+        # Cannot combine metavar with action for some unknown reason.
+        parser.add_argument('-m', '--mail', help='Send the waystation user the list of changed files in a mail message', dest='mail', action='store_true')
+
+        args = parser.parse_args()
+
+        # Read the series info from
+    except Exception as exc:
+        if len(exc.args) != 2:
+            raise # Re-raise
+
+        etype = exc.args[0]
+        msg = exc.args[1]
+
+        if etype == 'CmdlParser-ArgUnrecognized' or etype == 'CmdlParser-ArgBadformat' or etype == 'CmdlParser':
+            raise Exception('getArgs', 'Unable to parse command-line arguments.')
+        else:
+            raise # Re-raise.
+
+    optD['mail'] = args.mail
+
+    return optD
+
 msg = None
 rv = RV_SUCCESS
 
@@ -64,6 +95,7 @@ rv = RV_SUCCESS
 #   cd /home/jsoc/cvs/Development
 #   rsync -aluv --dry-run JSOC/ waystation/JSOC
 try:
+    optD = getArgs()
     changedFiles = []
     with Chdir(PROD_ROOTDIR) as ret:
         cmdList = ['rsync', '-aluv', '--dry-run', 'JSOC/', 'waystation/JSOC']
@@ -102,7 +134,11 @@ try:
     
                 # Now if there is at least one file that changed, send an email to WAYSTATION_USER
                 if changedFiles and len(changedFiles) >= 1:
-                    SendMail(WAYSTATION_USER, WAYSTATION_DOMAIN, 'List of files changed:\n' + '\n'.join(changedFiles))
+                    if optD['mail']:
+                        sendMail(WAYSTATION_USER, WAYSTATION_DOMAIN, 'List of files changed:\n' + '\n'.join(changedFiles))
+                    else:
+                        print('Files Modified in Production Directory:\n' + '\n'.join(changedFiles))
+
         else:
             print('Unable to change directory to ' + PROD_ROOTDIR, file=sys.stderr)
 
