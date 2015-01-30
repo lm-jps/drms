@@ -16,7 +16,8 @@ WAYSTATION_USER = 'arta'
 WAYSTATION_DOMAIN = 'sun.stanford.edu'
 
 RV_SUCCESS = 0
-RV_ERROR_MAIL = -1
+RV_ERROR_MAIL = 1
+RV_ERROR_ARGS = 2
 
 # This class changes the current working directory, and restores the original working directory when
 # the context is left.
@@ -77,7 +78,7 @@ def getArgs():
         msg = exc.args[1]
 
         if etype == 'CmdlParser-ArgUnrecognized' or etype == 'CmdlParser-ArgBadformat' or etype == 'CmdlParser':
-            raise Exception('getArgs', 'Unable to parse command-line arguments.')
+            raise Exception('getArgs', 'Unable to parse command-line arguments.', RV_ERROR_ARGS)
         else:
             raise # Re-raise.
 
