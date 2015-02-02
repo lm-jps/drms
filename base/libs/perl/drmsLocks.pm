@@ -6,7 +6,7 @@ use Fcntl ':flock';
 use FileHandle;
 
 # Class global variables
-my(%fpaths);
+%fpaths = ();
 
 sub new
 {
@@ -66,7 +66,7 @@ sub AcquireLock
     if (-e $path)
     {
         $$lckfh = FileHandle->new("<$path");
-        $fpaths{fileno($$lckfh)} = $path;
+        $drmsLocks::fpaths{fileno($$lckfh)} = $path;
     }
     else
     {
@@ -111,7 +111,7 @@ sub ReleaseLock
     if (defined($lckfh))
     {
         $lckfn = fileno($lckfh);
-        $lckfpath = $fpaths{$lckfn};
+        $lckfpath = $drmsLocks::fpaths{$lckfn};
         flock($$lckfh, LOCK_UN);
         
         $lckfh->close;
@@ -132,7 +132,7 @@ use File::lockf;
 use Data::Dumper;
 
 # Class global variables
-my(%fpaths);
+%fpaths = ();
 
 sub new
 {
@@ -194,7 +194,7 @@ sub AcquireLock
     if (!(-e $path))
     {
         $$lckfh = FileHandle->new(">$path");
-        $fpaths{fileno($$lckfh)} = $path;
+        $drmsNetLocks::fpaths{fileno($$lckfh)} = $path;
     }
     else
     {
@@ -247,7 +247,7 @@ sub ReleaseLock
     if (defined($lckfh))
     {
         $lckfn = fileno($lckfh);
-        $lckfpath = $fpaths{$lckfn};
+        $lckfpath = $drmsNetLocks::fpaths{$lckfn};
         File::lockf::ulock($lckfh, 0);
         
         $lckfh->close;
@@ -256,7 +256,7 @@ sub ReleaseLock
         if (defined($lckfpath))
         {
             chmod(0666, $lckfpath);
-            delete($fpaths{$lckfn});
+            delete($drmsNetLocks::fpaths{$lckfn});
         }
     }
 }
