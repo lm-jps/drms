@@ -61,5 +61,4 @@ except CalledProcessError as exc:
 except ValueError:
     print('Bad arguments to rsync: \n' + '\n'.join(cmdList[1:]))
 except Exception as exc:
-    if len(exc.args) != 3:
-        raise # Re-raise
+    raise # Re-raise
