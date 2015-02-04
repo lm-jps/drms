@@ -46,6 +46,12 @@ if pwd.getpwuid(os.getuid())[0] != WAYSTATION_USER:
 # Turn off debug builds.
 os.environ['JSOC_DEBUG'] = '0'
 
+# Make sure the JSOCROOT is PROD_ROOTDIR + '/JSOC'
+os.environ['JSOCROOT'] = PROD_ROOTDIR + '/JSOC'
+
+# Unset 'GLOBALHSTAGOVERRIDE'
+del os.environ['GLOBALHSTAGOVERRIDE']
+
 try:
     with Chdir(PROD_ROOTDIR + '/' + WAYSTATION + '/JSOC') as ret:
         # os.chdir does NOT change the environment variable $PWD. But our make system relies on PWD being the current directory.
