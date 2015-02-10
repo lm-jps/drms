@@ -73,7 +73,9 @@ q:RS_BINPATH                            /home/jsoc/cvs/Development/JSOC/bin/linu
 a:WL_HASWL                              1
 q:WL_FILE                               /web/jsoc/htdocs/whitelist.txt
 # Bin paths
+q:BIN_EXPORT                            /home/jsoc/cvs/Development/JSOC/bin
 q:BIN_PY                                /home/jsoc/bin/linux_x86_64/activepython27
+
 
 __MAKE__
 # JSOC_SDP third-party libraries used by base
@@ -438,8 +440,16 @@ __PROJ__
 __PROJCFG__
 #! /bin/csh -f
 
+set PERLBIN = ""
+
+if ($PERLBIN == "") then
+    if (-x /home/jsoc/bin/linux_x86_64/activeperl) then
+        set PERLBIN = "/home/jsoc/bin/linux_x86_64/activeperl"
+    else
+        set PERLBIN = "perl"
+    endif
+endif
+
 # Project-specific configuration (like adding links to scripts to the $JSOCROOT/scripts
 # directory).
-
-find ../proj/lev0/scripts -mindepth 1 \( -path \*CVS -prune -o -exec ln -s {} . \; -a -exec echo "  " {} " OK" \; \) -o -exec echo "  " {} " ERROR - couldn't create link" \;
-
+find ../proj/lev0/scripts -mindepth 1 -path \*CVS -prune -o -print | ${PERLBIN} -MFile::Basename -n -e 'my($bn) = basename($_); chomp($bn); my($path) = $_; chomp($path); if (!(-e $bn)) { `ln -s $_`; if ($? >> 8 == 0) { print "   " . $path . " OK\n"; } else { print "   " . $path . " ERROR - could not create link\n"; } }'
