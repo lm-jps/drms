@@ -27,6 +27,8 @@ specifying \a filter, a grep-like regular expression.
 <rb>
 \c -p: Print prime-keyword names and the series description
 <rb>
+\c -q: Quiet
+<rb>
 \c -v: Verbose - noisy
 <rb>
 \c -z: Emit JSON instead of normal output
@@ -110,6 +112,7 @@ char *drms_getseriesowner(DRMS_Env_t *drms_env, char *series, int *status)
 ModuleArgs_t module_args[] = { 
   {ARG_FLAG, "h", "0", "prints this message and quits."},   /* help flag, print usage and quit  */
   {ARG_FLAG, "p", "0", "enables print prime keys and description."},   /* print details */
+  {ARG_FLAG, "q", NULL, "quiet"}, /* verbose overrides this flag */
   {ARG_FLAG, "v", "0", "verbose"},   /* verbose flag, normally do not use  */
   {ARG_FLAG, "z", "0", "JSON"},   /* generate output in JSON format */
   {ARG_STRING, "QUERY_STRING", "Not Specified", "AJAX query from the web"},
@@ -169,6 +172,7 @@ regmatch_t pmatch[10];
 char *filter;
 char *filterctx = NULL;
 int filterNOT;
+int quiet;
 char *web_query;
 int from_web;
 int want_JSON;
@@ -179,6 +183,7 @@ char *index();
 
 if (nice_intro()) return(0);
 
+    quiet = cmdparams_isflagset(&cmdparams, "q");
 web_query = strdup (cmdparams_get_str (&cmdparams, "QUERY_STRING", NULL));
 from_web = strcmp (web_query, "Not Specified") != 0;
 want_JSON = from_web || cmdparams_get_int (&cmdparams, "z", NULL) != 0;
@@ -410,7 +415,7 @@ if (want_JSON)
   }
 else 
   {
-  if (filter)
+  if (!quiet && filter)
     printf("%d series found the matching %s\n", nused, filter);
   }
 
