@@ -6,8 +6,8 @@ import os
 import pwd
 from subprocess import check_output, check_call, call, Popen, CalledProcessError
 
-# PROD_ROOTDIR = '/home/jsoc/cvs/Development'
-PROD_ROOTDIR = '/tmp/arta'
+PROD_ROOTDIR = '/home/jsoc/cvs/Development'
+# PROD_ROOTDIR = '/tmp/arta'
 WAYSTATION = 'waystation'
 WAYSTATION_USER = 'arta'
 
@@ -58,7 +58,7 @@ try:
         # os.chdir does NOT change the environment variable $PWD. But our make system relies on PWD being the current directory.
         os.environ['PWD'] = os.path.realpath(os.getcwd())
 
-        cmdList = ['./configure']
+        cmdList = ['./configure', '-d']
         check_call(cmdList)
         
         cmdList = ['make']
