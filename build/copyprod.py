@@ -9,7 +9,8 @@ import smtplib
 from datetime import datetime
 
 # Hard code a bunch of stuff since I don't have time to do this correctly.
-PROD_ROOTDIR = '/home/jsoc/cvs/Development'
+# PROD_ROOTDIR = '/home/jsoc/cvs/Development'
+PROD_ROOTDIR = '/tmp/arta'
 WAYSTATION = 'waystation'
 
 RV_SUCCESS = 0
@@ -50,7 +51,7 @@ try:
             check_call(cmdList)
             cmdList = ['chmod', '-R', 'g-w', 'JSOC.new/JSOC']
             check_call(cmdList)
-            cmdList = ['mv', 'JSOC',  'JSOC_' + datetime.now().strftime('%Y%m%d_%S')]
+            cmdList = ['mv', 'JSOC',  'JSOC_' + datetime.now().strftime('%Y%m%d_%M%S')]
             check_call(cmdList)
             cmdList = ['mv', 'JSOC.new/JSOC', 'JSOC']
             check_call(cmdList)

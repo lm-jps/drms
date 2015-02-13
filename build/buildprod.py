@@ -6,7 +6,8 @@ import os
 import pwd
 from subprocess import check_output, check_call, call, Popen, CalledProcessError
 
-PROD_ROOTDIR = '/home/jsoc/cvs/Development'
+# PROD_ROOTDIR = '/home/jsoc/cvs/Development'
+PROD_ROOTDIR = '/tmp/arta'
 WAYSTATION = 'waystation'
 WAYSTATION_USER = 'arta'
 
@@ -74,7 +75,7 @@ try:
 except CalledProcessError as exc:
     if exc.output:
         print('Error calling make: ' + exc.output, file=sys.stderr)
-        sys.exit(RV_ERROR_MAKE);
+    sys.exit(RV_ERROR_MAKE);
 except ValueError:
     print('Bad arguments to make: \n' + '\n'.join(cmdList[1:]))
     sys.exit(RV_ERROR_MAKE);
