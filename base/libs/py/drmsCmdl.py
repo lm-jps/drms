@@ -39,7 +39,7 @@ class CmdlParser(argparse.ArgumentParser):
                         if matchObj.group(1) not in self.required:
                             raise Exception('CmdlParser-ArgUnrecognized', 'Unrecognized argument ' + "'" + arg + "'.")
                     else:
-                        raise Exception('CmdlParser-ArgBadformat', 'whatever ' + "'" + arg + "'.")
+                        raise Exception('CmdlParser-ArgBadformat', 'Unrecognized argument format ' + "'" + arg + "'.")
                     
                     argsMod.append(arg)
         else:
