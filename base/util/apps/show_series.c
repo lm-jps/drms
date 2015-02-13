@@ -326,7 +326,11 @@ nseries = qres->num_rows;
 
 if (want_JSON)
   {
-  printf("Content-type: application/json\n\n");
+      if (!quiet)
+      {
+          printf("Content-type: application/json\n\n");
+      }
+      
   if (nseries)
     {
     printf("{\"status\":0,\n");
