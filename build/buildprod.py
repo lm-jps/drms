@@ -66,7 +66,7 @@ try:
         cmdList = ['/usr/bin/make', 'dsds']
         check_call(cmdList)
 
-        cmdList = ['chgrp', '-R', 'jsoc', '.']
+        cmdList = ['chgrp', '-Rh', 'jsoc', '.']
         check_call(cmdList)
         cmdList = ['chmod', '-R', 'g-w', '.']
         check_call(cmdList)
