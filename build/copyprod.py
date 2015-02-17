@@ -9,8 +9,8 @@ import smtplib
 from datetime import datetime
 
 # Hard code a bunch of stuff since I don't have time to do this correctly.
-# PROD_ROOTDIR = '/home/jsoc/cvs/Development'
-PROD_ROOTDIR = '/tmp/arta'
+PROD_ROOTDIR = '/home/jsoc/cvs/Development'
+# PROD_ROOTDIR = '/tmp/arta'
 WAYSTATION = 'waystation'
 
 RV_SUCCESS = 0
