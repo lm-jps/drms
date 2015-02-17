@@ -110,8 +110,6 @@ def getArgs(drmsParams):
                 raise Exception('getArgs', 'cgi', 'Missing required argument ' + "'dbhost'.")
         except ValueError as exc:
             raise Exception('getArgs', 'cgi', 'Invalid arguments.')
-        except KeyError as exc:
-            raise Exception('drmsArgs', 'cgi', 'Undefined DRMS parameter.\n' + exc.strerror)
     else:
         # Non CGI invocation.
         try:
@@ -131,8 +129,6 @@ def getArgs(drmsParams):
             parser.add_argument('-w', '--wlfile', help='The text file containing the definitive list of internal series accessible via the external web site.', metavar='<white-list file>', dest='wlfile', default=drmsParams.get('WL_FILE'))
             
             args = parser.parse_args()
-        except KeyError as exc:
-            raise Exception('drmsArgs', 'cl', 'Undefined DRMS parameter.\n' + exc.strerror)
         except Exception as exc:
             if len(exc.args) != 2:
                 raise # Re-raise
@@ -194,6 +190,8 @@ if __name__ == "__main__":
         # outside the CGI context too. This is one argument for not systeming processes. So, call this csh script to figure out which
         # architecture's binary to run.
         binDir = drmsParams.get('BIN_EXPORT');
+        if not binDir:
+            raise Exception('drmsParams', optD['source'], 'Missing DRMS parameter: BIN_EXPORT.')
 
         cmdList = [os.path.join(binDir, '..', 'build', 'jsoc_machine.csh')]
         
