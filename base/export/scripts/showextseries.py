@@ -59,6 +59,7 @@ def getArgs(drmsParams):
     if optD['source'] == 'cgi':
         # Options
         optD['noheader'] = None
+        optD['info'] = None
         optD['dbport'] = None
         optD['dbname'] = None
         optD['dbuser'] = None
@@ -78,6 +79,11 @@ def getArgs(drmsParams):
                             optD['noheader'] = True
                         else:
                             optD['noheader'] = False
+                    if key in ('i', 'info'):
+                        if int(val) == 1:
+                            optD['info'] = True
+                        else:
+                            optD['info'] = False
                     elif key in ('H', 'dbhost'):
                         optD['dbhost'] = val
                     elif key in ('P', 'dbport'):
@@ -92,6 +98,7 @@ def getArgs(drmsParams):
                         optD['wlfile'] = val
             
             optD['noheader'] = bool(getOption(optD['noheader'], False))
+            optD['info'] = bool(getOption(optD['info'], False))
             optD['dbport'] = int(getOption(optD['dbport'], drmsParams.get('DRMSPGPORT')))
             optD['dbname'] = getOption(optD['dbname'], drmsParams.get('DBNAME'))
             optD['dbuser'] = getOption(optD['dbuser'], pwd.getpwuid(os.getuid())[0])
@@ -108,13 +115,14 @@ def getArgs(drmsParams):
     else:
         # Non CGI invocation.
         try:
-            parser = CmdlParser(usage='%(prog)s [ -hn ] dbhost=<db host> [ --dbport=<db port> ] [ --dbname=<db name> ] [ --dbuser=<db user> ] [ --filter=<DRMS regular expression> ] [--wlfile=<white-list text file> ]')
+            parser = CmdlParser(usage='%(prog)s [ -dhin ] dbhost=<db host> [ --dbport=<db port> ] [ --dbname=<db name> ] [ --dbuser=<db user> ] [ --filter=<DRMS regular expression> ] [--wlfile=<white-list text file> ]')
             
             # Required
             parser.add_argument('H', 'dbhost', '--dbhost', help='The machine hosting the EXTERNAL database that serves DRMS data series names.', metavar='<db host>', dest='dbhost', required=True)
             
             # Optional
             parser.add_argument('-d', '--debug', help='Run in CGI mode, and print helpful diagnostics.).', dest='debug', action='store_true', default=False)
+            parser.add_argument('-i', '--info', help='Print additional series information (such as series description)', dest='info', action='store_true', default=False)
             parser.add_argument('-n', '--noheader', help='Supress the HTML header (cgi runs only).', dest='noheader', action='store_true', default=False)
             parser.add_argument('-P', '--dbport', help='The port on the machine hosting DRMS data series names.', metavar='<db host port>', dest='dbport', default=drmsParams.get('DRMSPGPORT'))
             parser.add_argument('-N', '--dbname', help='The name of the database serving DRMS series names.', metavar='<db name>', dest='dbname', default=drmsParams.get('DBNAME'))
@@ -139,6 +147,7 @@ def getArgs(drmsParams):
 
         # Cannot loop through attributes since args has extra attributes we do not want.
         optD['noheader'] = args.noheader
+        optD['info'] = args.info
         optD['dbhost'] = args.dbhost
         optD['dbport'] = int(args.dbport)
         optD['dbname'] = args.dbname
@@ -204,13 +213,14 @@ if __name__ == "__main__":
         arch = outputList[0];
         
         # Call show_series on the internal host with the optional filter.
-        cmdList = [os.path.join(binDir, arch, 'show_series'), '-q', 'JSOC_DBHOST=' + drmsParams.get('SERVER'), 'JSOC_DBPORT=' + str(optD['dbport']), 'JSOC_DBNAME=' + optD['dbname']]
+        cmdList = [os.path.join(binDir, arch, 'show_series'), '-qz', 'JSOC_DBHOST=' + drmsParams.get('SERVER'), 'JSOC_DBPORT=' + str(optD['dbport']), 'JSOC_DBNAME=' + optD['dbname']]
         if optD['filter']:
             cmdList.append(optD['filter'])
 
         try:
             resp = check_output(cmdList, stderr=STDOUT)
             output = resp.decode('utf-8')
+            jsonObj = json.loads(output)
         except ValueError:
             raise Exception('showseries', rtype, "Unable to run command: '" + ' '.join(cmdList) + "'.")
         except CalledProcessError as exc:
@@ -219,12 +229,11 @@ if __name__ == "__main__":
         if output is None:
             raise Exception('showseries', rtype, 'Unexpected response from show_series.')
 
-        outputList = output.splitlines()
         # Hash all series in the internal DB.
         internal = {}
-        for series in outputList:
+        for series in jsonObj['names']:
             # Remove various whitespace too.
-            internal[series.strip().lower()] = 1
+            internal[str(series['name']).strip().lower()] = [str(series['note'])]
 
         # Fetch whitelist.
         with open(optD['wlfile'], 'r') as whitelist:
@@ -232,16 +241,20 @@ if __name__ == "__main__":
             # file. Series from the whitelist that match a series in internal-DB series are returned to the caller.
             for series in whitelist:
                 if series.strip().lower() in internal:
-                    passThruSeries.append(series.rstrip('\n'))
-        
+                    if optD['info']:
+                        passThruSeries.append({ series.rstrip('\n') : { 'description' : internal[series.strip().lower()][0] } })
+                    else:
+                        passThruSeries.append(series.rstrip('\n'))
+
         # Call show_series on the external host with the optional filter.
-        cmdList = [os.path.join(binDir, arch, 'show_series'), '-q', 'JSOC_DBHOST=' + optD['dbhost'], 'JSOC_DBPORT=' + str(optD['dbport']), 'JSOC_DBNAME=' + optD['dbname']]
+        cmdList = [os.path.join(binDir, arch, 'show_series'), '-qz', 'JSOC_DBHOST=' + optD['dbhost'], 'JSOC_DBPORT=' + str(optD['dbport']), 'JSOC_DBNAME=' + optD['dbname']]
         if optD['filter']:
             cmdList.append(optD['filter'])
         
         try:
             resp = check_output(cmdList, stderr=STDOUT)
             output = resp.decode('utf-8')
+            jsonObj = json.loads(output)
         except ValueError:
             raise Exception('showseries', rtype, "Unable to run command: '" + ' '.join(cmdList) + "'.")
         except CalledProcessError as exc:
@@ -250,17 +263,24 @@ if __name__ == "__main__":
         if output is None:
             raise Exception('showseries', rtype, 'Unexpected response from show_series.')
 
-        outputList = output.splitlines()
         external = {}
-        for series in outputList:
-            combinedSeries.append(series.strip())
-            external[series.strip().lower()] = 1
+        for series in jsonObj['names']:
+            if optD['info']:
+                combinedSeries.append({ str(series['name']).strip() : { 'description' : str(series['note']) } })
+            else:
+                combinedSeries.append(str(series['name']).strip())
+            external[str(series['name']).strip().lower()] = 1
 
         # Combine the passThru list with the list of external-DB series. Do not add any internal series that is already present in the external list.
         # This shouldn't be the case, but the whitelist is world-writeable.
         for series in passThruSeries:
-            if series.lower() not in external:
-                combinedSeries.append(series)
+            if optD['info']:
+                key = series.keys()[0]
+                if key.lower() not in external:
+                    combinedSeries.append(series)
+            else:
+                if series.lower() not in external:
+                    combinedSeries.append(series)
 
         # Sort by series.
         combinedSeries.sort()
@@ -277,6 +297,7 @@ if __name__ == "__main__":
         # It is possible that an exception has caused optD == None.
         if not optD:
             optD['noheader'] = None
+            optD['info'] = None
             optD['dbhost'] = None
             optD['dbport'] = None
             optD['dbname'] = None
@@ -348,6 +369,18 @@ if __name__ == "__main__":
     else:
         if errMsg:
             print(errMsg, file=sys.stderr)
-        for series in combinedSeries:
-            print(series)
+
+        if optD['info']:
+            if not optD['noheader']:
+                print('series\tdescription')
+            for series in combinedSeries:
+                # series is an object.
+                print(series.keys()[0] + '\t', end='')
+                print(series.values()[0]['description'])
+        else:
+            if not optD['noheader']:
+                print('series')
+            for series in combinedSeries:
+                # series is a string
+                print(series)
         sys.exit(rv)
