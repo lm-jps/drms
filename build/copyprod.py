@@ -47,11 +47,11 @@ try:
         if ret == 0:
             cmdList = ['rsync', '-alu', WAYSTATION + '/JSOC/', 'JSOC.new/JSOC']
             check_call(cmdList)
-            cmdList = ['chgrp', '-R', 'jsoc', 'JSOC.new/JSOC']
+            cmdList = ['chgrp', '-Rh', 'jsoc', 'JSOC.new/JSOC']
             check_call(cmdList)
             cmdList = ['chmod', '-R', 'g-w', 'JSOC.new/JSOC']
             check_call(cmdList)
-            cmdList = ['mv', 'JSOC',  'JSOC_' + datetime.now().strftime('%Y%m%d_%M%S')]
+            cmdList = ['mv', 'JSOC',  'JSOC_' + datetime.now().strftime('%Y%m%d_%H%M%S')]
             check_call(cmdList)
             cmdList = ['mv', 'JSOC.new/JSOC', 'JSOC']
             check_call(cmdList)
