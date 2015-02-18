@@ -279,15 +279,19 @@ if __name__ == "__main__":
         # This shouldn't be the case, but the whitelist is world-writeable.
         for series in passThruSeries:
             if optD['info']:
-                key = series.keys()[0]
+                # Python 3 keys() returns a view object, not a list.
+                key = list(series.keys())[0]
                 if key.lower() not in external:
                     combinedSeries.append(series)
             else:
                 if series.lower() not in external:
                     combinedSeries.append(series)
 
-        # Sort by series.
-        combinedSeries.sort()
+        # Sort by series. If optD['info'], then combinedSeries is a list of dictionaries.
+        if optD['info']:
+            combinedSeries.sort(key=lambda k: list(k.keys())[0])
+        else:
+            combinedSeries.sort()
 
     except Exception as exc:
         if len(exc.args) != 3:
@@ -378,9 +382,10 @@ if __name__ == "__main__":
             if not optD['noheader']:
                 print('series\tdescription')
             for series in combinedSeries:
-                # series is an object.
-                print(series.keys()[0] + '\t', end='')
-                print(series.values()[0]['description'])
+                # series is a dictionary.
+                # Python 3 keys() returns a view object, not a list.
+                print(list(series.keys())[0] + '\t', end='')
+                print(list(series.values())[0]['description'])
         else:
             if not optD['noheader']:
                 print('series')
