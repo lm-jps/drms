@@ -217,7 +217,7 @@ if __name__ == "__main__":
         arch = outputList[0];
         
         # Call show_series on the internal host with the optional filter.
-        cmdList = [os.path.join(binDir, arch, 'show_series'), '-qz', 'JSOC_DBHOST=' + drmsParams.get('SERVER'), 'JSOC_DBPORT=' + str(optD['dbport']), 'JSOC_DBNAME=' + optD['dbname']]
+        cmdList = [os.path.join(binDir, arch, 'show_series'), '-qz', 'JSOC_DBHOST=' + drmsParams.get('SERVER'), 'JSOC_DBPORT=' + drmsParams.get('DRMSPGPORT'), 'JSOC_DBNAME=' + drmsParams.get('DBNAME'), 'JSOC_DBUSER=' + optD['dbuser']]
         if optD['filter']:
             cmdList.append(optD['filter'])
 
@@ -251,7 +251,7 @@ if __name__ == "__main__":
                         passThruSeries.append(series.rstrip('\n'))
 
         # Call show_series on the external host with the optional filter.
-        cmdList = [os.path.join(binDir, arch, 'show_series'), '-qz', 'JSOC_DBHOST=' + optD['dbhost'], 'JSOC_DBPORT=' + str(optD['dbport']), 'JSOC_DBNAME=' + optD['dbname']]
+        cmdList = [os.path.join(binDir, arch, 'show_series'), '-qz', 'JSOC_DBHOST=' + optD['dbhost'], 'JSOC_DBPORT=' + str(optD['dbport']), 'JSOC_DBNAME=' + optD['dbname'], 'JSOC_DBUSER=' + optD['dbuser']]
         if optD['filter']:
             cmdList.append(optD['filter'])
         
@@ -357,8 +357,9 @@ if __name__ == "__main__":
             pass
 
         if msg and len(msg) > 0:
-            errMsg += ' '
-        errMsg += msg
+            if errMsg and len(errMsg) > 0:
+                errMsg += ' '
+            errMsg += msg
 
     printCGI = True
     if 'source' in optD:
@@ -375,21 +376,23 @@ if __name__ == "__main__":
         print(json.dumps(rootObj))
         sys.exit(0)
     else:
-        if errMsg:
-            print(errMsg, file=sys.stderr)
-
-        if optD['info']:
-            if not optD['noheader']:
-                print('series\tdescription')
-            for series in combinedSeries:
-                # series is a dictionary.
-                # Python 3 keys() returns a view object, not a list.
-                print(list(series.keys())[0] + '\t', end='')
-                print(list(series.values())[0]['description'])
+        if rv == RET_SUCCESS:
+            if optD['info']:
+                if not optD['noheader']:
+                    print('series\tdescription')
+                for series in combinedSeries:
+                    # series is a dictionary.
+                    # Python 3 keys() returns a view object, not a list.
+                    print(list(series.keys())[0] + '\t', end='')
+                    print(list(series.values())[0]['description'])
+            else:
+                if not optD['noheader']:
+                    print('series')
+                for series in combinedSeries:
+                    # series is a string
+                    print(series)
         else:
-            if not optD['noheader']:
-                print('series')
-            for series in combinedSeries:
-                # series is a string
-                print(series)
+            if errMsg:
+                print(errMsg, file=sys.stderr)
+
         sys.exit(rv)
