@@ -193,6 +193,11 @@ if __name__ == "__main__":
         if not binDir:
             raise Exception('drmsParams', optD['source'], 'Missing DRMS parameter: BIN_EXPORT.')
 
+        # Before calling anything, make sure that QUERY_STRING is not set in the child process. Some DRMS modules, like show_series,
+        # branch into "web" code if they see QUERY_STRING set. If that happens, then they will use the filter argument in QUERY_STRING,
+        # which will not contain a filter argument necessarily.
+        del os.environ['QUERY_STRING']
+
         cmdList = [os.path.join(binDir, '..', 'build', 'jsoc_machine.csh')]
         
         try:
