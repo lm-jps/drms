@@ -1236,7 +1236,7 @@ wantowner = cmdparams_get_int (&cmdparams, "o", NULL);
           {
               oseg = seg; /* Original seg. */
               
-              if (followLinks)
+              if (followLinks && seg->info->islink)
               {
                   /* Since rec is a template record, cannot follow links in the ordinary manner. Use this function - it finds the template
                    * segment of the series linked to. */
