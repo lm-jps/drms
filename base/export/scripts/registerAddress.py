@@ -19,8 +19,7 @@ RV_ERROR_DBCMD = -3
 RV_ERROR_DBCONNECT = -4
 RV_ERROR_TIMEOUT = -5
 RV_ERROR_CONFIRMATION = -6
-RV_ERROR_NOADDRESS = -7
-RV_ERROR_MAIL = -8
+RV_ERROR_MAIL = -7
 
 # Print stdin
 # import fileinput
@@ -83,11 +82,14 @@ if __name__ == "__main__":
             if address and confirmation:
                 break
 
+        localName, domainName = address.split('@')
+
+        if confirmation is None:
+            raise Exception('raConfirmation', 'Confirmation code not found in email reply from address ' + address + '.', RV_ERROR_CONFIRMATION)
+
         drmsParams = DRMSParams()
         if drmsParams is None:
             raise Exception('drmsParams', 'Unable to locate DRMS parameters file (drmsparams.py).', RV_ERROR_PARAMS)
-
-        localName, domainName = address.split('@')
 
         try:
             with psycopg2.connect(database=drmsParams.get('DBNAME'), user=drmsParams.get('WEB_DBUSER'), host=drmsParams.get('SERVER'), port=drmsParams.get('DRMSPGPORT')) as conn:
@@ -97,7 +99,7 @@ if __name__ == "__main__":
                         cursor.execute(cmd)
                         rows = cursor.fetchall()
                         if len(rows) == 0:
-                            raise Exception('raInvalidaddress', 'Email address not recognized.', RV_ERROR_NOADDRESS)
+                            raise Exception('raConfirmation', 'Confirmation ' + confirmation + ' not recognized from address ' + address + '.', RV_ERROR_CONFIRMATION)
                         if len(rows) != 1:
                             raise Exception('dbCorruption', 'Unexpected number of rows returned: ' + cmd + '.', RV_ERROR_DBCMD)
                     except psycopg2.Error as exc:
@@ -112,15 +114,10 @@ if __name__ == "__main__":
                     
                     if confirmationDB:
                         try:
-                            # Ensure that the confirmation codes match.
-                            if confirmation != confirmationDB:
-                                SendMailFailure(localNameDB, domainNameDB, confirmation, 'The confirmation code returned in the subject line does not match the confirmation code sent to you. Please visit the export page and register your address again.')
-                                raise Exception('raConfirmation', 'The confirmation code in the subject line does not match the confirmation code in the database.', RV_ERROR_CONFIRMATION)
-
                             # Reject if the confirmation code has expired.
                             if datetime.now(starttimeDB.tzinfo) > starttimeDB + timedelta(minutes=60):
-                                SendMailFailure(localNameDB, domainNameDB, confirmation, 'The registration process timed-out. Please visit the export page and register your address again.')
-                                raise Exception('raTimeout', 'The confirmation code for this address, ' + str(confirmationDB) + ' has expired.', RV_ERROR_TIMEOUT)
+                                SendMailFailure(localName, domainName, confirmation, 'The registration process timed-out. Please visit the export page and register your address again.')
+                                raise Exception('raTimeout', 'The confirmation code, ' + confirmation + ', for address ' + localNameDB + '@' + domainNameDB + ' has expired.', RV_ERROR_TIMEOUT)
 
                             # Remove confirmation code from address's record in jsoc.export_addresses. This is how we signify that the address has
                             # been successfully registered.
@@ -132,14 +129,15 @@ if __name__ == "__main__":
                                 # Handle database-command errors.
                                 raise Exception('dbCmd', exc.diag.message_primary + ": " + cmd, RV_ERROR_DBCMD)
 
-                            SendMailSuccess(localNameDB, domainNameDB, confirmation)
+                            SendMailSuccess(localName, domainNameDB, confirmation)
                         except Exception as exc:
                             if len(exc.args) == 3:
                                 etype = exc.args[0]
                                 msg = exc.args[1]
                                 rv = exc.args[2]
-                                if etype == 'raConfirmation' or etype == 'raTimeout':
-                                    print(msg)
+                                if etype == 'raTimeout':
+                                    # The procmail log captures stderr only.
+                                    print(msg, file=sys.stderr)
 
                                     # Remove row from address table. Don't worry about the domain table. Let the cleanAddresses.py script deal with that.
                                     cmd = 'DELETE FROM jsoc.export_addresses WHERE domainid = ' + str(domainIDDB) + " AND localname = '" + localNameDB + "'"
@@ -161,24 +159,27 @@ if __name__ == "__main__":
 
     except Exception as exc:
         if len(exc.args) != 3:
-            if localNameDB and domainNameDB and confirmation:
-                SendMailFailure(localNameDB, domainNameDB, confirmation, 'Please visit the export page and register your address again.')
+            if localName and domainName and confirmation:
+                SendMailFailure(localName, domainName, confirmation, 'Please visit the export page and register your address again.')
             raise # Re-raise
         
         etype = exc.args[0]
 
-        if etype == 'drmsParams' or etype == 'dbCorruption' or etype == 'dbCmd' or etype == 'dbConnect' or etype == 'raInvalidaddress':
-            if etype == 'raInvalidaddress':
-                SendMailFailure(localNameDB, domainNameDB, confirmation, 'Your email address was not recognized. Please visit the export page and register your address again.')
+        if etype == 'drmsParams' or etype == 'dbCorruption' or etype == 'dbCmd' or etype == 'dbConnect' or etype == 'raConfirmation' or etype == 'emailBadrecipient' or etype == 'raTimeout':
+            if etype == 'raConfirmation':
+                SendMailFailure(localName, domainName, confirmation, 'The confirmation code you sent was not recognized. Please visit the export page and register your address again.')
             else:
-                SendMailFailure(localNameDB, domainNameDB, confirmation, 'Please visit the export page and register your address again.')
+                SendMailFailure(localName, domainName, confirmation, 'Please visit the export page and register your address again.')
 
             msg = exc.args[1]
             rv = exc.args[2]
-            print(msg)
+            # The procmail log captures stderr only.
+            print(msg, file=sys.stderr)
         else:
-            if localNameDB and domainNameDB and confirmation:
-                SendMailFailure(localNameDB, domainNameDB, confirmation, 'Please visit the export page and register your address again.')
+            if localName and domainName and confirmation:
+                SendMailFailure(localName, domainName, confirmation, 'Please visit the export page and register your address again.')
             raise # Re-raise
 
+    # It appears that sys.exit() does NOT flush streams.
+    sys.stderr.flush()
     sys.exit(rv)
