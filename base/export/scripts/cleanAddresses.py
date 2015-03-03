@@ -49,7 +49,7 @@ def getArgs(drmsParams):
     optD['dbport'] = int(args.dbport)
     optD['dbname'] = args.dbname
     optD['dbuser'] = args.dbuser
-    optD['timeout'] = args.timeout
+    optD['timeout'] = int(args.timeout)
     optD['doit'] = args.doit
     
     # Get configuration information.
