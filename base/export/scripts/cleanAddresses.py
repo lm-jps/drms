@@ -29,6 +29,8 @@ def getArgs(drmsParams):
         parser.add_argument('-P', '--dbport', help='The port on the machine hosting DRMS address and domain tables.', metavar='<db host port>', dest='dbport', default=drmsParams.get('DRMSPGPORT'))
         parser.add_argument('-N', '--dbname', help='The name of the database serving the address and domain.', metavar='<db name>', dest='dbname', default=drmsParams.get('DBNAME'))
         parser.add_argument('-U', '--dbuser', help='The user to log-in as when connecting to the the serving database.', metavar='<db user>', dest='dbuser', default=pwd.getpwuid(os.getuid())[0])
+        parser.add_argument('-t', '--timeout', help='The number of minutes the user has to complete the registration process.', metavar='<timeout>', dest='timeout', default=15)
+
         parser.add_argument('-d', '--doit', help='If provided, the needed database modifications are perfomed. Otherwise, the SQL to be executed is printed and no database changes are made.', dest='doit', action='store_true', default=False)
 
         args = parser.parse_args()
@@ -47,6 +49,7 @@ def getArgs(drmsParams):
     optD['dbport'] = int(args.dbport)
     optD['dbname'] = args.dbname
     optD['dbuser'] = args.dbuser
+    optD['timeout'] = args.timeout
     optD['doit'] = args.doit
     
     # Get configuration information.
@@ -70,8 +73,9 @@ if __name__ == "__main__":
 
         try:
             logOutput('Starting clean-up.')
-            logOutput('Connection to database - dbname ==> ' + optD['dbname'] + ', dbuser ==> ' + optD['dbuser'] + ', dbhost ==> ' + optD['dbhost'] + ', dbhost ==> ' + str(optD['dbport']))
+
             with psycopg2.connect(database=optD['dbname'], user=optD['dbuser'], host=optD['dbhost'], port=str(optD['dbport'])) as conn:
+                logOutput('Connected to database - dbname ==> ' + optD['dbname'] + ', dbuser ==> ' + optD['dbuser'] + ', dbhost ==> ' + optD['dbhost'] + ', dbhost ==> ' + str(optD['dbport']))
                 with conn.cursor() as cursor:
                     domainMap = {}
                                             
@@ -101,6 +105,7 @@ if __name__ == "__main__":
                     prepDone = False
                     usedDomains = {}
 
+                    logOutput('Checking for expired registration attempts.')
                     for row in rows:
                         localname, domainid, confirmation, starttime = row
                         
@@ -112,8 +117,9 @@ if __name__ == "__main__":
                         
                         # Remove old unregistered email addresses. An address is unregistered if the confirmation
                         # column is not empty.
-                        if confirmation and datetime.now(starttime.tzinfo) > starttime + timedelta(minutes=60):
+                        if confirmation and datetime.now(starttime.tzinfo) > starttime + timedelta(minutes=optD['timeout']):
                             if not prepDone:
+                                logOutput('Found expired registration attempts.')
                                 cmd = "DELETE FROM jsoc.export_addresses WHERE localname = $1 AND domainid = $2"
                                 prepCmd = 'PREPARE deladdress AS ' + cmd
                                 
@@ -143,6 +149,11 @@ if __name__ == "__main__":
                             # Decrement refcount on used domains.
                             usedDomains[str(domainid)] -= 1
                     
+                    if not prepDone:
+                        logOutput('No expired registration attempts found.')
+
+
+                    logOutput('Checking for unused email domains.')
                     # In Py 2, keys() returns a list. In Py 3, it returns a view.
                     delQueue = []
                     keys = list(usedDomains.keys())
@@ -155,6 +166,7 @@ if __name__ == "__main__":
                     for domainid in delQueue:
                         # This domain is not in use - delete record of it.
                         if not prepDone:
+                            logOutput('Found unused email domains.')
                             cmd = "DELETE FROM jsoc.export_addressdomains WHERE domainid = $1"
                             prepCmd = 'PREPARE deldomain AS ' + cmd
                             
@@ -179,6 +191,10 @@ if __name__ == "__main__":
                             logOutput(completed)
                                     
                         logOutput("Deleted unused domain '" + domainMap[str(domainid)] + "'")
+
+                    if not prepDone:
+                        logOutput('No unused email domains found.')
+
         except psycopg2.DatabaseError as exc:
             # Closes the cursor and connection.
     
