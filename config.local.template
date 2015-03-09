@@ -274,6 +274,10 @@ WL_FILE                               /usr/share/drms/whitelist.txt
 BIN_EXPORT                            /home/jsoc/cvs/Development/JSOC/bin
 SCRIPTS_EXPORT                        /home/jsoc/cvs/Development/JSOC/scripts
 BIN_PY                                /usr/bin/python
+
+# The number of minutes after which a new email registration attempt will time-out if the registering user does
+# not respond to the verification email sent to them.
+REGEMAIL_TIMEOUT                      5
 ###############################
 
 __MAKE__
