@@ -17,19 +17,28 @@ from drmsCmdl import CmdlParser
 RV_ERROR_NONE = 0
 RV_ERROR_DBCONNECT = 1
 RV_ERROR_DBCMD = 2
+RV_ERROR_ARGS = 3
+RV_ERROR_PARAMS = 4
+
+def getDRMSParam(drmsParams, param):
+    rv = drmsParams.get(param)
+    if not rv:
+        raise Exception('drmsParams', 'DRMS parameter ' + param + ' is not defined.', RV_ERROR_PARAMS)
+
+    return rv
 
 def getArgs(drmsParams):
     optD = {}
     
     try:
-        parser = CmdlParser(usage='%(prog)s [ -dh ] [ --dbhost=<db host> ] [ --dbport=<db port> ] [ --dbname=<db name> ] [ --dbuser=<db user> ]')
+        parser = CmdlParser(usage='%(prog)s [ -dh ] [ --dbhost=<db host> ] [ --dbport=<db port> ] [ --dbname=<db name> ] [ --dbuser=<db user> ] [ --timeout=<minutes>]')
 
         # Optional
-        parser.add_argument('-H', '--dbhost', help='The host machine of the database that contains the address and domain tables from which records are to be deleted.', metavar='<db host machine>', dest='dbhost', default=drmsParams.get('SERVER'))
-        parser.add_argument('-P', '--dbport', help='The port on the machine hosting DRMS address and domain tables.', metavar='<db host port>', dest='dbport', default=drmsParams.get('DRMSPGPORT'))
-        parser.add_argument('-N', '--dbname', help='The name of the database serving the address and domain.', metavar='<db name>', dest='dbname', default=drmsParams.get('DBNAME'))
+        parser.add_argument('-H', '--dbhost', help='The host machine of the database that contains the address and domain tables from which records are to be deleted.', metavar='<db host machine>', dest='dbhost', default=getDRMSParam(drmsParams, 'SERVER'))
+        parser.add_argument('-P', '--dbport', help='The port on the machine hosting DRMS address and domain tables.', metavar='<db host port>', dest='dbport', default=getDRMSParam(drmsParams, 'DRMSPGPORT'))
+        parser.add_argument('-N', '--dbname', help='The name of the database serving the address and domain.', metavar='<db name>', dest='dbname', default=getDRMSParam(drmsParams, 'DBNAME'))
         parser.add_argument('-U', '--dbuser', help='The user to log-in as when connecting to the the serving database.', metavar='<db user>', dest='dbuser', default=pwd.getpwuid(os.getuid())[0])
-        parser.add_argument('-t', '--timeout', help='The number of minutes the user has to complete the registration process.', metavar='<timeout>', dest='timeout', default=15)
+        parser.add_argument('-t', '--timeout', help='The number of minutes the user has to complete the registration process.', metavar='<timeout>', dest='timeout', default=getDRMSParam(drmsParams, 'REGEMAIL_TIMEOUT'))
 
         parser.add_argument('-d', '--doit', help='If provided, the needed database modifications are perfomed. Otherwise, the SQL to be executed is printed and no database changes are made.', dest='doit', action='store_true', default=False)
 
