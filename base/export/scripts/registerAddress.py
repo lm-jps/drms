@@ -27,6 +27,13 @@ RV_ERROR_MAIL = -7
 # for line in fileinput.input():
 #    print(line, file=fobj)
 
+def getDRMSParam(drmsParams, param):
+    rv = drmsParams.get(param)
+    if not rv:
+        raise Exception('drmsParams', 'DRMS parameter ' + param + ' is not defined.', RV_ERROR_PARAMS)
+
+    return rv
+
 def SendMailSuccess(localName, domainName, confirmation):
     subject = 'EXPORT ADDRESS REGISTERED [' + str(confirmation) + ']'
     fromAddr = 'jsoc@solarpost.stanford.edu'
@@ -92,7 +99,7 @@ if __name__ == "__main__":
             raise Exception('drmsParams', 'Unable to locate DRMS parameters file (drmsparams.py).', RV_ERROR_PARAMS)
 
         try:
-            with psycopg2.connect(database=drmsParams.get('DBNAME'), user=drmsParams.get('WEB_DBUSER'), host=drmsParams.get('SERVER'), port=drmsParams.get('DRMSPGPORT')) as conn:
+            with psycopg2.connect(database=getDRMSParam(drmsParams, 'DBNAME'), user=getDRMSParam(drmsParams, 'WEB_DBUSER'), host=getDRMSParam(drmsParams, 'SERVER'), port=getDRMSParam(drmsParams, 'DRMSPGPORT')) as conn:
                 with conn.cursor() as cursor:
                     cmd = "SELECT A.localname, A.confirmation, A.starttime, D.domainid, D.domainname FROM jsoc.export_addresses AS A, jsoc.export_addressdomains AS D WHERE A.domainid = D.domainid AND A.confirmation = '" + confirmation + "'"
                     try:
@@ -115,7 +122,7 @@ if __name__ == "__main__":
                     if confirmationDB:
                         try:
                             # Reject if the confirmation code has expired.
-                            if datetime.now(starttimeDB.tzinfo) > starttimeDB + timedelta(minutes=60):
+                            if datetime.now(starttimeDB.tzinfo) > starttimeDB + timedelta(minutes=int(getDRMSParam(drmsParams, 'REGEMAIL_TIMEOUT'))):
                                 SendMailFailure(localName, domainName, confirmation, 'The registration process timed-out. Please visit the export page and register your address again.')
                                 raise Exception('raTimeout', 'The confirmation code, ' + confirmation + ', for address ' + localNameDB + '@' + domainNameDB + ' has expired.', RV_ERROR_TIMEOUT)
 
