@@ -94,7 +94,8 @@ def getArgs(drmsParams):
                     elif key in ('U', 'dbuser'):
                         optD['dbuser'] = val
                     elif key in ('s', 'series'):
-                        optD['series'] = map(lambda s: s.strip(), val.split(','))
+                        # Don't use map(lambda s: s.strip(), args.series.split(',')) - works differently in Py 3.
+                        optD['series'] = [ s.strip() for s in val.split(',') ]
                     elif key in ('w', 'wlfile'):
                         optD['wlfile'] = val
 
@@ -145,7 +146,8 @@ def getArgs(drmsParams):
         optD['debug'] = args.debug
         optD['noheader'] = args.noheader
         optD['dbhost'] = args.dbhost
-        optD['series'] = map(lambda s: s.strip(), args.series.split(','))
+        # Don't use map(lambda s: s.strip(), args.series.split(',')) - works differently in Py 3.
+        optD['series'] = [ s.strip() for s in args.series.split(',') ]
         optD['dbport'] = int(args.dbport)
         optD['dbname'] = args.dbname
         optD['dbuser'] = args.dbuser
@@ -171,13 +173,8 @@ if __name__ == "__main__":
     seriesObjs = [] # A list of series objects with info about the series (like the db server for that series
 
     try:
-        if os.getenv('REQUEST_URI'):
-            rtype = 'cgi'
-        else:
-            rtype = 'cl'
-    
         # Default to command-line invocation.
-        optD['source'] = rtype
+        optD['source'] = 'cgi'
         
         drmsParams = DRMSParams()
         if drmsParams is None:
@@ -341,6 +338,10 @@ if __name__ == "__main__":
     elif rtype != 'cgi':
         printCGI = False
 
+    noHeader = False
+    if 'noheader' in optD and optD['noheader']:
+        noHeader = True
+
     if printCGI:
         # Returns - { "server" : "hmidb2", "series" : [{ "hmi.M_45s" : { "server" : "hmidb" } }, { "hmi.internalonly" : { "server" : "hmidb2" }}], "err" : 0}
         rootObj['err'] = rv # A number
@@ -348,25 +349,25 @@ if __name__ == "__main__":
             rootObj['errMsg'] = errMsg # A string
         rootObj['server'] = server
         rootObj['series'] = seriesObjs
-        if not optD['noheader']:
+        if not noHeader:
             print('Content-type: application/json\n')
         print(json.dumps(rootObj))
         sys.exit(0)
     else:
         if rv == RET_SUCCESS:
-            if not optD['noheader']:
+            if not noHeader:
                 print('Database server information for series: \n\t', end='')
             
             print(','.join(optD['series']))
             
-            if not optD['noheader']:
+            if not noHeader:
                 print('\nserver: \n\t', end='')
             print(server)
 
-            if not optD['noheader']:
+            if not noHeader:
                 print('\nseries and information: \n', end='')
             for seriesObj in seriesObjs:
-                if not optD['noheader']:
+                if not noHeader:
                     print('\t', end='')
                 print(list(seriesObj.keys())[0] + '\t' + seriesObj[list(seriesObj.keys())[0]]['server'])
         else:
