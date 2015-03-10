@@ -218,7 +218,10 @@ if __name__ == "__main__":
         # Call show_series on the external host. If all series are on the external host, return the external server optD['dbhost']. show_series
         # does not provide a way to search for a list of series, so we have to make a hash of all series, then assess each series for membsership in the list
         # of external series.
-        cmdList = [os.path.join(binDir, arch, 'show_series'), '-qz', 'JSOC_DBHOST=' + optD['dbhost'], 'JSOC_DBPORT=' + str(optD['dbport']), 'JSOC_DBNAME=' + optD['dbname'], 'JSOC_DBUSER=' + optD['dbuser']]
+        #
+        # There is no JSOC_DBPORT DRMS parameter, much to my surprise. We need to append ':' + str(optD['dbport']) to optD['dbhost'].
+        hostAndPort = optD['dbhost'] + ':' + str(optD['dbport'])
+        cmdList = [os.path.join(binDir, arch, 'show_series'), '-qz', 'JSOC_DBHOST=' + hostAndPort, 'JSOC_DBNAME=' + optD['dbname'], 'JSOC_DBUSER=' + optD['dbuser']]
 
         try:
             resp = check_output(cmdList, stderr=STDOUT)
@@ -233,7 +236,7 @@ if __name__ == "__main__":
             raise Exception('showseries', 'Unexpected response from show_series.', RET_SHOWSERIES)
 
         externalMap = {}
-        external = []
+        internalMap = {}
         notExternal = []
         passThruSeries = {}
         
@@ -241,14 +244,18 @@ if __name__ == "__main__":
             externalMap[str(series['name']).strip().lower()] = str(series['name']).strip()
 
         for series in optD['series']:
-            if series.lower() in externalMap:
-                external.append(series)
-            else:
+            if series.lower() not in externalMap:
                 notExternal.append(series)
 
         # If all series are external, then we can return the external database server.
         if len(notExternal) == 0:
-            server = getDRMSParam(drmsParams, 'SERVER')
+            server = optD['dbhost']
+
+           # seriesObjs - [{ "hmi.tdpixlist" : { "server" : "hmidb" } }, { "hmi.internalonly" : { "server" : "hmidb2" }}, ...]
+            for series in optD['series']:
+                sobj = { externalMap[series.lower()] : {} }
+                sobj[externalMap[series.lower()]]['server'] = optD['dbhost']
+                seriesObjs.append(sobj)
         else:
             # Some series may be on the internal db server.
             cmdList = [os.path.join(binDir, arch, 'show_series'), '-qz', 'JSOC_DBHOST=' + getDRMSParam(drmsParams, 'SERVER'), 'JSOC_DBPORT=' + str(optD['dbport']), 'JSOC_DBNAME=' + optD['dbname'], 'JSOC_DBUSER=' + optD['dbuser']]
@@ -266,7 +273,6 @@ if __name__ == "__main__":
                 raise Exception('showseries', 'Unexpected response from show_series.', RET_SHOWSERIES)
 
             # Hash all series in the internal DB.
-            internalMap = {}
             for series in jsonObj['names']:
                 # Remove various whitespace too.
                 internalMap[str(series['name']).strip().lower()] = str(series['name']).strip()
@@ -287,7 +293,7 @@ if __name__ == "__main__":
             # Set server to internal server.
             server = getDRMSParam(drmsParams, 'SERVER')
 
-            # seriesObjs - [{ "hmi.M_45s" : { "server" : "hmidb" } }, { "hmi.internalonly" : { "server" : "hmidb2" }}, ...]
+            # seriesObjs - [{ "hmi.tdpixlist" : { "server" : "hmidb" } }, { "hmi.internalonly" : { "server" : "hmidb2" }}, ...]
             for series in optD['series']:
                 if series.lower() in externalMap:
                     sobj = { externalMap[series.lower()] : {} }
