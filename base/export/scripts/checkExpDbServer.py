@@ -161,10 +161,6 @@ def getArgs(drmsParams):
         optD['dbuser'] = args.dbuser
         optD['wlfile'] = args.wlfile
 
-    # The server specified must not be the internal server. Raise an exception otherwise.
-    if optD['dbhost'].lower() == getDRMSParam(drmsParams, 'SERVER'):
-        raise Exception('getArgs', 'Host specified is the internal server. Must select an external one.', RET_BADARGS)
-
     # Get configuration information.
     optD['cfg'] = drmsParams
 
@@ -189,6 +185,10 @@ if __name__ == "__main__":
             raise Exception('drmsParams', 'Unable to locate DRMS parameters file (drmsparams.py).', RET_DRMSPARAMS)
         
         optD = getArgs(drmsParams)
+
+        # The server specified must not be the internal server. Raise an exception otherwise.
+        if optD['dbhost'].lower() == getDRMSParam(drmsParams, 'SERVER'):
+            raise Exception('getArgs', 'Host specified is the internal server. Must select an external one.', RET_BADARGS)
         
         if not drmsParams.getBool('WL_HASWL'):
             raise Exception('whitelist', 'This DRMS does not support series whitelists.', RET_WHITELIST)
