@@ -58,6 +58,14 @@ def getArgs(drmsParams):
             break
         index += 1
 
+    index = 0
+    for arg in sys.argv:
+        if arg in ('-c'):
+            useCGI = True
+            sys.argv.pop(index)
+            break
+        index += 1
+
     # Use REQUEST_URI as surrogate for the invocation coming from a CGI request.
     if os.getenv('REQUEST_URI') or DEBUG_CGI or useCGI:
         optD['source'] = 'cgi'
