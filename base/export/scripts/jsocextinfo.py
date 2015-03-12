@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 
+# Document this, again. Again. Again.
+
 from __future__ import print_function
 import sys
 import os
@@ -124,7 +126,6 @@ try:
     try:
         resp = check_output(cmdList, stderr=STDOUT)
         output = resp.decode('utf-8')
-        print('outupt is ' + output)
         jsonObj = json.loads(output)
     except ValueError as exc:
         raise Exception('checkserver', exc.args[0], RET_CHECKSERVER)
