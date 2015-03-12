@@ -79,8 +79,8 @@ try:
     try:
         resp = check_output(cmdList, stderr=STDOUT)
         output = resp.decode('utf-8')
-    except ValueError:
-        raise Exception('arch', "Unable to run command: '" + ' '.join(cmdList) + "'.", RET_ARCH)
+    except ValueError as exc:
+        raise Exception('arch', exc.args[0], RET_ARCH)
     except CalledProcessError as exc:
         raise Exception('arch', "Command '" + ' '.join(cmdList) + "' returned non-zero status code " + str(exc.returncode), RET_ARCH)
     
@@ -101,13 +101,13 @@ try:
         resp = check_output(cmdList, stderr=STDOUT)
         output = resp.decode('utf-8')
         jsonObj = json.loads(output)
-    except ValueError:
-        raise Exception('parsespec', "Unable to run command: '" + ' '.join(cmdList) + "'.", RET_PARSESPEC)
+    except ValueError as exc:
+        raise Exception('parsespec', exc.args[0], RET_PARSESPEC)
     except CalledProcessError as exc:
         raise Exception('parsespec', "Command '" + ' '.join(cmdList) + "' returned non-zero status code " + str(exc.returncode), RET_PARSESPEC)
 
     if jsonObj is None or jsonObj['errMsg'] is not None:
-        raise Exception('parsespec', 'Unexpected response from drms_parsespec', RET_PARSESPEC)
+        raise Exception('parsespec', jsonObj['errMsg'], RET_PARSESPEC)
 
     for aset in jsonObj['subsets']:
         series.append(aset['seriesname'])
@@ -118,21 +118,24 @@ try:
     # Ask checkExpDbServer.py to provide the name of the db server that can handle all the series in series.
     binPy = getDRMSParam(drmsParams, 'BIN_PY')
     scriptsDir = getDRMSParam(drmsParams, 'SCRIPTS_EXPORT')
+    # ART
+    scriptsDir = '/home/arta/jsoctrees/JSOC/base/export/scripts'
 
     cmdList = [binPy, os.path.join(scriptsDir, 'checkExpDbServer.py'), '-c', 'n=1&dbhost=' + optD['dbhost'] + '&series=' + ','.join(series)]
 
     try:
         resp = check_output(cmdList, stderr=STDOUT)
         output = resp.decode('utf-8')
+        print('outupt is ' + output)
         jsonObj = json.loads(output)
-    except ValueError:
-        raise Exception('checkserver', 'Unable to run command: ' + ' '.join(cmdList), RET_CHECKSERVER)
+    except ValueError as exc:
+        raise Exception('checkserver', exc.args[0], RET_CHECKSERVER)
     except CalledProcessError as exc:
         raise Exception('checkserver', "Command '" + ' '.join(cmdList) + "' returned non-zero status code " + str(exc.returncode), RET_CHECKSERVER)
 
     # Returns {"series": [{"hmi.M_45s": {"server": "hmidb2"}}, {"hmi.tdpixlist": {"server": "hmidb"}}], "err": 0, "server": "hmidb"}
     if jsonObj is None or jsonObj['err'] != 0:
-        raise Exception('checkserver', 'Unexpected response from drms_parsespec', RET_CHECKSERVER)
+        raise Exception('checkserver', jsonObj['errMsg'], RET_CHECKSERVER)
 
     server = jsonObj['server']
 
@@ -145,19 +148,18 @@ try:
 
     try:
         check_call(cmdList)
-    except ValueError:
-        raise Exception('jsocinfo', "Unable to run command: '" + ' '.join(cmdList) + "'.", RET_JSOCINFO)
+    except ValueError as exc:
+        raise Exception('jsocinfo', exc.args[0], RET_JSOCINFO)
     except CalledProcessError as exc:
         raise Exception('jsocinfo', "Command '" + ' '.join(cmdList) + "' returned non-zero status code " + str(exc.returncode), RET_JSOCINFO)
 
 except Exception as exc:
-    raise
     if len(exc.args) != 3:
         msg = 'Unhandled exception.'
         raise # Re-raise
 
     etype, msg, rv = exc.args
-    
+
     if etype != 'invalidArgs' and etype != 'drmsParams' and etype != 'arch' and etype != 'parsespec' and etype != 'checkserver' and etype != 'jsocinfo':
         raise
 
@@ -167,7 +169,7 @@ except Exception as exc:
     if msg and len(msg) > 0:
         if errMsg and len(errMsg) > 0:
             errMsg += ' '
-            errMsg += msg
+        errMsg += msg
 
 # jsoc_info creates webpage content, if there is no failure. But if it or this script fails, then we have to create content that contains
 # an error code and error message.
