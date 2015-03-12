@@ -118,8 +118,6 @@ try:
     # Ask checkExpDbServer.py to provide the name of the db server that can handle all the series in series.
     binPy = getDRMSParam(drmsParams, 'BIN_PY')
     scriptsDir = getDRMSParam(drmsParams, 'SCRIPTS_EXPORT')
-    # ART
-    scriptsDir = '/home/arta/jsoctrees/JSOC/base/export/scripts'
 
     cmdList = [binPy, os.path.join(scriptsDir, 'checkExpDbServer.py'), '-c', 'n=1&dbhost=' + optD['dbhost'] + '&series=' + ','.join(series)]
 
