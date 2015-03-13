@@ -135,6 +135,7 @@ try:
 	###################
 	# show_info does NOT print the HTML header needed when it is run from the command line.
 	print('Content-type: text/plain\n')
+	sys.stdout.flush()
 	
 	cmdList = [os.path.join(binDir, arch, 'show_info'), 'JSOC_DBHOST=' + server]
 	# Provide all show_info arguments passed through showextinfo.py to show_info.
