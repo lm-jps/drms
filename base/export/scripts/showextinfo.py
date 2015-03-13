@@ -133,6 +133,9 @@ try:
 	###################
 	## Run show_info ##
 	###################
+	# show_info does NOT print the HTML header needed when it is run from the command line.
+	print('Content-type: text/plain\n')
+	
 	cmdList = [os.path.join(binDir, arch, 'show_info'), 'JSOC_DBHOST=' + server]
 	# Provide all show_info arguments passed through showextinfo.py to show_info.
 	cmdList.extend(allArgs)
@@ -165,10 +168,8 @@ except Exception as exc:
 # show_info creates webpage content, if there is no failure. But if it or this script fails, then we have to create content that contains
 # an error code and error message.
 if err:
-	print('Content-type: application/json\n')
-	rootObj = {}
-	rootObj['err'] = err
-	rootObj['errMsg'] = errMsg
-	print(json.dumps(rootObj))
+	print('Content-type: text/plain\n')
+	print('Error status: ' + err)
+	print('Error message: ' + errMsg)
 
 sys.exit(0)
