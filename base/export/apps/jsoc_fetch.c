@@ -30,6 +30,7 @@
 #include "json.h"
 #include "printk.h"
 #include "qDecoder.h"
+#include "jsmn.h"
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -89,7 +90,8 @@
 #define kOpExpKinds	"exp_kinds"	// not used yet
 #define kOpExpHistory	"exp_history"	// not used yet
 #define kUserHandle	"userhandle"    // user provided unique session handle
-#define KArgSizeRatio "sizeratio"
+#define kArgSizeRatio "sizeratio"
+#define kArgDontGenWebPage "W"
 
 #define kOptProtocolAsIs   "as-is"	   // Protocol option value for no change to fits files
 #define kOptProtocolSuAsIs "su-as-is"  // Protocol option value for requesting as-is FITS paths for the exp_su operation
@@ -120,9 +122,10 @@ ModuleArgs_t module_args[] =
   {ARG_STRING, kArgMethod, "url", "return method"},
   {ARG_STRING, kArgFile, kNotSpecified, "uploaded file contents"},
   {ARG_STRING, kUserHandle, kNotSpecified, "User specified unique session ID"},
-  {ARG_FLOAT, KArgSizeRatio, "1.0", "For cut-out requests, this is the ratio between the number of cut-out pixels to the number of original-image pixels."},
+  {ARG_FLOAT, kArgSizeRatio, "1.0", "For cut-out requests, this is the ratio between the number of cut-out pixels to the number of original-image pixels."},
   {ARG_FLAG, kArgTestmode, NULL, "if set, then creates new requests with status 12 (not 2)"},
   {ARG_FLAG, kArgPassthrough, NULL, "if set, then inserts an X into the request ID to denote that the request originated from an external user, but was executed on the internal database."},
+  {ARG_FLAG, kArgDontGenWebPage, NULL, "if set, print to stdout HTML headers."},
   {ARG_FLAG, "h", "0", "help - show usage"},
   {ARG_STRING, "QUERY_STRING", kNotSpecified, "AJAX query from the web"},
   {ARG_STRING, "REMOTE_ADDR", "0.0.0.0", "Remote IP address"},
@@ -394,6 +397,7 @@ static void CleanUp(int64_t **psunumarr, SUM_info_t ***infostructs, char **webar
 #define JSONDIE3(msg,info) {die(dojson,msg,info,"6",&sunumarr,&infostructs,&webarglist,series,paths,sustatus,susize,arrsize,userhandle);return(1);}
 
 int fileupload = 0;
+static int gGenWebPage = 1; /* For the die() function. */
 
 int die(int dojson, char *msg, char *info, char *stat, int64_t **psunumarr, SUM_info_t ***infostructs, char **webarglist,
         char **series, char **paths, char **sustatus, char **susize, int arrsize, const char *userhandle)
@@ -411,10 +415,15 @@ if (DEBUG) fprintf(stderr,"%s%s\n",msg,info);
     json_insert_pair_into_object(jroot, "status", json_new_number(stat));
     json_insert_pair_into_object(jroot, "error", json_new_string(msgjson));
     json_tree_to_string(jroot,&json);
-    if (fileupload)  // The returned json should be in the implied <body> tag for iframe requests.
-      printf("Content-type: text/html\n\n");
-    else
-      printf("Content-type: application/json\n\n");
+    
+    if (gGenWebPage)
+    {
+        if (fileupload)  // The returned json should be in the implied <body> tag for iframe requests.
+            printf("Content-type: text/html\n\n");
+        else
+            printf("Content-type: application/json\n\n");
+    }
+      
     printf("%s\n",json);
     }
   else
@@ -1042,6 +1051,219 @@ static char *GetExistReqID(DRMS_Env_t *env, const char *dsquery, const char *fil
     return id;
 }
 
+
+static int CheckEmailAddress(const char *logfile, const char *requestor, const char *notify, char *dieStr, int sz)
+{
+    /* Check notification email address. */
+    int rv = 0;
+    char realAddress[512] = {0};
+    
+    if (strcmp(requestor, kNotSpecified) != 0 && strncasecmp(notify, "solarmail", 9) == 0)
+    {
+        snprintf(realAddress, sizeof(realAddress), "%s@spd.aas.org", requestor);
+    }
+    else
+    {
+        if (strcmp(notify, kNotSpecified) != 0)
+        {
+            snprintf(realAddress, sizeof(realAddress), "%s", notify);
+        }
+    }
+    
+    /* If there is no email address, then bail. */
+    if (*realAddress == '\0')
+    {
+        /* Cannot call JSONDIE from functions. */
+       snprintf(dieStr, sz, "Email address for notification was not specfied. It is required.");
+       rv = 1;
+    }
+    
+    /* Call script to verify notification email address. If the email address is not registered, then we fail right here. */
+    char caCmd[PATH_MAX];
+    char caMsg[1024];
+    FILE *caFptr = NULL;
+    int res;
+    
+    /* This is going to be Stanford-specific stuff - I'll localize this when I have time. */
+    /* This script needs to connect to the database as database user apache, so the user running jsoc_fetch must have db user apache in their
+     * .pgpass file. Normally it is linux user apache who runs jsoc_fetch, and this user has database user apache in their .pgpass. */
+    snprintf(caCmd, sizeof(caCmd), "unset REQUEST_METHOD; unset QUERY_STRING; %s %s/checkAddress.py address=%s'&'checkonly=1'&'addresstab=jsoc.export_addresses'&'domaintab=jsoc.export_addressdomains'&'dbuser=apache", BIN_PY, SCRIPTS_EXPORT, realAddress);
+    WriteLog(logfile, "Calling checkAddress.py: %s\n", caCmd);
+    caFptr = popen(caCmd, "r");
+    
+    if (caFptr)
+    {
+        /* C has no good json parsers - use jsmn. */
+        jsmn_parser parser;
+        jsmntok_t *tokens = NULL;
+        size_t szjstokens = 512;
+        char rbuf[512];
+        size_t nbytes;
+        size_t ntot = 0;
+        size_t szjson = 1024;
+        char *json = NULL; /* output of checkAddress.py. */
+        int itok;
+        int itchar;
+        char *tok = NULL;
+        size_t szTok;
+        int statusTok = -1;
+        int msgTok = -1;
+        char *endptr = NULL;
+        long long caStatus;
+        char *caMsg = NULL;
+        char tChar[2];
+        
+        json = calloc(1, szjson);
+        
+        if (json)
+        {
+            while ((nbytes = fread(rbuf, sizeof(char), sizeof(rbuf) - 1, caFptr)) > 0)
+            {
+                rbuf[nbytes] = '\0';
+                ntot += nbytes;
+                json = base_strcatalloc(json, rbuf, &szjson);
+            }
+            
+            tokens = calloc(1, sizeof(jsmntok_t) * szjstokens);
+            
+            if (tokens)
+            {
+                jsmn_init(&parser);
+                res = jsmn_parse(&parser, json, tokens, szjstokens);
+                
+                if (res == JSMN_ERROR_NOMEM || res == JSMN_ERROR_INVAL || res == JSMN_ERROR_PART)
+                {
+                    /* Did not allocate enough tokens to hold parsing results. There shouldn't be 512 tokens in the response, only 2,
+                     * so error out. */
+                    pclose(caFptr);
+                    caFptr = NULL;
+                    /* Cannot call JSONDIE from functions. */
+                    snprintf(dieStr, sz, "Unexpected response from checkAddress.py.");
+                    rv = 1;
+                }
+                else if (res != JSMN_SUCCESS)
+                {
+                    /* Something else went wrong. */
+                    pclose(caFptr);
+                    caFptr = NULL;
+                    /* Cannot call JSONDIE from functions. */
+                    snprintf(dieStr, sz, "Failure parsing JSON.");
+                    rv = 1;
+                }
+                
+                /* There are 5 "tokens" in the returned json: <JSON object>, "status", <status val>, "msg", <msg val>. We
+                 * want to look at status (token[2]). If it is 2, then the address is registered, and we can continue. If it is anything else, we return
+                 * error code 6 (export record was not created). checkAddress.py will provide an appropriate error message in tokens[4]. tokens[0].size
+                 * is the total number of tokens (aside from the root object).
+                 */
+                
+                /* This JSON parser is pretty poor, so we need all this code to fetch the property values we want to look at. */
+                for (itok = 1; itok <= tokens[0].size; itok++)
+                {
+                    szTok = 128;
+                    
+                    tok = calloc(1, szTok);
+                    
+                    if (!tok)
+                    {
+                        pclose(caFptr);
+                        caFptr = NULL;
+                        /* Cannot call JSONDIE from functions. */
+                        snprintf(dieStr, sz, "Out of memory.");
+                        rv = 1;
+                    }
+                    
+                    tChar[1] = '\0';
+                    for (itchar = tokens[itok].start; itchar < tokens[itok].end; itchar++)
+                    {
+                        tChar[0] = json[itchar];
+                        tok = base_strcatalloc(tok, (char *)&tChar, &szTok);
+                    }
+                    
+                    if (*tok)
+                    {
+                        if (statusTok != -1)
+                        {
+                            /* tok is the status value. */
+                            caStatus = strtoll(tok, &endptr, 10);
+                            if (tok == endptr)
+                            {
+                                /* Bad status returned from checkAddress.py. */
+                                pclose(caFptr);
+                                caFptr = NULL;
+                                /* Cannot call JSONDIE from functions. */
+                                snprintf(dieStr, sz, "Bad status code returned from checkAddress.py.");
+                                rv = 1;
+                            }
+                            
+                            statusTok = -1;
+                        }
+                        
+                        if (msgTok != -1)
+                        {
+                            /* tok is the msg value. */
+                            caMsg = strdup(tok);
+                            msgTok = -1;
+                        }
+                        
+                        if (strcasecmp(tok, "status") == 0)
+                        {
+                            statusTok = itok + 1;
+                        }
+                        else if (strcasecmp(tok, "msg") == 0)
+                        {
+                            msgTok = itok + 1;
+                        }
+                    }
+                    
+                    free(tok);
+                }
+                
+                free(tokens);
+                tokens = NULL;
+            }
+            
+            free(json);
+            json = NULL;
+        }
+
+        WriteLog(logfile, "checkAddress.py returned status: %lld\n", caStatus);        
+        if (caStatus != 2)
+        {
+            /* Cannot continue because the notification email address has not been registered. */
+            if (caMsg)
+            {
+                /* Cannot call JSONDIE from functions. */
+                snprintf(dieStr, sz, "Cannot process your request. %s", caMsg);
+                rv = 3;
+            }
+            else
+            {
+                /* Cannot call JSONDIE from functions. */
+                snprintf(dieStr, sz, "Cannot process your request. Your notification email address has not been registered.");
+                rv = 3;
+            }
+        }
+        
+        if (caMsg)
+        {
+            free(caMsg);
+            caMsg = NULL;
+        }
+        
+        pclose(caFptr);
+        caFptr = NULL;
+    }
+    else
+    {
+        /* Cannot call JSONDIE from functions. */
+        snprintf(dieStr, sz, "Unable to call checkAddress.py.");
+        rv = 1;
+    }
+
+    return rv;
+}
+
 /* Module main function. */
 int DoIt(void)
 {
@@ -1067,6 +1289,7 @@ int DoIt(void)
   char dbhost[DRMS_MAXHOSTNAME];
   int testmode = 0;
   int passthrough = 0;
+  int genWebPage = 1;
   char *errorreply;
   int64_t *sunumarr = NULL; /* array of 64-bit sunums provided in the'sunum=...' argument. */
   int nsunums;
@@ -1175,12 +1398,13 @@ int DoIt(void)
             SetWebArg(req, kArgShipto, &webarglist, &webarglistsz);
             SetWebArg(req, kArgRequestorid, &webarglist, &webarglistsz);
             SetWebArg(req, kUserHandle, &webarglist, &webarglistsz);
-            SetWebArg(req, KArgSizeRatio, &webarglist, &webarglistsz);
+            SetWebArg(req, kArgSizeRatio, &webarglist, &webarglistsz);
             if (strncmp(cmdparams_get_str (&cmdparams, kArgDs, NULL),"*file*", 6) == 0);
             SetWebFileArg(req, kArgFile, &webarglist, &webarglistsz);
             SetWebArg(req, kArgTestmode, &webarglist, &webarglistsz);
             SetWebArg(req, kArgPassthrough, &webarglist, &webarglistsz);
-            
+            SetWebArg(req, kArgDontGenWebPage, &webarglist, &webarglistsz);
+                        
             qEntryFree(req); 
         }
     }
@@ -1191,7 +1415,7 @@ int DoIt(void)
   requestid = cmdparams_get_str (&cmdparams, kArgRequestid, NULL);
   dsin = cmdparams_get_str (&cmdparams, kArgDs, NULL);
   userhandle = cmdparams_get_str (&cmdparams, kUserHandle, NULL);
-  sizeRatio = cmdparams_get_float(&cmdparams, KArgSizeRatio, NULL);
+  sizeRatio = cmdparams_get_float(&cmdparams, kArgSizeRatio, NULL);
   Remote_Address = cmdparams_get_str(&cmdparams, "REMOTE_ADDR", NULL);
   Server = cmdparams_get_str(&cmdparams, "SERVER_NAME", NULL);
 
@@ -1240,6 +1464,8 @@ int DoIt(void)
 
   testmode = (TESTMODE || cmdparams_isflagset(&cmdparams, kArgTestmode));
   passthrough = cmdparams_isflagset(&cmdparams, kArgPassthrough);
+  genWebPage = (cmdparams_isflagset(&cmdparams, kArgDontGenWebPage) == 0);
+  gGenWebPage = genWebPage;
 
   dodataobj = strcmp(formatvar, "dataobj") == 0;
   dojson = strcmp(format, "json") == 0;
@@ -2092,7 +2318,10 @@ int DoIt(void)
         sprintf(sums_status_str, "%d", sums_status); //ISS
         json_insert_pair_into_object(jroot, "status", json_new_number(sums_status_str)); //ISS
         json_tree_to_string(jroot,&json);
-        printf("Content-type: application/json\n\n");
+        if (genWebPage)
+        {
+            printf("Content-type: application/json\n\n");
+        }
         printf("%s\n",json);
         fflush(stdout);
         free(json);
@@ -2258,19 +2487,36 @@ check for requestor to be valid remote DRMS site
     int compressedStorage;
     int compressedDownload;
     export_series = kExportSeriesNew;
-        
+    char dieStr[1024];
+    int caStatus = 0;
+
     if (internal)
     {
-        lfname = kLogFileExpReqInt;
+       lfname = kLogFileExpReqInt;
     }
     else
     {
-        lfname = kLogFileExpReqExt;            
+       lfname = kLogFileExpReqExt;
     }
-        
-        /* requestid was not provided on the command-line. It is created near the end of this code block. */
+
+    /* requestid was not provided on the command-line. It is created near the end of this code block. */
     LogReqInfo(lfname, fileupload, op, dsin, requestid, dbhost, from_web, webarglist, fetch_time);
 
+    caStatus = CheckEmailAddress(lfname, requestor, notify, dieStr, sizeof(dieStr));
+        
+    if (caStatus == 1)
+    {
+        JSONDIE(dieStr);
+    }
+    else if (caStatus == 2)
+    {
+       JSONDIE2(dieStr, "");
+    }
+    else if (caStatus == 3)
+    {
+       JSONDIE3(dieStr, "");
+    }
+        
     size=0;
     strncpy(dsquery,dsin,DRMS_MAXQUERYLEN);
     fileupload = strncmp(dsquery, "*file*", 6) == 0;
@@ -2477,14 +2723,17 @@ check for requestor to be valid remote DRMS site
                 
                 json_free_value(&jroot);
                 
-                if (fileupload)
+                if (genWebPage)
                 {
-                    // The returned json should be in the implied <body> tag for iframe requests.
-                    printf("Content-type: text/html\n\n");
-                }
-                else
-                {
-                    printf("Content-type: application/json\n\n");
+                    if (fileupload)
+                    {
+                        // The returned json should be in the implied <body> tag for iframe requests.
+                        printf("Content-type: text/html\n\n");
+                    }
+                    else
+                    {
+                        printf("Content-type: application/json\n\n");
+                    }
                 }
                 
                 if (jsonText)
@@ -2768,10 +3017,13 @@ check for requestor to be valid remote DRMS site
         json_insert_pair_into_object(jroot, "error", json_new_string(strval));
         free(strval);
         json_tree_to_string(jroot,&json);
-        if (fileupload)  // The returned json should be in the implied <body> tag for iframe requests.
-           printf("Content-type: text/html\n\n");
-        else
-          printf("Content-type: application/json\n\n");
+        if (genWebPage)
+        {
+            if (fileupload)  // The returned json should be in the implied <body> tag for iframe requests.
+                printf("Content-type: text/html\n\n");
+            else
+                printf("Content-type: application/json\n\n");
+        }
         printf("%s\n",json);
         fflush(stdout);
         free(json);
@@ -2826,10 +3078,13 @@ check for requestor to be valid remote DRMS site
         json_insert_pair_into_object(jroot, "wait", json_new_number("0"));
         json_insert_pair_into_object(jroot, "status", json_new_number("0"));
         json_tree_to_string(jroot,&json);
-        if (fileupload)  // The returned json should be in the implied <body> tag for iframe requests.
-           printf("Content-type: text/html\n\n");
-        else
-          printf("Content-type: application/json\n\n");
+        if (genWebPage)
+        {
+            if (fileupload)  // The returned json should be in the implied <body> tag for iframe requests.
+                printf("Content-type: text/html\n\n");
+            else
+                printf("Content-type: application/json\n\n");
+        }
         printf("%s\n",json);
         fflush(stdout);
         free(json);
@@ -3231,11 +3486,15 @@ JSONDIE("Re-Export requests temporarily disabled.");
             snprintf(dbuf, sizeof(dbuf), "Export should be complete but return %s file not found", indexfile);
             JSONCOMMIT(dbuf, &exprec, !insertexprec);
         }
-  
-        if (dojson)
-          printf("Content-type: application/json\n\n");
-        else
-	  printf("Content-type: text/plain\n\n");
+
+        if (genWebPage)
+        {  
+            if (dojson)
+                printf("Content-type: application/json\n\n");
+            else
+                printf("Content-type: text/plain\n\n");
+        }
+        
         while ((c = fgetc(fp)) != EOF)
           putchar(c);
         fclose(fp);
@@ -3310,11 +3569,15 @@ JSONDIE("Re-Export requests temporarily disabled.");
         json_tree_to_string(jroot,&json);
         json_free_value(&jroot);
         
-        if (fileupload)  // The returned json should be in the implied <body> tag for iframe requests.
-  	  printf("Content-type: text/html\n\n");
-        else
-          printf("Content-type: application/json\n\n");
-	printf("%s\n",json);
+        if (genWebPage)
+        {
+            if (fileupload)  // The returned json should be in the implied <body> tag for iframe requests.
+                printf("Content-type: text/html\n\n");
+            else
+                printf("Content-type: application/json\n\n");
+        }
+
+    	printf("%s\n",json);
         free(json);
         json = NULL;
 	}

@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 
-# Document this, again. Again. Again.
-
 from __future__ import print_function
 import sys
 import os

@@ -41,14 +41,14 @@ else
 endif
 
 $(OBJ_$(d)):		$(SRCDIR)/$(d)/Rules.mk
-$(OBJ_$(d)):		CF_TGT := $(CF_TGT) $(TPARTYH) -I$(SRCDIR)/$(d)/../../libs/json -I$(SRCDIR)/$(d)/../libs/util
+$(OBJ_$(d)):		CF_TGT := $(CF_TGT) $(TPARTYH) -I$(SRCDIR)/$(d)/../../libs/json -I$(SRCDIR)/$(d)/../../libs/jsmn -I$(SRCDIR)/$(d)/../libs/util
 # DBMS is the POSTGRESQL macro needed so that jsoc_fetch can see db_int8_t
-$(OBJ_$(d)):		CF_TGT := $(CF_TGT) -DCDIR="\"$(SRCDIR)/$(d)\"" -D$(DBMS)
+$(OBJ_$(d)):		CF_TGT := $(CF_TGT) -DEXPARCH="\""$(JSOC_MACHINE)"\"" -D$(DBMS)
 
-$(CEXE_$(d)):		$(LIBJSON) $(LIBEXPDRMS) $(LIBEXPUTL) $(LIBQDECODER)
-$(MODEXE_$(d)):		$(LIBJSON) $(LIBEXPDRMS) $(LIBEXPUTL) $(LIBQDECODER)
-$(MODEXE_ONLY_$(d)):	$(LIBJSON) $(LIBEXPDRMS) $(LIBEXPUTL) $(LIBQDECODER)
-$(MODEXE_SOCK_$(d)):	$(LIBJSON) $(LIBEXPDRMS) $(LIBEXPUTL) $(LIBQDECODER)
+$(CEXE_$(d)):		$(LIBJSON) $(LIBJSMN) $(LIBEXPDRMS) $(LIBEXPUTL) $(LIBQDECODER)
+$(MODEXE_$(d)):		$(LIBJSON) $(LIBJSMN) $(LIBEXPDRMS) $(LIBEXPUTL) $(LIBQDECODER)
+$(MODEXE_ONLY_$(d)):	$(LIBJSON) $(LIBJSMN) $(LIBEXPDRMS) $(LIBEXPUTL) $(LIBQDECODER)
+$(MODEXE_SOCK_$(d)):	$(LIBJSON) $(LIBJSMN) $(LIBEXPDRMS) $(LIBEXPUTL) $(LIBQDECODER)
 
 $(MODEXE_$(d)):		LL_TGT := $(LL_TGT) $(LIBTARL)
 $(MODEXE_SOCK_$(d)):	LL_TGT := $(LL_TGT) $(LIBTARL)
