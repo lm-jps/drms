@@ -3,6 +3,7 @@
 from __future__ import print_function
 import sys
 import os
+import re
 import cgi
 import json
 from subprocess import check_output, check_call, CalledProcessError, STDOUT
@@ -26,6 +27,11 @@ def getDRMSParam(drmsParams, param):
         raise Exception('drmsParams', 'DRMS parameter ' + param + ' is not defined.', RET_DRMSPARAMS)
 
     return rv
+    
+def validRequestID(id):
+    regexp = re.compile(r'JSOC_\d\d\d\d\d\d\d\d_\d+_X_IN')
+    match = regexp.match(id)
+    return match is not None
     
 def printUTF8(unicode):
     print(str(unicode).rstrip())
@@ -62,25 +68,29 @@ try:
      
     # Enforce requirements.   
     if 'op' not in optD:
-        raise Exception('invalidArgs', 'Missing required argument ' + "'op'.")
+        raise Exception('invalidArgs', 'Missing required argument ' + "'op'.", RET_BADARGS)
 
     if optD['op'] == 'exp_request':
         if not 'dbhost' in optD:
-            raise Exception('invalidArgs', 'Missing required argument ' + "'dbhost'.")
+            raise Exception('invalidArgs', 'Missing required argument ' + "'dbhost'.", RET_BADARGS)
         if not 'spec' in optD:
-            raise Exception('invalidArgs', 'Missing required argument ' + "'ds'.")
+            raise Exception('invalidArgs', 'Missing required argument ' + "'ds'.", RET_BADARGS)
     elif optD['op'] == 'exp_status' or optD['op'] == 'exp_repeat':
         if not 'requestid' in optD:
-            raise Exception('invalidArgs', 'Missing required argument ' + "'requestid'.")
+            raise Exception('invalidArgs', 'Missing required argument ' + "'requestid'.", RET_BADARGS)
+    
+    # Validate requestid - this script is called only from the external website when status is requested for a request handled by the internal database.
+    if not validRequestID(optD['requestid']):
+        raise Exception('invalidArgs', 'requestid ' + optD['requestid'] + ' is not for a pass-through request (acceptable format is JSOC_YYYYMMDD_NNN_X_IN).', RET_BADARGS)
     
     
     if 'requestid' in optD and 'spec' in optD:
-        raise Exception('invalidArsg', 'Cannot provide both ' + "'requestid' and 'ds'.")
+        raise Exception('invalidArgs', 'Cannot provide both ' + "'requestid' and 'ds'.", RET_BADARGS)
     
     drmsParams = DRMSParams()
 
     if drmsParams is None:
-        raise Exception('drmsParams', 'Unable to locate DRMS parameters file (drmsparams.py).')
+        raise Exception('drmsParams', 'Unable to locate DRMS parameters file (drmsparams.py).', RET_DRMSPARAMS)
 
     # Before calling anything, make sure that QUERY_STRING is not set in the child process. Some DRMS modules, like show_series,
     # branch into "web" code if they see QUERY_STRING set.
@@ -173,8 +183,7 @@ try:
         # jsoc_fetch DOES print the HTML header needed when it is run from the command line (unlike show_info).
 
         # W=1 ==> Do not print HTML headers. This script should do that.
-        #   ART cmdList = [os.path.join(binDir, arch, 'jsoc_fetch'), 'JSOC_DBHOST=' + server, 'DRMS_DBTIMEOUT=900000', 'W=1']
-        cmdList = [os.path.join('/home/arta/jsoctrees/JSOC/bin', arch, 'jsoc_fetch'), 'JSOC_DBHOST=' + server, 'DRMS_DBTIMEOUT=900000', 'W=1']
+        cmdList = [os.path.join(binDir, arch, 'jsoc_fetch'), 'JSOC_DBHOST=' + server, 'DRMS_DBTIMEOUT=900000', 'W=1']
         # Provide all jsoc_fetch arguments passed through jsocextfetch.py to jsoc_fetch.
         cmdList.extend(allArgs)
 
@@ -203,8 +212,9 @@ try:
         # op=exp_request command. The name of request ID encodes that information.
 
         # W=1 ==> Do not print HTML headers. This script should do that.
-        #   ART     cmdList = [os.path.join(binDir, arch, 'jsoc_fetch'), 'JSOC_DBHOST=' + getDRMSParam(drmsParams, 'SERVER'), 'DRMS_DBTIMEOUT=900000', 'W=1']
-        cmdList = [os.path.join('/home/arta/jsoctrees/JSOC/bin', arch, 'jsoc_fetch'), 'JSOC_DBHOST=' + getDRMSParam(drmsParams, 'SERVER'), 'DRMS_DBTIMEOUT=900000', 'W=1']
+        # JSOC_DBHOST is the internal server. jsocextfetch.py is called from the external website only when the original request was supported by the 
+        # internal database.
+        cmdList = [os.path.join(binDir, arch, 'jsoc_fetch'), 'JSOC_DBHOST=' + getDRMSParam(drmsParams, 'SERVER'), 'DRMS_DBTIMEOUT=900000', 'W=1']
         # Provide all jsoc_fetch arguments passed through jsocextfetch.py to jsoc_fetch.
         cmdList.extend(allArgs)
 
