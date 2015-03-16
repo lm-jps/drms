@@ -79,10 +79,9 @@ try:
         if not 'requestid' in optD:
             raise Exception('invalidArgs', 'Missing required argument ' + "'requestid'.", RET_BADARGS)
     
-    # Validate requestid - this script is called only from the external website when status is requested for a request handled by the internal database.
-    if not validRequestID(optD['requestid']):
-        raise Exception('invalidArgs', 'requestid ' + optD['requestid'] + ' is not for a pass-through request (acceptable format is JSOC_YYYYMMDD_NNN_X_IN).', RET_BADARGS)
-    
+        # Validate requestid - this script is called only from the external website when status is requested for a request handled by the internal database.
+        if not validRequestID(optD['requestid']):
+            raise Exception('invalidArgs', 'requestid ' + optD['requestid'] + ' is not for a pass-through request (acceptable format is JSOC_YYYYMMDD_NNN_X_IN).', RET_BADARGS)    
     
     if 'requestid' in optD and 'spec' in optD:
         raise Exception('invalidArgs', 'Cannot provide both ' + "'requestid' and 'ds'.", RET_BADARGS)
