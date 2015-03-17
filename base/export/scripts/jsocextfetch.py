@@ -194,11 +194,18 @@ try:
         try:
             resp = check_output(cmdList, stderr=STDOUT)
             output = resp.decode('utf-8')
-            jsonObj = json.loads(output)
         except ValueError as exc:
             raise Exception('jsocfetch', exc.args[0], RET_JSOCFETCH)
         except CalledProcessError as exc:
-            raise Exception('jsocfetch', "Command '" + ' '.join(cmdList) + "' returned non-zero status code " + str(exc.returncode), RET_JSOCFETCH)
+            # jsoc_fetch sometimes exits with a status code of 1 when it should not - like when it a request ID does not exist.
+            # It creates JSON to be used in a web page, but exits with 1 (which signifies that the JSON created should not
+            # be used). Fortunately, the output is saved in exc.output.
+            output = exc.output.decode('utf-8')
+            
+        try:
+            jsonObj = json.loads(output)
+        except ValueError as exc:
+            raise Exception('jsocfetch', exc.args[0], RET_JSOCFETCH)
             
         if jsonObj is None or int(jsonObj['status']) != 0 and int(jsonObj['status']) != 1 and int(jsonObj['status']) != 2 and int(jsonObj['status']) != 3 and int(jsonObj['status']) != 4 and int(jsonObj['status']) != 5 and int(jsonObj['status']) != 6:
             raise Exception('jsocfetch', 'jsoc_fetch did not return a known status code (code ' + jsonObj['status']+ ').', RET_JSOCFETCH)
@@ -225,11 +232,18 @@ try:
         try:
             resp = check_output(cmdList, stderr=STDOUT)
             output = resp.decode('utf-8')
-            jsonObj = json.loads(output)
         except ValueError as exc:
             raise Exception('jsocfetch', exc.args[0], RET_JSOCFETCH)
         except CalledProcessError as exc:
-            raise Exception('jsocfetch', "Command '" + ' '.join(cmdList) + "' returned non-zero status code " + str(exc.returncode), RET_JSOCFETCH)
+            # jsoc_fetch sometimes exits with a status code of 1 when it should not - like when it a request ID does not exist.
+            # It creates JSON to be used in a web page, but exits with 1 (which signifies that the JSON created should not
+            # be used). Fortunately, the output is saved in exc.output.
+            output = exc.output.decode('utf-8')
+            
+        try:
+            jsonObj = json.loads(output)
+        except ValueError as exc:
+            raise Exception('jsocfetch', exc.args[0], RET_JSOCFETCH)
             
         if jsonObj is None or int(jsonObj['status']) != 0 and int(jsonObj['status']) != 1 and int(jsonObj['status']) != 2 and int(jsonObj['status']) != 3 and int(jsonObj['status']) != 4 and int(jsonObj['status']) != 5 and int(jsonObj['status']) != 6:
             raise Exception('jsocfetch', 'jsoc_fetch did not return a known status code (code ' + jsonObj['status']+ ').', RET_JSOCFETCH)
