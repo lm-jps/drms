@@ -249,6 +249,7 @@ except Exception as exc:
 # jsoc_fetch creates webpage content, if there is no failure. But if it or this script fails, then we have to create content that contains
 # an error code and error message.
 if err:
+    print('Content-type: application/json\n')
     rootObj = { "status" : err, "error" : errMsg}
     print(json.dumps(rootObj))
     
