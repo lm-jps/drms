@@ -1,5 +1,12 @@
 #!/usr/bin/env python
 
+# This is a wrapper for jsoc_info.c, so it must adhere to its API:
+#   If no error has occurs, then return "status" : 0.
+#   If an error occurs, return a non-zero status. jsoc_info.c does not return anything other than 
+#     "status" : 1, but jsocextinfo.py distinguishes several different kinds of errors. jsocextinfo.py
+#     returns one of its return values (success is still 0). An error message is returned via
+#     the "error" property.
+
 from __future__ import print_function
 import sys
 import os
@@ -173,8 +180,8 @@ except Exception as exc:
 if err:
     print('Content-type: application/json\n')
     rootObj = {}
-    rootObj['err'] = err
-    rootObj['errMsg'] = errMsg
+    rootObj['status'] = err
+    rootObj['error'] = errMsg
     print(json.dumps(rootObj))
 
 sys.exit(0)
