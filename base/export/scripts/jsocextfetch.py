@@ -92,9 +92,14 @@ try:
         raise Exception('drmsParams', 'Unable to locate DRMS parameters file (drmsparams.py).', RET_DRMSPARAMS)
 
     # Before calling anything, make sure that QUERY_STRING is not set in the child process. Some DRMS modules, like show_series,
-    # branch into "web" code if they see QUERY_STRING set.
+    # branch into "web" code if they see QUERY_STRING set. Also remove the REQUEST_METHOD environment variable - if that
+    # is set to POST, then that could interfere with code called from here. We want all code called to get arguments from
+    # the command line, not from CGI environment variables.
     if 'QUERY_STRING' in os.environ:
         del os.environ['QUERY_STRING']
+        
+    if 'REQUEST_METHOD' in os.environ:
+        del os.environ['REQUEST_METHOD']
 
     # To run various DRMS modules, we'll need to know the path to the modules, and the architecture of the module to run.
     binDir = getDRMSParam(drmsParams, 'BIN_EXPORT')
