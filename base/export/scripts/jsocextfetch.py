@@ -29,9 +29,17 @@ def getDRMSParam(drmsParams, param):
     return rv
     
 def validRequestID(id):
-    regexp = re.compile(r'JSOC_\d\d\d\d\d\d\d\d_\d+_X_IN')
+    regexp = re.compile(r'JSOC_\d\d\d\d\d\d\d\d_\d+_X_IN\s*$')
     match = regexp.match(id)
-    return match is not None
+    if match is not None:
+        return 'int'
+    else:
+        regexp = re.compile(r'JSOC_\d\d\d\d\d\d\d\d_\d+\s*$')
+        match = regexp.match(id)
+        if match is not None:
+            return 'ext'
+    
+    return None
     
 def printUTF8(unicode):
     print(str(unicode).rstrip())
@@ -65,6 +73,11 @@ try:
                     optD['requestid'] = val
 
                 allArgs.append(key + '=' + val)
+                
+    drmsParams = DRMSParams()
+
+    if drmsParams is None:
+        raise Exception('drmsParams', 'Unable to locate DRMS parameters file (drmsparams.py).', RET_DRMSPARAMS)
      
     # Enforce requirements.   
     if 'op' not in optD:
@@ -80,16 +93,18 @@ try:
             raise Exception('invalidArgs', 'Missing required argument ' + "'requestid'.", RET_BADARGS)
     
         # Validate requestid - this script is called only from the external website when status is requested for a request handled by the internal database.
-        if not validRequestID(optD['requestid']):
-            raise Exception('invalidArgs', 'requestid ' + optD['requestid'] + ' is not for a pass-through request (acceptable format is JSOC_YYYYMMDD_NNN_X_IN).', RET_BADARGS)    
+        expSys = validRequestID(optD['requestid'])
+        if expSys == 'int':
+            server = getDRMSParam(drmsParams, 'SERVER')
+        elif expSys == 'ext':
+            if not 'dbhost' in optD:
+                raise Exception('invalidArgs', 'Missing required argument ' + "'dbhost'.", RET_BADARGS)
+            server = optD['dbhost']
+        else:
+            raise Exception('invalidArgs', 'requestid ' + optD['requestid'] + ' is not an acceptable ID for the external export system (acceptable format is JSOC_YYYYMMDD_NNN_X_IN or JSOC_YYYYMMDD_NNN).', RET_BADARGS)
     
     if 'requestid' in optD and 'spec' in optD:
         raise Exception('invalidArgs', 'Cannot provide both ' + "'requestid' and 'ds'.", RET_BADARGS)
-    
-    drmsParams = DRMSParams()
-
-    if drmsParams is None:
-        raise Exception('drmsParams', 'Unable to locate DRMS parameters file (drmsparams.py).', RET_DRMSPARAMS)
 
     # Before calling anything, make sure that QUERY_STRING is not set in the child process. Some DRMS modules, like show_series,
     # branch into "web" code if they see QUERY_STRING set. Also remove the REQUEST_METHOD environment variable - if that
@@ -123,7 +138,6 @@ try:
     # There should be only one output line.    
     outputList = output.splitlines()
     arch = outputList[0];
-
 
     if 'spec' in optD:
         series = []
@@ -187,7 +201,7 @@ try:
         # jsoc_fetch DOES print the HTML header needed when it is run from the command line (unlike show_info).
 
         # W=1 ==> Do not print HTML headers. This script should do that.
-        cmdList = [os.path.join(binDir, arch, 'jsoc_fetch'), 'JSOC_DBHOST=' + server, 'DRMS_DBTIMEOUT=900000', 'W=1']
+        cmdList = [os.path.join(binDir, arch, 'jsoc_fetch'), 'JSOC_DBHOST=' + server, 'DRMS_DBTIMEOUT=900000', 'W=1', 'p=1']
         # Provide all jsoc_fetch arguments passed through jsocextfetch.py to jsoc_fetch.
         cmdList.extend(allArgs)
 
@@ -225,7 +239,7 @@ try:
         # W=1 ==> Do not print HTML headers. This script should do that.
         # JSOC_DBHOST is the internal server. jsocextfetch.py is called from the external website only when the original request was supported by the 
         # internal database.
-        cmdList = [os.path.join(binDir, arch, 'jsoc_fetch'), 'JSOC_DBHOST=' + getDRMSParam(drmsParams, 'SERVER'), 'DRMS_DBTIMEOUT=900000', 'W=1']
+        cmdList = [os.path.join(binDir, arch, 'jsoc_fetch'), 'JSOC_DBHOST=' + server, 'DRMS_DBTIMEOUT=900000', 'W=1']
         # Provide all jsoc_fetch arguments passed through jsocextfetch.py to jsoc_fetch.
         cmdList.extend(allArgs)
 
