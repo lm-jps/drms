@@ -82,7 +82,9 @@ if __name__ == "__main__":
                     address = matchObj.group(1)
 
             if confirmation is None:
-                matchObj = regExpS.match(line)
+                # Either the responding email client or procmail inserts junk into the body of the email, so we
+                # cannot assume that the confirmation code sent to the user stays at the beginning of the line.
+                matchObj = regExpS.search(line)
                 if matchObj:
                     confirmation = matchObj.group(1)
 
