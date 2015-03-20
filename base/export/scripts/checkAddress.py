@@ -92,9 +92,15 @@ if __name__ == "__main__":
                 # know how to strip arguments in shell.                
 
         # Ensure required arguments are present.
-        if 'address' not in optD or 'addresstab' not in optD or 'domaintab' not in optD:
-            raise Exception('caArgs', 'Missing required argument.', RV_ERROR_ARGS)
-
+        if 'address' not in optD:
+            raise Exception('caArgs', "Missing required argument 'address'.", RV_ERROR_ARGS)
+            
+        if 'addresstab' not in optD:
+            raise Exception('caArgs', "Missing required argument 'addresstab'.", RV_ERROR_ARGS)
+        
+        if 'domaintab' not in optD:
+            raise Exception('caArgs', "Missing required argument 'domaintab'.", RV_ERROR_ARGS)
+            
         # Do a quick validation on the email address.
         regExp = re.compile(r'\s*[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,6}')
         matchObj = regExp.match(optD['address'])
