@@ -2508,13 +2508,9 @@ check for requestor to be valid remote DRMS site
     {
         JSONDIE(dieStr);
     }
-    else if (caStatus == 2)
+    else if (caStatus == 2 || caStatus == 3)
     {
        JSONDIE2(dieStr, "");
-    }
-    else if (caStatus == 3)
-    {
-       JSONDIE3(dieStr, "");
     }
         
     size=0;
