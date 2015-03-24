@@ -135,7 +135,7 @@ if __name__ == "__main__":
                         if optD['checkonly']:
                             # Do not initiate registration.
                             rv = RV_UNREGISTEREDADDRESS
-                            msg = 'Email address has neither been vaidated nor registered.'
+                            msg = 'Email address has neither been validated nor registered.'
                         else:
                             # Register it.
                             confirmation = uuid.uuid5(uuid.NAMESPACE_DNS, domainName)
