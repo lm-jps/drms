@@ -47,6 +47,9 @@ def printUTF8(unicode):
 try:
     optD = {}
     allArgs = []
+    
+    # Default to JSON output.
+    optD['json'] = True
 
     # If jsocextfetch.py is processing an HTTP POST request, then cgi.FieldStorage() reads from STDIN to get the arguments. This
     # means that the jsoc_fetch binary will not find the arguments when it tries to get them from STDIN!!! This is assuming that it is
@@ -71,6 +74,8 @@ try:
                     optD['op'] = val
                 elif key in ('requestid'):
                     optD['requestid'] = val
+                elif key in ('format') and val.lower() == 'txt':
+                    optD['json'] = False
 
                 allArgs.append(key + '=' + val)
                 
@@ -215,17 +220,24 @@ try:
             # It creates JSON to be used in a web page, but exits with 1 (which signifies that the JSON created should not
             # be used). Fortunately, the output is saved in exc.output.
             output = exc.output.decode('utf-8')
+        
+        # ACK - jsoc_fetch can produce text output, even in the CGI context. Instead of checking for errors in the text
+        # case, let the caller of this script do so.
+        if optD['json']:        
+            try:
+                jsonObj = json.loads(output)
+            except ValueError as exc:
+                raise Exception('jsocfetch', exc.args[0], RET_JSOCFETCH)
             
-        try:
-            jsonObj = json.loads(output)
-        except ValueError as exc:
-            raise Exception('jsocfetch', exc.args[0], RET_JSOCFETCH)
-            
-        if jsonObj is None or int(jsonObj['status']) != 0 and int(jsonObj['status']) != 1 and int(jsonObj['status']) != 2 and int(jsonObj['status']) != 3 and int(jsonObj['status']) != 4 and int(jsonObj['status']) != 5 and int(jsonObj['status']) != 6:
-            raise Exception('jsocfetch', 'jsoc_fetch did not return a known status code (code ' + jsonObj['status']+ ').', RET_JSOCFETCH)
+            if jsonObj is None or int(jsonObj['status']) != 0 and int(jsonObj['status']) != 1 and int(jsonObj['status']) != 2 and int(jsonObj['status']) != 3 and int(jsonObj['status']) != 4 and int(jsonObj['status']) != 5 and int(jsonObj['status']) != 6:
+                raise Exception('jsocfetch', 'jsoc_fetch did not return a known status code (code ' + jsonObj['status']+ ').', RET_JSOCFETCH)
 
-        # Print the JSON object as returned by jsoc_fetch.
-        print('Content-type: application/json\n')
+            # Print the JSON object as returned by jsoc_fetch.
+            print('Content-type: application/json\n')
+        else:
+            # For now, the only other option for output format is text.
+            print('Content-type: text/plain\n')
+            
         printUTF8(output)
 
     else:		
@@ -253,17 +265,24 @@ try:
             # It creates JSON to be used in a web page, but exits with 1 (which signifies that the JSON created should not
             # be used). Fortunately, the output is saved in exc.output.
             output = exc.output.decode('utf-8')
+        
+        # ACK - jsoc_fetch can produce text output, even in the CGI context. Instead of checking for errors in the text
+        # case, let the caller of this script do so.
+        if optD['json']:
+            try:
+                jsonObj = json.loads(output)
+            except ValueError as exc:
+                raise Exception('jsocfetch', exc.args[0], RET_JSOCFETCH)
             
-        try:
-            jsonObj = json.loads(output)
-        except ValueError as exc:
-            raise Exception('jsocfetch', exc.args[0], RET_JSOCFETCH)
-            
-        if jsonObj is None or int(jsonObj['status']) != 0 and int(jsonObj['status']) != 1 and int(jsonObj['status']) != 2 and int(jsonObj['status']) != 3 and int(jsonObj['status']) != 4 and int(jsonObj['status']) != 5 and int(jsonObj['status']) != 6:
-            raise Exception('jsocfetch', 'jsoc_fetch did not return a known status code (code ' + jsonObj['status']+ ').', RET_JSOCFETCH)
+            if jsonObj is None or int(jsonObj['status']) != 0 and int(jsonObj['status']) != 1 and int(jsonObj['status']) != 2 and int(jsonObj['status']) != 3 and int(jsonObj['status']) != 4 and int(jsonObj['status']) != 5 and int(jsonObj['status']) != 6:
+                raise Exception('jsocfetch', 'jsoc_fetch did not return a known status code (code ' + jsonObj['status']+ ').', RET_JSOCFETCH)
 
-        # Print the JSON object as returned by jsoc_fetch.
-        print('Content-type: application/json\n')
+            # Print the JSON object as returned by jsoc_fetch.
+            print('Content-type: application/json\n')
+        else:
+            # For now, the only other option for output format is text.
+            print('Content-type: text/plain\n')
+
         printUTF8(output)
         
 except Exception as exc:
