@@ -428,7 +428,11 @@ if (DEBUG) fprintf(stderr,"%s%s\n",msg,info);
     }
   else
     {
-    printf("Content-type: text/plain\n\n");
+    if (gGenWebPage)
+    {
+        printf("Content-type: text/plain\n\n");
+    }
+    
     printf("status=%s\nerror=%s\n", stat, message);
     }
   fflush(stdout);
@@ -2332,7 +2336,10 @@ int DoIt(void)
       else
         {
         int i;
-        printf("Content-type: text/plain\n\n");
+        if (genWebPage)
+        {
+            printf("Content-type: text/plain\n\n");
+        }
         printf("# JSOC Quick Data Export of as-is files.\n");
         printf("status=0\n");
         printf("requestid=\"%s\"\n", kNotSpecified);
@@ -2740,7 +2747,10 @@ check for requestor to be valid remote DRMS site
             }
             else
             {
-                printf("Content-type: text/plain\n\n");
+                if (genWebPage)
+                {
+                    printf("Content-type: text/plain\n\n");
+                }
                 printf("# JSOC Data Export Not Ready.\n");
                 printf("status=%d\n", testmode ? 12 : 2);
                 printf("requestid=%s\n", existReqID);
@@ -3026,7 +3036,10 @@ check for requestor to be valid remote DRMS site
         }  
       else
         {
-        printf("Content-type: text/plain\n\n");
+        if (genWebPage)
+        {
+            printf("Content-type: text/plain\n\n");
+        }
         printf("# JSOC Data Export Failure.\n");
   	printf("status=3\n");
         printf("size=%lld\n",size);
@@ -3087,7 +3100,10 @@ check for requestor to be valid remote DRMS site
         }  
       else
         {
-        printf("Content-type: text/plain\n\n");
+        if (genWebPage)
+        {
+            printf("Content-type: text/plain\n\n");
+        }
         printf("# JSOC Quick Data Export of as-is files.\n");
   	printf("status=0\n");
   	printf("requestid=\"%s\"\n", kNotSpecified);
@@ -3579,7 +3595,10 @@ JSONDIE("Re-Export requests temporarily disabled.");
 	}
       else
         {
-	printf("Content-type: text/plain\n\n");
+        if (genWebPage)
+        {
+        	printf("Content-type: text/plain\n\n");
+        }
         printf("# JSOC Data Export Not Ready.\n");
         printf("status=%d\n", status);
         printf("requestid=%s\n", requestid);
