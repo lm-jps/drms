@@ -30,6 +30,11 @@ TGT_LIB 	:= $(TGT_LIB) $(LIBDRMS) $(LIBDRMSCLIENT)
 S_$(d)		:= $(notdir $(LIBDRMS) $(LIBDRMSCLIENT))
 
 # Local rules
+$(SERVEROBJ_$(d)):	$(d)/server/%.o	: $(d)/%.c
+			$(COMP)
+$(CLIENTOBJ_$(d)):	$(d)/client/%.o : $(d)/%.c
+			$(COMP)
+
 $(COMMOBJ_$(d)):	$(SRCDIR)/$(d)/Rules.mk
 $(COMMOBJ_$(d)):	CF_TGT := $(CF_TGT) -D$(DBMS) $(CFITSIOH)
 $(SERVEROBJ_$(d)):		$(SRCDIR)/$(d)/Rules.mk
@@ -40,7 +45,7 @@ $(CLIENTOBJ_$(d)):		CF_TGT := $(CF_TGT) -D$(DBMS) -DDRMS_CLIENT
 $(LIBDRMS):		$(LIBDRMSSERVER_OBJ)
 			$(ARCHIVE)
 			$(SLLIB)
-			
+
 $(LIBDRMSCLIENT):	$(LIBDRMSCLIENT_OBJ)
 			$(ARCHIVE)
 			$(SLLIB)
