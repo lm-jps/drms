@@ -42,7 +42,7 @@ $(CLIENTOBJ_$(d)):		CF_TGT := -D$(DBMS) $(PGH)
 $(LIBDB):		$(LIBDB_OBJ)
 			$(ARCHIVE)
 			$(SLLIB)
-			
+
 $(LIBDBCLIENT):		$(LIBDBCLIENT_OBJ)
 			$(ARCHIVE)
 			$(SLLIB)
