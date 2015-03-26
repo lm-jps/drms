@@ -37,7 +37,6 @@ $(OBJDIR):
 	+@[ -d $@ ] || mkdir -p $@
 	+@[ -d $@/base/drms/apps ] || mkdir -p $@/base/drms/apps
 	+@[ -d $@/base/drms/libs/api/client ] || mkdir -p $@/base/drms/libs/api/client
-	+@[ -d $@/base/drms/libs/api/client_fpic ] || mkdir -p $@/base/drms/libs/api/client_fpic
 	+@[ -d $@/base/drms/libs/api/server ] || mkdir -p $@/base/drms/libs/api/server
 	+@[ -d $@/base/drms/libs/main/c ] || mkdir -p $@/base/drms/libs/main/c
 	+@[ -d $@/base/drms/libs/main/f ] || mkdir -p $@/base/drms/libs/main/f
@@ -48,7 +47,6 @@ $(OBJDIR):
 	+@[ -d $@/base/export/libs/exportDRMS ] || mkdir -p $@/base/export/libs/exportDRMS
 	+@[ -d $@/base/libs/cmdparams/test ] || mkdir -p $@/base/libs/cmdparams/test
 	+@[ -d $@/base/libs/db/client ] || mkdir -p $@/base/libs/db/client
-	+@[ -d $@/base/libs/db/client_fpic ] || mkdir -p $@/base/libs/db/client_fpic
 	+@[ -d $@/base/libs/db/server ] || mkdir -p $@/base/libs/db/server
 	+@[ -d $@/base/libs/defs/fpic ] || mkdir -p $@/base/libs/defs/fpic
 	+@[ -d $@/base/libs/dstruct/fpic ] || mkdir -p $@/base/libs/dstruct/fpic
