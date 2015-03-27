@@ -170,7 +170,7 @@ except Exception as exc:
 # an error code and error message.
 if err:
 	print('Content-type: text/plain\n')
-	print('Error status: ' + err)
+	print('Error status: ' + str(err))
 	print('Error message: ' + errMsg)
 
 sys.exit(0)
