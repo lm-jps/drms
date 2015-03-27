@@ -119,7 +119,7 @@ def getArgs(drmsParams):
             parser.add_argument('H', 'dbhost', '--dbhost', help='The machine hosting the EXTERNAL database that serves DRMS data series names.', metavar='<db host>', dest='dbhost', required=True)
             
             # Optional
-            parser.add_argument('-d', '--debug', help='Run in CGI mode, and print helpful diagnostics.).', dest='debug', action='store_true', default=False)
+            parser.add_argument('-d', '--debug', help='Run in CGI mode, and print helpful diagnostics.', dest='debug', action='store_true', default=False)
             parser.add_argument('-i', '--info', help='Print additional series information (such as series description)', dest='info', action='store_true', default=False)
             parser.add_argument('-n', '--noheader', help='Supress the HTML header (cgi runs only).', dest='noheader', action='store_true', default=False)
             parser.add_argument('-P', '--dbport', help='The port on the machine hosting DRMS data series names.', metavar='<db host port>', dest='dbport', default=drmsParams.get('DRMSPGPORT'))
