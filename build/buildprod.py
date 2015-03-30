@@ -5,6 +5,8 @@ import sys
 import os
 import pwd
 from subprocess import check_output, check_call, call, Popen, CalledProcessError
+sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../base/libs/py'))
+from drmsCmdl import CmdlParser
 
 PROD_ROOTDIR = '/home/jsoc/cvs/Development'
 # PROD_ROOTDIR = '/tmp/arta'
@@ -39,6 +41,30 @@ class Chdir:
             return 0
         else:
             return 1
+            
+optD = {}
+
+try:
+    parser = CmdlParser(usage='%(prog)s [ -f ]')
+    
+    # Optional
+    parser.add_argument('-f', '--full', help='Create/re-create all links and create/re-create all localization parameter files.', dest='full', action='store_true', default=False)
+    
+    args = parser.parse_args()
+    
+    optD['full'] = args.full
+
+except Exception as exc:
+    if len(exc.args) != 2:
+        raise # Re-raise
+    
+    etype = exc.args[0]
+    msg = exc.args[1]
+    
+    if etype == 'CmdlParser-ArgUnrecognized' or etype == 'CmdlParser-ArgBadformat' or etype == 'CmdlParser':
+        raise Exception('getArgs', 'cl', 'Unable to parse command-line arguments. ' + msg + '\n' + parser.format_help())
+    else:
+        raise # Re-raise.
 
 # Allow only arta to modify the files in the waystation.
 if pwd.getpwuid(os.getuid())[0] != WAYSTATION_USER:
@@ -58,13 +84,19 @@ try:
         # os.chdir does NOT change the environment variable $PWD. But our make system relies on PWD being the current directory.
         os.environ['PWD'] = os.path.realpath(os.getcwd())
 
-        cmdList = ['./configure', '-d']
+        if optD['full']:
+            cmdList = ['./configure']
+        else:
+            cmdList = ['./configure', '-d']
         check_call(cmdList)
         
-        cmdList = ['make']
+        cmdList = ['/usr/bin/make']
         check_call(cmdList)
         cmdList = ['/usr/bin/make', 'dsds']
         check_call(cmdList)
+        if optD['full']:
+            cmdList = ['/usr/bin/make', 'globalhs']
+            check_call(cmdList)
 
         cmdList = ['chgrp', '-Rh', 'jsoc', '.']
         check_call(cmdList)
@@ -80,4 +112,13 @@ except ValueError:
     print('Bad arguments to make: \n' + '\n'.join(cmdList[1:]))
     sys.exit(RV_ERROR_MAKE);
 except Exception as exc:
-    raise # Re-raise
+    if len(exc.args) != 2:
+        raise # Re-raise
+    
+    etype = exc.args[0]
+    msg = exc.args[1]
+    
+    if etype != 'getArgs':
+        raise # Re-raise
+        
+    print(msg, file=sys.stderr)
