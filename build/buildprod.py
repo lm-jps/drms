@@ -95,7 +95,7 @@ try:
         cmdList = ['/usr/bin/make', 'dsds']
         check_call(cmdList)
         if optD['full']:
-            cmdList = ['/usr/bin/make', 'globalhs']
+            cmdList = ['/usr/bin/make', 'globalhs', 'libdtgf.a', 'libinv2d.a', 'libpkbgn.a', 'libpkbgn360d.a', 'libprojection.a',]
             check_call(cmdList)
 
         cmdList = ['chgrp', '-Rh', 'jsoc', '.']

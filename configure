@@ -248,11 +248,13 @@ endif
         endif
     endif
         
-    # We now call localize.py for both Stanford and NetDRMS builds.
-    if ($CFGSERVER == "yes") then
-        $PYBIN ./localize.py -d ${LOCALIZATIONDIR} -b drmsparams -s
-    else
-        $PYBIN ./localize.py -d ${LOCALIZATIONDIR} -b drmsparams
+    if ($CLEAN == "yes") then
+        # We now call localize.py for both Stanford and NetDRMS builds.
+        if ($CFGSERVER == "yes") then
+            $PYBIN ./localize.py -d ${LOCALIZATIONDIR} -b drmsparams -s
+        else
+            $PYBIN ./localize.py -d ${LOCALIZATIONDIR} -b drmsparams
+        endif
     endif
 
     echo "Setting links to scripts..."
