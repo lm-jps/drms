@@ -9,14 +9,15 @@ use URI::Escape;
 use Sys::Hostname;
 use CGI;
 use JSON -support_by_pp;
-use FindBin qw($Bin);
-use lib "$Bin/../../../base/libs/perl";
+use FindBin qw($RealBin);
+use lib "$RealBin/../../../base/libs/perl";
 use drmsLocks;
 use drmsArgs;
 
 # Argument names
 use constant kArgRsSpec    => "rs";
 use constant kArgRequestor => "requestor";
+use constant kArgAddress   => "address";
 use constant kOptBaseURI   => "uri";
 use constant kOptFnameFmt  => "ffmt";
 
@@ -48,14 +49,15 @@ my($rv);
 # Required arguments
 $argsinH =
 {
-    &kArgRsSpec    => 's',  
+    &kArgRsSpec    => 's',
+    &kArgRequestor => 's',
+    &kArgAddress   => 's'
 };
 
 $optsinH =
 {
     &kOptBaseURI   => 's',
-    &kOptFnameFmt  => 's',
-    &kArgRequestor => 's'
+    &kOptFnameFmt  => 's'
 };
 
 $args = new drmsArgs($argsinH, 1);
@@ -70,6 +72,7 @@ if (!defined($args) || !defined($opts))
 else
 {
     my($requestor);
+    my($address);
     my($fnamefmt);
     my($content);
     my($reqid);
@@ -82,10 +85,6 @@ else
     $opt = $opts->Get(&kOptBaseURI);
     $baseuri = defined($opt) ? $opt : &kDefBaseURI;
     
-    # Use the requestor's name provided on the command-line (default to hostname).
-    $opt = $opts->Get(&kArgRequestor);
-    $requestor = defined($opt) ? $opt : hostname();
-    
     # Use the export file-name format provided on the command-line (default to providing no
     # file-name format, which will default to whatever jsoc_fetch does).
     $opt = $opts->Get(&kOptFnameFmt);
@@ -94,6 +93,8 @@ else
     # Fetch, from the command-line, the record-set specification that identifies the desired records.
     # This record-set-specification argument is required.
     $rsspec = $args->Get(&kArgRsSpec);
+    $requestor = $args->Get(&kArgRequestor);
+    $address = $args->Get(&kArgAddress);
     
     print "CGI root: $baseuri\n";
     
@@ -135,7 +136,7 @@ else
     
     if ($rv == &kRetSuccess)
     {
-        $uri = "$baseuri/jsoc_fetch?op=exp_request&ds=$rsspec&protocol=fits$fnamefmt&format=json&method=url&requestor=$requestor";
+        $uri = "$baseuri/jsoc_fetch?op=exp_request&ds=$rsspec&protocol=fits$fnamefmt&format=json&method=url&requestor=$requestor&notify=$address";
         
         # Send an aynchronous HTTP GET request to the server identified in $baseuri.
         if (!HTTPget($uri, \$content))
