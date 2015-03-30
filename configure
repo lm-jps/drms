@@ -129,13 +129,13 @@ endif
     echo
 
     if ($CLEAN == "yes") then
-	if (-x base/local/libs/dsds/scripts/rmlinks.csh) then
-	    base/local/libs/dsds/scripts/rmlinks.csh
-	endif
+        if (-x base/local/libs/dsds/scripts/rmlinks.csh) then
+            base/local/libs/dsds/scripts/rmlinks.csh
+        endif
 
-	if (-x base/local/libs/soi/scripts/rmlinks.csh) then
-	    base/local/libs/soi/scripts/rmlinks.csh
-	endif
+        if (-x base/local/libs/soi/scripts/rmlinks.csh) then
+            base/local/libs/soi/scripts/rmlinks.csh
+        endif
     endif
 
     # Make include directories here, since they are used by multiple script blocks below
@@ -181,8 +181,10 @@ endif
     echo "done"
     echo
 
-    # Site Localization
-
+    #######################
+    ## Site Localization ##
+    #######################
+    
     # Path to the configuration file - at some point, make this an argument to the configure script
     set LOCALIZATIONDIR = ""
     set RELLOCALIZATIONDIR = ""
@@ -199,85 +201,86 @@ endif
     # Make the path absoluate
     set LOCALIZATIONDIR = ${PWD}/${RELLOCALIZATIONDIR}
 
-    # Eventually, dump all these generated files into a user-specified location.
-    # This script will need to read the config.local file to get the 
-    # localization directory. Otherwise, just use JSOC/localization as the default.
-    if (!(-d ${LOCALIZATIONDIR})) then
-        mkdir ${LOCALIZATIONDIR}
-        if ($? != 0) then
-            echo "Error creating localization directory."
-        endif
-    endif
-
-    if (-e ${LOCALIZATIONDIR}/drmsparams.h) then
-        rm ${LOCALIZATIONDIR}/drmsparams.h
-    endif
-
-    if (-e ${LOCALIZATIONDIR}/drmsparams.mk) then
-        rm ${LOCALIZATIONDIR}/drmsparams.mk
-    endif
-
-    if (-e ${LOCALIZATIONDIR}/drmsparams.pm) then
-        rm ${LOCALIZATIONDIR}/drmsparams.pm
-    endif
-
-    if (-e ${LOCALIZATIONDIR}/drmsparams.py) then
-        rm ${LOCALIZATIONDIR}/drmsparams.py
-    endif
-
-    # Must create the scripts subdirectory before the call to gen_init.csh
-    if (!(-d scripts)) then
-        mkdir scripts
-    endif
-
-    if (!(-e configsdp.txt)) then
-        # This is NetDRMS.
-        if (!(-e config.local)) then
-            echo "Error: config.local not found. If you have a saved version of this"
-            echo "       file from a previous installation, you should copy that into"
-            echo "       this directory and rerun configure. Otherwise, copy the file"
-            echo "       config.local.template to config.local and edit the config.local"
-            echo "       file to contain site-appropriate values."
-            echo 
-            echo "*** IMPORTANT *** The edited config.local will contain site-specific"
-            echo "    values that should not be modified during subsequent updates to"
-            echo "    NetDRMS. Keep a safe copy of it somewhere outside of the DRMS"
-            echo "    directory tree, for example in /usr/local. After each NetDRMS"
-            echo "    update, ensure this file is in place."
-            exit 1;
-        endif
-    endif
-        
+    # Reset localization.
     if ($CLEAN == "yes") then
+        # This script will need to read the config.local file to get the 
+        # localization directory. Otherwise, just use JSOC/localization as the default.
+        if (!(-d ${LOCALIZATIONDIR})) then
+            mkdir ${LOCALIZATIONDIR}
+            if ($? != 0) then
+                echo "Error creating localization directory."
+            endif
+        endif
+
+        if (-e ${LOCALIZATIONDIR}/drmsparams.h) then
+            rm ${LOCALIZATIONDIR}/drmsparams.h
+        endif
+
+        if (-e ${LOCALIZATIONDIR}/drmsparams.mk) then
+            rm ${LOCALIZATIONDIR}/drmsparams.mk
+        endif
+
+        if (-e ${LOCALIZATIONDIR}/drmsparams.pm) then
+            rm ${LOCALIZATIONDIR}/drmsparams.pm
+        endif
+
+        if (-e ${LOCALIZATIONDIR}/drmsparams.py) then
+            rm ${LOCALIZATIONDIR}/drmsparams.py
+        endif
+
+        if (!(-e configsdp.txt)) then
+            # This is NetDRMS.
+            if (!(-e config.local)) then
+                echo "Error: config.local not found. If you have a saved version of this"
+                echo "       file from a previous installation, you should copy that into"
+                echo "       this directory and rerun configure. Otherwise, copy the file"
+                echo "       config.local.template to config.local and edit the config.local"
+                echo "       file to contain site-appropriate values."
+                echo 
+                echo "*** IMPORTANT *** The edited config.local will contain site-specific"
+                echo "    values that should not be modified during subsequent updates to"
+                echo "    NetDRMS. Keep a safe copy of it somewhere outside of the DRMS"
+                echo "    directory tree, for example in /usr/local. After each NetDRMS"
+                echo "    update, ensure this file is in place."
+                exit 1;
+            endif
+        endif
+        
         # We now call localize.py for both Stanford and NetDRMS builds.
         if ($CFGSERVER == "yes") then
             $PYBIN ./localize.py -d ${LOCALIZATIONDIR} -b drmsparams -s
         else
             $PYBIN ./localize.py -d ${LOCALIZATIONDIR} -b drmsparams
         endif
-    endif
+    endif # End reset localization
 
     echo "Setting links to scripts..."
-    cd scripts
+    if (!(-d scripts)) then
+        mkdir scripts
+    endif
+    
+    if ($CLEAN == "yes") then 
+        cd scripts
 
-    # Sums scripts
-    find ../base/sums/scripts -mindepth 1 -path \*CVS -prune -o -print | ${PERLBIN} -MFile::Basename -n -e 'my($bn) = basename($_); chomp($bn); my($path) = $_; chomp($path); if (!(-e $bn)) { `ln -s $_`; if ($? >> 8 == 0) { print "   " . $path . " OK\n"; } else { print "   " . $path . " ERROR - could not create link\n"; } }'
+        # Sums scripts
+        find ../base/sums/scripts -mindepth 1 -path \*CVS -prune -o -print | ${PERLBIN} -MFile::Basename -n -e 'my($bn) = basename($_); chomp($bn); my($path) = $_; chomp($path); if (!(-e $bn)) { `ln -s $_`; if ($? >> 8 == 0) { print "   " . $path . " OK\n"; } else { print "   " . $path . " ERROR - could not create link\n"; } }'
 
-    # Util scripts
-    find ../base/util/scripts -mindepth 1 -path \*CVS -prune -o -print | ${PERLBIN} -MFile::Basename -n -e 'my($bn) = basename($_); chomp($bn); my($path) = $_; chomp($path); if (!(-e $bn)) { `ln -s $_`; if ($? >> 8 == 0) { print "   " . $path . " OK\n"; } else { print "   " . $path . " ERROR - could not create link\n"; } }'
+        # Util scripts
+        find ../base/util/scripts -mindepth 1 -path \*CVS -prune -o -print | ${PERLBIN} -MFile::Basename -n -e 'my($bn) = basename($_); chomp($bn); my($path) = $_; chomp($path); if (!(-e $bn)) { `ln -s $_`; if ($? >> 8 == 0) { print "   " . $path . " OK\n"; } else { print "   " . $path . " ERROR - could not create link\n"; } }'
 
-    # Export scripts
-    find ../base/export/scripts -mindepth 1 -path \*CVS -prune -o -print | ${PERLBIN} -MFile::Basename -n -e 'my($bn) = basename($_); chomp($bn); my($path) = $_; chomp($path); if (!(-e $bn)) { `ln -s $_`; if ($? >> 8 == 0) { print "   " . $path . " OK\n"; } else { print "   " . $path . " ERROR - could not create link\n"; } }'
+        # Export scripts
+        find ../base/export/scripts -mindepth 1 -path \*CVS -prune -o -print | ${PERLBIN} -MFile::Basename -n -e 'my($bn) = basename($_); chomp($bn); my($path) = $_; chomp($path); if (!(-e $bn)) { `ln -s $_`; if ($? >> 8 == 0) { print "   " . $path . " OK\n"; } else { print "   " . $path . " ERROR - could not create link\n"; } }'
 
-    # DRMS / IDL-interface scripts
-    find ../base/drms/scripts -mindepth 1 -path \*CVS -prune -o -print | ${PERLBIN} -MFile::Basename -n -e 'my($bn) = basename($_); chomp($bn); my($path) = $_; chomp($path); if (!(-e $bn)) { `ln -s $_`; if ($? >> 8 == 0) { print "   " . $path . " OK\n"; } else { print "   " . $path . " ERROR - could not create link\n"; } }'
+        # DRMS / IDL-interface scripts
+        find ../base/drms/scripts -mindepth 1 -path \*CVS -prune -o -print | ${PERLBIN} -MFile::Basename -n -e 'my($bn) = basename($_); chomp($bn); my($path) = $_; chomp($path); if (!(-e $bn)) { `ln -s $_`; if ($? >> 8 == 0) { print "   " . $path . " OK\n"; } else { print "   " . $path . " ERROR - could not create link\n"; } }'
 
-    # Project-specific scripts - these won't show up if you don't have the project source.
-    if (-x ${LOCALIZATIONDIR}/configure) then
-        ${LOCALIZATIONDIR}/configure
+        # Project-specific scripts - these won't show up if you don't have the project source.
+        if (-x ${LOCALIZATIONDIR}/configure) then
+            ${LOCALIZATIONDIR}/configure
+        endif
+        cd ..
     endif
 
-    cd ..
     echo "done"
     echo
 
@@ -301,15 +304,19 @@ endif
         cd ../..
     endif
 
-    cd base/include
-    find .. -path '../include' -prune -o -name \*.h -print | ${PERLBIN} -MFile::Basename -n -e 'my($bn) = basename($_); chomp($bn); my($path) = $_; chomp($path); if (!(-e $bn)) { `ln -s $_`; if ($? >> 8 == 0) { print "   " . $path . " OK\n"; } else { print "   " . $path . " ERROR - could not create link\n"; } }'
-    cd ../..
+    if ($CLEAN == "yes") then 
+        cd base/include
+        find .. -path '../include' -prune -o -name \*.h -print | ${PERLBIN} -MFile::Basename -n -e 'my($bn) = basename($_); chomp($bn); my($path) = $_; chomp($path); if (!(-e $bn)) { `ln -s $_`; if ($? >> 8 == 0) { print "   " . $path . " OK\n"; } else { print "   " . $path . " ERROR - could not create link\n"; } }'
+        cd ../..
 
-    cd include
-    if (-d ../base/include) then
-        find ../base/include -name \*.h -print | ${PERLBIN} -MFile::Basename -n -e 'my($bn) = basename($_); chomp($bn); my($path) = $_; chomp($path); if (!(-e $bn)) { `ln -s $_`; if ($? >> 8 == 0) { print "   " . $path . " OK\n"; } else { print "   " . $path . " ERROR - could not create link\n"; } }'
+        cd include
+        if (-d ../base/include) then
+            find ../base/include -name \*.h -print | ${PERLBIN} -MFile::Basename -n -e 'my($bn) = basename($_); chomp($bn); my($path) = $_; chomp($path); if (!(-e $bn)) { `ln -s $_`; if ($? >> 8 == 0) { print "   " . $path . " OK\n"; } else { print "   " . $path . " ERROR - could not create link\n"; } }'
+        endif
+        cd ..
     endif
 
+    cd include
     # ${LOCALIZATIONDIR} is an absolute path
     if (!(-l drmsparams.h)) then
         ln -s ../${RELLOCALIZATIONDIR}/drmsparams.h
