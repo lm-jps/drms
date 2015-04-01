@@ -75,6 +75,8 @@ int DoIt(void)
     json_t *elem = NULL;
 
     Q_ENTRY *req = NULL;
+    
+    char *escapedStr = NULL;
 
     root = json_new_object();
     
@@ -127,7 +129,18 @@ int DoIt(void)
         if (rv == PRSSTAT_SUCCESS)
         {
             /* json_insert_pair_into_object() will fail if json_new_...() fails. */
-            rv = (json_insert_pair_into_object(root, "spec", json_new_string(spec)) == JSON_OK) ? PRSSTAT_SUCCESS : PRSSTAT_JSONELEM;
+            escapedStr = json_escape(spec);
+            if (!escapedStr)
+            {
+                rv = PRSSTAT_NOMEM;
+                errMsg = "Not enough memory to create spec string.";
+            }
+            
+            if (rv == PRSSTAT_SUCCESS)
+            {
+                rv = (json_insert_pair_into_object(root, "spec", json_new_string(escapedStr)) == JSON_OK) ? PRSSTAT_SUCCESS : PRSSTAT_JSONELEM;
+                free(escapedStr);
+            }
             
             if (rv == PRSSTAT_SUCCESS)
             {
@@ -173,28 +186,84 @@ int DoIt(void)
                         break;
                     }
                     
-                    rv = (json_insert_pair_into_object(elem, "spec", json_new_string(sets[iSet])) == JSON_OK) ? PRSSTAT_SUCCESS : PRSSTAT_JSONELEM;
+                    escapedStr = json_escape(sets[iSet]);
+                    if (!escapedStr)
+                    {
+                        rv = PRSSTAT_NOMEM;
+                        errMsg = "Not enough memory to create spec string.";
+                    }
+                    
+                    if (rv == PRSSTAT_SUCCESS)
+                    {
+                        rv = (json_insert_pair_into_object(elem, "spec", json_new_string(escapedStr)) == JSON_OK) ? PRSSTAT_SUCCESS : PRSSTAT_JSONELEM;
+                        free(escapedStr);
+                    }
+                        
                     if (rv != PRSSTAT_SUCCESS)
                     {
                         errMsg = "Unable to create spec property in subset object.";
                         break;
                     }
                     
-                    rv = (json_insert_pair_into_object(elem, "settype", json_new_string(drms_type_recsetnames[settypes[iSet]])) == JSON_OK) ? PRSSTAT_SUCCESS : PRSSTAT_JSONELEM;
+                    escapedStr = json_escape(drms_type_recsetnames[settypes[iSet]]);
+                    if (!escapedStr)
+                    {
+                        rv = PRSSTAT_NOMEM;
+                        errMsg = "Not enough memory to create set-type string.";
+                    }
+                    
+                    if (rv == PRSSTAT_SUCCESS)
+                    {
+                        rv = (json_insert_pair_into_object(elem, "settype", json_new_string(escapedStr)) == JSON_OK) ? PRSSTAT_SUCCESS : PRSSTAT_JSONELEM;
+                        free(escapedStr);
+                    }
+                        
                     if (rv != PRSSTAT_SUCCESS)
                     {
                         errMsg = "Unable to create settype property in subset object.";
                         break;
                     }
                     
-                    rv = (json_insert_pair_into_object(elem, "seriesname", json_new_string(snames[iSet])) == JSON_OK) ? PRSSTAT_SUCCESS : PRSSTAT_JSONELEM;
+                    escapedStr = json_escape(snames[iSet]);
+                    if (!escapedStr)
+                    {
+                        rv = PRSSTAT_NOMEM;
+                        errMsg = "Not enough memory to create series-name string.";
+                    }
+                    
+                    if (rv == PRSSTAT_SUCCESS)
+                    {
+                        rv = (json_insert_pair_into_object(elem, "seriesname", json_new_string(escapedStr)) == JSON_OK) ? PRSSTAT_SUCCESS : PRSSTAT_JSONELEM;
+                        free(escapedStr);
+                    }
+                        
                     if (rv != PRSSTAT_SUCCESS)
                     {
                         errMsg = "Unable to create seriesname property in subset object.";
                         break;
                     }
                     
-                    rv = (json_insert_pair_into_object(elem, "filter", (filts[iSet] != NULL) ? json_new_string(filts[iSet]) : json_new_null()) == JSON_OK) ? PRSSTAT_SUCCESS : PRSSTAT_JSONELEM;
+                    if (filts[iSet])
+                    {
+                        escapedStr = json_escape(filts[iSet]);
+                        
+                        if (!escapedStr)
+                        {
+                            rv = PRSSTAT_NOMEM;
+                            errMsg = "Not enough memory to create filter string.";
+                        }
+                    }
+                    else
+                    {
+                        escapedStr = NULL;
+                    }
+                    
+                    if (rv == PRSSTAT_SUCCESS)
+                    {
+                        rv = (json_insert_pair_into_object(elem, "filter", (escapedStr != NULL) ? json_new_string(escapedStr) : json_new_null()) == JSON_OK) ? PRSSTAT_SUCCESS : PRSSTAT_JSONELEM;
+                        free(escapedStr);
+                    }
+                    
                     if (rv != PRSSTAT_SUCCESS)
                     {
                         errMsg = "Unable to create filter property in subset object.";
@@ -247,7 +316,18 @@ int DoIt(void)
         
         if (root)
         {
-            rv = (json_insert_pair_into_object(root, "errMsg", json_new_string(errMsg)) == JSON_OK) ? PRSSTAT_SUCCESS : PRSSTAT_JSONELEM;
+            escapedStr = json_escape(errMsg);
+            if (!escapedStr)
+            {
+                rv = PRSSTAT_NOMEM;
+                errMsg = "Not enough memory to create error-message string.";
+            }
+                    
+            if (rv == PRSSTAT_SUCCESS)
+            {
+                rv = (json_insert_pair_into_object(root, "errMsg", json_new_string(escapedStr)) == JSON_OK) ? PRSSTAT_SUCCESS : PRSSTAT_JSONELEM;
+                free(escapedStr);
+            }
         }
         else
         {
@@ -263,6 +343,7 @@ int DoIt(void)
     char *jsonStr = NULL;
     
     json_tree_to_string(root, &jsonStr);
+    json_free_value(&root);
     printf(jsonStr);
     free(jsonStr);
     printf("\n");
