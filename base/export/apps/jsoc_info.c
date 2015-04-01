@@ -300,35 +300,46 @@ char * string_to_json(char *in)
 
 
 static void list_series_info(DRMS_Env_t *drms_env, DRMS_Record_t *rec, json_t *jroot, int followLinks)
-  {
-  DRMS_Keyword_t *key;
-  DRMS_Segment_t *seg;
-  DRMS_Link_t *link;
-  HIterator_t *last = NULL;
-  char intstring[100];
-  char *notework;
-  char *owner;
-  json_t *indexarray, *primearray, *keyarray, *segarray, *linkarray;
-  json_t *primeinfoarray;
-  int npkeys;
-  int status;
-  char prevKeyName[DRMS_MAXNAMELEN] = "";
-  char baseKeyName[DRMS_MAXNAMELEN];
+{
+    DRMS_Keyword_t *key;
+    DRMS_Segment_t *seg;
+    DRMS_Link_t *link;
+    HIterator_t *last = NULL;
+    char intstring[100];
+    char *notework;
+    char *owner;
+    json_t *indexarray, *primearray, *keyarray, *segarray, *linkarray;
+    json_t *primeinfoarray;
+    int npkeys;
+    int status;
+    char prevKeyName[DRMS_MAXNAMELEN] = "";
+    char baseKeyName[DRMS_MAXNAMELEN];
 
-  /* add description from seriesinfo */
-  notework = string_to_json(rec->seriesinfo->description);
-  json_insert_pair_into_object(jroot, "note", json_new_string(notework));
-  free(notework);
-  /* add retention, unitsize, archive, and tapegroup integers */
-  sprintf(intstring, "%d", rec->seriesinfo->retention);
-  json_insert_pair_into_object(jroot, "retention", json_new_number(intstring));
-  sprintf(intstring, "%d", rec->seriesinfo->unitsize);
-  json_insert_pair_into_object(jroot, "unitsize", json_new_number(intstring));
-  sprintf(intstring, "%d", rec->seriesinfo->archive);
-  json_insert_pair_into_object(jroot, "archive", json_new_number(intstring));
-  sprintf(intstring, "%d", rec->seriesinfo->tapegroup);
-  json_insert_pair_into_object(jroot, "tapegroup", json_new_number(intstring));
-  /* add ownder for series */
+    /* add description from seriesinfo */
+    notework = string_to_json(rec->seriesinfo->description);
+    json_insert_pair_into_object(jroot, "note", json_new_string(notework));
+    free(notework);
+    /* add retention, unitsize, archive, and tapegroup integers */
+    int16_t newSuRet = drms_series_getnewsuretention(rec->seriesinfo);
+    int16_t stagingRet = drms_series_getstagingretention(rec->seriesinfo);
+    
+    if (stagingRet == 0)
+    {
+        stagingRet = (int16_t)abs(STDRETENTION);
+    }
+
+    snprintf(intstring, sizeof(intstring), "%hd", newSuRet);
+    json_insert_pair_into_object(jroot, "retention", json_new_number(intstring));
+    snprintf(intstring, sizeof(intstring), "%hd", stagingRet);
+    json_insert_pair_into_object(jroot, "stagingretention", json_new_number(intstring));
+    sprintf(intstring, "%d", rec->seriesinfo->unitsize);
+    json_insert_pair_into_object(jroot, "unitsize", json_new_number(intstring));
+    sprintf(intstring, "%d", rec->seriesinfo->archive);
+    json_insert_pair_into_object(jroot, "archive", json_new_number(intstring));
+    sprintf(intstring, "%d", rec->seriesinfo->tapegroup);
+    json_insert_pair_into_object(jroot, "tapegroup", json_new_number(intstring));
+    /* add ownder for series */
+
 if (wantowner)
 {
   owner = string_to_json(drms_getseriesowner(drms_env, rec->seriesinfo->seriesname, &status));
