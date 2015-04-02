@@ -27,16 +27,6 @@
     #define kshadowTrackerFxn "drms.shadowtrackfxn"
 #endif
 
-static DB_Handle_t *gDbhInternal = NULL;
-
-static void freeDbhInternal(void *data)
-{
-    if (gDbhInternal)
-    {
-        db_disconnect(&gDbhInternal);
-    }
-}
-
 #if (defined TOC && TOC)
 static int TocExists(DRMS_Env_t *env, int *status)
 {
@@ -2268,148 +2258,6 @@ int drms_series_exists(DRMS_Env_t *drmsEnv, const char *sname, int *status)
    return ret;
 }
 
-#if WL_HASWL
-/* hostConn - the db host connected to during the current session. 
- * port - char * (be careful - for some reason, the calling code stores this as a string). */
-static int insertIntoAllSeries(DRMS_Env_t *env, const char *hostConn, const char *port, const char *db, const char *series, const char *author, const char *owner, int unitsize, int archive, int retention, int tapegroup, const char *pkey, const char *created, const char *description, const char *ikey, const char *version)
-{
-    char cbuf[4096];
-    int istat = DRMS_SUCCESS;
-    
-    snprintf(cbuf, sizeof(cbuf), "INSERT INTO drms.allseries (dbhost, dbport, dbname, seriesname, author, owner, unitsize, archive, retention, tapegroup, primary_idx, created, description, dbidx, version) VALUES ('%s', %s, '%s', '%s', '%s', '%s', %d, %d, %d, %d, '%s', '%s', '%s', '%s', '%s')", hostConn, port, db, series, author, owner, unitsize, archive, retention, tapegroup, pkey, created, description, ikey, version);
-    
-    if (strcmp(hostConn, SERVER) == 0)
-    {
-        /* We are connected to the internal database. Easy-peasy - just add the series info to the drms.allseries table that resides on host.
-         * We could be a client connected to drms_server though. So we need to use drms_query_txt() with the current session. */
-        if (drms_dms(env->session, NULL, cbuf))
-        {
-            fprintf(stderr, "SQL Insert statement failed: %s\n", cbuf);
-            istat = DRMS_ERROR_BADDBQUERY;
-        }
-    }
-    else
-    {
-        /* Must connect to internal db since we are connected to the external one. */
-        
-        /* We are connected to the external database. Not as easy - make a connection to the internal db and add the series info to the drms.allseries
-         * table that resides there. */
-        if (!gDbhInternal)
-        {
-            const char *dbuser = NULL;
-            
-#ifndef DRMS_CLIENT
-            dbuser = env->session->db_handle->dbuser;
-#else
-            dbuser = env->session->dbuser;
-#endif
-            
-            if ((gDbhInternal = db_connect(SERVER, dbuser, NULL, DBNAME, 1)) == NULL)
-            {
-                fprintf(stderr,"Couldn't connect to %s database on %s.\n", DBNAME, SERVER);
-                istat = DRMS_ERROR_CANTCONNECTTODB;
-            }
-            else
-            {
-                /* Register for clean up. */
-                BASE_Cleanup_t cu;
-                
-                cu.item = gDbhInternal; /* Not used. */
-                cu.free = freeDbhInternal;
-                base_cleanup_register("freedbhinternal", &cu);
-            }
-        }
-        
-        if (istat == DRMS_SUCCESS)
-        {
-            if (db_dms(gDbhInternal, NULL, cbuf))
-            {
-                fprintf(stderr, "SQL Insert statement failed: %s\n", cbuf);
-                istat = DRMS_ERROR_BADDBQUERY;
-            }
-        }
-    }
-    
-    return istat;
-}
-
-/* hostConn - the db host connected to during the current session. */
-static int deleteFromAllSeries(DRMS_Env_t *env, const char *hostConn, const char *port, const char *dbname, const char *series)
-{
-    char cbuf[256];
-    int istat = DRMS_SUCCESS;
-    char *seriesLc = NULL;
-    
-    seriesLc = strdup(series);
-    
-    if (seriesLc)
-    {
-        strtolower(seriesLc);
-        
-        snprintf(cbuf, sizeof(cbuf), "DELETE FROM drms.allseries WHERE dbhost='%s' AND dbport=%s AND dbname='%s' AND lower(seriesname) = '%s'", hostConn, port, dbname, seriesLc);
-        
-        if (strcmp(hostConn, SERVER) == 0)
-        {
-            /* We are connected to the internal database. Easy-peasy - just add the series info to the drms.allseries table that resides on host.
-             * We could be a client connected to drms_server though. So we need to use drms_query_txt() with the current session. */
-            if (drms_dms(env->session, NULL, cbuf))
-            {
-                fprintf(stderr, "SQL Insert statement failed: %s\n", cbuf);
-                istat = DRMS_ERROR_BADDBQUERY;
-            }
-        }
-        else
-        {
-            /* Must connect to internal db since we are connected to the external one. */
-            
-            /* We are connected to the external database. Not as easy - make a connection to the internal db and add the series info to the drms.allseries
-             * table that resides there. */
-            if (!gDbhInternal)
-            {
-                const char *dbuser = NULL;
-                
-#ifndef DRMS_CLIENT
-                dbuser = env->session->db_handle->dbuser;
-#else
-                dbuser = env->session->dbuser;
-#endif
-                
-                if ((gDbhInternal = db_connect(SERVER, dbuser, NULL, DBNAME, 1)) == NULL)
-                {
-                    fprintf(stderr,"Couldn't connect to %s database on %s.\n", DBNAME, SERVER);
-                    istat = DRMS_ERROR_CANTCONNECTTODB;
-                }
-                else
-                {
-                    /* Register for clean up. */
-                    BASE_Cleanup_t cu;
-                    
-                    cu.item = gDbhInternal; /* Not used. */
-                    cu.free = freeDbhInternal;
-                    base_cleanup_register("freedbhinternal", &cu);
-                }
-            }
-            
-            if (istat == DRMS_SUCCESS)
-            {
-                if (db_dms(gDbhInternal, NULL, cbuf))
-                {
-                    fprintf(stderr, "SQL Insert statement failed: %s\n", cbuf);
-                    istat = DRMS_ERROR_BADDBQUERY;
-                }
-            }
-        }
-    }
-    else
-    {
-        istat = DRMS_ERROR_OUTOFMEMORY;
-    }
-    
-    return istat;
-}
-#endif // WL_HASWL
-
-
 /* Create/update the database tables and entries for a new/existing series.
    The series is created from the information in the series template record
    given in the argument "template".
@@ -2432,15 +2280,6 @@ int drms_insert_series(DRMS_Session_t *session, int update, DRMS_Record_t *templ
   char defval[DRMS_DEFVAL_MAXLEN]={0};
   char *createstmt=0, *series_lower=0, *namespace=0;
   DB_Text_Result_t *qres;
-    
-#if WL_HASWL
-    time_t timenow;
-    struct tm *ltime;
-    char tbuf[128];
-    const char *hostConn = NULL;
-    const char *portConn = NULL;
-    const char *dbnameConn = NULL;
-#endif
 
   createstmt = malloc(30000);
   XASSERT(createstmt);
@@ -2561,50 +2400,6 @@ int drms_insert_series(DRMS_Session_t *session, int update, DRMS_Record_t *templ
 		DB_STRING, pidx_buf,
 		DB_STRING, dbidx_buf))
     goto failure;
-    
-#if WL_HASWL
-    time(&timenow);
-    ltime = localtime (&timenow);
-    strftime(tbuf, sizeof(tbuf), "%Y-%m-%d %T", ltime);
-    
-    if (template->env->session->db_direct)
-    {
-        hostConn = template->env->session->db_handle->dbhost;
-        portConn = template->env->session->db_handle->dbport;
-        dbnameConn = template->env->session->db_handle->dbname;
-    }
-    else
-    {
-        /* If socket-connect, use drms_env->session->dbhost, dbport, dbname. These get passed from drms_server to
-         * the client after the client has connected to drms_server. */
-        char portStr[32];
-        
-        hostConn = template->env->session->dbhost;
-        snprintf(portStr, sizeof(portStr), "%d", template->env->session->dbport);
-        portConn = portStr;
-        dbnameConn = template->env->session->dbname;
-    }
-    
-    /* If direct-connect, use drms_env->session->db_handle->dbhost for the hostname. */
-    if (insertIntoAllSeries(template->env,
-                            hostConn,
-                            portConn, /* char * */
-                            dbnameConn,
-                            si->seriesname,
-                            si->author,
-                            si->owner,
-                            si->unitsize,
-                            si->archive,
-                            si->retention,
-                            si->tapegroup,
-                            pidx_buf,
-                            tbuf, /* Not exactly the same as what went into DRMS_MASTER_SERIES_TABLE - do we care? */
-                            si->description,
-                            dbidx_buf,
-                            si->version))
-        goto failure;
-
-#endif
   
   p = createstmt;
   /* Fixed fields. */
@@ -3607,12 +3402,6 @@ int drms_delete_series(DRMS_Env_t *env, const char *series, int cascade, int kee
   int repl = 0;
   int retstat = -1;
   char shadow[DRMS_MAXSERIESNAMELEN];
-    
-#if WL_HASWL
-    const char *hostConn = NULL;
-    const char *portConn = NULL;
-    const char *dbnameConn = NULL;
-#endif
 
   if (!env->session->db_direct && !env->selfstart)
   {
@@ -3819,35 +3608,7 @@ int drms_delete_series(DRMS_Env_t *env, const char *series, int cascade, int kee
 
            if (drms_dms(session,NULL,query))
              goto bailout;
-            
-            /* Now, delete from the drms.allseries table, if it exists. */
-#if WL_HASWL
-            if (env->session->db_direct)
-            {
-                hostConn = env->session->db_handle->dbhost;
-                portConn = env->session->db_handle->dbport;
-                dbnameConn = env->session->db_handle->dbname;
-            }
-            else
-            {
-                /* If socket-connect, use drms_env->session->dbhost, dbport, dbname. These get passed from drms_server to
-                 * the client after the client has connected to drms_server. */
-                char portStr[32];
-                
-                hostConn = env->session->dbhost;
-                snprintf(portStr, sizeof(portStr), "%d", env->session->dbport);
-                portConn = portStr;
-                dbnameConn = env->session->dbname;
-
-            }
-            
-            if (deleteFromAllSeries(env, hostConn, portConn, dbnameConn, series_lower))
-            {
-                fprintf(stderr, "Unable to delete from drms.allseries.\n");
-                goto bailout;
-            }
-#endif
-            
+                        
             /* MUST DELETE ANY ASSOCIATED shadow table. If the user requires permissions
              * to delete the original table, then the user running this code must also 
              * have the permissions needed to delete the shadow table. */

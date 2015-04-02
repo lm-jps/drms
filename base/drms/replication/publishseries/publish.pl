@@ -297,41 +297,6 @@ if ($rv == kSuccess)
                else
                {
                    print "Successfully created series '$series' on slave db, continuing...\n";
-                   
-                   my($wl) = undef;
-                   
-                   $wl = $drmsParams->get('WL_HASWL');
-                   
-                   if (defined($wl) && $wl)
-                   {
-                       # Add series to drms.allseries. The machine hosting the db is in the DRMS parameter SERVER (port - DRMSPGPORT,
-                       # dbname - DBNAME). updateAllSeries.py will connect using these parameters. The all-series series is 
-                       # assumed to be named 'drms.allseries'. The db host, port, and name sento to updateAllSeries.py must be for the
-                       # slave db (since that is where we are creating a series during publication).
-                       print "Getting series info for series $series...\n";
-                       @seriesInfo = GetSeriesInfo(\$mdbh, $cfg{'SLAVEHOSTNAME'}, $cfg{'SLAVEPORT'}, $cfg{'SLAVEDBNAME'}, $series);
-                       
-                       if ($#seriesInfo >= 0)
-                       {
-                           my($info) = join(',', @seriesInfo);
-                           print "Got info: $info\n";
-                           
-                           if (RunCmd($drmsParams->get('BIN_PY') . " $cfg{kScriptDir}/updateAllSeries.py op=insert --info='$info'", 1) != 0)
-                           {
-                               print STDERR "Failure to insert series '$series' into drms.allseries.\n";
-                               $rv = &kRunCmd;
-                           }
-                           else
-                           {
-                               print "Successfully ran updateAllSeries.py.\n";
-                           }
-                       }
-                       else
-                       {
-                           print "Failed to get series info.\n";
-                           $rv = &kSeriesNotFound;
-                       }
-                   }
                }
             }
             else
