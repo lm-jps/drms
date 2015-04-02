@@ -197,7 +197,7 @@ class SuTable:
                         cmd = 'INSERT INTO ' + self.tableName + '(sunum, series, retention, starttime, refcount, status, errmsg) VALUES(' + sunumStr + ",'" + self.suDict[sunumStr]['series'] + "', " + str(self.suDict[sunumStr]['retention']) + ", '" + self.suDict[sunumStr]['starttime'].strftime('%Y-%m-%d %T') + "', " + str(self.suDict[sunumStr]['refcount']) + ", '" + self.suDict[sunumStr]['status'] + "', '" + self.suDict[sunumStr]['errmsg'] + "')"
                     else:
                         # The fields excluded from the update statement are not modified once set.
-                        cmd = 'UPDATE ' + self.tableName + " SET series='" + self.suDict[sunumStr]['series'] + "', retention=" + self.suDict[sunumStr]['retention'] + ", starttime='" + self.suDict[sunumStr]['starttime'].strftime('%Y-%m-%d %T') + "', refcount=" + str(self.suDict[sunumStr]['refcount']) + ", status='" + self.suDict[sunumStr]['status'] + "', errmsg='" + self.suDict[sunumStr]['errmsg'] + "' WHERE sunum=" + sunumStr
+                        cmd = 'UPDATE ' + self.tableName + " SET series='" + self.suDict[sunumStr]['series'] + "', retention=" + str(self.suDict[sunumStr]['retention']) + ", starttime='" + self.suDict[sunumStr]['starttime'].strftime('%Y-%m-%d %T') + "', refcount=" + str(self.suDict[sunumStr]['refcount']) + ", status='" + self.suDict[sunumStr]['status'] + "', errmsg='" + self.suDict[sunumStr]['errmsg'] + "' WHERE sunum=" + sunumStr
                 
                     self.log.write(['Updating SU db table: ' + cmd])
                 
@@ -214,7 +214,7 @@ class SuTable:
             for sunumStr in self.suDict:
                 if self.suDict[sunumStr]['dirty']:
                     if self.suDict[sunumStr]['new'] == True:
-                        cmd = 'INSERT INTO ' + self.tableName + '(sunum, series, retention, starttime, refcount, status, errmsg) VALUES(' + sunumStr + ",'" + self.suDict[sunumStr]['series'] + "', " + self.suDict[sunumStr]['retention'] + ", '" + self.suDict[sunumStr]['starttime'].strftime('%Y-%m-%d %T') + "', " + str(self.suDict[sunumStr]['refcount']) + ", '" + self.suDict[sunumStr]['status'] + "', '" + self.suDict[sunumStr]['errmsg'] + "')"
+                        cmd = 'INSERT INTO ' + self.tableName + '(sunum, series, retention, starttime, refcount, status, errmsg) VALUES(' + sunumStr + ",'" + self.suDict[sunumStr]['series'] + "', " + str(self.suDict[sunumStr]['retention']) + ", '" + self.suDict[sunumStr]['starttime'].strftime('%Y-%m-%d %T') + "', " + str(self.suDict[sunumStr]['refcount']) + ", '" + self.suDict[sunumStr]['status'] + "', '" + self.suDict[sunumStr]['errmsg'] + "')"
                     else:
                         cmd = 'UPDATE ' + self.tableName + " SET series='" + self.suDict[sunumStr]['series'] + "', retention=" + str(self.suDict[sunumStr]['retention']) + ", starttime='" + self.suDict[sunumStr]['starttime'].strftime('%Y-%m-%d %T') + "', refcount=" + str(self.suDict[sunumStr]['refcount']) + ", status='" + self.suDict[sunumStr]['status'] + "', errmsg='" + self.suDict[sunumStr]['errmsg'] + "' WHERE sunum=" + sunumStr
                     
@@ -244,7 +244,7 @@ class SuTable:
             
             sunumLstStr = ','.join([str(asunum) for asunum in sunums])
         
-            cmd = 'DELETE FROM ' + self.tableName + ' WHERE sunum=' + sunumLstStr
+            cmd = 'DELETE FROM ' + self.tableName + ' WHERE sunum IN (' + sunumLstStr + ')'
         
             try:
                 cursor.execute(cmd)
@@ -1210,7 +1210,7 @@ def getArgs():
             optD['reqtable'] = getOption(args.reqtable, drmsParams.get('RS_REQUEST_TABLE'))
             optD['sutable'] = getOption(args.sutable, drmsParams.get('RS_SU_TABLE'))
             optD['dbname'] = getOption(args.dbname, drmsParams.get('RS_DBNAME'))
-            optD['dbuser'] = getOption(args.dbname, drmsParams.get('RS_DBUSER'))
+            optD['dbuser'] = getOption(args.dbuser, drmsParams.get('RS_DBUSER'))
             optD['dbhost'] = getOption(args.dbhost, drmsParams.get('RS_DBHOST'))
             optD['dbport'] = int(getOption(args.dbport, drmsParams.get('RS_DBPORT')))
             optD['binpath'] = getOption(args.binpath, drmsParams.get('RS_BINPATH'))
@@ -1348,7 +1348,13 @@ def processSUs(url, sunums, sus, reqTable, request, dbUser, binPath, log, reproc
                 finally:
                     Downloader.lock.release()
 
+                # We are holding the suTable lock. The new downloader threads have to acquire this lock because they change the
+                # status of the suTable rows. If we do not releaes the lock, then we could deadlock here.
+                sus.releaseLock()
+
                 Downloader.eventMaxThreads.wait()
+
+                sus.acquireLock()
                 # We woke up, but we do not know if there are any open threads in the thread pool. Loop and check
                 # tList again.
 
