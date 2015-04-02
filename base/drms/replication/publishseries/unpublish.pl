@@ -251,9 +251,7 @@ if ($rv == &kSuccess)
 
              if ($rv == &kSuccess)
              {
-                 my($wl) = $drmsParams->get('WL_HASWL');
-
-                 if (DeleteSeries(\$slavedbh, (defined($wl) && $wl), $cfg{'SLAVEHOSTNAME'}, $cfg{'SLAVEPORT'}, $cfg{'SLAVEDBNAME'}, $schema, $table, $cfg{'kScriptDir'}, $drmsParams->get('BIN_PY'), 0) != 0)
+                 if (DeleteSeries(\$slavedbh, $cfg{'SLAVEHOSTNAME'}, $cfg{'SLAVEPORT'}, $cfg{'SLAVEDBNAME'}, $schema, $table, $cfg{'kScriptDir'}, $drmsParams->get('BIN_PY'), 0) != 0)
                  {
                      $rv = &kDelSeriesFailed;
                  }
@@ -390,15 +388,14 @@ sub RunCmd
 sub DeleteSeries
 {
    my($rdbh) = $_[0];
-   my($hasWL) = $_[1];
-   my($dbhost) = $_[2];
-   my($dbport) = $_[3];
-   my($dbname) = $_[4];
-   my($schema) = $_[5];
-   my($table) = $_[6];
-   my($scriptDir) = $_[7];
-   my($pybin) = $_[8];
-   my($doit) = $_[9];
+   my($dbhost) = $_[1];
+   my($dbport) = $_[2];
+   my($dbname) = $_[3];
+   my($schema) = $_[4];
+   my($table) = $_[5];
+   my($scriptDir) = $_[6];
+   my($pybin) = $_[7];
+   my($doit) = $_[8];
    my($rv);
    my($stmnt);
    my($res);
@@ -474,22 +471,6 @@ sub DeleteSeries
          $res = $$rdbh->do($stmnt);
          $rv = !NoErr($res, $rdbh, $stmnt);
       }
-   }
-
-   # Do'h! Need to also drop the series from the drms.allseries table (if it exists).
-   if ($rv == 0 && $hasWL)
-   {
-       my($series) = lc($schema) . "\." . lc($table);
-
-       if (RunCmd($pybin . " $scriptDir/updateAllSeries.py op=delete --dbhost=$dbhost --dbport=$dbport --dbname=$dbname --series=$series", $doit) != 0)
-       {
-           print STDERR "Failure to delete series '$series' from drms.alleries.\n";
-           $rv = &kRunCmd;
-       }
-       else
-       {
-           print "Successfully ran updateAllSeries.py.\n";
-       }
    }
 
    return $rv;
