@@ -258,60 +258,21 @@ if (filter)
 
 /* Query the database to get all series names from the master list. */
 if (singleNameSpace)
-  { // NameSpace contains desired namespace to search -- NEEDS TO BE "INCLUDED IN QUERY
-  if (printinfo || want_JSON)
-    sprintf(query, "select seriesname, primary_idx, description from %s() order by seriesname", DRMS_MASTER_SERIES_TABLE);
-  else
-    sprintf(query, "select seriesname from %s() order by seriesname", DRMS_MASTER_SERIES_TABLE);
-  }
+{ // NameSpace contains desired namespace to search -- NEEDS TO BE "INCLUDED IN QUERY
+    if (printinfo || want_JSON)
+        sprintf(query, "select seriesname, primary_idx, description from %s.%s order by seriesname", NameSpace, DRMS_MASTER_SERIES_TABLE);
+    else
+        sprintf(query, "select seriesname from %s.%s order by seriesname", NameSpace, DRMS_MASTER_SERIES_TABLE);
+}
 else
-  {
-     int hasWl = 0;
+{
+    if (printinfo || want_JSON)
+        sprintf(query, "select seriesname, primary_idx, description from %s() order by seriesname", DRMS_MASTER_SERIES_TABLE);
+    else
+        sprintf(query, "select seriesname from %s() order by seriesname", DRMS_MASTER_SERIES_TABLE);
+}
 
-#if WL_HASWL
-     hasWl = 1;
-#endif
-     if (hasWl &&
-         ((drms_env->session->db_direct && strcmp(SERVER, drms_env->session->db_handle->dbhost) == 0) ||
-          (!drms_env->session->db_direct && strcmp(SERVER, drms_env->session->dbhost) == 0)))
-     {
-        char dbhost[DRMS_MAXHOSTNAME];
-        char dbport[64];
-        char dbname[64];
-
-        if (drms_env->session->db_direct)
-        {
-           snprintf(dbhost, sizeof(dbhost), "%s", drms_env->session->db_handle->dbhost);
-           snprintf(dbport, sizeof(dbport), "%s", drms_env->session->db_handle->dbport);
-           snprintf(dbname, sizeof(dbname), "%s", drms_env->session->db_handle->dbname);
-        }
-        else
-        {
-           snprintf(dbhost, sizeof(dbhost), "%s", drms_env->session->dbhost);
-           snprintf(dbport, sizeof(dbport), "%d", drms_env->session->dbport);
-           snprintf(dbname, sizeof(dbname), "%s", drms_env->session->dbname);
-        }
-
-        /* We are connected to the database that has the white-list table of merged series information. And we need to query on all series, so use drms.allseries. */
-        if (printinfo || want_JSON)
-        {
-           snprintf(query, sizeof(query), "SELECT seriesname, primary_idx, description FROM drms.allseries WHERE dbhost='%s' AND dbport=%s AND dbname='%s' ORDER BY seriesname", dbhost, dbport, dbname);
-        }
-        else
-        {
-           snprintf(query, sizeof(query), "SELECT seriesname FROM drms.allseries WHERE dbhost='%s' AND dbport=%s AND dbname='%s' ORDER BY seriesname", dbhost, dbport, dbname);
-        }
-     }
-     else
-     {
-        if (printinfo || want_JSON)
-          sprintf(query, "select seriesname, primary_idx, description from %s() order by seriesname", DRMS_MASTER_SERIES_TABLE);
-        else
-          sprintf(query, "select seriesname from %s() order by seriesname", DRMS_MASTER_SERIES_TABLE);
-     }
-  }
-
-if ( (qres = drms_query_txt(drms_env->session, query)) == NULL)
+if ((qres = drms_query_txt(drms_env->session, query)) == NULL)
   {
   status = SS_NODRMS;
   goto Failure;
