@@ -1021,11 +1021,35 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
   int tryagain;
   int natts;
   int16_t stagingRet = INT16_MIN;
+    int status = 0; /* For pthread_create() only. */
 
+  /*
+  NILES OIEN oien@nso.edu : These declarations used to happen in the executable code, C++ style. I pulled
+  them out and put them here as C-style declarations before any executable code. I was seeing
+  what looked like memory overwrites in some of these variables. I wasn't not sure if the C compiler was
+  handling the C++ style variable declarations correctly. Some of them should only be delcared if
+  the JMD is installed (since otherwise the include files for the variable types won't be there).
+  */
+
+#if defined(JMD_IS_INSTALLED) && JMD_IS_INSTALLED
+ struct POSTState ps;
+ char *postrequeststr = NULL;
+ HContainer_t *postmap = NULL;
+ char *sname = NULL;
+ long long sunum;
+ int inprogress;
+ int ntries;
+#endif
+
+ int64_t *sunums = NULL;
+ DRMS_RsHandle_t *rsHandle = NULL;
+
+ /* Niles - end of declarations moved from executable code */
+
+  
   drms_lock_server(env);
 
   if (!env->sum_thread) {
-    int status;
     if((status = pthread_create(&env->sum_thread, NULL, &drms_sums_thread,
 				(void *) env))) {
       fprintf(stderr,"Thread creation failed: %d\n", status);
@@ -1141,21 +1165,24 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
 
 #if defined(JMD_IS_INSTALLED) && JMD_IS_INSTALLED
            //ISS VSO HTTP JMD START {
-           struct POSTState ps;
-           char *postrequeststr=NULL;
+           postrequeststr=NULL;
 
-           HContainer_t *postmap = hcon_create(sizeof(struct PassSunumList *), 128, NULL, NULL, NULL, NULL, 0);
-           char *sname = su->seriesinfo ? su->seriesinfo->seriesname : "unknown";
-           long long sunum = su->sunum;
+           postmap = hcon_create(sizeof(struct PassSunumList *), 128, NULL, NULL, NULL, NULL, 0);
+           sname = su->seriesinfo ? su->seriesinfo->seriesname : "unknown";
+           sunum = su->sunum;
            add_sunum_to_POST(env, postmap,sname,sunum);
 
-           int inprogress=-1;
-           int ntries = 0;
-           int totaltries=24;
-           int waittime=10;
-           while ((inprogress = session_status(ps.session_id)) > 0 && ntries < totaltries)
+	   /* NILES OIEN oien@nso.edu Added these two lines, eliminated totaltries=24 and waittime=10
+              constant variables because in fact they seemed to be not remaining constant (memory
+              overwrite?) and replaced them with hard coded values. */
+           postsize = create_post_msg (postmap, &postrequeststr);
+           send_POST_request (postrequeststr, postsize, &ps);
+	   
+           inprogress=-1;
+           ntries = 0;
+           while ((inprogress = session_status(ps.session_id)) > 0 && ntries < 24)
            {
-              sleep(waittime);
+              sleep(10);
               ntries++;
            }
 
@@ -1173,9 +1200,8 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
 #else
             /* Begin remote sums. */
             {
-                int64_t *sunums = NULL;
                 sunums = calloc(1, sizeof(int64_t));
-                DRMS_RsHandle_t *rsHandle = NULL;
+                rsHandle = NULL;
                 
                 if (!sunums)
                 {
@@ -1257,10 +1283,41 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
   int16_t maxRet;
   int16_t stagingRet = INT16_MIN;
 
+  /*
+  NILES OIEN oien@nso.edu These declarations used to happen in the executable code, C++ style. I pulled
+  them out and put them here as C-style declarations before any executable code. I was seeing
+  what looked like memory overwrites in some of these variables. I wasn't not sure if the C compiler was
+  handling the C++ style variable declarations correctly. Some of them should only be delcared if
+  the JMD is installed (since otherwise the include files for the variable types won't be there).
+  */
+  int status = 0;
+  int isu;
+  int iSUMSsunum;
+  DRMS_StorageUnit_t *onesu = NULL;
+  int start = 0;
+  int end = 0;
+  ListNode_t *node = NULL;
+  int64_t *sunums = NULL;
+  DRMS_RsHandle_t *rsHandle = NULL;
+  DRMS_StorageUnit_t *rsu = NULL;
+
+#if defined(JMD_IS_INSTALLED) && JMD_IS_INSTALLED 
+  DRMS_StorageUnit_t *jmd_rsu;
+  struct POSTState ps;
+  char *postrequeststr;
+  HContainer_t *postmap;
+  char *sname;
+  long long sunum;
+  int postsize;
+  int inprogress;
+  int ntries;
+#endif
+  
+  /* End of declarations that used to be in the executable code - Niles. */
+  
   drms_lock_server(env);
 
   if (!env->sum_thread) {
-    int status;
     if((status = pthread_create(&env->sum_thread, NULL, &drms_sums_thread,
 				(void *) env))) {
       fprintf(stderr,"Thread creation failed: %d\n", status);
@@ -1269,9 +1326,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
     }
   }
 
-  int isu;
-  int iSUMSsunum;
-  DRMS_StorageUnit_t *onesu = NULL;
+  onesu = NULL;
 
     /* SUMS does not support dontwait == 1, so force dontwait to be 0 (deprecate the dontwait parameter). */
     dontwait = 0;
@@ -1285,8 +1340,8 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
   }
 
   /* There is a maximum no. of SUs that can be requested from SUMS, MAXSUMREQCNT. So, loop. */
-  int start = 0;
-  int end = SUMIN(MAXSUMREQCNT, n); /* index of SU one past the last one to be processed */
+  start = 0;
+  end = SUMIN(MAXSUMREQCNT, n); /* index of SU one past the last one to be processed */
 
   workingsus = su;
   workingn = n;
@@ -1464,36 +1519,36 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
       * and then retry. */
      if (natts < 2 && retrysus && list_llgetnitems(retrysus) > 0)
      {
-         ListNode_t *node = NULL;
+         node = NULL;
 #if defined(JMD_IS_INSTALLED) && JMD_IS_INSTALLED
         //ISS VSO HTTP JMD START {
         /* iterate through each sunum */
-        DRMS_StorageUnit_t *rsu = NULL;
+        jmd_rsu = NULL;
 
         list_llreset(retrysus);
 
-        struct POSTState ps;
-        char *postrequeststr=NULL; //this pointer is allocated
+        postrequeststr=NULL; //this pointer is allocated
 
-        HContainer_t *postmap = hcon_create(sizeof(struct PassSunumList *), 128, NULL, NULL, NULL, NULL, 0);
+        postmap = hcon_create(sizeof(struct PassSunumList *), 128, NULL, NULL, NULL, NULL, 0);
         while ((node = list_llnext(retrysus)) != NULL)
         {
-           rsu = *((DRMS_StorageUnit_t **)(node->data));
-           char *sname = rsu->seriesinfo ? rsu->seriesinfo->seriesname : "unknown";
-           long long sunum = rsu->sunum;
+           jmd_rsu = *((DRMS_StorageUnit_t **)(node->data));
+           sname = jmd_rsu->seriesinfo ? jmd_rsu->seriesinfo->seriesname : "unknown";
+           sunum = jmd_rsu->sunum;
            add_sunum_to_POST(env, postmap,sname,sunum);
         }
 
-        int postsize = create_post_msg(postmap,&postrequeststr);
+        postsize = create_post_msg(postmap,&postrequeststr);
         send_POST_request(postrequeststr,postsize,&ps);
 
-        int inprogress=-1;
-        int ntries = 0;
-        int totaltries=40;
-        int waittime=10;
-        while ((inprogress = session_status(ps.session_id)) > 0 && ntries < totaltries) 
+	/*
+          NILES OIEN oien@nso.edu replaced constant variables waittime=10 and
+          totaltries=40 with hard coded values after it seemed like the values
+          were not remaining constant (memory orverwrite?).
+	 */
+        while ((inprogress = session_status(ps.session_id)) > 0 && ntries < 40) 
         {
-           sleep(waittime);
+           sleep(10);
            ntries++;
         }
 
@@ -1538,9 +1593,9 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
 #else
          /* Remote SUMS */
          {
-             int64_t *sunums = NULL;
-             DRMS_RsHandle_t *rsHandle = NULL;
-             DRMS_StorageUnit_t *rsu = NULL;
+             sunums = NULL;
+             rsHandle = NULL;
+             rsu = NULL;
              
              nretrySUNUMS = list_llgetnitems(retrysus);
              sunums = calloc(SUMIN(MAXSUMREQCNT, nretrySUNUMS), sizeof(int64_t));
