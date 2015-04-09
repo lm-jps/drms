@@ -4,9 +4,6 @@
 			/* This is tested for in sum_svc_proc.c getdo_1() */
 #if defined SUMDC
 #define SUM_VERSION_NUM    (1.0)
-//#define SUMSERVER "dcs0.Stanford.EDU"
-#define SUMDB "dcs0"
-
 #if defined DCS0
 #define SUMPGPORT "5430"
 #elif defined DCS1
@@ -19,15 +16,11 @@
 #define SUM_STOP_NOT "/usr/local/logs/SUM/SUM_STOP_NOT"
 #elif defined SUMT120
 #define SUM_VERSION_NUM    (1.0)
-//#define SUMSERVER "d00.Stanford.EDU"
-#define SUMDB "hmidb"
 #define SUMPGPORT "5434"
 #define TAPEVIEWERNAME "t120view"
 #define SUM_STOP_NOT "/usr/local/logs/SUM/SUM_STOP_NOT"
 #elif defined SUMT950
 #define SUM_VERSION_NUM    (1.0)
-//#define SUMSERVER "d02.Stanford.EDU"
-#define SUMDB "hmidb"
 #define SUMPGPORT "5434"
 #define TAPEVIEWERNAME "t950view"
 #define SUM_STOP_NOT "/usr/local/logs/SUM/SUM_STOP_NOT"
