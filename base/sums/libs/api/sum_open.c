@@ -132,6 +132,15 @@ int SUM_shutdown(int query, int (*history)(const char *fmt, ...))
  * **NEW 7Oct2005 the db arg has been depricated and has no effect. The db
  * you will get depends on how sum_svc was started, e.g. "sum_svc jsoc".
 */
+
+/* THE PARAMETER db IS NOT USED. IT IS PASSED TO sum_svc, but sum_svc
+ * DOES NOT USE IT. IF db IS NOT DEFINED, THEN THE ENVIRONMENT VARIABLE
+ * "SUMDB" IS USED (AND THEN IGNORED BY sum_svc). IT USED TO BE THE CASE THAT THE INTERNAL
+ * SUMDB MACRO WAS PASSED TO sum_svc (AND THEN IGNORED) IF db == NULL AND
+ * THE "SUMDB" ENVIRONMENT VARIABLE WAS NOT DEFINED, BUT I CHANGED THAT TO PASS IN THE 
+ * OFFICIAL LOCALIZED DEFINE SUMS_DB_HOST (WHICH IS THEN IGNORED BY sum_svc).
+ *   ART 
+ */
 SUM_t *SUM_open(char *server, char *db, int (*history)(const char *fmt, ...))
 {
   CLIENT *clopx;
@@ -343,8 +352,8 @@ for(i=0; i < numSUM; i++) {
   {
     if (!(db = getenv("SUMDB")))
     {
-      db = alloca(sizeof(SUMDB)+1);
-      strcpy(db, SUMDB);
+      db = alloca(sizeof(SUMS_DB_HOST)+1);
+      strcpy(db, SUMS_DB_HOST);
     }
   }
   klist = newkeylist();
