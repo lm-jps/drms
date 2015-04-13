@@ -76,6 +76,9 @@ q:WL_FILE                               /web/jsoc/htdocs/whitelist.txt
 q:BIN_EXPORT                            /home/jsoc/cvs/Development/JSOC/bin
 q:SCRIPTS_EXPORT                        /home/jsoc/cvs/Development/JSOC/scripts
 q:BIN_PY                                /home/jsoc/bin/linux_x86_64/activepython27
+q:INC_PY                                /home/jsoc/ActivePython-2.7/include/python2.7
+q:LIB_PY                                /home/jsoc/ActivePython-2.7/lib/python2.7
+a:SUMS_USEMTSUMS                        1
 # Email registration
 a:REGEMAIL_TIMEOUT                      5
 
