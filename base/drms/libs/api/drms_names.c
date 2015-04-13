@@ -1199,7 +1199,7 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
 
                      if (fabs(exact - rounded) > 1.0e-11 * (fabs(exact) + fabs(rounded)))
                      {
-                        fprintf(stdout, "NOTE: the skip value '%f' is not a multiple of step size; rounding to nearest step-size multiple '%f'\n", dval, rounded * step);
+                        fprintf(stderr, "NOTE: the skip value '%f' is not a multiple of step size; rounding to nearest step-size multiple '%f'\n", dval, rounded * step);
                      }
 
                      dvalval.double_val = rounded;
@@ -1278,7 +1278,7 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
 
                        if (fabs(exact - rounded) > 1.0e-11 * (fabs(exact) + fabs(rounded)))
                        {
-                          fprintf(stdout, "NOTE: the skip value '%f' is not a multiple of step size; rounding to nearest step-size multiple '%f'\n", dval, rounded * step);
+                          fprintf(stderr, "NOTE: the skip value '%f' is not a multiple of step size; rounding to nearest step-size multiple '%f'\n", dval, rounded * step);
                        }
 
                        dvalval.double_val = rounded;
