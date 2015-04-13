@@ -211,7 +211,7 @@ try:
         cmdList.extend(allArgs)
 
         try:
-            resp = check_output(cmdList, stderr=STDOUT)
+            resp = check_output(cmdList)
             output = resp.decode('utf-8')
         except ValueError as exc:
             raise Exception('jsocfetch', exc.args[0], RET_JSOCFETCH)
@@ -221,8 +221,7 @@ try:
             # be used). Fortunately, the output is saved in exc.output.
             output = exc.output.decode('utf-8')
         
-        # ACK - jsoc_fetch can produce text output, even in the CGI context. Instead of checking for errors in the text
-        # case, let the caller of this script do so.
+        # ACK - jsoc_fetch can produce text output in the CGI context. Let the caller of this script handle this.
         if optD['json']:        
             try:
                 jsonObj = json.loads(output)
@@ -256,7 +255,7 @@ try:
         cmdList.extend(allArgs)
 
         try:
-            resp = check_output(cmdList, stderr=STDOUT)
+            resp = check_output(cmdList)
             output = resp.decode('utf-8')
         except ValueError as exc:
             raise Exception('jsocfetch', exc.args[0], RET_JSOCFETCH)
@@ -266,8 +265,7 @@ try:
             # be used). Fortunately, the output is saved in exc.output.
             output = exc.output.decode('utf-8')
         
-        # ACK - jsoc_fetch can produce text output, even in the CGI context. Instead of checking for errors in the text
-        # case, let the caller of this script do so.
+        # ACK - jsoc_fetch can produce text output in the CGI context. Let the caller of this script handle this.
         if optD['json']:
             try:
                 jsonObj = json.loads(output)
