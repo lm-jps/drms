@@ -57,7 +57,7 @@ $(OBJ_SUMOPEN_$(d)):    $(SRCDIR)/$(d)/Rules.mk
 
 WRAP_CF_$(d) := 
 ifeq ($(COMPILER), gcc)
-    $(WRAP_CF_$(d)) := -fwrapv
+    WRAP_CF_$(d) := -fwrapv
 endif
 
 $(OBJ_$(d)):	CF_TGT := $(CF_TGT_$(d))
