@@ -59,6 +59,9 @@ NEW FEATURES:
 - The checkAddress CGI was modified to return the name of any missing arguments in the case where the user fails to provide all required arguments.
 - The email-registration system now provides the confirmation code in the body of the email instead of in the subject line. There were issues where SMTP servers were modifying the subject line and, in a few cases, deleting the confirmation code for reasons unknown.
 
+LOCALIZATION:
+- There is a single new localization parameter: REGEMAIL_TIMEOUT. The value of this parameter is the number of minutes, after which a pending email registration process will be canceled. If you are not running at Stanford, the value will not matter.
+
 DEFECTS FIXED:
 - The make system had been unnecessarily rebuilding binary files that were already up-to-date. Several make files were edited to fix this.
 - The make system had a bug that resulted in certain libraries being built twice. These were lower-level libraries, so the result was that almost every binary was getting rebuilt every time make was run.
