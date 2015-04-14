@@ -1033,6 +1033,7 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
 
 #if defined(JMD_IS_INSTALLED) && JMD_IS_INSTALLED
  struct POSTState ps;
+ int postsize;
  char *postrequeststr = NULL;
  HContainer_t *postmap = NULL;
  char *sname = NULL;
