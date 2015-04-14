@@ -342,9 +342,9 @@ include	$(SRCDIR)/Rules.mk
 
 # Libraries from src/util linked with all programs.
 ifneq ($(COMPILER), icc)
-  SYSLIBS = -lz -ldl -lpthread -lm -lutil -L $(LIB_PY)/config -lpython2.7 -Xlinker -export-dynamic
+  SYSLIBS = -lz -ldl -lpthread -lm
 else
-  SYSLIBS = -lz -ldl -lpthread -lutil -L $(LIB_PY)/config -lpython2.7 -Xlinker -export-dynamic 
+  SYSLIBS = -lz -ldl -lpthread 
 endif
 SRCLIBS = $(LIBTHREADUTIL) $(LIBRICECOMP) $(LIBCMDPARAMS) $(LIBTIMEIO) $(LIBFITSRW) $(LIBERRLOG) $(LIBEXPDRMS) $(LIBEXPUTL) $(LIBMISC) $(LIBDSTRUCT) $(LIBSTATS)
 FSRCLIBS = $(LIBTHREADUTIL) $(LIBRICECOMP) $(LIBCMDPARAMSF) $(LIBTIMEIO) $(LIBFITSRW) $(LIBERRLOG) $(LIBEXPDRMS) $(LIBEXPUTL) $(LIBMISC) $(LIBDSTRUCT) $(LIBSTATS)
