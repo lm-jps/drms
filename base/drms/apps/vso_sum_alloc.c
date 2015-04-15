@@ -43,10 +43,16 @@ int main(int argc, char *argv[])
   sum->bytes = size;
 
   /* Make RPC call to the SUM server. */
-  if ((status = SUM_alloc2(sum, sunum, printf)))
+  if ((status = SUM_alloc2(sum, sunum, printkerr)))
   {
-    fprintf(stderr,"ERROR: SUM_alloc2 RPC call failed with "
+    fprintf(stderr, "ERROR: SUM_alloc2 RPC call failed with "
                "error code %d\n", status);
+               
+    if (sum)
+    {
+        SUM_close(sum, printkerr);
+    }
+    
     return -3;
   }
 
@@ -54,7 +60,7 @@ int main(int argc, char *argv[])
   fprintf(stdout, "sunum:%llu;size:%llu;sudir:%s\n",(unsigned long long)sunum,(unsigned long long)size,sudir);
 
 
-  SUM_close(sum,printf);
+  SUM_close(sum, printkerr);
 
   if (sum->wd[0]) {
     free(sum->wd[0]);

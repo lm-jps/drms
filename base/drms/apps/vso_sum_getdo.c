@@ -60,10 +60,16 @@ int main(int argc, char *argv[])
   retention   = cmdparams_get_int64(&cmdparams, "retention", NULL);
 
   /* Make RPC call to the SUM server. */
-  if ((status = SUM_get(sum, printf)))
+  if ((status = SUM_get(sum, printkerr)))
   {
     fprintf(stderr,"ERROR: SUM_getdo RPC call failed with "
                "error code %d\n", status);
+               
+               if (sum)
+    {
+        SUM_close(sum, printkerr);
+    }
+    
     return -3;
   }
 
@@ -72,7 +78,7 @@ int main(int argc, char *argv[])
     fprintf(stdout, "sunum:%llu;sudir:%s\n",sunum[i],sudir);
   }
 
-  SUM_close(sum,printf);
+  SUM_close(sum, printkerr);
 
   free(sum->wd[0]);
 
