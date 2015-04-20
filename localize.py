@@ -77,7 +77,7 @@ PERL_FXNS_B = """sub get
 PY_BINPATH = '#/usr/bin/python\n'
 
 PY_FXNS_A = """
-class DRMSParams:
+class DRMSParams(object):
     def __init__(self):
         self.params = {}
         self.initialize()
