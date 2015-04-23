@@ -81,17 +81,74 @@ RET_DBUPDATE = 16
 
 LOG_FILE_BASE_NAME = 'rslog'
 
-class Log:
-    def __init__(self, logPath, baseFileName):
-        now = datetime.now().strftime('%Y%m%d')
-        fileName = baseFileName + '_' + now + '.txt'
-        self.fileName = os.path.join(logPath, fileName)
+class SumsDrmsParams(DRMSParams):
+    def __init__(self):
+        super(SumsDrmsParams, self).__init__()
+
+    def get(self, name):
+        val = super(SumsDrmsParams, self).get(name)
+
+        if val is None:
+            raise Exception('drmsParams', 'Unknown DRMS parameter: ' + name + '.')
+        return val
+
+
+class Arguments(object):
+
+    def __init__(self, parser):
+        # This could raise in a few places. Let the caller handle these exceptions.
+        self.parser = parser
+        
+        # Parse the arguments.
+        self.parse()
+        
+        # Set all args.
+        self.setAllArgs()
+        
+    def parse(self):
+        try:
+            self.parsedArgs = self.parser.parse_args()      
+        except Exception as exc:
+            if len(exc.args) == 2:
+                type, msg = exc
+                  
+                if type != 'CmdlParser-ArgUnrecognized' and type != 'CmdlParser-ArgBadformat':
+                    raise # Re-raise
+
+                raise Exception('args', msg)
+            else:
+                raise # Re-raise
+
+    def setArg(self, name, value):
+        if not hasattr(self, name):
+            # Since Arguments is a new-style class, it has a __dict__, so we can
+            # set attributes directly in the Arguments instance.
+            setattr(self, name, value)
+        else:
+            raise Exception('args', 'Attempt to set an argument that already exists: ' + name + '.')
+
+    def setAllArgs(self):
+        for key,val in list(vars(self.parsedArgs).items()):
+            self.setArg(key, val)
+        
+    def getArg(self, name):
+        try:
+            return getattr(self, name)
+        except AttributeError as exc:
+            raise Exception('args', 'Unknown argument: ' + name + '.')
+
+class Log(object):
+    """Manage a logfile."""
+
+    def __init__(self, file):
+        self.fileName = file
         self.fobj = None
         
         try:
-            # If path doesn't exist, create it. Since we are running as the production rs user, ownership will be fine.
-            if not os.path.isdir(logPath):
-                os.mkdir(logPath)
+            head, tail = os.path.split(file)
+
+            if not os.path.isdir(head):
+                os.mkdir(head)
             fobj = open(self.fileName, 'a')
         except OSError as exc:
             type, value, traceback = sys.exc_info()
@@ -103,7 +160,7 @@ class Log:
         self.fobj = fobj
 
     def __del__(self):
-	if self.fobj:
+        if self.fobj:
             self.fobj.close()
 
     def write(self, text):
@@ -1156,91 +1213,6 @@ class ProviderPoller(threading.Thread):
         poller = ProviderPoller(url, requestID, sunums, sus, reqTable, request, dbUser, binPath, log)
         poller.start()
 
-def getOption(val, default):
-    if val:
-        return val
-    else:
-        return default
-
-def getArgs():
-    istat = False
-    optD = {}
-    
-    parser = CmdlParser(usage='%(prog)s [ -h ] [ sutable=<storage unit table> ] [ reqtable=<request table> ] [ --dbname=<db name> ] [ --dbhost=<db host> ] [ --dbport=<db port> ] [ --binpath=<executable path> ] [ --logfile=<base log-file name> ]')
-    
-    # Optional parameters - no default argument is provided, so the default is None, which will trigger the use of what exists in the configuration file
-    # (which is drmsparams.py).
-    parser.add_argument('r', '--reqtable', help='The database table that contains records of the SU-request being processed. If provided, overrides default specified in configuration file.', metavar='<request unit table>', dest='reqtable')
-    parser.add_argument('s', '--sutable', help='The database table that contains records of the storage units being processed. If provided, overrides default specified in configuration file.', metavar='<storage unit table>', dest='sutable')
-    parser.add_argument('-N', '--dbname', help='The name of the database that contains the series table from which records are to be deleted.', metavar='<db name>', dest='dbname')
-    parser.add_argument('-U', '--dbuser', help='The name of the database user account.', metavar='<db user>', dest='dbuser')
-    parser.add_argument('-H', '--dbhost', help='The host machine of the database that contains the series table from which records are to be deleted.', metavar='<db host machine>', dest='dbhost')
-    parser.add_argument('-P', '--dbport', help='The port on the host machine that is accepting connections for the database that contains the series table from which records are to be deleted.', metavar='<db host port>', dest='dbport')
-    parser.add_argument('-b', '--binpath', help='The path to executables run by this daemon (e.g., vso_sum_alloc, vso_sum_put).', metavar='<executable path>', dest='binpath')
-    parser.add_argument('-l', '--logfile', help='The base file name to use for logs.', metavar='<base file name>', dest='logfile')
-    
-    try:
-        args = parser.parse_args()
-          
-    except Exception as exc:
-        if len(exc.args) == 2:
-            type = exc[0]
-            msg = exc[1]
-                  
-            if type != 'CmdlParser-ArgUnrecognized' and type != 'CmdlParser-ArgBadformat':
-                raise # Re-raise
-                  
-            print(msg, file=sys.stderr)
-            istat = True
-            optD = None
-              
-        else:
-            raise # Re-raise
-  
-    if not istat:
-        try:
-            drmsParams = DRMSParams()
-            if drmsParams is None:
-                raise Exception('drmsParams', 'Unable to locate DRMS parameters file (drmsparams.py).')
-            
-            # Get configuration information.
-            optD['cfg'] = drmsParams
-            
-            # Override defaults.
-            optD['reqtable'] = getOption(args.reqtable, drmsParams.get('RS_REQUEST_TABLE'))
-            optD['sutable'] = getOption(args.sutable, drmsParams.get('RS_SU_TABLE'))
-            optD['dbname'] = getOption(args.dbname, drmsParams.get('RS_DBNAME'))
-            optD['dbuser'] = getOption(args.dbuser, drmsParams.get('RS_DBUSER'))
-            optD['dbhost'] = getOption(args.dbhost, drmsParams.get('RS_DBHOST'))
-            optD['dbport'] = int(getOption(args.dbport, drmsParams.get('RS_DBPORT')))
-            optD['binpath'] = getOption(args.binpath, drmsParams.get('RS_BINPATH'))
-            optD['lockfile'] = getOption(None, drmsParams.get('RS_LOCKFILE'))
-            optD['dltimeout'] = int(getOption(None, drmsParams.get('RS_DLTIMEOUT')))
-            optD['reqtimeout'] = int(getOption(None, drmsParams.get('RS_REQTIMEOUT')))
-            optD['maxthreads'] = int(getOption(None, drmsParams.get('RS_MAXTHREADS')))
-            optD['logdir'] = getOption(None, drmsParams.get('RS_LOGDIR'))
-            optD['logfile'] = getOption(args.logfile, LOG_FILE_BASE_NAME)
-    
-        except Exception as exc:
-            if len(exc.args) != 2:
-                raise # Re-raise
-        
-            etype = exc.args[0]
-            msg = exc.args[1]
-        
-            if etype == 'drmsParams':
-                print('Error reading DRMS parameters: ' + msg, file=sys.stderr)
-                istat = True
-                optD = None
-    
-        except KeyError as exc:
-            type, value, traceback = sys.exc_info()
-            print(exc.strerror, file=sys.stderr)
-            istat = True
-            optD = None
-    
-    return optD
-
 def readTables(sus, requests, sites):
     if sus:
         sus.tryRead()
@@ -1384,22 +1356,46 @@ rv = RET_SUCCESS
 
 if __name__ == "__main__":
     try:
-        optD = getArgs()
+        sumsDrmsParams = SumsDrmsParams()
+        if sumsDrmsParams is None:
+            raise Exception('drmsParams', 'Unable to locate DRMS parameters file (drmsparams.py).')
+            
+        parser = CmdlParser(usage='%(prog)s [ -h ] [ sutable=<storage unit table> ] [ reqtable=<request table> ] [ --dbname=<db name> ] [ --dbhost=<db host> ] [ --dbport=<db port> ] [ --binpath=<executable path> ] [ --logfile=<base log-file name> ]')
+    
+        # Optional parameters - no default argument is provided, so the default is None, which will trigger the use of what exists in the configuration file
+        # (which is drmsparams.py).
+        parser.add_argument('r', '--reqtable', help='The database table that contains records of the SU-request being processed. If provided, overrides default specified in configuration file.', metavar='<request unit table>', dest='reqtable', default=sumsDrmsParams.get('RS_REQUEST_TABLE'))
+        parser.add_argument('s', '--sutable', help='The database table that contains records of the storage units being processed. If provided, overrides default specified in configuration file.', metavar='<storage unit table>', dest='sutable', default=sumsDrmsParams.get('RS_SU_TABLE'))
+        parser.add_argument('-N', '--dbname', help='The name of the database that contains the series table from which records are to be deleted.', metavar='<db name>', dest='dbname', default=sumsDrmsParams.get('RS_DBNAME'))
+        parser.add_argument('-U', '--dbuser', help='The name of the database user account.', metavar='<db user>', dest='dbuser', default=sumsDrmsParams.get('RS_DBUSER'))
+        parser.add_argument('-H', '--dbhost', help='The host machine of the database that contains the series table from which records are to be deleted.', metavar='<db host machine>', dest='dbhost', default=sumsDrmsParams.get('RS_DBHOST'))
+        parser.add_argument('-P', '--dbport', help='The port on the host machine that is accepting connections for the database that contains the series table from which records are to be deleted.', metavar='<db host port>', dest='dbport', default=int(sumsDrmsParams.get('RS_DBPORT')))
+        parser.add_argument('-b', '--binpath', help='The path to executables run by this daemon (e.g., vso_sum_alloc, vso_sum_put).', metavar='<executable path>', dest='binpath', default=sumsDrmsParams.get('RS_BINPATH'))
+        parser.add_argument('-l', '--logfile', help='The file to which logging is written.', metavar='<file name>', dest='logfile', default=os.path.join(sumsDrmsParams.get('RS_LOGDIR'), LOG_FILE_BASE_NAME + '_' + datetime.now().strftime('%Y%m%d') + '.txt'))
+                
+        arguments = Arguments(parser)
+        
+        arguments.setArg('lockfile', sumsDrmsParams.get('RS_LOCKFILE'))
+        arguments.setArg('dltimeout', int(sumsDrmsParams.get('RS_DLTIMEOUT')))
+        arguments.setArg('reqtimeout', int(sumsDrmsParams.get('RS_REQTIMEOUT')))
+        arguments.setArg('maxthreads', int(sumsDrmsParams.get('RS_MAXTHREADS')))
+        arguments.setArg('logdir', sumsDrmsParams.get('RS_LOGDIR'))
+        
         pid = os.getpid()
             
-        with DrmsLock(optD['lockfile'], str(pid)) as lock:
-            rslog = Log(optD['logdir'], optD['logfile'])
+        with DrmsLock(arguments.lockfile, str(pid)) as lock:
+            rslog = Log(arguments.logfile)
 
             rslog.write(['Starting up daemon.']) 
             rslog.write(['Obtained script file lock.'])
             # Connect to the database
             try:
                 # The connection is NOT in autocommit mode. If changes need to be saved, then conn.commit() must be called.
-                with psycopg2.connect(database=optD['dbname'], user=optD['dbuser'], host=optD['dbhost'], port=optD['dbport']) as conn:
-                    rslog.write(['Connected to database ' + optD['dbname'] + ' on ' + optD['dbhost'] + ':' + str(optD['dbport']) + ' as user ' + optD['dbuser']])
+                with psycopg2.connect(database=arguments.dbname, user=arguments.dbuser, host=arguments.dbhost, port=arguments.dbport) as conn:
+                    rslog.write(['Connected to database ' + arguments.dbname + ' on ' + arguments.dbhost + ':' + str(arguments.dbport) + ' as user ' + arguments.dbuser])
                     with conn.cursor() as cursor:
-                        suTable = optD['sutable']
-                        reqTable = optD['reqtable']
+                        suTable = arguments.sutable
+                        reqTable = arguments.reqtable
 
                         sus = None
                         requests = None
@@ -1412,10 +1408,10 @@ if __name__ == "__main__":
                         # been lost, and we cannot trust that the downloads completed successfully (although they might have).
                         # A fancier implementation would be some kind of download manager that can recover partially downloaded
                         # storage units, but who has the time :)
-                        rslog.write(['Setting download-timeout to ' + str(optD['dltimeout']) + ' minutes.'])
-                        sus = SuTable(suTable, timedelta(minutes=optD['dltimeout']), rslog)
-                        rslog.write(['Setting request-timeout to ' + str(optD['reqtimeout']) + ' minutes.'])
-                        requests = ReqTable(reqTable, timedelta(minutes=optD['reqtimeout']), rslog)
+                        rslog.write(['Setting download-timeout to ' + str(arguments.dltimeout) + ' minutes.'])
+                        sus = SuTable(suTable, timedelta(minutes=arguments.dltimeout), rslog)
+                        rslog.write(['Setting request-timeout to ' + str(arguments.reqtimeout) + ' minutes.'])
+                        requests = ReqTable(reqTable, timedelta(minutes=arguments.reqtimeout), rslog)
                         sites = SiteTable(rslog)
                         
                         SuTable.setCursor(cursor)
@@ -1425,7 +1421,7 @@ if __name__ == "__main__":
                         readTables(sus, requests, sites)
 
                         # Set max number of threads we can process at once.
-                        Downloader.setMaxThreads(optD['maxthreads'])
+                        Downloader.setMaxThreads(arguments.maxthreads)
 
                         # Recover pending downloads that got disrupted from a daemon crash. All SU downloads that are in the pending
                         # state at the time the tables are read were disrupted. There are no other threads running at this point.
@@ -1462,7 +1458,7 @@ if __name__ == "__main__":
                                     # setting the last reprocess argument to True, we do not insert a new record, but instead continue to use
                                     # the existing record. 
                                     try:
-                                        processSUs(url, chunk, sus, requests, None, optD['dbuser'], optD['binpath'], rslog, True)
+                                        processSUs(url, chunk, sus, requests, None, arguments.dbuser, arguments.binpath, rslog, True)
 
                                     except Exception as exc:
                                         if len(exc.args) != 2:
@@ -1612,7 +1608,7 @@ if __name__ == "__main__":
                                     # sus object.
                                     sus.incrementRefcount(known)
                                     
-                                    offlineSunums = SuTable.offline(unknown, optD['binpath'], rslog)
+                                    offlineSunums = SuTable.offline(unknown, arguments.binpath, rslog)
                                     offlineSunumsDict = dict([ (str(asunum), True) for asunum in offlineSunums ])
                                     
                                     dlsToStart = []
@@ -1647,7 +1643,7 @@ if __name__ == "__main__":
                                             for chunk in chunker:
                                                 # We want to always insert a record for each SU into the SU table. Do not provide the insertRec
                                                 # argument to do so. This call creates new SU-table records, so it modifies the sus object.
-                                                processSUs(url, chunk, sus, requests, arequest, optD['dbuser'], optD['binpath'], rslog)
+                                                processSUs(url, chunk, sus, requests, arequest, arguments.dbuser, arguments.binpath, rslog)
                                     
                                     # The new request has been fully processed. Change its status from 'N' to 'P'.
                                     # This call modifies the requests object.
