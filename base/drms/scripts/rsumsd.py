@@ -1524,8 +1524,16 @@ if __name__ == "__main__":
                                     reqError = False
                                     sunums = arequest['sunums']
                                     errMsg = ''
+                                    processing = {}
 
                                     for asunum in sunums:
+                                        if str(asunum) in processing:
+                                            # Skip duplicates.
+                                            rslog.write(['Skipping pending request for SU ' + str(asunum) + ' - this is a duplicate SU.'])
+                                            continue
+                                        else:
+                                            processing[str(asunum)] = True                                        
+
                                         if reqError == True:
                                             break
                                         asu = sus.get([asunum])
@@ -1555,7 +1563,12 @@ if __name__ == "__main__":
                                         try:
                                             cursor.execute('BEGIN')
                                             requests.updateDB([arequest['requestid']])
-                                            sus.decrementRefcount(sunums)
+                                            
+                                            # Remove duplicates from list first. We do not need to preserve the order of the SUNUMs
+                                            # before calling decrementRefcount() since that function uses a hash lookup on the SUNUM
+                                            # to find the associated refcount.
+                                            
+                                            sus.decrementRefcount(list(set(sunums)))
                                             cursor.execute('END')
                                         except psycopg2.Error as exc:
                                             # Handle database-command errors.
@@ -1589,7 +1602,16 @@ if __name__ == "__main__":
                                     # Get all SU records for which a download is already in progress.
                                     unknown = []
                                     known = []
+                                    processing = {} # The SUs in sunums that are currently being processed. Use this to avoid duplicate SUs.
+
                                     for asunum in sunums:
+                                        if str(asunum) in processing:
+                                            # Skip duplicates.
+                                            rslog.write(['Skipping request for SU ' + str(asunum) + ' - this is a duplicate SU.'])
+                                            continue
+                                        else:
+                                            processing[str(asunum)] = True
+                                            
                                         try:
                                             asu = sus.get([asunum])
                                             rslog.write(['A download for SU ' + str(asunum)+ ' is already in progress.'])
