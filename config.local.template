@@ -262,7 +262,7 @@ RS_REQTIMEOUT                          5
 RS_MAXTHREADS                         32
 
 # The path to executables run by the remote-sums system.
-RS_BINPATH                            /home/jsoc/cvs/Development/JSOC/bin/linux_x86_64
+RS_BINPATH                            /opt/drms/bin/linux_x86_64
 
 # If 1, then this DRMS allows access by the public to series defined in the internal database (SERVER).
 WL_HASWL                              0
@@ -271,13 +271,19 @@ WL_HASWL                              0
 WL_FILE                               /usr/share/drms/whitelist.txt
 
 # The paths to various binaries.
-BIN_EXPORT                            /home/jsoc/cvs/Development/JSOC/bin
-SCRIPTS_EXPORT                        /home/jsoc/cvs/Development/JSOC/scripts
+BIN_EXPORT                            /opt/drms/bin
+SCRIPTS_EXPORT                        /opt/drms/scripts
 BIN_PY                                /usr/bin/python
 
 # The number of minutes after which a new email registration attempt will time-out if the registering user does
 # not respond to the verification email sent to them.
 REGEMAIL_TIMEOUT                      5
+
+# These are parameters needed when using the multi-threaded SUMS daemon.
+SUMS_USEMTSUMS                        0
+INC_PY                                /usr/include/python2.7
+LIB_PY                                /usr/lib/python2.7
+
 ###############################
 
 __MAKE__

@@ -63,3 +63,6 @@ BIN_EXPORT                 q:BIN_EXPORT
 SCRIPTS_EXPORT                 q:SCRIPTS_EXPORT
 BIN_PY                     q:BIN_PY
 REGEMAIL_TIMEOUT           a:REGEMAIL_TIMEOUT
+INC_PY                     q:INC_PY
+LIB_PY                     q:LIB_PY
+SUMS_USEMTSUMS             a:SUMS_USEMTSUMS
