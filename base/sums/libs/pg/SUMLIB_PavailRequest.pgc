@@ -222,10 +222,17 @@ sqlerror:
 int cmp_pds_num(const void *a, const void *b)
 {
   PART *x=(PART *)a, *y=(PART *)b;
+  char xname[1000], yname[1000];
+  int n;
 
   if(x->pds_set_num < y->pds_set_num) return(-1);
   if(x->pds_set_num > y->pds_set_num) return(1);
-  if(strcmp(x->name, y->name) < 0) return(-1);
-  if(strcmp(x->name, y->name) > 0) return(1);
-  return(0);
+
+// reverse partition names before sorting  04-27-2015 Keh-Cheng
+  n = strlen(x->name); xname[n] = 0;
+  for (int i=0; i<n; ++i) xname[i] = x->name[n-1-i]; 
+  n = strlen(y->name); yname[n] = 0;
+  for (int i=0; i<n; ++i) yname[i] = y->name[n-1-i]; 
+    
+  return strcmp(xname, yname);
 }
