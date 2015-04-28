@@ -226,7 +226,8 @@ class Dbconnection(object):
             raise Exception('dbCommand', 'Cannot execute database command ' + cmd + ' - no database connection exists.')
 
         try:
-            rows = self.cursor.execute(cmd)
+            self.cursor.execute(cmd)
+            rows = self.cursor.fetchall()
         except psycopg2.Error as exc:
             # Handle database-command errors.
             raise Exception('dbCommand', exc.diag.message_primary)
@@ -266,15 +267,18 @@ class Collector(threading.Thread):
 
             cmd = "SELECT T1.ds_index, T1.online_loc, T1.online_status, T1.archive_status, T1.offsite_ack, T1.history_comment, T1.owning_series, T1.storage_group, T1.bytes, T1.create_sumid, T1.creat_date, T1.username, COALESCE(T1.arch_tape, 'N/A'), COALESCE(T1.arch_tape_fn, 0), COALESCE(T1.arch_tape_date, '1958-01-01 00:00:00'), COALESCE(T1.safe_tape, 'N/A'), COALESCE(T1.safe_tape_fn, 0), COALESCE(T1.safe_tape_date, '1958-01-01 00:00:00'), COALESCE(T2.effective_date, '195801010000'), coalesce(T2.status, 0), coalesce(T2.archive_substatus, 0) FROM " + SUM_MAIN + " AS T1 LEFT OUTER JOIN " + SUM_PARTN_ALLOC + " AS T2 ON (T1.ds_index = T2.ds_index) WHERE T1.ds_index IN (" + ','.join(self.suList) + ')'
             if self.debugLog:
-                self.debugLog.write(['db command is: '])
+                self.debugLog.write(['db command is: ' + cmd])
                 
             response = self.dbconn.exeCmd(cmd)
             
             # Send results back on the socket, which is connected to a single DRMS module. By sending the results
             # back, the client request is completed. We want to construct a list of "SUM_info" objects. Each object
             # { sunum:12592029, onlineloc:'/SUM52/D12592029', ...}
-            msg = self.pickleResponse(response)
+            
+            msg = self.pickleResponse(response)            
+            print('pickled response on server')
             self.sendResponse(msg)
+            print('sent response on server')
         except Exception as exc:
             import traceback
             log.write(['There was a problem communicating with client ' + str(self.sock.getpeername())])
@@ -292,6 +296,10 @@ class Collector(threading.Thread):
                 Collector.eventMaxThreads.set()
                 # Clear event so that main will block the next time it calls wait.
                 Collector.eventMaxThreads.clear()
+        except Exception as exc:
+            import traceback
+            log.write(['There was a problem closing the Collector thread for client ' + str(self.sock.getpeername()) + '.'])
+            log.write([traceback.format_exc(0)])
         finally:
             Collector.tListLock.release()
             if self.debugLog:
@@ -311,29 +319,30 @@ class Collector(threading.Thread):
         for row in response:
             rowIter = iter(row)
             infoObj = Info()
-            infoObj.sunum = rowIter.next()
-            infoObj.onlineLoc = rowIter.next()
-            infoObj.onlineStatus = rowIter.next()
-            infoObj.archiveStatus = rowIter.next()
-            infoObj.offsiteAck = rowIter.next()
-            infoObj.historyComment = rowIter.next()
-            infoObj.owningSeries = rowIter.next()
-            infoObj.storageGroup = rowIter.next()
-            infoObj.bytes = rowIter.next()
-            infoObj.creatDate = rowIter.next()
-            infoObj.username = rowIter.next()
-            infoObj.archTape = rowIter.next()
-            infoObj.archTapeFn = rowIter.next()
-            infoObj.archTapeDate = rowIter.next()
-            infoObj.safeTape = rowIter.next()
-            infoObj.safeTapeFn = rowIter.next()
-            infoObj.safeTapeDate = rowIter.next()
-            infoObj.paStatus = rowIter.next()
-            infoObj.paSubstatus = rowIter.next()
-            infoObj.effectiveDate = rowIter.next()
+            infoObj.sunum = rowIter.__next__()
+            infoObj.onlineLoc = rowIter.__next__()
+            infoObj.onlineStatus = rowIter.__next__()
+            infoObj.archiveStatus = rowIter.__next__()
+            infoObj.offsiteAck = rowIter.__next__()
+            infoObj.historyComment = rowIter.__next__()
+            infoObj.owningSeries = rowIter.__next__()
+            infoObj.storageGroup = rowIter.__next__()
+            infoObj.bytes = rowIter.__next__()
+            infoObj.createSumid = rowIter.__next__()
+            infoObj.creatDate = rowIter.__next__()
+            infoObj.username = rowIter.__next__()
+            infoObj.archTape = rowIter.__next__()
+            infoObj.archTapeFn = rowIter.__next__()
+            infoObj.archTapeDate = rowIter.__next__()
+            infoObj.safeTape = rowIter.__next__()
+            infoObj.safeTapeFn = rowIter.__next__()
+            infoObj.safeTapeDate = rowIter.__next__()
+            infoObj.effectiveDate = rowIter.__next__()
+            infoObj.paStatus = rowIter.__next__()
+            infoObj.paSubstatus = rowIter.__next__()
 
             infoList.append(infoObj)
-            
+        
         return pickle.dumps(infoList, pickle.HIGHEST_PROTOCOL)
         
     def sendResponse(self, msg):
@@ -434,24 +443,31 @@ class TestClient(threading.Thread):
     
     def run(self):
         # First, connect to the server.
-        self.sock.connect((socket.gethostname(), self.serverPort))
+        try:
+            self.sock.connect((socket.gethostname(), self.serverPort))
         
-        # Send some random SUNUMs to the server thread.
-        request = '650547410, 650547419, 650547430, 650551748, 650551852, 650551942, 650555939, 650556333'
-        msg = self.pickleRequest(request)
-        print('pickled msg is ' + str(msg))
-        print('before sending, unpickled is ' + str(pickle.loads(msg)))
+            # Send some random SUNUMs to the server thread.
+            request = '650547410, 650547419, 650547430, 650551748, 650551852, 650551942, 650555939, 650556333'
+            msg = self.pickleRequest(request)
+            print('pickled msg is ' + str(msg))
+            print('before sending, unpickled is ' + str(pickle.loads(msg)))
         
-        self.sendRequest(msg)
-        print('sent the request')
-        msg = self.receiveResponse()
-        print('got the response')
-        response = self.unpickleResponse(msg)
-        print('unpickled the response')
-        self.debugLog.write([str(response)])
-
-        self.sock.shutdown(socket.SHUT_RDWR)
-        self.sock.close()
+            self.sendRequest(msg)
+            print('sent the request')
+            msg = self.receiveResponse()
+            print('got the response in clinent')
+            response = self.unpickleResponse(msg)
+            print('unpickled the response in client')
+            
+            self.dumpsInfoList(response)
+        except Exception as exc:
+            import traceback
+            log.write(['Client ' + str(self.sock.getsockname()) + ' had a problem communicating with the server.'])
+            log.write([traceback.format_exc(0)])
+        finally:
+            self.debugLog.write(['Closing test client socket.'])
+            self.sock.shutdown(socket.SHUT_RDWR)
+            self.sock.close()
         
     def pickleRequest(self, request):
         # Split into a list.
@@ -484,34 +500,104 @@ class TestClient(threading.Thread):
     
     def receiveResponse(self):
         # First, receive length of message.
-        allTextReceived = []
+        allTextReceived = b''
         bytesReceivedTotal = 0
         
         while bytesReceivedTotal < TestClient.MSGLEN_NUMBYTES:
             textReceived = self.sock.recv(min(TestClient.MSGLEN_NUMBYTES - bytesReceivedTotal, TestClient.MAX_MSG_BUFSIZE))
-            if textReceived == '':
+            if textReceived == b'':
                 raise Exception('socketConnection', 'Socket broken.')
-            allTextReceived.append(textReceived)
+            allTextReceived += textReceived
             bytesReceivedTotal += len(textReceived)
             
         # Convert hex string to number.
-        numBytesMessage = int(''.join(allTextReceived), 16)
+        numBytesMessage = int(allTextReceived.decode('UTF-8'), 16)
         
         # Then receive the message.
-        allTextReceived = []
+        allTextReceived = b''
         bytesReceivedTotal = 0
         
         while bytesReceivedTotal < numBytesMessage:
             textReceived = self.sock.recv(min(numBytesMessage - bytesReceivedTotal, TestClient.MAX_MSG_BUFSIZE))
-            if textReceived == '':
+            if textReceived == b'':
                 raise Exception('socketConnection', 'Socket broken.')
-            allTextReceived.append(textReceived)
+            allTextReceived += textReceived
             bytesReceivedTotal += len(textReceived)
-        return ''.join(allTextReceived)
+        return allTextReceived
+        
+    def dumpsInfoList(self, infoList):
+        for infoObj in infoList:
+            print('come on!!!')
+            self.debugLog.write(['sunum=' + str(infoObj.sunum)])
+            print('place X1')
+            self.debugLog.write(['path=' + infoObj.onlineLoc])
+            print('place X2')
+            self.debugLog.write(['status=' + infoObj.onlineStatus])
+            print('place X3')
+            self.debugLog.write(['archstatus=' + infoObj.archiveStatus])
+            print('place C')
+            self.debugLog.write(['ack=' + infoObj.offsiteAck])
+            self.debugLog.write(['comment=' + infoObj.historyComment])
+            self.debugLog.write(['series=' + infoObj.owningSeries])
+            self.debugLog.write(['group=' + str(infoObj.storageGroup)])
+            self.debugLog.write(['size=' + str(infoObj.bytes)])
+            self.debugLog.write(['create=' + infoObj.creatDate.strftime('%Y-%m-%d %T')])
+            print('place A')
+            self.debugLog.write(['user=' + infoObj.username])
+            self.debugLog.write(['tape=' + infoObj.archTape])
+            self.debugLog.write(['tapefn=' + str(infoObj.archTapeFn)])
+            self.debugLog.write(['tapedate=' + infoObj.archTapeDate.strftime('%Y-%m-%d %T')])
+            self.debugLog.write(['safetape=' + infoObj.safeTape])
+            print('place B')
+            self.debugLog.write(['safetapefn=' + str(infoObj.safeTapeFn)])
+            self.debugLog.write(['safetapedate=' + infoObj.safeTapeDate.strftime('%Y-%m-%d %T')])
+            self.debugLog.write(['pastatus' + str(infoObj.paStatus)])
+            self.debugLog.write(['pasubstatus' + str(infoObj.paSubstatus)])
+            self.debugLog.write(['effdate=' + infoObj.effectiveDate])
 
+class SignalThread(threading.Thread):
+
+    sdLock = threading.Lock() # Guard self.shutDown
+    
+    def __init__(self, sigset, log):
+        threading.Thread.__init__(self)
+    
+        # Block the signals in the main thread.
+        signal.pthread_sigmask(signal.SIG_SETMASK, sigset)
+        print('hopefully this worked')
+        self.mask = sigset
+        self.shutDown = False
+        
+    def run(self):
+        while True:
+            print('point A - mask is ' + str(self.mask))
+            signo = signal.sigwait(self.mask)
+            print('point B')
+            log.write(['Signal thread received signal ' + str(signo) + '.'])
+            
+            if signo == signal.SIGINT:
+                try:
+                    SignalThread.sdLock.acquire()
+                    self.shutDown = True
+                finally:
+                    SignalThread.sdLock.release()
+            else:
+                # This handler does not handle this signal.
+                log.write(['SUMS server received unrecognized signal ' + str(signo) + '.'])
+
+            # Kill signal thread            
+            break
+                    
+    def isShuttingDown(self):
+        try:
+            SignalThread.sdLock.acquire()
+            rv = self.shutDown
+        finally:
+            SignalThread.sdLock.release()
+        return rv
 
 if __name__ == "__main__":
-    RV_SUCCESS = 0
+    rv = RV_SUCCESS
     
     try:
         sumsDrmsParams = SumsDrmsParams()
@@ -557,54 +643,53 @@ if __name__ == "__main__":
             client = TestClient(clientSocket, int(sumsDrmsParams.get('SUMSD_LISTENPORT')), log, debugLog)
             client.start()
             
-        shuttingDown = False
-        def terminator(*args):
-            global shuttingDown
-            global log
-            
-            log.write(['Termination signal handler called. The SUMS server is exiting.'])
-            shuttingDown = True
-
-        signal.signal(signal.SIGINT, terminator)
-        signal.signal(signal.SIGTERM, terminator)
+        # Make a signal-handler thread so we can shut-down cleanly.
+        # sigThread = SignalThread({signal.SIGINT}, log)
+        # sigThread.start()
 
         pollObj = select.poll()
         pollObj.register(serverSock, select.POLLIN | select.POLLPRI)
 
-        while not shuttingDown:
-            try:
-                fdList = pollObj.poll(500)
-            except IOError as exc:
-                raise Exception('poll', 'A failure occurred while checking for new client connections.')
+        # while not sigThread.isShuttingDown():
+        try:
+            while True:
+                try:
+                    fdList = pollObj.poll(500)
+                except IOError as exc:
+                    raise Exception('poll', 'A failure occurred while checking for new client connections.')
             
-            if len(fdList) == 0:
-                # Nobody knocking on the door.
-                continue
-            else:    
-                (clientSock, address) = serverSock.accept()
-                if debugLog:
-                    debugLog.write(['Accepting a client request from ' + address[0] + ' on port ' + str(address[1]) + '.'])
+                if len(fdList) == 0:
+                    # Nobody knocking on the door.
+                    continue
+                else:    
+                    (clientSock, address) = serverSock.accept()
+                    if debugLog:
+                        debugLog.write(['Accepting a client request from ' + address[0] + ' on port ' + str(address[1]) + '.'])
             
-                while True:
-                    Collector.lockTList()
-                    try:
-                        if Collector.freeThreadExists():
-                            if debugLog:
-                                debugLog.write(['Instantiating a Collector for client ' + str(address) + '.'])
-                            Collector.newThread(clientSock, arguments.getArg('dbhost'), arguments.getArg('dbport'), arguments.getArg('database'), arguments.getArg('dbuser'), log, debugLog)
-                            break # The finally clause will ensure the Collector lock is released.
-                    finally:
-                        Collector.unlockTList()
+                    while True:
+                        Collector.lockTList()
+                        try:
+                            if Collector.freeThreadExists():
+                                if debugLog:
+                                    debugLog.write(['Instantiating a Collector for client ' + str(address) + '.'])
+                                Collector.newThread(clientSock, arguments.getArg('dbhost'), arguments.getArg('dbport'), arguments.getArg('database'), arguments.getArg('dbuser'), log, debugLog)
+                                break # The finally clause will ensure the Collector lock is released.
+                        finally:
+                            Collector.unlockTList()
                     
-                    # There were no free threads. Wait until there is a free thread.
-                    Collector.waitForFreeThread()
+                        # There were no free threads. Wait until there is a free thread.
+                        Collector.waitForFreeThread()
                 
-                    # We woke up, because a free thread became available. However, that thread could 
-                    # now be in use. Loop and check again.
+                        # We woke up, because a free thread became available. However, that thread could 
+                        # now be in use. Loop and check again.
+        except KeyboardInterrupt:
+            # Shut down things if the user hits ctrl-c.
+            pass
         
         pollObj.unregister(serverSock)
         
         # Kill server socket.
+        log.write(['Closing server socket.'])
         serverSock.shutdown(socket.SHUT_RDWR)
         serverSock.close()
         
