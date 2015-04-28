@@ -276,15 +276,26 @@ class Collector(threading.Thread):
             # { sunum:12592029, onlineloc:'/SUM52/D12592029', ...}
             
             msg = self.pickleResponse(response)            
-            print('pickled response on server')
             self.sendResponse(msg)
-            print('sent response on server')
+            
+            # This thread is about to terminate. We don't want to end this thread before
+            # the client closes the socket though. Otherwise, our socket will get stuck in 
+            # the TIME_WAIT state. So, perform another read, and end the thread after the client
+            # has broken the connection. recv() will block till the client kills the connection
+            # (or it inappropriately sends more data over the connection).
+            textReceived = self.sock.recv(Collector.MAX_MSG_BUFSIZE)
+            if textReceived == b'':
+                # The client closed their end of the socket.
+                if self.debugLog:
+                    self.debugLog.write(['Client at ' + str(self.sock.getpeername()) + ' terminated connection.'])
+            else:
+                raise Exception('socketConnection', 'Client sent extraneous data over socket connection.')
+
         except Exception as exc:
             import traceback
-            log.write(['There was a problem communicating with client ' + str(self.sock.getpeername())])
+            log.write(['There was a problem communicating with client ' + str(self.sock.getpeername()) + '.'])
             log.write([traceback.format_exc(0)])
-            
-        # This thread is about to terminate. 
+
         # We need to check the class tList variable to update it, so we need to acquire the lock.
         try:
             Collector.tListLock.acquire()
@@ -449,15 +460,9 @@ class TestClient(threading.Thread):
             # Send some random SUNUMs to the server thread.
             request = '650547410, 650547419, 650547430, 650551748, 650551852, 650551942, 650555939, 650556333'
             msg = self.pickleRequest(request)
-            print('pickled msg is ' + str(msg))
-            print('before sending, unpickled is ' + str(pickle.loads(msg)))
-        
             self.sendRequest(msg)
-            print('sent the request')
             msg = self.receiveResponse()
-            print('got the response in clinent')
             response = self.unpickleResponse(msg)
-            print('unpickled the response in client')
             
             self.dumpsInfoList(response)
         except Exception as exc:
@@ -527,28 +532,21 @@ class TestClient(threading.Thread):
         
     def dumpsInfoList(self, infoList):
         for infoObj in infoList:
-            print('come on!!!')
             self.debugLog.write(['sunum=' + str(infoObj.sunum)])
-            print('place X1')
             self.debugLog.write(['path=' + infoObj.onlineLoc])
-            print('place X2')
             self.debugLog.write(['status=' + infoObj.onlineStatus])
-            print('place X3')
             self.debugLog.write(['archstatus=' + infoObj.archiveStatus])
-            print('place C')
             self.debugLog.write(['ack=' + infoObj.offsiteAck])
             self.debugLog.write(['comment=' + infoObj.historyComment])
             self.debugLog.write(['series=' + infoObj.owningSeries])
             self.debugLog.write(['group=' + str(infoObj.storageGroup)])
             self.debugLog.write(['size=' + str(infoObj.bytes)])
             self.debugLog.write(['create=' + infoObj.creatDate.strftime('%Y-%m-%d %T')])
-            print('place A')
             self.debugLog.write(['user=' + infoObj.username])
             self.debugLog.write(['tape=' + infoObj.archTape])
             self.debugLog.write(['tapefn=' + str(infoObj.archTapeFn)])
             self.debugLog.write(['tapedate=' + infoObj.archTapeDate.strftime('%Y-%m-%d %T')])
             self.debugLog.write(['safetape=' + infoObj.safeTape])
-            print('place B')
             self.debugLog.write(['safetapefn=' + str(infoObj.safeTapeFn)])
             self.debugLog.write(['safetapedate=' + infoObj.safeTapeDate.strftime('%Y-%m-%d %T')])
             self.debugLog.write(['pastatus' + str(infoObj.paStatus)])
@@ -564,7 +562,6 @@ class SignalThread(threading.Thread):
     
         # Block the signals in the main thread.
         signal.pthread_sigmask(signal.SIG_SETMASK, sigset)
-        print('hopefully this worked')
         self.mask = sigset
         self.shutDown = False
         
