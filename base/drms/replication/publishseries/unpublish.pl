@@ -251,7 +251,7 @@ if ($rv == &kSuccess)
 
              if ($rv == &kSuccess)
              {
-                 if (DeleteSeries(\$slavedbh, $cfg{'SLAVEHOSTNAME'}, $cfg{'SLAVEPORT'}, $cfg{'SLAVEDBNAME'}, $schema, $table, $cfg{'kScriptDir'}, $drmsParams->get('BIN_PY'), 0) != 0)
+                 if (DeleteSeries(\$slavedbh, $cfg{'SLAVEHOSTNAME'}, $cfg{'SLAVEPORT'}, $cfg{'SLAVEDBNAME'}, $schema, $table, $cfg{'kScriptDir'}, $drmsParams->get('BIN_PY'), 1) != 0)
                  {
                      $rv = &kDelSeriesFailed;
                  }
