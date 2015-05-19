@@ -260,6 +260,13 @@ class Collector(threading.Thread):
         try:
             # First, obtain request.
             msg = self.receiveRequest()
+            
+            # Print out the contents of this bytes so we can compare to what was sent
+            # by the client - debugging.
+            print('here are the bytes ')
+            print(str(["{0:0>2X}".format(b) for b in msg]))
+            # sys.stdout.buffer.write(msg)
+            
             if self.debugLog:
                 self.debugLog.write(['Received a request from ' + str(self.sock.getpeername()) + '.'])
 
@@ -275,7 +282,9 @@ class Collector(threading.Thread):
             # back, the client request is completed. We want to construct a list of "SUM_info" objects. Each object
             # { sunum:12592029, onlineloc:'/SUM52/D12592029', ...}
             
-            msg = self.pickleResponse(response)            
+            msg = self.pickleResponse(response)
+            print('here is the response to send ')
+            print(str(["{0:0>2X}".format(b) for b in msg]))                 
             self.sendResponse(msg)
             
             # This thread is about to terminate. We don't want to end this thread before
@@ -292,6 +301,7 @@ class Collector(threading.Thread):
                 raise Exception('socketConnection', 'Client sent extraneous data over socket connection.')
 
         except Exception as exc:
+            raise
             import traceback
             log.write(['There was a problem communicating with client ' + str(self.sock.getpeername()) + '.'])
             log.write([traceback.format_exc(0)])
@@ -323,10 +333,24 @@ class Collector(threading.Thread):
             self.sock.close()
             
     def unpickleRequest(self, msg):
-        self.suList = pickle.loads(msg)
+        # ARG! The TestClient sends a list of strings, but the real client sends
+        # a list of numbers. It should be a list of numbers (integers).
+        self.request = pickle.loads(msg)
+        processed = {}
+        self.suList = []
+        
+        if self.debugLog:
+            self.debugLog.write(['Requested SUs: ' + ','.join([str(item) for item in self.request])])
+         
+        # suList may contain duplicates. They must be removed.
+        for su in self.request:
+            if str(su) not in processed:        
+                self.suList.append(str(su)) # Make a list of strings - we'll need to concatenate the elements into a comma-separated list for the DB query.
         
     def pickleResponse(self, response):
         infoList = []
+        processed = {}
+        
         for row in response:
             rowIter = iter(row)
             infoObj = Info()
@@ -340,19 +364,70 @@ class Collector(threading.Thread):
             infoObj.storageGroup = rowIter.__next__()
             infoObj.bytes = rowIter.__next__()
             infoObj.createSumid = rowIter.__next__()
-            infoObj.creatDate = rowIter.__next__()
+            # It turns out that datetime objects are not supported very well in the C-to-Python
+            # interface, so convert the datetime to a bytes object.
+            infoObj.creatDate = rowIter.__next__().strftime('%Y-%m-%d %T')
             infoObj.username = rowIter.__next__()
             infoObj.archTape = rowIter.__next__()
             infoObj.archTapeFn = rowIter.__next__()
-            infoObj.archTapeDate = rowIter.__next__()
+            # It turns out that datetime objects are not supported very well in the C-to-Python
+            # interface, so convert the datetime to a bytes object.
+            infoObj.archTapeDate = rowIter.__next__().strftime('%Y-%m-%d %T')
             infoObj.safeTape = rowIter.__next__()
             infoObj.safeTapeFn = rowIter.__next__()
-            infoObj.safeTapeDate = rowIter.__next__()
+            # It turns out that datetime objects are not supported very well in the C-to-Python
+            # interface, so convert the datetime to a bytes object.
+            infoObj.safeTapeDate = rowIter.__next__().strftime('%Y-%m-%d %T')
             infoObj.effectiveDate = rowIter.__next__()
             infoObj.paStatus = rowIter.__next__()
             infoObj.paSubstatus = rowIter.__next__()
+            
+            # Put SU in hash of processed SUs.
+            processed[str(infoObj.sunum)] = infoObj
+        
+        for su in self.request:
+            if str(su) in processed:
+                infoList.append(processed[str(su)])
+            else:
+                # Must check for an invalid SU and set some appropriate values if the SU is indeed invalid:
+                #   sunum --> sunum
+                #   paStatus --> 0
+                #   paSubstatus --> 0
+                #   onlineLoc --> ''
+                #   effectiveDate --> 'N/A'
+                # The other attributes do not matter.
+                # If the SUNUM was invalid, then there was no row in the response for that SU. So, we
+                # have to create dummy rows for those SUs.
+                infoObj = Info()
+                infoObj.sunum = su
+                infoObj.onlineLoc = ''
+                infoObj.onlineStatus = ''
+                infoObj.archiveStatus = ''
+                infoObj.offsiteAck = ''
+                infoObj.historyComment = ''
+                infoObj.owningSeries = ''
+                infoObj.storageGroup = -1
+                infoObj.bytes = -1.0
+                infoObj.createSumid = -1
+                # It turns out that datetime objects are not supported very well in the C-to-Python
+                # interface, so convert the datetime to a bytes object.
+                infoObj.creatDate = '1966-12-25 00:54'
+                infoObj.username = ''
+                infoObj.archTape = ''
+                infoObj.archTapeFn = -1
+                # It turns out that datetime objects are not supported very well in the C-to-Python
+                # interface, so convert the datetime to a bytes object.
+                infoObj.archTapeDate = '1966-12-25 00:54'
+                infoObj.safeTape = ''
+                infoObj.safeTapeFn = -1
+                # It turns out that datetime objects are not supported very well in the C-to-Python
+                # interface, so convert the datetime to a bytes object.
+                infoObj.safeTapeDate = '1966-12-25 00:54'
+                infoObj.effectiveDate = 'N/A'
+                infoObj.paStatus = 0
+                infoObj.paSubstatus = 0
 
-            infoList.append(infoObj)
+                infoList.append(infoObj)
         
         return pickle.dumps(infoList, pickle.HIGHEST_PROTOCOL)
         
@@ -390,6 +465,7 @@ class Collector(threading.Thread):
             
         # Convert hex string to number.
         numBytesMessage = int(allTextReceived.decode('UTF-8'), 16)
+        print('message is ' + str(numBytesMessage) + ' bytes.')
         
         # Then receive the message.
         allTextReceived = b''
@@ -541,14 +617,14 @@ class TestClient(threading.Thread):
             self.debugLog.write(['series=' + infoObj.owningSeries])
             self.debugLog.write(['group=' + str(infoObj.storageGroup)])
             self.debugLog.write(['size=' + str(infoObj.bytes)])
-            self.debugLog.write(['create=' + infoObj.creatDate.strftime('%Y-%m-%d %T')])
+            self.debugLog.write(['create=' + infoObj.creatDate])
             self.debugLog.write(['user=' + infoObj.username])
             self.debugLog.write(['tape=' + infoObj.archTape])
             self.debugLog.write(['tapefn=' + str(infoObj.archTapeFn)])
-            self.debugLog.write(['tapedate=' + infoObj.archTapeDate.strftime('%Y-%m-%d %T')])
+            self.debugLog.write(['tapedate=' + infoObj.archTapeDate])
             self.debugLog.write(['safetape=' + infoObj.safeTape])
             self.debugLog.write(['safetapefn=' + str(infoObj.safeTapeFn)])
-            self.debugLog.write(['safetapedate=' + infoObj.safeTapeDate.strftime('%Y-%m-%d %T')])
+            self.debugLog.write(['safetapedate=' + infoObj.safeTapeDate])
             self.debugLog.write(['pastatus' + str(infoObj.paStatus)])
             self.debugLog.write(['pasubstatus' + str(infoObj.paSubstatus)])
             self.debugLog.write(['effdate=' + infoObj.effectiveDate])
@@ -619,6 +695,8 @@ if __name__ == "__main__":
         # The main log file - it is sparse.
         log = Log(arguments.getArg('logfile'))
         
+        log.write(['Starting sumsd.py server.'])
+        
         # The debug log file - it is a little more verbose than the main log file.
         debugLog = None
         if arguments.getArg('debug'):
@@ -630,8 +708,12 @@ if __name__ == "__main__":
             debugLog = Log(debugLogFile)
                             
         serverSock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # Bind to any IP address that this server is running on - the empty string
+        # represent INADDR_ANY. I DON'T KNOW HOW TO MAKE THIS WORK!!
+        # serverSock.bind(('', int(sumsDrmsParams.get('SUMSD_LISTENPORT'))))
         serverSock.bind((socket.gethostname(), int(sumsDrmsParams.get('SUMSD_LISTENPORT'))))
         serverSock.listen(5)
+        log.write(['Listening for client requests on ' + str(serverSock.getsockname()) + '.'])
 
         # Something cool. If the test flag is set, then create another thread that sends a SUM_info request to the main thread.
         # At this point, the server is listening, so it is OK to try to connect to it.
