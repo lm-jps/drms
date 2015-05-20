@@ -15,7 +15,7 @@ d		:= $(dir)
 # Local variables
 LIBSUMSAPI	:= $(d)/libsumsapi.a 
 OBJ_$(d)	:= $(addprefix $(d)/, key.o keyU.o printkey.o soi_error.o sum_export.o sumopened.o sum_xdr.o)
-OBJ_SUMOPEN_$(d)    := $(addprefix $(d)/, sum_open.o)
+OBJ_SUMOPEN_$(d)	:= $(addprefix $(d)/, sum_open.o)
 
 
 CF_TGT_$(d)     := -O0 -Wno-parentheses -fno-strict-aliasing
@@ -53,15 +53,15 @@ S_$(d)		:= $(notdir $(LIBSUMSAPI))
 
 # Local rules
 $(OBJ_$(d)):   $(SRCDIR)/$(d)/Rules.mk
-$(OBJ_SUMOPEN_$(d)):    $(SRCDIR)/$(d)/Rules.mk
+$(OBJ_SUMOPEN_$(d)):   $(SRCDIR)/$(d)/Rules.mk
 
 WRAP_CF_$(d) := 
 ifeq ($(COMPILER), gcc)
     WRAP_CF_$(d) := -fwrapv
 endif
 
-$(OBJ_$(d)):	CF_TGT := $(CF_TGT_$(d))
-$(OBJ_SUMOPEN_$(d)):    CF_TGT := -I $(INC_PY) $(CF_TGT_$(d)) -fpic -Wstrict-prototypes $(WRAP_CF_$(d))
+$(OBJ_$(d)):            CF_TGT := $(CF_TGT_$(d))
+$(OBJ_SUMOPEN_$(d)):    CF_TGT := $(LIBPYH) $(CF_TGT_$(d)) -fpic -Wstrict-prototypes $(WRAP_CF_$(d))
 
 ##endif
 $(LIBSUMSAPI):	$(LIBSUMSAPI_OBJ)

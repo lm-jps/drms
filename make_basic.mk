@@ -132,6 +132,11 @@ FFTW3FLIBS = $(FFTWL) -lfftw3f
 LIBTARH = -I$(TAR_INCS)
 LIBTARL = -L$(TAR_LIBS) -ltar
 
+# Python
+LIBPYH = -I$(PY_INCS)
+LIBPYL = -L$(PY_LIBS) -l$(PY_LIB)
+PYTHONHOME = "\"$(PY_HOME)\""
+
 #***********************************************************************************************#
 
 
@@ -233,29 +238,29 @@ ICC_CF_ICCCOMP  = -DICCCOMP -openmp
 
 # can't figure out how to get stupid make to do if/else if/else
 ifeq ($(DEBUG), 0)
-  GCC_CF_ALL	= -I$(SRCDIR)/base/include -std=gnu99 -O2 $(GCC_WARN) $(GCC_CF_GCCCOMP) $(CUSTOMSW) $(GLOBALSW) -DNDEBUG
+  GCC_CF_ALL	= -I$(SRCDIR)/base/include -std=gnu99 -O2 $(GCC_WARN) $(GCC_CF_GCCCOMP) $(CUSTOMSW) $(GLOBALSW) -DNDEBUG -DPYTHONHOME=$(PYTHONHOME)
 
   ifeq ($(JSOC_MACHINE), linux_x86_64)
-    ICC_CF_ALL = -I$(SRCDIR)/base/include -std=c99 -D_GNU_SOURCE $(ICC_WARN) $(ICC_CF_ICCCOMP) $(CUSTOMSW) $(GLOBALSW) -DNDEBUG
-    GCC_CF_ALL	= -I$(SRCDIR)/base/include -std=gnu99 -O2 -march=opteron $(GCC_WARN) $(GCC_CF_GCCCOMP) $(CUSTOMSW) $(GLOBALSW) -DNDEBUG
+    ICC_CF_ALL = -I$(SRCDIR)/base/include -std=c99 -D_GNU_SOURCE $(ICC_WARN) $(ICC_CF_ICCCOMP) $(CUSTOMSW) $(GLOBALSW) -DNDEBUG -DPYTHONHOME=$(PYTHONHOME)
+    GCC_CF_ALL	= -I$(SRCDIR)/base/include -std=gnu99 -O2 -march=opteron $(GCC_WARN) $(GCC_CF_GCCCOMP) $(CUSTOMSW) $(GLOBALSW) -DPYTHONHOME=$(PYTHONHOME)
   endif
 
   ifeq ($(JSOC_MACHINE), linux_avx)
-    ICC_CF_ALL = -xavx -I$(SRCDIR)/base/include -std=c99 -D_GNU_SOURCE $(ICC_WARN) $(ICC_CF_ICCCOMP) $(CUSTOMSW) $(GLOBALSW) -DNDEBUG
+    ICC_CF_ALL = -xavx -I$(SRCDIR)/base/include -std=c99 -D_GNU_SOURCE $(ICC_WARN) $(ICC_CF_ICCCOMP) $(CUSTOMSW) $(GLOBALSW) -DNDEBUG -DPYTHONHOME=$(PYTHONHOME)
   endif
 
   ifeq ($(JSOC_MACHINE), linux_ia64)
-    ICC_CF_ALL	= -I$(SRCDIR)/base/include -std=c99 -D_GNU_SOURCE $(ICC_WARN) $(ICC_CF_ICCCOMP) $(CUSTOMSW) $(GLOBALSW) -DNDEBUG
+    ICC_CF_ALL	= -I$(SRCDIR)/base/include -std=c99 -D_GNU_SOURCE $(ICC_WARN) $(ICC_CF_ICCCOMP) $(CUSTOMSW) $(GLOBALSW) -DNDEBUG -DPYTHONHOME=$(PYTHONHOME)
   endif
 
   ifeq ($(JSOC_MACHINE), linux_ia32)
-    GCC_CF_ALL	= -I$(SRCDIR)/base/include -std=gnu99 -O2 -march=i686 $(GCC_WARN) $(GCC_CF_GCCCOMP) $(CUSTOMSW) $(GLOBALSW) -DNDEBUG
+    GCC_CF_ALL	= -I$(SRCDIR)/base/include -std=gnu99 -O2 -march=i686 $(GCC_WARN) $(GCC_CF_GCCCOMP) $(CUSTOMSW) $(GLOBALSW) -DNDEBUG -DPYTHONHOME=$(PYTHONHOME)
   endif	
 
 else
 # -g tells the icc and gcc compilers to generate full debugging information
-  GCC_CF_ALL = -I$(SRCDIR)/base/include -std=gnu99 -g $(GCC_WARN) $(GCC_CF_GCCCOMP) $(CUSTOMSW) $(GLOBALSW)
-  ICC_CF_ALL = -I$(SRCDIR)/base/include -std=c99 -D_GNU_SOURCE -g $(ICC_WARN) $(ICC_CF_ICCCOMP) $(CUSTOMSW) $(GLOBALSW)
+  GCC_CF_ALL = -I$(SRCDIR)/base/include -std=gnu99 -g $(GCC_WARN) $(GCC_CF_GCCCOMP) $(CUSTOMSW) $(GLOBALSW) -DPYTHONHOME=$(PYTHONHOME)
+  ICC_CF_ALL = -I$(SRCDIR)/base/include -std=c99 -D_GNU_SOURCE -g $(ICC_WARN) $(ICC_CF_ICCCOMP) $(CUSTOMSW) $(GLOBALSW) -DPYTHONHOME=$(PYTHONHOME)
 endif
 
 # Fortran global COMPILE flags
@@ -342,9 +347,9 @@ include	$(SRCDIR)/Rules.mk
 
 # Libraries from src/util linked with all programs.
 ifneq ($(COMPILER), icc)
-  SYSLIBS = -lz -ldl -lpthread -lm -lutil -L $(LIB_PY)/config -lpython2.7 -Xlinker -export-dynamic
+  SYSLIBS = -lz -ldl -lpthread -lm -lutil $(LIBPYL) -Xlinker -export-dynamic
 else
-  SYSLIBS = -lz -ldl -lpthread -lutil -L $(LIB_PY)/config -lpython2.7 -Xlinker -export-dynamic 
+  SYSLIBS = -lz -ldl -lpthread -lutil $(LIBPYL) -Xlinker -export-dynamic 
 endif
 SRCLIBS = $(LIBTHREADUTIL) $(LIBRICECOMP) $(LIBCMDPARAMS) $(LIBTIMEIO) $(LIBFITSRW) $(LIBERRLOG) $(LIBEXPDRMS) $(LIBEXPUTL) $(LIBMISC) $(LIBDSTRUCT) $(LIBSTATS)
 FSRCLIBS = $(LIBTHREADUTIL) $(LIBRICECOMP) $(LIBCMDPARAMSF) $(LIBTIMEIO) $(LIBFITSRW) $(LIBERRLOG) $(LIBEXPDRMS) $(LIBEXPUTL) $(LIBMISC) $(LIBDSTRUCT) $(LIBSTATS)

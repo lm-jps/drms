@@ -223,29 +223,29 @@ bool_t xdr_sum_info_t(XDR *xdrs, SUM_info_t *objp);
 #define INFODOARRAY ((uint32_t)19)
 #define SUMREPARTN ((uint32_t)20)
 
-extern KEY *sumdo_1();
-extern KEY *opendo_1();
-extern KEY *shutdo_1();
-extern KEY *closedo_1();
-extern KEY *getdo_1();
-extern KEY *infodo_1();
-extern KEY *infodoX_1();
-extern KEY *infodoX_1_U();
-extern KEY *infodoArray_1();
-extern KEY *sumrespdo_1();
-extern KEY *allocdo_1();
-extern KEY *putdo_1();
-extern KEY *archsudo_1();
-extern KEY *nopdo_1();
-extern KEY *tapereconnectdo_1();
+extern KEY *sumdo_1(void);
+extern KEY *opendo_1(void);
+extern KEY *shutdo_1(void);
+extern KEY *closedo_1(void);
+extern KEY *getdo_1(void);
+extern KEY *infodo_1(void);
+extern KEY *infodoX_1(void);
+extern KEY *infodoX_1_U(void);
+extern KEY *infodoArray_1(void);
+extern KEY *sumrespdo_1(void);
+extern KEY *allocdo_1(void);
+extern KEY *putdo_1(void);
+extern KEY *archsudo_1(void);
+extern KEY *nopdo_1(void);
+extern KEY *tapereconnectdo_1(void);
 /**********************************
-extern KEY *apupdo_1();
-extern KEY *dpupdo_1();
-extern KEY *sumrmdo_1();
+extern KEY *apupdo_1(void);
+extern KEY *dpupdo_1(void);
+extern KEY *sumrmdo_1(void);
 ***********************************/
-extern KEY *delseriesdo_1();
-extern KEY *configdo_1();
-extern KEY *repartndo_1();
+extern KEY *delseriesdo_1(void);
+extern KEY *configdo_1(void);
+extern KEY *repartndo_1(void);
 
 /* This is the tape_svc program registration */
 #define TAPEPROG ((uint32_t)0x20000612)  /* 536872466 */
@@ -266,21 +266,21 @@ extern KEY *repartndo_1();
 #define TAPENOPDO ((uint32_t)14)
 #define CLNTGONE ((uint32_t)15)
 
-extern KEY *readdo_1();
-extern KEY *writedo_1();
-extern KEY *taperespreaddo_1();
-extern KEY *taperespwritedo_1();
-extern KEY *taperesprobotdo_1();
-extern KEY *taperesprobotdoordo_1();
-extern KEY *impexpdo_1();
-extern KEY *tapetestdo_1();
-extern KEY *onoffdo_1();
-extern KEY *dronoffdo_1();
-extern KEY *robotonoffdo_1();
-extern KEY *jmtxtapedo_1();
-extern KEY *expclosedo_1();
-extern KEY *tapenopdo_1();
-extern KEY *clntgone_1();
+extern KEY *readdo_1(void);
+extern KEY *writedo_1(void);
+extern KEY *taperespreaddo_1(void);
+extern KEY *taperespwritedo_1(void);
+extern KEY *taperesprobotdo_1(void);
+extern KEY *taperesprobotdoordo_1(void);
+extern KEY *impexpdo_1(void);
+extern KEY *tapetestdo_1(void);
+extern KEY *onoffdo_1(void);
+extern KEY *dronoffdo_1(void);
+extern KEY *robotonoffdo_1(void);
+extern KEY *jmtxtapedo_1(void);
+extern KEY *expclosedo_1(void);
+extern KEY *tapenopdo_1(void);
+extern KEY *clntgone_1(void);
 
 /* This is the SUM client API code response handling registration */
 #define RESPPROG ((uint32_t)0x20000613)  /* 536872467 */
@@ -289,7 +289,7 @@ extern KEY *clntgone_1();
 #define RESPDOARRAY ((uint32_t)2)
 #define RESULT_PEND 32		/* returned by clnt_call GETDO request 
 				   when storage unit is off line */
-extern KEY *respdo_1();
+extern KEY *respdo_1(KEY *params);
 
 /* This is the tapearc program registration */
 #define TAPEARCPROG ((uint32_t)0x20000614) /* 536872468 */
@@ -305,7 +305,7 @@ extern KEY *respdo_1();
 #define TAPEARCVERS8 ((uint32_t)10)
 #define TAPEARCDO ((uint32_t)1)
 
-extern KEY *tapearcdo_1();
+extern KEY *tapearcdo_1(KEY *params);
 
 /* This is the drive0_svc program registration */
 #define DRIVE0PROG ((uint32_t)0x20000615)  /* 536872469 */
@@ -313,8 +313,8 @@ extern KEY *tapearcdo_1();
 #define READDRVDO ((uint32_t)1)
 #define WRITEDRVDO ((uint32_t)2)
 
-extern KEY *readdrvdo_1();
-extern KEY *writedrvdo_1();
+extern KEY *readdrvdo_1(KEY *params);
+extern KEY *writedrvdo_1(KEY *params);
 
 /* This is the drive1_svc program registration */
 #define DRIVE1PROG ((uint32_t)0x20000616)
@@ -388,8 +388,8 @@ extern KEY *writedrvdo_1();
 #define ROBOTDO ((uint32_t)1)
 #define ROBOTDOORDO ((uint32_t)2)
 
-extern KEY *robotdo_1();
-extern KEY *robotdoordo_1();
+extern KEY *robotdo_1(KEY *params);
+extern KEY *robotdoordo_1(KEY *params);
 
 /* This is the robot1_svc program registration */
 #define ROBOT1PROG ((uint32_t)0x20000628)
@@ -409,14 +409,14 @@ extern KEY *robotdoordo_1();
 #define SUMPEVERS2 ((uint32_t)2)
 #define SUMPEDO ((uint32_t)1)
 #define SUMPEACK ((uint32_t)2)
-extern KEY *sumpedo_1();
-extern KEY *sumpeack_1();
+extern KEY *sumpedo_1(KEY *params);
+extern KEY *sumpeack_1(KEY *params);
 
 /* This is the pe/peq program registration for answers from sum_pe_svc */
 #define PEPEQPROG ((uint32_t)0x2000062b)
 #define PEPEQVERS ((uint32_t)1)
 #define PEPEQRESPDO ((uint32_t)1)
-extern KEY *pepeqdo_1();
+extern KEY *pepeqdo_1(KEY *params);
 
 /* This is the sum_export_svc program registration */
 #define SUMEXPROG ((uint32_t)0x2000062c)
@@ -424,25 +424,28 @@ extern KEY *pepeqdo_1();
 #define SUMEXVERS2 ((uint32_t)2)
 #define SUMEXDO ((uint32_t)1)
 #define SUMEXACK ((uint32_t)2)
-extern KEY *sumexdo_1();
-extern KEY *sumexack_1();
+extern KEY *sumexdo_1(KEY *params);
+extern KEY *sumexack_1(KEY *params);
 
 /* This is the SUM_export() registration for answers from sum_export_svc */
 #define REMSUMPROG ((uint32_t)0x2000062d)
 #define REMSUMVERS ((uint32_t)1)
 #define REMSUMRESPDO ((uint32_t)1)
-extern KEY *respdo_1();
 
 /* This is the jmtx program registration */
 #define JMTXPROG ((uint32_t)0x2000062e) /* 536872494 */
 #define JMTXVERS ((uint32_t)1)
 #define JMTXDO ((uint32_t)1)
-extern KEY *jmtxdo_1();
+extern KEY *jmtxdo_1(KEY *params);
 
 /* This is the sum_ping program registration */
 #define SUMPINGPROG ((uint32_t)0x2000062f) /* 536872495 */
 #define SUMPINGVERS ((uint32_t)1)
 #define SUMPINGDO ((uint32_t)1)
+
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
+typedef int MSUMSCLIENT_t;
+#endif
 
 //NOTE: Must be client handles for MAXNUMSUM (defined in SUM.h) servers
 typedef struct SUM_struct
@@ -481,6 +484,7 @@ typedef struct SUM_struct
   CLIENT *clput5;        /* client handle for calling sum_svc put */
   CLIENT *clput6;        /* client handle for calling sum_svc put */
   CLIENT *clput7;        /* client handle for calling sum_svc put */
+#if !defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS
   CLIENT *clinfo;        /* client handle for calling sum_svc info */
   CLIENT *clinfo1;       /* client handle for calling sum_svc info */
   CLIENT *clinfo2;       /* client handle for calling sum_svc info */
@@ -489,6 +493,7 @@ typedef struct SUM_struct
   CLIENT *clinfo5;       /* client handle for calling sum_svc info */
   CLIENT *clinfo6;       /* client handle for calling sum_svc info */
   CLIENT *clinfo7;       /* client handle for calling sum_svc info */
+#endif
   CLIENT *cldelser;      /* client handle for calling sum_svc del series */
   SUM_info_t *sinfo;	 /* info from sum_main for SUM_info() call */
   int debugflg;		 /* verbose debug mode if set */
@@ -505,6 +510,10 @@ typedef struct SUM_struct
   int reqcnt;            /* # of entries in arrays below */
   uint64_t *dsix_ptr;    /* ptr to array of dsindex uint64_t */
   char **wd;		 /* ptr to array of char * */
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
+  MSUMSCLIENT_t mSumsClient;   /* A handle to sumsd.py (a socket file descriptor actually ) */
+  struct Pickler_struct *pickler; /* An OPAQUE handle to stuff that needs to be decremented when we tear-down Py environment. */
+#endif
 } SUM_t;
 
 typedef struct SUMEXP_struct
@@ -614,30 +623,34 @@ struct peuid {
 typedef struct peuid PEUID;
 
 
-SUM_t *SUM_open();
-int SUM_shutdown();
-int SUM_close();
-int SUM_get();
-int SUM_put();
-int SUM_archSU();
-int SUM_alloc();
-int SUM_alloc2();
-int SUM_poll();
-int SUM_wait();
-int SUM_Init();
-int SUM_delete_series();
-int SUM_export();
+SUM_t *SUM_open(char *server, char *db, int (*history)(const char *fmt, ...));
+int SUM_shutdown(int query, int (*history)(const char *fmt, ...));
+int SUM_close(SUM_t *sum, int (*history)(const char *fmt, ...));
+int SUM_get(SUM_t *sum, int (*history)(const char *fmt, ...));
+int SUM_put(SUM_t *sum, int (*history)(const char *fmt, ...));
+int SUM_archSU(SUM_t *sum, int (*history)(const char *fmt, ...));
+int SUM_alloc(SUM_t *sum, int (*history)(const char *fmt, ...));
+int SUM_alloc2(SUM_t *sum, uint64_t sunum, int (*history)(const char *fmt, ...));
+int SUM_poll(SUM_t *sum);
+int SUM_wait(SUM_t *sum);
+int SUM_delete_series(char *filename, char *seriesname, int (*history)(const char *fmt, ...));
+int SUM_export(SUMEXP_t *sumexp, int (*history)(const char *fmt, ...));
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
+int SUM_infoArray(SUM_t *sums, uint64_t *sunums, int reqcnt, int (*history)(const char *fmt, ...));
+void SUM_infoArray_free(SUM_t *sums);
+#else
 int SUM_info(SUM_t *sum, uint64_t sunum, int (*history)(const char *fmt, ...));
 int SUM_infoEx(SUM_t *sum, int (*history)(const char *fmt, ...));
 int SUM_infoArray(SUM_t *sum, uint64_t *dxarray, int reqcnt, int (*history)(const char *fmt, ...));
 void SUM_infoEx_free(SUM_t *sum);
 void SUM_infoArray_free(SUM_t *sum);
-int SUM_nop();
+#endif
+int SUM_nop(SUM_t *sum, int (*history)(const char *fmt, ...));
 int SUM_repartn(SUM_t *sum, int (*history)(const char *fmt, ...));
 
-int NC_PaUpdate();
-SUMID_t SUMLIB_Open();
-SUMID_t sumrpcopen_1();
+int NC_PaUpdate(char *wd, uint64_t uid, double bytes, int status, int archsub, char *eff_date, int gpid, int sid, uint64_t ds_index, int flg, int commit);
+SUMID_t SUMLIB_Open(void);
+SUMID_t sumrpcopen_1(KEY *argp, CLIENT *clnt, int (*history)(const char *fmt, ...));
 void setsumopened (SUMOPENED **list, SUMID_t uid, SUM_t *sum, char *user);
 SUMOPENED *getsumopened (SUMOPENED *list, SUMID_t uid);
 void remsumopened (SUMOPENED **list, SUMID_t uid);
@@ -657,21 +670,21 @@ PADATA *getpadata(PADATA *list, char *wd, uint64_t sumid);
 PADATA *getpauid(PADATA *list, uint64_t uid);
 PADATA *getpawd(PADATA *list, char *wd);
 PADATA *getpanext(PADATA *list);
-PADATA *NC_PaRequest_AP (int groupset);
-PADATA *NC_PaRequest_AP_60d ();
+PADATA *NC_PaRequest_AP(int groupset);
+PADATA *NC_PaRequest_AP_60d(void);
 int DS_ConnectDB (char *dbname);
-int DS_DisConnectDB ();
+int DS_DisConnectDB(void);
 int DS_ConnectDB_Q (char *dbname);
-int DS_DisConnectDB_Q ();
-int DS_DataRequest (KEY *params, KEY **results);
-int DS_PavailRequest();
-int DS_PallocRequest();
-int DS_PallocClean();
+int DS_DisConnectDB_Q(void);
+int DS_DataRequest(KEY *params, KEY **results);
+int DS_PavailRequest(void);
+int DS_PallocRequest(void);
+int DS_PallocClean(void);
 int DS_RmDo(double *bytesdel);
 int DS_RmNow(char *wd, uint64_t sumid, double bytes, char *effdate, uint64_t ds_index, int archsub, double *rmbytes);
 int DS_RmDoX(char *name, double bytesdel);
 int DS_RmNowX(char *wd, uint64_t sumid, double bytes, char *effdate, uint64_t ds_index, int archsub, double *rmbytes);
-int DS_Rm_Commit();
+int DS_Rm_Commit(void);
 int rmdirs(char *wd, char *root);
 int SUM_Main_Update (KEY *params, KEY **results);
 //int SUM_Main_Update (KEY *params);
@@ -718,9 +731,9 @@ void uidpadata(PADATA *new, PADATA **start, PADATA **end);
 void remuidpadata(PADATA **start, PADATA **end, char *wd, uint64_t sumid);
 void rempadata(PADATA **list, char *wd, uint64_t sumid);
 char *get_effdate(int plusdays);
-char *get_datetime();
-void write_time();
-void send_ack();
+char *get_datetime(void);
+void write_time(void);
+void send_ack(void);
 CLIENT *set_client_handle(uint32_t prognum, uint32_t versnum);
 double du_dir(char *wd);
 

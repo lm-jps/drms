@@ -7,18 +7,17 @@
 #include <SUM.h>
 #include <soi_key.h>
 #include <rpc/rpc.h>
+#include <rpc/pmap_clnt.h>
 #include <sys/time.h>
 #include <sys/errno.h>
 #include <sum_rpc.h>
 
 extern int errno;
 static int RESPDO_called;
-void printkey();
-char *jdatestring();
+char *jdatestring(void);
 void sumexportprog_1(struct svc_req *rqstp, SVCXPRT *transp);
-int sumexport_wait();
-int sumexport_poll();
-extern void pmap_unset();
+int sumexport_wait(void);
+int sumexport_poll(void);
 KEY *alist;
 static struct timeval TIMEOUT = { 20, 0 };
 
@@ -44,7 +43,7 @@ int SUM_export(SUMEXP_t *sumexp, int (*history)(const char *fmt, ...))
     strcpy(server_name, server_name_p);
   }
   cptr = (char *)index(server_name, '.');       /* must be short form */
-  if(cptr) *cptr = (char)NULL;
+  if(cptr) *cptr = '\0';
 
     /* register for sum_export_svc to talk back to us */
     /* use our unique uid for our version number */

@@ -33,10 +33,27 @@ http://sun.stanford.edu/web.hmi/development/SU_Development_Plan/SUM_API.html
 #include <SUM.h>
 #include <soi_key.h>
 #include <rpc/rpc.h>
+#include <rpc/pmap_clnt.h>
 #include <sys/time.h>
 #include <sys/errno.h>
 #include <sum_rpc.h>
 #include "serverdefs.h"
+
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netdb.h>
+#include <Python.h>
+
+struct Pickler_struct
+{
+    PyObject *globalDict;
+    PyObject *pickleModule; /* We need a handle to this to free it. */
+    PyObject *pickleDict;
+};
+
+typedef struct Pickler_struct Pickler_t;
+#endif
 
 extern int errno;
 
@@ -46,11 +63,10 @@ static void respd(struct svc_req *rqstp, SVCXPRT *transp);
 static KEY *respdoarray_1(KEY *params);
 
 int getanymsg(int block);
-static int getmsgimmed ();
+static int getmsgimmed(void);
 static char *datestring(void);
 
 /* External prototypes */
-extern void pmap_unset();
 extern void printkey (KEY *key);
 
 //static struct timeval TIMEOUT = { 240, 0 };
@@ -92,7 +108,7 @@ int SUM_shutdown(int query, int (*history)(const char *fmt, ...))
     strcpy(server_name, SUMSERVER);
   }
   cptr = index(server_name, '.');	/* must be short form */
-  if(cptr) *cptr = (char)NULL;
+  if(cptr) *cptr = '\0';
   /* Create client handle used for calling the server */
   cl = clnt_create(server_name, SUMPROG, SUMVERS, "tcp");
   if(!cl) {              //no SUMPROG in portmap or timeout (default 25sec?)
@@ -124,6 +140,150 @@ int SUM_shutdown(int query, int (*history)(const char *fmt, ...))
   return(response);
 }
 
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
+static MSUMSCLIENT_t ConnectToMultiSums(Pickler_t **pickler, int (*history)(const char *fmt, ...))
+{
+    MSUMSCLIENT_t msums = -1;
+    int sockfd = -1;
+    struct addrinfo hints;
+    struct addrinfo *result = NULL;
+    char service[16];
+    struct sockaddr_in server;
+
+    PyObject *mainModule = NULL;
+    PyObject *globalDict = NULL;
+    PyObject *pickleModule = NULL;
+    PyObject *pickleDict = NULL;
+            
+    if (pickler)
+    {
+        *pickler = calloc(1, sizeof(Pickler_t));
+        
+        if (!pickler)
+        {
+            (*history)("No memory with which to pickle.\n");
+        }
+        else
+        {
+            memset(&hints, 0, sizeof(struct addrinfo));
+            hints.ai_flags = 0; /* A field to make this as complicated as possible. */
+            hints.ai_family = AF_INET;
+            hints.ai_socktype = SOCK_STREAM;
+            hints.ai_protocol = 0; /* Another field to make this as complicated as possible. */
+    
+            snprintf(service, sizeof(service), "%d", SUMSD_LISTENPORT);
+            // if (getaddrinfo(SUMSERVER, service, &hints, &result) != 0)
+            if (getaddrinfo("k1.stanford.edu", service, &hints, &result) != 0)
+            {
+                (*history)("Unable to get SUMS server address.\n");
+            }
+            else
+            {
+                if ((sockfd = socket(result->ai_family, result->ai_socktype, result->ai_protocol)) == -1)
+                {
+                    (*history)("");
+                }
+                else
+                {
+                    /* connect the socket to the server's address */
+                    if (connect(sockfd, result->ai_addr, result->ai_addrlen) == -1)
+                    {
+                        (*history)("Unable to connect to SUMS server (errno = %d).\n", errno);
+                    }
+                    else
+                    {
+                        msums = (MSUMSCLIENT_t)sockfd;
+                    }
+            
+                    freeaddrinfo(result);
+                }
+            }
+    
+            /* We also have to initialize the Python engine that we use to pickle and unpickle messages
+             * that we send over the socket. This requires that an environment variable be set. */
+            setenv("PYTHONHOME", PYTHONHOME, 1);
+            Py_Initialize();
+    
+            /* Load pickle functions and constant. */
+            pickleModule = PyImport_ImportModule("pickle");
+        
+            if (pickleModule)
+            {
+                /* This is a new reference. It must be dereferenced when we shut down the SUMS connection. */
+                (*pickler)->pickleModule = pickleModule;
+                (*pickler)->pickleDict = PyModule_GetDict(pickleModule);
+            }
+            else
+            {
+                (*history)("Unable to load pickle package.\n");
+                msums = -1;
+            }
+    
+            if (msums >= 0)
+            {
+                mainModule = PyImport_AddModule("__main__");
+                if (mainModule)
+                {   /* mainModule is a borrowed reference. It does not need to be dereferenced. */
+                    (*pickler)->globalDict = PyModule_GetDict(mainModule);        
+                }
+                else
+                {
+                    (*history)("Unable to main module.\n");
+                    msums = -1;
+                }
+            }
+        }
+    }
+    else
+    {
+        (*history)("Invalid argument - pickler must not be NULL.\n");
+    }
+    
+    return msums;
+}
+
+static void DisconnectFromMultiSums(SUM_t *sums, int (*history)(const char *fmt, ...))
+{
+    if (sums && sums->mSumsClient != -1)
+    {
+        int sockfd = (int)sums->mSumsClient;
+        shutdown(sockfd, SHUT_RDWR);
+        close(sockfd);
+        
+        /* Mark the socket variable as not being used. */
+        sums->mSumsClient = -1;
+
+        /* Remove the refcount on the pickle modle. */
+        if (sums->pickler)
+        {
+            if (sums->pickler->globalDict)
+            {
+                /* We were only borrowing the global dictionary reference - no need to decrement pointer. */
+                sums->pickler->globalDict = NULL;
+            }
+
+            if (sums->pickler->pickleModule)
+            {
+                /* We own the reference - decrement it. */
+                Py_DECREF(sums->pickler->pickleModule);
+                sums->pickler->pickleModule = NULL;
+            }
+            
+            if (sums->pickler->pickleDict)
+            {
+                /* We were only borrowing the global dictionary reference - no need to decrement pointer. */
+                sums->pickler->pickleDict = NULL;
+            }
+            
+            free(sums->pickler);
+        }
+
+        /* Shut-down the Python engine we used to pickle and unpickle messages. */
+        Py_Finalize();
+    }
+}
+#endif
+
 /* This must be the first thing called by DRMS to open with the SUMS.
  * Any one client may open up to MAXSUMOPEN times (TBD check) 
  * (although it's most likely that a client only needs one open session 
@@ -141,6 +301,19 @@ int SUM_shutdown(int query, int (*history)(const char *fmt, ...))
  * OFFICIAL LOCALIZED DEFINE SUMS_DB_HOST (WHICH IS THEN IGNORED BY sum_svc).
  *   ART 
  */
+ 
+/* If numSUM is 1, then all DRMS-SUMS API functions are handled by a single RPC server: sum_svc. 
+ * The handle for the RPC connection
+ * to sum_svc is cl. The fields representing the API function calls in sumptr all point to this cl. 
+ * If instead
+ * numSUM > 1, then cl (sum_svc) handles a single API function - the delete-series function. 
+ * cl is assigned to 
+ * sumptr->cldelser. Then each API function is handled by one or more new RPC clients. 
+ *
+ * If the configuration parameter SUMS_USEMTSUMS is set to 1, then the SopenX servers are all disabled
+ * (and they are not launched by sum_start). Instead, a single server daemon is launched to handle
+ * the Sum_info() calls - sumsd.py. 
+ */
 SUM_t *SUM_open(char *server, char *db, int (*history)(const char *fmt, ...))
 {
   CLIENT *clopx;
@@ -154,6 +327,11 @@ SUM_t *SUM_open(char *server, char *db, int (*history)(const char *fmt, ...))
   char *server_name, *cptr, *username;
   char *call_err;
   int i, j, rr;
+
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
+    MSUMSCLIENT_t msums = -1;
+    Pickler_t *pickler = NULL;
+#endif
 
   if(numopened >= MAXSUMOPEN) {
     (*history)("Exceeded max=%d SUM_open() for a client\n", MAXSUMOPEN);
@@ -174,7 +352,7 @@ SUM_t *SUM_open(char *server, char *db, int (*history)(const char *fmt, ...))
     }
   }
   cptr = index(server_name, '.');	/* must be short form */
-  if(cptr) *cptr = (char)NULL;
+  if(cptr) *cptr = '\0';
   gettimeofday(&tval, NULL);
   stime = (unsigned int)tval.tv_usec;
   srand(stime);				//seed rr_random()
@@ -193,6 +371,17 @@ SUM_t *SUM_open(char *server, char *db, int (*history)(const char *fmt, ...))
     }
   }
   clprev = cl;
+  
+  /* Connect to sumsd.py (if configuration specifies it should be used). */
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
+    msums = ConnectToMultiSums(&pickler, history);
+    if (msums == -1)
+    {
+        (*history)("DRMS is not able to connect to SUMS (unable to connect to sumsd.py).");
+        return NULL;
+    }
+#endif
+  
   if(!(username = (char *)getenv("USER"))) username = "nouser";
   klist = newkeylist();
   setkey_str(&klist, "db_name", db);
@@ -396,6 +585,12 @@ for(i=0; i < numSUM; i++) {
   numopened++;
   //sumptr = (SUM_t *)malloc(sizeof(SUM_t));
   sumptr = (SUM_t *)calloc(1, sizeof(SUM_t)); //NULL filled
+  
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
+    sumptr->mSumsClient = msums;
+    sumptr->pickler = pickler; /* steal */
+#endif
+
   sumptr->sinfo = NULL;
   sumptr->cl = cl;
 for(j=0; j < numSUM; j++) {
@@ -405,7 +600,9 @@ for(j=0; j < numSUM; j++) {
     sumptr->clalloc = cl;
     sumptr->clget = cl;
     sumptr->clput = cl;
+#if !defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS
     sumptr->clinfo = cl;
+#endif
     break;
   case 1:	//this is the case w/e.g. Salloc and Salloc1
     sumptr->clopen = clopen;
@@ -494,6 +691,8 @@ for(j=0; j < numSUM; j++) {
       }
     }
     sumptr->clput1 = clput;
+    
+#if !defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS
     clinfo = clnt_create(server_name, SUMINFO, SUMINFOV, "tcp");
     if(!clinfo) {
       clnt_pcreateerror("Can't get client handle to sum_svc SUMINFO");
@@ -507,6 +706,7 @@ for(j=0; j < numSUM; j++) {
       }
     }
     sumptr->clinfo = clinfo;
+
     clinfo = clnt_create(server_name, SUMINFO1, SUMINFOV, "tcp");
     if(!clinfo) {
       clnt_pcreateerror("Can't get client handle to sum_svc SUMINFO1");
@@ -520,6 +720,8 @@ for(j=0; j < numSUM; j++) {
       }
     }
     sumptr->clinfo1 = clinfo;
+#endif
+
     break;
   case 2:
     sumptr->clopen2 = clopen2;
@@ -565,6 +767,8 @@ for(j=0; j < numSUM; j++) {
       }
     }
     sumptr->clput2 = clput;
+    
+#if !defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS
     clinfo = clnt_create(server_name, SUMINFO2, SUMINFOV, "tcp");
     if(!clinfo) {
       clnt_pcreateerror("Can't get client handle to sum_svc SUMINFO2");
@@ -578,6 +782,7 @@ for(j=0; j < numSUM; j++) {
       }
     }
     sumptr->clinfo2 = clinfo;
+#endif
     break;
   case 3:
     sumptr->clopen3 = clopen3;
@@ -623,6 +828,8 @@ for(j=0; j < numSUM; j++) {
       }
     }
     sumptr->clput3 = clput;
+    
+#if !defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS
     clinfo = clnt_create(server_name, SUMINFO3, SUMINFOV, "tcp");
     if(!clinfo) {
       clnt_pcreateerror("Can't get client handle to sum_svc SUMINFO3");
@@ -636,6 +843,7 @@ for(j=0; j < numSUM; j++) {
       }
     }
     sumptr->clinfo3 = clinfo;
+#endif
     break;
   case 4:
     sumptr->clopen4 = clopen4;
@@ -681,6 +889,8 @@ for(j=0; j < numSUM; j++) {
       }
     }
     sumptr->clput4 = clput;
+    
+#if !defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS
     clinfo = clnt_create(server_name, SUMINFO4, SUMINFOV, "tcp");
     if(!clinfo) {
       clnt_pcreateerror("Can't get client handle to sum_svc SUMINFO4");
@@ -694,6 +904,7 @@ for(j=0; j < numSUM; j++) {
       }
     }
     sumptr->clinfo4 = clinfo;
+#endif
     break;
   case 5:
     sumptr->clopen5 = clopen5;
@@ -739,6 +950,8 @@ for(j=0; j < numSUM; j++) {
       }
     }
     sumptr->clput5 = clput;
+    
+#if !defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS
     clinfo = clnt_create(server_name, SUMINFO5, SUMINFOV, "tcp");
     if(!clinfo) {
       clnt_pcreateerror("Can't get client handle to sum_svc SUMINFO5");
@@ -752,6 +965,7 @@ for(j=0; j < numSUM; j++) {
       }
     }
     sumptr->clinfo5 = clinfo;
+#endif
     break;
   case 6:
     sumptr->clopen6 = clopen6;
@@ -797,6 +1011,8 @@ for(j=0; j < numSUM; j++) {
       }
     }
     sumptr->clput6 = clput;
+    
+#if !defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS
     clinfo = clnt_create(server_name, SUMINFO6, SUMINFOV, "tcp");
     if(!clinfo) {
       clnt_pcreateerror("Can't get client handle to sum_svc SUMINFO6");
@@ -810,6 +1026,7 @@ for(j=0; j < numSUM; j++) {
       }
     }
     sumptr->clinfo6 = clinfo;
+#endif
     break;
   case 7:
     sumptr->clopen7 = clopen7;
@@ -855,6 +1072,7 @@ for(j=0; j < numSUM; j++) {
       }
     }
     sumptr->clput7 = clput;
+#if !defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS
     clinfo = clnt_create(server_name, SUMINFO7, SUMINFOV, "tcp");
     if(!clinfo) {
       clnt_pcreateerror("Can't get client handle to sum_svc SUMINFO7");
@@ -868,6 +1086,7 @@ for(j=0; j < numSUM; j++) {
       }
     }
     sumptr->clinfo7 = clinfo;
+#endif
     break;
   }
 }
@@ -1098,6 +1317,784 @@ int SUM_alloc2(SUM_t *sum, uint64_t sunum, int (*history)(const char *fmt, ...))
   }
 }
 
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
+
+#define MSGLEN_NUMBYTES 8
+#define MAX_MSG_BUFSIZE 4096
+#ifdef MIN
+#undef MIN
+#endif
+#define MIN(a,b) ((a) < (b) ? (a) : (b))
+
+/* There could be NULL chars in the message to send, so the caller must provide the message length in msgLen. */
+static int sendRequest(SUM_t *sums, const char *msg, uint32_t msgLen, int (*history)(const char *fmt, ...))
+{
+    size_t bytesSentTotal;
+    size_t bytesSent;
+    char numBytesMesssage[MSGLEN_NUMBYTES + 1];
+    const char *pBuf = NULL;
+    int sockfd = -1;
+    int err = 0;
+    
+    if (msg && *msg)
+    {
+        sockfd = (int)sums->mSumsClient;
+        
+        /* First send the length of the message, msgLen. */
+        bytesSentTotal = 0;
+        snprintf(numBytesMesssage, sizeof(numBytesMesssage), "%08x", msgLen);
+        
+        while (bytesSentTotal < MSGLEN_NUMBYTES)
+        {
+            pBuf = numBytesMesssage + bytesSentTotal;
+            bytesSent = send(sockfd, pBuf, strlen(pBuf), 0);
+            
+            if (!bytesSent)
+            {
+                (*history)("Socket to sumsd.py broken.");
+                err = 1;
+                break;
+            }
+            
+            bytesSentTotal += bytesSent;
+        }
+        
+        if (!err)
+        {
+            /* Then send the message. */
+            bytesSentTotal = 0;
+            
+            while (bytesSentTotal < msgLen)
+            {
+                pBuf = msg + bytesSentTotal;
+                bytesSent = send(sockfd, pBuf, msgLen - bytesSentTotal, 0);
+
+                if (!bytesSent)
+                {
+                    (*history)("Socket to sumsd.py broken.");
+                    err = 1;
+                    break;
+                }
+            
+                bytesSentTotal += bytesSent;
+            }
+        }       
+    }
+    
+    return err;
+}
+
+static int receiveResponse(SUM_t *sums, char **out, size_t *outLen, int (*history)(const char *fmt, ...))
+{
+    size_t bytesReceivedTotal;
+    ssize_t sizeTextRecvd;
+    char recvBuffer[MAX_MSG_BUFSIZE];
+    char numBytesMessage[MSGLEN_NUMBYTES + 1];
+    unsigned int sizeMessage;
+    char *allTextReceived = NULL;
+    int sockfd = -1;
+    int err = 0;
+    
+    if (!out)
+    {
+        err = 1;
+        (*history)("'out' must not be NULL in receiveResponse().\n");
+    }
+    
+    if (!err)
+    {
+        if (!sums || sums->mSumsClient == -1)
+        {
+            err = 1;
+            (*history)("Not connected to sumsd.py.\n");
+        }
+    }
+
+    if (!err)
+    {
+        sockfd = (int)sums->mSumsClient;
+            
+        /* First, receive length of message. */
+        bytesReceivedTotal = 0;
+        
+        /* The double guard ensures that MSGLEN_NUMBYTES <= MAX_MSG_BUFSIZE. The header is accumulated directly
+         * in recvBuffer. */
+        while (bytesReceivedTotal < MSGLEN_NUMBYTES && bytesReceivedTotal < MAX_MSG_BUFSIZE)
+        {
+            sizeTextRecvd = recv(sockfd, recvBuffer + bytesReceivedTotal, MIN(MSGLEN_NUMBYTES - bytesReceivedTotal, MAX_MSG_BUFSIZE - bytesReceivedTotal), 0);
+        
+            if (sizeTextRecvd <= 0)
+            {
+                (*history)("Socket to sumsd.py broken.\n");
+                err = 1;
+                break;
+            }
+        
+            bytesReceivedTotal += sizeTextRecvd;
+        }
+    }
+
+    if (!err)
+    {
+        /* Convert hex string to number. */
+        snprintf(numBytesMessage, sizeof(numBytesMessage), "%s", recvBuffer);
+        sscanf(numBytesMessage, "%08x", &sizeMessage);
+        
+        allTextReceived = calloc(1, sizeMessage + 1);
+        
+        if (!allTextReceived)
+        {
+            (*history)("Out of memory in receiveResponse().\n");
+            err = 1;
+        }
+        else
+        {
+            /* Receive the message. */
+            bytesReceivedTotal = 0;
+        
+            while (bytesReceivedTotal < sizeMessage)
+            {
+                sizeTextRecvd = recv(sockfd, recvBuffer, MIN(sizeMessage - bytesReceivedTotal, MAX_MSG_BUFSIZE), 0);
+        
+                if (sizeTextRecvd <= 0)
+                {
+                    (*history)("Socket to sumsd.py broken.\n");
+                    err = 1;
+                    break;
+                }
+
+                /* Can't use string functions, like strncat(), since these functions 
+                 * assume the input is a null-terminated string. The input will be 
+                 * truncated at the first null character.*/
+                memcpy(allTextReceived + bytesReceivedTotal, recvBuffer, sizeTextRecvd);
+                bytesReceivedTotal += sizeTextRecvd;
+            }
+        }
+    }
+    
+    if (err)
+    {
+        if (allTextReceived)
+        {
+            free(allTextReceived);
+            allTextReceived = NULL;
+        }
+    }
+    else
+    {
+        *out = allTextReceived;
+        *outLen = bytesReceivedTotal;
+    }
+    
+    return err;
+}
+
+static int pickleRequest(SUM_t *sums, uint64_t *sunums, size_t nSus, char **pickled, size_t *pickleLen, int (*history)(const char *fmt, ...))
+{
+    PyObject *list = NULL;
+    PyObject *protocol = NULL;
+    PyObject *argTuple = NULL;
+    PyObject *dumpsFxn = NULL;
+    PyObject *result = NULL;
+    const char *pickledStr = NULL;
+    Py_ssize_t byteLen;
+    int isu;
+    uint64_t sunum;
+    int err;
+    
+    err = 0;
+    
+    if (!sums || !sunums || nSus == 0 || !pickled || !pickleLen)
+    {
+        (*history)("Invalid argument(s) to 'pickleRequest'.\n");
+        err = 1;
+    }
+    
+    if (!err)
+    {
+        list = PyList_New(nSus);
+        
+        if (!list)
+        {
+            (*history)("Unable to create new Py list.\n");
+            err = 1;
+        }
+    }
+    
+    if (!err)
+    {
+        for (isu = 0; isu < nSus; isu++)
+        {
+            sunum = sunums[isu];
+        
+            /* PyList_SET_ITEM steals the reference to the Py object provided in its third 
+             * argument. To free the memory allocated in the Py environment for the 
+             * list reference and all the references in the list, you simply have to
+             * decrement the reference on the list (and not the items in the list). */
+            PyList_SET_ITEM(list, isu, PyLong_FromUnsignedLongLong(sunum));
+        }
+        
+        protocol = PyDict_GetItemString(sums->pickler->pickleDict, "HIGHEST_PROTOCOL");
+    }
+    
+    if (!protocol)
+    {
+        (*history)("Unable to load pickle protocol.\n");
+        err = 1;
+    }
+    
+    if (!err)
+    {
+        dumpsFxn = PyDict_GetItemString(sums->pickler->pickleDict, "dumps");
+
+        if (!dumpsFxn)
+        {
+            (*history)("Unable to load 'dumps' function.\n");
+            err = 1;
+        }
+    }
+
+    if (!err)
+    {  
+        if (!PyCallable_Check(dumpsFxn)) 
+        {
+            (*history)("'dumps' function is not callable.\n");
+            err = 1;
+        }
+    }
+
+    if (!err)
+    {            
+        result = PyObject_CallFunctionObjArgs(dumpsFxn, list, protocol, NULL);
+
+        if (!result)
+        {
+            (*history)("Unable to call 'dumps' function.\n");
+            err = 1;
+        }
+    }
+    
+    if (!err)
+    {
+        /* Since this function returns a bytes object in the Py environment, I'm assuming 
+         * it returns a PyObject that is a bytes. */
+         if (!PyBytes_Check(result))
+         {
+            (*history)("Unexpected data type for object returned from 'dumps' function.\n");
+            err = 1;
+         }
+    }
+    
+    if (!err)
+    {
+        if (PyBytes_AsStringAndSize(result, (char **)&pickledStr, &byteLen) == 0)
+        {
+            /* PyLong_FromSsize_t() should not fail because PyBytes_AsStringAndSize() should fail
+             * if result would result in a byteLen that overflows. */
+            *pickleLen = (size_t)PyLong_AsLong(PyLong_FromSsize_t(byteLen));
+            *pickled = calloc(1, *pickleLen);
+            memcpy(*pickled, pickledStr, *pickleLen);
+        }
+        else
+        {
+            (*history)("Unable to extract string from 'dumps' response.\n");
+            err = 1;
+        }
+    }
+    
+    /* Free memory being held by the Py engine. */
+    if (list)
+    {
+        Py_DECREF(list);
+    }
+    
+    if (result)
+    {
+        Py_DECREF(result);
+    }
+
+    return err;
+}
+
+static PyObject *getAttr(PyObject *item, const char *name)
+{
+    PyObject *attr = NULL;
+    
+    if (item && name)
+    {
+        attr = PyObject_GetAttrString(item, name);
+    }
+    
+    return attr;
+}
+
+/* Thanks to Rick, we have to deal with the fact that strings from the DB are Latin1. */
+static int sprintUnicodeAsLatin1(PyObject *unicode, const char *attrName, char *str, size_t len, int (*history)(const char *fmt, ...))
+{
+    PyObject *result = NULL;
+    int err;
+    
+    err = 0;
+    
+    if (!PyUnicode_Check(unicode))
+    {
+        (*history)("Data type for %s is unexpected.\n", attrName);
+        err = 1;
+    }
+    else
+    {
+        result = PyUnicode_AsLatin1String(unicode);
+        
+        if (!result)
+        {
+            (*history)("Unable to convert unicode to Latin-1 string.\n");
+            err = 1;
+        }
+    }
+
+    if (!err)
+    {    
+        snprintf(str, len, "%s", PyBytes_AsString(result));
+    }
+
+    return err;
+}
+
+static int unpickleResponse(SUM_t *sums, const char *msg, size_t msgLen, int (*history)(const char *fmt, ...))
+{
+    int err;
+    PyObject *loadsFxn = NULL;
+    PyObject *bytes = NULL;
+    PyObject *byteLen = NULL;
+    PyObject *result = NULL;
+    
+    err = 0;
+    
+    if (!err)
+    {
+        loadsFxn = PyDict_GetItemString(sums->pickler->pickleDict, "loads");
+
+        if (!loadsFxn)
+        {
+            (*history)("Unable to load 'loads' function.\n");
+            err = 1;
+        }  
+    }
+
+    if (!err)
+    {
+        if (!PyCallable_Check(loadsFxn)) 
+        {
+            (*history)("'loads' function is not callable.\n");
+            err = 1;
+        }
+    }
+    
+    if (!err)
+    {
+        /* Make a PyObject out of the message. */
+        byteLen = PyLong_FromSize_t(msgLen);
+        if (!byteLen)
+        {
+            (*history)("Unable to create byte-length object.\n");
+            err = 1;
+        }
+    }
+    
+    if (!err)
+    {
+        /* PyLong_AsSsize_t() will raise an exception if byteLen is out of range. */
+        bytes = PyBytes_FromStringAndSize(msg, PyLong_AsSsize_t(byteLen));
+    }
+    
+    if (!err)
+    {
+        /* The response from sumsd.py contains instances of the Info class defined
+         * in sumsd.py. If we were to attempt to loads the bytes object, it would
+         * fail since class Info is not defined in our Python environment yet. To
+         * prevent this from happening, we must defined class Info. */
+        err = (PyRun_SimpleString("class Info(object):\n    pass") != 0);
+        if (err)
+        {
+            (*history)("Unable to define Info class in __main__ module.\n");
+        }
+    }
+
+    if (!err)
+    {
+        result = PyObject_CallFunctionObjArgs(loadsFxn, bytes, NULL);
+
+        if (!result)
+        {
+            (*history)("Unable to call 'loads' function.\n");
+            err = 1;
+        }
+    }
+    
+    if (!err)
+    {
+        /* The loads call should return a Python list. */
+        if (!PyList_Check(result))
+        {
+            (*history)("Unexpected data type for object returned from 'loads' function.\n");
+            err = 1;
+        }
+    }
+    
+    if (!err)
+    {
+        /* Extract elements from the list. Stick them into sums->sinfo as a linked-list. */
+        Py_ssize_t listLen;
+        int isu;
+        Py_ssize_t index;
+        PyObject *item = NULL;
+        PyObject *attr = NULL;
+        
+        listLen = PyList_Size(result);
+        sums->sinfo = (SUM_info_t *)calloc(PyLong_AsLong(PyLong_FromSsize_t(listLen)), sizeof(SUM_info_t));
+        
+        for (isu = 0; isu < listLen; isu++)
+        {
+            index = PyLong_AsSsize_t(PyLong_FromSize_t(isu));
+            item = PyList_GetItem(result, index); /* This is a SUM_info_t essentially. */
+            
+            attr = getAttr(item, "sunum");
+            if (!attr)
+            {
+                (*history)("Unable to unpickle sunum.\n");
+                err = 1;
+                break;
+            }
+            if (!PyLong_Check(attr))
+            {
+                (*history)("Data type for sunum is unexpected.\n");
+                err = 1;
+                break;
+            }
+            sums->sinfo[isu].sunum = PyLong_AsLong(attr);
+            
+            attr = getAttr(item, "onlineLoc");
+            if (!attr)
+            {
+                (*history)("Unable to unpickle onlineLoc.\n");
+                err = 1;
+                break;
+            }
+            err = (sprintUnicodeAsLatin1(attr, "onlineLoc", sums->sinfo[isu].online_loc, sizeof(sums->sinfo[isu].online_loc), history) != 0);
+            if (err)
+            {
+                break;
+            }
+                        
+            attr = getAttr(item, "onlineStatus");
+            if (!attr)
+            {
+                (*history)("Unable to unpickle onlineStatus.\n");
+                err = 1;
+                break;
+            }
+            err = (sprintUnicodeAsLatin1(attr, "onlineStatus", sums->sinfo[isu].online_status, sizeof(sums->sinfo[isu].online_status), history) != 0);
+            if (err)
+            {
+                break;
+            }
+               
+            attr = getAttr(item, "archiveStatus");
+            if (!attr)
+            {
+                (*history)("Unable to unpickle archiveStatus.\n");
+                err = 1;
+                break;
+            }
+            err = (sprintUnicodeAsLatin1(attr, "archiveStatus", sums->sinfo[isu].archive_status, sizeof(sums->sinfo[isu].archive_status), history) != 0);
+            if (err)
+            {
+                break;
+            }            
+            
+            attr = getAttr(item, "offsiteAck");
+            if (!attr)
+            {
+                (*history)("Unable to unpickle offsiteAck.\n");
+                err = 1;
+                break;
+            }
+            err = (sprintUnicodeAsLatin1(attr, "offsiteAck", sums->sinfo[isu].offsite_ack, sizeof(sums->sinfo[isu].offsite_ack), history) != 0);
+            if (err)
+            {
+                break;
+            }
+            
+            attr = getAttr(item, "historyComment");
+            if (!attr)
+            {
+                (*history)("Unable to unpickle historyComment.\n");
+                err = 1;
+                break;
+            }
+            err = (sprintUnicodeAsLatin1(attr, "historyComment", sums->sinfo[isu].history_comment, sizeof(sums->sinfo[isu].history_comment), history) != 0);
+            if (err)
+            {
+                break;
+            }
+
+            attr = getAttr(item, "owningSeries");
+            if (!attr)
+            {
+                (*history)("Unable to unpickle owningSeries.\n");
+                err = 1;
+                break;
+            }
+            err = (sprintUnicodeAsLatin1(attr, "owningSeries", sums->sinfo[isu].owning_series, sizeof(sums->sinfo[isu].owning_series), history) != 0);
+            if (err)
+            {
+                break;
+            }
+            
+            attr = getAttr(item, "storageGroup");
+            if (!attr)
+            {
+                (*history)("Unable to unpickle storageGroup.\n");
+                err = 1;
+                break;
+            }
+            if (!PyLong_Check(attr))
+            {
+                (*history)("Data type for storageGroup is unexpected.\n");
+                err = 1;
+                break;
+            }
+            sums->sinfo[isu].storage_group = PyLong_AsLong(attr);
+            
+            /* bytes is a double in SUM_info_t, but it is an integer in sum_main (and is reported as an integer by sumsd.py). */
+            attr = getAttr(item, "bytes");
+            if (!attr)
+            {
+                (*history)("Unable to unpickle bytes.\n");
+                err = 1;
+                break;
+            }
+            if (!PyLong_Check(attr))
+            {
+                (*history)("Data type for bytes is unexpected.\n");
+                err = 1;
+                break;
+            }
+            sums->sinfo[isu].bytes = PyLong_AsDouble(attr);
+            
+            /* Skip createSumid. */
+            
+            attr = getAttr(item, "creatDate");
+            if (!attr)
+            {
+                (*history)("Unable to unpickle creatDate.\n");
+                err = 1;
+                break;
+            }
+            err = (sprintUnicodeAsLatin1(attr, "creatDate", sums->sinfo[isu].creat_date, sizeof(sums->sinfo[isu].creat_date), history) != 0);
+            if (err)
+            {
+                break;
+            }            
+            
+            attr = getAttr(item, "username");
+            if (!attr)
+            {
+                (*history)("Unable to unpickle username.\n");
+                err = 1;
+                break;
+            }
+            err = (sprintUnicodeAsLatin1(attr, "username", sums->sinfo[isu].username, sizeof(sums->sinfo[isu].username), history) != 0);
+            if (err)
+            {
+                break;
+            }
+            
+            attr = getAttr(item, "archTape");
+            if (!attr)
+            {
+                (*history)("Unable to unpickle archTape.\n");
+                err = 1;
+                break;
+            }
+            err = (sprintUnicodeAsLatin1(attr, "archTape", sums->sinfo[isu].arch_tape, sizeof(sums->sinfo[isu].arch_tape), history) != 0);
+            if (err)
+            {
+                break;
+            }
+            
+            attr = getAttr(item, "archTapeFn");
+            if (!attr)
+            {
+                (*history)("Unable to unpickle archTapeFn.\n");
+                err = 1;
+                break;
+            }
+            if (!PyLong_Check(attr))
+            {
+                (*history)("Data type for archTapeFn is unexpected.\n");
+                err = 1;
+                break;
+            }
+            sums->sinfo[isu].arch_tape_fn = PyLong_AsLong(attr);
+            
+            attr = getAttr(item, "archTapeDate");
+            if (!attr)
+            {
+                (*history)("Unable to unpickle archTapeDate.\n");
+                err = 1;
+                break;
+            }
+            err = (sprintUnicodeAsLatin1(attr, "archTapeDate", sums->sinfo[isu].arch_tape_date, sizeof(sums->sinfo[isu].arch_tape_date), history) != 0);
+            if (err)
+            {
+                break;
+            }
+            
+            attr = getAttr(item, "safeTape");
+            if (!attr)
+            {
+                (*history)("Unable to unpickle safeTape.\n");
+                err = 1;
+                break;
+            }
+            err = (sprintUnicodeAsLatin1(attr, "safeTape", sums->sinfo[isu].safe_tape, sizeof(sums->sinfo[isu].safe_tape), history) != 0);
+            if (err)
+            {
+                break;
+            }
+
+            attr = getAttr(item, "safeTapeFn");
+            if (!attr)
+            {
+                (*history)("Unable to unpickle safeTapeFn.\n");
+                err = 1;
+                break;
+            }
+            if (!PyLong_Check(attr))
+            {
+                (*history)("Data type for safeTapeFn is unexpected.\n");
+                err = 1;
+                break;
+            }
+            sums->sinfo[isu].safe_tape_fn = PyLong_AsLong(attr);
+            
+            attr = getAttr(item, "safeTapeDate");
+            if (!attr)
+            {
+                (*history)("Unable to unpickle safeTapeDate.\n");
+                err = 1;
+                break;
+            }
+            err = (sprintUnicodeAsLatin1(attr, "safeTapeDate", sums->sinfo[isu].safe_tape_date, sizeof(sums->sinfo[isu].safe_tape_date), history) != 0);
+            if (err)
+            {
+                break;
+            }
+            
+            attr = getAttr(item, "effectiveDate");
+            if (!attr)
+            {
+                (*history)("Unable to unpickle effectiveDate.\n");
+                err = 1;
+                break;
+            }
+            err = (sprintUnicodeAsLatin1(attr, "effectiveDate", sums->sinfo[isu].effective_date, sizeof(sums->sinfo[isu].effective_date), history) != 0);
+            if (err)
+            {
+                break;
+            }            
+            
+            attr = getAttr(item, "paStatus");
+            if (!attr)
+            {
+                (*history)("Unable to unpickle paStatus.\n");
+                err = 1;
+                break;
+            }
+            if (!PyLong_Check(attr))
+            {
+                (*history)("Data type for paStatus is unexpected.\n");
+                err = 1;
+                break;
+            }
+            sums->sinfo[isu].pa_status = PyLong_AsLong(attr);
+            
+            attr = getAttr(item, "paSubstatus");
+            if (!attr)
+            {
+                (*history)("Unable to unpickle paSubtatus.\n");
+                err = 1;
+                break;
+            }
+            if (!PyLong_Check(attr))
+            {
+                (*history)("Data type for paSubstatus is unexpected.\n");
+                err = 1;
+                break;
+            }
+            sums->sinfo[isu].pa_substatus = PyLong_AsLong(attr);
+        }
+    }
+    
+    return err;
+}
+
+
+/* SUM_t::sinfo is a linear array of malloc'ed SUM_info_ts.
+ */
+void SUM_infoArray_free(SUM_t *sums)
+{
+    if(sums->sinfo) 
+    {
+        free(sums->sinfo);    
+        sums->sinfo = NULL;            //must do so no double free in SUM_close()
+    }
+}
+
+int SUM_infoArray(SUM_t *sums, uint64_t *sunums, int reqcnt, int (*history)(const char *fmt, ...))
+{
+    char *pickled = NULL;
+    size_t pickleLen;
+    char *response = NULL;
+    size_t rspLen;
+    int err;
+    
+    err = 0;
+    
+    /* pickle request */
+    err = pickleRequest(sums, sunums, reqcnt, &pickled, &pickleLen, history);
+    
+    if (!err)
+    {
+        /* send request */
+        err = sendRequest(sums, pickled, pickleLen, history);
+    }
+
+    if (!err)
+    {    
+        /* receive response */
+        err = receiveResponse(sums, &response, &rspLen, history);
+    }
+    
+    /* unpickle response */
+    if (!err)
+    {
+        err = unpickleResponse(sums, response, rspLen, history);
+    }
+    
+    if (!err)
+    {
+        free(response);
+        free(pickled);
+        pickled = NULL;
+    }
+    
+    return err;
+}
+
+
+#else
 /* Return information from sum_main for the given sunum (ds_index).
  * Return non-0 on error, else sum->sinfo has the SUM_info_t pointer.
  * NOTE: error 4 is Connection reset by peer, sum_svc probably gone.
@@ -1396,6 +2393,7 @@ int SUM_infoArray(SUM_t *sum, uint64_t *dxarray, int reqcnt, int (*history)(cons
     return(0);
   }
 }
+#endif
 
 /* Close this session with the SUMS. Return non 0 on error.
  * NOTE: error 4 is Connection reset by peer, sum_svc probably gone.
@@ -1482,6 +2480,7 @@ int SUM_close(SUM_t *sum, int (*history)(const char *fmt, ...))
   if(sum->clput5) clnt_destroy(sum->clput5);
   if(sum->clput6) clnt_destroy(sum->clput6);
   if(sum->clput7) clnt_destroy(sum->clput7);
+#if !defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS
   if(sum->clinfo) clnt_destroy(sum->clinfo);
   if(sum->clinfo1) clnt_destroy(sum->clinfo1);
   if(sum->clinfo2) clnt_destroy(sum->clinfo2);
@@ -1490,8 +2489,18 @@ int SUM_close(SUM_t *sum, int (*history)(const char *fmt, ...))
   if(sum->clinfo5) clnt_destroy(sum->clinfo5);
   if(sum->clinfo6) clnt_destroy(sum->clinfo6);
   if(sum->clinfo7) clnt_destroy(sum->clinfo7);
+#endif
   if(sum->cldelser) clnt_destroy(sum->cldelser);
   }
+  
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
+  /* Close connection to sumsd.py. */
+  if (sum->mSumsClient != -1)
+  {
+    DisconnectFromMultiSums(sum, history);
+  }
+#endif
+  
   for(i=0; i < MAXSUMOPEN; i++) {
     if(transpid[i] == sum->uid) {
       svc_destroy(transp[i]);
@@ -1582,7 +2591,7 @@ int SUM_get(SUM_t *sum, int (*history)(const char *fmt, ...))
   }
   gethostname(thishost, 80);
   dptr = index(thishost, '.');     // must be short form
-  if(dptr) *dptr = (char)NULL;
+  if(dptr) *dptr = '\0';
   pid = getpid();
   klist = newkeylist();
   setkey_uint64(&klist, "uid", sum->uid); 
@@ -1886,6 +2895,7 @@ int SUM_archSU(SUM_t *sum, int (*history)(const char *fmt, ...))
   }
   return(sum->status);
 *****************************************************************/
+    return 0;
 }
 
 /* Called by the delete_series program before it deletes the series table.
@@ -1914,7 +2924,7 @@ int SUM_delete_series(char *filename, char *seriesname, int (*history)(const cha
     strcpy(server_name, SUMSERVER);
   }
   cptr = (char *)index(server_name, '.');	/* must be short form */
-  if(cptr) *cptr = (char)NULL;
+  if(cptr) *cptr = '\0';
   //handle created in SUM_open()
   clprev = cldelser;
   status = clnt_call(cldelser, DELSERIESDO, (xdrproc_t)xdr_Rkey, (char *)klist, 
@@ -1945,7 +2955,7 @@ int SUM_delete_series(char *filename, char *seriesname, int (*history)(const cha
  * NOTE: Upon msg complete return, sum->status != 0 if error anywhere in the 
  * path of the request that initially returned the RESULT_PEND status.
 */
-int SUM_poll(SUM_t *sum) 
+int SUM_poll(SUM_t *sum)
 {
   int stat, xmode;
 
@@ -1966,7 +2976,7 @@ int SUM_poll(SUM_t *sum)
  * NOTE: Upon msg complete return, sum->status != 0 if error anywhere in the 
  * path of the request that initially returned the RESULT_PEND status.
 */
-int SUM_wait(SUM_t *sum) 
+int SUM_wait(SUM_t *sum)
 {
   int stat, xmode;
 
@@ -2173,6 +3183,8 @@ int SUM_repartn(SUM_t *sum, int (*history)(const char *fmt, ...))
         failflg = 1;
       }
     }
+
+#if !defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS
     if(sum->clinfo) {
       status = clnt_call(sum->clinfo, SUMREPARTN, (xdrproc_t)xdr_Rkey, 
   	(char *)klist, (xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
@@ -2237,6 +3249,7 @@ int SUM_repartn(SUM_t *sum, int (*history)(const char *fmt, ...))
         failflg = 1;
       }
     }
+#endif
   }
   return(0);
 }
@@ -2336,6 +3349,12 @@ int getmsgimmed()
 /* Function called on receipt of a sum_svc response message for
  * a RESPDOARRAY.  Called from respd().
 */
+
+/* This is the f*cking function where the SUM_t::sinfo list is created. It looks like 
+ * Jim started using xdr_array to create this list, but then couldn't figure out how to do 
+ * it, so he used this function instead. However, he left all the xdr crap laying about
+ * to cause confusion.
+ */
 KEY *respdoarray_1(KEY *params)
 {
   SUM_t *sum;
@@ -2363,6 +3382,12 @@ KEY *respdoarray_1(KEY *params)
     return((KEY *)NULL);
   }
   free(file);
+  
+  /* ************
+   *
+   * HERE IT IS!! THE PLACE WHERE THE sinfo LIST IS ALLOCATED.
+   *
+   * ************ */
   sum->sinfo = (SUM_info_t *)calloc(reqcnt, sizeof(SUM_info_t));
   sinfod = sum->sinfo;
   if(filemode == 0)
@@ -2386,6 +3411,11 @@ KEY *respdoarray_1(KEY *params)
     sscanf(line, "%s %lu", name, &sinfod->sunum);
     fgets(line, 128, rfp);
     sscanf(line, "%s %s", name, sinfod->online_loc);
+    
+    /* If an invalid SUNUM was encountered, then the next record inserted into the
+     * results file begins with "pa_status" instead of the normal "online_loc".  In that
+     * case, we add online_loc == '\0' and send that back to DRMS.
+     */
     if(!strcmp(name, "pa_status=")) {	//the sunum was not found in the db
       strcpy(sinfod->online_loc, "");
       goto SKIPENTRY;

@@ -228,16 +228,21 @@ ssize_t  writevn(int fd, struct iovec *vector, int count, size_t n)
     nleft -= nwritten;
     if (nwritten>0 && nleft>0)
     {
+        /* We wrote at least one byte, but we didn't write all bytes. */
       i = 0;
       while (i<count && nwritten>0)
       {
 	if (vector[i].iov_len<=nwritten)
 	{
+	    /* This vector got written. */
 	  nwritten -= vector[i].iov_len;
 	  vector[i].iov_len = 0;
 	}
 	else
 	{
+	    /* The vector got partially written - modify it so that it contains 
+         * the part that didn't get written. Then break out of the loop.
+         */
 	  vector[i].iov_len -= nwritten;
 	  vector[i].iov_base = (void *) ((char *) vector[i].iov_base + nwritten);
 	  nwritten = 0;
