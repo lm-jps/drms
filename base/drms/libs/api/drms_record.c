@@ -12256,7 +12256,7 @@ DRMS_Record_t *drms_recordset_fetchnext(DRMS_Env_t *env,
              * drms_recordset_fetchnext() is not valid, and we should return NULL with cstat set to kRecChunking_NoMoreRecs. 
              * We should also set the record pointer, rs->cursor->currentrec, to the last record in the record set
              * (it will be one past that now). */
-            if (rs->cursor->lastrec > 0 && rs->cursor->currentrec > rs->cursor->lastrec)
+            if (rs->cursor->lastrec >= 0 && rs->cursor->currentrec > rs->cursor->lastrec)
             {
                 rs->cursor->currentrec = rs->cursor->lastrec;
                 cstat = kRecChunking_NoMoreRecs;
