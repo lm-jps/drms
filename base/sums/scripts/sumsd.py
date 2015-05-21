@@ -30,7 +30,8 @@ RV_DBCOMMAND = 5
 RV_DBCONNECTION = 6
 RV_DBCURSOR = 7
 RV_SOCKETCONN = 8
-RV_POLL = 9
+RV_REQUESTTYPE = 9
+RV_POLL = 10
 
 class SumsDrmsParams(DRMSParams):
 
@@ -247,6 +248,7 @@ class Collector(threading.Thread):
     MSGLEN_NUMBYTES = 8 # This is the hex-text version of the number of bytes in the response message.
                         # So, we can send back 4 GB of response!
     MAX_MSG_BUFSIZE = 4096 # Don't receive more than this in one call!
+    REQUEST_TYPE = { '0':'none', '1': 'info'}
     
     def __init__(self, sock, host, port, database, user, log, debugLog):
         threading.Thread.__init__(self)
@@ -260,31 +262,35 @@ class Collector(threading.Thread):
         try:
             # First, obtain request.
             msg = self.receiveRequest()
-            
-            # Print out the contents of this bytes so we can compare to what was sent
-            # by the client - debugging.
-            print('here are the bytes ')
-            print(str(["{0:0>2X}".format(b) for b in msg]))
-            # sys.stdout.buffer.write(msg)
-            
-            if self.debugLog:
-                self.debugLog.write(['Received a request from ' + str(self.sock.getpeername()) + '.'])
+            # self.dumpBytes(msg)
 
             self.unpickleRequest(msg)
 
-            cmd = "SELECT T1.ds_index, T1.online_loc, T1.online_status, T1.archive_status, T1.offsite_ack, T1.history_comment, T1.owning_series, T1.storage_group, T1.bytes, T1.create_sumid, T1.creat_date, T1.username, COALESCE(T1.arch_tape, 'N/A'), COALESCE(T1.arch_tape_fn, 0), COALESCE(T1.arch_tape_date, '1958-01-01 00:00:00'), COALESCE(T1.safe_tape, 'N/A'), COALESCE(T1.safe_tape_fn, 0), COALESCE(T1.safe_tape_date, '1958-01-01 00:00:00'), COALESCE(T2.effective_date, '195801010000'), coalesce(T2.status, 0), coalesce(T2.archive_substatus, 0) FROM " + SUM_MAIN + " AS T1 LEFT OUTER JOIN " + SUM_PARTN_ALLOC + " AS T2 ON (T1.ds_index = T2.ds_index) WHERE T1.ds_index IN (" + ','.join(self.suList) + ')'
+            # Set the request type (can raise).
+            try:
+                self.reqType = Collector.REQUEST_TYPE['1'] # XXX Need to extract this type from the request.
+            except KeyError:
+                raise Exception('unknownRequestType', 'The request type ' + self.reqType + ' is not supported.')
+
+            if self.log:
+                # XXX need to write out user.
+                self.log.write(['New ' + self.reqType + ' request from ' + str(self.sock.getpeername()) + ': ' + ','.join(self.suList) + '.'])
+
+            if self.reqType == 'info':
+                cmd = "SELECT T1.ds_index, T1.online_loc, T1.online_status, T1.archive_status, T1.offsite_ack, T1.history_comment, T1.owning_series, T1.storage_group, T1.bytes, T1.create_sumid, T1.creat_date, T1.username, COALESCE(T1.arch_tape, 'N/A'), COALESCE(T1.arch_tape_fn, 0), COALESCE(T1.arch_tape_date, '1958-01-01 00:00:00'), COALESCE(T1.safe_tape, 'N/A'), COALESCE(T1.safe_tape_fn, 0), COALESCE(T1.safe_tape_date, '1958-01-01 00:00:00'), COALESCE(T2.effective_date, '195801010000'), coalesce(T2.status, 0), coalesce(T2.archive_substatus, 0) FROM " + SUM_MAIN + " AS T1 LEFT OUTER JOIN " + SUM_PARTN_ALLOC + " AS T2 ON (T1.ds_index = T2.ds_index) WHERE T1.ds_index IN (" + ','.join(self.suList) + ')'
+
             if self.debugLog:
                 self.debugLog.write(['db command is: ' + cmd])
-                
+
             response = self.dbconn.exeCmd(cmd)
-            
+
             # Send results back on the socket, which is connected to a single DRMS module. By sending the results
             # back, the client request is completed. We want to construct a list of "SUM_info" objects. Each object
             # { sunum:12592029, onlineloc:'/SUM52/D12592029', ...}
             
             msg = self.pickleResponse(response)
-            print('here is the response to send ')
-            print(str(["{0:0>2X}".format(b) for b in msg]))                 
+            # self.dumpBytes(msg)
+
             self.sendResponse(msg)
             
             # This thread is about to terminate. We don't want to end this thread before
@@ -459,13 +465,11 @@ class Collector(threading.Thread):
             textReceived = self.sock.recv(min(Collector.MSGLEN_NUMBYTES - bytesReceivedTotal, Collector.MAX_MSG_BUFSIZE))
             if textReceived == b'':
                 raise Exception('socketConnection', 'Socket broken.')
-            print('how about here')
             allTextReceived += textReceived
             bytesReceivedTotal += len(textReceived)
             
         # Convert hex string to number.
         numBytesMessage = int(allTextReceived.decode('UTF-8'), 16)
-        print('message is ' + str(numBytesMessage) + ' bytes.')
         
         # Then receive the message.
         allTextReceived = b''
@@ -486,6 +490,10 @@ class Collector(threading.Thread):
         coll = Collector(sock, host, port, database, user, log, debugLog)
         coll.tList.append(coll)
         coll.start()
+        
+    @staticmethod
+    def dumpBytes(msg):
+        print(str(["{0:0>2X}".format(b) for b in msg]))
 
     @classmethod
     def lockTList(cls):
@@ -792,6 +800,8 @@ if __name__ == "__main__":
                 rv = RV_DBCURSOR
             elif type == 'socketConnection':
                 rv = RV_SOCKETCONN
+            elif type == 'unknownRequestType':
+                rv = RV_REQUESTTYPE
             elif type == 'poll':
                 rv = RV_POLL
             else:
