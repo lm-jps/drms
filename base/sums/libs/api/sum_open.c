@@ -53,6 +53,14 @@ struct Pickler_struct
 };
 
 typedef struct Pickler_struct Pickler_t;
+
+/* Enum defining types of API functions supported by MT SUMS. */
+enum MTSums_CallType_enum
+{   kMTSums_CallType_None = 0,
+    kMTSums_CallType_Info = 1
+};
+
+typedef enum MTSums_CallType_enum MTSums_CallType_t;
 #endif
 
 extern int errno;
@@ -141,7 +149,7 @@ int SUM_shutdown(int query, int (*history)(const char *fmt, ...))
 }
 
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
-static MSUMSCLIENT_t ConnectToMultiSums(Pickler_t **pickler, int (*history)(const char *fmt, ...))
+static MSUMSCLIENT_t ConnectToMtSums(SUM_t *sums, MTSums_CallType_t type, int (*history)(const char *fmt, ...))
 {
     MSUMSCLIENT_t msums = -1;
     int sockfd = -1;
@@ -149,11 +157,78 @@ static MSUMSCLIENT_t ConnectToMultiSums(Pickler_t **pickler, int (*history)(cons
     struct addrinfo *result = NULL;
     char service[16];
     struct sockaddr_in server;
+    
+    if (sums && sums->mSumsClient == -1)
+    {
+        memset(&hints, 0, sizeof(struct addrinfo));
+        hints.ai_flags = 0; /* A field to make this as complicated as possible. */
+        hints.ai_family = AF_INET;
+        hints.ai_socktype = SOCK_STREAM;
+        hints.ai_protocol = 0; /* Another field to make this as complicated as possible. */
 
+        snprintf(service, sizeof(service), "%d", SUMSD_LISTENPORT);
+        if (getaddrinfo(SUMSERVER, service, &hints, &result) != 0)
+        {
+            (*history)("Unable to get SUMS server address.\n");
+        }
+        else
+        {
+            if ((sockfd = socket(result->ai_family, result->ai_socktype, result->ai_protocol)) == -1)
+            {
+                (*history)("Unable to create socket to sumsd.py.\n");
+            }
+            else
+            {
+                /* connect the socket to the server's address */
+                if (connect(sockfd, result->ai_addr, result->ai_addrlen) == -1)
+                {
+                    (*history)("Unable to connect to SUMS server (errno = %d).\n", errno);
+                }
+                else
+                {
+                    msums = (MSUMSCLIENT_t)sockfd;
+                }
+    
+                freeaddrinfo(result);
+            }
+        }
+    }
+    else
+    {
+        (*history)("Unable to connect to sumsd.py.\n");
+    }
+    
+    if (msums != -1)
+    {
+        sums->mSumsClient = msums;
+    }
+    else
+    {
+        sums->mSumsClient = -1;
+    }
+    
+    return sums->mSumsClient;
+}
+
+static void DisconnectFromMtSums(SUM_t *sums)
+{
+    if (sums && sums->mSumsClient != -1)
+    {
+        shutdown(sums->mSumsClient, SHUT_RDWR);
+        close(sums->mSumsClient);
+        sums->mSumsClient = -1;
+    }
+}
+
+static int InitializeMtSumsEnv(Pickler_t **pickler, int (*history)(const char *fmt, ...))
+{
     PyObject *mainModule = NULL;
     PyObject *globalDict = NULL;
     PyObject *pickleModule = NULL;
     PyObject *pickleDict = NULL;
+    int err;
+    
+    err = 0;
             
     if (pickler)
     {
@@ -165,41 +240,11 @@ static MSUMSCLIENT_t ConnectToMultiSums(Pickler_t **pickler, int (*history)(cons
         }
         else
         {
-            memset(&hints, 0, sizeof(struct addrinfo));
-            hints.ai_flags = 0; /* A field to make this as complicated as possible. */
-            hints.ai_family = AF_INET;
-            hints.ai_socktype = SOCK_STREAM;
-            hints.ai_protocol = 0; /* Another field to make this as complicated as possible. */
-    
-            snprintf(service, sizeof(service), "%d", SUMSD_LISTENPORT);
-            // if (getaddrinfo(SUMSERVER, service, &hints, &result) != 0)
-            if (getaddrinfo("k1.stanford.edu", service, &hints, &result) != 0)
-            {
-                (*history)("Unable to get SUMS server address.\n");
-            }
-            else
-            {
-                if ((sockfd = socket(result->ai_family, result->ai_socktype, result->ai_protocol)) == -1)
-                {
-                    (*history)("");
-                }
-                else
-                {
-                    /* connect the socket to the server's address */
-                    if (connect(sockfd, result->ai_addr, result->ai_addrlen) == -1)
-                    {
-                        (*history)("Unable to connect to SUMS server (errno = %d).\n", errno);
-                    }
-                    else
-                    {
-                        msums = (MSUMSCLIENT_t)sockfd;
-                    }
+            /* Connect to the sumsd.py server only when calling an API function that
+             * is handled by sumsd.py. So, do not do that here. Connect in the API 
+             * function itself. */
             
-                    freeaddrinfo(result);
-                }
-            }
-    
-            /* We also have to initialize the Python engine that we use to pickle and unpickle messages
+            /* We have to initialize the Python engine that we use to pickle and unpickle messages
              * that we send over the socket. This requires that an environment variable be set. */
             setenv("PYTHONHOME", PYTHONHOME, 1);
             Py_Initialize();
@@ -216,20 +261,21 @@ static MSUMSCLIENT_t ConnectToMultiSums(Pickler_t **pickler, int (*history)(cons
             else
             {
                 (*history)("Unable to load pickle package.\n");
-                msums = -1;
+                err = 1;
             }
     
-            if (msums >= 0)
+            if (!err)
             {
                 mainModule = PyImport_AddModule("__main__");
                 if (mainModule)
-                {   /* mainModule is a borrowed reference. It does not need to be dereferenced. */
+                {   
+                    /* mainModule is a borrowed reference. It does not need to be dereferenced. */
                     (*pickler)->globalDict = PyModule_GetDict(mainModule);        
                 }
                 else
                 {
                     (*history)("Unable to main module.\n");
-                    msums = -1;
+                    err = 1;
                 }
             }
         }
@@ -239,19 +285,23 @@ static MSUMSCLIENT_t ConnectToMultiSums(Pickler_t **pickler, int (*history)(cons
         (*history)("Invalid argument - pickler must not be NULL.\n");
     }
     
-    return msums;
+    return err;
 }
 
-static void DisconnectFromMultiSums(SUM_t *sums, int (*history)(const char *fmt, ...))
+static void FreeMtSumsEnv(SUM_t *sums, int (*history)(const char *fmt, ...))
 {
-    if (sums && sums->mSumsClient != -1)
+    if (sums)
     {
-        int sockfd = (int)sums->mSumsClient;
-        shutdown(sockfd, SHUT_RDWR);
-        close(sockfd);
+        if (sums->mSumsClient != -1)
+        {
+            /* There should be no open connection to sumsd.py, but if there is, close it. */
+            int sockfd = (int)sums->mSumsClient;
+            shutdown(sockfd, SHUT_RDWR);
+            close(sockfd);
         
-        /* Mark the socket variable as not being used. */
-        sums->mSumsClient = -1;
+            /* Mark the socket variable as not being used. */
+            sums->mSumsClient = -1;
+        }
 
         /* Remove the refcount on the pickle modle. */
         if (sums->pickler)
@@ -374,10 +424,9 @@ SUM_t *SUM_open(char *server, char *db, int (*history)(const char *fmt, ...))
   
   /* Connect to sumsd.py (if configuration specifies it should be used). */
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
-    msums = ConnectToMultiSums(&pickler, history);
-    if (msums == -1)
+    if (InitializeMtSumsEnv(&pickler, history))
     {
-        (*history)("DRMS is not able to connect to SUMS (unable to connect to sumsd.py).");
+        (*history)("DRMS is not able to initialize to SUMS (unable to initialize multi-threaded SUMS environment).");
         return NULL;
     }
 #endif
@@ -1336,49 +1385,62 @@ static int sendRequest(SUM_t *sums, const char *msg, uint32_t msgLen, int (*hist
     int sockfd = -1;
     int err = 0;
     
-    if (msg && *msg)
+    if (msg && *msg && sums)
     {
+        /* Make a socket to MT Sums and connect to it. */
         sockfd = (int)sums->mSumsClient;
         
-        /* First send the length of the message, msgLen. */
-        bytesSentTotal = 0;
-        snprintf(numBytesMesssage, sizeof(numBytesMesssage), "%08x", msgLen);
-        
-        while (bytesSentTotal < MSGLEN_NUMBYTES)
+        if (sockfd != -1)
         {
-            pBuf = numBytesMesssage + bytesSentTotal;
-            bytesSent = send(sockfd, pBuf, strlen(pBuf), 0);
-            
-            if (!bytesSent)
-            {
-                (*history)("Socket to sumsd.py broken.");
-                err = 1;
-                break;
-            }
-            
-            bytesSentTotal += bytesSent;
-        }
-        
-        if (!err)
-        {
-            /* Then send the message. */
+            /* First send the length of the message, msgLen. */
             bytesSentTotal = 0;
-            
-            while (bytesSentTotal < msgLen)
+            snprintf(numBytesMesssage, sizeof(numBytesMesssage), "%08x", msgLen);
+        
+            while (bytesSentTotal < MSGLEN_NUMBYTES)
             {
-                pBuf = msg + bytesSentTotal;
-                bytesSent = send(sockfd, pBuf, msgLen - bytesSentTotal, 0);
-
+                pBuf = numBytesMesssage + bytesSentTotal;
+                bytesSent = send(sockfd, pBuf, strlen(pBuf), 0);
+            
                 if (!bytesSent)
                 {
-                    (*history)("Socket to sumsd.py broken.");
+                    (*history)("Socket to sumsd.py broken.\n");
                     err = 1;
                     break;
                 }
             
                 bytesSentTotal += bytesSent;
             }
-        }       
+        
+            if (!err)
+            {
+                /* Then send the message. */
+                bytesSentTotal = 0;
+            
+                while (bytesSentTotal < msgLen)
+                {
+                    pBuf = msg + bytesSentTotal;
+                    bytesSent = send(sockfd, pBuf, msgLen - bytesSentTotal, 0);
+
+                    if (!bytesSent)
+                    {
+                        (*history)("Socket to sumsd.py broken.\n");
+                        err = 1;
+                        break;
+                    }
+            
+                    bytesSentTotal += bytesSent;
+                }
+            }
+        }
+        else
+        {
+            err = 1;
+            (*history)("Not connected to multi-threaded SUMS.\n");
+        }
+    }
+    else
+    {
+        (*history)("Invalid arguments to sendRequest().\n");
     }
     
     return err;
@@ -1755,6 +1817,11 @@ static int unpickleResponse(SUM_t *sums, const char *msg, size_t msgLen, int (*h
         
         for (isu = 0; isu < listLen; isu++)
         {
+            if (isu < listLen - 1)
+            {
+                sums->sinfo[isu].next = sums->sinfo + isu + 1;
+            }
+        
             index = PyLong_AsSsize_t(PyLong_FromSize_t(isu));
             item = PyList_GetItem(result, index); /* This is a SUM_info_t essentially. */
             
@@ -2067,6 +2134,11 @@ int SUM_infoArray(SUM_t *sums, uint64_t *sunums, int reqcnt, int (*history)(cons
     
     if (!err)
     {
+        err = (ConnectToMtSums(sums, kMTSums_CallType_Info, history) == -1);
+    }
+    
+    if (!err)
+    {
         /* send request */
         err = sendRequest(sums, pickled, pickleLen, history);
     }
@@ -2082,13 +2154,20 @@ int SUM_infoArray(SUM_t *sums, uint64_t *sunums, int reqcnt, int (*history)(cons
     {
         err = unpickleResponse(sums, response, rspLen, history);
     }
-    
-    if (!err)
+
+    DisconnectFromMtSums(sums);
+
+    if (response)
     {
         free(response);
+        response = NULL;
+    }
+    
+    if (pickled)
+    {
         free(pickled);
         pickled = NULL;
-    }
+    }    
     
     return err;
 }
@@ -2495,9 +2574,9 @@ int SUM_close(SUM_t *sum, int (*history)(const char *fmt, ...))
   
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
   /* Close connection to sumsd.py. */
-  if (sum->mSumsClient != -1)
+  if (sum->pickler)
   {
-    DisconnectFromMultiSums(sum, history);
+    FreeMtSumsEnv(sum, history);
   }
 #endif
   
