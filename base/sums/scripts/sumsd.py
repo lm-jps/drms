@@ -542,7 +542,7 @@ class TestClient(threading.Thread):
             self.sock.connect((socket.gethostname(), self.serverPort))
         
             # Send some random SUNUMs to the server thread.
-            request = '650547410, 650547419, 650547430, 650551748, 650551852, 650551942, 650555939, 650556333'
+            request = [650547410, 650547419, 650547430, 650551748, 650551852, 650551942, 650555939, 650556333]
             msg = self.pickleRequest(request)
             self.sendRequest(msg)
             msg = self.receiveResponse()
@@ -560,8 +560,7 @@ class TestClient(threading.Thread):
         
     def pickleRequest(self, request):
         # Split into a list.
-        requestList = request.split(',')
-        return pickle.dumps(requestList, pickle.HIGHEST_PROTOCOL)
+        return pickle.dumps(request, pickle.HIGHEST_PROTOCOL)
         
     def unpickleResponse(self, msg):
         infoList = pickle.loads(msg)
