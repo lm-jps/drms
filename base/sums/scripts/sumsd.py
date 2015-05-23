@@ -346,7 +346,7 @@ class Collector(threading.Thread):
         self.suList = []
         
         if self.debugLog:
-            self.debugLog.write(['Requested SUs: ' + ','.join([str(item) for item in self.request])])
+            self.debugLog.write([str(self.sock.getpeername()) + ' - requested SUs: ' + ','.join([str(item) for item in self.request])])
          
         # suList may contain duplicates. They must be removed.
         for su in self.request:
@@ -413,7 +413,7 @@ class Collector(threading.Thread):
                 infoObj.historyComment = ''
                 infoObj.owningSeries = ''
                 infoObj.storageGroup = -1
-                infoObj.bytes = -1.0
+                infoObj.bytes = -1 # In sum_main, bytes is an integer. In SUM_info, it is a double. sum_open.c converts the integer (long) to a floating-point number.
                 infoObj.createSumid = -1
                 # It turns out that datetime objects are not supported very well in the C-to-Python
                 # interface, so convert the datetime to a bytes object.
@@ -455,6 +455,9 @@ class Collector(threading.Thread):
             if not bytesSent:
                 raise Exception('socketConnection', 'Socket broken.')
             bytesSentTotal += bytesSent
+            
+        if self.debugLog:
+            self.debugLog.write([str(self.sock.getpeername()) + ' - sent ' + str(bytesSentTotal) + ' bytes response.'])
             
     def receiveRequest(self):
         # First, receive length of message.
@@ -541,8 +544,8 @@ class TestClient(threading.Thread):
         try:
             self.sock.connect((socket.gethostname(), self.serverPort))
         
-            # Send some random SUNUMs to the server thread.
-            request = [650547410, 650547419, 650547430, 650551748, 650551852, 650551942, 650555939, 650556333]
+            # Send some random SUNUMs to the server thread (one is invalid - 123456789).
+            request = [650547410, 650547419, 650547430, 650551748, 123456789, 650551852, 650551942, 650555939, 650556333]
             msg = self.pickleRequest(request)
             self.sendRequest(msg)
             msg = self.receiveResponse()
@@ -632,8 +635,8 @@ class TestClient(threading.Thread):
             self.debugLog.write(['safetape=' + infoObj.safeTape])
             self.debugLog.write(['safetapefn=' + str(infoObj.safeTapeFn)])
             self.debugLog.write(['safetapedate=' + infoObj.safeTapeDate])
-            self.debugLog.write(['pastatus' + str(infoObj.paStatus)])
-            self.debugLog.write(['pasubstatus' + str(infoObj.paSubstatus)])
+            self.debugLog.write(['pastatus=' + str(infoObj.paStatus)])
+            self.debugLog.write(['pasubstatus=' + str(infoObj.paSubstatus)])
             self.debugLog.write(['effdate=' + infoObj.effectiveDate])
 
 class SignalThread(threading.Thread):
