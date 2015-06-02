@@ -827,6 +827,8 @@ static int susort(const void *a, const void *b)
 }
 #endif
 
+/* If there is no series, then this means that the show_info command did not resolve into at least 
+ * one valid DRMS record. */
 static int PrintHeader(DRMS_Env_t *env, const char* series, const char *keylist, const char *seglist, int show_all, int show_keys, int show_all_segs, int show_segs, int show_all_links, int quiet, int keyword_list, int show_recnum, int show_sunum, int show_recordspec, int show_online, int show_retention, int show_archive, int show_tapeinfo, int show_size, int show_session, int want_dims, int want_path, int show_types, char **keys, int *nkeys, char **segs, int *nsegs, int *linked_segs, char **links, int *nlinks)
 {
     int drmsstat;
@@ -834,91 +836,112 @@ static int PrintHeader(DRMS_Env_t *env, const char* series, const char *keylist,
     int col;
     int ikey;
     int ilink;
-    DRMS_Record_t *rec = drms_template_record(env, series, &drmsstat);
+    DRMS_Record_t *rec;
     
-    if (drmsstat != DRMS_SUCCESS || !rec)
+    rec = NULL;
+    
+    if (series)
     {
-        return drmsstat;
+        rec = drms_template_record(env, series, &drmsstat);
+    
+        if (drmsstat != DRMS_SUCCESS || !rec)
+        {
+            return drmsstat;
+        }
     }
     
-    *nkeys = 0;
-    if (show_all)
-    { /* if wanted get list of all keywords */
-        DRMS_Keyword_t *key;
-        HIterator_t *last = NULL;
+    /* nkeys is NULL if we are printing a header, but we have no valid DRMS records that will follow (i.e., there is a list of bad SUNUMs to print). */
+    if (nkeys)
+    {
+        *nkeys = 0;
+    }
+    
+    if (rec)
+    {
+        if (show_all)
+        { /* if wanted get list of all keywords */
+            DRMS_Keyword_t *key;
+            HIterator_t *last = NULL;
         
-        while ((key = drms_record_nextkey(rec, &last, 0)))
-        {
-            if (!drms_keyword_getimplicit(key))
+            while ((key = drms_record_nextkey(rec, &last, 0)))
             {
-                keys[(*nkeys)++] = strdup (key->info->name);
+                if (!drms_keyword_getimplicit(key))
+                {
+                    keys[(*nkeys)++] = strdup (key->info->name);
+                }
+            }
+        
+            if (last)
+            {
+                hiter_destroy(&last);
+            }
+        
+        }
+        else if (show_keys)
+        { /* get specified list */
+            char *thiskey;
+            for (thiskey=strtok(keylist, ","); thiskey; thiskey=strtok(NULL,","))
+                keys[(*nkeys)++] = strdup(thiskey);
+        }
+    }
+    
+    if (rec)
+    {
+        /* get list of segments to show for each record */
+        // NEED to also check for {seglist} notation at end of each ss query
+        /* ART - This doesn't quite work because the {seglist} token could result in records with fewer
+         * segments than the segments in the template record.
+         */
+        *nsegs = 0;
+        if (show_all_segs)
+        { /* if wanted get list of all segments */
+            DRMS_Segment_t *seg;
+            HIterator_t *last = NULL;
+        
+            while ((seg = drms_record_nextseg(rec, &last, 0)))
+                segs[(*nsegs)++] = strdup (seg->info->name);
+        
+            if (last)
+            {
+                hiter_destroy(&last);
             }
         }
-        
-        if (last)
-        {
-            hiter_destroy(&last);
+        else if (show_segs)
+        { /* get specified segment list */
+            char *thisseg;
+            for (thisseg=strtok(seglist, ","); thisseg; thisseg=strtok(NULL,","))
+            {
+                segs[(*nsegs)++] = strdup(thisseg);
+            }
         }
-        
-    }
-    else if (show_keys)
-    { /* get specified list */
-        char *thiskey;
-        for (thiskey=strtok(keylist, ","); thiskey; thiskey=strtok(NULL,","))
-            keys[(*nkeys)++] = strdup(thiskey);
-    }
-    
-    /* get list of segments to show for each record */
-    // NEED to also check for {seglist} notation at end of each ss query
-    /* ART - This doesn't quite work because the {seglist} token could result in records with fewer
-     * segments than the segments in the template record.
-     */
-    *nsegs = 0;
-    if (show_all_segs)
-    { /* if wanted get list of all segments */
-        DRMS_Segment_t *seg;
-        HIterator_t *last = NULL;
-        
-        while ((seg = drms_record_nextseg(rec, &last, 0)))
-            segs[(*nsegs)++] = strdup (seg->info->name);
-        
-        if (last)
-        {
-            hiter_destroy(&last);
-        }
-    }
-    else if (show_segs)
-    { /* get specified segment list */
-        char *thisseg;
-        for (thisseg=strtok(seglist, ","); thisseg; thisseg=strtok(NULL,","))
-        {
-            segs[(*nsegs)++] = strdup(thisseg);
-        }
-    }
 
-    for (iseg = 0; iseg<*nsegs; iseg++)
-    {
-        DRMS_Segment_t *seg = hcon_lookup_lower(&rec->segments, segs[iseg]);
-        if (seg && seg->info && seg->info->islink)
-            (*linked_segs)++;
+        for (iseg = 0; iseg<*nsegs; iseg++)
+        {
+            DRMS_Segment_t *seg = hcon_lookup_lower(&rec->segments, segs[iseg]);
+            if (seg && seg->info && seg->info->islink)
+                (*linked_segs)++;
+        }
     }
     
-    /* get list of links to print for each record */
-    /* no way to choose a subset of links at this time */
-    *nlinks = 0;
-    if (show_all_links)
-    { /* if wanted get list of all links */
-        DRMS_Link_t *link;
-        HIterator_t *last = NULL;
+    if (rec)
+    {
+        /* get list of links to print for each record */
+        /* no way to choose a subset of links at this time */
+        *nlinks = 0;
+        if (show_all_links)
+        { /* if wanted get list of all links */
+            DRMS_Link_t *link;
+            HIterator_t *last = NULL;
         
-        while ((link = drms_record_nextlink(rec, &last)))
-            links[(*nlinks)++] = strdup (link->info->name);
+            while ((link = drms_record_nextlink(rec, &last)))
+                links[(*nlinks)++] = strdup (link->info->name);
         
-        if (last)
-        {
-            hiter_destroy(&last);
+            if (last)
+            {
+                hiter_destroy(&last);
+            }
+        
         }
-        
     }
     
     if (!quiet && !keyword_list)
@@ -946,18 +969,40 @@ static int PrintHeader(DRMS_Env_t *env, const char* series, const char *keylist,
             printf ("%ssize", (col++ ? "\t" : ""));
         if (show_session)
             printf ("%shost\tsessionid\truntime\tjsoc_version\tlogdirectory", (col++ ? "\t" : ""));
-        for (ikey=0 ; ikey<*nkeys; ikey++)
-            printf ("%s%s", (col++ ? "\t" : ""), keys[ikey]);
-        for (iseg = 0; iseg<*nsegs; iseg++)
+            
+        /* If we have no rec (because the show_info arguments did not resolve into at least one record),
+         * then no keywords and no segment values and no link values will print. */
+        if (keys)
         {
-            printf ("%s%s", (col++ ? "\t" : ""), segs[iseg]);
-            if (want_dims)
-                printf("\t%s_info", segs[iseg]);
+            for (ikey=0 ; ikey<*nkeys; ikey++)
+            {
+                printf ("%s%s", (col++ ? "\t" : ""), keys[ikey]);
+            }
         }
-        if (nsegs==0 && want_path)
+        
+        if (segs)
+        {
+            for (iseg = 0; iseg<*nsegs; iseg++)
+            {
+                printf ("%s%s", (col++ ? "\t" : ""), segs[iseg]);
+                if (want_dims)
+                {
+                    printf("\t%s_info", segs[iseg]);
+                }
+            }
+        }
+        
+        if ((!segs || *nsegs==0) && want_path)
             printf("%sSUDIR", (col++ ? "\t" : ""));
-        for (ilink=0 ; ilink<*nlinks; ilink++)
-            printf ("%s%s", (col++ ? "\t" : ""), links[ilink]);
+        
+        if (links)
+        {
+            for (ilink=0 ; ilink<*nlinks; ilink++)
+            {
+                printf ("%s%s", (col++ ? "\t" : ""), links[ilink]);
+            }
+        }
+            
         printf ("\n");
         /* now, if desired, print the type and format lines. */
         
@@ -987,30 +1032,49 @@ static int PrintHeader(DRMS_Env_t *env, const char* series, const char *keylist,
                 printf ("%slonglong", (col++ ? "\t" : ""));
             if (show_session)
                 printf ("%sstring\tlonglong\tstring\tstring\tstring", (col++ ? "\t" : ""));
-            for (ikey=0 ; ikey<*nkeys; ikey++)
+                
+            
+            /* If we have no rec (because the show_info arguments did not resolve into at least one record),
+             * then no keywords and no segment values and no link values will print. */
+            if (keys)
             {
-                DRMS_Keyword_t *rec_key_ikey = drms_keyword_lookup (rec, keys[ikey], 1);
-                if (rec_key_ikey)
-                    printf ("%s%s", (col++ ? "\t" : ""),  drms_type_names[rec_key_ikey->info->type]);
-                else
-                    printf ("%s%s", (col++ ? "\t" : ""),  "TBD");
-            }
-            for (iseg = 0; iseg<*nsegs; iseg++)
-            {
-                DRMS_Segment_t *rec_seg_iseg = drms_segment_lookup (rec, segs[iseg]);
-                printf ("%s%s", (col++ ? "\t" : ""),  drms_prot2str(rec_seg_iseg->info->protocol));
-                if (want_dims)
-                    printf ("\tstring");
+                for (ikey=0 ; ikey<*nkeys; ikey++)
+                {
+                    DRMS_Keyword_t *rec_key_ikey = drms_keyword_lookup (rec, keys[ikey], 1);
+                    if (rec_key_ikey)
+                        printf ("%s%s", (col++ ? "\t" : ""),  drms_type_names[rec_key_ikey->info->type]);
+                    else
+                        printf ("%s%s", (col++ ? "\t" : ""),  "TBD");
+                }
             }
             
-            if (nsegs==0 && want_path)
-                printf ("%sstring", (col++ ? "\t" : ""));
-            for (ilink=0 ; ilink<*nlinks; ilink++)
+            if (segs)
             {
-                DRMS_Link_t *rec_link = hcon_lookup_lower(&rec->links,links[ilink]);
-                printf ("%s%s", (col++ ? "\t" : ""),  rec_link->info->type == DYNAMIC_LINK ? "dynamic" : "static");
+                for (iseg = 0; iseg<*nsegs; iseg++)
+                {
+                    DRMS_Segment_t *rec_seg_iseg = drms_segment_lookup (rec, segs[iseg]);
+                    printf ("%s%s", (col++ ? "\t" : ""),  drms_prot2str(rec_seg_iseg->info->protocol));
+                    if (want_dims)
+                        printf ("\tstring");
+                }
             }
+            
+            if ((!segs || *nsegs==0) && want_path)
+            {
+                printf ("%sstring", (col++ ? "\t" : ""));
+            }
+                
+            if (links)
+            {
+                for (ilink=0 ; ilink<*nlinks; ilink++)
+                {
+                    DRMS_Link_t *rec_link = hcon_lookup_lower(&rec->links,links[ilink]);
+                    printf ("%s%s", (col++ ? "\t" : ""),  rec_link->info->type == DYNAMIC_LINK ? "dynamic" : "static");
+                }
+            }
+            
             printf ("\n");
+            
             /* now print format */
             /* ASSUME all records have same structure - might not be true for mixed queries, fix later */
             col=0;
@@ -1035,31 +1099,45 @@ static int PrintHeader(DRMS_Env_t *env, const char* series, const char *keylist,
                 printf ("%s%%lld", (col++ ? "\t" : ""));
             if (show_session)
                 printf ("%s%%s\t%%lld\t%%s\t%%s\t%%s", (col++ ? "\t" : ""));
-            for (ikey=0 ; ikey<*nkeys; ikey++)
+                
+            /* If we have no rec (because the show_info arguments did not resolve into at least one record),
+             * then no keywords and no segment values and no link values will print. */
+            if (keys)
             {
-                DRMS_Keyword_t *rec_key_ikey = drms_keyword_lookup (rec, keys[ikey], 1);
-                if (rec_key_ikey)
+                for (ikey=0 ; ikey<*nkeys; ikey++)
                 {
-                    if (rec_key_ikey->info->type == DRMS_TYPE_TIME)
-                        printf ("%s%%s", (col++ ? "\t" : ""));
+                    DRMS_Keyword_t *rec_key_ikey = drms_keyword_lookup (rec, keys[ikey], 1);
+                    if (rec_key_ikey)
+                    {
+                        if (rec_key_ikey->info->type == DRMS_TYPE_TIME)
+                            printf ("%s%%s", (col++ ? "\t" : ""));
+                        else
+                            printf ("%s%s", (col++ ? "\t" : ""),  rec_key_ikey->info->format);
+                    }
                     else
-                        printf ("%s%s", (col++ ? "\t" : ""),  rec_key_ikey->info->format);
+                        printf ("%s%s", (col++ ? "\t" : ""),  "TBD");
                 }
-                else
-                    printf ("%s%s", (col++ ? "\t" : ""),  "TBD");
             }
             
-            for (iseg = 0; iseg<*nsegs; iseg++)
+            if (segs)
             {
-                printf ("%s%%s", (col++ ? "\t" : ""));
-                if (want_dims)
+                for (iseg = 0; iseg<*nsegs; iseg++)
+                {
                     printf ("%s%%s", (col++ ? "\t" : ""));
+                    if (want_dims)
+                        printf ("%s%%s", (col++ ? "\t" : ""));
+                }
             }
-            if (nsegs==0 && want_path)
+            
+            if ((!segs || *nsegs==0) && want_path)
                 printf ("%s%%s", (col++ ? "\t" : ""));
-            for (ilink = 0; ilink<*nlinks; ilink++)
-            {
-                printf ("%s%%s", (col++ ? "\t" : ""));
+            
+            if (links)
+            {   
+                for (ilink = 0; ilink<*nlinks; ilink++)
+                {
+                    printf ("%s%%s", (col++ ? "\t" : ""));
+                }
             }
             printf ("\n");
         }
@@ -1382,36 +1460,76 @@ static void PrintLnkInfo(int *col, DRMS_Record_t *rec, char **links, int nlinks,
    }
 }
 
-static int PrintStuff(DRMS_Record_t *rec, const char *rsq, int keyword_list, int show_recnum, int show_sunum, int show_recordspec, int parseRS, int show_online, int show_retention, int show_archive, int show_tapeinfo, int show_size, int show_session, int want_path, int want_path_noret, int want_dims, char **keys, int nkeys, char **segs, int nsegs, int linked_segs, char **links, int nlinks, int nrecs, int nl)
+static int PrintStuff(DRMS_Record_t *rec, const char *rsq, int keyword_list, int show_recnum, int show_sunum, int show_recordspec, int parseRS, int show_online, int show_retention, int show_archive, int show_tapeinfo, int show_size, int show_session, int want_path, int want_path_noret, int want_dims, char **keys, int nkeys, char **segs, int nsegs, int linked_segs, char **links, int nlinks, int nrecs, int nl, int showKeySegLink)
 {
     int col;
     int status = 0;
+    int printBogus = 0;
+    int64_t sunum = -1;
+    int noInfoReq = 0;
+    
+    if (!rec)
+    {
+        /* Print a record for a bad SUNUM. */
+        printBogus = 1;
+        
+        /* rsq has the SUNUM (it is a pointer to an int64_t). */
+        sunum = *((int64_t *)rsq);
+    }
     
     col=0;
     if (keyword_list) /* if not in table mode, i.e. value per line mode then show record query for each rec */
     {
         if (nl)
             printf("\n");
-        printf("# ");
-        drms_print_rec_query(rec);
+            
+        if (printBogus)
+        {
+            printf("# sunum=%lld\n", sunum);        
+        }
+        else
+        {
+            printf("# ");
+            drms_print_rec_query(rec);
+        }
         printf("\n");
     }
     
     if (show_recnum)
     {
-        if (keyword_list)
-            printf("## recnum=%lld\n",rec->recnum);
+        if (printBogus)
+        {
+            if (keyword_list)
+                printf("## recnum=NA\n");
+            else
+                printf ("%sNA", (col++ ? "\t" : ""));
+        }
         else
-            printf ("%s%6lld", (col++ ? "\t" : ""), rec->recnum);
+        {
+            if (keyword_list)
+                printf("## recnum=%lld\n",rec->recnum);
+            else
+                printf ("%s%6lld", (col++ ? "\t" : ""), rec->recnum);
+        }
         
     }
     
     if (show_sunum)
     {
-        if (keyword_list)
-            printf("## sunum=%lld\n",rec->sunum);
+        if (printBogus)
+        {
+            if (keyword_list)
+                printf("## sunum=%lld\n", sunum);
+            else
+                printf ("%s%6lld", (col++ ? "\t" : ""), sunum);
+        }
         else
-            printf ("%s%6lld", (col++ ? "\t" : ""), rec->sunum);
+        {
+            if (keyword_list)
+                printf("## sunum=%lld\n",rec->sunum);
+            else
+                printf ("%s%6lld", (col++ ? "\t" : ""), rec->sunum);
+        }
     }
 
       if (!keyword_list)
@@ -1421,56 +1539,62 @@ static int PrintStuff(DRMS_Record_t *rec, const char *rsq, int keyword_list, int
             if (col++)
             {
                printf("\t");
-
             }
 
-            if (!parseRS)
+            if (printBogus)
             {
-               drms_print_rec_query(rec);
+                printf("NA");
             }
             else
             {
-               char querystring[DRMS_MAXQUERYLEN];
-               char *allvers = NULL; /* If 'y', then don't do a 'group by' on the primekey value.
-                                      * The rationale for this is to allow users to get all versions
-                                      * of the requested DRMS records */
-               char **sets = NULL;
-               DRMS_RecordSetType_t *settypes = NULL; /* a maximum doesn't make sense */
-               char **snames = NULL;
-               char **filts = NULL;
-               int nsets = 0;
-               DRMS_RecQueryInfo_t rsinfo; /* Filled in by parser as it encounters elements. */
-               char *filter = NULL;
-               int err;
+                if (!parseRS)
+                {
+                   drms_print_rec_query(rec);
+                }
+                else
+                {
+                   char querystring[DRMS_MAXQUERYLEN];
+                   char *allvers = NULL; /* If 'y', then don't do a 'group by' on the primekey value.
+                                          * The rationale for this is to allow users to get all versions
+                                          * of the requested DRMS records */
+                   char **sets = NULL;
+                   DRMS_RecordSetType_t *settypes = NULL; /* a maximum doesn't make sense */
+                   char **snames = NULL;
+                   char **filts = NULL;
+                   int nsets = 0;
+                   DRMS_RecQueryInfo_t rsinfo; /* Filled in by parser as it encounters elements. */
+                   char *filter = NULL;
+                   int err;
 
-               /* Obtain record-set specification for this query. */
-               drms_sprint_rec_query(querystring, rec);
+                   /* Obtain record-set specification for this query. */
+                   drms_sprint_rec_query(querystring, rec);
 
-               /* Parse the record-set specification (put bars between parts). */
-               if (drms_record_parserecsetspec(querystring, &allvers, &sets, &settypes, &snames, &filts, &nsets, &rsinfo) != DRMS_SUCCESS || nsets != 1)
-               {
-                  printf("%s(UNPARSEABLE)", querystring);
-               }
-               else
-               {
-                  filter = drms_recordset_extractfilter(rec, sets[0], &err);
+                   /* Parse the record-set specification (put bars between parts). */
+                   if (drms_record_parserecsetspec(querystring, &allvers, &sets, &settypes, &snames, &filts, &nsets, &rsinfo) != DRMS_SUCCESS || nsets != 1)
+                   {
+                      printf("%s(UNPARSEABLE)", querystring);
+                   }
+                   else
+                   {
+                      filter = drms_recordset_extractfilter(rec, sets[0], &err);
 
-                  if (!err)
-                  {
-                     printf("%s|%s", snames[0], filter);
-                  }
-                  else
-                  {
-                     printf("%s(UNPARSEABLE)", querystring);
-                  }
-               }
+                      if (!err)
+                      {
+                         printf("%s|%s", snames[0], filter);
+                      }
+                      else
+                      {
+                         printf("%s(UNPARSEABLE)", querystring);
+                      }
+                   }
 
-               if (filter)
-               {
-                  free(filter);
-               }
+                   if (filter)
+                   {
+                      free(filter);
+                   }
 
-               drms_record_freerecsetspecarr(&allvers, &sets, &settypes, &snames, &filts, nsets);
+                   drms_record_freerecsetspecarr(&allvers, &sets, &settypes, &snames, &filts, nsets);
+                }
             }
          }
       }
@@ -1480,14 +1604,21 @@ static int PrintStuff(DRMS_Record_t *rec, const char *rsq, int keyword_list, int
         /* rec has the suinfo struct already */
         char *msg;
         
-        if (!rec->suinfo)
-        /* rec->sunum == -1 */
-            msg = "NA";
-        else if (*rec->suinfo->online_loc == '\0')
-        /* rec->sunum is invalid */
-            msg = "NA";
+        if (printBogus)
+        {
+            msg = "NA";            
+        }
         else
-            msg = rec->suinfo->online_status;
+        {
+            if (!rec->suinfo)
+                /* rec->sunum == -1 */
+                msg = "NA";
+            else if (*rec->suinfo->online_loc == '\0')
+                /* rec->sunum is invalid */
+                msg = "NA";
+            else
+                msg = rec->suinfo->online_status;
+        }
         
         if (keyword_list)
             printf("## online=%s\n", msg);
@@ -1499,27 +1630,35 @@ static int PrintStuff(DRMS_Record_t *rec, const char *rsq, int keyword_list, int
     {
         /* rec has the suinfo struct already */
         char retain[20];
-        
-        if (!rec->suinfo)
-        /* rec->sunum == -1 */
-            strcpy(retain, "NA");
-        else if (*rec->suinfo->online_loc == '\0')
-        /* rec->sunum is invalid */
-            strcpy(retain, "NA");
-        else
+
+        if (printBogus)
         {
-            int y,m,d;
-            if (strcmp("N", rec->suinfo->online_status) == 0)
-                strcpy(retain,"-1");
+            strcpy(retain, "NA");            
+        }
+        else        
+        {
+            if (!rec->suinfo)
+                /* rec->sunum == -1 */
+                strcpy(retain, "NA");
+            else if (*rec->suinfo->online_loc == '\0')
+                /* rec->sunum is invalid */
+                strcpy(retain, "NA");
             else
             {
-                int nscanned = sscanf(rec->suinfo->effective_date, "%4d%2d%2d", &y,&m,&d);
-                if (nscanned == 3)
-                    sprintf(retain, "%4d.%02d.%02d",y,m,d);
+                int y,m,d;
+                if (strcmp("N", rec->suinfo->online_status) == 0)
+                    strcpy(retain,"-1");
                 else
-                    strcpy(retain, "NoRetValue ");
+                {
+                    int nscanned = sscanf(rec->suinfo->effective_date, "%4d%2d%2d", &y,&m,&d);
+                    if (nscanned == 3)
+                        sprintf(retain, "%4d.%02d.%02d",y,m,d);
+                    else
+                        strcpy(retain, "NoRetValue ");
+                }
             }
         }
+        
         if (keyword_list)
             printf("## retain=%s\n", retain);
         else
@@ -1531,19 +1670,27 @@ static int PrintStuff(DRMS_Record_t *rec, const char *rsq, int keyword_list, int
         /* rec has the suinfo struct already */
         char *msg;
         
-        if (!rec->suinfo)
-        /* rec->sunum == -1 */
+        if (printBogus)
+        {
             msg = "NA";
-        else if (*rec->suinfo->online_loc == '\0')
-        /* rec->sunum is invalid */
-            msg = "NA";
+        }
         else
         {
-            if(rec->suinfo->pa_status == DAAP && rec->suinfo->pa_substatus == DAADP)
-                msg = "Pending";
+            if (!rec->suinfo)
+            /* rec->sunum == -1 */
+                msg = "NA";
+            else if (*rec->suinfo->online_loc == '\0')
+            /* rec->sunum is invalid */
+                msg = "NA";
             else
-                msg = rec->suinfo->archive_status;
+            {
+                if(rec->suinfo->pa_status == DAAP && rec->suinfo->pa_substatus == DAADP)
+                    msg = "Pending";
+                else
+                    msg = rec->suinfo->archive_status;
+            }
         }
+        
         if (keyword_list)
             printf("## archive=%s\n", msg);
         else
@@ -1557,22 +1704,31 @@ static int PrintStuff(DRMS_Record_t *rec, const char *rsq, int keyword_list, int
         char *msg;
         int fn;
         
-        if (!rec->suinfo)
-        {
-            /* rec->sunum == -1 */
-            msg = "NA";
-            fn = -9999;
-        }
-        else if (*rec->suinfo->arch_tape == '\0')
+        if (printBogus)
         {
             msg = "NA";
             fn = -9999;
         }
         else
         {
-            msg = rec->suinfo->arch_tape;
-            fn = rec->suinfo->arch_tape_fn;
+            if (!rec->suinfo)
+            {
+                /* rec->sunum == -1 */
+                msg = "NA";
+                fn = -9999;
+            }
+            else if (*rec->suinfo->arch_tape == '\0')
+            {
+                msg = "NA";
+                fn = -9999;
+            }
+            else
+            {
+                msg = rec->suinfo->arch_tape;
+                fn = rec->suinfo->arch_tape_fn;
+            }
         }
+        
         if (keyword_list)
         {
             printf("## tapename=%s\n", msg);
@@ -1590,14 +1746,22 @@ static int PrintStuff(DRMS_Record_t *rec, const char *rsq, int keyword_list, int
         /* rec has the suinfo struct already */
         char size[20];
         
-        if (!rec->suinfo)
-        /* rec->sunum == -1 */
+        if (printBogus)
+        {
             strcpy(size, "NA");
-        else if (*rec->suinfo->online_loc == '\0')
-        /* rec->sunum is invalid */
-            strcpy(size, "NA");
+        }
         else
-            sprintf(size, "%.0f", rec->suinfo->bytes);
+        {
+            if (!rec->suinfo)
+                /* rec->sunum == -1 */
+                strcpy(size, "NA");
+            else if (*rec->suinfo->online_loc == '\0')
+                /* rec->sunum is invalid */
+                strcpy(size, "NA");
+            else
+                sprintf(size, "%.0f", rec->suinfo->bytes);
+        }
+
         if (keyword_list)
             printf("## size=%s\n", size);
         else
@@ -1607,7 +1771,7 @@ static int PrintStuff(DRMS_Record_t *rec, const char *rsq, int keyword_list, int
     if (show_session)
     {  // show host, runtime, jsoc_version, and logdir                                                                                                                         
         char *runhost, *runtime, *jsoc_vers, *logdir;
-        if (get_session_info(rec, &runhost, &runtime, &jsoc_vers, &logdir))
+        if (printBogus || get_session_info(rec, &runhost, &runtime, &jsoc_vers, &logdir))
         {
             if (keyword_list)
                 printf("## host=ERROR\n## sessionid=ERROR\n## runtime=ERROR\njsoc_version=ERROR\nlogdir=ERROR\n");
@@ -1628,12 +1792,58 @@ static int PrintStuff(DRMS_Record_t *rec, const char *rsq, int keyword_list, int
         }
     }
     
-    PrintKeyInfo(&col, rec, keys, nkeys, keyword_list);
-    status = PrintSegInfo(&col, rec, segs, nsegs, linked_segs, want_path, want_path_noret, keyword_list, want_dims);
-    PrintLnkInfo(&col, rec, links, nlinks, keyword_list);
-    
-    if (!keyword_list && !col)
+    /* Not only does PrintSegInfo() print paths for specified segments, it prints paths for all 
+     * segments if no segments are specified (and the -p/-P flags are set). But if printBogus is True,
+     * then we need to print an NA (PrintStuff() was called for a bad SU).
+     */
+    if (!printBogus)
     {
+        /* All these functions advance the column counter as long as there is one key, seg, or link, unless
+         * the keyword_list flag is set. 
+         *
+         * keys/nkeys, segs/nsegs, links/nlinks do NOT contain a list of all keys, segments, or links. They contain
+         * only those that were specified in the key= and seg= arguments. They do contain all keys or segments
+         * if the -a or -A flags were set. links is empty, unless the -K flag was set, in which case links contains
+         * a list of ALL links.
+         */
+        PrintKeyInfo(&col, rec, keys, nkeys, keyword_list); 
+        
+        /* PrintSegInfo() will advance the col pointer if want_path is True (and ) */       
+        status = PrintSegInfo(&col, rec, segs, nsegs, linked_segs, want_path, want_path_noret, keyword_list, want_dims);
+        PrintLnkInfo(&col, rec, links, nlinks, keyword_list);
+        
+        noInfoReq = (col == 0);
+    }
+    else
+    {
+        /* If we are printing a bogus line, we don't iterate through keys, segs, or links, so we do not know if 
+         * the user asked to print key, seg, or link information. Instead, use the showKeySegLink parameter. */
+        if (want_path)
+        {
+            if (keyword_list)
+            {
+                printf("SUDIR=**_NO_sudir_**\n");
+            }
+            else
+            {
+                if (col++)
+                {
+                    printf("\t");
+                }
+                
+                printf("**_NO_sudir_**");
+            }            
+        }
+        
+        noInfoReq = ((col == 0) && !showKeySegLink);
+    }
+    
+    if (!keyword_list && noInfoReq)
+    {
+        /* This test for no information requested should be moved out of this function. This function gets 
+         * executed for each record returned by show_info. However, it makes more sense to do 
+         * this check earlier and outside of the record loop. Look at the cmd-line flags to 
+         * see if the caller has provided at least one that causes information to be printed. */
         int count = 0;
 
         if (nrecs < 0)
@@ -1643,17 +1853,28 @@ static int PrintStuff(DRMS_Record_t *rec, const char *rsq, int keyword_list, int
              *
              * rsq must not be NULL
              */
-            XASSERT(rsq != NULL);
-            
-            count = drms_count_records(rec->env, (char *)rsq, &status);
-            if (status)
+            if (!printBogus)
             {
-                fprintf(stderr,"can't call drms_count_records() on %s.\n", rsq);
-                return 1;
+                XASSERT(rsq != NULL);
+            
+                count = drms_count_records(rec->env, (char *)rsq, &status);
+                if (status)
+                {
+                    fprintf(stderr,"can't call drms_count_records() on %s.\n", rsq);
+                    return 1;
+                }
             }
         }
         
-        printf("%d records found, no other information requested\n", count);
+        if (!printBogus)
+        {
+            printf("%d records found, no other information requested\n", count);
+        }
+        else
+        {
+            printf("No information requested. Provide at least one argument that requests information be printed.\n");
+        }
+        
         return 1; /* Exit record loop. */
     }
     if (!keyword_list && (show_recnum || show_sunum || show_recordspec || show_online || show_session ||
@@ -1664,7 +1885,8 @@ static int PrintStuff(DRMS_Record_t *rec, const char *rsq, int keyword_list, int
 }
 
 /* returns status == 0 on successs and non-zero on failure. */
-static int RecordLoopCursor(DRMS_Env_t *env, const char *rsq, DRMS_RecordSet_t *recordset, int requireSUMinfo, int64_t *given_sunum, HContainer_t *suinfo, int want_path, int want_path_noret, const char* series, const char *keylist, const char *seglist, int show_all, int show_keys, int show_all_segs, int show_segs, int show_all_links, int quiet, int keyword_list, int show_recnum, int show_sunum, int show_recordspec, int parseRS, int show_online, int show_retention, int show_archive, int show_tapeinfo, int show_size, int show_session, int want_dims, int show_types, char *sunum_rs_query)
+/* Bogus is an array of invalid SUNUMs. nBogus is the number of elements in this array. */
+static int RecordLoopCursor(DRMS_Env_t *env, const char *rsq, DRMS_RecordSet_t *recordset, LinkedList_t *bogusList, int requireSUMinfo, int64_t *given_sunum, HContainer_t *suinfo, int want_path, int want_path_noret, const char* series, const char *keylist, const char *seglist, int show_all, int show_keys, int show_all_segs, int show_segs, int show_all_links, int quiet, int keyword_list, int show_recnum, int show_sunum, int show_recordspec, int parseRS, int show_online, int show_retention, int show_archive, int show_tapeinfo, int show_size, int show_session, int want_dims, int show_types, char *sunum_rs_query, char **keys, int nkeys, char **segs, int nsegs, int linked_segs, char **links, int nlinks)
 {
     /* rs->n is -1 - we won't know the total number of records until the loop terminates. */
     char key[128];
@@ -1673,29 +1895,40 @@ static int RecordLoopCursor(DRMS_Env_t *env, const char *rsq, DRMS_RecordSet_t *
     DRMS_RecChunking_t cstat = kRecChunking_None;
     int newchunk;
     int irec;
-    int ikey;
     DRMS_Record_t *rec = NULL;
-    int nkeys = 0;
-    char *keys[1024];
-    int nsegs = 0;
-    char *segs[1024];
-    int iSeg;
-    int linked_segs = 0;
-    int nlinks = 0;
-    char *links[1024];
     int atleastone = 0;
+    int64_t sunum = -1;
+    int isu;
+    int first;
+    
+    /* First, print out a filler line for each invalid SU specified with the sunum argument to show_info. */
+    if (bogusList)
+    {
+        ListNode_t *node = NULL;
+        
+        list_llreset(bogusList);
+        first = 1;
+        
+        while ((node = list_llnext(bogusList)) != NULL)
+        {
+            sunum = *((int64_t *)(node->data));
+
+            /* If the rec argument to PrintStuff() is NULL, then pass in the SUNUM in the record-set query argument. */
+            if ((status = PrintStuff(NULL, (const char *)&sunum, keyword_list, show_recnum, show_sunum, show_recordspec, parseRS, show_online, show_retention, show_archive, show_tapeinfo, show_size, show_session, want_path, want_path_noret, want_dims, keys, nkeys, segs, nsegs, linked_segs, links, nlinks, -1, !first, show_all || show_keys || show_all_segs || show_segs || show_all_links)) != 0)
+            {
+                first = 0;
+                break;  
+            }
+            
+            first = 0;
+        }
+    }
     
     irec = 0;
-    while ((rec = drms_recordset_fetchnext(env, recordset, &status, &cstat, &newchunk)) != NULL)
+    while (!status && recordset && ((rec = drms_recordset_fetchnext(env, recordset, &status, &cstat, &newchunk)) != NULL))
     {
         atleastone = 1;
-        
-        if (irec == 0)
-        {
-            /* Print the header, if there is at least one row. */
-            PrintHeader(env, rec->seriesinfo->seriesname, keylist, seglist, show_all, show_keys, show_all_segs, show_segs, show_all_links, quiet, keyword_list, show_recnum, show_sunum, show_recordspec, show_online, show_retention, show_archive, show_tapeinfo, show_size, show_session, want_dims, want_path, show_types, keys, &nkeys, segs, &nsegs, &linked_segs, links, &nlinks);
-        }
-        
+                
         /* ART - status may be DRMS_REMOTESUMS_TRYLATER, but there should still be a                                                                                            
          * valid record in rec, unless the recordset is bad or there was a db timeout. */
         if (status == DRMS_ERROR_QUERYFAILED)
@@ -1764,7 +1997,7 @@ static int RecordLoopCursor(DRMS_Env_t *env, const char *rsq, DRMS_RecordSet_t *
             break;
         }
         
-        if ((status = PrintStuff(rec, rsq, keyword_list, show_recnum, show_sunum, show_recordspec, parseRS, show_online, show_retention, show_archive, show_tapeinfo, show_size, show_session, want_path, want_path_noret, want_dims,keys, nkeys, segs, nsegs, linked_segs, links, nlinks, -1, irec != 0)) != 0)
+        if ((status = PrintStuff(rec, rsq, keyword_list, show_recnum, show_sunum, show_recordspec, parseRS, show_online, show_retention, show_archive, show_tapeinfo, show_size, show_session, want_path, want_path_noret, want_dims, keys, nkeys, segs, nsegs, linked_segs, links, nlinks, -1, irec != 0 || (bogusList && list_llgetnitems(bogusList) > 0), show_all || show_keys || show_all_segs || show_segs || show_all_links)) != 0)
         {
             break;  
         }
@@ -1772,61 +2005,49 @@ static int RecordLoopCursor(DRMS_Env_t *env, const char *rsq, DRMS_RecordSet_t *
         irec++;
     } /* while */
     
-    /* Maybe have broken out of the while loop without freeing segs. */
-    for (iSeg = 0; iSeg < nsegs; iSeg++)
-    {
-        if (segs[iSeg])
-        {
-            free(segs[iSeg]);
-            segs[iSeg] = NULL;
-        }
-    }
-    
     if (!quiet && !atleastone)
     {
         printf ("** No records in selected data set, query was %s **\n", rsq);
     }
     
-    /* Finished.  Clean up and exit. */
-    for (ikey=0; ikey<nkeys; ikey++)
-        free(keys[ikey]);
-    
     return status;
 }
 
-static int RecordLoopNoCursor(DRMS_Env_t *env, DRMS_RecordSet_t *recordset, int requireSUMinfo, int64_t *given_sunum,  HContainer_t *suinfo, int want_path, int want_path_noret, const char* series, const char *keylist, const char *seglist, int show_all, int show_keys, int show_all_segs, int show_segs, int show_all_links, int quiet, int keyword_list, int show_recnum, int show_sunum, int show_recordspec, int parseRS, int show_online, int show_retention, int show_archive, int show_tapeinfo, int show_size, int show_session, int want_dims, int show_types, char *sunum_rs_query)
+static int RecordLoopNoCursor(DRMS_Env_t *env, DRMS_RecordSet_t *recordset, LinkedList_t *bogusList, int requireSUMinfo, int64_t *given_sunum,  HContainer_t *suinfo, int want_path, int want_path_noret, const char* series, const char *keylist, const char *seglist, int show_all, int show_keys, int show_all_segs, int show_segs, int show_all_links, int quiet, int keyword_list, int show_recnum, int show_sunum, int show_recordspec, int parseRS, int show_online, int show_retention, int show_archive, int show_tapeinfo, int show_size, int show_session, int want_dims, int show_types, char *sunum_rs_query, char **keys, int nkeys, char **segs, int nsegs, int linked_segs, char **links, int nlinks)
 {
     /* rs->n contains the accurate number of records in the record set. */
     char key[128];
     int irec;
     DRMS_Record_t *rec = NULL;
     SUM_info_t **ponesuinfo = NULL;
-    int nkeys = 0;
-    char *keys[1024];
-    int nsegs = 0;
-    int iSeg;
-    int linked_segs = 0;
-    char *segs[1024] = {0};
-    int nlinks = 0;
-    char *links[1024];
     int status = 0;
+    int64_t sunum = -1;
+    int isu;
+    int first;
     
-    if (recordset->n > 0)
+    /* First, print out a filler line for each invalid SU specified with the sunum argument to show_info. */
+    if (bogusList)
     {
-        if (*series != '\0')
+        ListNode_t *node = NULL;
+        
+        list_llreset(bogusList);
+        first = 1;
+        while ((node = list_llnext(bogusList)) != NULL)
         {
-            /* We were able to get the series name without having to actually open records. */
-            PrintHeader(env, series, keylist, seglist, show_all, show_keys, show_all_segs, show_segs, show_all_links, quiet, keyword_list, show_recnum, show_sunum, show_recordspec, show_online, show_retention, show_archive, show_tapeinfo, show_size, show_session, want_dims, want_path, show_types, keys, &nkeys, segs, &nsegs, &linked_segs, links, &nlinks);
-        }
-        else
-        {
-            /* We were not able to get the series name from parsing the record-set specification (e.g., the record-set specification 
-             * was a DSDS set. */
-            PrintHeader(env, recordset->records[0]->seriesinfo->seriesname, keylist, seglist, show_all, show_keys, show_all_segs, show_segs, show_all_links, quiet, keyword_list, show_recnum, show_sunum, show_recordspec, show_online, show_retention, show_archive, show_tapeinfo, show_size, show_session, want_dims, want_path, show_types, keys, &nkeys, segs, &nsegs, &linked_segs, links, &nlinks);
+            sunum = *((int64_t *)(node->data));
+
+            /* If the rec argument to PrintStuff() is NULL, then pass in the SUNUM in the record-set query argument. */
+            if ((status = PrintStuff(NULL, (const char *)&sunum, keyword_list, show_recnum, show_sunum, show_recordspec, parseRS, show_online, show_retention, show_archive, show_tapeinfo, show_size, show_session, want_path, want_path_noret, want_dims,keys, nkeys, segs, nsegs, linked_segs, links, nlinks, -1, !first, show_all || show_keys || show_all_segs || show_segs || show_all_links)) != 0)
+            {
+                first = 0;
+                break;  
+            }
+            
+            first = 0;
         }
     }
     
-    for (irec = 0; irec < recordset->n; irec++) 
+    for (irec = 0; !status && recordset && irec < recordset->n; irec++) 
     {
         rec = recordset->records[irec];  /* pointer to current record */
         
@@ -1849,21 +2070,12 @@ static int RecordLoopNoCursor(DRMS_Env_t *env, DRMS_RecordSet_t *recordset, int 
             }
         }
         
-        if ((status = PrintStuff(rec, NULL, keyword_list, show_recnum, show_sunum, show_recordspec, parseRS, show_online, show_retention, show_archive, show_tapeinfo, show_size, show_session, want_path, want_path_noret, want_dims, keys, nkeys, segs, nsegs, linked_segs, links, nlinks, recordset->n, irec != 0)) != 0)
+        if ((status = PrintStuff(rec, NULL, keyword_list, show_recnum, show_sunum, show_recordspec, parseRS, show_online, show_retention, show_archive, show_tapeinfo, show_size, show_session, want_path, want_path_noret, want_dims, keys, nkeys, segs, nsegs, linked_segs, links, nlinks, recordset->n, irec != 0 || (bogusList && list_llgetnitems(bogusList) > 0), show_all || show_keys || show_all_segs || show_segs || show_all_links)) != 0)
         {
             break;
         }
     }
-    
-    for (iSeg = 0; iSeg < nsegs; iSeg++)
-    {
-        if (segs[iSeg])
-        {
-            free(segs[iSeg]);
-            segs[iSeg] = NULL;
-        }
-    }
-    
+        
     return status;
 }
 
@@ -1942,6 +2154,9 @@ int DoIt(void)
   int drmsstat;
   DRMS_Record_t *templrec = NULL;
   char *filter = NULL;
+  int64_t *bogus = NULL;
+  int nBogus = 0;
+    LinkedList_t *bogusList = NULL;
 
   // Include this code segment to allow operating show_info as a cgi-bin program.
   // It will preceed any output to stdout with the content-type info for text.
@@ -2060,6 +2275,7 @@ int DoIt(void)
      int firstone;
      char key[128];
      int isunum;
+     int newSeries;
 
      /* The whole point of this code block is to form a record-set query from the 
       * list of sunums provided, and the owning series for those sunums. To get the
@@ -2086,6 +2302,7 @@ int DoIt(void)
      querylen = sizeof(char) * DRMS_MAXQUERYLEN;
      sunum_rs_query = malloc(querylen);
      *sunum_rs_query = '\0';
+     newSeries = 0;
 
      for (isunum = 0; isunum < nsunum; isunum++)
      {
@@ -2108,19 +2325,37 @@ int DoIt(void)
              /* skip this sunum - there is no info struct for it. */
              continue;
          }
-        
+         else if (*onesuinfo->online_loc == '\0')
+         {
+            /* The sunum was invalid. Add a item to the list of bogus SUs. */            
+            if (!bogusList)
+            {
+                bogusList = list_llcreate(sizeof(int64_t), NULL);
+                if (!bogusList)
+                {
+                    fprintf(stderr, "Out of memory.\n");
+                    show_info_return(1);
+                }
+            }
+            
+            list_llinserttail(bogusList, &(given_sunum[isunum]));
+            continue;
+         }
+
         if (!lastsuinfo || strcasecmp(onesuinfo->owning_series, lastsuinfo->owning_series) != 0)
         {
            /* Got a new series (so start a new subquery). */
            if (lastsuinfo)
            {
               sunum_rs_query = base_strcatalloc(sunum_rs_query, " !],", &querylen);
+              newSeries = 0;
            }
 
            snprintf(intstr, sizeof(intstr), "%s[! sunum=", onesuinfo->owning_series);
            sunum_rs_query = base_strcatalloc(sunum_rs_query, intstr, &querylen);
            lastsuinfo = onesuinfo;
            firstone = 1;
+           newSeries = 1;
         }
 
         /* append an sunum */
@@ -2135,12 +2370,16 @@ int DoIt(void)
 
         snprintf(intstr, sizeof(intstr), "%llu", (unsigned long long)onesuinfo->sunum);
         sunum_rs_query = base_strcatalloc(sunum_rs_query, intstr, &querylen);
-     }
+     } /* SU loop */
 
-     /* Need to end the current subquery. */
-     sunum_rs_query = base_strcatalloc(sunum_rs_query, " !]", &querylen);
+    if (newSeries == 1)
+    {
+         /* Need to end the current subquery. */
+         sunum_rs_query = base_strcatalloc(sunum_rs_query, " !]", &querylen);
+         newSeries = 0;
+    }
 
-     if (strlen(sunum_rs_query) == 0)
+     if (strlen(sunum_rs_query) == 0 && bogusList == NULL)
      {
         printf("### show_info: given sunum=%s invalid, must quit\n", cmdparams_get_str(&cmdparams, "sunum", NULL));
         free(sunum_rs_query);
@@ -2148,12 +2387,16 @@ int DoIt(void)
         show_info_return(1);
      }
 
-     if (sunum_rs_query)
+     if (sunum_rs_query && strlen(sunum_rs_query) > 0)
      {
         in = sunum_rs_query;
         /* free sunum_rs_query before exiting. */
          /* Don't modify sunum_rs_query if -b flag is set - sunum_rs_query has prime-key logic disabled
           * already. */
+     }
+     else
+     {
+        in = "";
      }
   }
   else if (strcmp(in, "Not Specified") == 0)
@@ -2181,6 +2424,7 @@ int DoIt(void)
        * BTW, checking for an @file argument isn't sufficient - the file could be empty, or
        * it could contain seriesnames with no filters. The parsing below will make sure a filter 
        * is found somewhere, even if it is inside the @file. */
+       if (in && strlen(in) > 0)
       {
           char *allvers = NULL; /* If 'y', then don't do a 'group by' on the primekey value.
                                  * The rationale for this is to allow users to get all versions
@@ -2580,53 +2824,57 @@ int DoIt(void)
 
   /* check for poor usage of no query and no n=record_count */
 
-  if (!inqry && max_recs == 0 && !atfile)
+  if (in && strlen(in) > 0 && !inqry && max_recs == 0 && !atfile)
     {
     fprintf(stderr, "### show_info - the query must contain a record-filter, or the n=num_records or @file argument must be present.\n");
     show_info_return(1);
     }
 
   /* Open record_set(s) */
-  if (max_recs == 0)
+    if (in && strlen(in) > 0)
     {
-        cursoredQ = 1;
-       /* Set chunk size to something bigger than that of the SUM_infoEx() call. 
-        * Code in drms_storageunit.c will subchunk this into the chunk size used by
-        * SUM_infoEx(). */
-       if (drms_recordset_setchunksize(4 * MAXSUMREQCNT) != DRMS_SUCCESS)
-       {
-          show_info_return(99);
-       }
-
-       recordset = drms_open_recordset (drms_env, in, &status);
-    }
-  else // max_recs specified via "n=" parameter.
-    {
-        cursoredQ = 0;
-    recordset = drms_open_nrecords (drms_env, in, max_recs, &status);
-    }
-      
-      if (status == DRMS_ERROR_QUERYFAILED)
-      {
-          /* Check for error message. */
-          const char *emsg = DB_GetErrmsg(drms_env->session->db_handle);
-          
-          if (emsg)
-          {
-              fprintf(stderr, "DB error message: %s\n", emsg);
-          }
-          
-          show_info_return(1);
-      }
-
-  if (!recordset) 
-    {
-        if (status == DRMS_ERROR_UNKNOWNSERIES)
+        if (max_recs == 0)
         {
-            fprintf(stderr,"### show_info: series %s not found.\n",in);
+            cursoredQ = 1;
+            /* Set chunk size to something bigger than that of the SUM_infoEx() call. 
+            * Code in drms_storageunit.c will subchunk this into the chunk size used by
+            * SUM_infoEx(). */
+            if (drms_recordset_setchunksize(4 * MAXSUMREQCNT) != DRMS_SUCCESS)
+            {
+              show_info_return(99);
+            }
+
+            recordset = drms_open_recordset (drms_env, in, &status);
         }
-        
-    show_info_return(1);
+        else // max_recs specified via "n=" parameter.
+        {
+            cursoredQ = 0;
+            recordset = drms_open_nrecords (drms_env, in, max_recs, &status);
+        }
+    
+      
+        if (status == DRMS_ERROR_QUERYFAILED)
+        {
+            /* Check for error message. */
+            const char *emsg = DB_GetErrmsg(drms_env->session->db_handle);
+
+            if (emsg)
+            {
+              fprintf(stderr, "DB error message: %s\n", emsg);
+            }
+
+            show_info_return(1);
+        }
+
+        if (!recordset) 
+        {
+            if (status == DRMS_ERROR_UNKNOWNSERIES)
+            {
+                fprintf(stderr,"### show_info: series %s not found.\n",in);
+            }
+    
+            show_info_return(1);
+        }
     }
 
 /* recordset now points to a struct with  count of records found ("n"), and a pointer to an
@@ -2634,25 +2882,29 @@ int DoIt(void)
  * it may be a chunked recordset (max_recs==0) or a limited size (max_recs!=0).
  */
 
-      if (!cursoredQ)
-      {
-          if (recordset->n == 0)
-          {
-              if (!quiet)
+    if (recordset)
+    {
+        if (!cursoredQ)
+        {
+            if (recordset->n == 0)
+            {
+                if (!quiet)
                   printf ("** No records in selected data set, query was %s **\n",in);
-              if (recordset)
-              {
-                  drms_close_records(recordset, DRMS_FREE_RECORD);
-                  recordset = NULL;
-              }
-              show_info_return(0);
-          }
-      }
-      else
-      {
+                if (recordset)
+                {
+                    drms_close_records(recordset, DRMS_FREE_RECORD);
+                    recordset = NULL;
+                }
+                
+                show_info_return(0);
+            }
+        }
+        else
+        {
           /* nrecs == -1 : we don't know how many records, if any, exist. So, we can't really 
            * reject any queries at this point. */
-      }
+        }
+    }
 
   /* stage records if the user has requested the path (regardless if the user has requested 
    * segment information -- -A or seg=XXX).
@@ -2670,15 +2922,18 @@ int DoIt(void)
    * in the record-chunk cursor that causes drms_recordset_fetchnext() to automatically 
    * stage the record chunk.*/
 
-  if (requireSUMinfo)
-  {
-     if ((!given_sunum || given_sunum[0] < 0))
-     {    
-        /* If the caller didn't provide a sunum list, but the caller requested items that requre SUM_info, 
-         * make the getinfo call now. */
-        drms_record_getinfo(recordset);
-     }  
-  }
+    if (recordset)
+    {
+        if (requireSUMinfo)
+        {
+             if ((!given_sunum || given_sunum[0] < 0))
+             {    
+                /* If the caller didn't provide a sunum list, but the caller requested items that requre SUM_info, 
+                 * make the getinfo call now. */
+                drms_record_getinfo(recordset);
+             }  
+        }
+    }
 
   /* At this point, we may or may not have a container of SUM_info_t's available - if we're going to stage 
    * records by first sorting on tapeid, filenumber, then we should use that array of SUM_info_t structs, 
@@ -2693,30 +2948,106 @@ int DoIt(void)
    * container if the records in the record-set do not already have an SUM_info_t attached.
    */
 
-  if (want_path_noret)
-  {
-     /* -P - don't retrieve but wait for SUMS to give dir info */
-     drms_stage_records(recordset, 0, 0); 
-  }
-  else if (want_path) 
-  {
-     /* -p - retrieve and wait for retrieval */
-     drms_sortandstage_records(recordset, 1, 0, &suinfo); 
-  }
+    if (recordset)
+    {
+        if (want_path_noret)
+        {
+             /* -P - don't retrieve but wait for SUMS to give dir info */
+             drms_stage_records(recordset, 0, 0); 
+        }
+        else if (want_path) 
+        {
+             /* -p - retrieve and wait for retrieval */
+             drms_sortandstage_records(recordset, 1, 0, &suinfo); 
+        }
+    }
 
   /* check for multiple sub-sets */
 
 // NEED to add stuff to loop over subsets
 
-  /* MAIN loop over set of selected records */
-  if (cursoredQ)
-  {
-     status = RecordLoopCursor(drms_env, in, recordset, requireSUMinfo, given_sunum, suinfo, want_path, want_path_noret, seriesnameforheader, keylist, seglist, show_all, show_keys, show_all_segs, show_segs, show_all_links, quiet, keyword_list, show_recnum, show_sunum, show_recordspec, parseRS, show_online, show_retention, show_archive, show_tapeinfo, show_size, show_session, want_dims, show_types, sunum_rs_query);
-  }
-  else
-  {
-     status = RecordLoopNoCursor(drms_env, recordset, requireSUMinfo, given_sunum, suinfo, want_path, want_path_noret, seriesnameforheader, keylist, seglist, show_all, show_keys, show_all_segs, show_segs, show_all_links, quiet, keyword_list, show_recnum, show_sunum, show_recordspec, parseRS, show_online, show_retention, show_archive, show_tapeinfo, show_size, show_session, want_dims, show_types, sunum_rs_query);
-  }
+    /* MAIN loop over set of selected records */
+    if (recordset)
+    {
+        /* We need to know if there are any records to print at all. It used to be the case that this was determined in 
+         * the record loop. However, we need to know before we go into the loop so we can determine what kind of header 
+         * to print, if any at all. If we have a mixture of good and bad SUNUMs, then as we go through the record loop, 
+         * we might have to print a header, but not have an actual record from which to draw information. 
+         *
+         * In other words, simplify the logic. */
+        char *keys[1024];
+        int nkeys = 0;
+        char *segs[1024];
+        int nsegs = 0;
+        int linked_segs = 0;
+        char *links[1024];
+        int nlinks = 0;
+        int iSeg;
+        int iKey;
+
+        if (cursoredQ)
+        {
+            int count = drms_count_records(drms_env, in, &status);
+
+            if (!status)
+            {
+                if (count > 0)
+                {
+                    PrintHeader(drms_env, seriesnameforheader, keylist, seglist, show_all, show_keys, show_all_segs, show_segs, show_all_links, quiet, keyword_list, show_recnum, show_sunum, show_recordspec, show_online, show_retention, show_archive, show_tapeinfo, show_size, show_session, want_dims, want_path, show_types, keys, &nkeys, segs, &nsegs, &linked_segs, links, &nlinks);
+                    status = RecordLoopCursor(drms_env, in, recordset, bogusList, requireSUMinfo, given_sunum, suinfo, want_path, want_path_noret, seriesnameforheader, keylist, seglist, show_all, show_keys, show_all_segs, show_segs, show_all_links, quiet, keyword_list, show_recnum, show_sunum, show_recordspec, parseRS, show_online, show_retention, show_archive, show_tapeinfo, show_size, show_session, want_dims, show_types, sunum_rs_query, keys, nkeys, segs, nsegs, linked_segs, links, nlinks);
+                }
+            }
+        }
+        else
+        {
+            int count = recordset->n;
+            
+            if (count > 0)
+            {
+                PrintHeader(drms_env, seriesnameforheader, keylist, seglist, show_all, show_keys, show_all_segs, show_segs, show_all_links, quiet, keyword_list, show_recnum, show_sunum, show_recordspec, show_online, show_retention, show_archive, show_tapeinfo, show_size, show_session, want_dims, want_path, show_types, keys, &nkeys, segs, &nsegs, &linked_segs, links, &nlinks);
+                status = RecordLoopNoCursor(drms_env, recordset, bogusList, requireSUMinfo, given_sunum, suinfo, want_path, want_path_noret, seriesnameforheader, keylist, seglist, show_all, show_keys, show_all_segs, show_segs, show_all_links, quiet, keyword_list, show_recnum, show_sunum, show_recordspec, parseRS, show_online, show_retention, show_archive, show_tapeinfo, show_size, show_session, want_dims, show_types, sunum_rs_query, keys, nkeys, segs, nsegs, linked_segs, links, nlinks);
+            }
+        }
+        
+        for (iSeg = 0; iSeg < nsegs; iSeg++)
+        {
+            if (segs[iSeg])
+            {
+                free(segs[iSeg]);
+                segs[iSeg] = NULL;
+            }
+        }
+        
+        /* Finished.  Clean up and exit. */
+        for (iKey = 0; iKey < nkeys; iKey++)
+        {
+            if (keys[iKey])
+            {
+                free(keys[iKey]);
+                keys[iKey] = NULL;
+            }
+        }
+    }
+    else
+    {
+        /* We have not loaded any DRMS records at all. There was a sunum=XX argument provided, but 
+         * no ds=XX argument. In this case, either function will work, because neither will actually 
+         * iterate through any records. */
+         
+        int count = list_llgetnitems(bogusList);
+
+        if (count > 0)
+        {
+            PrintHeader(drms_env, NULL, keylist, seglist, show_all, show_keys, show_all_segs, show_segs, show_all_links, quiet, keyword_list, show_recnum, show_sunum, show_recordspec, show_online, show_retention, show_archive, show_tapeinfo, show_size, show_session, want_dims, want_path, show_types, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+            status = RecordLoopNoCursor(drms_env, NULL, bogusList, requireSUMinfo, given_sunum, suinfo, want_path, want_path_noret, NULL, keylist, seglist, show_all, show_keys, show_all_segs, show_segs, show_all_links, quiet, keyword_list, show_recnum, show_sunum, show_recordspec, parseRS, show_online, show_retention, show_archive, show_tapeinfo, show_size, show_session, want_dims, show_types, sunum_rs_query, NULL, -1, NULL, -1, -1, NULL, -1);
+        }
+    }
+
+    if (bogusList)
+    {
+        list_llfree(&bogusList);
+        bogusList = NULL;
+    }
 
   if (finalin)
   {
