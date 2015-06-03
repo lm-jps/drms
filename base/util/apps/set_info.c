@@ -1012,6 +1012,10 @@ int DoIt(void)
                       } 
                   }
               }
+              else if (drms_keyword_getrecscope(key) == kRecScopeType_Constant)
+              { // This is not supposed to be needed according to comments at start, but constant keywords were not ignored.
+                  ; 
+              }
               else
               {
                   keyval = drms_cmdparams_get(&cmdparams, keyname, keytype, &status);
