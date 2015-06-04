@@ -235,6 +235,7 @@ class Dbconnection(object):
 
         return RowGenerator(rows)    
 
+# An object for passing data between the client and server (in both directions)
 class Info(object):
     pass
 
@@ -257,13 +258,16 @@ class Collector(threading.Thread):
         self.sock = sock
         self.log = log
         self.debugLog = debugLog
-        
+                
     def run(self):
         try:
-            # First, obtain request.
-            msg = self.receiveRequest()
-            # self.dumpBytes(msg)
+            # The client must pass in some identifying information (other than their IP address).
+            # Receive that information now.
+            msg = self.receivePickle()
+            self.unpickleClientInfo(msg)
 
+            # First, obtain request.
+            msg = self.receivePickle()
             self.unpickleRequest(msg)
 
             # Set the request type (can raise).
@@ -274,7 +278,7 @@ class Collector(threading.Thread):
 
             if self.log:
                 # XXX need to write out user.
-                self.log.write(['New ' + self.reqType + ' request from ' + str(self.sock.getpeername()) + ': ' + ','.join(self.suList) + '.'])
+                self.log.write(['New ' + self.reqType + ' request from process ' + str(self.clientInfo.pid) + ' by user ' + self.clientInfo.user + ' at ' + str(self.sock.getpeername()) + ': ' + ','.join(self.suList) + '.'])
 
             if self.reqType == 'info':
                 cmd = "SELECT T1.ds_index, T1.online_loc, T1.online_status, T1.archive_status, T1.offsite_ack, T1.history_comment, T1.owning_series, T1.storage_group, T1.bytes, T1.create_sumid, T1.creat_date, T1.username, COALESCE(T1.arch_tape, 'N/A'), COALESCE(T1.arch_tape_fn, 0), COALESCE(T1.arch_tape_date, '1958-01-01 00:00:00'), COALESCE(T1.safe_tape, 'N/A'), COALESCE(T1.safe_tape_fn, 0), COALESCE(T1.safe_tape_date, '1958-01-01 00:00:00'), COALESCE(T2.effective_date, '195801010000'), coalesce(T2.status, 0), coalesce(T2.archive_substatus, 0) FROM " + SUM_MAIN + " AS T1 LEFT OUTER JOIN " + SUM_PARTN_ALLOC + " AS T2 ON (T1.ds_index = T2.ds_index) WHERE T1.ds_index IN (" + ','.join(self.suList) + ')'
@@ -289,9 +293,7 @@ class Collector(threading.Thread):
             # { sunum:12592029, onlineloc:'/SUM52/D12592029', ...}
             
             msg = self.pickleResponse(response)
-            # self.dumpBytes(msg)
-
-            self.sendResponse(msg)
+            self.sendPickle(msg)
             
             # This thread is about to terminate. We don't want to end this thread before
             # the client closes the socket though. Otherwise, our socket will get stuck in 
@@ -352,6 +354,18 @@ class Collector(threading.Thread):
         for su in self.request:
             if str(su) not in processed:        
                 self.suList.append(str(su)) # Make a list of strings - we'll need to concatenate the elements into a comma-separated list for the DB query.
+                
+    def unpickleClientInfo(self, msg):
+        # This is an Info object. 
+        info = pickle.loads(msg)
+
+        self.clientInfo = Info()
+                
+        # info.pid is an int
+        self.clientInfo.pid = info.pid
+        
+        # info.user is a str object.
+        self.clientInfo.user = info.user
         
     def pickleResponse(self, response):
         infoList = []
@@ -437,7 +451,7 @@ class Collector(threading.Thread):
         
         return pickle.dumps(infoList, pickle.HIGHEST_PROTOCOL)
         
-    def sendResponse(self, msg):
+    def sendPickle(self, msg):
         # First send the length of the message.
         bytesSentTotal = 0
         numBytesMessage = '{:08x}'.format(len(msg))
@@ -459,7 +473,7 @@ class Collector(threading.Thread):
         if self.debugLog:
             self.debugLog.write([str(self.sock.getpeername()) + ' - sent ' + str(bytesSentTotal) + ' bytes response.'])
             
-    def receiveRequest(self):
+    def receivePickle(self):
         # First, receive length of message.
         allTextReceived = b''
         bytesReceivedTotal = 0

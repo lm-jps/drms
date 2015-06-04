@@ -36,6 +36,7 @@ http://sun.stanford.edu/web.hmi/development/SU_Development_Plan/SUM_API.html
 #include <rpc/pmap_clnt.h>
 #include <sys/time.h>
 #include <sys/errno.h>
+#include <pwd.h>
 #include <sum_rpc.h>
 #include "serverdefs.h"
 
@@ -149,6 +150,366 @@ int SUM_shutdown(int query, int (*history)(const char *fmt, ...))
 }
 
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
+
+#define MSGLEN_NUMBYTES 8
+#define MAX_MSG_BUFSIZE 4096
+#ifdef MIN
+#undef MIN
+#endif
+#define MIN(a,b) ((a) < (b) ? (a) : (b))
+
+/* There could be NULL chars in the message to send, so the caller must provide the message length in msgLen. */
+static int sendMsg(SUM_t *sums, const char *msg, uint32_t msgLen, int (*history)(const char *fmt, ...))
+{
+    size_t bytesSentTotal;
+    size_t bytesSent;
+    char numBytesMesssage[MSGLEN_NUMBYTES + 1];
+    const char *pBuf = NULL;
+    int sockfd = -1;
+    int err = 0;
+    
+    if (msg && *msg && sums)
+    {
+        /* Make a socket to MT Sums and connect to it. */
+        sockfd = (int)sums->mSumsClient;
+        
+        if (sockfd != -1)
+        {
+            /* First send the length of the message, msgLen. */
+            bytesSentTotal = 0;
+            snprintf(numBytesMesssage, sizeof(numBytesMesssage), "%08x", msgLen);
+        
+            while (bytesSentTotal < MSGLEN_NUMBYTES)
+            {
+                pBuf = numBytesMesssage + bytesSentTotal;
+                bytesSent = send(sockfd, pBuf, strlen(pBuf), 0);
+            
+                if (!bytesSent)
+                {
+                    (*history)("Socket to MT SUMS broken.\n");
+                    err = 1;
+                    break;
+                }
+            
+                bytesSentTotal += bytesSent;
+            }
+        
+            if (!err)
+            {
+                /* Then send the message. */
+                bytesSentTotal = 0;
+            
+                while (bytesSentTotal < msgLen)
+                {
+                    pBuf = msg + bytesSentTotal;
+                    bytesSent = send(sockfd, pBuf, msgLen - bytesSentTotal, 0);
+
+                    if (!bytesSent)
+                    {
+                        (*history)("Socket to MT SUMS broken.\n");
+                        err = 1;
+                        break;
+                    }
+            
+                    bytesSentTotal += bytesSent;
+                }
+            }
+        }
+        else
+        {
+            err = 1;
+            (*history)("Not connected to MT SUMS.\n");
+        }
+    }
+    else
+    {
+        (*history)("Invalid arguments to sendMsg().\n");
+    }
+    
+    return err;
+}
+
+static int receiveMsg(SUM_t *sums, char **out, size_t *outLen, int (*history)(const char *fmt, ...))
+{
+    size_t bytesReceivedTotal;
+    ssize_t sizeTextRecvd;
+    char recvBuffer[MAX_MSG_BUFSIZE];
+    char numBytesMessage[MSGLEN_NUMBYTES + 1];
+    unsigned int sizeMessage;
+    char *allTextReceived = NULL;
+    int sockfd = -1;
+    int err = 0;
+    
+    if (!out)
+    {
+        err = 1;
+        (*history)("'out' must not be NULL in receiveMsg().\n");
+    }
+    
+    if (!err)
+    {
+        if (!sums || sums->mSumsClient == -1)
+        {
+            err = 1;
+            (*history)("Not connected to sumsd.py.\n");
+        }
+    }
+
+    if (!err)
+    {
+        sockfd = (int)sums->mSumsClient;
+            
+        /* First, receive length of message. */
+        bytesReceivedTotal = 0;
+        
+        /* The double guard ensures that MSGLEN_NUMBYTES <= MAX_MSG_BUFSIZE. The header is accumulated directly
+         * in recvBuffer. */
+        while (bytesReceivedTotal < MSGLEN_NUMBYTES && bytesReceivedTotal < MAX_MSG_BUFSIZE)
+        {
+            sizeTextRecvd = recv(sockfd, recvBuffer + bytesReceivedTotal, MIN(MSGLEN_NUMBYTES - bytesReceivedTotal, MAX_MSG_BUFSIZE - bytesReceivedTotal), 0);
+        
+            if (sizeTextRecvd <= 0)
+            {
+                (*history)("Socket to sumsd.py broken.\n");
+                err = 1;
+                break;
+            }
+        
+            bytesReceivedTotal += sizeTextRecvd;
+        }
+    }
+
+    if (!err)
+    {
+        /* Convert hex string to number. */
+        snprintf(numBytesMessage, sizeof(numBytesMessage), "%s", recvBuffer);
+        sscanf(numBytesMessage, "%08x", &sizeMessage);
+        
+        allTextReceived = calloc(1, sizeMessage + 1);
+        
+        if (!allTextReceived)
+        {
+            (*history)("Out of memory in receiveMsg().\n");
+            err = 1;
+        }
+        else
+        {
+            /* Receive the message. */
+            bytesReceivedTotal = 0;
+        
+            while (bytesReceivedTotal < sizeMessage)
+            {
+                sizeTextRecvd = recv(sockfd, recvBuffer, MIN(sizeMessage - bytesReceivedTotal, MAX_MSG_BUFSIZE), 0);
+        
+                if (sizeTextRecvd <= 0)
+                {
+                    (*history)("Socket to sumsd.py broken.\n");
+                    err = 1;
+                    break;
+                }
+
+                /* Can't use string functions, like strncat(), since these functions 
+                 * assume the input is a null-terminated string. The input will be 
+                 * truncated at the first null character.*/
+                memcpy(allTextReceived + bytesReceivedTotal, recvBuffer, sizeTextRecvd);
+                bytesReceivedTotal += sizeTextRecvd;
+            }
+        }
+    }
+    
+    if (err)
+    {
+        if (allTextReceived)
+        {
+            free(allTextReceived);
+            allTextReceived = NULL;
+        }
+    }
+    else
+    {
+        *out = allTextReceived;
+        *outLen = bytesReceivedTotal;
+    }
+    
+    return err;
+}
+
+static char *pickleObject(SUM_t *sums, PyObject *obj, size_t *pickleLen, int (*history)(const char *fmt, ...))
+{
+    char *pickle = NULL;
+    PyObject *protocol = NULL;
+    PyObject *dumpsFxn = NULL;
+    PyObject *result = NULL;
+    const char *pickledStr = NULL;
+    Py_ssize_t byteLen;
+    int err = 0;
+
+    protocol = PyDict_GetItemString(sums->pickler->pickleDict, "HIGHEST_PROTOCOL");
+            
+    if (!protocol)
+    {
+        (*history)("Unable to load pickle protocol.\n");
+        err = 1;
+    }
+    
+    if (!err)
+    {
+        dumpsFxn = PyDict_GetItemString(sums->pickler->pickleDict, "dumps");
+
+        if (!dumpsFxn)
+        {
+            (*history)("Unable to load 'dumps' function.\n");
+            err = 1;
+        }
+    }
+
+    if (!err)
+    {
+        if (!PyCallable_Check(dumpsFxn)) 
+        {
+            (*history)("'dumps' function is not callable.\n");
+            err = 1;
+        }
+    }
+
+    if (!err)
+    {            
+        result = PyObject_CallFunctionObjArgs(dumpsFxn, obj, protocol, NULL);
+
+        if (!result)
+        {
+            (*history)("Unable to call 'dumps' function.\n");
+            err = 1;
+        }
+    }
+    
+    if (!err)
+    {
+        /* Since this function returns a bytes object in the Py environment, I'm assuming 
+         * it returns a PyObject that is a bytes. */
+         if (!PyBytes_Check(result))
+         {
+            (*history)("Unexpected data type for object returned from 'dumps' function.\n");
+            err = 1;
+         }
+    }
+    
+    if (!err)
+    {
+        if (PyBytes_AsStringAndSize(result, (char **)&pickledStr, &byteLen) == 0)
+        {
+            /* PyLong_FromSsize_t() should not fail because PyBytes_AsStringAndSize() should fail
+             * if result would result in a byteLen that overflows. */
+            *pickleLen = (size_t)PyLong_AsLong(PyLong_FromSsize_t(byteLen));
+            pickle = calloc(1, *pickleLen);
+            memcpy(pickle, pickledStr, *pickleLen);
+        }
+        else
+        {
+            (*history)("Unable to extract string from 'dumps' response.\n");
+            err = 1;
+        }
+    }
+
+    if (result)
+    {
+        Py_DECREF(result);
+    }
+    
+    return pickle;
+}
+
+static int pickleClientInfo(SUM_t *sums, pid_t pid, const char *username, char **pickle, size_t *pickleLen, int (*history)(const char *fmt, ...))
+{
+    PyObject *pyInfoConstructor = NULL;
+    PyObject *pyClientInfo = NULL;
+    PyObject *pyPid = NULL;
+    PyObject *pyUser = NULL;
+    int err = 0;
+    
+    if (!err)
+    {
+        pyInfoConstructor = PyDict_GetItemString(sums->pickler->globalDict, "Info");
+
+        if (!pyInfoConstructor)
+        {
+            (*history)("Unable to load 'Info' function.\n");
+            err = 1;
+        }
+    }
+    
+    if (!err)
+    {
+        if (!PyCallable_Check(pyInfoConstructor)) 
+        {
+            (*history)("'Info' function is not callable.\n");
+            err = 1;
+        }
+    }
+    
+    if (!err)
+    {
+        pyClientInfo = PyObject_CallFunctionObjArgs(pyInfoConstructor, NULL);
+
+        if (!pyClientInfo)
+        {
+            (*history)("Unable to call 'Info' function.\n");
+            err = 1;
+        }
+    }
+
+    /* I wish C had native exception handling. */
+    if (!err)
+    {
+        err = ((pyPid = PyLong_FromLong((long)pid)) == NULL);
+    }
+    
+    if (!err)
+    {
+        err = ((pyUser = PyUnicode_FromString(username)) == NULL);
+    }
+
+    if (!err)
+    {
+        err = (PyObject_SetAttrString(pyClientInfo, "pid", pyPid) == -1);
+    }
+
+    if (!err)
+    {
+        err = (PyObject_SetAttrString(pyClientInfo, "user", pyUser) == -1);
+    }
+
+    if (!err)
+    {
+        *pickle = pickleObject(sums, pyClientInfo, pickleLen, history);
+        if (!*pickle || *pickleLen == 0)
+        {
+            (*history)("Unable to pickle client info object.\n");
+            err = 1;
+        }
+    }
+    
+    if (pyPid)
+    {
+        Py_DECREF(pyPid);
+        pyPid = NULL;
+    }
+    
+    if (pyUser)
+    {
+        Py_DECREF(pyUser);
+        pyUser = NULL;
+    }
+    
+    if (pyClientInfo)
+    {
+        Py_DECREF(pyClientInfo);
+        pyClientInfo = NULL;
+    }
+
+    return err;
+}
+
 static MSUMSCLIENT_t ConnectToMtSums(SUM_t *sums, MTSums_CallType_t type, int (*history)(const char *fmt, ...))
 {
     MSUMSCLIENT_t msums = -1;
@@ -192,21 +553,53 @@ static MSUMSCLIENT_t ConnectToMtSums(SUM_t *sums, MTSums_CallType_t type, int (*
                 freeaddrinfo(result);
             }
         }
+        
+        /* Every time we connect to MT SUMS, we send the server client information. */
+        if (msums != -1)
+        {
+            pid_t pid;
+            struct passwd *pwd = NULL;
+            char *pickle = NULL;
+            size_t pickleLen = 0;
+            
+            /* Need to set mSumsClient for the sendMsg() call. */
+            sums->mSumsClient = msums;
+            
+            pid = getpid();
+            pwd = getpwuid(geteuid());
+            
+            if (pickleClientInfo(sums, pid, pwd->pw_name, &pickle, &pickleLen, history))
+            {
+                (*history)("Unable to collect client info.\n");
+                shutdown(msums, SHUT_RDWR);
+                close(msums);
+                msums = -1;
+                sums->mSumsClient = -1;
+            }
+            else
+            {
+                /* Send pickle. */
+                if (sendMsg(sums, pickle, pickleLen, history))
+                {
+                    shutdown(msums, SHUT_RDWR);
+                    close(msums);
+                    msums = -1;
+                    sums->mSumsClient = -1;
+                }
+            }
+            
+            if (pickle)
+            {
+                free(pickle);
+                pickle = NULL;
+            } 
+        }
     }
     else
     {
-        (*history)("Unable to connect to sumsd.py.\n");
+        (*history)("Unable to connect to MT SUMS.\n");
     }
-    
-    if (msums != -1)
-    {
-        sums->mSumsClient = msums;
-    }
-    else
-    {
-        sums->mSumsClient = -1;
-    }
-    
+        
     return sums->mSumsClient;
 }
 
@@ -274,8 +667,24 @@ static int InitializeMtSumsEnv(Pickler_t **pickler, int (*history)(const char *f
                 }
                 else
                 {
-                    (*history)("Unable to main module.\n");
+                    (*history)("Unable to load main module.\n");
                     err = 1;
+                }
+            }
+            
+            if (!err)
+            {
+                /* The response from sumsd.py contains instances of the Info class defined
+                 * in sumsd.py. If we were to attempt to loads the bytes object, it would
+                 * fail since class Info is not defined in our Python environment yet. To
+                 * prevent this from happening, we must defined class Info. 
+                 * 
+                 * We also need to send data to sumsd.py via this class.
+                 */
+                err = (PyRun_SimpleString("class Info(object):\n    pass") != 0);
+                if (err)
+                {
+                    (*history)("Unable to define Info class in __main__ module.\n");
                 }
             }
         }
@@ -1367,206 +1776,16 @@ int SUM_alloc2(SUM_t *sum, uint64_t sunum, int (*history)(const char *fmt, ...))
 }
 
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
-
-#define MSGLEN_NUMBYTES 8
-#define MAX_MSG_BUFSIZE 4096
-#ifdef MIN
-#undef MIN
-#endif
-#define MIN(a,b) ((a) < (b) ? (a) : (b))
-
-/* There could be NULL chars in the message to send, so the caller must provide the message length in msgLen. */
-static int sendRequest(SUM_t *sums, const char *msg, uint32_t msgLen, int (*history)(const char *fmt, ...))
-{
-    size_t bytesSentTotal;
-    size_t bytesSent;
-    char numBytesMesssage[MSGLEN_NUMBYTES + 1];
-    const char *pBuf = NULL;
-    int sockfd = -1;
-    int err = 0;
-    
-    if (msg && *msg && sums)
-    {
-        /* Make a socket to MT Sums and connect to it. */
-        sockfd = (int)sums->mSumsClient;
-        
-        if (sockfd != -1)
-        {
-            /* First send the length of the message, msgLen. */
-            bytesSentTotal = 0;
-            snprintf(numBytesMesssage, sizeof(numBytesMesssage), "%08x", msgLen);
-        
-            while (bytesSentTotal < MSGLEN_NUMBYTES)
-            {
-                pBuf = numBytesMesssage + bytesSentTotal;
-                bytesSent = send(sockfd, pBuf, strlen(pBuf), 0);
-            
-                if (!bytesSent)
-                {
-                    (*history)("Socket to sumsd.py broken.\n");
-                    err = 1;
-                    break;
-                }
-            
-                bytesSentTotal += bytesSent;
-            }
-        
-            if (!err)
-            {
-                /* Then send the message. */
-                bytesSentTotal = 0;
-            
-                while (bytesSentTotal < msgLen)
-                {
-                    pBuf = msg + bytesSentTotal;
-                    bytesSent = send(sockfd, pBuf, msgLen - bytesSentTotal, 0);
-
-                    if (!bytesSent)
-                    {
-                        (*history)("Socket to sumsd.py broken.\n");
-                        err = 1;
-                        break;
-                    }
-            
-                    bytesSentTotal += bytesSent;
-                }
-            }
-        }
-        else
-        {
-            err = 1;
-            (*history)("Not connected to multi-threaded SUMS.\n");
-        }
-    }
-    else
-    {
-        (*history)("Invalid arguments to sendRequest().\n");
-    }
-    
-    return err;
-}
-
-static int receiveResponse(SUM_t *sums, char **out, size_t *outLen, int (*history)(const char *fmt, ...))
-{
-    size_t bytesReceivedTotal;
-    ssize_t sizeTextRecvd;
-    char recvBuffer[MAX_MSG_BUFSIZE];
-    char numBytesMessage[MSGLEN_NUMBYTES + 1];
-    unsigned int sizeMessage;
-    char *allTextReceived = NULL;
-    int sockfd = -1;
-    int err = 0;
-    
-    if (!out)
-    {
-        err = 1;
-        (*history)("'out' must not be NULL in receiveResponse().\n");
-    }
-    
-    if (!err)
-    {
-        if (!sums || sums->mSumsClient == -1)
-        {
-            err = 1;
-            (*history)("Not connected to sumsd.py.\n");
-        }
-    }
-
-    if (!err)
-    {
-        sockfd = (int)sums->mSumsClient;
-            
-        /* First, receive length of message. */
-        bytesReceivedTotal = 0;
-        
-        /* The double guard ensures that MSGLEN_NUMBYTES <= MAX_MSG_BUFSIZE. The header is accumulated directly
-         * in recvBuffer. */
-        while (bytesReceivedTotal < MSGLEN_NUMBYTES && bytesReceivedTotal < MAX_MSG_BUFSIZE)
-        {
-            sizeTextRecvd = recv(sockfd, recvBuffer + bytesReceivedTotal, MIN(MSGLEN_NUMBYTES - bytesReceivedTotal, MAX_MSG_BUFSIZE - bytesReceivedTotal), 0);
-        
-            if (sizeTextRecvd <= 0)
-            {
-                (*history)("Socket to sumsd.py broken.\n");
-                err = 1;
-                break;
-            }
-        
-            bytesReceivedTotal += sizeTextRecvd;
-        }
-    }
-
-    if (!err)
-    {
-        /* Convert hex string to number. */
-        snprintf(numBytesMessage, sizeof(numBytesMessage), "%s", recvBuffer);
-        sscanf(numBytesMessage, "%08x", &sizeMessage);
-        
-        allTextReceived = calloc(1, sizeMessage + 1);
-        
-        if (!allTextReceived)
-        {
-            (*history)("Out of memory in receiveResponse().\n");
-            err = 1;
-        }
-        else
-        {
-            /* Receive the message. */
-            bytesReceivedTotal = 0;
-        
-            while (bytesReceivedTotal < sizeMessage)
-            {
-                sizeTextRecvd = recv(sockfd, recvBuffer, MIN(sizeMessage - bytesReceivedTotal, MAX_MSG_BUFSIZE), 0);
-        
-                if (sizeTextRecvd <= 0)
-                {
-                    (*history)("Socket to sumsd.py broken.\n");
-                    err = 1;
-                    break;
-                }
-
-                /* Can't use string functions, like strncat(), since these functions 
-                 * assume the input is a null-terminated string. The input will be 
-                 * truncated at the first null character.*/
-                memcpy(allTextReceived + bytesReceivedTotal, recvBuffer, sizeTextRecvd);
-                bytesReceivedTotal += sizeTextRecvd;
-            }
-        }
-    }
-    
-    if (err)
-    {
-        if (allTextReceived)
-        {
-            free(allTextReceived);
-            allTextReceived = NULL;
-        }
-    }
-    else
-    {
-        *out = allTextReceived;
-        *outLen = bytesReceivedTotal;
-    }
-    
-    return err;
-}
-
-static int pickleRequest(SUM_t *sums, uint64_t *sunums, size_t nSus, char **pickled, size_t *pickleLen, int (*history)(const char *fmt, ...))
+static int pickleRequest(SUM_t *sums, uint64_t *sunums, size_t nSus, char **pickle, size_t *pickleLen, int (*history)(const char *fmt, ...))
 {
     PyObject *list = NULL;
-    PyObject *protocol = NULL;
-    PyObject *argTuple = NULL;
-    PyObject *dumpsFxn = NULL;
-    PyObject *result = NULL;
-    const char *pickledStr = NULL;
-    Py_ssize_t byteLen;
     int isu;
     uint64_t sunum;
     int err;
     
     err = 0;
     
-    if (!sums || !sunums || nSus == 0 || !pickled || !pickleLen)
+    if (!sums || !sunums || nSus == 0 || !pickle || !pickleLen)
     {
         (*history)("Invalid argument(s) to 'pickleRequest'.\n");
         err = 1;
@@ -1595,84 +1814,21 @@ static int pickleRequest(SUM_t *sums, uint64_t *sunums, size_t nSus, char **pick
              * decrement the reference on the list (and not the items in the list). */
             PyList_SET_ITEM(list, isu, PyLong_FromUnsignedLongLong(sunum));
         }
-        
-        protocol = PyDict_GetItemString(sums->pickler->pickleDict, "HIGHEST_PROTOCOL");
-    }
-    
-    if (!protocol)
-    {
-        (*history)("Unable to load pickle protocol.\n");
-        err = 1;
     }
     
     if (!err)
     {
-        dumpsFxn = PyDict_GetItemString(sums->pickler->pickleDict, "dumps");
-
-        if (!dumpsFxn)
+        *pickle = pickleObject(sums, list, pickleLen, history);
+        if (!*pickle || *pickleLen == 0)
         {
-            (*history)("Unable to load 'dumps' function.\n");
             err = 1;
         }
     }
-
-    if (!err)
-    {  
-        if (!PyCallable_Check(dumpsFxn)) 
-        {
-            (*history)("'dumps' function is not callable.\n");
-            err = 1;
-        }
-    }
-
-    if (!err)
-    {            
-        result = PyObject_CallFunctionObjArgs(dumpsFxn, list, protocol, NULL);
-
-        if (!result)
-        {
-            (*history)("Unable to call 'dumps' function.\n");
-            err = 1;
-        }
-    }
-    
-    if (!err)
-    {
-        /* Since this function returns a bytes object in the Py environment, I'm assuming 
-         * it returns a PyObject that is a bytes. */
-         if (!PyBytes_Check(result))
-         {
-            (*history)("Unexpected data type for object returned from 'dumps' function.\n");
-            err = 1;
-         }
-    }
-    
-    if (!err)
-    {
-        if (PyBytes_AsStringAndSize(result, (char **)&pickledStr, &byteLen) == 0)
-        {
-            /* PyLong_FromSsize_t() should not fail because PyBytes_AsStringAndSize() should fail
-             * if result would result in a byteLen that overflows. */
-            *pickleLen = (size_t)PyLong_AsLong(PyLong_FromSsize_t(byteLen));
-            *pickled = calloc(1, *pickleLen);
-            memcpy(*pickled, pickledStr, *pickleLen);
-        }
-        else
-        {
-            (*history)("Unable to extract string from 'dumps' response.\n");
-            err = 1;
-        }
-    }
-    
+ 
     /* Free memory being held by the Py engine. */
     if (list)
     {
         Py_DECREF(list);
-    }
-    
-    if (result)
-    {
-        Py_DECREF(result);
     }
 
     return err;
@@ -1769,19 +1925,6 @@ static int unpickleResponse(SUM_t *sums, const char *msg, size_t msgLen, int (*h
         bytes = PyBytes_FromStringAndSize(msg, PyLong_AsSsize_t(byteLen));
     }
     
-    if (!err)
-    {
-        /* The response from sumsd.py contains instances of the Info class defined
-         * in sumsd.py. If we were to attempt to loads the bytes object, it would
-         * fail since class Info is not defined in our Python environment yet. To
-         * prevent this from happening, we must defined class Info. */
-        err = (PyRun_SimpleString("class Info(object):\n    pass") != 0);
-        if (err)
-        {
-            (*history)("Unable to define Info class in __main__ module.\n");
-        }
-    }
-
     if (!err)
     {
         result = PyObject_CallFunctionObjArgs(loadsFxn, bytes, NULL);
@@ -2121,7 +2264,7 @@ void SUM_infoArray_free(SUM_t *sums)
 
 int SUM_infoArray(SUM_t *sums, uint64_t *sunums, int reqcnt, int (*history)(const char *fmt, ...))
 {
-    char *pickled = NULL;
+    char *pickle = NULL;
     size_t pickleLen;
     char *response = NULL;
     size_t rspLen;
@@ -2130,7 +2273,7 @@ int SUM_infoArray(SUM_t *sums, uint64_t *sunums, int reqcnt, int (*history)(cons
     err = 0;
     
     /* pickle request */
-    err = pickleRequest(sums, sunums, reqcnt, &pickled, &pickleLen, history);
+    err = pickleRequest(sums, sunums, reqcnt, &pickle, &pickleLen, history);
     
     if (!err)
     {
@@ -2140,13 +2283,13 @@ int SUM_infoArray(SUM_t *sums, uint64_t *sunums, int reqcnt, int (*history)(cons
     if (!err)
     {
         /* send request */
-        err = sendRequest(sums, pickled, pickleLen, history);
+        err = sendMsg(sums, pickle, pickleLen, history);
     }
 
     if (!err)
     {    
         /* receive response */
-        err = receiveResponse(sums, &response, &rspLen, history);
+        err = receiveMsg(sums, &response, &rspLen, history);
     }
     
     /* unpickle response */
@@ -2163,15 +2306,14 @@ int SUM_infoArray(SUM_t *sums, uint64_t *sunums, int reqcnt, int (*history)(cons
         response = NULL;
     }
     
-    if (pickled)
+    if (pickle)
     {
-        free(pickled);
-        pickled = NULL;
-    }    
+        free(pickle);
+        pickle = NULL;
+    }
     
     return err;
 }
-
 
 #else
 /* Return information from sum_main for the given sunum (ds_index).
