@@ -613,7 +613,7 @@ static int GetSUMinfo(DRMS_Env_t *env, HContainer_t **info, int64_t *given_sunum
       int natts;
       /* Holds pointers to the SUM_info structs for the SUNUMS provided in given_sunum */
       *info = hcon_create(sizeof(SUM_info_t *), 128, ShowInfoFreeInfo, NULL, NULL, NULL, 0);
-      infostructs = (SUM_info_t **)malloc(sizeof(SUM_info_t *) * nsunums);
+      infostructs = (SUM_info_t **)calloc(nsunums, sizeof(SUM_info_t *));
 
       natts = 1;
       while (natts <= 2)
