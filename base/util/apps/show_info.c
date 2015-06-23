@@ -2850,7 +2850,7 @@ int DoIt(void)
             }
             else
             {
-                recordset = drms_open_partialrecords(drms_env, in, keylist, &status);
+                recordset = drms_open_recordswithkeys(drms_env, in, keylist, &status);
             }
         }
         else // max_recs specified via "n=" parameter.

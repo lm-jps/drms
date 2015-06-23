@@ -59,7 +59,7 @@ DRMS_RecordSet_t *drms_open_nrecords(DRMS_Env_t *env,
                                      const char *recordsetname, 
                                      int n,
                                      int *status);
-DRMS_RecordSet_t *drms_open_partialrecords(DRMS_Env_t *env, const char *specification, const char *keylist, int *status);
+DRMS_RecordSet_t *drms_open_recordswithkeys(DRMS_Env_t *env, const char *specification, const char *keylist, int *status);
 
 DRMS_RecordSet_t *drms_clone_records(DRMS_RecordSet_t *recset,  
 				     DRMS_RecLifetime_t lifetime, 

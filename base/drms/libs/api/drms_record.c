@@ -2377,7 +2377,7 @@ DRMS_RecordSet_t *drms_open_nrecords(DRMS_Env_t *env,
  * first in the returned keyword containers. So, the order of keys passed into this function can be
  * ignored. 
  */
-DRMS_RecordSet_t *drms_open_partialrecords(DRMS_Env_t *env, const char *specification, const char *keylist, int *status)
+DRMS_RecordSet_t *drms_open_recordswithkeys(DRMS_Env_t *env, const char *specification, const char *keylist, int *status)
 {
     char *allvers = NULL;
     DRMS_RecordSet_t *ret = NULL;
@@ -2420,7 +2420,7 @@ DRMS_RecordSet_t *drms_open_partialrecords(DRMS_Env_t *env, const char *specific
             }
             else
             {
-                fprintf(stderr, "Out of memory in drms_open_partialrecords().\n");
+                fprintf(stderr, "Out of memory in drms_open_recordswithkeys().\n");
             
                 if (status)
                 {
@@ -2430,7 +2430,7 @@ DRMS_RecordSet_t *drms_open_partialrecords(DRMS_Env_t *env, const char *specific
         }
         else
         {
-            fprintf(stderr, "Out of memory in drms_open_partialrecords().\n");
+            fprintf(stderr, "Out of memory in drms_open_recordswithkeys().\n");
             
             if (status)
             {
