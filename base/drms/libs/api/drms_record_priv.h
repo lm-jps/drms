@@ -117,6 +117,9 @@ DRMS_RecordSet_t *drms_retrieve_records(DRMS_Env_t *env,
                                         HContainer_t *pkwhereNFL,
                                         int recnumq,
                                         int cursor, 
+                                        HContainer_t *links,
+                                        HContainer_t *keys,
+                                        HContainer_t *segs,
                                         int *status);
 
 DRMS_RecordSet_t *drms_record_retrievelinks(DRMS_Env_t *env, DRMS_RecordSet_t *rs, int *status);

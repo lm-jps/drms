@@ -2844,7 +2844,14 @@ int DoIt(void)
               show_info_return(99);
             }
 
-            recordset = drms_open_recordset (drms_env, in, &status);
+            if (strcmp(keylist, "Not Specified") == 0)
+            {
+                recordset = drms_open_recordset (drms_env, in, &status);
+            }
+            else
+            {
+                recordset = drms_open_partialrecords(drms_env, in, keylist, &status);
+            }
         }
         else // max_recs specified via "n=" parameter.
         {

@@ -33,7 +33,7 @@ typedef enum {DRMS_FREE_RECORD, DRMS_INSERT_RECORD} DRMS_CloseAction_t;
 */
 
 /** \brief DRMS query type */
-typedef enum {DRMS_QUERY_COUNT, DRMS_QUERY_FL, DRMS_QUERY_ALL, DRMS_QUERY_N} DRMS_QueryType_t;
+typedef enum {DRMS_QUERY_COUNT, DRMS_QUERY_FL, DRMS_QUERY_ALL, DRMS_QUERY_N, DRMS_QUERY_PARTIAL} DRMS_QueryType_t;
 
 
 enum DRMS_RecChunking_enum
@@ -59,6 +59,7 @@ DRMS_RecordSet_t *drms_open_nrecords(DRMS_Env_t *env,
                                      const char *recordsetname, 
                                      int n,
                                      int *status);
+DRMS_RecordSet_t *drms_open_partialrecords(DRMS_Env_t *env, const char *specification, const char *keylist, int *status);
 
 DRMS_RecordSet_t *drms_clone_records(DRMS_RecordSet_t *recset,  
 				     DRMS_RecLifetime_t lifetime, 

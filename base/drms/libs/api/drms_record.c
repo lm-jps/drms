@@ -155,6 +155,10 @@ static DRMS_RecordSet_t *OpenPlainFileRecords(DRMS_Env_t *env,
 static void RSFree(const void *val);
 /* end drms_open_records() helpers */
 
+static char *columnList(DRMS_Record_t *rec, HContainer_t *links, HContainer_t *keys, HContainer_t *segs, int *num_cols);
+
+static size_t partialRecordMemsize(DRMS_Record_t *rec, HContainer_t *links, HContainer_t *keys, HContainer_t *segs);
+
 
 /* A valid local spec is:
  *   ( <file> | <directory> ) { '[' <keyword1>, <keyword2>, <...> ']' }
@@ -1186,6 +1190,51 @@ static void RSFree(const void *val)
    }
 }
 
+static int linkListSort(const void *he1, const void *he2)
+{
+    DRMS_Link_t **pl1 = (DRMS_Link_t **)hcon_getval(*((HContainerElement_t **)he1));
+    DRMS_Link_t **pl2 = (DRMS_Link_t **)hcon_getval(*((HContainerElement_t **)he2));
+
+    XASSERT(pl1 && pl2);
+
+    DRMS_Link_t *l1 = *pl1;
+    DRMS_Link_t *l2 = *pl2;
+    
+    XASSERT(l1 && l2);
+
+    return (l1->info->rank < l2->info->rank) ? -1 : (l1->info->rank > l2->info->rank ? 1 : 0);
+}
+
+static int keyListSort(const void *he1, const void *he2)
+{
+    DRMS_Keyword_t **pk1 = (DRMS_Keyword_t **)hcon_getval(*((HContainerElement_t **)he1));
+    DRMS_Keyword_t **pk2 = (DRMS_Keyword_t **)hcon_getval(*((HContainerElement_t **)he2));
+
+    XASSERT(pk1 && pk2);
+
+    DRMS_Keyword_t *k1 = *pk1;
+    DRMS_Keyword_t *k2 = *pk2;
+    
+    XASSERT(k1 && k2);
+
+    return (k1->info->rank < k2->info->rank) ? -1 : (k1->info->rank > k2->info->rank ? 1 : 0);
+}
+
+static int segListSort(const void *he1, const void *he2)
+{
+    DRMS_Segment_t **ps1 = (DRMS_Segment_t **)hcon_getval(*((HContainerElement_t **)he1));
+    DRMS_Segment_t **ps2 = (DRMS_Segment_t **)hcon_getval(*((HContainerElement_t **)he2));
+
+    XASSERT(ps1 && ps2);
+
+    DRMS_Segment_t *s1 = *ps1;
+    DRMS_Segment_t *s2 = *ps2;
+    
+    XASSERT(s1 && s2);
+
+    return (s1->info->segnum < s2->info->segnum) ? -1 : (s1->info->segnum > s2->info->segnum ? 1 : 0);
+}
+
 /*********************** Public functions *********************/
 
 DRMS_RecordSet_t *drms_open_localrecords(DRMS_Env_t *env, const char *dsRecSet, int *status)
@@ -1368,6 +1417,11 @@ static void QFree(void *data)
  * allversout is an array of int flags, one for each record-subset, indicating
  * if the query for that subset is for all records with the prime-key value, 
  * of if the query yields just one, unique record for the prime-key value.
+ *
+ * Re-purpose llistout to pass a list of keywords. If this list exists, then 
+ * a DRMS_Keyword_t struct will be created only for the keywords in this list.
+ * If this list is NULL, then a DRMS_Keyword_t struct will be created for all
+ * keywords in the series implied by the record-set specification.
  */
 DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, 
                                              const char *recordsetname, 
@@ -1403,20 +1457,41 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
     HContainer_t *goodsegcont = NULL;
     DB_Text_Result_t *tres = NULL;
     int cursor = 0; /* The query will be run in a db cursor. */
+    /* conflict with stat var in this scope */
+    int (*filestat)(const char *, struct stat *buf) = stat;
+
+    int stat = DRMS_SUCCESS;
     
     /* Must save SELECT statements if saving the query is desired (retreiverecs == 0) */
     LinkedList_t *llist = NULL;
     
+    /* Keyword list provided by caller. */
+    LinkedList_t *klist = NULL;
+    
     cursor = (!retrieverecs);
     if (llistout)
     {
-        llist = list_llcreate(sizeof(char *), QFree);
-        *llistout = llist;
+        if (*llistout)
+        {
+            /* The caller is providing a list of keywords. They would like to specify the DRMS keyword structs that are created 
+             * and populated in the DRMS record structs returned. The keywords have not been verified
+             * as valid keywords yet. Do that after the series name has been extracted from the specification. */
+            klist = *llistout;
+            if (list_llgetnitems(klist) == 0)
+            {
+                stat = DRMS_ERROR_INVALIDDATA;
+                fprintf(stderr, "drms_open_records_internal() called with empty keyword list.\n");
+                goto failure;
+            }
+        }
+        else
+        {
+            /* The caller would like a list of record-set-specification SQL queries, one for each sub-record-set, returned. */
+            llist = list_llcreate(sizeof(char *), QFree);
+            *llistout = llist;
+        }
     }
-    
-    /* conflict with stat var in this scope */
-    int (*filestat)(const char *, struct stat *buf) = stat;
-    
+        
     /* recordsetname is a list of comma-separated record sets
      * commas may appear within record sets, so need to use a parsing 
      * mechanism more sophisticated than strtok() */
@@ -1431,7 +1506,7 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
                            * The rationale for this is to allow users to get all versions
                            * of the requested DRMS records */
     DRMS_RecQueryInfo_t rsinfo; /* Filled in by parser as it encounters elements. */
-    int stat = ParseRecSetDesc(recordsetname, &allvers, &sets, &settypes, &snames, &filts, &nsets, &rsinfo);
+    stat = ParseRecSetDesc(recordsetname, &allvers, &sets, &settypes, &snames, &filts, &nsets, &rsinfo);
     
     if (stat == DRMS_SUCCESS)
     {
@@ -1462,8 +1537,7 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
                 {
                     char pbuf[DRMS_MAXPATHLEN];
                     struct stat stBuf;
-                    int foundOV = 0;
-                    
+                    int foundOV = 0;                    
                     
 #if !defined(DSDS_SUPPORT) || !DSDS_SUPPORT
                     stat = DRMS_ERROR_NODSDSSUPPORT;
@@ -1611,6 +1685,88 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
                 } /* DSDSPort */
                 else if (settypes[iSet] == kRecordSetType_DRMS)
                 {
+                    HContainer_t *unsorted = NULL;
+                    DRMS_Keyword_t *keyword = NULL;
+                    int iKey;
+                    DRMS_Keyword_t *pkey = NULL;
+
+                    if (klist)
+                    {
+                        /* Convert the klist from a list of key names to a list of actual DRMS_Keyword_t structs. As we do
+                         * this, ensure the keys named exist. Sort the keys by rank as well (their order in the <ns>.drms_keywords
+                         * table. 
+                         *
+                         * Unfortunately, it isn't completely trivial to sort linked lists. Instead, put the 
+                         * keyword structs into an HContainer_t - we can sort the entries easily (since they
+                         * are contiguous in memory) and we can iterate over an HCon easily. */
+                        DRMS_Record_t *recTempl = NULL;
+                        ListNode_t *ln = NULL;
+
+                        recTempl = drms_template_record(env, snames[iSet], &stat);
+                        
+                        if (!recTempl)
+                        {
+                            goto failure;
+                        }
+                        
+                        /* First, we need to put the prime-key keywords in the container. Since we are creating DRMS_Record_t
+                         * structs, each struct must contain the prime-key keywords at the very least. A record is identified 
+                         * by its prime-key keyword values, so none of those can be missing from the record. To simplify this 
+                         * process, add ALL prime-key constituents. Then loop through keyword list provided by caller, and 
+                         * add those keywords if they have not already been added. */
+                        for (iKey = 0; iKey < recTempl->seriesinfo->pidx_num; iKey++)
+                        { 
+                            if (!unsorted)
+                            {
+                                /* A list of POINTERS to keyword structs, not of keyword structs themselves. */
+                                unsorted = hcon_create(sizeof(DRMS_Keyword_t *), DRMS_MAXKEYNAMELEN, NULL, NULL, NULL, NULL, 0);
+                            }
+                            
+                            if (!unsorted)
+                            {
+                                goto failure;
+                            }
+                                
+                            pkey = recTempl->seriesinfo->pidx_keywords[iKey];
+                            hcon_insert_lower(unsorted, pkey->info->name, &pkey);
+                            
+                            if (drms_keyword_isindex(pkey))
+                            {
+                                /* Use slotted keyword */
+                                pkey = drms_keyword_slotfromindex(pkey);
+                                hcon_insert_lower(unsorted, pkey->info->name, &pkey);
+                            }
+                        } 
+
+                        list_llreset(klist);
+                        while ((ln = (ListNode_t *)(list_llnext(klist))) != NULL)
+                        {
+                            keyword = drms_keyword_lookup(recTempl, (char *)(ln->data), 0);
+
+                            if (!keyword)
+                            {
+                                fprintf(stderr, "Keyword %s does not exist in series %s.\n", (char *)(ln->data), snames[iSet]);
+                                goto failure;
+                            }
+                            
+                            if (!hcon_member_lower(unsorted, keyword->info->name))
+                            {
+                                if (!unsorted)
+                                {
+                                    /* A list of POINTERS to keyword structs, not of keyword structs themselves. */
+                                    unsorted = hcon_create(sizeof(DRMS_Keyword_t *), DRMS_MAXKEYNAMELEN, NULL, NULL, NULL, NULL, 0);
+                                }
+                                
+                                if (!unsorted)
+                                {
+                                    goto failure;
+                                }
+                            
+                                hcon_insert_lower(unsorted, keyword->info->name, &keyword);
+                            }
+                        }                        
+                    }
+
                     /* oneSet may have a segement specifier - strip that off and 
                      * generate the HContainer_t that contains the requested segment 
                      * names. */
@@ -1702,6 +1858,9 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
                                                         pkwhereNFL,
                                                         recnumq,
                                                         1,
+                                                        NULL,
+                                                        unsorted,
+                                                        NULL,
                                                         &stat));
                         /* Remove unrequested segments now */
                     }
@@ -2207,6 +2366,89 @@ DRMS_RecordSet_t *drms_open_nrecords(DRMS_Env_t *env,
     }
     
     return rs;
+}
+
+/* keylist is a string containing a comma-separated list of keywords. This records returned will
+ * contain only keyword instances of the keywords specified in this list. If keylist is NULL, then
+ * all keywords instances are created (and this function behaves identically to drms_open_records()).
+ *
+ * The keys are ordered according to the order they exist in the series template. And this order is
+ * determined by the row order in ns.drms_keyword - a key whose row appears before another will appear
+ * first in the returned keyword containers. So, the order of keys passed into this function can be
+ * ignored. 
+ */
+DRMS_RecordSet_t *drms_open_partialrecords(DRMS_Env_t *env, const char *specification, const char *keylist, int *status)
+{
+    char *allvers = NULL;
+    DRMS_RecordSet_t *ret = NULL;
+
+    if (keylist)
+    {
+        /* Make a linked list from keylist. Also, set retrieverecs to 1 so that drms_retrieve_records() 
+         * is called. The latter function passes the list to drms_query_string(), which then incorporates
+         * the desired columns into the SQL that fetches record information.
+         */
+        char *akey = NULL;
+        char *lkey = NULL;
+        char key[DRMS_MAXKEYNAMELEN];
+        LinkedList_t *list = NULL;
+        
+        list = list_llcreate(DRMS_MAXKEYNAMELEN, NULL);
+        
+        if (list)
+        {
+            /* I guess strtok_r() wants to modify keylist. So, dupe it first. */
+            char *keylistDupe = strdup(keylist);
+            
+            if (keylistDupe)
+            {
+                /* strtok_r() returns a NULL-terminated string. */
+                for (akey = strtok_r(keylistDupe, ",", &lkey); akey; akey = strtok_r(NULL, ",", &lkey))
+                {
+                    /* Since it is drms_open_records_internal() that parses the specification, let it 
+                     * ensure that the keywords provided in keylist are valid. */
+                     snprintf(key, sizeof(key), "%s", akey);
+                     list_llinserttail(list, key);
+                }
+
+                ret = drms_open_records_internal(env, specification, 1, &list, &allvers, NULL, 0, status);
+            
+                list_llfree(&list);
+                
+                free(keylistDupe);
+                keylistDupe = NULL;
+            }
+            else
+            {
+                fprintf(stderr, "Out of memory in drms_open_partialrecords().\n");
+            
+                if (status)
+                {
+                    *status = DRMS_ERROR_OUTOFMEMORY;
+                }
+            }
+        }
+        else
+        {
+            fprintf(stderr, "Out of memory in drms_open_partialrecords().\n");
+            
+            if (status)
+            {
+                *status = DRMS_ERROR_OUTOFMEMORY;
+            }
+        }
+    }
+    else
+    {
+        ret = drms_open_records_internal(env, specification, 1, NULL, &allvers, NULL, 0, status);
+    }
+    
+    if (allvers)
+    {
+        free(allvers);
+    }
+
+    return ret;
 }
 
 /* Create n new records by calling drms_create_record n times.  */
@@ -5008,6 +5250,9 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env,
                                                         HContainer_t *pkwhereNFL,
                                                         int recnumq,
                                                         int cursor,
+                                                        HContainer_t *links, /* Links to fetch from db. */
+                                                        HContainer_t *keys, /* Keys to fetch from db. */
+                                                        HContainer_t *segs, /* Segs to fetch from db. */
                                                         int *status)
 {
   int i,throttled;
@@ -5019,7 +5264,7 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env,
   char hashkey[DRMS_MAXHASHKEYLEN];
   char *series_lower;
   long long recsize, limit;
-  HIterator_t *hit = NULL;
+  HIterator_t hit;
   const char *hkey = NULL;
     char *tmpquery = NULL;
   
@@ -5028,8 +5273,17 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env,
   if ((template = drms_template_record(env,seriesname,status)) == NULL)
     return NULL;
   drms_link_getpidx(template); /* Make sure links have pidx's set. */
-  recsize = drms_record_memsize(template);
-  limit  = (long long)((0.4e6*env->query_mem)/recsize);
+  
+    if (keys && hcon_size(keys) > 0)
+    {
+        recsize = partialRecordMemsize(template, NULL, keys, NULL);
+    }
+    else
+    {
+        recsize = drms_record_memsize(template);
+    }
+    
+    limit  = (long long)((0.4e6*env->query_mem)/recsize);
 #ifdef DEBUG
   printf("limit  = (%f / %lld) = %lld\n",0.4e6*env->query_mem, recsize, limit);
 #endif
@@ -5044,14 +5298,15 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env,
                                           npkwhere,
                                           filter, 
                                           mixed, 
-                                          nrecs == 0 ? DRMS_QUERY_ALL : DRMS_QUERY_N, 
+                                          keys && hcon_size(keys) > 0 ? DRMS_QUERY_PARTIAL : (nrecs == 0 ? DRMS_QUERY_ALL : DRMS_QUERY_N),
                                           &nrecs, 
-                                          NULL, 
+                                          (char *)keys, // overload this argument
                                           allvers,
                                           firstlast,
                                           pkwhereNFL,
                                           recnumq,
                                           cursor);
+    
 #ifdef DEBUG
   printf("ENTER drms_retrieve_records, env=%p, status=%p\n",env,status);
 #endif
@@ -5112,39 +5367,186 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env,
       recnum = db_binary_field_getlonglong(qres, i, 0);
       drms_make_hashkey(hashkey, seriesname, recnum);
       
-      if ( (rs->records[i] = hcon_lookup(&env->record_cache, hashkey)) == NULL )
-      {
-	/* Allocate a slot in the hash indexed record cache. */
-	rs->records[i] = hcon_allocslot(&env->record_cache, hashkey);
-
-	/* Populate the slot with values from the template. */
-	drms_copy_record_struct(rs->records[i], template);
-
-       /* Set refcount to initial value of 1. */
-        if (rs->records[i])
+      /* If a key list is passed in, then we are downloading a partial record. And we cannot cache a partial
+       * record since every piece of code that uses the cache assumes that it contains full records. */
+        if ((links && hcon_size(links) > 0) || (keys && hcon_size(keys) > 0) || (segs && hcon_size(segs) > 0))
         {
-           rs->records[i]->refcount = 1;
+            DRMS_Link_t *link = NULL;
+            DRMS_Link_t **plink = NULL;
+            DRMS_Keyword_t *key = NULL;
+            DRMS_Keyword_t **pkey = NULL;
+            DRMS_Segment_t *seg = NULL;
+            DRMS_Segment_t **pseg = NULL;
+            
+            /* Don't cache these records!! They are going to be headless records. */
+            rs->records[i] = calloc(1, sizeof(DRMS_Record_t));
+            
+            /* Copy record info from template. Do not copy link, keyword, or segment info. */
+            rs->records[i]->env = template->env;
+            rs->records[i]->sunum = -1;
+            rs->records[i]->init = template->init;
+            rs->records[i]->readonly = template->readonly;
+            rs->records[i]->lifetime = template->lifetime;
+            rs->records[i]->su = template->su;
+            rs->records[i]->slotnum = template->slotnum;
+            rs->records[i]->sessionid = template->sessionid;
+            rs->records[i]->sessionns = template->sessionns;
+            rs->records[i]->seriesinfo = template->seriesinfo;
+            
+            /* Initialize the link, keyword, and segment info. */
+            hcon_init(&rs->records[i]->links, sizeof(DRMS_Link_t), DRMS_MAXHASHKEYLEN, (void (*)(const void *))drms_free_link_struct, (void (*)(const void *, const void *))drms_copy_link_struct);
+            hcon_init(&rs->records[i]->keywords, sizeof(DRMS_Keyword_t), DRMS_MAXHASHKEYLEN, (void (*)(const void *))drms_free_keyword_struct, (void (*)(const void *, const void *))drms_copy_keyword_struct);
+            hcon_init(&rs->records[i]->segments, sizeof(DRMS_Segment_t), DRMS_MAXHASHKEYLEN, (void (*)(const void *))drms_free_segment_struct, (void (*)(const void *, const void *))drms_copy_segment_struct);
+            
+            const char *keyVal = NULL;
+            const char *strVal = NULL;
+            
+            /* Copy link structs from template. links == 0 ==> all links, list_llgetnitems(links) == 0 ==> no links. */
+            if (!links)
+            {
+                /* Copy all link structs. */
+                hcon_copy(&(rs->records[i]->links), &template->links);
+            }
+            else if (hcon_size(links) > 0)
+            {
+                hiter_new_sort(&hit, links, linkListSort);
+                while((plink = (DRMS_Link_t **)hiter_extgetnext(&hit, &keyVal)) != NULL)
+                {
+                    link = *plink;
+                    
+                    /* Copy the link struct. */
+                    hcon_insert(&(rs->records[i]->links), keyVal, link);
+                }
+                hiter_free(&hit);
+            }
+            
+            /* Iterate through all links and make them point to rs->records[i]. */
+            hiter_new(&hit, &(rs->records[i]->links));
+            while((link = (DRMS_Link_t *)hiter_getnext(&hit)) != NULL)
+            {
+                link->record = rs->records[i];
+            }
+            hiter_free(&hit);
+
+            /* Copy keyword structs from template. If the keyword data type is a string, then we have to deep copy 
+             * the string value, which then becomes the default value of the keyword instance. 
+             * keys == 0 ==> all keys, list_llgetnitems(keys) == 0 ==> no keys. */
+            if (!keys)
+            {
+                /* Copy all keyword structs. This will perform a deep-copy. */
+                hcon_copy(&(rs->records[i]->keywords), &template->keywords);
+            }
+            else if (hcon_size(keys) > 0)
+            {
+                hiter_new_sort(&hit, keys, keyListSort);
+                while((pkey = (DRMS_Keyword_t **)hiter_extgetnext(&hit, &keyVal)) != NULL)
+                {
+                    key = *pkey;
+                    
+                    /* Copy the keyword struct. */
+                    hcon_insert(&(rs->records[i]->keywords), keyVal, key);
+                    
+                    if (key->info->type == DRMS_TYPE_STRING)
+                    {
+                        /* Don't have a handle to the new record's keyword struct. */
+                        strVal = key->value.string_val;
+                        key = hcon_lookup_lower(&(rs->records[i]->keywords), keyVal);
+                        XASSERT(key);
+                        key->value.string_val = strdup(strVal);
+                    }
+                }
+                hiter_free(&hit);
+            }
+            
+            /* Iterate through all keywords and make them point to rs->records[i]. */
+            hiter_new(&hit, &(rs->records[i]->keywords));
+            while((key = (DRMS_Keyword_t *)hiter_getnext(&hit)) != NULL)
+            {
+                key->record = rs->records[i];
+            }
+            hiter_free(&hit);
+
+            /* Copy segment structs from template. segs == 0 ==> all segs, list_llgetnitems(segs) == 0 ==> no segs. */
+            if (!segs)
+            {
+                /* Copy all link structs. */
+                hcon_copy(&(rs->records[i]->segments), &template->segments);
+            }
+            else if (hcon_size(segs) > 0)
+            {
+                hiter_new_sort(&hit, segs, segListSort);
+                while((pseg = (DRMS_Segment_t **)hiter_extgetnext(&hit, &keyVal)) != NULL)
+                {
+                    seg = *pseg;
+                    
+                    /* Copy the link struct. */
+                    hcon_insert(&(rs->records[i]->segments), keyVal, seg);
+                }
+                hiter_free(&hit);
+            }
+            
+            /* Iterate through all segments and make them point to rs->records[i]. */
+            hiter_new(&hit, &(rs->records[i]->segments));
+            while((seg = (DRMS_Segment_t *)hiter_getnext(&hit)) != NULL)
+            {
+                seg->record = rs->records[i];
+            }
+            hiter_free(&hit);
+            
+            /* Set refcount to initial value of 1. */
+            if (rs->records[i])
+            {
+               rs->records[i]->refcount = 1;
+            }
+            
+            /* Set pidx in links */
+            drms_link_getpidx(rs->records[i]);
+            
+            /* Set new unique record number. */
+            rs->records[i]->recnum = recnum;
+
+            /* The suinfo field is allocated on-demand, and must be set to NULL so that there is 
+             * no attempt to free an unallocated suinfo pointer in drms_free_record(). */
+            rs->records[i]->suinfo = NULL;
         }
+        else
+        {
+            if ((rs->records[i] = hcon_lookup(&env->record_cache, hashkey)) == NULL)
+            {
+                /* Allocate a slot in the hash indexed record cache. */
+                rs->records[i] = hcon_allocslot(&env->record_cache, hashkey);
 
-	/* Set pidx in links */
-	drms_link_getpidx(rs->records[i]);
-	/* Set new unique record number. */
-	rs->records[i]->recnum = recnum;
+                /* Populate the slot with values from the template. */
+                drms_copy_record_struct(rs->records[i], template);
 
-        /* The suinfo field is allocated on-demand, and must be set to NULL so that there is 
-         * no attempt to free an unallocated suinfo pointer in drms_free_record(). */
-        rs->records[i]->suinfo = NULL;
-      } else {
-	// the old record is going to be overridden
+                /* Set refcount to initial value of 1. */
+                if (rs->records[i])
+                {
+                   rs->records[i]->refcount = 1;
+                }
 
-         /* The record was in the record cache already. Increment reference counter. */
-         if (rs->records[i])
-         {
-            ++rs->records[i]->refcount;
-         }
+                /* Set pidx in links */
+                drms_link_getpidx(rs->records[i]);
+                /* Set new unique record number. */
+                rs->records[i]->recnum = recnum;
 
-	free(rs->records[i]->sessionns);
-      }
+                /* The suinfo field is allocated on-demand, and must be set to NULL so that there is 
+                 * no attempt to free an unallocated suinfo pointer in drms_free_record(). */
+                rs->records[i]->suinfo = NULL;
+            } 
+            else 
+            {
+                // the old record is going to be overridden
+
+                /* The record was in the record cache already. Increment reference counter. */
+                if (rs->records[i])
+                {
+                    ++rs->records[i]->refcount;
+                }
+
+                free(rs->records[i]->sessionns);
+            }
+        }
       rs->records[i]->readonly = 1;
     }
 
@@ -5180,6 +5582,7 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env,
 
            if (keynames)
            {
+               HIterator_t *hit = NULL;
               hit = hiter_create(&(rs->records[i]->segments));
               if (hit)
               {
@@ -5268,6 +5671,9 @@ DRMS_RecordSet_t *drms_retrieve_records(DRMS_Env_t *env,
                                         HContainer_t *pkwhereNFL,
                                         int recnumq,
                                         int cursor, 
+                                        HContainer_t *links,
+                                        HContainer_t *keys,
+                                        HContainer_t *segs,
                                         int *status)
 {
    return drms_retrieve_records_internal(env, 
@@ -5285,6 +5691,9 @@ DRMS_RecordSet_t *drms_retrieve_records(DRMS_Env_t *env,
                                          pkwhereNFL,
                                          recnumq,
                                          cursor, 
+                                         NULL,
+                                         keys,
+                                         NULL,
                                          status);
 }
 
@@ -6264,7 +6673,7 @@ DRMS_RecordSet_t *callRetrieveRecsPreparedQuery(DRMS_Env_t *env, HContainer_t *m
                         {
                             sql = base_strcatalloc(sql, ")", &stsz);
                             
-                            rvSupp = drms_retrieve_records_internal(env, seriesGet, NULL, NULL, NULL, 0, 0, NULL, sql, 0, 0, NULL, NULL, 0, 0, &istat);
+                            rvSupp = drms_retrieve_records_internal(env, seriesGet, NULL, NULL, NULL, 0, 0, NULL, sql, 0, 0, NULL, NULL, 0, 0, NULL, NULL, NULL, &istat);
                             
                             if (rvSupp)
                             {
@@ -6784,7 +7193,7 @@ char *drms_query_string(DRMS_Env_t *env,
 {
     DRMS_Record_t *template;
     char *field_list = NULL;
-    char *query=0;
+    char *query = NULL;
     char *series_lower;
     long long recsize, limit;
     char pidx_names[1024]; // comma separated pidx keyword names
@@ -7011,10 +7420,37 @@ char *drms_query_string(DRMS_Env_t *env,
           field_list = strdup("count(recnum)");
       }
     break;
+  case DRMS_QUERY_PARTIAL:
+    /* intentional fall-through */
   case DRMS_QUERY_FL:
     /* intentional fall-through */
   case DRMS_QUERY_ALL:
-    if (qtype == DRMS_QUERY_FL)
+    if (qtype == DRMS_QUERY_PARTIAL)
+    {
+        /* And now we have to take the keyword list that started as a comma-separated string, became a linked list, and 
+         * then got reverted back into a comma-separated string, and convert it to a associative array. 
+         * Since we only really care about keywords at this point, I'm just going to implement this for keywords. 
+         * If we want a segment filter or a link filter down the road, then I'll implement those too. */
+         if (fl)
+         {
+            HContainer_t *keys = (HContainer_t *)fl;
+
+            recsize = partialRecordMemsize(template, NULL, keys, NULL);
+            if (!recsize) 
+            {
+                goto bailout;
+            }
+
+            field_list = columnList(template, NULL, keys, NULL, NULL);            
+        }
+        else
+        {
+            /* No filters provided - default to DRMS_QUERY_ALL behavior. */
+            field_list = drms_field_list(template, NULL);
+            recsize = drms_record_memsize(template);
+        }
+    }
+    else if (qtype == DRMS_QUERY_FL)
     {
        field_list = strdup(fl);
        recsize = drms_keylist_memsize(template, field_list);
@@ -8628,7 +9064,304 @@ char *drms_field_list(DRMS_Record_t *rec, int *num_cols)
   return buf;
 }
 
+char *columnList(DRMS_Record_t *rec, HContainer_t *links, HContainer_t *keys, HContainer_t *segs, int *num_cols) 
+{
+    int i;
+    char *buf = NULL;
+    char *p = NULL;
+    DRMS_Link_t **plink = NULL;
+    DRMS_Link_t *link = NULL;
+    DRMS_Keyword_t **pkey = NULL;
+    DRMS_Keyword_t *key = NULL;
+    int ncol=0;
+    int segnum;
+    DRMS_Segment_t **pseg = NULL;
+    DRMS_Segment_t *seg = NULL;
+    HIterator_t hit;
+    char *lower = NULL;
+    char tail[256];
+    size_t szBuf;
+    int err;
+    
+    XASSERT(rec);
 
+    err = 0;    
+    ncol = 0;
+
+    /* There was no reason to first determine the size of the buffer, and then create the buffer on the heap.
+     * Just realloc the heap memory if needed. That way we do not need to iterate through all these columns twice. */
+
+    /* Malloc string buffer. */
+    szBuf = 256;
+    buf = calloc(szBuf, sizeof(char));
+    XASSERT(buf);
+
+    /* Fixed fields. */
+    buf = base_strcatalloc(buf, "recnum", &szBuf);
+    ++ncol;
+    buf = base_strcatalloc(buf, ", sunum", &szBuf);
+    ++ncol;
+    buf = base_strcatalloc(buf, ", slotnum", &szBuf);
+    ++ncol;
+    buf = base_strcatalloc(buf, ", sessionid", &szBuf);
+    ++ncol;
+    buf = base_strcatalloc(buf, ", sessionns", &szBuf);
+    ++ncol;
+ 
+    if (!err)
+    {
+        /* Link fields. */
+        if (links)
+        {
+            hiter_new_sort(&hit, links, linkListSort);
+            while((plink = (DRMS_Link_t **)hiter_getnext(&hit)) != NULL)
+            {
+                link = *plink;
+            
+                lower = strdup(link->info->name);
+            
+                if (!lower)
+                {
+                    err = 1;
+                    fprintf(stderr, "Out of memory in columnList().\n");
+                    break;
+                }
+            
+                strtolower(lower);
+            
+                if (link->info->type == STATIC_LINK)
+                {
+                    snprintf(tail, sizeof(tail), ", ln_%s", lower);
+                    buf = base_strcatalloc(buf, tail, &szBuf);
+                    ++ncol;
+                }
+                else  /* Oh crap! A dynamic link... */
+                {
+                    if (link->info->pidx_num) 
+                    {
+                        snprintf(tail, sizeof(tail), ", ln_%s_isset", lower);
+                        buf = base_strcatalloc(buf, tail, &szBuf);
+                        ++ncol;
+                    }
+            
+                    /* There is a field for each keyword in the primary index
+                    of the target series...walk through them. */
+                    for (i=0; i<link->info->pidx_num; i++)
+                    {
+                        snprintf(tail, sizeof(tail), ", ln_%s_%s", lower, link->info->pidx_name[i]);
+                        buf = base_strcatalloc(buf, tail, &szBuf);
+                        ++ncol;
+                    }
+                }
+            
+                free(lower);
+                lower = NULL;
+            }
+            hiter_free(&hit);
+        }
+        else
+        {
+            hiter_new_sort(&hit, &(rec->links), drms_link_ranksort);
+            while((link = (DRMS_Link_t *)hiter_getnext(&hit)) != NULL)
+            {            
+                lower = strdup(link->info->name);
+            
+                if (!lower)
+                {
+                    err = 1;
+                    fprintf(stderr, "Out of memory in columnList().\n");
+                    break;
+                }
+            
+                strtolower(lower);
+            
+                if (link->info->type == STATIC_LINK)
+                {
+                    snprintf(tail, sizeof(tail), ", ln_%s", lower);
+                    buf = base_strcatalloc(buf, tail, &szBuf);
+                    ++ncol;
+                }
+                else  /* Oh crap! A dynamic link... */
+                {
+                    if (link->info->pidx_num) 
+                    {
+                        snprintf(tail, sizeof(tail), ", ln_%s_isset", lower);
+                        buf = base_strcatalloc(buf, tail, &szBuf);
+                        ++ncol;
+                    }
+            
+                    /* There is a field for each keyword in the primary index
+                    of the target series...walk through them. */
+                    for (i=0; i<link->info->pidx_num; i++)
+                    {
+                        snprintf(tail, sizeof(tail), ", ln_%s_%s", lower, link->info->pidx_name[i]);
+                        buf = base_strcatalloc(buf, tail, &szBuf);
+                        ++ncol;
+                    }
+                }
+            
+                free(lower);
+                lower = NULL;
+            }
+            hiter_free(&hit);
+        }
+    }
+
+    if (!err)
+    {
+        /* Keyword fields. */
+        if (keys)
+        {
+            hiter_new_sort(&hit, keys, keyListSort);
+            while((pkey = (DRMS_Keyword_t **)hiter_getnext(&hit)) != NULL)
+            {
+                key = *pkey;
+            
+                lower = strdup(key->info->name);
+            
+                if (!lower)
+                {
+                    err = 1;
+                    fprintf(stderr, "Out of memory in columnList().\n");
+                    break;
+                }
+            
+                strtolower(lower);
+            
+                if (!key->info->islink && !drms_keyword_isconstant(key))
+                {
+                    snprintf(tail, sizeof(tail), ", %s", lower);
+                    buf = base_strcatalloc(buf, tail, &szBuf);
+                    ++ncol;
+                }
+            
+                free(lower);
+                lower = NULL;
+            }
+            hiter_free(&hit);
+        }
+        else
+        {
+            hiter_new_sort(&hit, &(rec->keywords), drms_keyword_ranksort);
+            while((key = (DRMS_Keyword_t *)hiter_getnext(&hit)) != NULL)
+            {
+                lower = strdup(key->info->name);
+            
+                if (!lower)
+                {
+                    err = 1;
+                    fprintf(stderr, "Out of memory in columnList().\n");
+                    break;
+                }
+            
+                strtolower(lower);
+            
+                if (!key->info->islink && !drms_keyword_isconstant(key))
+                {
+                    snprintf(tail, sizeof(tail), ", %s", lower);
+                    buf = base_strcatalloc(buf, tail, &szBuf);
+                    ++ncol;
+                }
+            
+                free(lower);
+                lower = NULL;
+            }
+            hiter_free(&hit);
+        }
+    }
+
+    if (!err)
+    {
+        /* Segment fields. */
+        if (segs)
+        {
+            hiter_new_sort(&hit, segs, segListSort);
+            while((pseg = (DRMS_Segment_t **)hiter_getnext(&hit)) != NULL)
+            {
+                seg = *pseg;
+            
+                lower = strdup(seg->info->name);
+            
+                if (!lower)
+                {
+                    err = 1;
+                    fprintf(stderr, "Out of memory in columnList().\n");
+                    break;
+                }
+            
+                strtolower(lower);
+            
+                segnum = seg->info->segnum;
+            
+                snprintf(tail, sizeof(tail), ", sg_%03d_file", segnum);
+                buf = base_strcatalloc(buf, tail, &szBuf);
+                ++ncol;
+            
+                if (seg->info->scope==DRMS_VARDIM)
+                {
+                    /* segment dim names are stored as columns "sgXXX_axisXXX" */	
+                    for (i = 0; i < seg->info->naxis; i++)
+                    {
+                        snprintf(tail, sizeof(tail), ", sg_%03d_axis%03d", segnum, i);
+                        buf = base_strcatalloc(buf, tail, &szBuf);
+                        ++ncol;
+                    }
+                }
+                free(lower);
+                lower = NULL;
+            }
+            hiter_free(&hit);
+        }
+        else
+        {
+            hiter_new_sort(&hit, &(rec->segments), drms_segment_ranksort);
+            while((seg = (DRMS_Segment_t *)hiter_getnext(&hit)) != NULL)
+            {
+                lower = strdup(seg->info->name);
+            
+                if (!lower)
+                {
+                    err = 1;
+                    fprintf(stderr, "Out of memory in columnList().\n");
+                    break;
+                }
+            
+                strtolower(lower);
+            
+                segnum = seg->info->segnum;
+            
+                snprintf(tail, sizeof(tail), ", sg_%03d_file", segnum);
+                buf = base_strcatalloc(buf, tail, &szBuf);
+                ++ncol;
+            
+                if (seg->info->scope==DRMS_VARDIM)
+                {
+                    /* segment dim names are stored as columns "sgXXX_axisXXX" */	
+                    for (i = 0; i < seg->info->naxis; i++)
+                    {
+                        snprintf(tail, sizeof(tail), ", sg_%03d_axis%03d", segnum, i);
+                        buf = base_strcatalloc(buf, tail, &szBuf);
+                        ++ncol;
+                    }
+                }
+                free(lower);
+                lower = NULL;
+            }
+            hiter_free(&hit);
+        }
+    }
+
+    if (num_cols)
+    {
+        *num_cols = ncol;
+    }
+
+#ifdef DEBUG
+    printf("Constructed field list '%s'\n",buf);
+#endif
+
+    return buf;
+}
 
 /* Insert multiple records via bulk insert interface. */
 int drms_insert_records(DRMS_RecordSet_t *recset)
@@ -9523,6 +10256,127 @@ long long drms_keylist_memsize(DRMS_Record_t *rec, char *keylist) {
   free(list);
   return size;
 }
+
+/* rec is the template record. */
+size_t partialRecordMemsize(DRMS_Record_t *rec, HContainer_t *links, HContainer_t *keys, HContainer_t *segs) 
+{
+    /* Memory allocated to the record struct. */
+    size_t allocSize;
+    size_t hConElementSize;
+    HIterator_t hit;
+    DRMS_Link_t **plink = NULL;
+    DRMS_Link_t *link = NULL;
+    DRMS_Keyword_t **pkeyword = NULL;
+    DRMS_Keyword_t *keyword = NULL;
+    DRMS_Segment_t **psegment = NULL;
+    DRMS_Segment_t *segment = NULL;
+
+    allocSize = 0;
+    
+    hConElementSize = sizeof(HContainerElement_t) + sizeof(Table_t) + sizeof(Entry_t);
+
+    /* Record struct allocation. */
+    allocSize += sizeof(DRMS_Record_t) + DRMS_MAXHASHKEYLEN + hConElementSize;
+
+    /* Link struct allocation. */
+    if (links)
+    {        
+        hiter_new_sort(&hit, links, linkListSort);
+        while((plink = (DRMS_Link_t **)hiter_getnext(&hit)) != NULL)
+        {
+            link = *plink;
+            allocSize += sizeof(DRMS_Link_t) + sizeof(DRMS_LinkInfo_t) + DRMS_MAXLINKNAMELEN * 2 + DRMS_MAXSEGNAMELEN + hConElementSize;
+        }
+        hiter_free(&hit);
+    }
+    else
+    {
+        /* Calculate size for all links in the series. */
+        hiter_new_sort(&hit, &(rec->links), drms_link_ranksort);
+        while((link = (DRMS_Link_t *)hiter_getnext(&hit)) != NULL)
+        {
+            allocSize += sizeof(DRMS_Link_t) + sizeof(DRMS_LinkInfo_t) + DRMS_MAXLINKNAMELEN * 2 + DRMS_MAXSEGNAMELEN + hConElementSize;
+        }
+        hiter_free(&hit);
+    }
+
+    /* Keyword struct allocation. */
+    if (keys)
+    {        
+        hiter_new_sort(&hit, keys, keyListSort);
+        while((pkeyword = (DRMS_Keyword_t **)hiter_getnext(&hit)) != NULL)
+        {
+            keyword = *pkeyword;
+            
+            allocSize += sizeof(DRMS_Keyword_t) + sizeof(DRMS_KeywordInfo_t) + DRMS_MAXKEYNAMELEN + hConElementSize;
+            
+            if (!keyword->info->islink && !drms_keyword_isconstant(keyword)) 
+            {
+                if (keyword->info->type == DRMS_TYPE_STRING) 
+                {
+                    if (keyword->value.string_val)
+                    {
+                        allocSize += strlen(keyword->value.string_val); 
+                    }
+                    else 
+                    {
+                        allocSize += 40; // SWAG!
+                    }
+                }    
+            }            
+        }
+        hiter_free(&hit);
+    }
+    else
+    {
+        /* Calculate size for all keywords in the series. */
+        hiter_new_sort(&hit, &(rec->keywords), drms_keyword_ranksort);
+        while((keyword = (DRMS_Keyword_t *)hiter_getnext(&hit)) != NULL)
+        {
+            allocSize += sizeof(DRMS_Keyword_t) + sizeof(DRMS_KeywordInfo_t) + DRMS_MAXKEYNAMELEN + hConElementSize;
+            
+            if (!keyword->info->islink && !drms_keyword_isconstant(keyword)) 
+            {
+                if (keyword->info->type == DRMS_TYPE_STRING) 
+                {
+                    if (keyword->value.string_val)
+                    {
+                        allocSize += strlen(keyword->value.string_val); 
+                    }
+                    else 
+                    {
+                        allocSize += 40; // SWAG!
+                    }
+                }    
+            }
+        }
+        hiter_free(&hit);
+    }
+      
+    /* Segment struct allocation. */
+    if (segs)
+    {
+        hiter_new_sort(&hit, segs, segListSort);
+        while((psegment = (DRMS_Segment_t **)hiter_getnext(&hit)) != NULL)
+        {
+            segment = *psegment;
+            allocSize += sizeof(DRMS_Segment_t) + sizeof(DRMS_SegmentInfo_t) + DRMS_MAXSEGNAMELEN + hConElementSize;
+        }
+        hiter_free(&hit);
+    }
+    else
+    {
+        hiter_new_sort(&hit, &(rec->segments), drms_segment_ranksort);
+        while((segment = (DRMS_Segment_t *)hiter_getnext(&hit)) != NULL)
+        {
+            allocSize += sizeof(DRMS_Segment_t) + sizeof(DRMS_SegmentInfo_t) + DRMS_MAXSEGNAMELEN + hConElementSize;
+        }
+        hiter_free(&hit);
+    }
+    
+    return allocSize;
+}
+
 
 int CopySeriesInfo(DRMS_Record_t *target, DRMS_Record_t *source)
 {
@@ -11732,6 +12586,9 @@ int drms_open_recordchunk(DRMS_Env_t *env,
                                                                NULL,
                                                                0,
                                                                1,
+                                                               NULL,
+                                                               NULL,
+                                                               NULL,
                                                                &stat);
                   
                   if (goodsegcont)
@@ -12556,7 +13413,7 @@ failure:
     return(0);
 }
 
-/* Columns are stored contiguously in DRMS_Arra_t::data */
+/* Columns are stored contiguously in DRMS_Array_t::data */
 DRMS_Array_t *drms_record_getvector(DRMS_Env_t *env, 
                                     const char *recordsetname, 
                                     const char *keylist, 
