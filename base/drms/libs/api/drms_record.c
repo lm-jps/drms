@@ -12843,7 +12843,7 @@ DRMS_RecordSet_t *drms_open_recordset(DRMS_Env_t *env,
     {
         /* querylist has, for each queryset, the SQL query to select all records
          * in that set (a queryset is a set of recordsets - they are comma-separated) */
-        LinkedList_t *querylist;
+        LinkedList_t *querylist = NULL;
         char *tmp = strdup(rsquery);
         char *allvers = NULL;
         

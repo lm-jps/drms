@@ -1905,8 +1905,6 @@ static void SUFreeInfo(const void *value)
 int drms_su_getinfo(DRMS_Env_t *env, long long *sunums, int nsunums, SUM_info_t **info)
 {
    int status = DRMS_SUCCESS;
-   DRMS_SumRequest_t *request = NULL;
-   DRMS_SumRequest_t *reply = NULL;
    HContainer_t *map = NULL;
    int isunum;
    int iinfo;
@@ -1914,6 +1912,17 @@ int drms_su_getinfo(DRMS_Env_t *env, long long *sunums, int nsunums, SUM_info_t 
    char key[128];
    SUM_info_t *nulladdr = NULL;
    SUM_info_t **pinfo = NULL;
+   int maxNoSus;
+   
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
+    maxNoSus = MAX_MTSUMS_NSUS;
+    DRMS_MtSumsRequest_t *request = NULL;
+    DRMS_MtSumsRequest_t *reply = NULL;
+#else
+    maxNoSus = MAXSUMREQCNT;
+    DRMS_SumRequest_t *request = NULL;
+    DRMS_SumRequest_t *reply = NULL;
+#endif
 
    drms_lock_server(env);
 
@@ -1929,7 +1938,7 @@ int drms_su_getinfo(DRMS_Env_t *env, long long *sunums, int nsunums, SUM_info_t 
       }
    }
 
-   /* There might be more than MAXSUMREQCNT sunums, and there might be duplicates. 
+   /* There might be more than maxNoSus sunums, and there might be duplicates. 
     * Store unique values. */
    map = hcon_create(sizeof(SUM_info_t *), 128, SUFreeInfo, NULL, NULL, NULL, 0);
 
@@ -1937,8 +1946,17 @@ int drms_su_getinfo(DRMS_Env_t *env, long long *sunums, int nsunums, SUM_info_t 
    {
       if (nReqs == 0)
       {
-         request = (DRMS_SumRequest_t *)malloc(sizeof(DRMS_SumRequest_t));
-         XASSERT(request);
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
+        request = (DRMS_MtSumsRequest_t *)calloc(1, sizeof(DRMS_MtSumsRequest_t));
+        XASSERT(request);
+        
+        request->sunum = calloc(maxNoSus, sizeof(uint64_t)); /* This may be larger than needed, but don't sweat it. */
+        XASSERT(request->sunum);
+#else
+        request = (DRMS_SumRequest_t *)malloc(sizeof(DRMS_SumRequest_t));
+        XASSERT(request);
+#endif
+
          request->opcode = DRMS_SUMINFO;
          request->dontwait = 0;
       }
@@ -1953,9 +1971,9 @@ int drms_su_getinfo(DRMS_Env_t *env, long long *sunums, int nsunums, SUM_info_t 
          nReqs++;
       }
       
-      /* ART - Although SUMS will handle up to MAXSUMREQCNT SUNUMs, the keylist 
+      /* ART - Although SUMS will handle up to maxNoSus SUNUMs, the keylist 
        * code used by SUMS is inefficient - the optimal batch size is 64. */
-      if (nReqs == MAXSUMREQCNT || (isunum + 1 == nsunums && nReqs > 0))
+      if (nReqs == maxNoSus || (isunum + 1 == nsunums && nReqs > 0))
       {
          request->reqcnt = nReqs;
 
@@ -1974,6 +1992,22 @@ int drms_su_getinfo(DRMS_Env_t *env, long long *sunums, int nsunums, SUM_info_t 
                  fprintf(stderr, "Cannot access SUMS in this DRMS session - a tape read is pending.\n");
                  if (reply)
                  {
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
+                    if (reply->sudir)
+                    {
+                        for (int i = 0; i < request->reqcnt; i++) 
+                        {
+                            if ((((DRMS_MtSumsRequest_t *)reply)->sudir)[i])
+                            {
+                                free((((DRMS_MtSumsRequest_t *)reply)->sudir)[i]);
+                            }
+                        }
+                    
+                        free(reply->sudir);
+                        reply->sudir = NULL;
+                    }
+#endif
+                    
                      free(reply);
                  }
                  drms_unlock_server(env);
@@ -1984,6 +2018,22 @@ int drms_su_getinfo(DRMS_Env_t *env, long long *sunums, int nsunums, SUM_info_t 
              
              if (reply)
              {
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
+                if (reply->sudir)
+                {
+                    for (int i = 0; i < request->reqcnt; i++) 
+                    {
+                        if ((((DRMS_MtSumsRequest_t *)reply)->sudir)[i])
+                        {
+                            free((((DRMS_MtSumsRequest_t *)reply)->sudir)[i]);
+                        }
+                    }
+
+                    free(reply->sudir);
+                    reply->sudir = NULL;
+                }
+#endif
+                    
                  free(reply);
              }
              
@@ -2006,7 +2056,8 @@ int drms_su_getinfo(DRMS_Env_t *env, long long *sunums, int nsunums, SUM_info_t 
                snprintf(key, sizeof(key), "%llu", (unsigned long long)(retinfo->sunum)); /* -1 converted to ULLONG_MAX. */
                if ((pinfo = hcon_lookup(map, key)) != NULL)
                {
-                  *pinfo = retinfo;
+                    /* Steal SUM_info_t - so do not free reply->sudir[iinfo]. */
+                    *pinfo = retinfo;
                }
                else
                {
@@ -2020,6 +2071,14 @@ int drms_su_getinfo(DRMS_Env_t *env, long long *sunums, int nsunums, SUM_info_t 
          /* Caller's responsibility to clean up the reply since caller is waiting for the reply. */
          if (reply)
          {
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
+            if (reply->sudir)
+            {        
+                free(reply->sudir);
+                reply->sudir = NULL;
+            }
+#endif
+                    
             free(reply);
             reply = NULL;
          }
@@ -2049,7 +2108,7 @@ int drms_su_getinfo(DRMS_Env_t *env, long long *sunums, int nsunums, SUM_info_t 
       }
    }
 
-   /* clean up - free up the SUM_info_t structs pointed to by map */
+   /* clean up - free up the SUM_info_t structs pointed to by map (which are the SUM_info_ts made by sum_open.c). */
    hcon_destroy(&map);
 
    /* request is shallow-freed by the SUMS thread, so don't free here. */

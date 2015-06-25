@@ -14,13 +14,19 @@
 #include <sum_info.h>
 
 /* !!TBD fix up these defs */
-//#define OFFSITEHOST "d00.stanford.edu" //offsite hostname to send .md5 files
+
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
+    /* Macros for the multi-threaded SUMS daemon. */
+    #define MAX_MTSUMS_NSUS 262144 /* 2^18 - the easiest way to say 'unlimited'. */
+#endif
+
 #define OFFSITEDIR "/dds/socdc" /* offsite dir to put .md5 files */
 #define MAX_PART 1024		/* max # +1 of dedicated /SUM partitions */
 #define MAXSUMSETS 4		/* max # of SUM sets */
 #define MAXSUMOPEN 16		/* max# of SUM opens for a single client */
 #define MAXSUMREQCNT 512	/* max# of SU that can request in a single
 			         * SUM_get() call */
+
 #define MAX_STR 256		/* max size of a char[] */
 #define MAXSTRING 4096
 #define SUMARRAYSZ MAXSUMREQCNT	/* num of entries in SUM_t * arrays malloced */

@@ -471,7 +471,27 @@ typedef struct DRMS_SumRequest_struct
   int dontwait;
 } DRMS_SumRequest_t;
 
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
+/* Why oh why did he make a fixed array for sudir and sunum?
+ */
+typedef struct DRMS_MtSumsRequest_struct
+{
+  int opcode; /* Used for command code in inbox and status in the outbox. */
 
+  int reqcnt;
+  double bytes;
+  char *dsname;
+  int mode;
+  int group;
+  int tdays;
+  char *comment;
+
+  char **sudir;
+  uint64_t *sunum;
+  
+  int dontwait;
+} DRMS_MtSumsRequest_t;
+#endif
 
 
 /*************************** Data records and Series ************************/

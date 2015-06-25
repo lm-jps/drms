@@ -191,7 +191,9 @@ static int MakeSumsCall(DRMS_Env_t *env, int calltype, SUM_t **sumt, int (*histo
 
 static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
 						    SUM_t **sum,
-						    DRMS_SumRequest_t *request);
+						    DRMS_SumRequest_t *request,
+						    int opcode,
+						    int mtRequest);
 
 static void GettingSleepier(int *sleepiness)
 {
@@ -2366,7 +2368,13 @@ void *drms_sums_thread(void *arg)
   int status;
   DRMS_Env_t *env;
   SUM_t *sum=NULL;
-  DRMS_SumRequest_t *request, *reply;
+  
+  /* ACK! Horrible hack to get around SUMS limiting the #SUs per request. For API functions that 
+   * use the MT SUMS daemon, we need to use the DRMS_MtSumsRequest_t request/reply struct, not 
+   * the DRMS_SumRequest_t struct. */
+  void *request = NULL;
+  void *reply = NULL;
+  
   long stop, empty;
   int connected = 0;
   char *ptmp;
@@ -2378,6 +2386,11 @@ void *drms_sums_thread(void *arg)
   sem_t *sdsem = drms_server_getsdsem();
   int sumscallret;
   int rv;
+  int mtRequest = 0;
+  int opcode;
+  int dontwait;
+  int reqcnt;
+  
 
   env = (DRMS_Env_t *) arg;
 
@@ -2448,14 +2461,48 @@ void *drms_sums_thread(void *arg)
        empty = rv;
     }
 
-    request = (DRMS_SumRequest_t *) ptmp;
-      
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
+    /* Regardless of the type of request struct, casting as a DRMS_SumRequest_t to obtain 
+     * the opcode will work. */
+    opcode = ((DRMS_SumRequest_t *)ptmp)->opcode;
+
+    /* This could be a multi-thread SUMS request. */    
+    if (opcode == DRMS_SUMINFO)
+    {
+        mtRequest = 1;
+    }
+    else
+    {
+        mtRequest = 0;
+    }
+    
+    if (mtRequest)
+    {
+        request = (DRMS_MtSumsRequest_t *)ptmp;
+        dontwait = ((DRMS_MtSumsRequest_t *)request)->dontwait;
+        reqcnt = ((DRMS_MtSumsRequest_t *)request)->reqcnt;
+    }
+    else
+    {
+        /* We have an old-type request struct. */
+        request = (DRMS_SumRequest_t *)ptmp;
+        dontwait = ((DRMS_SumRequest_t *)request)->dontwait;
+        reqcnt = ((DRMS_SumRequest_t *)request)->reqcnt;
+    }
+#else
+    opcode = ((DRMS_SumRequest_t *)ptmp)->opcode;
+    
+    request = (DRMS_SumRequest_t *)ptmp;
+    dontwait = ((DRMS_SumRequest_t *)request)->dontwait;
+    reqcnt = ((DRMS_SumRequest_t *)request)->reqcnt;
+#endif
+    
       if (env->verbose)
       {
-          printf("sums thread: Got request %d from thread %ld.\n", request->opcode, env->sum_tag);
+          printf("sums thread: Got request %d from thread %ld.\n", opcode, env->sum_tag);
       }
 
-    if (tryconnect && !connected && request->opcode!=DRMS_SUMCLOSE)
+    if (tryconnect && !connected && opcode!=DRMS_SUMCLOSE)
     {
         int firstSumOpen = 1;
         
@@ -2561,7 +2608,7 @@ void *drms_sums_thread(void *arg)
     }
 
     /* Check for special CLOSE or ABORT codes. */
-    if (request->opcode==DRMS_SUMCLOSE)
+    if (opcode == DRMS_SUMCLOSE)
     {
         if (env->verbose)
         {
@@ -2596,7 +2643,7 @@ void *drms_sums_thread(void *arg)
                                                 the queue.*/
       }
     }
-    else if ( request->opcode==DRMS_SUMABORT )
+    else if (opcode == DRMS_SUMABORT)
     {
         if (env->verbose)
         {
@@ -2607,7 +2654,7 @@ void *drms_sums_thread(void *arg)
     }
     else /* A regular request. */
     {
-        int requestID = request->opcode;
+        int requestID = opcode;
         
         if (env->verbose)
         {
@@ -2626,7 +2673,7 @@ void *drms_sums_thread(void *arg)
              * sum_svc with a SUM_open() call. If that happens, drms_process_sums_request()
              * will return the new SUM_t. */
             
-            reply = drms_process_sums_request(env, &sum, request);
+            reply = drms_process_sums_request(env, &sum, (DRMS_SumRequest_t *)request, opcode, mtRequest);
             if (!reply)
             {
                 fprintf(stderr, "sums thread: drms_process_sums_request() returned NULL. Thread making the request (ID): %ld. Request (ID): %d\n", env->sum_tag, requestID);
@@ -2643,19 +2690,35 @@ void *drms_sums_thread(void *arg)
             }
             
             /* Send a reply to the client saying that SUM_open() failed. */
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
+            if (mtRequest)
+            {
+                reply = calloc(1, sizeof(DRMS_MtSumsRequest_t));
+                XASSERT(reply);
+                ((DRMS_MtSumsRequest_t *)reply)->opcode = DRMS_ERROR_SUMOPEN;
+            }
+            else
+            {
+                reply = malloc(sizeof(DRMS_SumRequest_t));
+                XASSERT(reply);
+                ((DRMS_SumRequest_t *)reply)->opcode = DRMS_ERROR_SUMOPEN;
+            }
+#else
             reply = malloc(sizeof(DRMS_SumRequest_t));
             XASSERT(reply);
-            reply->opcode = DRMS_ERROR_SUMOPEN;
+            ((DRMS_SumRequest_t *)reply)->opcode = DRMS_ERROR_SUMOPEN;
+#endif
         }
         
         if (reply)
         {
             if (env->verbose)
             {
-                printf("sums thread: A reply was returned from SUMS, return code %d.\n", reply->opcode);
+                /* The opcode is accessible from either type of request struct. */
+                printf("sums thread: A reply was returned from SUMS, return code %d.\n", ((DRMS_SumRequest_t *)reply)->opcode);
             }
             
-            if (!request->dontwait)
+            if (!dontwait)
             {
                 if (env->verbose)
                 {
@@ -2674,14 +2737,40 @@ void *drms_sums_thread(void *arg)
                 
                 /* If the calling thread waits for the reply, then it is the caller's responsibility
                  * to clean up. Otherwise, clean up here. */
-                for (int i = 0; i < request->reqcnt; i++) {
-                    if (reply->sudir[i])
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
+                if (mtRequest)
+                {
+                    for (int i = 0; i < reqcnt; i++) 
                     {
-                        free(reply->sudir[i]);
+                        if ((((DRMS_MtSumsRequest_t *)reply)->sudir)[i])
+                        {
+                            free((((DRMS_MtSumsRequest_t *)reply)->sudir)[i]);
+                        }
                     }
                     
-                    /* The sunum array is statically defined - no need to free. */
+                    free(((DRMS_MtSumsRequest_t *)reply)->sudir);
+                    ((DRMS_MtSumsRequest_t *)reply)->sudir = NULL;
                 }
+                else
+                {
+                    for (int i = 0; i < reqcnt; i++) 
+                    {
+                        if ((((DRMS_SumRequest_t *)reply)->sudir)[i])
+                        {
+                            free((((DRMS_SumRequest_t *)reply)->sudir)[i]);
+                        }
+                    }
+                }
+#else
+            for (int i = 0; i < reqcnt; i++) 
+            {
+                if ((((DRMS_SumRequest_t *)reply)->sudir)[i])
+                {
+                    free((((DRMS_SumRequest_t *)reply)->sudir)[i]);
+                }
+            }
+#endif
+                
                 free(reply);
             }
         }
@@ -2692,7 +2781,7 @@ void *drms_sums_thread(void *arg)
                 printf("sums thread: A reply was NOT returned from SUMS.\n");
             }
 
-            if (!request->dontwait)
+            if (!dontwait)
             {
                 /* This shouldn't happen. The client is waiting for a reply, but no reply is available to return to the client. */
                 fprintf(stderr, "ERROR: The client has requested a reply from SUMS, but no such reply is available.\n");
@@ -2704,6 +2793,16 @@ void *drms_sums_thread(void *arg)
 
     /* Note: request is only shallow-freed. The is the requestor's responsiblity 
      * to free any memory allocated for the dsname, comment, and sudir fields. */
+     
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
+    if (mtRequest && ((DRMS_MtSumsRequest_t *)request)->sunum)
+    {
+        /* If the request is handled by the multi-threaded SUMS, then DRMS allocated the list of SUNUMs. Free those here. */
+        free(((DRMS_MtSumsRequest_t *)request)->sunum);
+        ((DRMS_MtSumsRequest_t *)request)->sunum = NULL;
+    }
+#endif
+
     free(request);
   } /* main loop on queue. */
 
@@ -2863,7 +2962,9 @@ static int UnsetSgPending(SUMID_t id)
 
 static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
 						    SUM_t **suminout,
-						    DRMS_SumRequest_t *request)
+						    DRMS_SumRequest_t *request,
+						    int opcode,
+						    int mtRequest)
 {
   int i;
   DRMS_SumRequest_t *reply = NULL;
@@ -2889,9 +2990,21 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
      return NULL;
   }
 
-  reply = malloc(sizeof(DRMS_SumRequest_t));
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
+    if (mtRequest)
+    {
+        reply = calloc(1, sizeof(DRMS_MtSumsRequest_t));
+    }
+    else
+    {
+        reply = malloc(sizeof(DRMS_SumRequest_t));
+    }
+#else
+    reply = malloc(sizeof(DRMS_SumRequest_t));
+#endif
+
   XASSERT(reply);
-  switch(request->opcode)
+  switch(opcode)
   {
   case DRMS_SUMALLOC:
 #ifdef DEBUG
@@ -3677,12 +3790,23 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
        char key[128];
        SUM_info_t *nulladdr = NULL;
        uint64_t dxarray[MAXSUNUMARRAY];
+       int maxNoSus;
+       
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
+        DRMS_MtSumsRequest_t *requestWrap = (DRMS_MtSumsRequest_t *)request;
+        DRMS_MtSumsRequest_t *replyWrap = (DRMS_MtSumsRequest_t *)reply;
+        maxNoSus = MAX_MTSUMS_NSUS;
+#else
+        DRMS_SumRequest_t *requestWrap = request;
+        DRMS_SumRequest_t *replyWrap = reply;
+        maxNoSus = MAXSUMREQCNT;
+#endif
 
-       if (request->reqcnt < 1 || request->reqcnt > MAXSUMREQCNT)
+       if (requestWrap->reqcnt < 1 || requestWrap->reqcnt > maxNoSus)
        {
           fprintf(stderr,"SUM thread: Invalid reqcnt (%d) in SUMINFO request.\n",
-                  request->reqcnt);
-          reply->opcode = DRMS_ERROR_SUMINFO;
+                  requestWrap->reqcnt);
+          replyWrap->opcode = DRMS_ERROR_SUMINFO;
           break;
        }
 
@@ -3708,7 +3832,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
               {
                   sum = NULL;
                   nosums = 1;
-                  reply->opcode = sumscallret;
+                  replyWrap->opcode = sumscallret;
                   break;
               }
               
@@ -3731,21 +3855,21 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
            * the SUNUM in the array of streamlined requests. */
           map = hcon_create(sizeof(SUM_info_t *), 128, NULL, NULL, NULL, NULL, 0);
 
-          for (i = 0, isunum = 0; i < request->reqcnt; i++)
+          for (i = 0, isunum = 0; i < requestWrap->reqcnt; i++)
           {
              /* One or more sunums may be ULLONG_MAX (originally, they were -1, but because request->sunum 
               * is an array of uint64_t, they will have been cast to ULLONG_MAX). Don't put the -1 
               * requests in dxarray, because -1 is invalid as far as SUMS is concerned. */
-             if (request->sunum[i] == ULLONG_MAX)
+             if (requestWrap->sunum[i] == ULLONG_MAX)
              {
                 /* skip sunum == -1. */
                 continue;
              }
 
-             snprintf(key, sizeof(key), "%llu", (unsigned long long)request->sunum[i]);
+             snprintf(key, sizeof(key), "%llu", (unsigned long long)requestWrap->sunum[i]);
              if (!hcon_member(map, key))
              {
-                dxarray[isunum] = request->sunum[i];
+                dxarray[isunum] = requestWrap->sunum[i];
                 hcon_insert(map, key, &nulladdr);
                 isunum++;
              }
@@ -3755,11 +3879,11 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
           sum->sinfo = NULL;
 
           /* Make RPC call to the SUM server. */
-          reply->opcode = MakeSumsCall(env, DRMS_SUMINFO, &sum, printkerr, dxarray, isunum);
+          replyWrap->opcode = MakeSumsCall(env, DRMS_SUMINFO, &sum, printkerr, dxarray, isunum);
       
-          if (reply->opcode != 0)
+          if (replyWrap->opcode != 0)
           {
-             sumscrashed = (reply->opcode == 4 || reply->opcode == kBrokenPipe);
+             sumscrashed = (replyWrap->opcode == 4 || replyWrap->opcode == kBrokenPipe);
              if (sumscrashed)
              {
                 sum = NULL;
@@ -3772,7 +3896,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
              else
              {
                 fprintf(stderr,"SUM thread: SUM_infoArray RPC call failed with "
-                        "error code %d\n", reply->opcode);
+                        "error code %d\n", replyWrap->opcode);
                 nosums = 1;
                 break; // from loop
              }
@@ -3795,7 +3919,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
              if (!psinfo)
              {
                 fprintf(stderr, "SUMS did not return a SUM_info_t struct for sunum %s.\n", key);
-                reply->opcode = 99;
+                replyWrap->opcode = 99;
                 break;
              }
 
@@ -3811,41 +3935,44 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
              else
              {
                 fprintf(stderr, "Information returned for sunum '%s' unknown to DRMS.\n", key);
-                reply->opcode = 99;
+                replyWrap->opcode = 99;
                 break; // from loop
              }
 
              psinfo = psinfo->next;
           }
 
-           if (reply->opcode == 0)
+           if (replyWrap->opcode == 0)
            {
-               for (i = 0; i < request->reqcnt; i++)
+                /* We are going to send back SUM_info_t structs in the reply->sudir field. Malloc (more than needed) now. */
+                replyWrap->sudir = calloc(requestWrap->reqcnt, sizeof(char *));
+                
+               for (i = 0; i < requestWrap->reqcnt; i++)
                {
                    /* request->sunum may contain duplicate sunums. One or more sunums may be ULLONG_MAX also 
                     * (originally, they were -1, but because request->sunum is an array of uint64_t, 
                     * they will have been cast to ULLONG_MAX). */
-                   if (request->sunum[i] == ULLONG_MAX)
+                   if (requestWrap->sunum[i] == ULLONG_MAX)
                    {
                        /* Create a dummy, empty SUM_info_t*/
-                       reply->sudir[i] = (char *)malloc(sizeof(SUM_info_t));
-                       memset(reply->sudir[i], 0, sizeof(SUM_info_t));
-                       ((SUM_info_t *)(reply->sudir[i]))->sunum = ULLONG_MAX; /* This will be cast to -1 by the 
+                       replyWrap->sudir[i] = (char *)malloc(sizeof(SUM_info_t));
+                       memset(replyWrap->sudir[i], 0, sizeof(SUM_info_t));
+                       ((SUM_info_t *)(replyWrap->sudir[i]))->sunum = ULLONG_MAX; /* This will be cast to -1 by the 
                                                                                * calling code. */
                        continue;
                    }
 
-                   snprintf(key, sizeof(key), "%llu", (unsigned long long)(request->sunum[i]));
+                   snprintf(key, sizeof(key), "%llu", (unsigned long long)(requestWrap->sunum[i]));
                    if ((pinfo = hcon_lookup(map, key)) != NULL)
                    {
-                       reply->sudir[i] = (char *)malloc(sizeof(SUM_info_t));
-                       *((SUM_info_t *)(reply->sudir[i])) = **pinfo;
-                       ((SUM_info_t *)(reply->sudir[i]))->next = NULL;
+                       replyWrap->sudir[i] = (char *)malloc(sizeof(SUM_info_t));
+                       *((SUM_info_t *)(replyWrap->sudir[i])) = **pinfo;
+                       ((SUM_info_t *)(replyWrap->sudir[i]))->next = NULL;
                    }
                    else
                    {
                        fprintf(stderr, "Information returned for sunum '%s' unknown to DRMS.\n", key);
-                       reply->opcode = 99;
+                       replyWrap->opcode = 99;
                        break; // from loop
                    }
                }

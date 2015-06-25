@@ -264,6 +264,7 @@ static int receiveMsg(SUM_t *sums, char **out, size_t *outLen, int (*history)(co
         
         /* The double guard ensures that MSGLEN_NUMBYTES <= MAX_MSG_BUFSIZE. The header is accumulated directly
          * in recvBuffer. */
+        *recvBuffer = '\0';
         while (bytesReceivedTotal < MSGLEN_NUMBYTES && bytesReceivedTotal < MAX_MSG_BUFSIZE)
         {
             sizeTextRecvd = recv(sockfd, recvBuffer + bytesReceivedTotal, MIN(MSGLEN_NUMBYTES - bytesReceivedTotal, MAX_MSG_BUFSIZE - bytesReceivedTotal), 0);
@@ -282,6 +283,7 @@ static int receiveMsg(SUM_t *sums, char **out, size_t *outLen, int (*history)(co
     if (!err)
     {
         /* Convert hex string to number. */
+        *numBytesMessage = '\0';
         snprintf(numBytesMessage, sizeof(numBytesMessage), "%s", recvBuffer);
         sscanf(numBytesMessage, "%08x", &sizeMessage);
         
@@ -297,6 +299,7 @@ static int receiveMsg(SUM_t *sums, char **out, size_t *outLen, int (*history)(co
             /* Receive the message. */
             bytesReceivedTotal = 0;
         
+            *recvBuffer = '\0';
             while (bytesReceivedTotal < sizeMessage)
             {
                 sizeTextRecvd = recv(sockfd, recvBuffer, MIN(sizeMessage - bytesReceivedTotal, MAX_MSG_BUFSIZE), 0);
@@ -2267,7 +2270,7 @@ int SUM_infoArray(SUM_t *sums, uint64_t *sunums, int reqcnt, int (*history)(cons
     char *pickle = NULL;
     size_t pickleLen;
     char *response = NULL;
-    size_t rspLen;
+    size_t rspLen = 0;
     int err;
     
     err = 0;
