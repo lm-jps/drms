@@ -3945,7 +3945,9 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
            if (replyWrap->opcode == 0)
            {
                 /* We are going to send back SUM_info_t structs in the reply->sudir field. Malloc (more than needed) now. */
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
                 replyWrap->sudir = calloc(requestWrap->reqcnt, sizeof(char *));
+#endif
                 
                for (i = 0; i < requestWrap->reqcnt; i++)
                {
