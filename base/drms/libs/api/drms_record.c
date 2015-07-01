@@ -1477,12 +1477,6 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
              * and populated in the DRMS record structs returned. The keywords have not been verified
              * as valid keywords yet. Do that after the series name has been extracted from the specification. */
             klist = *llistout;
-            if (list_llgetnitems(klist) == 0)
-            {
-                stat = DRMS_ERROR_INVALIDDATA;
-                fprintf(stderr, "drms_open_records_internal() called with empty keyword list.\n");
-                goto failure;
-            }
         }
         else
         {
@@ -1745,8 +1739,7 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
 
                             if (!keyword)
                             {
-                                fprintf(stderr, "Keyword %s does not exist in series %s.\n", (char *)(ln->data), snames[iSet]);
-                                goto failure;
+                                continue;
                             }
                             
                             if (!hcon_member_lower(unsorted, keyword->info->name))
