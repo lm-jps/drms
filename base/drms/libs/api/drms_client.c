@@ -2652,14 +2652,17 @@ sem_t *drms_client_getsdsem(void)
 
 void drms_client_initsdsem(void)
 {
-  /* create shutdown (unnamed POSIX) semaphore */
-  gShutdownsem = malloc(sizeof(sem_t));
+    if (!gShutdownsem)
+    {
+        /* create shutdown (unnamed POSIX) semaphore */
+        gShutdownsem = malloc(sizeof(sem_t));
 
-  /* Initialize semaphore to 1 - "unlocked" */
-  sem_init(gShutdownsem, 0, 1);
-  
-  /* Initialize shutdown state to kSHUTDOWN_UNINITIATED - no shutdown requested */
-  gShutdown = kSHUTDOWN_UNINITIATED;
+        /* Initialize semaphore to 1 - "unlocked" */
+        sem_init(gShutdownsem, 0, 1);
+
+        /* Initialize shutdown state to kSHUTDOWN_UNINITIATED - no shutdown requested */
+        gShutdown = kSHUTDOWN_UNINITIATED;
+    }
 }
 
 void drms_client_destroysdsem(void)
