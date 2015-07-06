@@ -277,7 +277,6 @@ class Collector(threading.Thread):
                 raise Exception('unknownRequestType', 'The request type ' + self.reqType + ' is not supported.')
 
             if self.log:
-                # XXX need to write out user.
                 self.log.write(['New ' + self.reqType + ' request from process ' + str(self.clientInfo.pid) + ' by user ' + self.clientInfo.user + ' at ' + str(self.sock.getpeername()) + ': ' + ','.join(self.suList) + '.'])
 
             if self.reqType == 'info':
@@ -309,7 +308,6 @@ class Collector(threading.Thread):
                 raise Exception('socketConnection', 'Client sent extraneous data over socket connection.')
 
         except Exception as exc:
-            raise
             import traceback
             log.write(['There was a problem communicating with client ' + str(self.sock.getpeername()) + '.'])
             log.write([traceback.format_exc(0)])
