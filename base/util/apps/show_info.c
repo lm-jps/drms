@@ -2839,7 +2839,7 @@ int DoIt(void)
             /* Set chunk size to something bigger than that of the SUM_infoEx() call. 
             * Code in drms_storageunit.c will subchunk this into the chunk size used by
             * SUM_infoEx(). */
-            if (drms_recordset_setchunksize(4 * MAXSUMREQCNT) != DRMS_SUCCESS)
+            if (drms_recordset_setchunksize(4096) != DRMS_SUCCESS)
             {
               show_info_return(99);
             }
@@ -2850,7 +2850,12 @@ int DoIt(void)
             }
             else
             {
-                recordset = drms_open_recordswithkeys(drms_env, in, keylist, &status);
+                /* For now, do not use the memory-saving API function (since there might be users who
+                 * do not expect a limit on the number of resulting records). 
+                 * 
+                 *  recordset = drms_open_partialrecords(drms_env, in, keylist, &status);
+                 */
+                recordset = drms_open_recordset (drms_env, in, &status);
             }
         }
         else // max_recs specified via "n=" parameter.
