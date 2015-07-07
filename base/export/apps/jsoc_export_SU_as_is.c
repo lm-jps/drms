@@ -54,190 +54,388 @@ int nice_intro ()
   return(1);	\
   }
 
-SUM_t *my_sum=NULL;
-
-SUM_info_t *drms_get_suinfo(long long sunum)
-  {
-  int status;
-  if (my_sum && my_sum->sinfo->sunum == sunum)
-    return(my_sum->sinfo);
-  if (!my_sum)
-    {
-    if ((my_sum = SUM_open(NULL, NULL, printkerr)) == NULL)
-      {
-      printkerr("drms_open: Failed to connect to SUMS.\n");
-      return(NULL);
-      }
-    }
-  if (status = SUM_info(my_sum, sunum, printkerr))
-    {
-    printkerr("Fail on SUM_info, status=%d\n", status);
-    return(NULL);
-    }
-
-  return(my_sum->sinfo);
-  }
-
 TIME timenow()
   {
   TIME UNIX_epoch = -220924792.000; /* 1970.01.01_00:00:00_UTC */
   TIME now = (double)time(NULL) + UNIX_epoch;
   return(now);
   }
+  
+  
+void freeInfostructs(SUM_info_t ***infostructs, int count)
+{
+    int iinfo;
+    
+    if (infostructs && *infostructs)
+    {
+        for (iinfo = 0; iinfo < count; iinfo++)
+        {
+            if ((*infostructs)[iinfo])
+            {
+                free((*infostructs)[iinfo]);
+                (*infostructs)[iinfo] = NULL;
+            }
+        }
+        
+        free(*infostructs);
+        *infostructs = NULL;
+    }
+}
+
+static int nextInfoIndex(char **list)
+{
+    static char **current = NULL;
+    
+    if (!current)
+    {
+        current = list;
+    }
+    
+    while (current)
+    {
+        current++;
+    }
+    
+    return current - list;
+}
 
 /* Module main function. */
 int DoIt(void)
   {
-  char *in;
   char *sunumlist, *sunumlistptr;
   char *this_sunum;
-  char *requestid;
-  char *method;
-  char *protocol;
-  char *format;
+  const char *requestid;
+  const char *method;
+  const char *protocol;
+  const char *format;
 
   int count;
-  long long sunum;
-  int status=0;
+  int status = DRMS_SUCCESS;
   long long size;
-  FILE *index_txt, *index_data;
+  FILE *index_txt = NULL;
   char buf[2*DRMS_MAXPATHLEN];
   char *cwd;
   TIME now = timenow();
 
-  char mbuf[128];
-  char onlinestat[128];
+  char onlinestat;
   int susize;
   char supath[DRMS_MAXPATHLEN];
+    int64_t *sunumList = NULL; /* array of 64-bit sunums provided in the'ds=...' argument. */
+    int y,m,d,hr,mn;
+    char sutime[64];
+    int online;
+    int ioff;
+    int noff;
+    SUM_info_t **infostructs = NULL;
+    int iinfo;
+    SUM_info_t *suinfo = NULL;
+    int retention;
+    char **outList = NULL;
+    DRMS_SuAndSeries_t *offlineSUs = NULL;
+    int nextIInfo;
+    long long *offlineSUList = NULL;
 
   if (nice_intro ()) return (0);
+  
+  count = cmdparams_get_int64arr(&cmdparams, "ds", &sunumList, &status);
 
-  in = cmdparams_get_str (&cmdparams, "ds", NULL);
-  requestid = cmdparams_get_str (&cmdparams, "requestid", NULL);
-  format = cmdparams_get_str (&cmdparams, "format", NULL);
-  method = cmdparams_get_str (&cmdparams, "method", NULL);
-  protocol = cmdparams_get_str (&cmdparams, "protocol", NULL);
-
-  index_txt = fopen("index.txt", "w");
-  fprintf(index_txt, "# JSOC Export SU List\n");
-  fprintf(index_txt, "version=1\n");
-  fprintf(index_txt, "requestid=%s\n", requestid);
-  fprintf(index_txt, "method=%s\n", method);
-  fprintf(index_txt, "protocol=%s\n", protocol);
-  fprintf(index_txt, "wait=0\n");
+  if (status != CMDPARAMS_SUCCESS || !sunumList)
+  {
+     fprintf(stderr, "Invalid argument 'sunum=%s'.\n", cmdparams_get_str(&cmdparams, "ds", NULL));
+     return 1;
+  }
+  
+  requestid = cmdparams_get_str(&cmdparams, "requestid", NULL);
+  format = cmdparams_get_str(&cmdparams, "format", NULL);
+  method = cmdparams_get_str(&cmdparams, "method", NULL);
+  protocol = cmdparams_get_str(&cmdparams, "protocol", NULL);
 
   /* loop through list of storage units */
-  count = 0;
   size = 0;
-  sunumlist = strdup(in);
-  index_data = fopen("index.data", "w+");
+  
+    /* This used to make one direct SUM_info() call for each SU. Changed to use drms_getsuinfo(). This call 
+     * batches the SUs by using SUM_infoArray(). */
+    if (count > 0)
+    {     
+        infostructs = (SUM_info_t **)calloc(count, sizeof(SUM_info_t *));
+        
+        if (!infostructs)
+        {
+            fprintf(stderr, "Out of memory.\n");
+            free(sunumList); 
+            
+            return 1;
+        }
+        
+        status = drms_getsuinfo(drms_env, (long long *)sunumList, count, infostructs);
 
-  while (this_sunum = strtok_r(sunumlist, ",", &sunumlistptr))
-    {
-    SUM_info_t *sinfo;
-    TIME expire;
-    sunum = atoll(this_sunum);
-    sunumlist = NULL;
-    count += 1;
-    
-    susize = 0;
-    memset(onlinestat, 0, sizeof(onlinestat));
-    snprintf(supath, sizeof(supath), "NA");
+        if (status != DRMS_SUCCESS)
+        {
+            fprintf(stderr, "Unable to get SUMS information for specified SUs.\n");
+            
+            freeInfostructs(&infostructs, count);
+            free(sunumList);
 
-    sinfo = drms_get_suinfo(sunum);
-    if (!sinfo)
-    {
-       snprintf(mbuf, 
-                sizeof(mbuf), 
-                "Invalid sunum, drms_open_records call failed: owning series - '%s', sunum - '%lld.\n", 
-                sinfo->owning_series, 
-                sunum);
-       fprintf(stderr, mbuf);
-       *onlinestat = 'I';
-    }
-    else
-    {
-       if (strcmp(sinfo->online_status,"N")!=0)
-       {
-          int y,m,d,hr,mn;
-          char sutime[50];
-          sscanf(sinfo->effective_date,"%4d%2d%2d%2d%2d", &y,&m,&d,&hr,&mn);
-          sprintf(sutime, "%4d.%02d.%02d_%02d:%02d", y,m,d,hr,mn);
-          expire = (sscan_time(sutime) - now)/86400.0;
-       }
-       if (strcmp(sinfo->online_status,"N")==0 || expire < 3)
-       {  // need to stage or reset retention time
-          char query[DRMS_MAXQUERYLEN];
-          char recpath[DRMS_MAXPATHLEN];
-          char *slash;
-          DRMS_RecordSet_t *rs;
-          sprintf(query,"%s[! sunum=%lld !]", sinfo->owning_series, sunum);
-          rs = drms_open_records(drms_env, query, &status);
-          if (!rs || rs->n < 1)
-          {
-             snprintf(mbuf, 
-                      sizeof(mbuf), 
-                      "Invalid sunum, drms_open_records call failed: owning series - '%s', sunum - '%lld.\n", 
-                      sinfo->owning_series, 
-                      sunum);
-             fprintf(stderr, mbuf);
-             *onlinestat = 'I';
-          }
-          else
-          {
-             if (strcmp(sinfo->archive_status, "N") == 0)
-             {
-                *onlinestat = 'X';
-             }
-             else
-             {
-                drms_record_directory(rs->records[0], recpath, 1);
+            return 1;
+        }
+        
+        offlineSUs = calloc(count, sizeof(DRMS_SuAndSeries_t)); /* overkill - at most there will be count offlineSUs (if they are all offline). */
+        if (!offlineSUs)
+        {
+            fprintf(stderr, "Out of memory.\n");
+            freeInfostructs(&infostructs, count);
+            free(sunumList); 
+            
+            return 1;
+        }
+        
+        outList = calloc(count, sizeof(char *));
+        if (!outList)
+        {
+            fprintf(stderr, "Out of memory.\n");
+            free(offlineSUs);
+            freeInfostructs(&infostructs, count);
+            free(sunumList); 
+            
+            return 1;
+        }
 
-                if (strlen(recpath) == 0)
+        for (iinfo = 0, ioff = 0; iinfo < count; iinfo++)
+        {
+            suinfo = infostructs[iinfo];
+            if (suinfo && *suinfo->online_loc != '\0')
+            {
+                size += (long long)suinfo->bytes;
+            
+                /* Valid SU. */
+                if (strcmp(suinfo->online_status, "Y") == 0)
                 {
-                   *onlinestat = 'X';
+                    /* No checking for format errors here. */
+                    sscanf(suinfo->effective_date, "%4d%2d%2d%2d%2d", &y, &m, &d, &hr, &mn);
+                    snprintf(sutime, sizeof(sutime), "%4d.%02d.%02d_%02d:%02d", y, m, d, hr, mn);
+                    retention = (sscan_time(sutime) - now)/86400.0;
+                
+                    if (retention >= 3)
+                    {
+                        /* Online already. */
+                        snprintf(buf, sizeof(buf), "%lld\t%s\t%s\t%s\t%d\n", suinfo->sunum, suinfo->owning_series, suinfo->online_loc, "Y", (int)suinfo->bytes);
+                        outList[iinfo] = strdup(buf);
+                        online = 1;
+                        onlinestat = 'Y';
+                    }
+                    else
+                    {
+                        online = 0;
+                    }
                 }
                 else
                 {
-                   susize = (int)sinfo->bytes;
-                   *onlinestat = 'Y';
+                    online = 0;
                 }
+            
+                if (!online)
+                {
+                    if (strcmp(suinfo->archive_status, "N") == 0)
+                    {
+                        snprintf(buf, sizeof(buf), "%lld\t%s\t%s\t%s\t%d\n", suinfo->sunum, suinfo->owning_series, "NA", "X", (int)suinfo->bytes);
+                        outList[iinfo] = strdup(buf);
+                    }
+                    else
+                    {
+                        /* Save these so that we can call SUM_get() via drms_getunits() and bring them back online. We have to sort these
+                         * according to owning series. */                        
+                        offlineSUs[ioff].sunum = suinfo->sunum;
+                        offlineSUs[ioff].series = suinfo->owning_series; /* swiper no swiping! */
+                        ioff++;
+                    }
+                }
+            }
+            else
+            {
+                /* Invalid SU. */
+                snprintf(buf, sizeof(buf), "%lld\t%s\t%s\t%s\t%d\n", sunumList[iinfo], "NA", "NA", "I", 0);
+                outList[iinfo] = strdup(buf);
+            }
+        }
+        
+        noff = ioff;
+     
+        if (noff > 0)
+        {
+            /* We want to call SUM_get() on all these SUs with the retrieve flag set, and dontwait set to false (the original semantics).
+             * That means that this module could hang if a tape is offline.
+             * 
+             * There is no easy way to call SUM_get(), short of having to call drms_open_records(), drms_record_directory(), and 
+             * drms_close_records(). ARGH says I! If we use drms_open_records(), then we have to group by series. We would have to 
+             * create a record-set specification with <series>[! sunum=XXX !] in it. Instead, we can use drms_getunits_ex().
+             * We simply have to provide an array of DRMS_SuAndSeries_t. We do not have an array of DRMS_SuAndSeries_t, just headless ones.
+             */
+            int bail = 0;
+            
+            /* suAndSeriesArray is now pointing into infostructs. */
+            status = drms_getunits_ex(drms_env, noff, offlineSUs, 1, 0);
+                        
+            /* Clear out old infostructs. offlineSUs was pointing into infostructs, but we freed offlineSUs. */
+            freeInfostructs(&infostructs, count);
 
-                strcpy(supath, recpath);
-                slash = rindex(supath, '/');
-                if (slash && strncmp(slash, "/S", 2) == 0)
-                  slash[0] = '\0';
-             }
-          }
+            if (status != DRMS_SUCCESS)
+            {
+                fprintf(stderr, "Out of memory.\n");
+                free(offlineSUs);
+                free(outList);
+                free(sunumList);
+                
+                return 1;
+            }
+            
+            /* For some reason, the SUMS information obtained by drms_getunits_ex() gets discarded. Have to call drms_getsuinfo() again. Bail if any SUs are 
+             * not valid. */
+                                      
+            /* Allocate infostructs for the next call of drms_getsuinfo() - for the SUs that were originally offline. */
+            infostructs = (SUM_info_t **)calloc(noff, sizeof(SUM_info_t *));
+        
+            if (!infostructs)
+            {
+                fprintf(stderr, "Out of memory.\n");
+                free(offlineSUs);
+                free(outList);
+                free(sunumList);
 
-          drms_close_records(rs, DRMS_FREE_RECORD);
-       }
-       else
-       {
-          strcpy(supath, sinfo->online_loc);
-          susize = (int)sinfo->bytes;
-          *onlinestat = 'Y';
-       }
+                return 1;
+            }
+
+            /* Must create list of previously offline SUs. */
+            offlineSUList = calloc(noff, sizeof(long long));
+            
+            if (!offlineSUList)
+            {
+                fprintf(stderr, "Out of memory.\n");
+                freeInfostructs(&infostructs, noff);
+                free(offlineSUs);
+                free(outList);
+                free(sunumList);
+
+                return 1;
+            }
+            
+            for (ioff = 0; ioff < noff; ioff++)
+            {
+                offlineSUList[ioff] = offlineSUs[ioff].sunum;
+            }
+            
+            free(offlineSUs);
+            offlineSUs = NULL;
+
+            status = drms_getsuinfo(drms_env, (long long *)offlineSUList, noff, infostructs);
+            
+            free(offlineSUs);
+            offlineSUs = NULL;
+            
+            free(offlineSUList);
+            offlineSUList = NULL;            
+
+            if (status != DRMS_SUCCESS)
+            {
+                fprintf(stderr, "Unable to get SUMS information for specified SUs.\n");
+                freeInfostructs(&infostructs, noff);
+                free(outList);
+                free(sunumList);
+
+                return 1;
+            }
+
+            for (ioff = 0; iinfo < noff; ioff++)
+            {
+                suinfo = infostructs[ioff];
+                
+                if (suinfo && *suinfo->online_loc != '\0')
+                {
+                    /* Valid SU. */
+                    if (strcmp(suinfo->online_status, "Y") == 0)
+                    {
+                        /* No checking for format errors here. */
+                        sscanf(suinfo->effective_date, "%4d%2d%2d%2d%2d", &y, &m, &d, &hr, &mn);
+                        snprintf(sutime, sizeof(sutime), "%4d.%02d.%02d_%02d:%02d", y, m, d, hr, mn);
+                        retention = (sscan_time(sutime) - now)/86400.0;
+                
+                        if (retention < 3)
+                        {
+                            /* Offline. */
+                            bail = 1;
+                        }
+                    }
+                    else
+                    {
+                        /* Offline. */
+                        bail = 1;
+                    }
+                }
+                else
+                {
+                    /* Invalid. */
+                    bail = 1;
+                }
+                
+                if (bail)
+                {
+                    fprintf(stderr, "Unable to stage offline SUs.\n");
+                    freeInfostructs(&infostructs, noff);
+                    free(outList);
+                    free(sunumList);
+
+                    return 1;
+                }
+                else
+                {
+                    snprintf(buf, sizeof(buf), "%lld\t%s\t%s\t%s\t%d\n", suinfo->sunum, suinfo->owning_series, suinfo->online_loc, "Y", (int)suinfo->bytes);
+                    nextIInfo = nextInfoIndex(outList);
+                    outList[nextIInfo] = strdup(buf);
+                }
+            }
+            
+            freeInfostructs(&infostructs, noff);
+        }
     }
 
-    fprintf(index_data, "%lld\t%s\t%s\t%s\t%d\n", sunum, sinfo->owning_series, supath, onlinestat, susize);
-    size += sinfo->bytes;
+    if (noff < 1)
+    {
+        freeInfostructs(&infostructs, count);
     }
 
-  fprintf(index_txt, "count=%d\n",count);
-  fprintf(index_txt, "size=%lld\n",size);
-  fprintf(index_txt, "status=0\n");
-  cwd = getcwd(NULL, 0);
-  fprintf(index_txt,"dir=%s\n", ((strncmp("/auto", cwd,5) == 0) ? cwd+5 : cwd));
-  fprintf(index_txt, "# DATA SU\n");
-  rewind(index_data);
-  while (fgets(buf, DRMS_MAXPATHLEN*2, index_data))
-    fputs(buf, index_txt);
-  fclose(index_txt);
-  fclose(index_data);
-  unlink("index.data");
+    index_txt = fopen("index.txt", "w");
+
+    if (!index_txt)
+    {
+        fprintf(stderr, "Unable to open index.txt for writing.\n");
+        if (sunumList)
+        {
+            free(sunumList);
+        }
+        
+        return 1;
+    }
+
+    fprintf(index_txt, "# JSOC Export SU List\n");
+    fprintf(index_txt, "version=1\n");
+    fprintf(index_txt, "requestid=%s\n", requestid);
+    fprintf(index_txt, "method=%s\n", method);
+    fprintf(index_txt, "protocol=%s\n", protocol);
+    fprintf(index_txt, "wait=0\n");
+    fprintf(index_txt, "count=%d\n",count);
+    fprintf(index_txt, "size=%lld\n",size);
+    fprintf(index_txt, "status=0\n");
+    
+    cwd = getcwd(NULL, 0);
+    fprintf(index_txt,"dir=%s\n", ((strncmp("/auto", cwd,5) == 0) ? cwd+5 : cwd));
+    fprintf(index_txt, "# DATA SU\n");
+    
+    /* Finally, we have info for all SUs. */
+    for (iinfo = 0; iinfo < count; iinfo++)
+    {
+        fprintf(index_txt, outList[iinfo]);
+    }
+    
+    fclose(index_txt);
   
-  if (my_sum)
-    SUM_close(my_sum,printkerr);
-  return(0);
+    return(0);
 }
