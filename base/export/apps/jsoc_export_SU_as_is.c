@@ -82,6 +82,23 @@ void freeInfostructs(SUM_info_t ***infostructs, int count)
     }
 }
 
+void freeOutList(char ***outList, int num)
+{
+    int iinfo;
+    
+    for (iinfo = 0; iinfo < num; iinfo++)
+    {
+        if ((*outList)[iinfo])
+        {
+            free((*outList)[iinfo]);
+            (*outList)[iinfo] = NULL;
+        }
+    }
+    
+    free(*outList);
+    *outList = NULL;
+}
+
 static int nextInfoIndex(char **list)
 {
     static char **current = NULL;
@@ -102,7 +119,7 @@ static int nextInfoIndex(char **list)
 /* Module main function. */
 int DoIt(void)
   {
-  char *sunumlist, *sunumlistptr;
+  char *sunumlist;
   char *this_sunum;
   const char *requestid;
   const char *method;
@@ -117,9 +134,6 @@ int DoIt(void)
   char *cwd;
   TIME now = timenow();
 
-  char onlinestat;
-  int susize;
-  char supath[DRMS_MAXPATHLEN];
     int64_t *sunumList = NULL; /* array of 64-bit sunums provided in the'ds=...' argument. */
     int y,m,d,hr,mn;
     char sutime[64];
@@ -179,21 +193,10 @@ int DoIt(void)
             return 1;
         }
         
-        offlineSUs = calloc(count, sizeof(DRMS_SuAndSeries_t)); /* overkill - at most there will be count offlineSUs (if they are all offline). */
-        if (!offlineSUs)
-        {
-            fprintf(stderr, "Out of memory.\n");
-            freeInfostructs(&infostructs, count);
-            free(sunumList); 
-            
-            return 1;
-        }
-        
         outList = calloc(count, sizeof(char *));
         if (!outList)
         {
             fprintf(stderr, "Out of memory.\n");
-            free(offlineSUs);
             freeInfostructs(&infostructs, count);
             free(sunumList); 
             
@@ -221,7 +224,6 @@ int DoIt(void)
                         snprintf(buf, sizeof(buf), "%lld\t%s\t%s\t%s\t%d\n", suinfo->sunum, suinfo->owning_series, suinfo->online_loc, "Y", (int)suinfo->bytes);
                         outList[iinfo] = strdup(buf);
                         online = 1;
-                        onlinestat = 'Y';
                     }
                     else
                     {
@@ -243,7 +245,20 @@ int DoIt(void)
                     else
                     {
                         /* Save these so that we can call SUM_get() via drms_getunits() and bring them back online. We have to sort these
-                         * according to owning series. */                        
+                         * according to owning series. */
+                        if (!offlineSUs)
+                        {
+                            offlineSUs = calloc(count, sizeof(DRMS_SuAndSeries_t)); /* overkill - at most there will be count offlineSUs (if they are all offline). */
+                            if (!offlineSUs)
+                            {
+                                fprintf(stderr, "Out of memory.\n");
+                                freeInfostructs(&infostructs, count);
+                                free(sunumList); 
+            
+                                return 1;
+                            }
+                        }
+                         
                         offlineSUs[ioff].sunum = suinfo->sunum;
                         offlineSUs[ioff].series = suinfo->owning_series; /* swiper no swiping! */
                         ioff++;
@@ -257,6 +272,9 @@ int DoIt(void)
                 outList[iinfo] = strdup(buf);
             }
         }
+        
+        free(sunumList);
+        sunumList = NULL;
         
         noff = ioff;
      
@@ -282,9 +300,8 @@ int DoIt(void)
             {
                 fprintf(stderr, "Out of memory.\n");
                 free(offlineSUs);
-                free(outList);
-                free(sunumList);
-                
+                freeOutList(&outList, count);
+
                 return 1;
             }
             
@@ -298,8 +315,7 @@ int DoIt(void)
             {
                 fprintf(stderr, "Out of memory.\n");
                 free(offlineSUs);
-                free(outList);
-                free(sunumList);
+                freeOutList(&outList, count);
 
                 return 1;
             }
@@ -312,8 +328,7 @@ int DoIt(void)
                 fprintf(stderr, "Out of memory.\n");
                 freeInfostructs(&infostructs, noff);
                 free(offlineSUs);
-                free(outList);
-                free(sunumList);
+                freeOutList(&outList, count);
 
                 return 1;
             }
@@ -328,9 +343,6 @@ int DoIt(void)
 
             status = drms_getsuinfo(drms_env, (long long *)offlineSUList, noff, infostructs);
             
-            free(offlineSUs);
-            offlineSUs = NULL;
-            
             free(offlineSUList);
             offlineSUList = NULL;            
 
@@ -338,8 +350,7 @@ int DoIt(void)
             {
                 fprintf(stderr, "Unable to get SUMS information for specified SUs.\n");
                 freeInfostructs(&infostructs, noff);
-                free(outList);
-                free(sunumList);
+                freeOutList(&outList, count);
 
                 return 1;
             }
@@ -380,8 +391,7 @@ int DoIt(void)
                 {
                     fprintf(stderr, "Unable to stage offline SUs.\n");
                     freeInfostructs(&infostructs, noff);
-                    free(outList);
-                    free(sunumList);
+                    freeOutList(&outList, count);
 
                     return 1;
                 }
@@ -407,10 +417,6 @@ int DoIt(void)
     if (!index_txt)
     {
         fprintf(stderr, "Unable to open index.txt for writing.\n");
-        if (sunumList)
-        {
-            free(sunumList);
-        }
         
         return 1;
     }
@@ -421,19 +427,25 @@ int DoIt(void)
     fprintf(index_txt, "method=%s\n", method);
     fprintf(index_txt, "protocol=%s\n", protocol);
     fprintf(index_txt, "wait=0\n");
-    fprintf(index_txt, "count=%d\n",count);
-    fprintf(index_txt, "size=%lld\n",size);
+    fprintf(index_txt, "count=%d\n", count);
+    fprintf(index_txt, "size=%lld\n", size);
     fprintf(index_txt, "status=0\n");
     
     cwd = getcwd(NULL, 0);
-    fprintf(index_txt,"dir=%s\n", ((strncmp("/auto", cwd,5) == 0) ? cwd+5 : cwd));
+    fprintf(index_txt,"dir=%s\n", ((strncmp("/auto", cwd, 5) == 0) ? cwd + 5 : cwd));
+    free(cwd);
     fprintf(index_txt, "# DATA SU\n");
     
     /* Finally, we have info for all SUs. */
     for (iinfo = 0; iinfo < count; iinfo++)
     {
         fprintf(index_txt, outList[iinfo]);
+        free(outList[iinfo]);
+        outList[iinfo] = NULL;
     }
+
+    free(outList);
+    outList = NULL;
     
     fclose(index_txt);
   
