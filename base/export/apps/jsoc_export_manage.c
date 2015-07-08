@@ -3173,9 +3173,11 @@ int DoIt(void)
             FreeRecSpecParts(&snames, &filts, nsets);
         }
         
-        if (seriesEnv != drms_env)
+        if (seriesEnv != NULL && seriesEnv != drms_env)
         {
-            /* This rolls-back the transaction needed in the case that the dbmainhost was not the host that jsoc_export_manage connected to at start. */
+            /* This rolls-back the transaction needed in the case that the dbmainhost was not the host that jsoc_export_manage connected to at start. 
+             * We only made this second environment if we needed to call a DRMS API function that required an environment and that environment
+             * was different from the one that this module created on start-up. */
             drms_server_end_transaction(seriesEnv, 1, 1);
         }
 
