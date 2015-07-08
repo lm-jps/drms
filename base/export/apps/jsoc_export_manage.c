@@ -3000,7 +3000,7 @@ int DoIt(void)
                  * we simply provide a record-set specification that has no commas.
                  */
          
-                if (list_llgetnitems(proccmds) != 0)
+                if (proccmds && list_llgetnitems(proccmds) != 0)
                 {
                     int iseries;
                     const char *setname = NULL;
