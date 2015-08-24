@@ -1179,22 +1179,20 @@ static int InitVarConts(const char *args,
                 {
                     *pc = '\0';
                     
-                    if (oneval)
+                    if (oneval && *oneval != '\0')
                     {
                         valcpy = strdup(oneval);
                         hcon_insert(*pvarsargs, onename, &valcpy);
                     }
-                    else
-                    {
-                        valcpy = strdup("");
-                        hcon_insert(*pvarsargs, onename, &valcpy);
-                    }
+                    
                     pc++;
                     onename = pc;
                     oneval = NULL;
                 }
-                
-                pc++;
+                else
+                {
+                    pc++;
+                }
             }
             
             if (!err)
@@ -2966,8 +2964,6 @@ int DoIt(void)
             snprintf(msgbuf, sizeof(msgbuf), "Invalid process field value: %s.", process);          
             ErrorOutExpRec(&export_rec, 4, msgbuf);
             ErrorOutExpNewRec(exports_new, &export_log, irec, 4, msgbuf);
-            fclose(fp);
-            fp = NULL;
 
             /* mem leak - need to free all strings obtained with drms_getkey_string(). */
             continue; /* next export record */
