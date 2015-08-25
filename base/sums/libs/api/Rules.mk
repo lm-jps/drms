@@ -55,13 +55,9 @@ S_$(d)		:= $(notdir $(LIBSUMSAPI))
 $(OBJ_$(d)):   $(SRCDIR)/$(d)/Rules.mk
 $(OBJ_SUMOPEN_$(d)):   $(SRCDIR)/$(d)/Rules.mk
 
-WRAP_CF_$(d) := 
-ifeq ($(COMPILER), gcc)
-    WRAP_CF_$(d) := -fwrapv
-endif
-
 $(OBJ_$(d)):            CF_TGT := $(CF_TGT_$(d))
-$(OBJ_SUMOPEN_$(d)):    CF_TGT := $(LIBPYH) $(CF_TGT_$(d)) -fpic -Wstrict-prototypes $(WRAP_CF_$(d))
+$(OBJ_SUMOPEN_$(d)):    CF_TGT := -I$(LIBCJSONH) $(CF_TGT_$(d)) -Wstrict-prototypes
+$(OBJ_SUMOPEN_$(d)):    $(LIBCJSON)
 
 ##endif
 $(LIBSUMSAPI):	$(LIBSUMSAPI_OBJ)

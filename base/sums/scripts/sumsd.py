@@ -9,7 +9,8 @@ import socket
 import signal
 import select
 from datetime import datetime, timedelta
-import pickle
+import re
+import json
 import psycopg2
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../include'))
 from drmsparams import DRMSParams
@@ -235,9 +236,184 @@ class Dbconnection(object):
 
         return RowGenerator(rows)    
 
-# An object for passing data between the client and server (in both directions)
-class Info(object):
+class DataObj(object):
     pass
+    
+class Jsonizer(object):
+    def __init__(self, response, sus):
+        self.response = response
+        self.sus = sus
+        self.json = None
+        self.data = None
+    
+    def jsonize(self):
+        self.json = json.dumps(self.data)
+        
+    def getJSON(self):
+        return self.json
+    
+    @staticmethod    
+    def stripHexPrefix(hexadecimal):
+        regexp = re.compile(r'^\s*0x(\S+)', re.IGNORECASE)
+        match = regexp.match(hexadecimal)
+        if match:
+            return match.group(1)
+        else:
+            return hexadecimal
+    
+class SuminfoJsonizer(Jsonizer):
+    # response is a SuminfoResponse object. The db response text is in response.response.
+    def __init__(self, response, sus):
+        super(SuminfoJsonizer, self).__init__(response, sus)
+        infoList = []
+        processed = {}
+        
+        # Make an object from the arrays returned by the database.
+        for row in response.getDbResponse():
+            rowIter = iter(row)
+            infoDict = {}
+            infoDict['sunum'] = Jsonizer.stripHexPrefix(hex(rowIter.__next__())) # Convert to hex string since some parsers do not support 64-bit integers.
+            infoDict['onlineLoc'] = rowIter.__next__()
+            infoDict['onlineStatus'] = rowIter.__next__()
+            infoDict['archiveStatus'] = rowIter.__next__()
+            infoDict['offsiteAck'] = rowIter.__next__()
+            infoDict['historyComment'] = rowIter.__next__()
+            infoDict['owningSeries'] = rowIter.__next__()
+            infoDict['storageGroup'] = rowIter.__next__()
+            infoDict['bytes'] = Jsonizer.stripHexPrefix(hex(rowIter.__next__())) # Convert to hex string since some parsers do not support 64-bit integers.
+            infoDict['createSumid'] = rowIter.__next__()
+            # The db returns a datetime object. Convert the datetime to a str object.
+            infoDict['creatDate'] = rowIter.__next__().strftime('%Y-%m-%d %T')
+            infoDict['username'] = rowIter.__next__()
+            infoDict['archTape'] = rowIter.__next__()
+            infoDict['archTapeFn'] = rowIter.__next__()
+            # The db returns a datetime object. Convert the datetime to a str object.
+            infoDict['archTapeDate'] = rowIter.__next__().strftime('%Y-%m-%d %T')
+            infoDict['safeTape'] = rowIter.__next__()
+            infoDict['safeTapeFn'] = rowIter.__next__()
+            # The db returns a datetime object. Convert the datetime to a str object.
+            infoDict['safeTapeDate'] = rowIter.__next__().strftime('%Y-%m-%d %T')
+            infoDict['effectiveDate'] = rowIter.__next__()
+            infoDict['paStatus'] = rowIter.__next__()
+            infoDict['paSubstatus'] = rowIter.__next__()
+            
+            # Put SU in hash of processed SUs.
+            suStr = str(int(infoDict['sunum'], 16)) # Convert hexadecimal string to decimal string.
+            processed[suStr] = infoDict
+        
+        for su in sus:
+            if str(su) in processed:
+                infoList.append(processed[str(su)])
+            else:
+                # Must check for an invalid SU and set some appropriate values if the SU is indeed invalid:
+                #   sunum --> sunum
+                #   paStatus --> 0
+                #   paSubstatus --> 0
+                #   onlineLoc --> ''
+                #   effectiveDate --> 'N/A'
+                # The other attributes do not matter.
+                # If the SUNUM was invalid, then there was no row in the response for that SU. So, we
+                # have to create dummy rows for those SUs.
+                infoDict = {}
+                infoDict['sunum'] = Jsonizer.stripHexPrefix(hex(su)) # Convert to hex string since some parsers do not support 64-bit integers.
+                infoDict['onlineLoc'] = ''
+                infoDict['onlineStatus'] = ''
+                infoDict['archiveStatus'] = ''
+                infoDict['offsiteAck'] = ''
+                infoDict['historyComment'] = ''
+                infoDict['owningSeries'] = ''
+                infoDict['storageGroup'] = -1
+                infoDict['bytes'] = Jsonizer.stripHexPrefix(hex(0)) # In sum_main, bytes is a 64-bit integer. In SUM_info, it is a double. sum_open.c converts the integer (long) to a floating-point number.
+                infoDict['createSumid'] = -1
+                infoDict['creatDate'] = '1966-12-25 00:54'
+                infoDict['username'] = ''
+                infoDict['archTape'] = ''
+                infoDict['archTapeFn'] = -1
+                infoDict['archTapeDate'] = '1966-12-25 00:54'
+                infoDict['safeTape'] = ''
+                infoDict['safeTapeFn'] = -1
+                infoDict['safeTapeDate'] = '1966-12-25 00:54'
+                infoDict['effectiveDate'] = 'N/A'
+                infoDict['paStatus'] = 0
+                infoDict['paSubstatus'] = 0
+
+                infoList.append(infoDict)
+        self.data = { 'suinfolist' : infoList }
+        self.jsonize()
+        
+class Unjsonizer(object):
+    def __init__(self, jsonStr):
+        self.json = jsonStr
+        self.unjsonized = json.loads(jsonStr) # JSON objects are converted to Python dictionaries!
+        self.data = DataObj()
+        
+class ClientinfoUnjsonizer(Unjsonizer):
+    # msg is JSON:
+    # {
+    #    "pid" : 1946,
+    #    "user" : "TheDonald"
+    # }
+    # 
+    # The pid is a JSON number, which could be a double string. But the client
+    # will make sure that the number is a 32-bit integer.
+    def __init__(self, jsonStr):
+        super(ClientinfoUnjsonizer, self).__init__(jsonStr)
+        self.data.pid = self.unjsonized['pid']
+        self.data.user = self.unjsonized['user']
+        
+class SuminfoUnjsonizer(Unjsonizer):
+    # msg is JSON:
+    # {
+    #    "reqtype" : "infoArray",
+    #    "sulist" : [ "3039", "5BA0" ]
+    # }
+    def __init__(self, jsonStr=None, unjsonizer=None):
+        if jsonStr:
+            super(SuminfoUnjsonizer, self).__init__(jsonStr)
+        elif unjsonizer:
+            self.json = unjsonizer.json
+            self.unjsonized = unjsonizer.unjsonized
+            self.data = DataObj()
+        else:
+            raise Exception('invalidArgument', 'Must supply either json or Unjsonizer to SuminfoUnjsonizer().')
+            
+        self.data.reqType = self.unjsonized['reqtype']
+        # Convert array of hexadecimal strings to array of integers.
+        self.data.sus = [ int(suStr, 16) for suStr in self.unjsonized['sulist'] ]
+    
+    @classmethod
+    def fromJson(cls, msg):
+        # Check that obj is an instance of cls.
+        return cls(jsonStr=msg)
+            
+    @classmethod
+    def fromObj(cls, obj):
+        # Check that obj is an instance of cls.
+        return cls(unjsonizer=obj)
+        
+class Response(object):
+    def __init__(self, debugLog, dbconn, suList):
+        self.debugLog = debugLog
+        self.dbconn = dbconn
+        self.suList = suList
+        self.response = None
+
+    def exeDbCmd(self):
+        if self.debugLog:
+            self.debugLog.write(['db command is: ' + self.cmd])
+        return self.dbconn.exeCmd(self.cmd)
+        
+    def getDbResponse(self):
+        return self.response
+        
+class SuminfoResponse(Response):
+    def __init__(self, debugLog, dbconn, suList):
+        super(SuminfoResponse, self).__init__(debugLog, dbconn, suList)
+        self.exeDbCmd()
+        
+    def exeDbCmd(self):
+        self.cmd = "SELECT T1.ds_index, T1.online_loc, T1.online_status, T1.archive_status, T1.offsite_ack, T1.history_comment, T1.owning_series, T1.storage_group, T1.bytes, T1.create_sumid, T1.creat_date, T1.username, COALESCE(T1.arch_tape, 'N/A'), COALESCE(T1.arch_tape_fn, 0), COALESCE(T1.arch_tape_date, '1958-01-01 00:00:00'), COALESCE(T1.safe_tape, 'N/A'), COALESCE(T1.safe_tape_fn, 0), COALESCE(T1.safe_tape_date, '1958-01-01 00:00:00'), COALESCE(T2.effective_date, '195801010000'), coalesce(T2.status, 0), coalesce(T2.archive_substatus, 0) FROM " + SUM_MAIN + " AS T1 LEFT OUTER JOIN " + SUM_PARTN_ALLOC + " AS T2 ON (T1.ds_index = T2.ds_index) WHERE T1.ds_index IN (" + ','.join(self.suList) + ')'
+        self.response = super(SuminfoResponse, self).exeDbCmd()
 
 class Collector(threading.Thread):
 
@@ -249,7 +425,7 @@ class Collector(threading.Thread):
     MSGLEN_NUMBYTES = 8 # This is the hex-text version of the number of bytes in the response message.
                         # So, we can send back 4 GB of response!
     MAX_MSG_BUFSIZE = 4096 # Don't receive more than this in one call!
-    REQUEST_TYPE = { '0':'none', '1': 'info'}
+    REQUEST_TYPE = { '0':'none', '1': 'infoArray'}
     
     def __init__(self, sock, host, port, database, user, log, debugLog):
         threading.Thread.__init__(self)
@@ -263,36 +439,22 @@ class Collector(threading.Thread):
         try:
             # The client must pass in some identifying information (other than their IP address).
             # Receive that information now.
-            msg = self.receivePickle()
-            self.unpickleClientInfo(msg)
+            msgStr = self.receiveJson() # msgStr is a string object.
+            self.extractClientInfo(msgStr)
 
             # First, obtain request.
-            msg = self.receivePickle()
-            self.unpickleRequest(msg)
-
-            # Set the request type (can raise).
-            try:
-                self.reqType = Collector.REQUEST_TYPE['1'] # XXX Need to extract this type from the request.
-            except KeyError:
-                raise Exception('unknownRequestType', 'The request type ' + self.reqType + ' is not supported.')
+            msgStr = self.receiveJson() # msgStr is a string object.
+            self.extractRequest(msgStr) # Will raise if reqtype is not supported.
 
             if self.log:
-                self.log.write(['New ' + self.reqType + ' request from process ' + str(self.clientInfo.pid) + ' by user ' + self.clientInfo.user + ' at ' + str(self.sock.getpeername()) + ': ' + ','.join(self.suList) + '.'])
+                self.log.write(['New ' + self.request.data.reqType + ' request from process ' + str(self.clientInfo.data.pid) + ' by user ' + self.clientInfo.data.user + ' at ' + str(self.sock.getpeername()) + ': ' + ','.join(self.suList) + '.'])
 
-            if self.reqType == 'info':
-                cmd = "SELECT T1.ds_index, T1.online_loc, T1.online_status, T1.archive_status, T1.offsite_ack, T1.history_comment, T1.owning_series, T1.storage_group, T1.bytes, T1.create_sumid, T1.creat_date, T1.username, COALESCE(T1.arch_tape, 'N/A'), COALESCE(T1.arch_tape_fn, 0), COALESCE(T1.arch_tape_date, '1958-01-01 00:00:00'), COALESCE(T1.safe_tape, 'N/A'), COALESCE(T1.safe_tape_fn, 0), COALESCE(T1.safe_tape_date, '1958-01-01 00:00:00'), COALESCE(T2.effective_date, '195801010000'), coalesce(T2.status, 0), coalesce(T2.archive_substatus, 0) FROM " + SUM_MAIN + " AS T1 LEFT OUTER JOIN " + SUM_PARTN_ALLOC + " AS T2 ON (T1.ds_index = T2.ds_index) WHERE T1.ds_index IN (" + ','.join(self.suList) + ')'
-
-            if self.debugLog:
-                self.debugLog.write(['db command is: ' + cmd])
-
-            response = self.dbconn.exeCmd(cmd)
+            msgStr = self.generateResponse() # A str object.
 
             # Send results back on the socket, which is connected to a single DRMS module. By sending the results
             # back, the client request is completed. We want to construct a list of "SUM_info" objects. Each object
             # { sunum:12592029, onlineloc:'/SUM52/D12592029', ...}
-            
-            msg = self.pickleResponse(response)
-            self.sendPickle(msg)
+            self.sendJson(msgStr) # Expects a str object.
             
             # This thread is about to terminate. We don't want to end this thread before
             # the client closes the socket though. Otherwise, our socket will get stuck in 
@@ -338,118 +500,43 @@ class Collector(threading.Thread):
             self.sock.shutdown(socket.SHUT_RDWR)
             self.sock.close()
             
-    def unpickleRequest(self, msg):
-        # ARG! The TestClient sends a list of strings, but the real client sends
-        # a list of numbers. It should be a list of numbers (integers).
-        self.request = pickle.loads(msg)
+    def extractRequest(self, msg):
+        request = Unjsonizer(msg)
+
+        if request.unjsonized['reqtype'] == Collector.REQUEST_TYPE['1']:
+            self.request = SuminfoUnjsonizer.fromObj(request)
+        else:
+            raise Exception('unknownRequestType', 'The request type ' + request.unjsonized['reqtype'] + ' is not supported.')
+            
         processed = {}
         self.suList = []
         
         if self.debugLog:
-            self.debugLog.write([str(self.sock.getpeername()) + ' - requested SUs: ' + ','.join([str(item) for item in self.request])])
+            self.debugLog.write([str(self.sock.getpeername()) + ' - requested SUs: ' + ','.join([str(item) for item in self.request.data.sus])])
          
         # suList may contain duplicates. They must be removed.
-        for su in self.request:
+        for su in self.request.data.sus:
             if str(su) not in processed:        
                 self.suList.append(str(su)) # Make a list of strings - we'll need to concatenate the elements into a comma-separated list for the DB query.
                 
-    def unpickleClientInfo(self, msg):
-        # This is an Info object. 
-        info = pickle.loads(msg)
-
-        self.clientInfo = Info()
-                
-        # info.pid is an int
-        self.clientInfo.pid = info.pid
+    def extractClientInfo(self, msg):
+        if self.debugLog:
+            self.debugLog.write([str(self.sock.getpeername()) + ' extracting client info.'])
+        self.clientInfo = ClientinfoUnjsonizer(msg);
         
-        # info.user is a str object.
-        self.clientInfo.user = info.user
-        
-    def pickleResponse(self, response):
-        infoList = []
-        processed = {}
-        
-        for row in response:
-            rowIter = iter(row)
-            infoObj = Info()
-            infoObj.sunum = rowIter.__next__()
-            infoObj.onlineLoc = rowIter.__next__()
-            infoObj.onlineStatus = rowIter.__next__()
-            infoObj.archiveStatus = rowIter.__next__()
-            infoObj.offsiteAck = rowIter.__next__()
-            infoObj.historyComment = rowIter.__next__()
-            infoObj.owningSeries = rowIter.__next__()
-            infoObj.storageGroup = rowIter.__next__()
-            infoObj.bytes = rowIter.__next__()
-            infoObj.createSumid = rowIter.__next__()
-            # It turns out that datetime objects are not supported very well in the C-to-Python
-            # interface, so convert the datetime to a bytes object.
-            infoObj.creatDate = rowIter.__next__().strftime('%Y-%m-%d %T')
-            infoObj.username = rowIter.__next__()
-            infoObj.archTape = rowIter.__next__()
-            infoObj.archTapeFn = rowIter.__next__()
-            # It turns out that datetime objects are not supported very well in the C-to-Python
-            # interface, so convert the datetime to a bytes object.
-            infoObj.archTapeDate = rowIter.__next__().strftime('%Y-%m-%d %T')
-            infoObj.safeTape = rowIter.__next__()
-            infoObj.safeTapeFn = rowIter.__next__()
-            # It turns out that datetime objects are not supported very well in the C-to-Python
-            # interface, so convert the datetime to a bytes object.
-            infoObj.safeTapeDate = rowIter.__next__().strftime('%Y-%m-%d %T')
-            infoObj.effectiveDate = rowIter.__next__()
-            infoObj.paStatus = rowIter.__next__()
-            infoObj.paSubstatus = rowIter.__next__()
+    def generateResponse(self):
+        if self.request.data.reqType == Collector.REQUEST_TYPE['1']:
+            # response contains the database-command Pythonized response, unjsonized.
+            response = SuminfoResponse(self.debugLog, self.dbconn, self.suList)
+            # Jsonize response.
+            jsonizer = SuminfoJsonizer(response, self.request.data.sus)
+        else:
+            raise Exception('unknownRequestType', 'The request type ' + self.request.data.reqType + ' is not supported.')
             
-            # Put SU in hash of processed SUs.
-            processed[str(infoObj.sunum)] = infoObj
+        return jsonizer.getJSON()
         
-        for su in self.request:
-            if str(su) in processed:
-                infoList.append(processed[str(su)])
-            else:
-                # Must check for an invalid SU and set some appropriate values if the SU is indeed invalid:
-                #   sunum --> sunum
-                #   paStatus --> 0
-                #   paSubstatus --> 0
-                #   onlineLoc --> ''
-                #   effectiveDate --> 'N/A'
-                # The other attributes do not matter.
-                # If the SUNUM was invalid, then there was no row in the response for that SU. So, we
-                # have to create dummy rows for those SUs.
-                infoObj = Info()
-                infoObj.sunum = su
-                infoObj.onlineLoc = ''
-                infoObj.onlineStatus = ''
-                infoObj.archiveStatus = ''
-                infoObj.offsiteAck = ''
-                infoObj.historyComment = ''
-                infoObj.owningSeries = ''
-                infoObj.storageGroup = -1
-                infoObj.bytes = -1 # In sum_main, bytes is an integer. In SUM_info, it is a double. sum_open.c converts the integer (long) to a floating-point number.
-                infoObj.createSumid = -1
-                # It turns out that datetime objects are not supported very well in the C-to-Python
-                # interface, so convert the datetime to a bytes object.
-                infoObj.creatDate = '1966-12-25 00:54'
-                infoObj.username = ''
-                infoObj.archTape = ''
-                infoObj.archTapeFn = -1
-                # It turns out that datetime objects are not supported very well in the C-to-Python
-                # interface, so convert the datetime to a bytes object.
-                infoObj.archTapeDate = '1966-12-25 00:54'
-                infoObj.safeTape = ''
-                infoObj.safeTapeFn = -1
-                # It turns out that datetime objects are not supported very well in the C-to-Python
-                # interface, so convert the datetime to a bytes object.
-                infoObj.safeTapeDate = '1966-12-25 00:54'
-                infoObj.effectiveDate = 'N/A'
-                infoObj.paStatus = 0
-                infoObj.paSubstatus = 0
-
-                infoList.append(infoObj)
-        
-        return pickle.dumps(infoList, pickle.HIGHEST_PROTOCOL)
-        
-    def sendPickle(self, msg):
+    # msg is a bytes object.
+    def sendMsg(self, msg):
         # First send the length of the message.
         bytesSentTotal = 0
         numBytesMessage = '{:08x}'.format(len(msg))
@@ -470,8 +557,9 @@ class Collector(threading.Thread):
             
         if self.debugLog:
             self.debugLog.write([str(self.sock.getpeername()) + ' - sent ' + str(bytesSentTotal) + ' bytes response.'])
-            
-    def receivePickle(self):
+    
+    # Returns a bytes object.
+    def receiveMsg(self):
         # First, receive length of message.
         allTextReceived = b''
         bytesReceivedTotal = 0
@@ -496,9 +584,18 @@ class Collector(threading.Thread):
                 raise Exception('socketConnection', 'Socket broken.')
             allTextReceived += textReceived
             bytesReceivedTotal += len(textReceived)
-        # Return a bytes object (not a string). The unpickle function will need a bytes object for input.
+        # Return a bytes object (not a string). The unjsonize function will need a str object for input.
         return allTextReceived
-    
+        
+    # msg is a str object.
+    def sendJson(self, msgStr):
+        msgBytes = bytes(msgStr, 'UTF-8')
+        self.sendMsg(msgBytes)
+
+    def receiveJson(self):
+        msgBytes = self.receiveMsg() # A bytes object, not a str object. json.loads requires a str object.
+        return msgBytes.decode('UTF-8') # Convert bytes to str.
+            
     # Must acquire Collector lock BEFORE calling newThread() since newThread() will append to tList (the Collector threads will be deleted from tList as they complete).
     @staticmethod
     def newThread(sock, host, port, database, user, log, debugLog):
@@ -557,11 +654,13 @@ class TestClient(threading.Thread):
             self.sock.connect((socket.gethostname(), self.serverPort))
         
             # Send some random SUNUMs to the server thread (one is invalid - 123456789).
-            request = [650547410, 650547419, 650547430, 650551748, 123456789, 650551852, 650551942, 650555939, 650556333]
-            msg = self.pickleRequest(request)
-            self.sendRequest(msg)
-            msg = self.receiveResponse()
-            response = self.unpickleResponse(msg)
+            request = {[650547410, 650547419, 650547430, 650551748, 123456789, 650551852, 650551942, 650555939, 650556333]}
+            msgStr = self.jsonizeRequest(request)
+            msgBytes = bytes(msgStr, 'UTF-8')
+            self.sendRequest(msgBytes)
+            msgBytes = self.receiveResponse()
+            msgStr = msgBytes.decode('UTF-8')
+            response = self.unjsonizeResponse(msgStr)
             
             self.dumpsInfoList(response)
         except Exception as exc:
@@ -573,15 +672,16 @@ class TestClient(threading.Thread):
             self.sock.shutdown(socket.SHUT_RDWR)
             self.sock.close()
         
-    def pickleRequest(self, request):
-        # Split into a list.
-        return pickle.dumps(request, pickle.HIGHEST_PROTOCOL)
+    def jsonizeRequest(self, request):
+        return json.dumps(request)
         
-    def unpickleResponse(self, msg):
-        infoList = pickle.loads(msg)
+    def unjsonizeResponse(self, msg):
+        infoDict = json.loads(msg)
+        infoList = infoDict['suinfolist']
         # We now have a list of Info objects.
         return infoList
     
+    # msg is a bytes object.
     def sendRequest(self, msg):
         # First send the length of the message.
         bytesSentTotal = 0
@@ -601,6 +701,7 @@ class TestClient(threading.Thread):
                 raise Exception('socketConnection', 'Socket broken.')
             bytesSentTotal += bytesSent
     
+    # Returns a bytes object.
     def receiveResponse(self):
         # First, receive length of message.
         allTextReceived = b''
@@ -629,27 +730,27 @@ class TestClient(threading.Thread):
         return allTextReceived
         
     def dumpsInfoList(self, infoList):
-        for infoObj in infoList:
-            self.debugLog.write(['sunum=' + str(infoObj.sunum)])
-            self.debugLog.write(['path=' + infoObj.onlineLoc])
-            self.debugLog.write(['status=' + infoObj.onlineStatus])
-            self.debugLog.write(['archstatus=' + infoObj.archiveStatus])
-            self.debugLog.write(['ack=' + infoObj.offsiteAck])
-            self.debugLog.write(['comment=' + infoObj.historyComment])
-            self.debugLog.write(['series=' + infoObj.owningSeries])
-            self.debugLog.write(['group=' + str(infoObj.storageGroup)])
-            self.debugLog.write(['size=' + str(infoObj.bytes)])
-            self.debugLog.write(['create=' + infoObj.creatDate])
-            self.debugLog.write(['user=' + infoObj.username])
-            self.debugLog.write(['tape=' + infoObj.archTape])
-            self.debugLog.write(['tapefn=' + str(infoObj.archTapeFn)])
-            self.debugLog.write(['tapedate=' + infoObj.archTapeDate])
-            self.debugLog.write(['safetape=' + infoObj.safeTape])
-            self.debugLog.write(['safetapefn=' + str(infoObj.safeTapeFn)])
-            self.debugLog.write(['safetapedate=' + infoObj.safeTapeDate])
-            self.debugLog.write(['pastatus=' + str(infoObj.paStatus)])
-            self.debugLog.write(['pasubstatus=' + str(infoObj.paSubstatus)])
-            self.debugLog.write(['effdate=' + infoObj.effectiveDate])
+        for infoDict in infoList:
+            self.debugLog.write(['sunum=' + str(infoDict['sunum'])])
+            self.debugLog.write(['path=' + infoDict['onlineLoc']])
+            self.debugLog.write(['status=' + infoDict['onlineStatus']])
+            self.debugLog.write(['archstatus=' + infoDict['archiveStatus']])
+            self.debugLog.write(['ack=' + infoDict['offsiteAck']])
+            self.debugLog.write(['comment=' + infoDict['historyComment']])
+            self.debugLog.write(['series=' + infoDict['owningSeries']])
+            self.debugLog.write(['group=' + str(infoDict['storageGroup'])])
+            self.debugLog.write(['size=' + str(infoDict['bytes'])])
+            self.debugLog.write(['create=' + infoDict['creatDate']])
+            self.debugLog.write(['user=' + infoDict['username']])
+            self.debugLog.write(['tape=' + infoDict['archTape']])
+            self.debugLog.write(['tapefn=' + str(infoDict['archTapeFn'])])
+            self.debugLog.write(['tapedate=' + infoDict['archTapeDate']])
+            self.debugLog.write(['safetape=' + infoDict['safeTape']])
+            self.debugLog.write(['safetapefn=' + str(infoDict['safeTapeFn'])])
+            self.debugLog.write(['safetapedate=' + infoDict['safeTapeDate']])
+            self.debugLog.write(['pastatus=' + str(infoDict['paStatus'])])
+            self.debugLog.write(['pasubstatus=' + str(infoDict['paSubstatus'])])
+            self.debugLog.write(['effdate=' + infoDict['effectiveDate']])
 
 class SignalThread(threading.Thread):
 

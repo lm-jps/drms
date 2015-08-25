@@ -22,7 +22,7 @@ q:DRMSPGPORT                    5432
 q:SUMS_DB_HOST                  hmidb3
 q:SUMPGPORT                     5434
 a:SUMSD_MAX_THREADS             32
-a:SUMSD_LISTENPORT              6002
+a:SUMSD_LISTENPORT              6004
 a:DRMS_LOCAL_SITE_CODE          0x0000
 q:DBNAME                        jsoc
 q:WEB_DBUSER                    apache
@@ -81,6 +81,8 @@ q:BIN_PY                                /home/jsoc/bin/linux_x86_64/activepython
 a:SUMS_USEMTSUMS                        1
 # Email registration
 a:REGEMAIL_TIMEOUT                      5
+# Slony
+q:SLONY_CONFIG                          /home/jsoc/cvs/Development/JSOC/proj/replication/etc/repserver.cfg
 
 __MAKE__
 # JSOC_SDP third-party libraries used by base
@@ -203,7 +205,6 @@ PY_LIBS:AVX             /home/jsoc/ActiveStatePy/linux_avx/ActivePython-3.4/lib
 PY_HOME:X86_64          /home/jsoc/ActiveStatePy/linux_x86_64/ActivePython-3.4
 PY_HOME:AVX             /home/jsoc/ActiveStatePy/linux_avx/ActivePython-3.4
 
-
 # Set custom make file to tell the make system that the gcc cfitsio library is called
 # libcfitsio_gcc.a
 _CUST_
@@ -215,8 +216,8 @@ endif
 _ENDCUST_
 
 __PROJ_MK_RULES__
-$(CEXESUMS):                    $(LIBSUMSAPI) $(LIBSUM) $(LIBDSTRUCT)
-$(MODEXESUMS):                  $(LIBSUMSAPI) $(LIBSUM)
+$(CEXESUMS):                    $(LIBSUMSAPI) $(LIBCJSON) $(LIBSUM) $(LIBDSTRUCT)
+$(MODEXESUMS):                  $(LIBSUMSAPI) $(LIBCJSON) $(LIBSUM)
 
 $(MODEXEDROBJ):                 CF_TGT := $(CF_TGT) -I$(SRCDIR)/proj/libs/dr
 $(MODEXEDR) $(MODEXEDR_SOCK):   $(LIBDR)

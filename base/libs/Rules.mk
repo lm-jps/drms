@@ -4,6 +4,8 @@ dirstack_$(sp)	:= $(d)
 d		:= $(dir)
 
 # Subdirectories, in random order. Directory-specific rules are optional here.
+dir     := $(d)/cjson
+-include                $(SRCDIR)/$(dir)/Rules.mk
 dir	:= $(d)/cmdparams
 -include		$(SRCDIR)/$(dir)/Rules.mk
 dir	:= $(d)/db

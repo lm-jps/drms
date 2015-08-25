@@ -23,8 +23,6 @@
 //igor VSO HTTP request to JMD start
 #if defined(JMD_IS_INSTALLED) && JMD_IS_INSTALLED
     #include <curl/curl.h>
-    #include <curl/types.h>
-    #include <curl/easy.h>
 
     struct POSTState
     {

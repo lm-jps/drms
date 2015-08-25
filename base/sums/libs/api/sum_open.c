@@ -39,21 +39,12 @@ http://sun.stanford.edu/web.hmi/development/SU_Development_Plan/SUM_API.html
 #include <pwd.h>
 #include <sum_rpc.h>
 #include "serverdefs.h"
+#include "cJSON.h"
 
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
-#include <Python.h>
-
-struct Pickler_struct
-{
-    PyObject *globalDict;
-    PyObject *pickleModule; /* We need a handle to this to free it. */
-    PyObject *pickleDict;
-};
-
-typedef struct Pickler_struct Pickler_t;
 
 /* Enum defining types of API functions supported by MT SUMS. */
 enum MTSums_CallType_enum
@@ -337,179 +328,44 @@ static int receiveMsg(SUM_t *sums, char **out, size_t *outLen, int (*history)(co
     return err;
 }
 
-static char *pickleObject(SUM_t *sums, PyObject *obj, size_t *pickleLen, int (*history)(const char *fmt, ...))
+/* Returns json string in json. Handles Unicode, but UTF-8 only. So we can use strlen(json) to get the string length.
+ *
+ * Send:
+ * {
+ *    "pid": 12345, 
+ *    "user": arta
+ * }
+ */
+static int jsonizeClientInfo(SUM_t *sums, pid_t pid, const char *username, char **json, int (*history)(const char *fmt, ...))
 {
-    char *pickle = NULL;
-    PyObject *protocol = NULL;
-    PyObject *dumpsFxn = NULL;
-    PyObject *result = NULL;
-    const char *pickledStr = NULL;
-    Py_ssize_t byteLen;
-    int err = 0;
-
-    protocol = PyDict_GetItemString(sums->pickler->pickleDict, "HIGHEST_PROTOCOL");
-            
-    if (!protocol)
-    {
-        (*history)("Unable to load pickle protocol.\n");
-        err = 1;
-    }
+    int err = 1;
     
-    if (!err)
+    if (json)
     {
-        dumpsFxn = PyDict_GetItemString(sums->pickler->pickleDict, "dumps");
-
-        if (!dumpsFxn)
+        cJSON *root = NULL;
+        
+        root = cJSON_CreateObject();
+        if (!root)
         {
-            (*history)("Unable to load 'dumps' function.\n");
-            err = 1;
-        }
-    }
-
-    if (!err)
-    {
-        if (!PyCallable_Check(dumpsFxn)) 
-        {
-            (*history)("'dumps' function is not callable.\n");
-            err = 1;
-        }
-    }
-
-    if (!err)
-    {            
-        result = PyObject_CallFunctionObjArgs(dumpsFxn, obj, protocol, NULL);
-
-        if (!result)
-        {
-            (*history)("Unable to call 'dumps' function.\n");
-            err = 1;
-        }
-    }
-    
-    if (!err)
-    {
-        /* Since this function returns a bytes object in the Py environment, I'm assuming 
-         * it returns a PyObject that is a bytes. */
-         if (!PyBytes_Check(result))
-         {
-            (*history)("Unexpected data type for object returned from 'dumps' function.\n");
-            err = 1;
-         }
-    }
-    
-    if (!err)
-    {
-        if (PyBytes_AsStringAndSize(result, (char **)&pickledStr, &byteLen) == 0)
-        {
-            /* PyLong_FromSsize_t() should not fail because PyBytes_AsStringAndSize() should fail
-             * if result would result in a byteLen that overflows. */
-            *pickleLen = (size_t)PyLong_AsLong(PyLong_FromSsize_t(byteLen));
-            pickle = calloc(1, *pickleLen);
-            memcpy(pickle, pickledStr, *pickleLen);
+            (*history)("Out of memory calling cJSON_CreateObject().\n");
         }
         else
         {
-            (*history)("Unable to extract string from 'dumps' response.\n");
-            err = 1;
-        }
-    }
-
-    if (result)
-    {
-        Py_DECREF(result);
-    }
-    
-    return pickle;
-}
-
-static int pickleClientInfo(SUM_t *sums, pid_t pid, const char *username, char **pickle, size_t *pickleLen, int (*history)(const char *fmt, ...))
-{
-    PyObject *pyInfoConstructor = NULL;
-    PyObject *pyClientInfo = NULL;
-    PyObject *pyPid = NULL;
-    PyObject *pyUser = NULL;
-    int err = 0;
-    
-    if (!err)
-    {
-        pyInfoConstructor = PyDict_GetItemString(sums->pickler->globalDict, "Info");
-
-        if (!pyInfoConstructor)
-        {
-            (*history)("Unable to load 'Info' function.\n");
-            err = 1;
+            /* The cJSON library doesn't provide a way to check if this worked. We'll know when we print out the json string. */
+            cJSON_AddNumberToObject(root, "pid", (double)pid);
+            cJSON_AddStringToObject(root, "user", username);
+        
+            *json = cJSON_Print(root);
+            
+            if (*json)
+            {
+                err = 0;
+            }
+            
+            cJSON_Delete(root);
         }
     }
     
-    if (!err)
-    {
-        if (!PyCallable_Check(pyInfoConstructor)) 
-        {
-            (*history)("'Info' function is not callable.\n");
-            err = 1;
-        }
-    }
-    
-    if (!err)
-    {
-        pyClientInfo = PyObject_CallFunctionObjArgs(pyInfoConstructor, NULL);
-
-        if (!pyClientInfo)
-        {
-            (*history)("Unable to call 'Info' function.\n");
-            err = 1;
-        }
-    }
-
-    /* I wish C had native exception handling. */
-    if (!err)
-    {
-        err = ((pyPid = PyLong_FromLong((long)pid)) == NULL);
-    }
-    
-    if (!err)
-    {
-        err = ((pyUser = PyUnicode_FromString(username)) == NULL);
-    }
-
-    if (!err)
-    {
-        err = (PyObject_SetAttrString(pyClientInfo, "pid", pyPid) == -1);
-    }
-
-    if (!err)
-    {
-        err = (PyObject_SetAttrString(pyClientInfo, "user", pyUser) == -1);
-    }
-
-    if (!err)
-    {
-        *pickle = pickleObject(sums, pyClientInfo, pickleLen, history);
-        if (!*pickle || *pickleLen == 0)
-        {
-            (*history)("Unable to pickle client info object.\n");
-            err = 1;
-        }
-    }
-    
-    if (pyPid)
-    {
-        Py_DECREF(pyPid);
-        pyPid = NULL;
-    }
-    
-    if (pyUser)
-    {
-        Py_DECREF(pyUser);
-        pyUser = NULL;
-    }
-    
-    if (pyClientInfo)
-    {
-        Py_DECREF(pyClientInfo);
-        pyClientInfo = NULL;
-    }
-
     return err;
 }
 
@@ -562,8 +418,7 @@ static MSUMSCLIENT_t ConnectToMtSums(SUM_t *sums, MTSums_CallType_t type, int (*
         {
             pid_t pid;
             struct passwd *pwd = NULL;
-            char *pickle = NULL;
-            size_t pickleLen = 0;
+            char *json = NULL;
             
             /* Need to set mSumsClient for the sendMsg() call. */
             sums->mSumsClient = msums;
@@ -571,7 +426,7 @@ static MSUMSCLIENT_t ConnectToMtSums(SUM_t *sums, MTSums_CallType_t type, int (*
             pid = getpid();
             pwd = getpwuid(geteuid());
             
-            if (pickleClientInfo(sums, pid, pwd->pw_name, &pickle, &pickleLen, history))
+            if (jsonizeClientInfo(sums, pid, pwd->pw_name, &json, history))
             {
                 (*history)("Unable to collect client info.\n");
                 shutdown(msums, SHUT_RDWR);
@@ -581,8 +436,8 @@ static MSUMSCLIENT_t ConnectToMtSums(SUM_t *sums, MTSums_CallType_t type, int (*
             }
             else
             {
-                /* Send pickle. */
-                if (sendMsg(sums, pickle, pickleLen, history))
+                /* Send json. */
+                if (sendMsg(sums, json, strlen(json), history))
                 {
                     shutdown(msums, SHUT_RDWR);
                     close(msums);
@@ -591,10 +446,10 @@ static MSUMSCLIENT_t ConnectToMtSums(SUM_t *sums, MTSums_CallType_t type, int (*
                 }
             }
             
-            if (pickle)
+            if (json)
             {
-                free(pickle);
-                pickle = NULL;
+                free(json);
+                json = NULL;
             } 
         }
     }
@@ -613,135 +468,6 @@ static void DisconnectFromMtSums(SUM_t *sums)
         shutdown(sums->mSumsClient, SHUT_RDWR);
         close(sums->mSumsClient);
         sums->mSumsClient = -1;
-    }
-}
-
-static int InitializeMtSumsEnv(Pickler_t **pickler, int (*history)(const char *fmt, ...))
-{
-    PyObject *mainModule = NULL;
-    PyObject *globalDict = NULL;
-    PyObject *pickleModule = NULL;
-    PyObject *pickleDict = NULL;
-    int err;
-    
-    err = 0;
-            
-    if (pickler)
-    {
-        *pickler = calloc(1, sizeof(Pickler_t));
-        
-        if (!pickler)
-        {
-            (*history)("No memory with which to pickle.\n");
-        }
-        else
-        {
-            /* Connect to the sumsd.py server only when calling an API function that
-             * is handled by sumsd.py. So, do not do that here. Connect in the API 
-             * function itself. */
-            
-            /* We have to initialize the Python engine that we use to pickle and unpickle messages
-             * that we send over the socket. This requires that an environment variable be set. */
-            setenv("PYTHONHOME", PYTHONHOME, 1);
-            Py_Initialize();
-    
-            /* Load pickle functions and constant. */
-            pickleModule = PyImport_ImportModule("pickle");
-        
-            if (pickleModule)
-            {
-                /* This is a new reference. It must be dereferenced when we shut down the SUMS connection. */
-                (*pickler)->pickleModule = pickleModule;
-                (*pickler)->pickleDict = PyModule_GetDict(pickleModule);
-            }
-            else
-            {
-                (*history)("Unable to load pickle package.\n");
-                err = 1;
-            }
-    
-            if (!err)
-            {
-                mainModule = PyImport_AddModule("__main__");
-                if (mainModule)
-                {   
-                    /* mainModule is a borrowed reference. It does not need to be dereferenced. */
-                    (*pickler)->globalDict = PyModule_GetDict(mainModule);        
-                }
-                else
-                {
-                    (*history)("Unable to load main module.\n");
-                    err = 1;
-                }
-            }
-            
-            if (!err)
-            {
-                /* The response from sumsd.py contains instances of the Info class defined
-                 * in sumsd.py. If we were to attempt to loads the bytes object, it would
-                 * fail since class Info is not defined in our Python environment yet. To
-                 * prevent this from happening, we must defined class Info. 
-                 * 
-                 * We also need to send data to sumsd.py via this class.
-                 */
-                err = (PyRun_SimpleString("class Info(object):\n    pass") != 0);
-                if (err)
-                {
-                    (*history)("Unable to define Info class in __main__ module.\n");
-                }
-            }
-        }
-    }
-    else
-    {
-        (*history)("Invalid argument - pickler must not be NULL.\n");
-    }
-    
-    return err;
-}
-
-static void FreeMtSumsEnv(SUM_t *sums, int (*history)(const char *fmt, ...))
-{
-    if (sums)
-    {
-        if (sums->mSumsClient != -1)
-        {
-            /* There should be no open connection to sumsd.py, but if there is, close it. */
-            int sockfd = (int)sums->mSumsClient;
-            shutdown(sockfd, SHUT_RDWR);
-            close(sockfd);
-        
-            /* Mark the socket variable as not being used. */
-            sums->mSumsClient = -1;
-        }
-
-        /* Remove the refcount on the pickle modle. */
-        if (sums->pickler)
-        {
-            if (sums->pickler->globalDict)
-            {
-                /* We were only borrowing the global dictionary reference - no need to decrement pointer. */
-                sums->pickler->globalDict = NULL;
-            }
-
-            if (sums->pickler->pickleModule)
-            {
-                /* We own the reference - decrement it. */
-                Py_DECREF(sums->pickler->pickleModule);
-                sums->pickler->pickleModule = NULL;
-            }
-            
-            if (sums->pickler->pickleDict)
-            {
-                /* We were only borrowing the global dictionary reference - no need to decrement pointer. */
-                sums->pickler->pickleDict = NULL;
-            }
-            
-            free(sums->pickler);
-        }
-
-        /* Shut-down the Python engine we used to pickle and unpickle messages. */
-        Py_Finalize();
     }
 }
 #endif
@@ -792,7 +518,6 @@ SUM_t *SUM_open(char *server, char *db, int (*history)(const char *fmt, ...))
 
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
     MSUMSCLIENT_t msums = -1;
-    Pickler_t *pickler = NULL;
 #endif
 
   if(numopened >= MAXSUMOPEN) {
@@ -833,16 +558,7 @@ SUM_t *SUM_open(char *server, char *db, int (*history)(const char *fmt, ...))
     }
   }
   clprev = cl;
-  
-  /* Connect to sumsd.py (if configuration specifies it should be used). */
-#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
-    if (InitializeMtSumsEnv(&pickler, history))
-    {
-        (*history)("DRMS is not able to initialize to SUMS (unable to initialize multi-threaded SUMS environment).");
-        return NULL;
-    }
-#endif
-  
+    
   if(!(username = (char *)getenv("USER"))) username = "nouser";
   klist = newkeylist();
   setkey_str(&klist, "db_name", db);
@@ -1049,7 +765,6 @@ for(i=0; i < numSUM; i++) {
   
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
     sumptr->mSumsClient = msums;
-    sumptr->pickler = pickler; /* steal */
 #endif
 
   sumptr->sinfo = NULL;
@@ -1779,28 +1494,51 @@ int SUM_alloc2(SUM_t *sum, uint64_t sunum, int (*history)(const char *fmt, ...))
 }
 
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
-static int pickleRequest(SUM_t *sums, uint64_t *sunums, size_t nSus, char **pickle, size_t *pickleLen, int (*history)(const char *fmt, ...))
+/* The request JSON looks like this (since JSON does not support 64-bit numbers, send SUNUMs as hexadecimal strings):
+ * 
+ *   {
+ *      "reqtype" : "infoArray",
+ *      "sulist" : ["1DE2D412", "1AA72414"]
+ *   }
+ */
+static int jsonizeSuminfoRequest(SUM_t *sums, uint64_t *sunums, size_t nSus, char **json, int (*history)(const char *fmt, ...))
 {
-    PyObject *list = NULL;
     int isu;
     uint64_t sunum;
+    char numBuf[64];
+    cJSON *root = NULL;
+    cJSON *sunumArray = NULL;
+    cJSON *numStr = NULL;
     int err;
     
     err = 0;
     
-    if (!sums || !sunums || nSus == 0 || !pickle || !pickleLen)
+    if (!sums || !sunums || nSus == 0 || !json)
     {
-        (*history)("Invalid argument(s) to 'pickleRequest'.\n");
+        (*history)("Invalid argument(s) to 'jsonizeRequest'.\n");
         err = 1;
     }
     
     if (!err)
     {
-        list = PyList_New(nSus);
-        
-        if (!list)
+        root = cJSON_CreateObject();
+        if (!root)
         {
-            (*history)("Unable to create new Py list.\n");
+            (*history)("Out of memory calling cJSON_CreateObject().\n");
+            err = 1;
+        }
+    }
+    
+    if (!err)
+    {   
+        /* The cJSON library doesn't provide a way to check if this worked. We'll know when we print out the json string. */
+        cJSON_AddItemToObjectCS(root, "reqtype", cJSON_CreateString("infoArray"));
+        
+        sunumArray = cJSON_CreateArray();
+        
+        if (!sunumArray)
+        {
+            (*history)("Out of memory calling cJSON_CreateArray().\n");
             err = 1;
         }
     }
@@ -1815,444 +1553,430 @@ static int pickleRequest(SUM_t *sums, uint64_t *sunums, size_t nSus, char **pick
              * argument. To free the memory allocated in the Py environment for the 
              * list reference and all the references in the list, you simply have to
              * decrement the reference on the list (and not the items in the list). */
-            PyList_SET_ITEM(list, isu, PyLong_FromUnsignedLongLong(sunum));
+            snprintf(numBuf, sizeof(numBuf), "%llx", sunum); /* No padding, no minimum string length. */
+            
+            numStr = cJSON_CreateString(numBuf);
+            if (!numStr)
+            {
+                (*history)("Out of memory calling cJSON_CreateString().\n");
+                err = 1;
+                break;
+            }
+            
+            cJSON_AddItemToArray(sunumArray, numStr);
         }
     }
     
     if (!err)
-    {
-        *pickle = pickleObject(sums, list, pickleLen, history);
-        if (!*pickle || *pickleLen == 0)
-        {
-            err = 1;
-        }
+    {   
+        /* Add the SUNUM array to the root object. */
+        cJSON_AddItemToObjectCS(root, "sulist", sunumArray);
+        
+        *json = cJSON_Print(root);
     }
- 
-    /* Free memory being held by the Py engine. */
-    if (list)
+    
+    if (root)
     {
-        Py_DECREF(list);
+        cJSON_Delete(root);
     }
-
+    
     return err;
 }
 
-static PyObject *getAttr(PyObject *item, const char *name)
+static int jsonizeRequest(SUM_t *sums, MTSums_CallType_t type, uint64_t *sunums, size_t nSus, char **json, int (*history)(const char *fmt, ...))
 {
-    PyObject *attr = NULL;
-    
-    if (item && name)
-    {
-        attr = PyObject_GetAttrString(item, name);
-    }
-    
-    return attr;
-}
-
-/* Thanks to Rick, we have to deal with the fact that strings from the DB are Latin1. */
-static int sprintUnicodeAsLatin1(PyObject *unicode, const char *attrName, char *str, size_t len, int (*history)(const char *fmt, ...))
-{
-    PyObject *result = NULL;
     int err;
     
     err = 0;
     
-    if (!PyUnicode_Check(unicode))
+    if (type == kMTSums_CallType_Info)
     {
-        (*history)("Data type for %s is unexpected.\n", attrName);
-        err = 1;
+        err = jsonizeSuminfoRequest(sums, sunums, nSus, json, history);
     }
     else
     {
-        result = PyUnicode_AsLatin1String(unicode);
-        
-        if (!result)
-        {
-            (*history)("Unable to convert unicode to Latin-1 string.\n");
-            err = 1;
-        }
-    }
-
-    if (!err)
-    {    
-        snprintf(str, len, "%s", PyBytes_AsString(result));
+        (*history)("Unsupported MT SUMS request %d.\n", type);
+        err = 1;
     }
 
     return err;
 }
 
-static int unpickleResponse(SUM_t *sums, const char *msg, size_t msgLen, int (*history)(const char *fmt, ...))
+/* 
+ * The MT SUMS daemon returns JSON in this format:
+ * {
+ *    "suinfolist" : 
+ *     [
+ *        {
+ *          "sunum" : "2B13493A",
+ *          "onlineLoc" : "/SUM50/D722684218",
+ *          "onlineStatus" : "Y",
+ *          "archiveStatus" : "N",
+ *          "offsiteAck" : "N",
+ *          "historyComment" : null,
+ *          "owningSeries" : "hmi.M_45s",
+ *          "storageGroup" : 1001,
+ *          "bytes" : "F0D115A",
+ *          "creatDate" : "2015-07-20 13:43:27",
+ *          "username" : "jsocprod",
+ *          "archTape" : null,
+ *          "archTapeFn" : null,
+ *          "archTapeDate" : null,
+ *          "safeTape" : null,
+ *          "safeTapeFn" : null,
+ *          "safeTapeDate" : null,
+ *          "effectiveDate" : "204212051243",
+ *          "paStatus" : 4,
+ *          "paSubstatus" : 128
+ *        },
+ *        {
+ *          "sunum" : "392FA",
+ *          "onlineLoc" : "/SUM5/D2608803/D234234",
+ *          "onlineStatus" : "N",
+ *          "archiveStatus" : "Y",
+ *          "offsiteAck" : "N",
+ *          "historyComment" : null,
+ *          "owningSeries" : "ds_mdi.fd_M_01h_lev1_8",
+ *          "storageGroup" : 1,
+ *          "bytes" : "227FF5",
+ *          "creatDate" : "2006-12-05 10:46:31",
+ *          "username" : "jeneen",
+ *          "archTape" : "012762L4",
+ *          "archTapeFn" : 236,
+ *          "archTapeDate" : "2008-06-04 12:58:44",
+ *          "safeTape" : null,
+ *          "safeTapeFn" : null,
+ *          "safeTapeDate" : null,
+ *          "effectiveDate" : null,
+ *          "paStatus" : null,
+ *          "paSubstatus" : null
+ *        },
+ *        ...
+ *     ]
+ *
+ * }
+ 
+*/
+static int unjsonizeSuminfoResponse(SUM_t *sums, const char *msg, int (*history)(const char *fmt, ...))
 {
     int err;
-    PyObject *loadsFxn = NULL;
-    PyObject *bytes = NULL;
-    PyObject *byteLen = NULL;
-    PyObject *result = NULL;
+    cJSON *response = NULL;
+    cJSON *suinfoArray = NULL;
+    cJSON *item = NULL;
+    cJSON *value = NULL;
+    SUM_info_t *elem = NULL;
+    int64_t numBytes;
+    int nElems;
+    int iElem;
     
     err = 0;
     
     if (!err)
     {
-        loadsFxn = PyDict_GetItemString(sums->pickler->pickleDict, "loads");
+        err = ((response = cJSON_Parse(msg)) == NULL);
+    }
+    
+    if (!err)
+    {
+        err = ((suinfoArray = cJSON_GetObjectItem(response, "suinfolist")) == NULL);
+    }
 
-        if (!loadsFxn)
-        {
-            (*history)("Unable to load 'loads' function.\n");
-            err = 1;
-        }  
-    }
-
     if (!err)
     {
-        if (!PyCallable_Check(loadsFxn)) 
-        {
-            (*history)("'loads' function is not callable.\n");
-            err = 1;
-        }
-    }
-    
-    if (!err)
-    {
-        /* Make a PyObject out of the message. */
-        byteLen = PyLong_FromSize_t(msgLen);
-        if (!byteLen)
-        {
-            (*history)("Unable to create byte-length object.\n");
-            err = 1;
-        }
-    }
-    
-    if (!err)
-    {
-        /* PyLong_AsSsize_t() will raise an exception if byteLen is out of range. */
-        bytes = PyBytes_FromStringAndSize(msg, PyLong_AsSsize_t(byteLen));
-    }
-    
-    if (!err)
-    {
-        result = PyObject_CallFunctionObjArgs(loadsFxn, bytes, NULL);
-
-        if (!result)
-        {
-            (*history)("Unable to call 'loads' function.\n");
-            err = 1;
-        }
-    }
-    
-    if (!err)
-    {
-        /* The loads call should return a Python list. */
-        if (!PyList_Check(result))
-        {
-            (*history)("Unexpected data type for object returned from 'loads' function.\n");
-            err = 1;
-        }
-    }
-    
-    if (!err)
-    {
-        /* Extract elements from the list. Stick them into sums->sinfo as a linked-list. */
-        Py_ssize_t listLen;
-        int isu;
-        Py_ssize_t index;
-        PyObject *item = NULL;
-        PyObject *attr = NULL;
+        nElems = cJSON_GetArraySize(suinfoArray);
+        sums->sinfo = (SUM_info_t *)calloc(nElems, sizeof(SUM_info_t));
         
-        listLen = PyList_Size(result);
-        sums->sinfo = (SUM_info_t *)calloc(PyLong_AsLong(PyLong_FromSsize_t(listLen)), sizeof(SUM_info_t));
-        
-        for (isu = 0; isu < listLen; isu++)
+        if (!sums->sinfo)
         {
-            if (isu < listLen - 1)
+            (*history)("Out of memory calling calloc().\n");
+            err = 1;
+        }
+        
+        if (!err)
+        {
+            for (iElem = 0; iElem < nElems; iElem++)
             {
-                sums->sinfo[isu].next = sums->sinfo + isu + 1;
-            }
-        
-            index = PyLong_AsSsize_t(PyLong_FromSize_t(isu));
-            item = PyList_GetItem(result, index); /* This is a SUM_info_t essentially. */
+                elem = &(sums->sinfo[iElem]);
+                item = cJSON_GetArrayItem(suinfoArray, iElem);
+                
+                if (iElem < nElems - 1)
+                {
+                    elem->next = sums->sinfo + iElem + 1;
+                }
+                
+                /* sunum */
+                value = cJSON_GetObjectItem(item, "sunum");
+                if (!value)
+                {
+                    (*history)("Unable to unjsonize sunum.\n");
+                    err = 1;
+                    break;
+                }
+                
+                if (value->type == cJSON_String)
+                {
+                    /* Convert hexadecimal string to 64-bit number. */
+                    sscanf(value->valuestring, "%llx", &(elem->sunum));
+                }
+                else
+                {
+                    (*history)("Unexpected data type for sunum.");
+                    err = 1;
+                    break;
+                }
+                
+                /* online_loc */
+                value = cJSON_GetObjectItem(item, "onlineLoc");
+                if (!value || value->type != cJSON_String)
+                {
+                    (*history)("Unable to unjsonize onlineLoc.\n");
+                    err = 1;
+                    break;
+                }
+                
+                snprintf(elem->online_loc, sizeof(elem->online_loc), "%s", value->valuestring);
+                
+                /* online_status */
+                value = cJSON_GetObjectItem(item, "onlineStatus");
+                if (!value || value->type != cJSON_String)
+                {
+                    (*history)("Unable to unjsonize onlineStatus.\n");
+                    err = 1;
+                    break;
+                }
+                
+                snprintf(elem->online_status, sizeof(elem->online_status), "%s", value->valuestring);
+                
+                /* archive_status */
+                value = cJSON_GetObjectItem(item, "archiveStatus");
+                if (!value || value->type != cJSON_String)
+                {
+                    (*history)("Unable to unjsonize archiveStatus.\n");
+                    err = 1;
+                    break;
+                }
+                
+                snprintf(elem->archive_status, sizeof(elem->archive_status), "%s", value->valuestring);
             
-            attr = getAttr(item, "sunum");
-            if (!attr)
-            {
-                (*history)("Unable to unpickle sunum.\n");
-                err = 1;
-                break;
-            }
-            if (!PyLong_Check(attr))
-            {
-                (*history)("Data type for sunum is unexpected.\n");
-                err = 1;
-                break;
-            }
-            sums->sinfo[isu].sunum = PyLong_AsLong(attr);
+                /* offsite_ack */
+                value = cJSON_GetObjectItem(item, "offsiteAck");
+                if (!value || value->type != cJSON_String)
+                {
+                    (*history)("Unable to unjsonize offsiteAck.\n");
+                    err = 1;
+                    break;
+                }
+                
+                snprintf(elem->offsite_ack, sizeof(elem->offsite_ack), "%s", value->valuestring);
+
+                /* history_comment */
+                value = cJSON_GetObjectItem(item, "historyComment");
+                if (!value || value->type != cJSON_String)
+                {
+                    (*history)("Unable to unjsonize historyComment.\n");
+                    err = 1;
+                    break;
+                }
+                
+                snprintf(elem->history_comment, sizeof(elem->history_comment), "%s", value->valuestring);
             
-            attr = getAttr(item, "onlineLoc");
-            if (!attr)
-            {
-                (*history)("Unable to unpickle onlineLoc.\n");
-                err = 1;
-                break;
-            }
-            err = (sprintUnicodeAsLatin1(attr, "onlineLoc", sums->sinfo[isu].online_loc, sizeof(sums->sinfo[isu].online_loc), history) != 0);
-            if (err)
-            {
-                break;
-            }
+                /* owning_series */
+                value = cJSON_GetObjectItem(item, "owningSeries");
+                if (!value || value->type != cJSON_String)
+                {
+                    (*history)("Unable to unjsonize owningSeries.\n");
+                    err = 1;
+                    break;
+                }
+                
+                snprintf(elem->owning_series, sizeof(elem->owning_series), "%s", value->valuestring);
+                
+                /* storage_group */
+                value = cJSON_GetObjectItem(item, "storageGroup");
+                if (!value || value->type != cJSON_Number)
+                {
+                    (*history)("Unable to unjsonize storageGroup.\n");
+                    err = 1;
+                    break;
+                }
+                
+                elem->storage_group = value->valueint;
+            
+                /* bytes */
+                /* bytes is a double in SUM_info_t, but it is a 64-bit integer in sum_main (and is reported as a 64-bit integer by sumsd.py). 
+                 * But because JSON-parsers do not typically support 64-bit integers, convert to hexadecimal string. */
+                value = cJSON_GetObjectItem(item, "bytes");
+                if (!value || value->type != cJSON_String)
+                {
+                    (*history)("Unable to unjsonize bytes.\n");
+                    err = 1;
+                    break;
+                }
+                
+                if (value->type == cJSON_String)
+                {
+                    /* Convert hexadecimal string to 64-bit number. */
+                    sscanf(value->valuestring, "%llx", &numBytes);
+                }
+                else
+                {
+                    (*history)("Unexpected data type for bytes.");
+                    err = 1;
+                    break;
+                }
+                                
+                /* WARNING: a loss of precision can result here. */
+                elem->bytes = (double)numBytes;
                         
-            attr = getAttr(item, "onlineStatus");
-            if (!attr)
-            {
-                (*history)("Unable to unpickle onlineStatus.\n");
-                err = 1;
-                break;
-            }
-            err = (sprintUnicodeAsLatin1(attr, "onlineStatus", sums->sinfo[isu].online_status, sizeof(sums->sinfo[isu].online_status), history) != 0);
-            if (err)
-            {
-                break;
-            }
-               
-            attr = getAttr(item, "archiveStatus");
-            if (!attr)
-            {
-                (*history)("Unable to unpickle archiveStatus.\n");
-                err = 1;
-                break;
-            }
-            err = (sprintUnicodeAsLatin1(attr, "archiveStatus", sums->sinfo[isu].archive_status, sizeof(sums->sinfo[isu].archive_status), history) != 0);
-            if (err)
-            {
-                break;
-            }            
+                /* Skip createSumid. Yay! This is another 64-bit integer in sum_main. */
             
-            attr = getAttr(item, "offsiteAck");
-            if (!attr)
-            {
-                (*history)("Unable to unpickle offsiteAck.\n");
-                err = 1;
-                break;
-            }
-            err = (sprintUnicodeAsLatin1(attr, "offsiteAck", sums->sinfo[isu].offsite_ack, sizeof(sums->sinfo[isu].offsite_ack), history) != 0);
-            if (err)
-            {
-                break;
-            }
+                /* creatDate */
+                value = cJSON_GetObjectItem(item, "creatDate");
+                if (!value || value->type != cJSON_String)
+                {
+                    (*history)("Unable to unjsonize creatDate.\n");
+                    err = 1;
+                    break;
+                }
+                
+                snprintf(elem->creat_date, sizeof(elem->creat_date), "%s", value->valuestring);
+                
+                /* username */
+                value = cJSON_GetObjectItem(item, "username");
+                if (!value || value->type != cJSON_String)
+                {
+                    (*history)("Unable to unjsonize username.\n");
+                    err = 1;
+                    break;
+                }
+                
+                snprintf(elem->username, sizeof(elem->username), "%s", value->valuestring);
+                
+                /* arch_tape */
+                value = cJSON_GetObjectItem(item, "archTape");
+                if (!value || value->type != cJSON_String)
+                {
+                    (*history)("Unable to unjsonize archTape.\n");
+                    err = 1;
+                    break;
+                }
+                
+                snprintf(elem->arch_tape, sizeof(elem->arch_tape), "%s", value->valuestring);
             
-            attr = getAttr(item, "historyComment");
-            if (!attr)
-            {
-                (*history)("Unable to unpickle historyComment.\n");
-                err = 1;
-                break;
-            }
-            err = (sprintUnicodeAsLatin1(attr, "historyComment", sums->sinfo[isu].history_comment, sizeof(sums->sinfo[isu].history_comment), history) != 0);
-            if (err)
-            {
-                break;
-            }
+            
+                /* arch_tape_fn */
+                value = cJSON_GetObjectItem(item, "archTapeFn");
+                if (!value || value->type != cJSON_Number)
+                {
+                    (*history)("Unable to unjsonize archTapeFn.\n");
+                    err = 1;
+                    break;
+                }
+                
+                elem->arch_tape_fn = value->valueint;
+            
+                /* arch_tape_date */
+                value = cJSON_GetObjectItem(item, "archTapeDate");
+                if (!value || value->type != cJSON_String)
+                {
+                    (*history)("Unable to unjsonize archTapeDate.\n");
+                    err = 1;
+                    break;
+                }
+                
+                snprintf(elem->arch_tape_date, sizeof(elem->arch_tape_date), "%s", value->valuestring);
+            
+                /* safe_tape */
+                value = cJSON_GetObjectItem(item, "safeTape");
+                if (!value || value->type != cJSON_String)
+                {
+                    (*history)("Unable to unjsonize safeTape.\n");
+                    err = 1;
+                    break;
+                }
+                
+                snprintf(elem->safe_tape, sizeof(elem->safe_tape), "%s", value->valuestring);
+            
+                /* safe_tape_fn */
+                value = cJSON_GetObjectItem(item, "safeTapeFn");
+                if (!value || value->type != cJSON_Number)
+                {
+                    (*history)("Unable to unjsonize safeTapeFn.\n");
+                    err = 1;
+                    break;
+                }
+                
+                elem->safe_tape_fn = value->valueint;
+            
+                /* safe_tape_date */
+                value = cJSON_GetObjectItem(item, "safeTapeDate");
+                if (!value || value->type != cJSON_String)
+                {
+                    (*history)("Unable to unjsonize safeTapeDate.\n");
+                    err = 1;
+                    break;
+                }
+                
+                snprintf(elem->safe_tape_date, sizeof(elem->safe_tape_date), "%s", value->valuestring);
 
-            attr = getAttr(item, "owningSeries");
-            if (!attr)
-            {
-                (*history)("Unable to unpickle owningSeries.\n");
-                err = 1;
-                break;
+                /* effective_date */
+                value = cJSON_GetObjectItem(item, "effectiveDate");
+                if (!value || value->type != cJSON_String)
+                {
+                    (*history)("Unable to unjsonize effectiveDate.\n");
+                    err = 1;
+                    break;
+                }
+                
+                snprintf(elem->effective_date, sizeof(elem->effective_date), "%s", value->valuestring);
+                
+                /* pa_status */
+                value = cJSON_GetObjectItem(item, "paStatus");
+                if (!value || value->type != cJSON_Number)
+                {
+                    (*history)("Unable to unjsonize paStatus.\n");
+                    err = 1;
+                    break;
+                }
+                
+                elem->pa_status = value->valueint;
+           
+                 
+                /* pa_substatus */
+                value = cJSON_GetObjectItem(item, "paSubstatus");
+                if (!value || value->type != cJSON_Number)
+                {
+                    (*history)("Unable to unjsonize paSubstatus.\n");
+                    err = 1;
+                    break;
+                }
+                
+                elem->pa_substatus = value->valueint;
             }
-            err = (sprintUnicodeAsLatin1(attr, "owningSeries", sums->sinfo[isu].owning_series, sizeof(sums->sinfo[isu].owning_series), history) != 0);
-            if (err)
-            {
-                break;
-            }
-            
-            attr = getAttr(item, "storageGroup");
-            if (!attr)
-            {
-                (*history)("Unable to unpickle storageGroup.\n");
-                err = 1;
-                break;
-            }
-            if (!PyLong_Check(attr))
-            {
-                (*history)("Data type for storageGroup is unexpected.\n");
-                err = 1;
-                break;
-            }
-            sums->sinfo[isu].storage_group = PyLong_AsLong(attr);
-            
-            /* bytes is a double in SUM_info_t, but it is an integer in sum_main (and is reported as an integer by sumsd.py). */
-            attr = getAttr(item, "bytes");
-            if (!attr)
-            {
-                (*history)("Unable to unpickle bytes.\n");
-                err = 1;
-                break;
-            }
-            if (!PyLong_Check(attr))
-            {
-                (*history)("Data type for bytes is unexpected.\n");
-                err = 1;
-                break;
-            }
-            sums->sinfo[isu].bytes = PyLong_AsDouble(attr);
-            
-            /* Skip createSumid. */
-            
-            attr = getAttr(item, "creatDate");
-            if (!attr)
-            {
-                (*history)("Unable to unpickle creatDate.\n");
-                err = 1;
-                break;
-            }
-            err = (sprintUnicodeAsLatin1(attr, "creatDate", sums->sinfo[isu].creat_date, sizeof(sums->sinfo[isu].creat_date), history) != 0);
-            if (err)
-            {
-                break;
-            }            
-            
-            attr = getAttr(item, "username");
-            if (!attr)
-            {
-                (*history)("Unable to unpickle username.\n");
-                err = 1;
-                break;
-            }
-            err = (sprintUnicodeAsLatin1(attr, "username", sums->sinfo[isu].username, sizeof(sums->sinfo[isu].username), history) != 0);
-            if (err)
-            {
-                break;
-            }
-            
-            attr = getAttr(item, "archTape");
-            if (!attr)
-            {
-                (*history)("Unable to unpickle archTape.\n");
-                err = 1;
-                break;
-            }
-            err = (sprintUnicodeAsLatin1(attr, "archTape", sums->sinfo[isu].arch_tape, sizeof(sums->sinfo[isu].arch_tape), history) != 0);
-            if (err)
-            {
-                break;
-            }
-            
-            attr = getAttr(item, "archTapeFn");
-            if (!attr)
-            {
-                (*history)("Unable to unpickle archTapeFn.\n");
-                err = 1;
-                break;
-            }
-            if (!PyLong_Check(attr))
-            {
-                (*history)("Data type for archTapeFn is unexpected.\n");
-                err = 1;
-                break;
-            }
-            sums->sinfo[isu].arch_tape_fn = PyLong_AsLong(attr);
-            
-            attr = getAttr(item, "archTapeDate");
-            if (!attr)
-            {
-                (*history)("Unable to unpickle archTapeDate.\n");
-                err = 1;
-                break;
-            }
-            err = (sprintUnicodeAsLatin1(attr, "archTapeDate", sums->sinfo[isu].arch_tape_date, sizeof(sums->sinfo[isu].arch_tape_date), history) != 0);
-            if (err)
-            {
-                break;
-            }
-            
-            attr = getAttr(item, "safeTape");
-            if (!attr)
-            {
-                (*history)("Unable to unpickle safeTape.\n");
-                err = 1;
-                break;
-            }
-            err = (sprintUnicodeAsLatin1(attr, "safeTape", sums->sinfo[isu].safe_tape, sizeof(sums->sinfo[isu].safe_tape), history) != 0);
-            if (err)
-            {
-                break;
-            }
-
-            attr = getAttr(item, "safeTapeFn");
-            if (!attr)
-            {
-                (*history)("Unable to unpickle safeTapeFn.\n");
-                err = 1;
-                break;
-            }
-            if (!PyLong_Check(attr))
-            {
-                (*history)("Data type for safeTapeFn is unexpected.\n");
-                err = 1;
-                break;
-            }
-            sums->sinfo[isu].safe_tape_fn = PyLong_AsLong(attr);
-            
-            attr = getAttr(item, "safeTapeDate");
-            if (!attr)
-            {
-                (*history)("Unable to unpickle safeTapeDate.\n");
-                err = 1;
-                break;
-            }
-            err = (sprintUnicodeAsLatin1(attr, "safeTapeDate", sums->sinfo[isu].safe_tape_date, sizeof(sums->sinfo[isu].safe_tape_date), history) != 0);
-            if (err)
-            {
-                break;
-            }
-            
-            attr = getAttr(item, "effectiveDate");
-            if (!attr)
-            {
-                (*history)("Unable to unpickle effectiveDate.\n");
-                err = 1;
-                break;
-            }
-            err = (sprintUnicodeAsLatin1(attr, "effectiveDate", sums->sinfo[isu].effective_date, sizeof(sums->sinfo[isu].effective_date), history) != 0);
-            if (err)
-            {
-                break;
-            }            
-            
-            attr = getAttr(item, "paStatus");
-            if (!attr)
-            {
-                (*history)("Unable to unpickle paStatus.\n");
-                err = 1;
-                break;
-            }
-            if (!PyLong_Check(attr))
-            {
-                (*history)("Data type for paStatus is unexpected.\n");
-                err = 1;
-                break;
-            }
-            sums->sinfo[isu].pa_status = PyLong_AsLong(attr);
-            
-            attr = getAttr(item, "paSubstatus");
-            if (!attr)
-            {
-                (*history)("Unable to unpickle paSubtatus.\n");
-                err = 1;
-                break;
-            }
-            if (!PyLong_Check(attr))
-            {
-                (*history)("Data type for paSubstatus is unexpected.\n");
-                err = 1;
-                break;
-            }
-            sums->sinfo[isu].pa_substatus = PyLong_AsLong(attr);
         }
     }
     
     return err;
 }
 
+static int unjsonizeResponse(SUM_t *sums, MTSums_CallType_t type, const char *msg, int (*history)(const char *fmt, ...))
+{
+    int err;
+    
+    err = 0;
+    
+    if (type == kMTSums_CallType_Info)
+    {
+        err = unjsonizeSuminfoResponse(sums, msg, history);
+    }
+    else
+    {
+        (*history)("Unsupported MT SUMS request %d.\n", type);
+        err = 1;
+    }
+
+    return err;
+}
 
 /* SUM_t::sinfo is a linear array of malloc'ed SUM_info_ts.
  */
@@ -2267,16 +1991,15 @@ void SUM_infoArray_free(SUM_t *sums)
 
 int SUM_infoArray(SUM_t *sums, uint64_t *sunums, int reqcnt, int (*history)(const char *fmt, ...))
 {
-    char *pickle = NULL;
-    size_t pickleLen;
+    char *request = NULL;
     char *response = NULL;
     size_t rspLen = 0;
     int err;
     
     err = 0;
     
-    /* pickle request */
-    err = pickleRequest(sums, sunums, reqcnt, &pickle, &pickleLen, history);
+    /* jsonize request */
+    err = jsonizeRequest(sums, kMTSums_CallType_Info, sunums, reqcnt, &request, history);
     
     if (!err)
     {
@@ -2286,7 +2009,7 @@ int SUM_infoArray(SUM_t *sums, uint64_t *sunums, int reqcnt, int (*history)(cons
     if (!err)
     {
         /* send request */
-        err = sendMsg(sums, pickle, pickleLen, history);
+        err = sendMsg(sums, request, strlen(request), history);
     }
 
     if (!err)
@@ -2295,10 +2018,10 @@ int SUM_infoArray(SUM_t *sums, uint64_t *sunums, int reqcnt, int (*history)(cons
         err = receiveMsg(sums, &response, &rspLen, history);
     }
     
-    /* unpickle response */
+    /* unjsonize response */
     if (!err)
     {
-        err = unpickleResponse(sums, response, rspLen, history);
+        err = unjsonizeResponse(sums, kMTSums_CallType_Info, response, history);
     }
 
     DisconnectFromMtSums(sums);
@@ -2309,10 +2032,10 @@ int SUM_infoArray(SUM_t *sums, uint64_t *sunums, int reqcnt, int (*history)(cons
         response = NULL;
     }
     
-    if (pickle)
+    if (request)
     {
-        free(pickle);
-        pickle = NULL;
+        free(request);
+        request = NULL;
     }
     
     return err;
@@ -2716,14 +2439,6 @@ int SUM_close(SUM_t *sum, int (*history)(const char *fmt, ...))
 #endif
   if(sum->cldelser) clnt_destroy(sum->cldelser);
   }
-  
-#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
-  /* Close connection to sumsd.py. */
-  if (sum->pickler)
-  {
-    FreeMtSumsEnv(sum, history);
-  }
-#endif
   
   for(i=0; i < MAXSUMOPEN; i++) {
     if(transpid[i] == sum->uid) {

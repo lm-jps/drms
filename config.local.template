@@ -1,48 +1,39 @@
 __DEFS__
 
-# NetDRMS local site configuration info
-# edit the values in the second column of each line in this file to reflect
-#   the values appropriate to your site
+# NetDRMS local site configuration info.
+# Edit the values in the second column of each line in this file to reflect
+#   the values appropriate to your site.
 
-# a marker to indicate whether this file has been checked/edited. You MUST
-# either change its value to yes (or anything but NO) or comment it out.
-LOCAL_CONFIG_SET	NO
+# The next three entries must almost certainly be changed to reflect your
+#   local configuration.
 
-# the next three entries must almost certainly be changed to reflect your
-#   local configuration
-
-# the name of the NetDRMS database; the SUMS database will be assumed to
-#   have the same name with "_sums" appended
+# The name of the NetDRMS database (e.g., sdac_drms, nso_drms); this is also the prefix of the SUMS database, 
+#   which is constructed by appending "_sums" to the prefix.
 DRMS_DATABASE	mydb
 
 # The database user account that cgi programs access.
 WEB_DBUSER      apache
 
-# the host name of the default database server you will be accessing; you
-#   should include the internet domain (e.g. host.subnet.net) if the server is
-#   not on your subnet; but if it is on your subnet it may be better not to
-# the default value is only really appropriate if you are running in a
-#   single-user environment, such as a laptop; whether it is the default
-#   or a named host depends on how the postgres database named above and
-#   its dependent _sums have been configured in their pg_hba.conf files:
-#   localhost for METHOD "trust", a named host for METHOD "ident sameuser"
+# The host machine of the database server you will be accessing; if
+#   the DRMS server and client reside on different subnets, then the host
+#   name should be a fully qualified domain name (FQDN). 
+# A value of 'localhost' can be used, but it is only appropriate if you
+#   are running in a single-user environment, such as on a laptop. In
+#   this case, the client and the server are the same machine, so
+#   it is not necessary to specify a host name for the server.
 DBSERVER_HOST	localhost
 
-# the port number for the DRMS database server - default should be okay
-#   unless in use otherwise
+# The port number for the DRMS database server - the default of 5432 is a
+#   good choice, unless it is already in use.
 DRMS_DBPORT	5432
 
-# a 15-bit numerical site identifier; values < 16384 (0x4000) are for
-#   publicly exporting sites, and must be registered to assure uniqueness
-# the default value is for a private unregistered site, and may not provide
-#   access to publicly exporting sites
+# A 15-bit numerical site identifier. Values < 16384 (0x4000) are for
+#   NetDRMS sites that create Storage Units for public export / distribution.
+#   They must be unique across all DRMS sites. Values >= 16384 are for private
+#   use and need not be unique across sites.
 DRMS_SITE_CODE	0x4000
 
-# the default values for the following five entries may or may not be
-#   appropriate for your site configuration, depending on how and where
-#   third-party software has been set up and installed
-
-# the user name of the postgres administrative account; normally "postgres"
+# The user name of the postgres administrative account; normally "postgres"
 #   if you have followed the PostgreSQL installation suggestions
 POSTGRES_ADMIN	postgres
 
@@ -248,6 +239,10 @@ SUMSD_MAX_THREADS                    32
 # The port to be used by the MT SUMS daemon for incoming requests.
 SUMSD_LISTENPORT                   6002
 ############ END MT SUMS ############
+
+# The Slony server configure file. This is used only if you are generating Slony logs to distribute DRMS series data
+# to subscribing mirror sites.
+SLONY_CONFIG                       /home/jsoc/cvs/Development/JSOC/proj/replication/etc/repserver.cfg
 
 
 ###############################
