@@ -1,17 +1,16 @@
 __DEFS__
 
 # NetDRMS local site configuration info.
-# Edit the values in the second column of each line in this file to reflect
-#   the values appropriate to your site.
-
-# The next three entries must almost certainly be changed to reflect your
-#   local configuration.
+#
+# This file contains configurable parameters that allow NetDRMS sites to customize their DRMS installation. By editing this file, you can specify which resources to use, such as the PostgreSQL database host, you can specify arguments to certain programs, like arguments that control how often SUMS purges expired Storage Units, and you can enable/disable certain features, like remoteSUMS. Each line that is not a comment contains two columns of information. The first column contains the name of a parameter and the second contains its value. To customize your installation, you would edit the value in the second column.
+#
+# Once you have edited this file, you must run the configure script, which parses this file to create macros and constants and such that are used by the various DRMS components. These data are stored in files which are then either compiled into binaries or loaded by scripts. The configure script accomplishes much of this work by calling localize.py. The resulting files are stored in the localization directory. 
 
 # The name of the NetDRMS database (e.g., sdac_drms, nso_drms); this is also the prefix of the SUMS database, 
 #   which is constructed by appending "_sums" to the prefix.
 DRMS_DATABASE	mydb
 
-# The database user account that cgi programs access.
+# The database user account that cgi programs access when they need to read from or write to database relations.
 WEB_DBUSER      apache
 
 # The host machine of the database server you will be accessing; if
@@ -33,77 +32,52 @@ DRMS_DBPORT	5432
 #   use and need not be unique across sites.
 DRMS_SITE_CODE	0x4000
 
-# The user name of the postgres administrative account; normally "postgres"
-#   if you have followed the PostgreSQL installation suggestions
+# The database user name of the postgres administrative account; this is normally "postgres"
+#   if you have followed the PostgreSQL installation suggestions.
 POSTGRES_ADMIN	postgres
-
-# a sample namespace appropriate to your site; this is only used for a
-#   couple of database initialization scripts and is not important for
-#   subsequent installations/updates
-DRMS_SAMPLE_NAMESPACE	drms
-
-# The remaining definitions only need to be reviewed and modified as
-#   appropriate if you will be doing a "make sums" as or in behalf of the
-#   SUMS_MANAGER; they do not affect the functioning of the libraries and
-#   applications  built by a regular user with plain "make"; nevertheless
-#   it is probably a good idea to keep them consistent for the site
-
-# The following entries are for slony processing of mirrored data archives;
-#   they are not currently used in the "make"
-
-# the postgres user name of the slony administrative account; normally "slony"
-SLONY_ADMIN	slony
-
-# the base directory for slony logs
-SLONY_LOG_BASEDIR	/usr/local/logs/slony
-
-# the user name(s) or email addresses for slony problem notifications
-SLONY_NOTIFY	production
 
 # The following entries are specific to the SUMS configuration
 
-# the user name of the SUMS administrator account - a special account is
-#   recommended for multi-user systems, but not required
+# The user name of the SUMS administrator database account.
 SUMS_MANAGER	production
 
-# the group name for users permitted to add data to DRMS/SUMS; not
+# The linux group name for users permitted to add data to SUMS Storage Units; not
 #   currently used in code, but should match the group ownership of
 #   the SUMS root directories /SUM*
 SUMS_GROUP	drms
 
-# the host name of the default SUMS server you will be using; this is the
+# The host of the default SUMS server you will be using; this is the
 #   the machine that the SUMS storage units are mounted on, not necessarily
-#   the machine serving the Postgres SUMS database
+#   the machine serving the PostgreSQL SUMS database.
 SUMS_SERVER_HOST	localhost
 
-# the machine hosting the SUMS database
+# The machine hosting the SUMS database.
 SUMS_DB_HOST            localhost
 
-# the port number for the DRMS database server - default should be okay
-#   unless in use otherwise
+# The port number for the DRMS database server - the default of 5434 should be okay
+#   unless it is in use already.
 SUMS_DBPORT	5434
 
-# the number of sum_svc processes, per sum service (e.g., SUM_get, SUM_alloc) to start, 
+# The number of sum_svc processes, per sum service (e.g., SUM_get, SUM_alloc) to start, 
 # by default, when multi-SUMS starts up.
 SUM_NUMSUM    1
 
-# the maximum number of sum_svc processes, per sums service.
+# The maximum number of sum_svc processes, per sums service.
 SUM_MAXNUMSUM 8
 
-# the base directory for SUMS logs and configuration files; used by
-#   base/sums/apps/sum_svc.c and sum_rm.c
+# The base directory for SUMS logs and configuration files; used by
+# sum_svc and sum_rm.
 SUMS_LOG_BASEDIR	/usr/local/logs/SUM
 
-# the directory in which the binary of sum_chmown, a root setuid program,
+# The directory in which sum_chmown, a root setuid program,
 #   is installed; must be mounted locally on the machine on which the
 #   SUMS partition are mounted; used by base/sums/apps/sum_svc_proc.c
 SUMS_BIN_BASEDIR	/usr/local/bin
 
-# whether a tape archive service is available for SUMS or not; set to a
-#   non-zero value if it is
+# If set to 1, then SUMS includes a tape-archive system.
 SUMS_TAPE_AVAILABLE	0
 
-# whether or not there exist multiple SUMS partition sets
+# If set to 1, then SUMS has more than one partition set.
 SUMS_MULTIPLE_PARTNSETS      0
 
 # If AUTOSELCOMP is 1, then the configure script will automatically select
@@ -214,7 +188,7 @@ RS_MAXTHREADS                         32
 # The path to executables run by the remote-sums system.
 RS_BINPATH                            /opt/drms/bin/linux_x86_64
 
-# If 1, then this DRMS allows access by the public to series defined in the internal database (SERVER).
+# If set to 1, then this DRMS allows access by the public to series defined in the internal database (SERVER).
 WL_HASWL                              0
 
 # The file that contains a list of internal series that are accessible to external users.
