@@ -406,6 +406,7 @@ __PROJ__
              <subdir>d4vm/apps</subdir>
              <subdir>remapmags/apps</subdir>
              <subdir>synop/apps</subdir>
+             <subdir>polarfield/apps</subdir>
         </subdirs>
         <filters>
              <filter>
