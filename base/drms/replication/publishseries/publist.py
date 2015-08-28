@@ -13,9 +13,13 @@ import pwd
 import re
 import json
 import cgi
-sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '..'))
 import psycopg2
 
+sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../../include'))
+from drmsparams import DRMSParams
+sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../../base/libs/py'))
+from drmsCmdl import CmdlParser
+sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '..'))
 from toolbox import getCfg
 
 # Debug flag
@@ -36,6 +40,62 @@ SLONY_TABLE_REL = 'tab_relname'
 LST_TABLE_SERIES = 'series'
 LST_TABLE_NODE = 'node'
 CFG_TABLE_NODE = 'node'
+
+class PublistDrmsParams(DRMSParams):
+
+    def __init__(self):
+        super(PublistDrmsParams, self).__init__()
+
+    def get(self, name):
+        val = super(PublistDrmsParams, self).get(name)
+
+        if val is None:
+            raise Exception('drmsParams', 'Unknown DRMS parameter: ' + name + '.')
+        return val
+
+class Arguments(object):
+
+    def __init__(self, parser):
+        # This could raise in a few places. Let the caller handle these exceptions.
+        self.parser = parser
+        
+        # Parse the arguments.
+        self.parse()
+        
+        # Set all args.
+        self.setAllArgs()
+        
+    def parse(self):
+        try:
+            self.parsedArgs = self.parser.parse_args()      
+        except Exception as exc:
+            if len(exc.args) == 2:
+                type, msg = exc
+                  
+                if type != 'CmdlParser-ArgUnrecognized' and type != 'CmdlParser-ArgBadformat':
+                    raise # Re-raise
+
+                raise Exception('args', msg)
+            else:
+                raise # Re-raise
+
+    def setArg(self, name, value):
+        if not hasattr(self, name):
+            # Since Arguments is a new-style class, it has a __dict__, so we can
+            # set attributes directly in the Arguments instance.
+            setattr(self, name, value)
+        else:
+            raise Exception('args', 'Attempt to set an argument that already exists: ' + name + '.')
+
+    def setAllArgs(self):
+        for key,val in list(vars(self.parsedArgs).items()):
+            self.setArg(key, val)
+        
+    def getArg(self, name):
+        try:
+            return getattr(self, name)
+        except AttributeError as exc:
+            raise Exception('args', 'Unknown argument: ' + name + '.')
 
 # Read arguments
 # (c)fg     - Path to configuration file
@@ -62,37 +122,13 @@ CFG_TABLE_NODE = 'node'
 # both HTTP GET and POST requests. A nice feature is that we can test the script as it runs in a CGI context
 # by simply running on the command line with a single argument that is equivalent to an HTTP GET parameter string
 # (e.g., cfg=/home/jsoc/cvs/Development/JSOC/proj/replication/etc/repserver.cfg&insts=kis&d=1&p=1).
-#
-# The script uses the argparse Python module when it is invoked from the command line. Although thie module nicely handles options
-# and arguments whose names begin with a '-', it does not support other kinds of arguments, unless they are positional.
-# And we're not interested in positional arguments. So I had to essentially implement the <key>=<val> arguments myself,
-# treating them as optional positional arugments. As far as I can tell, Python does not provide a good <key>=<val>-argument cmd-line
-# parser. I was then hoping I could convert the mixed <key>=<val>-argument and -arg-argument command-line into a form that
-# could be used by cgi.FieldStorage() [ampersand-separated arguments]. However, the arguments in a string cannot be passed to
-# to cgi.FieldStorage().
-#
-# So we're stuck with clunky argument parsing.
-def parseArg(options, args, arg, regexp, isList):
-    if not arg is None:
-        matchobj = regexp.match(arg)
-        if not(matchobj is None):
-            # Ensure that the name of the argument is legitimate.
-            if matchobj.group(1) in args:
-                if isList:
-                    options[matchobj.group(1)] = matchobj.group(2).split(',')
-                else:
-                    options[matchobj.group(1)] = matchobj.group(2)
-            else:
-                raise Exception('getArgsCmdline', 'Invalid arguments ' + matchobj.group(1) + '.')
-        else:
-            raise Exception('getArgsCmdline', 'Invalid argument format ' + arg + '.')
 
-def GetArgs(args):
+def GetArgs(publistDrmsParams):
     istat = bool(0)
     optD = {}
     
     # Use REQUEST_URI as surrogate for the invocation coming from a CGI request.
-    if os.getenv('REQUEST_URI'):
+    if os.getenv('REQUEST_URI') or DEBUG_CGI:
         optD['source'] = 'cgi'
     else:
         optD['source'] = 'cmdline'
@@ -102,8 +138,10 @@ def GetArgs(args):
     optD['publist'] = False
     optD['nojson'] = False
     optD['json'] = False
+    optD['cfg'] = publistDrmsParams.get('SLONY_CONFIG')
 
-    if optD['source'] == 'cgi' or DEBUG_CGI:
+    if optD['source'] == 'cgi':
+        arguments.setArg('source', 'cgi')
         try:
             # Try to get arguments with the cgi module. If that doesn't work, then fetch them from the command line.
             arguments = cgi.FieldStorage()
@@ -130,41 +168,24 @@ def GetArgs(args):
                         optD['series'] = val.split(',') # a list
 
         except ValueError:
-            insertJson(rootObj, 'errMsg', 'Invalid usage.\nUsage:\n  publist.py [ d=1 ] [ p=1 ] [ t=1 ] cfg=<configuration file> [ insts=<institution list> ] [ series=<series list> ]')
+            insertJson(rootObj, 'errMsg', 'Invalid usage.\nUsage:\n  publist.py [ d=1 ] [ p=1 ] [ t=1 ] [ cfg=<configuration file> ] [ insts=<institution list> ] [ series=<series list> ]')
             raise Exception('getArgsForm', 'Invalid arguments.')
     else:
-        # Try this argparse stuff.
-        parser = argparse.ArgumentParser()
-        parser.add_argument('-d', '--descs', help="Print each series' description.", action='store_true')
-        parser.add_argument('-p', '--publist', help='Print the list of published series.', action='store_true')
-        parser.add_argument('-t', '--text', help='Print output in text format (not html containing JSON).', action='store_true')
-        parser.add_argument('-j', '--json', help='Return a JSON object.', action='store_true')
-        parser.add_argument('cfg', help='[cfg=<configuration file>] The configuration file that contains information needed to locate database information.', nargs='?')
-        parser.add_argument('insts', help='[insts=<institution list>] A comma-separated list of institutions. The series to which these institutions are printed.', nargs='?')
-        parser.add_argument('series', help='[series=<series list>] A comma-separated list of series. The institutions subscribed to these series are printed.', nargs='?')
-        parser.add_argument('dbuser', help='[dbuser=<database user>] The database user-account name to login to the database as.', nargs='?')
-        args = parser.parse_args()
+        parser = CmdlParser(usage='%(prog)s [ -djpt ] [ cfg=<configuration file> ] [ --insts=<institution list> ] [ --series=<series list> ]')
+        parser.add_argument('-d', '--descs', help="Print each series' description.", dest='descs', action='store_true', default=False)
+        parser.add_argument('-p', '--publist', help='Print the list of published series.', dest='publist', action='store_true', default=False)
+        parser.add_argument('-t', '--text', help='Print output in text format (not JSON, no HTML headers).', dest='nojson', action='store_true', default=False)
+        parser.add_argument('-j', '--json', help='Return a JSON object (no HTML headers).', dest='json', action='store_true', default=False)        
+        parser.add_argument('-c', '--cfg', help='The configuration file that contains information needed to locate database information.', metavar='<slony configuration file>', dest='cfg', default=publistDrmsParams.get('SLONY_CONFIG'))
+        parser.add_argument('-i', '--insts', help='A comma-separated list of institutions. The series to which these institutions are printed.', metavar='<institution list>', dest='insts', default=None)
+        parser.add_argument('-s', '--series', help='A comma-separated list of series. The institutions subscribed to these series are printed.', metavar='<series list>', dest='series', default=None)
+        parser.add_argument('-U', '--dbuser', help='The database user-account name to login to the database as.', metavar='<db user>', dest='dbuser', default=pwd.getpwuid(os.getuid())[0])
+
+        arguments = Arguments(parser)
         
-        # Collect the optional arguments.
-        if args.descs:
-            optD['descs'] = True
-        if args.publist:
-            optD['publist'] = True
-        if args.text:
-            optD['nojson'] = True
-        if args.json:
-            optD['json'] = True
+        arguments.setArg('source', 'cmdline')
 
-        # The non-optional arguments are positional. It is possible that the caller could put the arguments for one argument into
-        # the position for a different argument. Positional arguments are a nuisance. So we must parse the values of these three arguments
-        # and get the name of the arguments from the LHS of the equal sign.
-        regexp = re.compile(r"(\S+)=(\S+)")
-        parseArg(optD, args, args.cfg, regexp, False)
-        parseArg(optD, args, args.insts, regexp, True)
-        parseArg(optD, args, args.series, regexp, True)
-        parseArg(optD, args, args.dbuser, regexp, False)
-
-    return optD
+    return arguments
 
 def GetPubList(cursor, plDict, descsDict):
     list = []
@@ -252,10 +273,11 @@ cfgDict = {}
 
 # Parse arguments
 if __name__ == "__main__":
-    optD = {}
     try:
-        optD = GetArgs(sys.argv[1:])
-        if optD is None:
+        publistDrmsParams = PublistDrmsParams()
+    
+        arguments = GetArgs(publistDrmsParams)
+        if arguments is None:
             # Return JSON just in case this script was initiated by web.
             raise Exception('getArgsForm', 'No arguments provided.')
     
@@ -271,21 +293,21 @@ if __name__ == "__main__":
             listObj = {}
             insertJson(listObj, 'errMsg', msg)
             insertJson(rootObj, 'publist', listObj)
-            if 'json' not in optD or not optD['json']:
+            if not arguments.getArg('json'):
                 print('Content-type: application/json\n')
             print(json.dumps(rootObj))
-            optD['source'] = 'form'
+            arguments.setArg('source', 'form')
         elif etype == 'getArgsCmdline':
             print('Invalid arguments.')
             print('Usage:\n  publist.y [ -h ] [ -d ] [ -p ] [ -t ] [ -j ] cfg=<configuration file> [ insts=<institution list> ] [ series=<series list> ] [ dbuser=<dbuser> ]')
-            optD['source'] = 'cmdline'
+            arguments.setArg('source', 'cmdline')
             rv = RET_INVALIDARG
 
 if rv == RET_SUCCESS:
-    if 'cfg' in optD:
-        cfgFile = optD['cfg']
+    if arguments.getArg('cfg'):
+        cfgFile = arguments.getArg('cfg')
     else:
-        if optD['source'] == 'cmdline':
+        if arguments.getArg('source') == 'cmdline':
             print('Missing required argument, cfg=<configuration file>', file=sys.stderr)
             print('Usage:\n  publist.y [ -h ] [ -d ] [ -p ] [ -t ] [ -j ] cfg=<configuration file> [ insts=<institution list> ] [ series=<series list> ] [ dbuser=<dbuser> ]')
             rv = RET_INVALIDARG
@@ -294,30 +316,30 @@ if rv == RET_SUCCESS:
             listObj = {}
             insertJson(listObj, 'errMsg', "Required argument 'cfg' missing.")
             insertJson(rootObj, 'publist', listObj)
-            if 'json' not in optD or not optD['json']:
+            if not arguments.getArg('json'):
                 print('Content-type: application/json\n')
             print(json.dumps(rootObj))
 
     if rv == RET_SUCCESS:
-        descs = optD['descs']
-        dispPubList = optD['publist']
-        nojson = optD['nojson']
-        jsonobj = optD['json']
+        descs = arguments.getArg('descs')
+        dispPubList = arguments.getArg('publist')
+        nojson = arguments.getArg('nojson')
+        jsonobj = arguments.getArg('json')
         insts = None
         series = None
         
         # If the user has specified neither -p, -i, or -s, then default to displaying the publication list
-        if not(optD['publist']) and not('insts' in optD) and not('series' in optD):
+        if not arguments.getArg('publist') and not arguments.getArg('insts') and not arguments.getArg('series'):
             dispPubList = True
 
-        if 'insts' in optD:
-            insts = optD['insts']
+        if arguments.getArg('insts'):
+            insts = arguments.getArg('insts').split(',')
 
-        if 'series' in optD:
-            series = optD['series']
+        if arguments.getArg('series'):
+            series = arguments.getArg('series').split(',')
 
-        if 'dbuser' in optD:
-            dbuser = optD['dbuser']
+        if arguments.getArg('dbuser'):
+            dbuser = arguments.getArg('dbuser')
         else:
             # Assume the dbuser is the linux user.
             dbuser = pwd.getpwuid(os.getuid())[0]
@@ -337,8 +359,9 @@ if rv == RET_SUCCESS:
                     subListObj = {}
                     nodeListObj = {}
 
-                # Need pubListDict if printing all instituions subscribed to series
-                if dispPubList or not(series is None):
+                # Need pubListDict if printing all institutions subscribed to series. Also need descsDict if 
+                # insts argument was provided.
+                if dispPubList or not series is None or not insts is None:
                     # First print all published series
                     pubListDict = {}
                     if descs:
@@ -347,7 +370,11 @@ if rv == RET_SUCCESS:
                         descsDict = None
 
                     pubList = GetPubList(cursor, pubListDict, descsDict)
-
+                    
+                # If we are printing text in the CGI context, print the HTTP header.
+                if arguments.getArg('source') == 'cgi' and nojson:
+                    print('Content-type: text/plain\n')
+                
                 if dispPubList:
                     if nojson:
                         print('All published series')
@@ -393,11 +420,21 @@ if rv == RET_SUCCESS:
                             if len(subList) == 0:
                                 print('Institution ' + inst + ' is not subscribed to any published series.\n')
                             else:
-                                for oneSeries in subList:
-                                    print(oneSeries)
+                                if descs:
+                                    for oneSeries in subList:
+                                        if oneSeries in descsDict:
+                                            print(oneSeries + ' - ' + descsDict[oneSeries])
+                                        else:
+                                            print(oneSeries)
+                                else:
+                                    for oneSeries in subList:
+                                        print(oneSeries)
                                 print('')
                         else:
-                            insertJson(subListObj, inst, subList)
+                            if descs:
+                                insertJson(subListObj, inst, [oneSeries + ' - ' + descsDict[oneSeries] for oneSeries in subList])
+                            else:
+                                insertJson(subListObj, inst, subList)
             
                     if not nojson:
                         insertJson(rootObj, 'sublist', subListObj)
@@ -407,15 +444,15 @@ if rv == RET_SUCCESS:
                         # Print nodelists for the series specified in the subs list by first modifying pubList to contain the subs list,
                         # unless the user has specified all series, in which case pubList can be used as it (it contains a list of all
                         # published series).
-                        warnMsg = []
-                        pubListClean = [seriesname for seriesname in series if checkSeries(seriesname, pubListDict, warnMsg)]
-                        if nojson:
-                            print(''.join(warnMsg), file=sys.stderr)
-                        pubList = pubListClean
+                        pubList = series # pubList is all series otherwise
                     
                     # For each published series, print a list of institutions subscribed to that series
                     for seriesname in pubList:
-                        nodeList = GetNodeList(cursor, cfgDict, seriesname)
+                        warnMsg = []
+                        if series[0].lower() != 'all' and not checkSeries(seriesname, pubListDict, warnMsg):
+                            nodeList = [ ''.join(warnMsg) ]
+                        else:
+                            nodeList = GetNodeList(cursor, cfgDict, seriesname)
                         if nojson:
                             print('Institutions subscribed to series ' + seriesname)
                             print('---------------------------------------------------')
@@ -452,7 +489,9 @@ if rv == RET_SUCCESS:
         elif etype == 'getNodeList':
             seriesname = exc.args[2]
             msg = 'Error retrieving from the database the list of institutions subscribed to series ' + seriesname + '.'
-
+        elif etype == 'drmsParams':
+            msg = dbmsg
+            
         if nojson:
             print(msg + '\n' + dbmsg, file=sys.stderr)
         else:
@@ -467,7 +506,7 @@ if rv == RET_SUCCESS:
             print('Content-type: application/json\n')
         print(json.dumps(rootObj))
 
-if optD['source'] == 'cmdline':
+if arguments.getArg('source') == 'cmdline':
     sys.exit(rv)
 else:
     sys.exit(0)
