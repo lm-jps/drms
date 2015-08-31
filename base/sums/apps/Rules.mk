@@ -158,7 +158,7 @@ $(XSUMSVC_$(d)):   %:	%.o $(xsum_svc_obj_$(d)) $(sum_svc_comm_obj_$(d)) $(LIBSUM
 			$(SLBIN)
 
 $(TGT_$(d)):		LL_TGT :=  $(LL_TGT) $(LL_TGT_$(d))
-$(TGT_$(d)):	%:	%.o $(LIBSUM) $(LIBSUMSAPI) $(SUMSICCLIBS_$(d)) $(LIBMISC) $(LIBDSTRUCT)
+$(TGT_$(d)):	%:	%.o $(LIBSUM) $(LIBSUMSAPI) $(LIBCJSON) $(SUMSICCLIBS_$(d)) $(LIBMISC) $(LIBDSTRUCT)
 			$(SUMSLINK)
 			$(SLBIN)
 
