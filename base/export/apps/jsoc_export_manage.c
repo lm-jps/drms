@@ -2389,7 +2389,10 @@ static int GenExpFitsCmd(FILE *fptr,
 
       /* ART - multiple processing steps
        * Always use record limit, since we can no longer make the export commands processing-specific. */
-      fprintf(fptr, "jsoc_export_as_fits JSOC_DBHOST=%s reqid='%s' expversion=%s rsquery='%s' n=%s path=$REQDIR ffmt='%s' "
+      /* ART - Don't use single quotes around the record-set specification. The spec may contain single quotes.
+       * I don't think it can contain double quotes, so put the spec inside double quotes.
+       */
+      fprintf(fptr, "jsoc_export_as_fits JSOC_DBHOST=%s reqid='%s' expversion=%s rsquery=\"%s\" n=%s path=$REQDIR ffmt='%s' "
               "method='%s' protocol='%s' %s\n",
               dbmainhost, requestid, PACKLIST_VER, dataset, RecordLimit, filenamefmt, method, protos[kProto_FITS], dbids);
 
