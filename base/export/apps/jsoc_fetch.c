@@ -991,7 +991,7 @@ static char *GetExistReqID(DRMS_Env_t *env, const char *dsquery, const char *fil
         return id;
 
     
-    snprintf(cmd, sizeof(cmd), "SELECT requestid, filenamefmt, processing, protocol, method, sunum, esttime, size, status FROM %s WHERE recnum = (SELECT max(recnum) AS recnum FROM %s WHERE requestid = (SELECT requestid FROM %s WHERE reqtime > %lf AND dataset ILIKE '%%%s%%' ORDER BY requestid DESC LIMIT 1))", kExportSeries, kExportSeries, kExportSeries, beginWindow, dsquery);
+    snprintf(cmd, sizeof(cmd), "SELECT requestid, filenamefmt, processing, protocol, method, sunum, esttime, size, status FROM %s WHERE recnum = (SELECT max(recnum) AS recnum FROM %s WHERE requestid = (SELECT requestid FROM %s WHERE reqtime > %lf AND dataset ILIKE $engayify$%%%s%%$engayify$ ORDER BY requestid DESC LIMIT 1))", kExportSeries, kExportSeries, kExportSeries, beginWindow, dsquery);
     
     if ((tres = drms_query_txt(drms_env->session, cmd)) != NULL && tres->num_rows == 1 && tres->num_cols == 9)
     {
