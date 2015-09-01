@@ -6,12 +6,6 @@ USER                       a:USER
 PASSWD                     a:PASSWD
 DRMS_SITE_CODE             a:DRMS_LOCAL_SITE_CODE
 POSTGRES_ADMIN             q:POSTGRES_ADMIN
-# DRMS_SAMPLE_NAMESPACE    This was in config.local, but it was not used anywhere in DRMS.
-# The following three parameters do not appear to be used anywhere in DRMS. Keep because
-# somebody might be using them.
-SLONY_ADMIN                q:SLONY_ADMIN
-SLONY_LOG_BASEDIR          q:SLONY_LOG_BASEDIR
-SLONY_NOTIFY               q:SLONY_NOTIFY
 SUMS_MANAGER               q:SUMS_MANAGER
 SUMS_MANAGER_UID           q:SUMS_MANAGER_UID
 SUMS_GROUP                 q:SUMS_GROUP
