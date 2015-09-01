@@ -23,6 +23,7 @@ if (-d "scripts")
 # safe to ignore the error message (the redirection redirects stderr
 # to stdout, which then gets dropped).
 `psql -c "DROP TYPE drmskw CASCADE" $dbname 2>&1`;
+`psql -c "DROP TYPE drmssg CASCADE" $dbname 2>&1`;
 `psql -c "DROP TYPE rep_item CASCADE" $dbname 2>&1`;
 `psql -c "DROP TYPE drmsseries CASCADE" $dbname 2>&1`;
 `psql -c "DROP TYPE drmssession CASCADE" $dbname 2>&1`;
@@ -30,6 +31,8 @@ if (-d "scripts")
 # Now create the types/functions
 `psql -f create_type_drmskw.sql $dbname`;
 `psql -f drms_keyword.sql $dbname`;
+`psql -f create_type_drmssg.sql $dbname`;
+`psql -f drms_segment.sql $dbname`;
 `psql -f create_type_rep_item.sql $dbname`;
 `psql -f drms_replicated.sql $dbname`;
 `psql -f create_type_drmsseries.sql $dbname`;
