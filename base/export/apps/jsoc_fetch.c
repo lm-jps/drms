@@ -2611,15 +2611,109 @@ check for requestor to be valid remote DRMS site
         int nsets = 0;
         DRMS_RecQueryInfo_t rsinfo; /* Filled in by parser as it encounters elements. */
         int iset;
+        int firstlastExists = 0;
+        const char *setName = NULL;
         
         if (drms_record_parserecsetspec(dsquery, &allvers, &sets, &settypes, &snames, &filts, &nsets, &rsinfo) == DRMS_SUCCESS)
         {
+            /* Below, we need to know whether or not there was a FIRSTLAST symbol in the record-set specification. 
+             * But because record-set subsets may exist, we need to iterate through them. If any subset contains 
+             * a FIRSTLAST symbol, set a flag indicating that and check the flag below. 
+             *
+             * Although drms_record_parserecsetspec() is a rec-set parser, it does not recognize the FIRSTLAST symbols, so
+             * we need to use drms_recordset_query(), the definitive parser. We actually already parsed the info we need, 
+             * but that info gets discarded and not saved into the record-set struct.
+             */
+            char *query = NULL;
+            char *pkwhere = NULL;
+            char *npkwhere = NULL;
+            char *seriesname = NULL;
+            int filter;
+            int mixed;
+            HContainer_t *firstlast = NULL;
+            HContainer_t *pkwhereNFL = NULL;             
+            int recnumq;
+            
+            if (nsets > 0)
+            {
+                setName = snames[0];
+            }
+                    
             for (iset = 0; iset < nsets; iset++)
             {
+                if (strcmp(setName, snames[iset]) != 0)
+                {
+                    snprintf(mbuf, sizeof(mbuf), "Cannot specify subsets of records from different series.\n");
+                    JSONDIE(mbuf);
+                }
+                
                 if (!drms_series_exists(drms_env, snames[iset], &status))
                 {
                     snprintf(mbuf, sizeof(mbuf), "Cannot export series '%s' - it does not exist.\n", snames[iset]);
                     JSONDIE(mbuf);
+                }
+                
+                status = drms_recordset_query(drms_env, sets[iset], &query, &pkwhere, &npkwhere, &seriesname, &filter, &mixed, NULL, &firstlast, &pkwhereNFL, &recnumq);
+                if (status != DRMS_SUCCESS)
+                {
+                    snprintf(mbuf, sizeof(mbuf), "Bad record-set subset specification '%s'.\n", sets[iset]);
+                    JSONDIE(mbuf);
+                }
+                
+                /* Iterate through firstlast, looking for anything that isn't 'N'. */
+                if (firstlast)
+                {
+                    HIterator_t *hiter = NULL;
+                    char *code = NULL;
+                    
+                    hiter = hiter_create(firstlast);
+                    if (hiter)
+                    {
+                        while ((code = hiter_getnext(hiter)) != NULL)
+                        {
+                            if (*code != 'N')
+                            {
+                                firstlastExists = 1;
+                                break;
+                            }
+                        }
+                        
+                        hiter_destroy(&hiter);
+                    }
+                    else
+                    {
+                        JSONDIE("Out of memory.\n");
+                    }
+                }
+                
+                if (query)
+                {
+                    free(query);
+                }
+    
+                if (pkwhere)
+                {
+                    free(pkwhere);
+                }
+    
+                if (npkwhere)
+                {
+                    free(npkwhere);
+                }
+                
+                if (seriesname)
+                {
+                    free(seriesname);
+                }
+                
+                if (firstlast)
+                {
+                    hcon_destroy(&firstlast);
+                }
+
+                if (pkwhereNFL)
+                {
+                    hcon_destroy(&pkwhereNFL);
                 }
             }
         }
@@ -2656,6 +2750,47 @@ check for requestor to be valid remote DRMS site
         drms_record_freerecsetspecarr(&allvers, &sets, &settypes, &snames, &filts, nsets);
         JSONDIE2("Can not open RecordSet, bad query or too many records: ", dsquery);
     }
+    
+    /* We've got the records to be exported open already - if the user has used a FIRSTLAST symbol, like '$' or '^', 
+     * then convert the record-set specification to one that contains a list of recnums. There are some bugs in 
+     * jsoc_export_manage having to do with characters like '$' gumming up DB queries and shell command-lines. Let's 
+     * get rid of these characters as much as possible as upstream as possible. */
+     if (firstlastExists)
+     {
+        char *newSpec = NULL;
+        size_t szNewSpec = DRMS_MAXQUERYLEN;
+        char recnumStr[64];
+        
+        newSpec = calloc(1, szNewSpec);
+        if (!newSpec)
+        {
+            JSONDIE("Out of memory.\n");
+        }
+        
+        newSpec = base_strcatalloc(newSpec, setName, &szNewSpec);
+        newSpec = base_strcatalloc(newSpec, "[", &szNewSpec);
+
+        for (irec = 0; irec < rs->n; irec++)
+        {
+            snprintf(recnumStr, sizeof(recnumStr), "%lld", rs->records[irec]->recnum);
+            
+            if (irec == 0)
+            {
+                newSpec = base_strcatalloc(newSpec, ":#" , &szNewSpec);
+            }
+            else
+            {
+                newSpec = base_strcatalloc(newSpec, ",#" , &szNewSpec);
+            }
+            
+            newSpec = base_strcatalloc(newSpec, recnumStr, &szNewSpec);
+        }
+        
+        newSpec = base_strcatalloc(newSpec, "]", &szNewSpec);
+        snprintf(dsquery, sizeof(dsquery), "%s", newSpec);
+        
+        free(newSpec);
+     }
 
     rcount = rs->n;
         
