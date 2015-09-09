@@ -253,6 +253,7 @@ void drms_array2missing(DRMS_Array_t *arr)
       for (i=0; i<n; i++, ssrc++)
 	*ssrc = DRMS_MISSING_TIME;
     }
+    break;
   case DRMS_TYPE_STRING: 
     {
       char **ssrc = (char **) (arr->data);
