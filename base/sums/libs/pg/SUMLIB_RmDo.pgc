@@ -6,10 +6,11 @@
 #include <soi_error.h>
 #include <printk.h>
 
+EXEC SQL TYPE myuint64_t IS unsigned long long;
+
 int DS_RmDo(double *bytesdel)
 {
-    EXEC SQL TYPE myuint64_t IS unsigned long long int;
-    
+
 EXEC SQL BEGIN DECLARE SECTION;
   VARCHAR l_wd[80];
   VARCHAR l_eff_date[20];
@@ -23,10 +24,10 @@ EXEC SQL END DECLARE SECTION;
 
   typedef struct palloc_cursor {
     char p_wd[80];
-    uint64_t p_sumid;
+    myuint64_t p_sumid;
     double p_bytes;
     char p_effdate[20];
-    uint64_t p_ds_index;
+    myuint64_t p_ds_index;
     int p_archsub;
   } PALLOC_CURSOR;
   //PALLOC_CURSOR pcursor[1600];
@@ -98,11 +99,8 @@ sqlerror:
     return DS_DATA_QRY;
 }
 
-int DS_RmNow(char *wd, uint64_t sumid, double bytes, char *effdate,
-		uint64_t ds_index, int archsub, double *rmbytes) {
-		
-    EXEC SQL TYPE myuint64_t IS unsigned long long int;
-    
+int DS_RmNow(char *wd, myuint64_t sumid, double bytes, char *effdate,
+		myuint64_t ds_index, int archsub, double *rmbytes) {
 EXEC SQL BEGIN DECLARE SECTION;
   varchar target[80];
   int l_count;
@@ -110,7 +108,7 @@ EXEC SQL BEGIN DECLARE SECTION;
   char stmt[65536];
 EXEC SQL END DECLARE SECTION;
   FILE *rxfp;
-  uint64_t eff_date, today_date;
+  myuint64_t eff_date, today_date;
   char rwd[80], rectxt[128], line[128], seriesname[128];
   char *rootdir, *cptr, *cptr1, *token, *effd;
 
@@ -118,7 +116,7 @@ EXEC SQL END DECLARE SECTION;
   EXEC SQL WHENEVER NOT FOUND GOTO sqlrmerror; 
 
     effd = get_effdate(0);
-    today_date = (uint64_t)atol(effd);
+    today_date = (myuint64_t)atol(effd);
     free(effd);
     EXEC SQL SELECT count(*) INTO :l_count from SUM_PARTN_ALLOC
         where DS_INDEX = :l_ds_index and status = 8;
@@ -129,7 +127,7 @@ EXEC SQL END DECLARE SECTION;
        EXEC SQL COMMIT;
        return(0);		/* skip this dir opend for read */
     }
-    eff_date = (uint64_t)atol(effdate);
+    eff_date = (myuint64_t)atol(effdate);
 
 //printk("DS_RmNow() wd=%s eff_date=%lu today_date=%lu\n", wd, eff_date, today_date); //!!!TEMP
 

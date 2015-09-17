@@ -6,6 +6,7 @@
 #include <soi_error.h>
 #include <printk.h>
 
+EXEC SQL TYPE myunit64_t IS unsigned long long;
 
 int DS_Rm_Commit()
 {
@@ -17,14 +18,12 @@ int DS_Rm_Commit()
 int DS_RmDoX(char *name, double bytesdel)
 {
 
-    EXEC SQL TYPE myuint64_t IS unsigned long long int;
-
 EXEC SQL BEGIN DECLARE SECTION;
   char stmt[256];
   VARCHAR l_wd[80];
   VARCHAR l_eff_date[20];
-  myuint64_t l_sumid;
-  myuint64_t ds_index;
+  myunit64_t l_sumid;
+  myunit64_t ds_index;
   int l_archsub;
   double l_bytes;
 EXEC SQL END DECLARE SECTION;
@@ -33,10 +32,10 @@ EXEC SQL END DECLARE SECTION;
 
   typedef struct palloc_cursor {
     char p_wd[80];
-    uint64_t p_sumid;
+    myunit64_t p_sumid;
     double p_bytes;
     char p_effdate[20];
-    uint64_t p_ds_index;
+    myunit64_t p_ds_index;
     int p_archsub;
   } PALLOC_CURSOR;
   //PALLOC_CURSOR pcursor[1600];
@@ -118,19 +117,16 @@ sqlerror:
     return DS_DATA_QRY;
 }
 
-int DS_RmNowX(char *wd, uint64_t sumid, double bytes, char *effdate,
-		uint64_t ds_index, int archsub, double *rmbytes) {
-		
-    EXEC SQL TYPE myuint64_t IS unsigned long long int;
-    
+int DS_RmNowX(char *wd, myunit64_t sumid, double bytes, char *effdate,
+		myunit64_t ds_index, int archsub, double *rmbytes) {
 EXEC SQL BEGIN DECLARE SECTION;
   varchar target[80];
   int l_count;
-  myuint64_t l_ds_index;
+  myunit64_t l_ds_index;
   char stmt[65536];
 EXEC SQL END DECLARE SECTION;
   FILE *rxfp;
-  uint64_t eff_date, today_date;
+  myunit64_t eff_date, today_date;
   char rwd[80], rectxt[128], line[128], seriesname[128];
   char *rootdir, *cptr, *cptr1, *token, *effd;
 
@@ -138,7 +134,7 @@ EXEC SQL END DECLARE SECTION;
   EXEC SQL WHENEVER NOT FOUND GOTO sqlrmerror; 
 
     effd = get_effdate(0);
-    today_date = (uint64_t)atol(effd);
+    today_date = (myunit64_t)atol(effd);
     free(effd);
     l_ds_index = ds_index;
     EXEC SQL SELECT count(*) INTO :l_count from SUM_PARTN_ALLOC
@@ -150,7 +146,7 @@ EXEC SQL END DECLARE SECTION;
        //EXEC SQL COMMIT;
        return(0);		/* skip this dir opend for read */
     }
-    eff_date = (uint64_t)atol(effdate);
+    eff_date = (myunit64_t)atol(effdate);
 
     rootdir = strcpy(rwd, wd);
     //contin with del if garbage date > year 30000
