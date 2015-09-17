@@ -230,28 +230,28 @@ bool_t xdr_sum_info_t(XDR *xdrs, SUM_info_t *objp);
 #define SUMREPARTN ((uint32_t)20)
 
 extern KEY *sumdo_1(void);
-extern KEY *opendo_1(void);
-extern KEY *shutdo_1(void);
-extern KEY *closedo_1(void);
-extern KEY *getdo_1(void);
-extern KEY *infodo_1(void);
-extern KEY *infodoX_1(void);
+extern KEY *opendo_1(KEY *params);
+extern KEY *shutdo_1(KEY *params);
+extern KEY *closedo_1(KEY *params);
+extern KEY *getdo_1(KEY *params);
+extern KEY *infodo_1(KEY *params);
+extern KEY *infodoX_1(KEY *params);
 extern KEY *infodoX_1_U(void);
-extern KEY *infodoArray_1(void);
-extern KEY *sumrespdo_1(void);
-extern KEY *allocdo_1(void);
-extern KEY *putdo_1(void);
+extern KEY *infodoArray_1(Sunumarray *params);
+extern KEY *sumrespdo_1(KEY *params);
+extern KEY *allocdo_1(KEY *params);
+extern KEY *putdo_1(KEY *params);
 extern KEY *archsudo_1(void);
-extern KEY *nopdo_1(void);
-extern KEY *tapereconnectdo_1(void);
+extern KEY *nopdo_1(KEY *params);
+extern KEY *tapereconnectdo_1(KEY *params);
 /**********************************
 extern KEY *apupdo_1(void);
 extern KEY *dpupdo_1(void);
 extern KEY *sumrmdo_1(void);
 ***********************************/
-extern KEY *delseriesdo_1(void);
-extern KEY *configdo_1(void);
-extern KEY *repartndo_1(void);
+extern KEY *delseriesdo_1(KEY *params);
+extern KEY *configdo_1(KEY *params);
+extern KEY *repartndo_1(KEY *params);
 
 /* This is the tape_svc program registration */
 #define TAPEPROG ((uint32_t)0x20000612)  /* 536872466 */
