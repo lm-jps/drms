@@ -280,7 +280,7 @@ unless ($repro) {
   }
   else
   {
-     print "Warning:: couldn't obtain parse lock; bailing.\n";
+     info("Warning:: couldn't obtain SUBSCRIPTION lock; bailing.\n");
      exit(1);
   }
 
@@ -1205,13 +1205,22 @@ sub dumpSlonLog {
 }
 
 ## test end of line in insert sql  - ISS 2010/Aug/20
-sub dumpErrorLog {
-  my ($cfgH, $series, $line) = @_;
-  if (defined $series) {
-    for my $node (@{$cfgH->{$series}}) {
-      error("bad log line [$line] for node [$node]");
+sub dumpErrorLog 
+{
+    my ($cfgH, $series, $line) = @_;
+
+    if (defined $series) 
+    {
+        for my $node (@{$cfgH->{$series}})
+        {
+            error("bad log line [$line] for node [$node].");
+        }
     }
-  }
+    else
+    {
+        # Non series-specific problem.
+        error("bad log line [$line].");
+    }
 }
 
 # Parse a single original slony log file into N site-specific log files, one for each node.
@@ -1235,174 +1244,241 @@ sub parseLog {
 
   open SRC, '<', $srcFile or CallDie ("Could not open source file [$srcFile]\n");
 
-  while (<SRC>) {
- 
-      # Present in every slony log
-    if ($_ =~ /select "_jsoc"\.archiveTracking_offline\('.*'\);/i ||
-        $_ =~ /^--/ ||
-        $_ =~ /^start tran/i ||
-        $_ =~ /^commit/i ||
-        $_ =~ /^vacuum/i ) {
-      dumpSlonLog($cfgH, $nodeH, undef, $_);
-      next;
-    }
+    my($statement); # Actual SQL statement in Slony log.
+    my($nextLine);
+    my($dumpError); # If 1, then we never found a statement's ending required semicolon.
+
+    while (<SRC>) 
+    {
+        # The SQL statements may span more than one line. The original parser
+        # worked with single lines in the original log files, which was wrong.
+        # Each SQL statement ends in a semicolon, so we have to concatenate 
+        # lines that do not end in a semicolon with the next line. In this 
+        # manner, we coalesce all lines that form a single SQL statement and
+        # put that string into $statement. The original log file also contains
+        # comments, which span single lines, so no coalescing is necessary
+        # if a comment is encountered
+        $statement = "";
+        $dumpError = 0;
+        
+        if ($_ =~ /^--/)
+        {
+            $statement = $_;
+        }
+        elsif ($_ =~ /^\s*$/)
+        {
+            # Gotta get rid of whitespace since that isn't part of a statement.
+            next;
+        }
+        else
+        {
+            # This regexp will match the ending semicolon, even if it is followed by a
+            # newline (and the $_ will always end in a newline).
+            $nextLine = $_;
+            while ($nextLine !~ /.*;$/)
+            {
+                $statement = $statement . $nextLine;
+                $nextLine = <SRC>;
+                if (!$nextLine)
+                {
+                    # Never found the ending semicolon. Dump the partial 
+                    # statement to the error log.
+                    # Ack - we have to extract the series. Set a flag to
+                    # denote failure, and then let downstream code handle this as
+                    # before
+                    $dumpError = 1;
+                }
+            }
+            
+            $statement = $statement . $nextLine;
+        }
+        
+        # Present in every slony log
+        if ($statement =~ /select "_jsoc"\.archiveTracking_offline\('.*'\);/i ||
+            $statement =~ /^--/ ||
+            $statement =~ /^start tran/i ||
+            $statement =~ /^commit/i ||
+            $statement =~ /^vacuum/i ) 
+        {
+            if ($dumpError)
+            {
+                dumpErrorLog($cfgH, undef, $statement);
+            }
+            else
+            {
+                dumpSlonLog($cfgH, $nodeH, undef, $statement);
+            }
+            next;
+        }
       
-      # Present in logs generated in response to a slonik change to DDL that alters a table.
-      # THIS LINE IS SERIES-SPECIFIC - print to the log only if we are altering a table
-      # to which the remote site is subscribed.
-      if ($_ =~ /^\s*alter\s+table\s+(\S+\.\S+)\s+/i)
-      {
-          # I don't think that there can be newlines in the contents of the ALTER TABLE command.
-          my($series) = $1;
-          my($weirdseriesname);
-          my(@parts);
-          
-          # The series name MUST be of the format "ns"."table". At this point, $series may 
-          # have quotes around the ns, or around the table, or both, or neither.
-          @parts = ($series =~ /(\S+)\.(\S+)/);
-          if ($parts[0] !~ /"\S+"/)
-          {
+        # Present in logs generated in response to a slonik change to DDL that alters a table.
+        # THIS LINE IS SERIES-SPECIFIC - print to the log only if we are altering a table
+        # to which the remote site is subscribed.
+        if ($statement =~ /^\s*alter\s+table\s+(\S+\.\S+)\s+/i)
+        {
+            # I don't think that there can be newlines in the contents of the ALTER TABLE command.
+            my($series) = $1;
+            my($weirdseriesname);
+            my(@parts);
+
+            # The series name MUST be of the format "ns"."table". At this point, $series may 
+            # have quotes around the ns, or around the table, or both, or neither.
+            @parts = ($series =~ /(\S+)\.(\S+)/);
+            if ($parts[0] !~ /"\S+"/)
+            {
               $weirdseriesname = "\"" . lc($parts[0]) . "\"";
-          }
-          else
-          {
+            }
+            else
+            {
               $weirdseriesname = lc($parts[0]);
-          }
-          
-          $weirdseriesname = $weirdseriesname . "\.";
+            }
 
-          if ($parts[1] !~ /"\S+"/)
-          {
+            $weirdseriesname = $weirdseriesname . "\.";
+
+            if ($parts[1] !~ /"\S+"/)
+            {
               $weirdseriesname = $weirdseriesname . "\"" . lc($parts[1]) . "\"";
-          }
-          else
-          {
+            }
+            else
+            {
               $weirdseriesname = $weirdseriesname . lc($parts[1]);
-          }
+            }
 
-          dumpSlonLog($cfgH, $nodeH, $weirdseriesname, $_);
-          next;
-      }
+            if ($dumpError)
+            {
+                dumpErrorLog($cfgH, $weirdseriesname, $statement);
+            }
+            else
+            {
+                dumpSlonLog($cfgH, $nodeH, $weirdseriesname, $statement);
+            }
+            
+            next;
+        }
       
-      # Along with the alter statement, there will be 1 or more insert statements. Capture those too.
-      # They could occur either before or after the alter statement though.
-      if ($_ =~ /^\s*insert\s+into\s+\S+\.drms_keyword.+\)\s+values\s+\(\s*(\S+\.[^,]+),/i)
-      {
-          # Yay, this is an insert statement that goes with the alter table statement.
-          
-          # There could be newlines in this insert statement.
-          my($series) = $1;
-          my(@parts);
-          
-          if ($series =~ /\'(\S+)\.(\S+)\'/ || /\"(\S+)\.(\S+)\"/)
-          {
-              $parts[0] = lc($1);
-              $parts[1] = lc($2);
-          }
-          else
-          {
-              @parts = ($series =~ /(\S+)\.(\S+)/);
-          }
-          
-          if ($parts[0] !~ /"\S+"/ && $parts[0] !~ /\'\S+\'/)
-          {
-              $weirdseriesname = "\"" . $parts[0] . "\"";
-          }
-          elsif ($parts[0] =~ /\'(\S+)\'/)
-          {
-              $weirdseriesname = "\"" . $1 . "\"";
-          }
-          else
-          {
-              $weirdseriesname = $parts[0];
-          }
-          
-          $weirdseriesname = $weirdseriesname . "\.";
-          
-          if ($parts[1] !~ /"\S+"/ && $parts[1] !~ /\'\S+\'/)
-          {
-              $weirdseriesname = $weirdseriesname . "\"" . $parts[1] . "\"";
-          }
-          elsif ($parts[1] =~ /\'(\S+)\'/)
-          {
-              $weirdseriesname = $weirdseriesname . "\"" . $1 . "\"";
-          }
-          else
-          {
-              $weirdseriesname = $weirdseriesname . $parts[1];
-          }
-          
-          dumpSlonLog($cfgH, $nodeH, $weirdseriesname, $_);
-          next;
-      }
-      
+        # Along with the alter statement, there will be 1 or more insert statements. Capture those too.
+        # They could occur either before or after the alter statement though.
+        if ($statement =~ /^\s*insert\s+into\s+\S+\.drms_keyword.+\)\s+values\s+\(\s*(\S+\.[^,]+),/i)
+        {
+            # Yay, this is an insert statement that goes with the alter table statement.
 
-  #e.g.
-  #insert into "lm_jps"."lev1_test4k10s"
-    ## test end of line in insert sql  - ISS 2010/Aug/20
-      if ($_ =~ /^insert\s+into\s+("\S+"\."\S+")/i ||
-          $_ =~ /^insert\s+into\s+(\S+\."\S+")/i ||
-          $_ =~ /^insert\s+into\s+("\S+"\.\S+)/i ||
-          $_ =~ /^insert\s+into\s+(\S+\.\S+)/i) 
-      {
-          # There could be newlines in this insert statement.
-          
-          my $series = $1;
-          if ($_ =~ /.*\);$/ ) 
-          {
-              dumpSlonLog($cfgH, $nodeH, $series, $_);
-          } 
-          else 
-          {
-              dumpErrorLog($cfgH, $series, $_);
-          }
-      }
-      elsif ($_ =~ /^update\s+only\s+(\S+.\S+)/i || $_ =~ /^update\s+(\S+.\S+)/i)
-      {
-          # update "lm_jps"."lev1_test4k10s" set blah = 'hithere' ...
-          # There might be no namespace in the slong log (if there is a preceding set search_path to ... statement), 
-          # and if so, we're screwed.
-          
-          # There could be newlines in this update statement.
-          my($series) = GetQuotedSeries($1);
-          
-          # I guess we want to make sure that the line ends with a semicolon.
-          if ($_ =~ /.*;$/ ) 
-          {
-              dumpSlonLog($cfgH, $nodeH, $series, $_);
-          } 
-          else 
-          {
-              dumpErrorLog($cfgH, $series, $_);
-          }
-      }
-      elsif ($_ =~ /^delete\s+from\s+only\s+(\S+.\S+)/i || $_ =~ /^delete\s+from\s+(\S+.\S+)/i)
-      {
-          # There could be newlines in this delete statement.
-          
-          # delete from only "aia_test"."synoptic2" where "recnum"='1544700'.
-          my($series) = GetQuotedSeries($1);
-          
-          # I guess we want to make sure that the line ends with a semicolon.
-          if ($_ =~ /.*;$/ ) 
-          {
-              dumpSlonLog($cfgH, $nodeH, $series, $_);
-          } 
-          else 
-          {
-              dumpErrorLog($cfgH, $series, $_);
-          }
-      }
-  }
+            # There could be newlines in this insert statement.
+            my($series) = $1;
+            my(@parts);
 
-  close SRC;
+            if ($series =~ /\'(\S+)\.(\S+)\'/ || /\"(\S+)\.(\S+)\"/)
+            {
+                $parts[0] = lc($1);
+                $parts[1] = lc($2);
+            }
+            else
+            {
+                @parts = ($series =~ /(\S+)\.(\S+)/);
+            }
 
-  if (($rv = closeSlonLogs($nodeH)))
-  {
-     error("Problem parsing source log file $srcFile.") 
-  }
+            if ($parts[0] !~ /"\S+"/ && $parts[0] !~ /\'\S+\'/)
+            {
+                $weirdseriesname = "\"" . $parts[0] . "\"";
+            }
+            elsif ($parts[0] =~ /\'(\S+)\'/)
+            {
+                $weirdseriesname = "\"" . $1 . "\"";
+            }
+            else
+            {
+                $weirdseriesname = $parts[0];
+            }
 
-  return $rv;
+            $weirdseriesname = $weirdseriesname . "\.";
+
+            if ($parts[1] !~ /"\S+"/ && $parts[1] !~ /\'\S+\'/)
+            {
+                $weirdseriesname = $weirdseriesname . "\"" . $parts[1] . "\"";
+            }
+            elsif ($parts[1] =~ /\'(\S+)\'/)
+            {
+                $weirdseriesname = $weirdseriesname . "\"" . $1 . "\"";
+            }
+            else
+            {
+                $weirdseriesname = $weirdseriesname . $parts[1];
+            }
+
+            if ($dumpError)
+            {
+                dumpErrorLog($cfgH, $weirdseriesname, $statement);
+            }
+            else
+            {
+                dumpSlonLog($cfgH, $nodeH, $weirdseriesname, $statement);
+            }
+            next;
+        }
+
+
+        # insert into "lm_jps"."lev1_test4k10s"
+        if ($statement =~ /^insert\s+into\s+("\S+"\."\S+")/i ||
+            $statement =~ /^insert\s+into\s+(\S+\."\S+")/i ||
+            $statement =~ /^insert\s+into\s+("\S+"\.\S+)/i ||
+            $statement =~ /^insert\s+into\s+(\S+\.\S+)/i) 
+        {
+            my $series = $1;
+
+            if ($dumpError) 
+            {
+                dumpErrorLog($cfgH, $series, $statement);
+            } 
+            else 
+            {
+                dumpSlonLog($cfgH, $nodeH, $series, $statement);
+            }
+        }
+        elsif ($statement =~ /^update\s+only\s+(\S+.\S+)/i || $statement =~ /^update\s+(\S+.\S+)/i)
+        {
+            # update "lm_jps"."lev1_test4k10s" set blah = 'hithere' ...
+            # There might be no namespace in the slong log (if there is a preceding set search_path to ... statement), 
+            # and if so, we're screwed.
+
+            # There could be newlines in this update statement.
+            my($series) = GetQuotedSeries($1);
+
+            # I guess we want to make sure that the line ends with a semicolon.
+            if ($dumpError)
+            {
+                dumpErrorLog($cfgH, $series, $statement);
+            } 
+            else 
+            {
+                dumpSlonLog($cfgH, $nodeH, $series, $statement);
+            }
+        }
+        elsif ($statement =~ /^delete\s+from\s+only\s+(\S+.\S+)/i || $statement =~ /^delete\s+from\s+(\S+.\S+)/i)
+        {
+            # There could be newlines in this delete statement.
+
+            # delete from only "aia_test"."synoptic2" where "recnum"='1544700'.
+            my($series) = GetQuotedSeries($1);
+
+            # I guess we want to make sure that the line ends with a semicolon.
+            if ($dumpError) 
+            {
+                dumpErrorLog($cfgH, $series, $statement);              
+            } 
+            else 
+            {
+                dumpSlonLog($cfgH, $nodeH, $series, $statement);
+            }
+        }
+    }
+
+    close SRC;
+
+    if (($rv = closeSlonLogs($nodeH)))
+    {
+        error("Problem parsing source log file $srcFile.") 
+    }
+
+    return $rv;
 }
 
 sub serverLock {
