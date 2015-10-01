@@ -220,7 +220,7 @@ cleanup_counter=$(( $cleanup_counter + 1 ))
             # ART LST - call into perl code to update db-table versions of the .lst files. Make sure
             # to use $node.lst to populate the lst table, and not $node.new.lst - the latter got
             # renamed to $node.lst.
-            $kRepDir/subscribe_manage/gentables.pl conf=$config_file op=replace --node=$node --lst=$node.lst
+            $kRepDir/subscribe_manage/gentables.pl conf=$config_file op=replace --node=$node --lst=$tables_dir/$node.lst
 
             if [ $? -ne 0 ]
             then
