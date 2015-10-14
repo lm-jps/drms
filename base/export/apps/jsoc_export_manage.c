@@ -90,6 +90,8 @@
 
 #define kArgTestmode    "t"
 #define kArgProcSeries  "procser"
+#define kArgTestConvQuotes "tQuotes"
+#define kArgValNotUsed "NoT UsEd"
 
 #define kMaxProcNameLen 128
 #define kMaxIntVar 64
@@ -169,6 +171,7 @@ ModuleArgs_t module_args[] =
 { 
     {ARG_STRING, "op", "process", "<Operation>"},
     {ARG_STRING, kArgProcSeries, "jsoc.export_procs", "The series containing the list of available processing steps. There is one such series on hmidb and one on hmidb2."},
+    {ARG_STRING, kArgTestConvQuotes, kArgValNotUsed, "Put a record-set query in here to test the code that converts double-quoted strings to single-quoted strings."},
     {ARG_FLAG, kArgTestmode, NULL, "if set, then operates on new requests with status 12 (not 2)"},
     {ARG_FLAG, "h", "0", "help - show usage"},
     {ARG_END}
@@ -530,6 +533,60 @@ int nice_intro ()
     }
   return (0);
   }
+  
+  // jsoc.export
+static void ErrorOutExpRec(DRMS_Record_t **exprec, int expstatus, const char *mbuf)
+{
+    // Print mbuf to stderr
+    if (mbuf)
+    {
+        fprintf(stderr, "%s\n", mbuf);
+    }
+    
+    // Write to export record in jsoc.export
+    if (exprec && *exprec)
+    {
+        drms_setkey_string(*exprec, "errmsg", mbuf);
+        drms_setkey_int(*exprec, "Status", expstatus);
+        
+        // Close export record
+        drms_close_record(*exprec, DRMS_INSERT_RECORD);
+        *exprec = NULL;
+    }
+}
+
+// jsoc.export_new
+static void ErrorOutExpNewRec(DRMS_RecordSet_t *exprecs, DRMS_Record_t **exprec, int irec, int expstatus, const char *mbuf)
+{
+    int closedrec = 0;
+    
+    // Print mbuf to stderr
+    if (mbuf)
+    {
+        fprintf(stderr, "%s\n", mbuf);
+    }
+    
+    // Write to export record in jsoc.export
+    if (exprec && *exprec)
+    {
+        drms_setkey_string(*exprec, "errmsg", mbuf);
+        drms_setkey_int(*exprec, "Status", expstatus);
+        
+        // Close export record
+        drms_close_record(*exprec, DRMS_INSERT_RECORD);
+        *exprec = NULL;
+        closedrec = 1;
+    }
+    
+    if (exprecs)
+    {
+        if (closedrec)
+        {
+            exprecs->records[irec] = NULL; // Detach record - don't double free.
+        }
+    }
+}
+
 
 // generate qsub script
 /* requestid is the ID and requestorid is the name of the person making the request (and is the only member of the prime-key set.) */
@@ -2357,8 +2414,284 @@ static void GenErrChkCmd(FILE *fptr)
    fprintf(fptr, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
 }
 
+static char *convertQuotes(const char *arg, DRMS_Record_t **export_rec, DRMS_Record_t **export_log, DRMS_RecordSet_t *exports_new, int irec)
+{
+    char *ret = NULL;
+    size_t sz;
+    size_t bufSz;
+    char bufCh[2] = {0};
+    int pos;
+    int error;
+    
+    /* states */
+    int inSQString; /* we are parsing a single-quoted string. */
+    int inEString; /* we are parsing an escaped string. */
+    int inDQString; /* we are parsing a double-quoted string (not part of the SQL standard, but something DRMS supports). */
+    int inString; /* we are parsing one of the three kinds of strings. */
+    int lastE; /* the previous char was an e (so perhaps we are at the beginning of an escaped string). 
+                * 1 - capital E, 2 - lower-case e.
+                */
+    int lastSQ; /* we are in a single-quoted string or an escape string and the previous char was a '\''
+                 * (so if the next char is a '\'', then we have a '\'' inside a string delimited by '\'' chars.
+                 */
+    int lastEsc; /* we are in an escaped string and the previous char was an escaping backslash (so 
+                  * we ignore the "specialness" of a following '\''. */
+                 
+    if (!arg || strlen(arg) <= 0)
+    {
+        ErrorOutExpRec(export_rec, 4, "Missing record-set specification.");
+        ErrorOutExpNewRec(exports_new, export_log, irec, 4, "Missing record-set specification.");
+        return NULL;
+    }
+    
+    if (strlen(arg) >= 4096)
+    {
+        ErrorOutExpRec(export_rec, 4, "Record-set specification is too long.");
+        ErrorOutExpNewRec(exports_new, export_log, irec, 4, "Record-set specification is too long.");
+        return NULL;
+    }
+    
+    sz = strlen(arg);
+    bufSz = sz;
+    ret = calloc(1, bufSz);
+    
+    if (!ret)
+    {
+        ErrorOutExpRec(export_rec, 4, "Out of memory.");
+        ErrorOutExpNewRec(exports_new, export_log, irec, 4, "Out of memory.");
+        return NULL;
+    }
+    
+    /* We want to change a d-quote to an s-quote in only two cases: 
+     * 1. We are outside of any string and we see a '\"'.
+     * 2. We are inside a string that is enclosed by d-quotes.
+     *
+     * There are six quoting methods to specify a string in SQL:
+     * 1. Enclose the string in single quotes 'this is a string'.
+     * 2. Enclose the string in E'this is a string' or e'this is a string'.
+     * 3. Enclose the string in $$this is a string$$ or $someTag$this is a string$someTag$.
+     * 4. Enclose the string in U&'this is a string' or u&'this is a string'.
+     * 5. Enclose the string in B'1010110' or b'1010110.
+     * 6. Enclose the string in X'1FF' or X'1ff'.
+     * 
+     * Since d-quotes are not allowed in the last two methods, those methods can be ignored. In addition, if 
+     * the PGSQL standard_conforming_strings parameter is off (we should require that this is so), then
+     * Unicode escape sequences cannot be used to define string constants. But if a d-quote
+     * exists in one of the first three methods, it cannot be considered the start of a d-quote-enclosed string.
+     * Determining where the end of the string is with the first two methods is tricky because
+     * in both cases, single quotes can be inside the strings. This can 
+     * happen if there are two single quotes in a row (the first single quote escapes the second).
+     * With the second method, it can also happen if a single quote is backslash-escaped. Regarding dollar-quoted string...
+     * fuck that. They are not part of the SQL standard (they are a PSQL construct), so we will disregard them 
+     * to simplify things. They can nest, which would make parsing painful. Even without them, things are fairly complicated.
+     */
+    
+    error = 0;
+    for (pos = 0, inSQString = 0, inEString = 0, inDQString = 0, lastSQ = 0, lastE = 0, lastEsc = 0; pos < sz; pos++)
+    {
+        inString = (inSQString || inEString || inDQString);
+        
+        /* Go to the right state first. */
+        if (!inString)
+        {
+            if (lastE != 0)
+            {
+                /* The previous char was an 'E' or 'e'. */
+                if (arg[pos] == '\'')
+                {
+                    ret = base_strcatalloc(ret, "E'", &bufSz);
+                    inEString = 1;
+                }
+                else
+                {
+                    /* Shit - we have to distinguish between E and e. */
+                    ret = base_strcatalloc(ret, (lastE == 1) ? "E" : "e", &bufSz);
+                    bufCh[0] = arg[pos];
+                    ret = base_strcatalloc(ret, bufCh, &bufSz);
+                }
+                
+                lastE = 0;
+            }
+            else
+            {
+                if (arg[pos] == '\'')
+                {
+                    ret = base_strcatalloc(ret, "'", &bufSz);
+                    inSQString = 1;
+                }
+                else if (arg[pos] == 'E')
+                {
+                    lastE = 1;
+                }
+                else if (arg[pos] == 'e')
+                {
+                    lastE = 2;
+                }
+                else if (arg[pos] == '\"')
+                {
+                    /* The start of a d-quoted string - replace the d-quote with an s-quote. */
+                    ret = base_strcatalloc(ret, "'", &bufSz);
+                    inDQString = 1;
+                }
+                else
+                {
+                    bufCh[0] = arg[pos];
+                    ret = base_strcatalloc(ret, bufCh, &bufSz);
+                }
+            }
+        }
+        else
+        {
+            if (inDQString)
+            {
+                if (arg[pos] == '\"')
+                {
+                    /* We are parsing a d-quoted string, and we have a d-quote - end the string. Replace the end d-quote with an s-quote. */
+                    ret = base_strcatalloc(ret, "'", &bufSz);
+                    inDQString = 0;
+                }
+                else
+                {
+                    bufCh[0] = arg[pos];
+                    ret = base_strcatalloc(ret, bufCh, &bufSz);
+                }
+            }
+            else if (inSQString || inEString)
+            {
+                if (lastEsc)
+                {
+                    /* The previous character was a backslash, so pass this char directly to output - it isn't special in any way. */
+                    bufCh[0] = arg[pos];
+                    ret = base_strcatalloc(ret, bufCh, &bufSz);
+                    lastEsc = 0;
+                }
+                else if (lastSQ)
+                {
+                    if (arg[pos] == '\'')
+                    {
+                        /* We have a single-q, and the last char was a single-q. This is OK - pass both single quotes through. */
+                        ret = base_strcatalloc(ret, "''", &bufSz);
+                    }
+                    else
+                    {
+                        /* Last time we saw a first consecutive '\'', but this time we did not. End of string. */
+                        ret = base_strcatalloc(ret, "'", &bufSz);
+                        
+                        inSQString = 0;
+                        inEString = 0;
+                        lastSQ = 0;
+                        
+                        pos--; /* Otherwise the parser would move on to the char two past the end of the string. */
+                    }
+                    
+                    lastSQ = 0;
+                }
+                else
+                {
+                    if (arg[pos] == '\'')
+                    {
+                        /* This is a first consecutive single-q. Or it may be the end of the string. */
+                        lastSQ = 1;
+                    }
+                    else
+                    {
+                        if (inEString && arg[pos] == '\\')
+                        {
+                            lastEsc = 1;
+                        }
+                        
+                        bufCh[0] = arg[pos];
+                        ret = base_strcatalloc(ret, bufCh, &bufSz);
+                    }
+                }
+            }
+            else
+            {
+                /* Parser error - if we are in a string, it must be one of the three string types already handled. */
+                ErrorOutExpRec(export_rec, 4, "Invalid SQL string in record-set specification.");
+                ErrorOutExpNewRec(exports_new, export_log, irec, 4, "Invalid SQL string in record-set specification.");
+                error = 1;
+                break;
+            }
+        }
+    }
+    
+    if (lastE != 0)
+    {
+        /* We are not insdie a string at this point. */
+        ret = base_strcatalloc(ret, (lastE == 1) ? "E" : "e", &bufSz);
+    }
+    
+    if (lastSQ && (inSQString || inEString))
+    {
+        /* It could the the case that we were parsing a string delimited by single quotes, and
+         * the single quote was the last character. */
+        if (pos > 0 && arg[pos - 1] == '\'')
+        {
+            ret = base_strcatalloc(ret, "'", &bufSz);
+            inSQString = 0;
+            inEString = 0;
+            lastSQ = 0;
+        }                      
+    }
+    
+    if (inSQString || inEString || inDQString || error)
+    {
+        /* All strings should have been completely parsed. */
+        ErrorOutExpRec(export_rec, 4, "Invalid record-set specification.");
+        ErrorOutExpNewRec(exports_new, export_log, irec, 4, "Invalid record-set specification.");
+        free(ret);
+        ret = NULL;
+    }
+    
+    return ret;
+}
+
+static char *escapeArgument(const char *arg)
+{
+    char *ret = NULL;
+    size_t sz;
+    size_t bufSz;
+    char bufCh[2] = {0};
+    int pos;
+
+    
+    if (strlen(arg) >= 4096)
+    {
+        fprintf(stderr, "Argument is too long.\n");
+        return NULL;
+    }
+    
+    sz = strlen(arg);
+    bufSz = sz;
+    ret = calloc(1, bufSz);
+
+    if (!ret)
+    {
+        fprintf(stderr, "Out of memory.\n");
+        return NULL;
+    }
+    
+    for (pos = 0; pos < sz; pos++)
+    {
+        if (!isalnum(arg[pos]))
+        {
+            ret = base_strcatalloc(ret, "\\", &bufSz);
+        }
+        
+        bufCh[0] = arg[pos];
+        ret = base_strcatalloc(ret, bufCh, &bufSz);
+    }
+    
+    return ret;
+}
+
 /* returns 1 on error, 0 on success */
 static int GenExpFitsCmd(FILE *fptr, 
+                         DRMS_Record_t **export_rec,
+                         DRMS_Record_t **export_log,
+                         DRMS_RecordSet_t *exports_new,
+                         int irec,
                          const char *proto,
                          const char *dbmainhost,
                          const char *requestid,
@@ -2368,43 +2701,73 @@ static int GenExpFitsCmd(FILE *fptr,
                          const char *method,
                          const char *dbids)
 {
-   char *protocol = strdup(proto);
-   int rv = 0;
+    char *protocol = strdup(proto);
+    int rv = 0;
 
-   if (protocol)
-   {
-      char *cparms, *p = index(protocol, ',');
+    if (protocol)
+    {
+        char *cparms, *p = index(protocol, ',');
 
-      /* The "Protocol" field of jsoc.export has been overloaded. It contains not only the export protocol 
-       * (i.e., FITS, as-is, JPEG, MOVIE), but for the FITS protocol, the comma-separated compression 
-       * parameters follow. */
+        /* The "Protocol" field of jsoc.export has been overloaded. It contains not only the export protocol 
+        * (i.e., FITS, as-is, JPEG, MOVIE), but for the FITS protocol, the comma-separated compression 
+        * parameters follow. */
 
-      if (p)
-      {
-         *p = '\0';
-         cparms = p+1;
-      }
-      else
-        cparms = "**NONE**";
+        if (p)
+        {
+            *p = '\0';
+            cparms = p+1;
+        }
+        else
+        {
+            cparms = "**NONE**";
+        }
 
-      /* ART - multiple processing steps
-       * Always use record limit, since we can no longer make the export commands processing-specific. */
-      /* ART - Don't use single quotes around the record-set specification. The spec may contain single quotes.
-       * I don't think it can contain double quotes, so put the spec inside double quotes.
-       */
-      fprintf(fptr, "jsoc_export_as_fits JSOC_DBHOST=%s reqid='%s' expversion=%s rsquery=\"%s\" n=%s path=$REQDIR ffmt='%s' "
-              "method='%s' protocol='%s' %s\n",
-              dbmainhost, requestid, PACKLIST_VER, dataset, RecordLimit, filenamefmt, method, protos[kProto_FITS], dbids);
+        /* ART - multiple processing steps
+         * Always use record limit, since we can no longer make the export commands processing-specific. */
+        /* ART - Don't use single quotes around the record-set specification. The spec may contain single quotes.
+         * I don't think it can contain double quotes, so put the spec inside double quotes.
+         * ART - Oh, well, it can contain double quotes, so we are going to escape them. Escape all non-alphanumeric
+         * chars in the drms run script's jsoc_export_as_fits command line. The shell will then accept them.
+         */
+         
+        /* SQL string literals must be enclosed in single quotes. Or they must contain Unicode escape sequences or 
+         * or they must be C-style strings enclosed in E''. But DRMS allows people to enclose them in double quotes too, so 
+         * we have to convert double quotes to single quotes, but only if the double quotes are the kind that enclose
+         * string literals. So, do two parsing passes. The first converts these double quotes to single quotes.
+         */
+         
+        char *rssArgConv = convertQuotes(dataset, export_rec, export_log, exports_new, irec);
+        char *rssArgEsc = NULL;
+         
+        if (rssArgConv)
+        {
+            rssArgEsc = escapeArgument(rssArgConv);
+            if (rssArgEsc)
+            {
+                fprintf(fptr, "jsoc_export_as_fits JSOC_DBHOST=%s reqid='%s' expversion=%s rsquery=%s n=%s path=$REQDIR ffmt='%s' method='%s' protocol='%s' %s\n", dbmainhost, requestid, PACKLIST_VER, rssArgEsc, RecordLimit, filenamefmt, method, protos[kProto_FITS], dbids);
+                free(rssArgEsc);      
+            }
+            else
+            {
+                rv = 1;
+            }
+            
+            free(rssArgConv);
+        }
+        else
+        {
+            rv = 1;
+        }
 
-      GenErrChkCmd(fptr);
-   }
-   else
-   {
-      fprintf(stderr, "XX jsoc_export_manage FAIL - out of memory.\n");
-      rv = 1;
-   }
+        GenErrChkCmd(fptr);
+    }
+    else
+    {
+        fprintf(stderr, "XX jsoc_export_manage FAIL - out of memory.\n");
+        rv = 1;
+    }
 
-   return rv;
+    return rv;
 }
 
 /* returns 1 on error, 0 on success */
@@ -2437,6 +2800,10 @@ static int GenPreProcessCmd(FILE *fptr,
 }
 
 static int GenProtoExpCmd(FILE *fptr, 
+                          DRMS_Record_t **export_rec,
+                          DRMS_Record_t **export_log,
+                          DRMS_RecordSet_t *exports_new,
+                          int irec,
                           const char *protocol,
                           const char *dbmainhost,
                           const char *dataset,
@@ -2450,7 +2817,7 @@ static int GenProtoExpCmd(FILE *fptr,
     
     if (strncasecmp(protocol, protos[kProto_FITS], strlen(protos[kProto_FITS])) == 0)
     {
-        rv = (GenExpFitsCmd(fptr, protocol, dbmainhost, requestid, dataset, RecordLimit, filenamefmt, method, dbids) != 0);
+        rv = (GenExpFitsCmd(fptr, export_rec, export_log, exports_new, irec, protocol, dbmainhost, requestid, dataset, RecordLimit, filenamefmt, method, dbids) != 0);
     }
     else if (strncasecmp(protocol, protos[kProto_MPEG], strlen(protos[kProto_MPEG])) == 0 ||
              strncasecmp(protocol, protos[kProto_JPEG], strlen(protos[kProto_JPEG])) == 0 ||
@@ -2561,58 +2928,7 @@ static void FreeDataSetKw(void *val)
    }
 }
 
-// jsoc.export
-static void ErrorOutExpRec(DRMS_Record_t **exprec, int expstatus, const char *mbuf)
-{
-    // Print mbuf to stderr
-    if (mbuf)
-    {
-        fprintf(stderr, "%s\n", mbuf);
-    }
-    
-    // Write to export record in jsoc.export
-    if (exprec && *exprec)
-    {
-        drms_setkey_string(*exprec, "errmsg", mbuf);
-        drms_setkey_int(*exprec, "Status", expstatus);
-        
-        // Close export record
-        drms_close_record(*exprec, DRMS_INSERT_RECORD);
-        *exprec = NULL;
-    }
-}
 
-// jsoc.export_new
-static void ErrorOutExpNewRec(DRMS_RecordSet_t *exprecs, DRMS_Record_t **exprec, int irec, int expstatus, const char *mbuf)
-{
-    int closedrec = 0;
-    
-    // Print mbuf to stderr
-    if (mbuf)
-    {
-        fprintf(stderr, "%s\n", mbuf);
-    }
-    
-    // Write to export record in jsoc.export
-    if (exprec && *exprec)
-    {
-        drms_setkey_string(*exprec, "errmsg", mbuf);
-        drms_setkey_int(*exprec, "Status", expstatus);
-        
-        // Close export record
-        drms_close_record(*exprec, DRMS_INSERT_RECORD);
-        *exprec = NULL;
-        closedrec = 1;
-    }
-    
-    if (exprecs)
-    {
-        if (closedrec)
-        {
-            exprecs->records[irec] = NULL; // Detach record - don't double free.
-        }
-    }
-}
 
 // jsoc.export
 static int DBCOMM(DRMS_Record_t **rec, const char *mbuf, int expstatus)
@@ -2745,6 +3061,22 @@ int DoIt(void)
   DRMS_Env_t *seriesEnv = NULL;
       
   if (nice_intro ()) return (0);
+  
+  const char *testQuotes = cmdparams_get_str(&cmdparams, kArgTestConvQuotes, NULL);
+  if (testQuotes)
+  {
+    if (strcmp(testQuotes, kArgValNotUsed) != 0)
+    {
+        char *quoted = convertQuotes(testQuotes, NULL, NULL, NULL, -1);
+        if (quoted)
+        {
+            fprintf(stderr, quoted);
+            fprintf(stderr, "\n");
+            free(quoted);
+        }
+        return 0;
+    }
+  }
 
   testmode = (TESTMODE || cmdparams_isflagset(&cmdparams, kArgTestmode));
   submitcode = (testmode ? 12 : 2);
@@ -3537,7 +3869,14 @@ int DoIt(void)
 
       /* PROTOCOL-SPECIFIC EXPORT */
       /* Use the dataset output by the last processing step (if processing was performed). */
+      
+      
+      
       procerr = GenProtoExpCmd(fp, 
+                               &export_rec,
+                               &export_log,
+                               exports_new,
+                               irec, 
                                protocol,
                                dbmainhost, 
                                exprecspec,
