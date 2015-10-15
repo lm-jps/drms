@@ -2674,13 +2674,27 @@ static char *escapeArgument(const char *arg)
     
     for (pos = 0; pos < sz; pos++)
     {
-        if (!isalnum(arg[pos]))
+        /* If the char is an escape sequence, then we have to make a string 
+         * equivalent of it to pass the sequence via the shell to the 
+         * export programs. We have to support only newline and tab. */
+        if (arg[pos] == '\n')
         {
-            ret = base_strcatalloc(ret, "\\", &bufSz);
+            ret = base_strcatalloc(ret, "\\n", &bufSz);
         }
+        else if (arg[pos] == '\t')
+        {
+            ret = base_strcatalloc(ret, "\\t", &bufSz);
+        }
+        else
+        {    
+            if (!isalnum(arg[pos]))
+            {          
+                ret = base_strcatalloc(ret, "\\", &bufSz);
+            }
         
-        bufCh[0] = arg[pos];
-        ret = base_strcatalloc(ret, bufCh, &bufSz);
+            bufCh[0] = arg[pos];
+            ret = base_strcatalloc(ret, bufCh, &bufSz);
+        }
     }
     
     return ret;
@@ -3070,8 +3084,21 @@ int DoIt(void)
         char *quoted = convertQuotes(testQuotes, NULL, NULL, NULL, -1);
         if (quoted)
         {
+            fprintf(stderr, "Quoted string:\n");
             fprintf(stderr, quoted);
             fprintf(stderr, "\n");
+
+            char *escaped = escapeArgument(quoted);
+        
+            if (escaped)
+            {
+                fprintf(stderr, "Escaped string:\n");
+                fprintf(stderr, escaped);
+                fprintf(stderr, "\n");
+                
+                free(escaped);        
+            }
+
             free(quoted);
         }
         return 0;
