@@ -2679,11 +2679,11 @@ static char *escapeArgument(const char *arg)
          * export programs. We have to support only newline and tab. */
         if (arg[pos] == '\n')
         {
-            ret = base_strcatalloc(ret, "\\n", &bufSz);
+            ret = base_strcatalloc(ret, "\\\\n", &bufSz);
         }
         else if (arg[pos] == '\t')
         {
-            ret = base_strcatalloc(ret, "\\t", &bufSz);
+            ret = base_strcatalloc(ret, "\\\\t", &bufSz);
         }
         else
         {    
