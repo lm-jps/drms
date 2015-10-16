@@ -19,12 +19,12 @@ int SUMLIB_TapeFilenumber(char *tapeid);
 
 int SUMLIB_TapeUpdate(char *tapeid, int tapenxtfn, uint64_t tellblock, double totalbytes)
 {
-  EXEC SQL TYPE uint64_t IS unsigned long long;
+  EXEC SQL TYPE myuint64_t IS unsigned long long int;
 
 EXEC SQL BEGIN DECLARE SECTION;
   VARCHAR l_date[32];
   VARCHAR l_tapeid[20];
-  uint64_t  l_availblocks;
+  myuint64_t  l_availblocks;
   int  l_nxtwrtfn;
   int  l_closed;
 EXEC SQL END DECLARE SECTION;

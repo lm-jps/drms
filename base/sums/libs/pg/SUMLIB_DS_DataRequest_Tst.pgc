@@ -23,14 +23,14 @@ int DS_DataRequest_Tst(KEY *params, KEY **results);
 
 int DS_DataRequest_Tst(KEY *params, KEY **results)
 {
-  EXEC SQL TYPE uint64_t IS unsigned long long;
+  EXEC SQL TYPE myuint64_t IS unsigned long long int;
 
 EXEC SQL BEGIN DECLARE SECTION;
   VARCHAR l_eff_date[20];
   VARCHAR eff_date_str[20];
   char *eff_date;
-  uint64_t uid;
-  uint64_t ds_index;
+  myuint64_t uid;
+  myuint64_t ds_index;
   int  touch;
   int  daro = DARO;
   struct {
@@ -39,8 +39,8 @@ EXEC SQL BEGIN DECLARE SECTION;
     VARCHAR archive_status[5];
     VARCHAR offsite_ack[5];
     double bytes;
-    uint64_t ds_index;
-    uint64_t create_sumid;
+    myuint64_t ds_index;
+    myuint64_t create_sumid;
     VARCHAR  tape_id[20];
     int  tape_file_num;
     VARCHAR tapepos[15];

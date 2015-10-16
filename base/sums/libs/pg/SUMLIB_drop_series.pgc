@@ -18,11 +18,11 @@ int SUM_drop_series(char *tablename);
 
 int SUM_drop_series(char *tablename) 
 {
-  EXEC SQL TYPE uint64_t IS unsigned long long;
+  EXEC SQL TYPE myuint64_t IS unsigned long long int;
 
 EXEC SQL BEGIN DECLARE SECTION;
   char stmt[128];
-  uint64_t ds_index;
+  myuint64_t ds_index;
 EXEC SQL END DECLARE SECTION;
 
 int i, j;

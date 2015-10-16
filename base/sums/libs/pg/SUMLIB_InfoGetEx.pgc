@@ -32,12 +32,12 @@ int compare_sta(const void *a, const void *b);
 
 int SUMLIB_InfoGetEx(KEY *params, KEY **results)
 {
-  EXEC SQL TYPE uint64_t IS unsigned long long;
+  EXEC SQL TYPE myuint64_t IS unsigned long long int;
 
 EXEC SQL BEGIN DECLARE SECTION;
-  uint64_t uid;
-  uint64_t ds_index;
-  uint64_t ds_index_arr[MAXSUMREQCNT];
+  myuint64_t uid;
+  myuint64_t ds_index;
+  myuint64_t ds_index_arr[MAXSUMREQCNT];
   int  touch;
   int  daro = DARO;
 
@@ -53,7 +53,7 @@ EXEC SQL BEGIN DECLARE SECTION;
     VARCHAR owning_series[81];
     int storage_group;
     double bytes;
-    uint64_t create_sumid;
+    myuint64_t create_sumid;
     VARCHAR creat_date[32];
     VARCHAR username[11];
     VARCHAR arch_tape[21];
@@ -159,13 +159,13 @@ sqlerror:
 /********TEST STUFF ONLY*************************************************
 int SUMLIB_InfoGetEx_U(KEYU *params, KEYU **results)
 {
-  EXEC SQL TYPE uint64_t IS unsigned long long;
+  EXEC SQL TYPE myuint64_t IS unsigned long long int;
 
 EXEC SQL BEGIN DECLARE SECTION;
   char stmt[8192];
-  uint64_t uid;
-  uint64_t ds_index;
-  uint64_t ds_index_arr[MAXSUMREQCNT];
+  myuint64_t uid;
+  myuint64_t ds_index;
+  myuint64_t ds_index_arr[MAXSUMREQCNT];
   int  touch;
   int  daro = DARO;
 
@@ -181,7 +181,7 @@ EXEC SQL BEGIN DECLARE SECTION;
     VARCHAR owning_series[81];
     int storage_group;
     double bytes;
-    uint64_t create_sumid;
+    myuint64_t create_sumid;
     VARCHAR creat_date[32];
     VARCHAR username[11];
     VARCHAR arch_tape[21];
@@ -292,11 +292,11 @@ sqlerror:
 //
 int SUMLIB_InfoGetArrayXX(Sunumarray *params, char *file)
 {
-  EXEC SQL TYPE uint64_t IS unsigned long long;
+  EXEC SQL TYPE myuint64_t IS unsigned long long int;
 
 EXEC SQL BEGIN DECLARE SECTION;
-  uint64_t uid;
-  uint64_t ds_index;
+  myuint64_t uid;
+  myuint64_t ds_index;
   int  touch;
   int  daro = DARO;
 
@@ -312,7 +312,7 @@ EXEC SQL BEGIN DECLARE SECTION;
     VARCHAR owning_series[81];
     int storage_group;
     double bytes;
-    uint64_t create_sumid;
+    myuint64_t create_sumid;
     VARCHAR creat_date[32];
     VARCHAR username[11];
     VARCHAR arch_tape[21];
@@ -430,12 +430,12 @@ int compare_sunum(const void *a, const void *b)
 */
 int SUMLIB_InfoGetArray(Sunumarray *params, char *file, int *mode)
 {
-  EXEC SQL TYPE uint64_t IS unsigned long long;
+  EXEC SQL TYPE myuint64_t IS unsigned long long int;
 
 EXEC SQL BEGIN DECLARE SECTION;
   char *stmt;
-  uint64_t uid;
-  uint64_t ds_index;
+  myuint64_t uid;
+  myuint64_t ds_index;
   int  touch;
   int  daro = DARO;
 
@@ -451,7 +451,7 @@ EXEC SQL BEGIN DECLARE SECTION;
     VARCHAR owning_series[81];
     int storage_group;
     double bytes;
-    uint64_t create_sumid;
+    myuint64_t create_sumid;
     VARCHAR creat_date[32];
     VARCHAR username[11];
     VARCHAR arch_tape[21];

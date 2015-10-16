@@ -15,18 +15,18 @@ int NC_PaUpdate
   (char *wd, uint64_t uid, double bytes, int status, int archsub, 
    char *eff_date, int gpid, int sid, uint64_t ds_index, int flg, int commit)
 {
-  EXEC SQL TYPE uint64_t IS unsigned long long;
+  EXEC SQL TYPE myuint64_t IS unsigned long long int;
 
 EXEC SQL BEGIN DECLARE SECTION;
   VARCHAR l_wd[80];
   VARCHAR l_eff_date[20];
-  uint64_t l_uid;
+  myuint64_t l_uid;
   double  l_bytes;
   int 	  l_status;
   int	  l_archsub; 
   int     l_gpid; 
   int     l_sid;
-  uint64_t l_ds_index;
+  myuint64_t l_ds_index;
 EXEC SQL END DECLARE SECTION;
 
    sprintf(l_wd.arr,"%s", wd);

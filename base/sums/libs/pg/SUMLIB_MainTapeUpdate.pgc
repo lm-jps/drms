@@ -64,7 +64,7 @@ int SUMLIB_MainTapeUpdate(KEY *params);
 
 int SUMLIB_MainTapeUpdate(KEY *params) 
 {
-  EXEC SQL TYPE uint64_t IS unsigned long long;
+  EXEC SQL TYPE myuint64_t IS unsigned long long int;
 
 EXEC SQL BEGIN DECLARE SECTION;
   VARCHAR l_eff_date[20];
@@ -73,8 +73,8 @@ EXEC SQL BEGIN DECLARE SECTION;
   int storage_group;
   int safe_id;
   double bytes;
-  uint64_t ds_index;
-  uint64_t create_sumid;
+  myuint64_t ds_index;
+  myuint64_t create_sumid;
   VARCHAR arch_tape[20];
   VARCHAR l_md5cksum[48];
   int gtarblock;

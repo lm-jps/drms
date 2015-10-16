@@ -13,16 +13,16 @@ PADATA *NC_PaRequest_AP_60d();
 
 PADATA *NC_PaRequest_AP_60d()
 {
-  EXEC SQL TYPE uint64_t IS unsigned long long;
+  EXEC SQL TYPE myuint64_t IS unsigned long long int;
 
 EXEC SQL BEGIN DECLARE SECTION;
   VARCHAR l_wd[80];
   VARCHAR l_eff_date[20];
-  uint64_t l_sumid;
+  myuint64_t l_sumid;
   int l_status;
   int group_id;
   int safe_id;
-  uint64_t ds_index;
+  myuint64_t ds_index;
   int l_archsub;
   double l_bytes;
   char wd[80];

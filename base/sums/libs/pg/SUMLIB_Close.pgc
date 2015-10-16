@@ -9,10 +9,10 @@
 
 int SUMLIB_Close(KEY *params)
 {
-  EXEC SQL TYPE uint64_t IS unsigned long long;
+  EXEC SQL TYPE myuint64_t IS unsigned long long int;
 
 EXEC SQL BEGIN DECLARE SECTION;
-  uint64_t uid;
+  myuint64_t uid;
 EXEC SQL END DECLARE SECTION;
   
     EXEC SQL WHENEVER SQLERROR  GOTO sqlerror;

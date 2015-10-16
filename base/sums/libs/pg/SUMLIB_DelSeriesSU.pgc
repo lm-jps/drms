@@ -18,10 +18,10 @@ int SUMLIB_DelSeriesSU(char *file, char *series);
 
 int SUMLIB_DelSeriesSU(char *file, char *series)
 {
-  EXEC SQL TYPE uint64_t IS unsigned long long;
+  EXEC SQL TYPE myuint64_t IS unsigned long long int;
 
 EXEC SQL BEGIN DECLARE SECTION;
-  uint64_t        l_ds_index;
+  myuint64_t        l_ds_index;
 EXEC SQL END DECLARE SECTION;
   FILE *fp;
   uint64_t index;

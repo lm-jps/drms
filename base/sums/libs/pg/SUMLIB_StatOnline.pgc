@@ -13,13 +13,13 @@ int SUM_StatOnline(uint64_t ds_index, char *newwd);
 
 int SUM_StatOnline(uint64_t ds_index, char *newwd)
 {
-  EXEC SQL TYPE uint64_t IS unsigned long long;
+  EXEC SQL TYPE myuint64_t IS unsigned long long int;
 
 EXEC SQL BEGIN DECLARE SECTION;
   VARCHAR l_newwd[80];
   VARCHAR l_status[5];
   VARCHAR l_date[32];
-  uint64_t l_ds_index;
+  myuint64_t l_ds_index;
 EXEC SQL END DECLARE SECTION;
   
     l_ds_index = ds_index;
@@ -59,10 +59,10 @@ int SUM_StatOffline(uint64_t ds_index);
 
 int SUM_StatOffline(uint64_t ds_index)
 {
-  EXEC SQL TYPE uint64_t IS unsigned long long;
+  EXEC SQL TYPE myuint64_t IS unsigned long long int;
 
 EXEC SQL BEGIN DECLARE SECTION;
-  uint64_t l_ds_index;
+  myuint64_t l_ds_index;
   VARCHAR l_status[5];
 EXEC SQL END DECLARE SECTION;
   
@@ -93,10 +93,10 @@ int SUM_GetEffDate(uint64_t ds_index, char *effarray);
 
 int SUM_GetEffDate(uint64_t ds_index, char *effarray)
 {
-  EXEC SQL TYPE uint64_t IS unsigned long long;
+  EXEC SQL TYPE myuint64_t IS unsigned long long int;
 
 EXEC SQL BEGIN DECLARE SECTION;
-  uint64_t l_ds_index;
+  myuint64_t l_ds_index;
   VARCHAR eff_date_str[20];
   int  daro = DARO;
 EXEC SQL END DECLARE SECTION;

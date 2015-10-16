@@ -24,14 +24,14 @@ int SUMLIB_SumsetGet(int group, int *sumset);
 
 int SUMLIB_PavailGet(double bytes, int pds_set, uint64_t uid, uint64_t sunum, KEY **results) 
 {
-  EXEC SQL TYPE uint64_t IS unsigned long long;
+  EXEC SQL TYPE myuint64_t IS unsigned long long int;
 
 EXEC SQL BEGIN DECLARE SECTION;
   VARCHAR l_name[80];
   double  l_bytes;
   double  total_bytes;
   int	  l_pnum;
-  uint64_t ds_index;
+  myuint64_t ds_index;
 EXEC SQL END DECLARE SECTION;
 
 extern PART ptabx[]; 		/* defined in sum_svc.c */
@@ -106,7 +106,7 @@ end_fetch:
 	setkey_str(results, "partn_name", mkpart);
         sprintf(dirstr, "mkdir %s; chmod 02775 %s", mkpart, mkpart);
         if(system(dirstr)) {
-          printk("Error in SUMLIB_PavailGet() for cmd: %s\n", dirstr);
+          printk("Error in SUMLIB_PavailGet() for SUNUM %llu, cmd: %s\n", ds_index, dirstr);
           EXEC SQL COMMIT;
           return DS_ALLOC_ERR;
         }

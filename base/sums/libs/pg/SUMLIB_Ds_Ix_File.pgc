@@ -30,12 +30,12 @@ int SUMLIB_Ds_Ix_FindX(char *tapeid, int filenum, uint64_t filedsix[],
 
 int SUMLIB_Ds_Ix_File(uint64_t filedsix[],  uint64_t filedsixoff[], int *dsmdiflg)
 {
-  EXEC SQL TYPE uint64_t IS unsigned long long;
+  EXEC SQL TYPE myuint64_t IS unsigned long long int;
 
 EXEC SQL BEGIN DECLARE SECTION;
   VARCHAR online_status[5];
   VARCHAR own_series[80];
-  uint64_t ds_index;
+  myuint64_t ds_index;
 EXEC SQL END DECLARE SECTION;
    int i, j, offline;
 
@@ -111,11 +111,11 @@ sqlerror:
 int SUMLIB_Ds_Ix_Find(char *tapeid, int filenum, uint64_t filedsix[], 
 			double filebytes[])
 {
-  EXEC SQL TYPE uint64_t IS unsigned long long;
+  EXEC SQL TYPE myuint64_t IS unsigned long long int;
 
 EXEC SQL BEGIN DECLARE SECTION;
   VARCHAR l_tapeid[20];
-  uint64_t ds_index;
+  myuint64_t ds_index;
   double l_bytes;
   int l_filenum;
 EXEC SQL END DECLARE SECTION;
@@ -156,12 +156,12 @@ sqlerror:
 
 int SUMLIB_Ds_Ix_FileX(uint64_t filedsix[],  uint64_t filedsixoff[], int *dsmdiflg)
 {
-  EXEC SQL TYPE uint64_t IS unsigned long long;
+  EXEC SQL TYPE myuint64_t IS unsigned long long int;
 
 EXEC SQL BEGIN DECLARE SECTION;
   VARCHAR online_status[5];
   VARCHAR own_series[80];
-  uint64_t ds_index;
+  myuint64_t ds_index;
 EXEC SQL END DECLARE SECTION;
    int i, j, offline;
 
@@ -239,11 +239,11 @@ sqlerror:
 int SUMLIB_Ds_Ix_FindX(char *tapeid, int filenum, uint64_t filedsix[], 
 			double filebytes[])
 {
-  EXEC SQL TYPE uint64_t IS unsigned long long;
+  EXEC SQL TYPE myuint64_t IS unsigned long long int;
 
 EXEC SQL BEGIN DECLARE SECTION;
   VARCHAR l_tapeid[20];
-  uint64_t ds_index;
+  myuint64_t ds_index;
   double l_bytes;
   int l_filenum;
 EXEC SQL END DECLARE SECTION;
