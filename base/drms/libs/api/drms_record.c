@@ -10958,22 +10958,30 @@ int ParseRecSetDesc(const char *recsetsStr,
                                 int rlen = drms_sscanf_str(pc, "]", &val);
                                 int ilen = 0;
                                 
-                                /* Don't need string - just strlen */
-                                DRMS_Value_t dummy = {DRMS_TYPE_STRING, val};
-                                drms_value_free(&dummy);
-                                
-                                /* if ending ']' was found, then pc + rlen is ']', otherwise
-                                 * it is the next char after end quote */
-                                while (ilen < rlen)
+                                if (rlen == -1)
                                 {
-                                    *pcBuf++ = *pc++;
-                                    
-                                    if (pc == endInput)
+                                    state = kRSParseState_Error;
+                                    fprintf(stderr, "Invalid string in DRMS filter.\n");
+                                }
+                                else
+                                {                                
+                                    /* Don't need string - just strlen */
+                                    DRMS_Value_t dummy = {DRMS_TYPE_STRING, val};
+                                    drms_value_free(&dummy);
+                                
+                                    /* if ending ']' was found, then pc + rlen is ']', otherwise
+                                     * it is the next char after end quote */
+                                    while (ilen < rlen)
                                     {
-                                        state = kRSParseState_Error;
-                                    }
+                                        *pcBuf++ = *pc++;
                                     
-                                    ilen++;
+                                        if (pc == endInput)
+                                        {
+                                            state = kRSParseState_Error;
+                                        }
+                                    
+                                        ilen++;
+                                    }
                                 }
                             }
                             
