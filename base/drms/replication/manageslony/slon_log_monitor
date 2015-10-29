@@ -56,6 +56,11 @@ fi
 
 # if no other process is running, create and write to PID file
 echo $$ > $SLMPIDFile
+if [ $? -ne 0 ]
+then
+    logwrite "ERROR: Write PID to $SLMPIDFile failed."
+    exit_out
+fi
 
 logwrite "Starting $0" nl
 
@@ -86,6 +91,11 @@ log_grab () {
 	then
 		logwrite "WARNING: File [$SLMLastLineFile] does not exist, creating it now"
 		echo "0" > $SLMLastLineFile
+		if [ $? -ne 0 ]
+		then
+		    logwrite "ERROR: Write 0 to $SLMLastLineFile failed."
+		    exit_out
+		fi
 	fi
 
 	# copy the slony log file to a temporary file
@@ -107,6 +117,12 @@ log_grab () {
 		logwrite "There have been [$linecountdiff] log entries since the last time I ran"
 		logwrite "Writing [$currentlinecount] to the last line file"
 		echo "$currentlinecount" > $SLMLastLineFile
+		if [ $? -ne 0 ]
+		then
+		    logwrite "ERROR: Write $currentlinecount to $SLMLastLineFile failed."
+		    exit_out
+		fi
+		
 		logwrite "Grabbing the last [$linecountdiff] lines from the end of the temp log file"
 		tail -$linecountdiff $SLMTempDir/temp_slon_log.working > $SLMTempDir/temp_slon_log.tmp
 		logwrite "Removing the old temp log file" nl
@@ -117,6 +133,12 @@ log_grab () {
 		# if there are less lines now than the last time we ran, assume it was truncated. Start from scratch, grab all lines.
 		logwrite "The file has been truncated since I last ran. Writing [$currentlinecount] to the last line file"
 		echo "$currentlinecount" > $SLMLastLineFile
+		if [ $? -ne 0 ]
+		then
+		    logwrite "ERROR: Write $currentlinecount to $SLMLastLineFile failed."
+		    exit_out
+		fi
+		
 		logwrite "Moving the $SLMTempDir/temp_slon_log.working to $SLMTempDir/temp_slon_log.tmp"
 		run_command "mv -f $SLMTempDir/temp_slon_log.working $SLMTempDir/temp_slon_log.tmp"
 
@@ -142,7 +164,19 @@ build_action_que () {
 
 	logwrite "Searching for string matches in the temp log file, building action que if any are found"
 	echo > $SLMTempDir/slon_log_action_que.lst
+	if [ $? -ne 0 ]
+    then
+        logwrite "ERROR: Creation of $SLMTempDir/slon_log_action_que.lst failed."
+        exit_out
+    fi
+	
 	echo ". $config_file" >> $SLMTempDir/slon_log_action_que.lst
+	if [ $? -ne 0 ]
+    then
+        logwrite "ERROR: Append of config file to $SLMTempDir/slon_log_action_que.lst failed."
+        exit_out
+    fi
+	
 
 	# While loop that loops though each line in the list file, parses it, and preforms a search on the temporary log file
 	counter=0
@@ -257,6 +291,11 @@ build_action_que () {
 						grep -v "$search_string" $hourlyHistoryfile > $hourlyHistoryfile.tmp
 						run_command "mv -f $hourlyHistoryfile.tmp $hourlyHistoryfile"
 						echo `date +"%m-%d-%Y %H:%M:%S"` "| $search_string" >> $hourlyHistoryfile
+						if [ $? -ne 0 ]
+                        then
+                            logwrite "ERROR: Append to $hourlyHistoryfile failed."
+                            exit_out
+                        fi
 
 					# if the result is 1, then yes, it was executed in the past hour. Will not add to the action que
 					elif [[ $timecheck -eq "1" ]]
@@ -273,6 +312,11 @@ build_action_que () {
 					# no match was found in the history file. We assume there has been no action on this string found yet.
 					logwrite "No match was found, adding it to the history file"
 					echo `date +"%m-%d-%Y %H:%M:%S"` "| $search_string" >> $hourlyHistoryfile
+					if [ $? -ne 0 ]
+                    then
+                        logwrite "ERROR: Append to $hourlyHistoryfile failed."
+                        exit_out
+                    fi
 					
 					logwrite "Adding the command to the que"
 					add_to_que "$command_string" "$strmatch" "$string_forward"
@@ -321,6 +365,11 @@ build_action_que () {
 						grep -v "$search_string" $dailyHistoryfile > $dailyHistoryfile.tmp
 						run_command "mv -f $dailyHistoryfile.tmp $dailyHistoryfile"
 						echo `date +"%m-%d-%Y %H:%M:%S"` "| $search_string" >> $dailyHistoryfile
+						if [ $? -ne 0 ]
+                        then
+                            logwrite "ERROR: Append to $dailyHistoryfile failed."
+                            exit_out
+                        fi
 
 					# if the result is 1, then yes, it was executed in the past day. Will not add to the action que
 					elif [[ $timecheck -eq "1" ]]
@@ -337,6 +386,11 @@ build_action_que () {
 					# no match was found in the history file. We assume there has been no action on this string found yet.
 					logwrite "No match was found, adding it to the history file"
 					echo `date +"%m-%d-%Y %H:%M:%S"` "| $search_string" >> $dailyHistoryfile
+					if [ $? -ne 0 ]
+                    then
+                        logwrite "ERROR: Append to $dailyHistoryfile failed."
+                        exit_out
+                    fi
 					
 					logwrite "Adding the command to the que"
 					add_to_que "$command_string" "$strmatch" "$string_forward"
@@ -372,11 +426,21 @@ add_to_que () {
 		# add the action as well as the found line to the action que
 		logwrite "Adding to the action que: \"$action $log_line\" >> $SLMTempDir/slon_log_action_que.lst"
 		echo "$action $log_line" >> $SLMTempDir/slon_log_action_que.lst
+		if [ $? -ne 0 ]
+        then
+            logwrite "ERROR: Append to $SLMTempDir/slon_log_action_que.lst failed."
+            exit_out
+        fi
 	elif [[ "$forward" == "false" ]]
 	then
 		# add only the action to the action que
 		logwrite "Adding to the action que: \"$action\" >> $SLMTempDir/slon_log_action_que.lst"
 		echo "$action" >> $SLMTempDir/slon_log_action_que.lst
+		if [ $? -ne 0 ]
+        then
+            logwrite "ERROR: Append to $SLMTempDir/slon_log_action_que.lst failed."
+            exit_out
+        fi
 	else
 		logwrite "ERROR: variable \$forward [$string_forward] seems to be neither true nor false"
 	fi
