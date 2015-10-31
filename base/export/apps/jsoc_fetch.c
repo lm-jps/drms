@@ -2513,11 +2513,19 @@ check for requestor to be valid remote DRMS site
         
     if (caStatus == 1)
     {
+        if (gLogs)
+        {
+            hcon_destroy(&gLogs);
+        }
         JSONDIE(dieStr);
     }
     else if (caStatus == 2 || caStatus == 3)
     {
-       JSONDIE2(dieStr, "");
+        if (gLogs)
+        {
+            hcon_destroy(&gLogs);
+        }        
+        JSONDIE2(dieStr, "");
     }
         
     size=0;
