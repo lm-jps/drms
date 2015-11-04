@@ -196,7 +196,7 @@ my $complete = {
 ## check lock, only one version of this program should run
 
 ## setting log file and targets
-logThreshold("info");
+logThreshold("debug");
 
 map { logTarget($_,$config{'kPSLprepLog'}) } qw(notice info error emergency warning debug);
 
@@ -238,8 +238,10 @@ unless ($repro) {
      ## load configuration in a hash structure
      my ($cfgH, $nodeH) = loadConfig($config{'kPSLprepCfg'});
 
-     my $counter      = readCounter($config{'kPSLparseCounter'});
-     my $slon_counter = readSlonCounter($config{'kPSLlogReady'});
+     my $counter      = readCounter($config{'kPSLparseCounter'}); # This is the file parse_counter.txt that is maintained 
+                                                                  # entirely by this script.
+     my $slon_counter = readSlonCounter($config{'kPSLlogReady'}); # This is the file that Slony writes. It contains the log
+                                                                  # number of the last log Slony produced.      
 
      info ("Current counter [$counter]");
 
@@ -919,7 +921,9 @@ sub readCounter {
   chomp $internal_file_counter;
   close $fhR;
 
-  if ($internal_file_counter != $slon_dir_counter) { 
+  if ($internal_file_counter != $slon_dir_counter) {
+    # If the counter maintained by this script (parse_counter.txt) does not agree with the number of the
+    # last slony log, then the last slon log number overrides.
     notice("counter in file [$internal_file_counter] and in slon directory [$slon_dir_counter] differ!!");
     my $source_dir=$config{'kPSLlogsSourceDir'};
     open my $fhR, '>', $internal_counter_file or CallDie "Can't Open $internal_counter_file:$!";
