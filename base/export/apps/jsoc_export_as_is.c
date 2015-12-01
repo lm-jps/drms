@@ -35,13 +35,13 @@ ModuleArgs_t module_args[] =
   {ARG_END}
 };
 
-char *module_name = "jsoc_info";
+char *module_name = "jsoc_export_as_is";
 int nice_intro ()
   {
   int usage = cmdparams_get_int (&cmdparams, "h", NULL);
   if (usage)
     {
-    printf ("Usage:\njsoc_info {-h} "
+    printf ("Usage:\njsoc_export_as_is {-h} "
 	"op=<command> ds=<recordset query> {n=0} {key=<keylist>} {seg=<segment_list>}\n"
         "  details are:\n"
 	"op=<command> tell which ajax function to execute\n"
@@ -169,7 +169,14 @@ int DoIt(void)
   else
     recordset = drms_open_nrecords (drms_env, in, RecordLimit, &status);
   if (!recordset) 
-    DIE(" jsoc_info: series not found.");
+    DIE(" jsoc_export_as_is: series not found.");
+    
+    /* There is no call to drms_open_recordset(), so staging happens when drms_stage_records() is called. 
+     * With drms_open_recordset(), you have to call drms_recordset_fetchnext() to stage each chunk on-demand. */
+    if (drms_stage_records(recordset, 1, 0))
+    {
+        DIE(" jsoc_export_as_is: Unable to stage records.");
+    }
 
   nrecs = recordset->n;
   if (nrecs == 0)
