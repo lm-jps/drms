@@ -309,8 +309,7 @@ TIME timenow()
   return(now);
   }
 
-static void CleanUp(int64_t **psunumarr, SUM_info_t ***infostructs, char **webarglist,
-                    char **series, char **paths, char **sustatus, char **susize, int arrsize, const char *userhandle)
+static void CleanUp(int64_t **psunumarr, SUM_info_t ***infostructs, char **webarglist, char ***series, char ***paths, char ***susize, int arrsize, const char *userhandle)
 {
    int iarr;
 
@@ -332,53 +331,51 @@ static void CleanUp(int64_t **psunumarr, SUM_info_t ***infostructs, char **webar
       *webarglist = NULL;
    }
 
-   if (series)
+   if (series && *series)
    {
       for (iarr = 0; iarr < arrsize; iarr++)
       {
-         if (series[iarr])
+         if ((*series)[iarr])
          {
-            free(series[iarr]);
-            series[iarr] = 0;
+            free((*series)[iarr]);
+            (*series)[iarr] = NULL;
          }
       }
+      
+      free(*series);
+      *series = NULL;
    }
 
-   if (paths)
+   if (paths && *paths)
    {
       for (iarr = 0; iarr < arrsize; iarr++)
       {
-         if (paths[iarr])
+         if ((*paths)[iarr])
          {
-            free(paths[iarr]);
-            paths[iarr] = 0;
+            free((*paths)[iarr]);
+            (*paths)[iarr] = NULL;
          }
       }
+      
+      free(*paths);
+      *paths = NULL;
    }
 
-   if (sustatus)
+   if (susize && *susize)
    {
       for (iarr = 0; iarr < arrsize; iarr++)
       {
-         if (sustatus[iarr])
+         if ((*susize)[iarr])
          {
-            free(sustatus[iarr]);
-            sustatus[iarr] = 0;
+            free((*susize)[iarr]);
+            (*susize)[iarr] = 0;
          }
       }
+      
+      free(*susize);
+      *susize = NULL;
    }
-
-   if (susize)
-   {
-      for (iarr = 0; iarr < arrsize; iarr++)
-      {
-         if (susize[iarr])
-         {
-            free(susize[iarr]);
-            susize[iarr] = 0;
-         }
-      }
-   }
+   
    if (userhandle && *userhandle)
      manage_userhandle(0, userhandle);
     
@@ -392,15 +389,15 @@ static void CleanUp(int64_t **psunumarr, SUM_info_t ***infostructs, char **webar
  * is called from the sub-function.
  * PHS - but the return value of sub-functions should be checked!
  */
-#define JSONDIE(msg) {die(dojson,msg,"","4",&sunumarr,&infostructs,&webarglist,series,paths,sustatus,susize,arrsize,userhandle);return(1);}
-#define JSONDIE2(msg,info) {die(dojson,msg,info,"4",&sunumarr,&infostructs,&webarglist,series,paths,sustatus,susize,arrsize,userhandle);return(1);}
-#define JSONDIE3(msg,info) {die(dojson,msg,info,"6",&sunumarr,&infostructs,&webarglist,series,paths,sustatus,susize,arrsize,userhandle);return(1);}
+#define JSONDIE(msg) {die(dojson,msg,"","4",&sunumarr,&infostructs,&webarglist,&series,&paths,&susize,arrsize,userhandle);return(1);}
+#define JSONDIE2(msg,info) {die(dojson,msg,info,"4",&sunumarr,&infostructs,&webarglist,&series,&paths,&susize,arrsize,userhandle);return(1);}
+#define JSONDIE3(msg,info) {die(dojson,msg,info,"6",&sunumarr,&infostructs,&webarglist,&series,&paths,&susize,arrsize,userhandle);return(1);}
 
 int fileupload = 0;
 static int gGenWebPage = 1; /* For the die() function. */
 
 int die(int dojson, char *msg, char *info, char *stat, int64_t **psunumarr, SUM_info_t ***infostructs, char **webarglist,
-        char **series, char **paths, char **sustatus, char **susize, int arrsize, const char *userhandle)
+        char ***series, char ***paths, char ***susize, int arrsize, const char *userhandle)
   {
   char *msgjson;
   char *json;
@@ -437,7 +434,7 @@ if (DEBUG) fprintf(stderr,"%s%s\n",msg,info);
     }
   fflush(stdout);
 
-  CleanUp(psunumarr, infostructs, webarglist, series, paths, sustatus, susize, arrsize, userhandle);
+  CleanUp(psunumarr, infostructs, webarglist, series, paths, susize, arrsize, userhandle);
 
   return(1);
   }
@@ -451,17 +448,16 @@ static int JsonCommitFn(DRMS_Record_t **exprec,
                         int64_t **psunumarr, 
                         SUM_info_t ***infostructs, 
                         char **webarglist,
-                        char **series, 
-                        char **paths, 
-                        char **sustatus, 
-                        char **susize, 
+                        char ***series, 
+                        char ***paths, 
+                        char ***susize, 
                         int arrsize, 
                         const char *userhandle)
 {
     int rv = 1; // rollback db
     
     // Return some json or plain text in response to the HTTP request
-    die(dojson, msg, "", "4", psunumarr, infostructs, webarglist, series, paths, sustatus, susize, arrsize, userhandle); // ignore return value
+    die(dojson, msg, "", "4", psunumarr, infostructs, webarglist, series, paths, susize, arrsize, userhandle); // ignore return value
     
     if (exprec && *exprec)
     {
@@ -491,7 +487,7 @@ static int JsonCommitFn(DRMS_Record_t **exprec,
     return rv;
 }
 
-#define JSONCOMMIT(msg,rec,ro) {return JsonCommitFn(rec, ro, dojson, msg, "", "4", &sunumarr, &infostructs, &webarglist, series, paths, sustatus, susize, arrsize, userhandle);};
+#define JSONCOMMIT(msg,rec,ro) {return JsonCommitFn(rec, ro, dojson, msg, "", "4", &sunumarr, &infostructs, &webarglist, &series, &paths, &susize, arrsize, userhandle);};
 
 
 static int send_file(DRMS_Record_t *rec, int segno, char *pathret, int size)
@@ -570,7 +566,7 @@ static int SetWebArg(Q_ENTRY *req, const char *key, char **arglist, size_t *size
              * function here - but it is not possible to do that from a function
              * called by DoIt(). But I've retained the original semantics of 
              * returning back to DoIt() from here. */
-            die(dojson, "Illegal text in arg: ", arg_bad, "4", NULL, NULL, arglist, NULL, NULL, NULL, NULL, 0, NULL);
+            die(dojson, "Illegal text in arg: ", arg_bad, "4", NULL, NULL, arglist, NULL, NULL, NULL, 0, NULL);
             return(1);
          }
 
@@ -580,7 +576,7 @@ static int SetWebArg(Q_ENTRY *req, const char *key, char **arglist, size_t *size
              * function here - but it is not possible to do that from a function
              * called by DoIt(). But I've retained the original semantics of 
              * returning back to DoIt() from here. */
-            die(dojson, "CommandLine Error", "", "4", NULL, NULL, arglist, NULL, NULL, NULL, NULL, 0, NULL);
+            die(dojson, "CommandLine Error", "", "4", NULL, NULL, arglist, NULL, NULL, NULL, 0, NULL);
             return(1);
          }
 
@@ -1319,11 +1315,13 @@ int DoIt(void)
   struct timeval thistv;
   double StartTime;
 
-  char *paths[DRMS_MAXQUERYLEN/8] = {0};
-  char *series[DRMS_MAXQUERYLEN/8] = {0};
-  char *sustatus[DRMS_MAXQUERYLEN/8] = {0};
-  char *susize[DRMS_MAXQUERYLEN/8] = {0};
-  int arrsize = DRMS_MAXQUERYLEN/8;
+    /* Allocate the size of these arrays dynamically. Originally there were 1024, but 
+     * we could need bigger arrays. */
+  char **paths = NULL;
+  char **series = NULL;
+  char *sustatus = NULL;
+  char **susize = NULL;
+  int arrsize = -1; /* Fill this in later, when we know how many elements we have. */
     
     int postorget = 0;
     int insertexprec = 1;
@@ -1381,7 +1379,7 @@ int DoIt(void)
         webarglistsz = 2048;
         webarglist = (char *)malloc(webarglistsz);
         *webarglist = '\0';
-        
+
         req = qCgiRequestParseQueries(NULL, NULL);
         if (req)
         {
@@ -1489,7 +1487,10 @@ int DoIt(void)
     /* jsoc.export */
   export_series = kExportSeries;
 
-  long long sunums[DRMS_MAXQUERYLEN/8];  // should be enough!
+  // long long sunums[DRMS_MAXQUERYLEN/8];  // should be enough!
+  // 1024 is not enough.
+  // sunums is used only in the kOpExpSu case, but it is used throughout DoIt(), so declare here.
+  long long *sunums = NULL;
   int expsucount;
   const char *lfname = NULL;
   int fileupload = strncmp(dsin, "*file*", 6) == 0;
@@ -2135,6 +2136,40 @@ int DoIt(void)
     int roll;
         int reject;
 
+    /* Since we know how many sunums we are processing, allocate enough space for the sunums variable here. */
+    sunums = calloc(nsunums, sizeof(long long));
+    if (!sunums)
+    {
+        JSONDIE("Not enough memory to allocate SUNUM array for exp_su request.");
+    }
+    
+    paths = calloc(nsunums, sizeof(char *));
+    if (!paths)
+    {
+        JSONDIE("Not enough memory to allocate paths array for exp_su request.");
+    }
+    
+    series = calloc(nsunums, sizeof(char *));
+    if (!series)
+    {
+        JSONDIE("Not enough memory to allocate series array for exp_su request.");
+    }
+    
+    /* This one is a little different, since each status code is a char, not a char *. */
+    sustatus = calloc(nsunums, sizeof(char));
+    if (!sustatus)
+    {
+        JSONDIE("Not enough memory to allocate sustatus array for exp_su request.");
+    }
+    
+    susize = calloc(nsunums, sizeof(char *));
+    if (!susize)
+    {
+        JSONDIE("Not enough memory to allocate susize array for exp_su request.");
+    }
+
+    arrsize = nsunums;
+    
     for (isunum = 0; isunum < nsunums; isunum++)
       {
       SUM_info_t *sinfo;
@@ -2184,10 +2219,10 @@ int DoIt(void)
               *onlinestat = 'N';
           }
           
-          sunums[count] = sunum;
+          sunums[count] = sunum; // XXXXXXXXXX
           paths[count] = strdup("NA");
           series[count] = strdup("NA");
-          sustatus[count] = strdup(onlinestat);
+          sustatus[count] = onlinestat[0];
           susize[count] = strdup("0");
           count++;
       }
@@ -2220,10 +2255,10 @@ int DoIt(void)
              }
          }
 
-         sunums[count] = sunum;
+         sunums[count] = sunum; // XXXXXXXXXX
          paths[count] = strdup(supath);
          series[count] = strdup(sinfo->owning_series);
-         sustatus[count] = strdup(onlinestat);
+         sustatus[count] = onlinestat[0];
          snprintf(yabuff, sizeof(yabuff), "%lld", dirsize);
          susize[count] = strdup(yabuff);
 
@@ -2289,7 +2324,10 @@ int DoIt(void)
           jsonstr = string_to_json(paths[i]);
           json_insert_pair_into_object(suobj, "path", json_new_string(jsonstr));
           free(jsonstr);
-          json_insert_pair_into_object(suobj, "sustatus", json_new_string(sustatus[i]));
+          numval[0] = sustatus[i];
+          numval[1] = '\0';
+          /* No need to escape sustatus - the char codes are all ASCII. */
+          json_insert_pair_into_object(suobj, "sustatus", json_new_string(numval));
           json_insert_pair_into_object(suobj, "susize", json_new_string(susize[i]));
           if (dodataobj)
             {
@@ -2351,7 +2389,7 @@ int DoIt(void)
         printf("dir=/\n");
         printf("# DATA\n");
         for (i=0; i<count; i++)
-          printf("%lld\t%s\t%s\t%s\t%s\n",sunums[i],series[i],paths[i], sustatus[i], susize[i]);
+          printf("%lld\t%s\t%s\t%c\t%s\n",sunums[i],series[i],paths[i], sustatus[i], susize[i]);
         }
 
       report_summary(Server, StartTime, Remote_Address, op, dsin, 0, internal, 0);
@@ -2359,12 +2397,36 @@ int DoIt(void)
         {
          /* If not a VSO request, we're done. If a VSO request, done if all online, or if SUMS is down. 
           * Otherwise, continue below and start a new request for the items not online. */
-           CleanUp(&sunumarr, &infostructs, &webarglist, series, paths, sustatus, susize, arrsize, userhandle);
+            if (sustatus)
+            {
+                free(sustatus);
+                sustatus = NULL;
+            }
+
+            if (sunums)
+            {
+                free(sunums);
+                sunums = NULL;
+            }
+          
+           CleanUp(&sunumarr, &infostructs, &webarglist, &series, &paths, &susize, arrsize, userhandle);
            return(0);
         }
       else if (strcmp(requestid, kNoAsyncReq) == 0) // user never wants full export of leftovers
          {
-         CleanUp(&sunumarr, &infostructs, &webarglist, series, paths, sustatus, susize, arrsize, userhandle);
+         if (sustatus)
+         {
+            free(sustatus);
+            sustatus = NULL;
+         }
+         
+         if (sunums)
+         {
+            free(sunums);
+            sunums = NULL;
+         }
+         
+         CleanUp(&sunumarr, &infostructs, &webarglist, &series, &paths, &susize, arrsize, userhandle);
          return 0;
          }
       }
@@ -2905,7 +2967,7 @@ check for requestor to be valid remote DRMS site
             
             fflush(stdout);
             
-            CleanUp(&sunumarr, &infostructs, &webarglist, series, paths, sustatus, susize, arrsize, userhandle);
+            CleanUp(&sunumarr, &infostructs, &webarglist, &series, &paths, &susize, arrsize, userhandle);
             free(existReqID);
             existReqID = NULL;
             drms_record_freerecsetspecarr(&allvers, &sets, &settypes, &snames, &filts, nsets);
@@ -3191,7 +3253,7 @@ check for requestor to be valid remote DRMS site
   	printf("wait=0\n");
   	}
 
-      CleanUp(&sunumarr, &infostructs, &webarglist, series, paths, sustatus, susize, arrsize, userhandle);
+      CleanUp(&sunumarr, &infostructs, &webarglist, &series, &paths, &susize, arrsize, userhandle);
       return(0);
       }
 
@@ -3208,7 +3270,7 @@ check for requestor to be valid remote DRMS site
            }
            else
            {
-              CleanUp(&sunumarr, &infostructs, &webarglist, series, paths, sustatus, susize, arrsize, userhandle);
+              CleanUp(&sunumarr, &infostructs, &webarglist, &series, &paths, &susize, arrsize, userhandle);
               return(sfret);
            }
         }
@@ -3255,7 +3317,7 @@ check for requestor to be valid remote DRMS site
   	printf("wait=0\n");
         quick_export_rs(NULL, rs, 0, size); // add count, size, and array data of names and paths
   	}
-      CleanUp(&sunumarr, &infostructs, &webarglist, series, paths, sustatus, susize, arrsize, userhandle);
+      CleanUp(&sunumarr, &infostructs, &webarglist, &series, &paths, &susize, arrsize, userhandle);
       return(0);
       }
 
@@ -3683,7 +3745,10 @@ JSONDIE("Re-Export requests temporarily disabled.");
               jsonstr = string_to_json(paths[i]);
               json_insert_pair_into_object(suobj, "path", json_new_string(jsonstr));
               free(jsonstr);
-              json_insert_pair_into_object(suobj, "sustatus", json_new_string(sustatus[i]));
+                numval[0] = sustatus[i];
+                numval[1] = '\0';
+                /* No need to escape sustatus - the char codes are all ASCII. */
+              json_insert_pair_into_object(suobj, "sustatus", json_new_string(numval));
               json_insert_pair_into_object(suobj, "susize", json_new_string(susize[i]));
 
               json_insert_child(data, suobj);
@@ -3761,16 +3826,28 @@ JSONDIE("Re-Export requests temporarily disabled.");
            printf("# DATA\n");
            for (i = 0; i < expsucount; i++)
              {
-             printf("%lld\t%s\t%s\t%s\t%s\n", sunums[i], series[i], paths[i], sustatus[i], susize[i]);
+             printf("%lld\t%s\t%s\t%c\t%s\n", sunums[i], series[i], paths[i], sustatus[i], susize[i]);
              }
           }
         }
       fflush(stdout);
       }
     }
+    
+    if (sustatus)
+    {
+        free(sustatus);
+        sustatus = NULL;
+    }
+    
+    if (sunums)
+    {
+        free(sunums);
+        sunums = NULL;
+    }
 
   report_summary(Server, StartTime, Remote_Address, op, dsin, rcountlimit, internal, status);
-  CleanUp(&sunumarr, &infostructs, &webarglist, series, paths, sustatus, susize, arrsize, userhandle);
+  CleanUp(&sunumarr, &infostructs, &webarglist, &series, &paths, &susize, arrsize, userhandle);
     
     if (exprec)
     {
