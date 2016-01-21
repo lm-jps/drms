@@ -84,6 +84,9 @@ a:REGEMAIL_TIMEOUT                      5
 # Slony
 q:SLONY_CONFIG                          /home/jsoc/cvs/Development/JSOC/proj/replication/etc/repserver.cfg
 
+# lev1.5_hmi
+q:POLCAL_PARAMS                         /home/jsoc/hmi/tables/lev15/polcal-param-fit.bin
+
 __MAKE__
 # JSOC_SDP third-party libraries used by base
 # The parameters in this section are used to create make variables. For example, the line 
