@@ -13,8 +13,8 @@ class DrmsLock(object):
     hasLock = False
     
     def __new__(cls, fileName, content):
-        # Create the object (this is going to be self).
-        rObj = super(DrmsLock, cls).__new__(cls, fileName, content)
+        # Create the DRMSLock object (this is going to be self).
+        rObj = super(DrmsLock, cls).__new__(cls)
         
         # Try to open lock file.
         try:
@@ -27,8 +27,8 @@ class DrmsLock(object):
             # Save the lock file information.
             rObj.lockFile = fileName
             rObj.fileObj = fobj
-        except:
-            return None
+        except Exception as exc:
+            raise Exception('drmsLock', 'Unable to open lock file ' + fileName + '.')
 
         # Keep file open
         return rObj
