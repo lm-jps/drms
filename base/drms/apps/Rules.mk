@@ -57,5 +57,8 @@ $(S_$(d)):	%:	$(d)/%
 # Standard things
 -include	$(DEP_$(d))
 
+dir     := $(d)/test
+-include                $(SRCDIR)/$(dir)/Rules.mk
+
 d		:= $(dirstack_$(sp))
 sp		:= $(basename $(sp))
