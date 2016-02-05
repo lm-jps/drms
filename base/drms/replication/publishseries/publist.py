@@ -154,6 +154,7 @@ def GetArgs(publistDrmsParams):
         arguments.setArg('cfg', publistDrmsParams.get('SLONY_CONFIG'))
         arguments.setArg('insts', '')
         arguments.setArg('series', '')
+        arguments.setArg('qseries', '')
         arguments.setArg('dbuser', pwd.getpwuid(os.getuid())[0])
 
         try:
@@ -180,6 +181,8 @@ def GetArgs(publistDrmsParams):
                         arguments.setArg('insts', val.split(',')) # a list
                     elif key in ('s', 'series'):
                         arguments.setArg('series', val.split(',')) # a list
+                    elif key in ('q', 'qseries'):
+                        arguments.setArg('qseries', val.split(',')) # a list
 
         except ValueError:
             insertJson(rootObj, 'errMsg', 'Invalid usage.\nUsage:\n  publist.py [ d=1 ] [ p=1 ] [ t=1 ] [ cfg=<configuration file> ] [ insts=<institution list> ] [ series=<series list> ]')
@@ -193,6 +196,7 @@ def GetArgs(publistDrmsParams):
         parser.add_argument('-c', '--cfg', help='The configuration file that contains information needed to locate database information.', metavar='<slony configuration file>', dest='cfg', default=publistDrmsParams.get('SLONY_CONFIG'))
         parser.add_argument('-i', '--insts', help='A comma-separated list of institutions. The series to which these institutions are printed.', metavar='<institution list>', dest='insts', action=ListAction, default=[])
         parser.add_argument('-s', '--series', help='A comma-separated list of series. The institutions subscribed to these series are printed.', metavar='<series list>', dest='series', action=ListAction, default=[])
+        parser.add_argument('-q', '--qseries', help='A comma-separated list of series. The list of series is printed in one column, and True or False in a second column (which denotes whether the series is published or not).', metavar='<series list>', dest='qseries', action=ListAction, default=[])
         parser.add_argument('-U', '--dbuser', help='The database user-account name to login to the database as.', metavar='<db user>', dest='dbuser', default=pwd.getpwuid(os.getuid())[0])
 
         arguments = Arguments(parser)
@@ -342,9 +346,10 @@ if rv == RET_SUCCESS:
         jsonobj = arguments.getArg('json')
         insts = arguments.getArg('insts') # A list.
         series = arguments.getArg('series') # A list.
+        qseries = arguments.getArg('qseries') # A list.
         
-        # If the user has specified neither -p, -i, or -s, then default to displaying the publication list
-        if not arguments.getArg('publist') and len(insts) == 0 and len(series) == 0:
+        # If the user has specified neither -p, -i, -s, nor -q then default to displaying the publication list
+        if not arguments.getArg('publist') and len(insts) == 0 and len(series) == 0 and len(qseries) == 0:
             dispPubList = True
 
         dbuser = arguments.getArg('dbuser')
@@ -366,7 +371,7 @@ if rv == RET_SUCCESS:
 
                 # Need pubListDict if printing all institutions subscribed to series. Also need descsDict if 
                 # insts argument was provided.
-                if dispPubList or not series is None or not insts is None:
+                if dispPubList or not series is None or not insts is None or not qseries is None:
                     # First print all published series
                     pubListDict = {}
                     if descs:
@@ -472,6 +477,18 @@ if rv == RET_SUCCESS:
 
                     if not nojson:
                         insertJson(rootObj, 'nodelist', nodeListObj)
+                        
+                if not(qseries is None) and len(qseries) > 0:
+                    warnMsg = []
+                    for seriesname in qseries:
+                        if nojson:
+                            if checkSeries(seriesname, pubListDict, warnMsg):
+                                ans = 'True'
+                            else:
+                                ans = 'False'
+                            print(seriesname + '\t' + ans)
+                        else:
+                            insertJson(rootObj, seriesname, checkSeries(seriesname, pubListDict, warnMsg))
 
     except psycopg2.Error as exc:
         # Closes the cursor and connection
