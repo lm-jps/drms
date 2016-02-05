@@ -123,7 +123,7 @@ int DoIt(void)
             }
 
             /* Coerce to DRMS_TYPE_DOUBLE - who care what type we use. */
-            data = drms_record_getvector(drms_env, rsin, keyBuf, DRMS_TYPE_STRING, 0, &status);
+            data = drms_record_getvector(drms_env, rsin, keyBuf, DRMS_TYPE_STRING, 1, &status);
 
             if (data && status == DRMS_SUCCESS)
             {
