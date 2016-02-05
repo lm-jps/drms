@@ -257,8 +257,8 @@ void drms_array2missing(DRMS_Array_t *arr)
   case DRMS_TYPE_STRING: 
     {
       char **ssrc = (char **) (arr->data);
-      for (i=0; i<n; i++, ssrc++)
-	(*ssrc)[0] = 0;
+      for (i=0; i<n; i++)
+        ssrc[i] = NULL;
 
     }
     break;
