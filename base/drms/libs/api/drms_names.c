@@ -1524,11 +1524,11 @@ int drms_names_parsedegreedelta(char **deltastr, DRMS_SlotKeyUnit_t *unit, doubl
 
 /***************** Middle-end: Generate SQL from AST ********************/
 
-static int sql_record_set_filter(RecordSet_Filter_t *rs, char *seriesname, char **query, char **pkwhere, int sizep, char **npkwhere, int sizen, HContainer_t *pkwhereNFL);
-static int sql_record_query(RecordQuery_t *rs, char **query);
-static int sql_record_list(RecordList_t *rs, char *seriesname,  char **query);
-static int sql_recnum_set(IndexRangeSet_t  *rs, char *seriesname, char **query);
-static int sql_primekey_set(PrimekeyRangeSet_t *rs, char *seriesname,char **query);
+static int sql_record_set_filter(RecordSet_Filter_t *rs, char *seriesname, char **query, int sizeq, char **pkwhere, int sizep, char **npkwhere, int sizen, HContainer_t *pkwhereNFL);
+static int sql_record_query(RecordQuery_t *rs, char **query, int sizeq);
+static int sql_record_list(RecordList_t *rs, char *seriesname,  char **query, int sizeq);
+static int sql_recnum_set(IndexRangeSet_t  *rs, char *seriesname, char **query, int sizeq);
+static int sql_primekey_set(PrimekeyRangeSet_t *rs, char *seriesname,char **query, int sizeq);
 static int sql_primekey_index_set(IndexRangeSet_t *rs, DRMS_Keyword_t *keyword,
 				  char *seriesname, char **query);
 static int sql_primekey_value_set(ValueRangeSet_t *rs, DRMS_Keyword_t *keyword,
@@ -1539,6 +1539,7 @@ static int sql_primekey_value_set(ValueRangeSet_t *rs, DRMS_Keyword_t *keyword,
 static int sql_record_set(RecordSet_t *rs, 
                           char *seriesname, 
                           char *query, 
+                          int sizeq,
                           char *pkwhere, 
                           int sizep, 
                           char *npkwhere, 
@@ -1560,7 +1561,7 @@ static int sql_record_set(RecordSet_t *rs,
   if (rs->recordset_spec)
   {
     /*    p += sprintf(p," WHERE "); */
-     return sql_record_set_filter(rs->recordset_spec, seriesname, &p, &pkwhere, sizep, &npkwhere, sizen, pkwhereNFL);
+     return sql_record_set_filter(rs->recordset_spec, seriesname, &p, sizeq, &pkwhere, sizep, &npkwhere, sizen, pkwhereNFL);
   }
   else
   {
@@ -1571,7 +1572,7 @@ static int sql_record_set(RecordSet_t *rs,
   }
 }
 
-static int sql_record_set_filter(RecordSet_Filter_t *rs, char *seriesname, char **query, char **pkwhere, int sizep, char **npkwhere, int sizen, HContainer_t *pkwhereNFL)
+static int sql_record_set_filter(RecordSet_Filter_t *rs, char *seriesname, char **query, int sizeq, char **pkwhere, int sizep, char **npkwhere, int sizen, HContainer_t *pkwhereNFL)
 {
 #ifdef DEBUG
     printf("Enter sql_record_set_filter\n");
@@ -1607,10 +1608,10 @@ static int sql_record_set_filter(RecordSet_Filter_t *rs, char *seriesname, char 
         switch(rs->type)
         {
             case RECORDQUERY:
-                sql_record_query(rs->record_query, &bogus);
+                sql_record_query(rs->record_query, &bogus, sizeof(wherebuf) - 2);
                 break;
             case RECORDLIST:
-                sql_record_list(rs->record_list, seriesname, &bogus);
+                sql_record_list(rs->record_list, seriesname, &bogus, sizeof(wherebuf) - 2);
                 break;
             default:    
                 fprintf(stderr,"Wrong type (%d) in sql_record_set_filter.\n",
@@ -1751,7 +1752,7 @@ static int sql_record_set_filter(RecordSet_Filter_t *rs, char *seriesname, char 
 }
 
 
-static int sql_record_query(RecordQuery_t *rs, char **query)
+static int sql_record_query(RecordQuery_t *rs, char **query, int sizeq)
 {
   char *p=*query;
 #ifdef DEBUG
@@ -1765,7 +1766,7 @@ static int sql_record_query(RecordQuery_t *rs, char **query)
   return 0;
 }
 
-static int sql_record_list(RecordList_t *rs, char *seriesname, char **query)
+static int sql_record_list(RecordList_t *rs, char *seriesname, char **query, int sizeq)
 {
   char *p=*query;  
 #ifdef DEBUG
@@ -1775,10 +1776,10 @@ static int sql_record_list(RecordList_t *rs, char *seriesname, char **query)
   switch(rs->type)
   {
   case RECNUMSET:
-    sql_recnum_set(rs->recnum_rangeset, seriesname, &p);
+    sql_recnum_set(rs->recnum_rangeset, seriesname, &p, sizeq);
     break;
   case PRIMEKEYSET:
-    sql_primekey_set(rs->primekey_rangeset, seriesname, &p);
+    sql_primekey_set(rs->primekey_rangeset, seriesname, &p, sizeq);
     break;
   default:    
     fprintf(stderr,"Wrong type (%d) in sql_record_list.\n",
@@ -1793,54 +1794,195 @@ static int sql_record_list(RecordList_t *rs, char *seriesname, char **query)
   return 0;
 }
 
-static int sql_recnum_set(IndexRangeSet_t  *rs, char *seriesname, char **query)
+static int sql_recnum_set(IndexRangeSet_t  *rs, char *seriesname, char **query, int sizeq)
 {
   char *p=*query;
+  size_t bufSz = DRMS_MAXQUERYLEN;
+  char *buf = calloc(1, bufSz);
+  char numBuf[64];
+  
+  XASSERT(buf);
+  
 #ifdef DEBUG
-  printf("Enter sql_recnum_set\n");
+    printf("Enter sql_recnum_set\n");
 #endif
-  do {
-    p += sprintf(p,"( ");
-    if (rs->type == FIRST_VALUE) {
-      p += sprintf(p,"recnum=(select min(recnum) from %s)", seriesname);
-    } else if (rs->type == LAST_VALUE) {
-      p += sprintf(p,"recnum=(select max(recnum) from %s)", seriesname);
-    } else if (rs->type == SINGLE_VALUE)
-      p += sprintf(p,"recnum=%lld ",rs->start);
-    else
+
+    /* If IndexRangeSet_t::type is only FIRST_VALUE, LAST_VALUE, or SINGLE_VALUE, then use
+     * the recnum in (23123, 24232, 2326, 623623, ...) format. */
+    IndexRangeSet_t *pRS = rs;
+    int doRecnumIn = 1;
+    
+    while (pRS)
     {
-      if (rs->type == RANGE_ALL) 
-	p += sprintf(p,"1 = 1 ");
-      else if (rs->type == RANGE_START) 
-	p += sprintf(p,"%lld<=recnum ",rs->start);
-      else if (rs->type == RANGE_END) 
-	p += sprintf(p,"recnum<=%lld ",rs->x);
-      else if (rs->type == START_END)
-	p += sprintf(p,"%lld<=recnum AND recnum<=%lld ",rs->start,rs->x);
-      else if (rs->type == START_DURATION)
-	p += sprintf(p,"%lld<=recnum AND recnum<%lld ",rs->start,rs->start+rs->x);
-      if (rs->skip!=1) {
-	if (rs->type == RANGE_END || rs->type == RANGE_ALL) 
-	  p += sprintf(p,"AND (recnum-(select min(recnum) from %s))%%%lld=0 ",seriesname,rs->skip);	  
-	else
-	  p += sprintf(p,"AND (recnum-%lld)%%%lld=0 ",rs->start,rs->skip);
-      }
+        if (pRS->type != FIRST_VALUE && pRS->type != LAST_VALUE && pRS->type != SINGLE_VALUE)
+        {
+            doRecnumIn = 0;
+            break;
+        }
+        
+        pRS = pRS->next;
     }
-    p += sprintf(p," )");
-    if (rs->next)
-      p += sprintf(p," OR ");
-    rs = rs->next;
-  }
-  while (rs);
+    
+    if (doRecnumIn && rs)
+    {
+        buf = base_strcatalloc(buf, "recnum in (", &bufSz); XASSERT(buf);
+        while (rs) 
+        {
+            if (rs->type == FIRST_VALUE) 
+            {
+                /* p += sprintf(p,"recnum=(select min(recnum) from %s)", seriesname); */
+                buf = base_strcatalloc(buf, "(select min(recnum) from ", &bufSz); XASSERT(buf);
+                buf = base_strcatalloc(buf, seriesname, &bufSz); XASSERT(buf);
+                buf = base_strcatalloc(buf, ")", &bufSz); XASSERT(buf);
+            } 
+            else if (rs->type == LAST_VALUE) 
+            {
+                /* p += sprintf(p,"recnum=(select max(recnum) from %s)", seriesname); */
+                buf = base_strcatalloc(buf, "(select max(recnum) from ", &bufSz); XASSERT(buf);
+                buf = base_strcatalloc(buf, seriesname, &bufSz); XASSERT(buf);
+                buf = base_strcatalloc(buf, ")", &bufSz); XASSERT(buf);
+            } 
+            else if (rs->type == SINGLE_VALUE)
+            {
+                /* p += sprintf(p,"recnum=%lld ",rs->start); */
+                snprintf(numBuf, sizeof(numBuf), "%lld", rs->start);
+                buf = base_strcatalloc(buf, numBuf, &bufSz); XASSERT(buf);
+            }
+            
+            if (rs->next)
+            {
+                /* p += sprintf(p," OR "); */
+                buf = base_strcatalloc(buf, ", ", &bufSz); XASSERT(buf);
+            }
+                
+            rs = rs->next;
+        }
+        
+        buf = base_strcatalloc(buf, ")", &bufSz); XASSERT(buf);
+    }
+    else if (rs)
+    {
+        do 
+        {
+            /* p += sprintf(p,"( "); */
+            buf = base_strcatalloc(buf, "( ", &bufSz); XASSERT(buf);
+
+            if (rs->type == FIRST_VALUE) 
+            {
+                /* p += sprintf(p,"recnum=(select min(recnum) from %s)", seriesname); */
+                buf = base_strcatalloc(buf, "recnum=(select min(recnum) from ", &bufSz); XASSERT(buf);
+                buf = base_strcatalloc(buf, seriesname, &bufSz); XASSERT(buf);
+                buf = base_strcatalloc(buf, ")", &bufSz); XASSERT(buf);
+            } 
+            else if (rs->type == LAST_VALUE) 
+            {
+                /* p += sprintf(p,"recnum=(select max(recnum) from %s)", seriesname); */
+                buf = base_strcatalloc(buf, "recnum=(select max(recnum) from ", &bufSz); XASSERT(buf);
+                buf = base_strcatalloc(buf, seriesname, &bufSz); XASSERT(buf);
+                buf = base_strcatalloc(buf, ")", &bufSz); XASSERT(buf);
+            } 
+            else if (rs->type == SINGLE_VALUE)
+            {
+                /* p += sprintf(p,"recnum=%lld ",rs->start); */
+                snprintf(numBuf, sizeof(numBuf), "%lld", rs->start);
+                buf = base_strcatalloc(buf, "recnum=", &bufSz); XASSERT(buf);
+                buf = base_strcatalloc(buf, numBuf, &bufSz); XASSERT(buf);
+            }
+            else 
+            {
+                if (rs->type == RANGE_ALL)
+                {
+                    /* p += sprintf(p,"1 = 1 "); */
+                    buf = base_strcatalloc(buf, "1 = 1 ", &bufSz); XASSERT(buf);
+                }
+                else if (rs->type == RANGE_START) 
+                {
+                    /* p += sprintf(p,"%lld<=recnum ",rs->start); */
+                    snprintf(numBuf, sizeof(numBuf), "%lld", rs->start);
+                    buf = base_strcatalloc(buf, numBuf, &bufSz); XASSERT(buf);
+                    buf = base_strcatalloc(buf, "<=recnum ", &bufSz); XASSERT(buf);
+                }
+                else if (rs->type == RANGE_END)
+                { 
+                    /* p += sprintf(p,"recnum<=%lld ",rs->x); */
+                    buf = base_strcatalloc(buf, "recnum<=", &bufSz); XASSERT(buf);
+                    snprintf(numBuf, sizeof(numBuf), "%lld", rs->x);
+                    buf = base_strcatalloc(buf, numBuf, &bufSz); XASSERT(buf);
+                }
+                else if (rs->type == START_END)
+                {
+                    /* p += sprintf(p,"%lld<=recnum AND recnum<=%lld ",rs->start,rs->x); */
+                    snprintf(numBuf, sizeof(numBuf), "%lld", rs->start);
+                    buf = base_strcatalloc(buf, numBuf, &bufSz); XASSERT(buf);
+                    buf = base_strcatalloc(buf, "<=recnum AND recnum<=", &bufSz); XASSERT(buf);
+                    snprintf(numBuf, sizeof(numBuf), "%lld", rs->x);
+                    buf = base_strcatalloc(buf, numBuf, &bufSz); XASSERT(buf);
+                }
+                else if (rs->type == START_DURATION)
+                {
+                    /* p += sprintf(p,"%lld<=recnum AND recnum<%lld ",rs->start,rs->start+rs->x); */
+                    snprintf(numBuf, sizeof(numBuf), "%lld", rs->start);
+                    buf = base_strcatalloc(buf, numBuf, &bufSz); XASSERT(buf);
+                    buf = base_strcatalloc(buf, "<=recnum AND recnum<", &bufSz); XASSERT(buf);
+                    snprintf(numBuf, sizeof(numBuf), "%lld", rs->start+rs->x);
+                    buf = base_strcatalloc(buf, numBuf, &bufSz); XASSERT(buf);
+                }
+
+                if (rs->skip!=1) 
+                {
+                    if (rs->type == RANGE_END || rs->type == RANGE_ALL) 
+                    {
+                          /* p += sprintf(p,"AND (recnum-(select min(recnum) from %s))%%%lld=0 ",seriesname,rs->skip); */
+                          buf = base_strcatalloc(buf, " AND (recnum-(select min(recnum) from ", &bufSz); XASSERT(buf);
+                          buf = base_strcatalloc(buf, seriesname, &bufSz); XASSERT(buf);
+                          buf = base_strcatalloc(buf, "))%", &bufSz); XASSERT(buf);
+                          snprintf(numBuf, sizeof(numBuf), "%lld", rs->skip);
+                          buf = base_strcatalloc(buf, numBuf, &bufSz); XASSERT(buf);
+                          buf = base_strcatalloc(buf, "=0 ", &bufSz); XASSERT(buf);
+                    }
+                    else
+                    {
+                          /* p += sprintf(p,"AND (recnum-%lld)%%%lld=0 ",rs->start,rs->skip); */
+                          buf = base_strcatalloc(buf, " AND (recnum-", &bufSz); XASSERT(buf);
+                          snprintf(numBuf, sizeof(numBuf), "%lld", rs->start);
+                          buf = base_strcatalloc(buf, numBuf, &bufSz); XASSERT(buf);
+                          buf = base_strcatalloc(buf, ")%", &bufSz); XASSERT(buf);
+                          snprintf(numBuf, sizeof(numBuf), "%lld", rs->skip);
+                          buf = base_strcatalloc(buf, numBuf, &bufSz); XASSERT(buf);
+                          buf = base_strcatalloc(buf, "=0 ", &bufSz); XASSERT(buf);
+                    }
+                }
+            }
+
+            /* p += sprintf(p," )"); */
+            buf = base_strcatalloc(buf, " )", &bufSz); XASSERT(buf);
+            if (rs->next)
+            {
+                /* p += sprintf(p," OR "); */
+                buf = base_strcatalloc(buf, " OR ", &bufSz); XASSERT(buf);
+            }
+            rs = rs->next;
+        }
+        while (rs);
+    }
+  
+    /* Ack - we don't know the size of the *query buffer.  */
+    snprintf(*query, sizeq, buf);
+  
 #ifdef DEBUG
-  printf("Added '%s'\nExit sql_recnum_set\n",*query);
+      printf("Added '%s'\nExit sql_recnum_set\n",*query);
 #endif
-  *query=p;
-  return 0;
+
+    *query += strlen(buf);
+    
+    free(buf);
+    buf = NULL;
+
+    return 0;
 }
 
 
-static int sql_primekey_set(PrimekeyRangeSet_t *rs, char *seriesname, char **query)
+static int sql_primekey_set(PrimekeyRangeSet_t *rs, char *seriesname, char **query, int sizeq)
 {
   if (rs->type == INDEX_RANGE) 
     return sql_primekey_index_set(rs->index_rangeset, rs->keyword, seriesname, query);
@@ -2503,7 +2645,7 @@ int drms_recordset_query(DRMS_Env_t *env,
             *allvers = rs->allvers;
         }
         
-        sql_record_set(rs,*seriesname, *query, *pkwhere, DRMS_MAXQUERYLEN, *npkwhere, DRMS_MAXQUERYLEN, *pkwhereNFL);
+        sql_record_set(rs,*seriesname, *query, DRMS_MAXQUERYLEN, *pkwhere, DRMS_MAXQUERYLEN, *npkwhere, DRMS_MAXQUERYLEN, *pkwhereNFL);
         free_record_set(rs);
         ret = 0;
     }
@@ -2865,7 +3007,7 @@ int drms_recordset_query_ext(DB_Handle_t *dbh,
            *allvers = rs->allvers;
        }
        
-       sql_record_set(rs, *seriesname, *query, *pkwhere, DRMS_MAXQUERYLEN, *npkwhere, DRMS_MAXQUERYLEN, *pkwhereNFL);
+       sql_record_set(rs, *seriesname, *query, DRMS_MAXQUERYLEN, *pkwhere, DRMS_MAXQUERYLEN, *npkwhere, DRMS_MAXQUERYLEN, *pkwhereNFL);
        free_record_set(rs);
        ret = 0;
    }

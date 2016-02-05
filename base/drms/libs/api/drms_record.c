@@ -7189,12 +7189,12 @@ char *drms_query_string(DRMS_Env_t *env,
     char *query = NULL;
     char *series_lower;
     long long recsize, limit;
-    char pidx_names[1024]; // comma separated pidx keyword names
-    char pidx_names_desc[1200]; // comma separated pidx keyword names with DESC
-    char pidx_names_n[1024]; // comma separated pidx keyword names in 'limited' table
-    char pidx_names_bare[1024]; // comma separated pidx keyword names in 'limited' table
-    char pidx_names_desc_bare[1024]; // comma separated pidx keyword names in 'limited' table
-    char limitedtable[1024]; // for DRMS_QUERY_N, innermost table that has 4 * n rows
+    char *pidx_names = NULL; // comma separated pidx keyword names
+    char *pidx_names_desc = NULL; // comma separated pidx keyword names with DESC
+    char *pidx_names_n = NULL; // comma separated pidx keyword names in 'limited' table
+    char *pidx_names_bare = NULL; // comma separated pidx keyword names in 'limited' table
+    char *pidx_names_desc_bare = NULL; // comma separated pidx keyword names in 'limited' table
+    char *limitedtable = NULL; // for DRMS_QUERY_N, innermost table that has 4 * n rows
     char *p;
     int nrecs = 0;
     int unique = 0;
@@ -7795,6 +7795,9 @@ char *drms_query_string(DRMS_Env_t *env,
     printf("Unknown query type: %d\n", (int)qtype);
     return NULL;
   }
+  
+    size_t cmdSz;
+    char numBuf[64];
 
 #ifdef DEBUG
   printf("limit  = (%f / %lld) = %lld\n",0.4e6*env->query_mem, recsize, limit);
@@ -7803,79 +7806,149 @@ char *drms_query_string(DRMS_Env_t *env,
   strtolower(series_lower);
 
   if (template->seriesinfo->pidx_num>0) {
-    char *pdesc = pidx_names_desc;
-    char *p_n = pidx_names_n;
-    char *p_bare = pidx_names_bare;
-    char *pdesc_bare = pidx_names_desc_bare;
+    /* p = pidx_names; */
+    size_t namesSz = 1024;
+    pidx_names = calloc(1, namesSz);
+    XASSERT(pidx_names);
+    
+    /* char *pdesc = pidx_names_desc; */
+    size_t namesDescSz = 1024;
+    pidx_names_desc = calloc(1, namesDescSz);
+    XASSERT(pidx_names_desc);
+    
+    /* char *p_n = pidx_names_n; */
+    size_t namesNSz = 1024;
+    pidx_names_n = calloc(1, namesNSz);
+    XASSERT(pidx_names_n);
+    
+    /* char *p_bare = pidx_names_bare; */
+    size_t namesBareSz = 1024;
+    pidx_names_bare = calloc(1, namesBareSz);
+    XASSERT(pidx_names_bare);
+    
+    /* char *pdesc_bare = pidx_names_desc_bare; */
+    size_t namesDescBareSz = 1024;
+    pidx_names_desc_bare = calloc(1, namesDescBareSz);
+    XASSERT(pidx_names_desc_bare);
 
-    p = pidx_names;
+    /* p += sprintf(p, "%s.%s", series_lower, template->seriesinfo->pidx_keywords[0]->info->name); */
+    pidx_names = base_strcatalloc(pidx_names, series_lower, &namesSz); XASSERT(pidx_names);
+    pidx_names = base_strcatalloc(pidx_names, ".", &namesSz); XASSERT(pidx_names);
+    pidx_names = base_strcatalloc(pidx_names, template->seriesinfo->pidx_keywords[0]->info->name, &namesSz); XASSERT(pidx_names);
 
-    p += sprintf(p, "%s.%s", series_lower, template->seriesinfo->pidx_keywords[0]->info->name);
-
-    pdesc += sprintf(pdesc, "%s.%s DESC", series_lower, template->seriesinfo->pidx_keywords[0]->info->name);
+    /* pdesc += sprintf(pdesc, "%s.%s DESC", series_lower, template->seriesinfo->pidx_keywords[0]->info->name); */
+    pidx_names_desc = base_strcatalloc(pidx_names_desc, series_lower, &namesDescSz); XASSERT(pidx_names_desc);
+    pidx_names_desc = base_strcatalloc(pidx_names_desc, ".", &namesDescSz); XASSERT(pidx_names_desc);
+    pidx_names_desc = base_strcatalloc(pidx_names_desc, template->seriesinfo->pidx_keywords[0]->info->name, &namesDescSz); XASSERT(pidx_names_desc);
+    pidx_names_desc = base_strcatalloc(pidx_names_desc, " DESC", &namesDescSz); XASSERT(pidx_names_desc);
 
     /* limited case */
-    p_n += sprintf(p_n, 
+    /* p_n += sprintf(p_n, 
                    "limited.%s", 
                    template->seriesinfo->pidx_keywords[0]->info->name);
-    
-    p_bare += sprintf(p_bare, 
+     */            
+    pidx_names_n = base_strcatalloc(pidx_names_n, "limited.", &namesNSz); XASSERT(pidx_names_n);
+    pidx_names_n = base_strcatalloc(pidx_names_n, template->seriesinfo->pidx_keywords[0]->info->name, &namesNSz); XASSERT(pidx_names_n);
+
+    /* p_bare += sprintf(p_bare, 
                       "%s", 
                       template->seriesinfo->pidx_keywords[0]->info->name);
+     */
+    pidx_names_bare = base_strcatalloc(pidx_names_bare, template->seriesinfo->pidx_keywords[0]->info->name, &namesBareSz); XASSERT(pidx_names_bare);
 
-    pdesc_bare += sprintf(pdesc_bare, 
+    /* pdesc_bare += sprintf(pdesc_bare, 
                           "%s DESC", 
                           template->seriesinfo->pidx_keywords[0]->info->name);
+     */                   
+    pidx_names_desc_bare = base_strcatalloc(pidx_names_desc_bare, template->seriesinfo->pidx_keywords[0]->info->name, &namesDescBareSz); XASSERT(pidx_names_desc_bare);
+    pidx_names_desc_bare = base_strcatalloc(pidx_names_desc_bare, " DESC", &namesDescBareSz); XASSERT(pidx_names_desc_bare);
     
     
     for (int i = 1; i < template->seriesinfo->pidx_num; i++) 
     {
-       p += sprintf(p, ", %s.%s", series_lower, template->seriesinfo->pidx_keywords[i]->info->name);
+        /* p += sprintf(p, ", %s.%s", series_lower, template->seriesinfo->pidx_keywords[i]->info->name); */
+        pidx_names = base_strcatalloc(pidx_names, ", ", &namesSz); XASSERT(pidx_names);
+        pidx_names = base_strcatalloc(pidx_names, series_lower, &namesSz); XASSERT(pidx_names);
+        pidx_names = base_strcatalloc(pidx_names, ".", &namesSz); XASSERT(pidx_names);
+        pidx_names = base_strcatalloc(pidx_names, template->seriesinfo->pidx_keywords[i]->info->name, &namesSz); XASSERT(pidx_names);
 
-      pdesc += sprintf(pdesc, ", %s.%s DESC", series_lower, template->seriesinfo->pidx_keywords[i]->info->name);
+        /* pdesc += sprintf(pdesc, ", %s.%s DESC", series_lower, template->seriesinfo->pidx_keywords[i]->info->name); */
+        pidx_names_desc = base_strcatalloc(pidx_names_desc, ", ", &namesDescSz); XASSERT(pidx_names_desc);
+        pidx_names_desc = base_strcatalloc(pidx_names_desc, series_lower, &namesDescSz); XASSERT(pidx_names_desc);
+        pidx_names_desc = base_strcatalloc(pidx_names_desc, ".", &namesDescSz); XASSERT(pidx_names_desc);
+        pidx_names_desc = base_strcatalloc(pidx_names_desc, template->seriesinfo->pidx_keywords[i]->info->name, &namesDescSz); XASSERT(pidx_names_desc);
+        pidx_names_desc = base_strcatalloc(pidx_names_desc, " DESC", &namesDescSz); XASSERT(pidx_names_desc);
 
-       p_n += sprintf(p_n, 
+        /* p_n += sprintf(p_n, 
                       ", limited.%s", 
                       template->seriesinfo->pidx_keywords[i]->info->name);
+         */
+        pidx_names_n = base_strcatalloc(pidx_names_n, ", limited.", &namesNSz); XASSERT(pidx_names_n);
+        pidx_names_n = base_strcatalloc(pidx_names_n, template->seriesinfo->pidx_keywords[i]->info->name, &namesNSz); XASSERT(pidx_names_n);
 
-       p_bare += sprintf(p_bare, 
+        /* p_bare += sprintf(p_bare, 
                          ", %s", 
                          template->seriesinfo->pidx_keywords[i]->info->name);
+         */
+        pidx_names_bare = base_strcatalloc(pidx_names_bare, ", ", &namesBareSz); XASSERT(pidx_names_bare);
+        pidx_names_bare = base_strcatalloc(pidx_names_bare, template->seriesinfo->pidx_keywords[i]->info->name, &namesBareSz); XASSERT(pidx_names_bare);
 
-       pdesc_bare += sprintf(pdesc_bare, 
+        /* pdesc_bare += sprintf(pdesc_bare, 
                             ", %s DESC", 
                             template->seriesinfo->pidx_keywords[i]->info->name);
+         */
+        pidx_names_desc_bare = base_strcatalloc(pidx_names_desc_bare, ", ", &namesDescBareSz); XASSERT(pidx_names_desc_bare);
+        pidx_names_desc_bare = base_strcatalloc(pidx_names_desc_bare, template->seriesinfo->pidx_keywords[i]->info->name, &namesDescBareSz); XASSERT(pidx_names_desc_bare);
+        pidx_names_desc_bare = base_strcatalloc(pidx_names_desc_bare, " DESC", &namesDescBareSz); XASSERT(pidx_names_desc_bare);        
     }
   }
 
-
   if (qtype == DRMS_QUERY_N)
   {
-     char *plimtab = limitedtable;
      int fudge = kQUERYNFUDGE;
+     cmdSz = 1024;
+     limitedtable = calloc(1, cmdSz);
+     XASSERT(limitedtable);
 
-     plimtab += snprintf(limitedtable, 
+        /* plimtab += snprintf(limitedtable, 
                          sizeof(limitedtable),
                          "select recnum,%s from %s where 1=1",
                          pidx_names_bare,
-                         series_lower);
+                         series_lower); 
+         */
+                         
+        limitedtable = base_strcatalloc(limitedtable, "select recnum,", &cmdSz); XASSERT(limitedtable);
+        limitedtable = base_strcatalloc(limitedtable, pidx_names_bare, &cmdSz); XASSERT(limitedtable);
+        limitedtable = base_strcatalloc(limitedtable, " from ", &cmdSz); XASSERT(limitedtable);
+        limitedtable = base_strcatalloc(limitedtable, series_lower, &cmdSz); XASSERT(limitedtable);
+        limitedtable = base_strcatalloc(limitedtable, " where 1=1", &cmdSz); XASSERT(limitedtable);
+                         
      if (where && *where)
      {
-        plimtab += sprintf(plimtab, " and %s", where);
+        /* plimtab += sprintf(plimtab, " and %s", where); */
+        limitedtable = base_strcatalloc(limitedtable, " and ", &cmdSz); XASSERT(limitedtable);
+        limitedtable = base_strcatalloc(limitedtable, where, &cmdSz); XASSERT(limitedtable);
 
      }
 
-     plimtab += sprintf(plimtab, 
+        /* plimtab += sprintf(plimtab, 
                         " order by %s limit %d",
                         nrecs > 0 ? pidx_names_bare : pidx_names_desc_bare,
-                        abs(nrecs) * fudge);
+                        abs(nrecs) * fudge); */
+        limitedtable = base_strcatalloc(limitedtable, " order by ", &cmdSz); XASSERT(limitedtable);
+        limitedtable = base_strcatalloc(limitedtable, nrecs > 0 ? pidx_names_bare : pidx_names_desc_bare, &cmdSz); XASSERT(limitedtable);
+        limitedtable = base_strcatalloc(limitedtable, " limit ", &cmdSz); XASSERT(limitedtable);
+        
+        snprintf(numBuf, sizeof(numBuf), "%d", abs(nrecs) * fudge);
+        limitedtable = base_strcatalloc(limitedtable, numBuf, &cmdSz); XASSERT(limitedtable);
   }
 
   /* Do query to retrieve record meta-data. */
-  query = malloc(strlen(field_list)+DRMS_MAXQUERYLEN);
+  /* Do not use a static buffer to hold the resulting string. That buffer has been overrun several times. This is a security 
+   * issue (since a public user can cause the overrun by providing a certain query). */
+  cmdSz = strlen(field_list)+DRMS_MAXQUERYLEN;
+  query = calloc(1, cmdSz);
   XASSERT(query);
-  p = query;
-
 
   /* If this is a [! ... !] query, then we want to get rid of the 'group by' clause and replace
    * the max(recnum) in the subquery with simply recnum. We can do that by just forcing the
@@ -7889,16 +7962,51 @@ char *drms_query_string(DRMS_Env_t *env,
         * sprintf() */
        if (qtype != DRMS_QUERY_N)
        {
-          p += sprintf(p, "select %s from %s, (select q2.max1 as max from  (select max(recnum) as max1, min(q1.max) as max2 from %s, (select %s, max(recnum) from %s where %s group by %s) as q1 where %s.%s = q1.%s", field_list, series_lower, series_lower, pidx_names, series_lower, where, pidx_names, series_lower, template->seriesinfo->pidx_keywords[0]->info->name, template->seriesinfo->pidx_keywords[0]->info->name);
-          for (int i = 1; i < template->seriesinfo->pidx_num; i++) {
-             p += sprintf(p, " and %s.%s = q1.%s", series_lower, template->seriesinfo->pidx_keywords[i]->info->name, template->seriesinfo->pidx_keywords[i]->info->name);
-          }
-          p += sprintf(p, " group by %s) as q2 where max1 = max2) as q3 where %s.recnum = q3.max", pidx_names, series_lower);
+            /* p += sprintf(p, "select %s from %s, (select q2.max1 as max from  (select max(recnum) as max1, min(q1.max) as max2 from %s, (select %s, max(recnum) from %s where %s group by %s) as q1 where %s.%s = q1.%s", field_list, series_lower, series_lower, pidx_names, series_lower, where, pidx_names, series_lower, template->seriesinfo->pidx_keywords[0]->info->name, template->seriesinfo->pidx_keywords[0]->info->name); */          
+            query = base_strcatalloc(query, "select ", &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, field_list, &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, " from ", &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, series_lower, &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, ", (select q2.max1 as max from  (select max(recnum) as max1, min(q1.max) as max2 from ", &cmdSz);  XASSERT(query);
+            query = base_strcatalloc(query, series_lower, &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, ", (select ", &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, pidx_names, &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, ", max(recnum) from ", &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, series_lower, &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, " where ", &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, where, &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, " group by ", &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, pidx_names, &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, ") as q1 where ", &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, series_lower, &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, ".", &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, template->seriesinfo->pidx_keywords[0]->info->name, &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, " = q1.", &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, template->seriesinfo->pidx_keywords[0]->info->name, &cmdSz); XASSERT(query);
+          
+            for (int i = 1; i < template->seriesinfo->pidx_num; i++) 
+            {
+                /* p += sprintf(p, " and %s.%s = q1.%s", series_lower, template->seriesinfo->pidx_keywords[i]->info->name, template->seriesinfo->pidx_keywords[i]->info->name); */
+                query = base_strcatalloc(query, " and ", &cmdSz); XASSERT(query);
+                query = base_strcatalloc(query, series_lower, &cmdSz); XASSERT(query);
+                query = base_strcatalloc(query, ".", &cmdSz); XASSERT(query);
+                query = base_strcatalloc(query, template->seriesinfo->pidx_keywords[i]->info->name, &cmdSz); XASSERT(query);
+                query = base_strcatalloc(query, " = q1.", &cmdSz); XASSERT(query);
+                query = base_strcatalloc(query, template->seriesinfo->pidx_keywords[i]->info->name, &cmdSz); XASSERT(query);
+            }
+            
+            /* p += sprintf(p, " group by %s) as q2 where max1 = max2) as q3 where %s.recnum = q3.max", pidx_names, series_lower); */
+            query = base_strcatalloc(query, " group by ", &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, pidx_names, &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, ") as q2 where max1 = max2) as q3 where ", &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, series_lower, &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, ".recnum = q3.max", &cmdSz); XASSERT(query);
        }
        else
        {
-          /* DRMS_QUERY_N */
-          p += sprintf(p, 
+            /* DRMS_QUERY_N */
+            /*
+            p += sprintf(p, 
                        "select %s from %s, (select q2.max1 as max from  (select max(recnum) as max1, min(q1.max) as max2 from %s, (select %s, max(recnum) from (%s) as limited group by %s) as q1 where %s.%s = q1.%s",
                        field_list, 
                        series_lower, 
@@ -7909,20 +8017,53 @@ char *drms_query_string(DRMS_Env_t *env,
                        series_lower, 
                        template->seriesinfo->pidx_keywords[0]->info->name, 
                        template->seriesinfo->pidx_keywords[0]->info->name);
-
+             */
+            query = base_strcatalloc(query, "select ", &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, field_list, &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, " from ", &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, series_lower, &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, ", (select q2.max1 as max from (select max(recnum) as max1, min(q1.max) as max2 from ", &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, series_lower, &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, ", (select ", &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, pidx_names_n, &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, ", max(recnum) from (", &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, limitedtable, &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, ") as limited group by ", &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, pidx_names_n, &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, ") as q1 where ", &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, series_lower, &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, ".", &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, template->seriesinfo->pidx_keywords[0]->info->name, &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, " = q1.", &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, template->seriesinfo->pidx_keywords[0]->info->name, &cmdSz); XASSERT(query);
+            
           for (int i = 1; i < template->seriesinfo->pidx_num; i++) 
           {
-             p += sprintf(p, 
+             /* p += sprintf(p, 
                           " and %s.%s = q1.%s", 
                           series_lower, 
                           template->seriesinfo->pidx_keywords[i]->info->name, 
                           template->seriesinfo->pidx_keywords[i]->info->name);
+              */
+                          
+            query = base_strcatalloc(query, " and ", &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, series_lower, &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, ".", &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, template->seriesinfo->pidx_keywords[i]->info->name, &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, " = q1.", &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, template->seriesinfo->pidx_keywords[i]->info->name, &cmdSz); XASSERT(query);
           }
 
-          p += sprintf(p, 
+            /* p += sprintf(p, 
                        " group by %s) as q2 where max1 = max2) as q3 where %s.recnum = q3.max", 
                        pidx_names, 
                        series_lower);
+             */        
+            query = base_strcatalloc(query, " group by ", &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, pidx_names, &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, ") as q2 where max1 = max2) as q3 where ", &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, series_lower, &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, ".recnum = q3.max", &cmdSz); XASSERT(query);
        }
     } 
     else 
@@ -7932,40 +8073,75 @@ char *drms_query_string(DRMS_Env_t *env,
         * sprintf() */
        if (qtype != DRMS_QUERY_N)
        {
-          p += sprintf(p, "select %s from %s where recnum in (select max(recnum) from %s where 1=1 ", field_list, series_lower, series_lower);
-          if (where && *where) 
-          {
-             p += sprintf(p, " and %s", where);
-          }
+          /* p += sprintf(p, "select %s from %s where recnum in (select max(recnum) from %s where 1=1 ", field_list, series_lower, series_lower); */
+          
+            query = base_strcatalloc(query, "select ", &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, field_list, &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, " from ", &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, series_lower, &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, " where recnum in (select max(recnum) from ", &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, series_lower, &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, " where 1=1 ", &cmdSz); XASSERT(query);
 
-          p += sprintf(p, " group by %s )", pidx_names);
+            if (where && *where) 
+            {
+                /* p += sprintf(p, " and %s", where); */
+                query = base_strcatalloc(query, " and ", &cmdSz); XASSERT(query);
+                query = base_strcatalloc(query, where, &cmdSz); XASSERT(query);
+            }
+
+            /* p += sprintf(p, " group by %s )", pidx_names); */
+            query = base_strcatalloc(query, " group by ", &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, pidx_names, &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, " )", &cmdSz); XASSERT(query);
        }
        else
        {
-          /* DRMS_QUERY_N */
-          p += sprintf(p, 
+            /* DRMS_QUERY_N */
+            /* p += sprintf(p, 
                        "select %s from %s where recnum in (select max(recnum) from (%s) as limited group by %s)", 
                        field_list, 
                        series_lower, 
                        limitedtable, 
                        pidx_names_n);
-
+             */
+                       
+            query = base_strcatalloc(query, "select ", &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, field_list, &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, " from ", &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, series_lower, &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, " where recnum in (select max(recnum) from (", &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, limitedtable, &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, ") as limited group by ", &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, pidx_names_n, &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, ")", &cmdSz); XASSERT(query);
        }
     }
   } else { // query on all records including all versions
      /* same for  DRMS_QUERY_N and other types of queries */
-     p += sprintf(p, "select %s from %s where 1 = 1", field_list, series_lower);
+     /* p += sprintf(p, "select %s from %s where 1 = 1", field_list, series_lower); */
+     query = base_strcatalloc(query, "select ", &cmdSz); XASSERT(query);
+     query = base_strcatalloc(query, field_list, &cmdSz); XASSERT(query);
+     query = base_strcatalloc(query, " from ", &cmdSz); XASSERT(query);
+     query = base_strcatalloc(query, series_lower, &cmdSz); XASSERT(query);
+     query = base_strcatalloc(query, " where 1 = 1", &cmdSz); XASSERT(query);
+     
      if (where && *where) {
-        p += sprintf(p, " and %s", where);
+        /* p += sprintf(p, " and %s", where); */
+        query = base_strcatalloc(query, " and ", &cmdSz); XASSERT(query);
+        query = base_strcatalloc(query, where, &cmdSz); XASSERT(query);
+        
      }    
   }
   if (qtype != DRMS_QUERY_COUNT) 
-  {
+  { 
      if (qtype == DRMS_QUERY_N)
      {
         if (template->seriesinfo->pidx_num > 0) 
         {
-           p += sprintf(p, " order by %s", nrecs > 0 ? pidx_names : pidx_names_desc);
+           /* p += sprintf(p, " order by %s", nrecs > 0 ? pidx_names : pidx_names_desc); */
+           query = base_strcatalloc(query, " order by ", &cmdSz); XASSERT(query);
+           query = base_strcatalloc(query, nrecs > 0 ? pidx_names : pidx_names_desc, &cmdSz); XASSERT(query);
         }
 
         if (abs(nrecs) < limit)
@@ -7973,30 +8149,49 @@ char *drms_query_string(DRMS_Env_t *env,
            limit = abs(nrecs);
         }
 
-        p += sprintf(p, " limit %lld", limit);
+        /* p += sprintf(p, " limit %lld", limit); */
+        snprintf(numBuf, sizeof(numBuf), "%lld", limit);
+        query = base_strcatalloc(query, " limit ", &cmdSz); XASSERT(query);
+        query = base_strcatalloc(query, numBuf, &cmdSz); XASSERT(query);
      }
      else
      {
         if (template->seriesinfo->pidx_num > 0) {
-           p += sprintf(p, " order by %s", pidx_names);
+           /* p += sprintf(p, " order by %s", pidx_names); */
+           query = base_strcatalloc(query, " order by ", &cmdSz); XASSERT(query);
+           query = base_strcatalloc(query, pidx_names, &cmdSz); XASSERT(query);
         }
-        p += sprintf(p, " limit %lld", limit);
+        /* p += sprintf(p, " limit %lld", limit); */
+        snprintf(numBuf, sizeof(numBuf), "%lld", limit);
+        query = base_strcatalloc(query, " limit ", &cmdSz); XASSERT(query);
+        query = base_strcatalloc(query, numBuf, &cmdSz); XASSERT(query);
      }
   }
 
   if (qtype == DRMS_QUERY_FL && unique)
-  {
-     int qsize = strlen(query) + DRMS_MAXQUERYLEN;
-     char *modquery = NULL;
-     modquery = malloc(qsize);
-     XASSERT(modquery);
-     snprintf(modquery, 
+  {        
+        size_t qsize = strlen(query) * 2;
+        char *modquery = NULL;
+        modquery = calloc(1, qsize);
+        XASSERT(modquery);
+
+        /* snprintf(modquery, 
               qsize, 
               "select %s from (%s) as subfoo group by %s order by %s", 
               field_list, 
               query, 
               field_list,
               field_list);
+         */   
+        modquery = base_strcatalloc(modquery, "select ", &qsize); XASSERT(modquery);
+        modquery = base_strcatalloc(modquery, field_list, &qsize); XASSERT(modquery);
+        modquery = base_strcatalloc(modquery, " from (", &qsize); XASSERT(modquery);
+        modquery = base_strcatalloc(modquery, query, &qsize); XASSERT(modquery);
+        modquery = base_strcatalloc(modquery, ") as subfoo group by ", &qsize); XASSERT(modquery);
+        modquery = base_strcatalloc(modquery, field_list, &qsize); XASSERT(modquery);
+        modquery = base_strcatalloc(modquery, " order by ", &qsize); XASSERT(modquery);
+        modquery = base_strcatalloc(modquery, field_list, &qsize); XASSERT(modquery);
+              
      if (query)
      {
         free(query);
@@ -8008,6 +8203,42 @@ char *drms_query_string(DRMS_Env_t *env,
   free(series_lower);
  bailout:
   free(field_list);
+  
+    if (pidx_names)
+    {
+        free(pidx_names);
+        pidx_names = NULL;
+    }
+    
+    if (pidx_names_desc)
+    {
+        free(pidx_names_desc);
+        pidx_names_desc = NULL;
+    }
+
+    if (pidx_names_n)
+    {
+        free(pidx_names_n);
+        pidx_names_n = NULL;
+    }
+
+    if (pidx_names_bare)
+    {
+        free(pidx_names_bare);
+        pidx_names_bare = NULL;
+    }
+    
+    if (pidx_names_desc_bare)
+    {
+        free(pidx_names_desc_bare);
+        pidx_names_desc_bare = NULL;
+    }
+    
+    if (limitedtable)
+    {
+        free(limitedtable);
+        limitedtable = NULL;
+    }
 
   if (env->verbose)
   {
@@ -8016,8 +8247,6 @@ char *drms_query_string(DRMS_Env_t *env,
 
   return query;
 }
-
-
 
 
 /* Allocate a new record data structure and initialize it with
