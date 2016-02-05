@@ -36,6 +36,7 @@ $(OBJDIR):
 	+@[ -d lib/$(MACH) ] || mkdir -p lib/$(MACH)
 	+@[ -d $@ ] || mkdir -p $@
 	+@[ -d $@/base/drms/apps ] || mkdir -p $@/base/drms/apps
+	+@[ -d $@/base/drms/apps/test ] || mkdir -p $@/base/drms/apps/test
 	+@[ -d $@/base/drms/libs/api/client ] || mkdir -p $@/base/drms/libs/api/client
 	+@[ -d $@/base/drms/libs/api/server ] || mkdir -p $@/base/drms/libs/api/server
 	+@[ -d $@/base/drms/libs/main/c ] || mkdir -p $@/base/drms/libs/main/c
