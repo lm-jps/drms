@@ -196,7 +196,7 @@ my $complete = {
 ## check lock, only one version of this program should run
 
 ## setting log file and targets
-logThreshold("debug");
+logThreshold("info");
 
 map { logTarget($_,$config{'kPSLprepLog'}) } qw(notice info error emergency warning debug);
 
