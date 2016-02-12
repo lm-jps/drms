@@ -12,6 +12,10 @@ from datetime import datetime, timedelta
 from io import StringIO
 from pySmartDL import SmartDL
 import tarfile
+import argparse
+import threading
+import logging
+import signal
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../../include'))
 from drmsparams import DRMSParams
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../../base/libs/py'))
@@ -38,7 +42,6 @@ STATUS_ERR_INVALID_REQUEST = 'invalidRequest'
 
 
 LOCKFILE = 'clientsublock.txt'
-SSSTATEFILE = 'ssstate.txt'
 
 
 def terminator(*args):
@@ -46,11 +49,14 @@ def terminator(*args):
     sys.exit(0)
 
 class TerminationHandler(DrmsLock):
+    def __new__(cls, lockFile, dieFile, strPid, log):
+        return super(TerminationHandler, cls).__new__(cls, lockFile, strPid)
+
     def __init__(self, lockFile, dieFile, strPid, log):
         self.lockFile = lockFile
         self.dieFile = dieFile
         self.log = log
-        log.write(['Lock file is ' + lockFile + '.'])
+        log.writeInfo([ 'Lock file is ' + lockFile + '.' ])
         super(TerminationHandler, self).__init__(lockFile, strPid)
         
     def __enter__(self):
@@ -63,10 +69,13 @@ class TerminationHandler(DrmsLock):
     # __exit__() will be bypassed if a SIGTERM signal is received. Use the signal handler installed in the
     # __enter__() call to handle SIGTERM.
     def __exit__(self, etype, value, traceback):
+        if etype == SystemExit:
+            self.log.writeInfo(['Termination signal handler called.'])    
         self.hastaLaVistaBaby()
 
-    def hastaLaVistaBaby(self):
-        self.log.write(['Termination signal handler called.'])
+    def hastaLaVistaBaby(self):        
+        del self.log
+        # logging.shutdown()
     
         # Remove die file (if present).
         if os.path.exists(self.dieFile):
@@ -89,7 +98,7 @@ class SubscribeParams(DRMSParams):
 
 class Arguments(object):
 
-    def __init__(self, parser):
+    def __init__(self, parser=None):
         # This could raise in a few places. Let the caller handle these exceptions.
         if parser:
             self.parser = parser
@@ -128,7 +137,11 @@ class Arguments(object):
             # set attributes directly in the Arguments instance.
             setattr(self, name, value)
         else:
-            raise Exception('args', 'Attempt to set an argument that already exists: ' + name + '.')
+            raise Exception('args', 'Attempt to set an argument that already exists: ' + name + ':' + str(value) + '.')
+            
+    def set(self, name, value):
+        # Sets attribute, even if it exists already.
+        setattr(self, name, value)
 
     def setAllArgs(self):
         for key,val in list(vars(self.parsedArgs).items()):
@@ -147,42 +160,53 @@ class Arguments(object):
             raise Exception('clientConfig', 'Unable to open or parse client-side configuration file ' + file + '.')
         for key, val in cfileDict.items():
             self.setArg(key, val)
+            
+    def dump(self, log):
+        attrList = []
+        for attr in sorted(vars(self)):
+            attrList.append('  ' + attr + ':' + str(getattr(self, attr)))
+        log.writeDebug([ '\n'.join(attrList) ])
 
 class Log(object):
     """Manage a logfile."""
 
-    def __init__(self, file):
+    def __init__(self, file, level, formatter):
         self.fileName = file
-        self.fobj = None
+        self.log = logging.getLogger()
+        self.log.setLevel(level)
+        self.fileHandler = logging.FileHandler(file)
+        self.fileHandler.setLevel(level)
+        self.fileHandler.setFormatter(formatter)
+        self.log.addHandler(self.fileHandler)
         
-        try:
-            head, tail = os.path.split(file)
-
-            if not os.path.isdir(head):
-                os.mkdir(head)
-            fobj = open(self.fileName, 'a')
-        except OSError as exc:
-            type, value, traceback = sys.exc_info()
-            raise Exception('badLogfile', 'Unable to access ' + "'" + value.filename + "'.")
-        except IOError as exc:
-            type, value, traceback = sys.exc_info()
-            raise Exception('badLogfile', 'Unable to open ' + "'" + value.filename + "'.")
-        
-        self.fobj = fobj
-
     def __del__(self):
-        if self.fobj:
-            self.fobj.close()
+        if self.fileHandler:
+            self.log.removeHandler(self.fileHandler)
+            self.fileHandler.flush()
+            self.fileHandler.close()
+            self.fileHandler = None
 
-    def write(self, text):
-        try:
-            lines = ['[' + datetime.now().strftime('%Y-%m-%d %T') + '] ' + line + '\n' for line in text]
-            self.fobj.writelines(lines)
-            self.fobj.flush()
-        except IOError as exc:
-            type, value, traceback = sys.exc_info()
-            raise Exception('badLogwrite', 'Unable to write to ' + value.filename + '.')
+    def writeDebug(self, text):
+        for line in text:
+            self.log.debug(line)
             
+    def writeInfo(self, text):
+        for line in text:
+            self.log.info(line)
+    
+    def writeWarning(self, text):
+        for line in text:
+            self.log.warning(line)
+    
+    def writeError(self, text):
+        for line in text:
+            self.log.error(line)
+            
+    def writeCritical(self, text):
+        for line in text:
+            self.log.critical(line)
+
+
 class RedirectStdFileStreams(object):
     def __new__(cls, stdout=None, stderr=None):
         return super(RedirectStdFileStreams, cls).__new__(cls)
@@ -237,6 +261,14 @@ class ListAction(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
         setattr(namespace, self.dest, values.split(','))
         
+class OverrideAction(argparse.Action):
+    def __init__(self, option_strings, dest, arguments, *args, **kwargs):
+        self.arguments = arguments
+        super(OverrideAction, self).__init__(option_strings, dest, *args, **kwargs)
+        
+    def __call__(self, parser, namespace, values, option_string=None):
+        self.arguments.set(self.dest, values)
+
 class SqlCopy(threading.Thread):
     def __init__(self, readPipe, cursor, dbtable, columns, log):
         self.readPipe = readPipe
@@ -499,9 +531,9 @@ def ingestDumpFile(client, series, cursor, log):
                 except psycopg2.Error as exc:
                     raise Exception('sqlDump', exc.diag.message_primary)
                     
-    # Make sure any previous COPY command completed.
-    if writeFd or copier or writePipe or readPipe:
-        raise Exception('sqlDump', 'Missing EOF terminator for COPY command.')
+        # Make sure any previous COPY command completed.
+        if writeFd or copier or writePipe or readPipe:
+            raise Exception('sqlDump', 'Missing EOF terminator for COPY command.')
 
     finally:
         if writeFd:
@@ -519,7 +551,7 @@ def ingestDumpFile(client, series, cursor, log):
 
     if not committed:
         raise Exception('sqlDump', 'Missing COMMIT statement.')
-
+    
             
 # Main Program
 if __name__ == "__main__":
@@ -532,22 +564,26 @@ if __name__ == "__main__":
 
         arguments = Arguments()
 
-        parser = CmdlParser(usage='%(prog)s [ -h ] cfg=<client configuration file> form=<file containing series requests> agent=<ssh-agent configuration file>[ --logfile=<log-file name> ]')
+        parser = CmdlParser(usage='%(prog)s [ -hjpl ] cfg=<client configuration file> reqtype=<subscribe, resubscribe, unsubscribe> series=<comma-separated list of series> [ --archive=<0, 1>] [ --retention=<number of days>] [ --tapegroup=<tape-group number> ] [ --logfile=<log-file name> ]')
 
         parser.add_argument('cfg', '--config', help='The client-side configuration file used by the subscription service.', metavar='<client configuration file>', dest='slonyCfg', action=CfgAction, arguments=arguments, required=True)
         parser.add_argument('reqtype', '--reqtype', help='The type of request (subscribe, resubscribe, or unsubscribe).', metavar='<request type>', dest='reqtype', required=True)
-        parser.add_argument('agent', '--agent', help='The ssh agent configuration file needed for non-interactive authentication with the server.', metavar='<ssh-agent configuration file>', dest='agent', required=True)
         parser.add_argument('series', '--series', help='A comma-separated list of DRMS series to subscribe/resubscribe to, or to unsubscribe from.', dest='series', action=ListAction, required=True)
-        parser.add_argument('archive', '--archive', help='The tape archive flag for the series - either 0 (do not archive) or 1 (archive).', metavar='<series archive flag>', dest='archive', type=int, default=0)
-        parser.add_argument('retention', '--retention', help='The number of days the series SUs remain on disk before becoming subject to deletion.', metavar='<series SU disk retention>', dest='retention', type=int, default=arguments.getArg('retention'))
-        parser.add_argument('tapegroup', '--tapegroup', help='If the archive flag is 1, the number identifying the group of series that share tape files.', metavar='<series SU tape group>', dest='tapeGroup', type=int, default=arguments.getArg('tapegroup'))
-        parser.add_argument('-p', '--pause', help='Pause and ask for user confirmation before applying the downloaded SQL dump file.', dest='pause', action='store_true', default=False)
+        parser.add_argument('archive', '--archive', help='The tape archive flag for the series - either 0 (do not archive) or 1 (archive).', metavar='<series archive flag>', dest='archive', type=int, action=OverrideAction, arguments=arguments, default=argparse.SUPPRESS)
+        parser.add_argument('retention', '--retention', help='The number of days the series SUs remain on disk before becoming subject to deletion.', metavar='<series SU disk retention>', dest='retention', type=int, action=OverrideAction, arguments=arguments, default=argparse.SUPPRESS)
+        parser.add_argument('tapegroup', '--tapegroup', help='If the archive flag is 1, the number identifying the group of series that share tape files.', metavar='<series SU tape group>', dest='tapeGroup', type=int, action=OverrideAction, arguments=arguments, default=argparse.SUPPRESS)
         parser.add_argument('-j', '--jmd', help="When receiving a dump file, if set then set-up the JMD to pre-fetch the series' Storage Units.", dest='jmd', action='store_true', default=False)
+        parser.add_argument('-p', '--pause', help='Pause and ask for user confirmation before applying the downloaded SQL dump file.', dest='pause', action='store_true', default=False)
         parser.add_argument('-l', '--logfile', help='The file to which logging is written.', metavar='<file name>', dest='logfile', default=os.path.join('.', 'subscribe_' + datetime.now().strftime('%Y%m%d') + '.log'))
+        
+        arguments.setParser(parser)
 
         # Create/Initialize the log file.
-        log = Log(arguments.getArg('logfile'))
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        log = Log(arguments.getArg('logfile'), logging.DEBUG, formatter)
 
+        arguments.dump(log)
+        
         client = arguments.getArg('node')
         lockFile = os.path.join(arguments.getArg('kLocalLogDir'), LOCKFILE)
         dieFile = os.path.join(arguments.getArg('ingestion_path'), 'get_slony_logs.' + client + '.die')
@@ -555,54 +591,13 @@ if __name__ == "__main__":
 
         # In addition to handling termination signals, TerminationHandler also prevents multiple, simultaneous runs of this script.
         with TerminationHandler(lockFile, dieFile, strPid, log) as lock:
+            # del log
+            raise Exception('blah', 'trying to get out')
+        
             writeStream = WriteStream()
             # with RedirectStdFileStreams(stdout=writeStream, stderr=writeStream) as stdStreams:
             with RedirectStdFileStreams(stdout=writeStream.getStream(), stderr=writeStream.getStream()) as stdStreams:
                 print('streams managed')
-                stateFile = os.path.join(arguments.getArg('kLocalLogDir'), SSSTATEFILE)
-                
-                # Load the environment with the ssh-agent configuration file. This file may be either bash- or csh-compatible.
-                bashCfg = False
-                with open(arguments.getArg('agent'), mode='r', encoding='utf-8') as fin:
-                    agentContent = fin.read().splitlines()
-                    regexp = re.compile(r'^\s*export')
-                    for line in agentContent:
-                        match = regexp.match(line)
-                        if match:
-                            bashCfg = True
-                            break
-                            
-                if bashCfg:
-                    cmd = ['bash', '-c', 'source ' + arguments.getArg('agent') + ' && env']
-                    log.write(['ssh-agent source file is bash-compatible.'])
-                else:
-                    cmd = ['csh', '-c', 'source ' + arguments.getArg('agent') + ' && env']
-                    log.write(['ssh-agent source file is csh-compatible.'])
-                    
-                try:
-                    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
-                    
-                except OSError as exc:
-                    raise Exception('agent', "Cannot source agent-configuration file '" + ' '.join(cmd) + "' ")
-                except ValueError as exc:
-                    raise Exception('agent', "shell command '" + ' '.join(cmd) + "' called with invalid arguments.")
-                    
-                # Call this after every library call, just in case the library or program writes to stdout or stderr.
-                log.write(writeStream.getLines())
-
-                regexp1 = re.compile(r'^\s*SSH_AUTH_SOCK')
-                regexp2 = re.compile(r'^\s*SSH_AGENT_PID')
-                
-                for line in proc.stdout:
-                    (keyBytes, _, valueBytes) = line.rstrip().partition(b'=')
-                    key = keyBytes.decode('utf-8')
-                    value = valueBytes.decode('utf-8')
-                    if regexp1.match(key) or regexp2.match(key):
-                        print('Adding to environment: (' + key + ', ' + value + ')')
-                        os.environ[key] = value
-                        
-                proc.communicate()
-
                 cluster = arguments.getArg('slony_cluster')
 
                 # That was fun. Now, determine if client is a site that has never subscribed to a series before.
@@ -645,7 +640,7 @@ if __name__ == "__main__":
                     seriesList = arguments.getArg('series')
                     if len(series) > 1:
                         raise Exception('invalidArgument', 'Please subscribe to a single series at a time.')
-                    else if len(series) == 0:
+                    elif len(series) == 0:
                         raise Exception('invalidArgument', 'Please provide a series to which you would like to subscribe.')
                         
                     series = seriesList[0]
