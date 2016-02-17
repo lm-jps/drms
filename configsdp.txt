@@ -238,7 +238,7 @@ __PROJ__
              <subdir>stats</subdir>
              <subdir>egsehmicomp</subdir>
              <subdir>imrotate</subdir>
-             <subdir>projection/subdir>
+             <subdir>projection</subdir>
        </subdirs>
    </proj>
    <proj>
