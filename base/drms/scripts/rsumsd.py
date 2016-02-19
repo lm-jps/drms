@@ -1324,7 +1324,7 @@ def processSUs(url, sunums, sus, reqTable, request, dbUser, binPath, log, reproc
                 # status of the suTable rows. If we do not releaes the lock, then we could deadlock here.
                 sus.releaseLock()
 
-                Downloader.eventMaxThreads.wait() # This will cause this thread to wait until a worker thread completes.
+                Downloader.eventMaxThreads.wait()
 
                 sus.acquireLock()
                 # We woke up, but we do not know if there are any open threads in the thread pool. Loop and check
@@ -1573,10 +1573,6 @@ if __name__ == "__main__":
                                         except psycopg2.Error as exc:
                                             # Handle database-command errors.
                                             raise Exception('dbUpdate', exc.diag.message_primary)
-                                            
-                                # Right here is where we can find orphaned sus records and delete them. We have a list of all reachable SUs now that we've 
-                                # iterated through the pending requests. We now iterate through ALL sus records and delete any that are not reachable.
-                                xxx
                 
                                 # For each 'N' request in the request table, start a new set of downloads (if there is no download currently running -
                                 # i.e., no SU record) or increment the refcounts on the downloads (if there are downloads currently running - i.e.,
@@ -1607,7 +1603,6 @@ if __name__ == "__main__":
                                     unknown = []
                                     known = []
                                     processing = {} # The SUs in sunums that are currently being processed. Use this to avoid duplicate SUs.
-                                    skipRequest = False
 
                                     for asunum in sunums:
                                         if str(asunum) in processing:
@@ -1618,15 +1613,7 @@ if __name__ == "__main__":
                                             processing[str(asunum)] = True
                                             
                                         try:
-                                            asu = sus.get([asunum]) # Will raise if asunum is unknown.
-                                            
-                                            # If the SU is in the 'E' or 'C' state, then we cannot start this request. We must wait until
-                                            # this SU has been cleared out of the sus table when the pending requests are processed.
-                                            if asu[0]['status'] != 'P':
-                                                rslog.write(['Deferring request, id ' + str(arequest['requestid']) + '. At least one previous request for this SU must be completed first.'])
-                                                skipRequest = True
-                                                break
-                                            
+                                            asu = sus.get([asunum])
                                             rslog.write(['A download for SU ' + str(asunum)+ ' is already in progress.'])
                                             known.append(asunum)
                                         except Exception as exc:
@@ -1638,9 +1625,6 @@ if __name__ == "__main__":
                     
                                             if etype == 'unknownSunum':
                                                 unknown.append(asunum)
-                                                
-                                    if skipRequest:
-                                        continue
  
                                     # Increment the refcount on all SU records for the SUs being requested by the new request. This modifies the
                                     # sus object.
