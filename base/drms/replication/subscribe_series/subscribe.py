@@ -185,6 +185,11 @@ class Log(object):
             self.fileHandler.flush()
             self.fileHandler.close()
             self.fileHandler = None
+            
+    def getLevel(self):
+        # Hacky way to get the level - make a dummy LogRecord
+        logRecord = self.log.makeRecord(self.log.name, self.log.getEffectiveLevel(), None, '', '', None, None)
+        return logRecord.levelname
 
     def writeDebug(self, text):
         for line in text:
@@ -262,12 +267,43 @@ class ListAction(argparse.Action):
         setattr(namespace, self.dest, values.split(','))
         
 class OverrideAction(argparse.Action):
+    '''
+    This class sets the arguments directly in the Arguments object passed in
+    the arguments parameter. When the argument parser is called, the arguments
+    will get set in the arguments::parsedArgs property, which then get copied
+    as properties into arguments, the Arguments object. If the user were to not
+    provide a value for an argument on the command line, then the parser would
+    set the argument's value to None (the default) in arguments::parsedArgs, 
+    which would then overwrite the value set in arguments, the Arguments
+    object, by the CfgAction class. To allow a default to be set by the
+    CfgAction and not have it overwritten by the default value of None set by the
+    parser when the user does not supply a value on the command line, suppress the
+    setting of a default value in the add_argument() call for the argument.
+    '''
     def __init__(self, option_strings, dest, arguments, *args, **kwargs):
         self.arguments = arguments
         super(OverrideAction, self).__init__(option_strings, dest, *args, **kwargs)
         
     def __call__(self, parser, namespace, values, option_string=None):
         self.arguments.set(self.dest, values)
+
+class LogLevelAction(argparse.Action):
+    def __call__(self, parser, namespace, value, option_string=None):
+        valueLower = value.lower()
+        if valueLower == 'critical':
+            level = logging.CRITICAL
+        elif valueLower == 'error':
+            level = logging.ERROR
+        elif valueLower == 'warning':
+            level = logging.WARNING
+        elif valueLower == 'info':
+            level = logging.INFO
+        elif valueLower == 'debug':
+            level = logging.DEBUG
+        else:
+            level = logging.ERROR
+            
+        setattr(namespace, self.dest, level)
 
 class SqlCopy(threading.Thread):
     def __init__(self, readPipe, cursor, dbtable, columns, log):
@@ -574,13 +610,15 @@ if __name__ == "__main__":
         parser.add_argument('tapegroup', '--tapegroup', help='If the archive flag is 1, the number identifying the group of series that share tape files.', metavar='<series SU tape group>', dest='tapeGroup', type=int, action=OverrideAction, arguments=arguments, default=argparse.SUPPRESS)
         parser.add_argument('-j', '--jmd', help="When receiving a dump file, if set then set-up the JMD to pre-fetch the series' Storage Units.", dest='jmd', action='store_true', default=False)
         parser.add_argument('-p', '--pause', help='Pause and ask for user confirmation before applying the downloaded SQL dump file.', dest='pause', action='store_true', default=False)
+        parser.add_argument('-t', '--loglevel', help='Specifies the amount of logging to perform. In increasing order: critical, error, warning, info, debug', dest='loglevel', action=LogLevelAction, default=logging.ERROR)
         parser.add_argument('-l', '--logfile', help='The file to which logging is written.', metavar='<file name>', dest='logfile', default=os.path.join('.', 'subscribe_' + datetime.now().strftime('%Y%m%d') + '.log'))
         
         arguments.setParser(parser)
 
         # Create/Initialize the log file.
-        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-        log = Log(arguments.getArg('logfile'), logging.DEBUG, formatter)
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+        log = Log(arguments.getArg('logfile'), arguments.getArg('loglevel'), formatter)
+        log.writeCritical(['Logging threshold level is ' + log.getLevel() + '.'])
 
         arguments.dump(log)
         
