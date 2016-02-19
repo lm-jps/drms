@@ -1031,7 +1031,7 @@ if __name__ == "__main__":
         with RedirectStdFileStreams(stdout=writeStream.getStream(), stderr=writeStream.getStream()) as stdStreams:
             subscribeLock = join(arguments.getArg('kServerLockDir'), arguments.getArg('sublock'))
             with terminationHandler(log, subscribeLock):
-                with psycopg2.connect(database=arguments.getArg('dbname'), user=arguments.getArg('dbuser'), host=arguments.getArg('dbhost'), port=str(arguments.getArg(dbport))) as conn:
+                with psycopg2.connect(database=arguments.getArg('dbname'), user=arguments.getArg('dbuser'), host=arguments.getArg('dbhost'), port=str(arguments.getArg('dbport'))) as conn:
                     log.write([ 'Connected to database ' + arguments.getArg('dbname') + ' on ' + arguments.getArg('dbhost') + ':' + str(arguments.getArg(dbport)) + ' as user ' + arguments.getArg('dbuser') ])
                     with conn.cursor() as cursor:
                         # Read the requests table into memory.

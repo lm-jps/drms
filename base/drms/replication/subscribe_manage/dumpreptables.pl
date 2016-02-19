@@ -207,36 +207,6 @@ else
             {
                 if ($newclient)
                 {
-                    # ----
-                    # Fill the sl_sequence_offline table and provide initial 
-                    # values for all sequences.
-                    # ----
-                    
-                    # This goes into the .sql file. Everything that goes into the .sql file is sent to stdout.
-                    print "COPY $clnsp.sl_sequence_offline FROM stdin;\n";
-                    # This will provide the values that go into the $clnsp.sl_sequence_offline table at the client site. This command
-                    # returns rows, unlike previous commands. Must call selectall_arrayref().
-                    $stmnt = "SELECT seq_id::text || '\t' || seq_relname  || '\t' || seq_nspname FROM $clnsp.sl_sequence;";
-                    $rrows = $dbh->selectall_arrayref($stmnt, undef);
-                    
-                    if (NoErr($rrows, \$dbh, $stmnt))
-                    {
-                        my(@rows) = @$rrows;
-                        
-                        foreach my $row (@rows)
-                        {
-                            # Print each row to stdout.
-                            print "$row->[0]\n";
-                        }
-                        
-                        # Send an EOF to the COPY command.
-                        print "\\\.\n";
-                    }
-                    else
-                    {
-                        $rv = &kRetDbQuery;
-                    }
-
                     if ($rv == &kRetSuccess)
                     {
                         # ----
@@ -255,6 +225,44 @@ else
                                 # Print each row to stdout (there should be only one row).
                                 print "$row->[0]\n";
                             }
+                        }
+                        else
+                        {
+                            $rv = &kRetDbQuery;
+                        }
+                    }
+                
+                    # Do the COPY command after the INSERT INTO command so that all COPY commands are at the end of the SQL dump file.
+                    # This way the client can split the SQL dump file and execute the non-COPY commands first in one transaction, 
+                    # and then do the potentially large COPY commands in a second transaction. If the first set of commands succeeds,
+                    # and the second set fails, then we end up with an empty series on the client host. An error message will
+                    # indicate this, and the client can then re-subscribe to try again.
+                    if ($rv == &kRetSuccess)
+                    {
+                        # ----
+                        # Fill the sl_sequence_offline table and provide initial 
+                        # values for all sequences.
+                        # ----
+                    
+                        # This goes into the .sql file. Everything that goes into the .sql file is sent to stdout.
+                        print "COPY $clnsp.sl_sequence_offline FROM stdin;\n";
+                        # This will provide the values that go into the $clnsp.sl_sequence_offline table at the client site. This command
+                        # returns rows, unlike previous commands. Must call selectall_arrayref().
+                        $stmnt = "SELECT seq_id::text || '\t' || seq_relname  || '\t' || seq_nspname FROM $clnsp.sl_sequence;";
+                        $rrows = $dbh->selectall_arrayref($stmnt, undef);
+                    
+                        if (NoErr($rrows, \$dbh, $stmnt))
+                        {
+                            my(@rows) = @$rrows;
+                        
+                            foreach my $row (@rows)
+                            {
+                                # Print each row to stdout.
+                                print "$row->[0]\n";
+                            }
+                        
+                            # Send an EOF to the COPY command.
+                            print "\\\.\n";
                         }
                         else
                         {

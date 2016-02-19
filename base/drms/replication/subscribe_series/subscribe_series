@@ -1156,7 +1156,7 @@ then
     then
         logwrite "At least one series was removed from subscription; run ingest program, then delete series removed from subscription."
         logwrite "Running $ingestprog $config_file."
-        "$ingestprog" "$config_file"
+        "$kRSPerl" "$ingestprog" "$config_file"
         if [ $? -ne 0 ]
         then
             logwrite "SQL-log-ingestion failure - unable to delete series $series."

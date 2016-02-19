@@ -443,7 +443,7 @@ fi
 
 #-------------------------------------------------------------------------
 # Adding the new entry to the slon log parser config file
-# This was moved to subscription_cleanup, into the critical region
+# This was moved to dumpreptables.pl, into the critical region
 #-------------------------------------------------------------------------
 #logwrite "Adding the new entry to $parser_config"
 #logwrite "[$subscribers_dir/$node.new	$newtablefile]" nl

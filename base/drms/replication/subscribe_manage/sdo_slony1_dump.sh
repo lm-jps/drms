@@ -2,7 +2,7 @@
 # ----------
 # slony1_dump.sh
 #
-# $Id: sdo_slony1_dump.sh,v 1.11 2014/03/17 19:44:14 arta Exp $
+# $Id: sdo_slony1_dump.sh,v 1.12 2016/02/19 20:24:23 arta Exp $
 #
 #	This script creates a special data only dump from a subscriber
 #	node. The stdout of this script, fed into psql for a database that
@@ -127,12 +127,12 @@ cat <<_EOF_
 -- ----------------------------------------------------------------------
 -- SCHEMA $clname
 -- ----------------------------------------------------------------------
-create schema $clname;
+CREATE SCHEMA $clname;
 
 -- ----------------------------------------------------------------------
 -- TABLE sl_sequence_offline
 -- ----------------------------------------------------------------------
-create table $clname.sl_sequence_offline (
+CREATE TABLE IF NOT EXISTS $clname.sl_sequence_offline (
 	seq_id				int4,
 	seq_relname			name NOT NULL,
 	seq_nspname			name NOT NULL,
@@ -145,7 +145,7 @@ create table $clname.sl_sequence_offline (
 -- ----------------------------------------------------------------------
 -- TABLE sl_archive_tracking
 -- ----------------------------------------------------------------------
-create table $clname.sl_archive_tracking (
+CREATE TABLE IF NOT EXISTS $clname.sl_archive_tracking (
 	at_counter			bigint,
 	at_created			timestamp,
 	at_applied			timestamp
@@ -154,8 +154,8 @@ create table $clname.sl_archive_tracking (
 -- -----------------------------------------------------------------------------
 -- FUNCTION sequenceSetValue_offline (seq_id, last_value)
 -- -----------------------------------------------------------------------------
-create or replace function $clname.sequenceSetValue_offline(int4, int8) returns int4
-as '
+CREATE OR REPLACE FUNCTION $clname.sequenceSetValue_offline(int4, int8) RETURNS int4
+AS '
 declare
 	p_seq_id			alias for \$1;
 	p_last_value		alias for \$2;
@@ -185,15 +185,15 @@ end;
 -- ---------------------------------------------------------------------------------------
 -- This can just be a simple stub function; it does not need to do anything...
 -- ---------------------------------------------------------------------------------------
-create or replace function $clname.finishTableAfterCopy(int4) returns int4 as
+CREATE OR REPLACE FUNCTION $clname.finishTableAfterCopy(int4) RETURNS int4 AS
   'select 1'
 language sql;
 
 -- ---------------------------------------------------------------------------------------
 -- FUNCTION archiveTracking_offline (new_counter, created_timestamp)
 -- ---------------------------------------------------------------------------------------
-create or replace function $clname.archiveTracking_offline(int8, timestamp) returns int8
-as '
+CREATE OR REPLACE FUNCTION $clname.archiveTracking_offline(int8, timestamp) RETURNS int8
+AS '
 declare
 	p_new_seq	alias for \$1;
 	p_created	alias for \$2;

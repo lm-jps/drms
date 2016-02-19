@@ -14,6 +14,17 @@ export LD_LIBRARY_PATH=/usr/local/pgsql/lib
 #-------------------------------------------------------------------------
 # syntax check
 #-------------------------------------------------------------------------
+
+#-------------------------------------------------------------------------
+# ART
+# This file writes "failure" on the first line of the sqldone file if there is a problem, then exits.
+# Otherwise, it copies the input_file to sqldone, although it isn't clear what is contained in input_file.
+# But the client looks for the presence of "failure" only in this file - no other information is needed
+# in sqldone.
+# As far as I can tell, the only thing needed in the input_file is two columns: the first contains the 
+# series, and the second contains the string "subscribe". The columns are white-space separated.
+#-------------------------------------------------------------------------
+
 if [ $# -eq 6 ]
 then
 #        config_file=$1
