@@ -7,7 +7,6 @@ if sys.version_info < (3, 2):
 
 import os
 import re
-import subprocess
 from datetime import datetime, timedelta
 from io import StringIO
 from pySmartDL import SmartDL
@@ -16,6 +15,7 @@ import argparse
 import threading
 import logging
 import signal
+import psycopg2
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../../include'))
 from drmsparams import DRMSParams
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../../base/libs/py'))
@@ -25,10 +25,12 @@ sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '..'))
 from toolbox import getCfg
 
 RV_SUCCESS = 0
-RV_DRMSPARAMS = 1
-RV_ARGS = 2
-RV_AGENT = 3
-RV_LOCK = 4
+RV_DBCONNECTION = 1
+RV_DRMSPARAMS = 2
+RV_ARGS = 3
+RV_CLIENTCONFIG = 4
+RV_LOCK = 5
+RV_DBCMD = 6
 
 STATUS_REQUEST_QUEUED = 'requestQueued'
 STATUS_REQUEST_PROCESSING = 'requestProcessing'
@@ -56,7 +58,7 @@ class TerminationHandler(DrmsLock):
         self.lockFile = lockFile
         self.dieFile = dieFile
         self.log = log
-        log.writeInfo([ 'Lock file is ' + lockFile + '.' ])
+        log.writeInfo([ 'Lock file is ' + lockFile + '.', 'Die file is ' + dieFile + '.' ])
         super(TerminationHandler, self).__init__(lockFile, strPid)
         
     def __enter__(self):
@@ -210,47 +212,6 @@ class Log(object):
     def writeCritical(self, text):
         for line in text:
             self.log.critical(line)
-
-
-class RedirectStdFileStreams(object):
-    def __new__(cls, stdout=None, stderr=None):
-        return super(RedirectStdFileStreams, cls).__new__(cls)
-    
-    def __init__(self, stdout=None, stderr=None):
-        self.stdout = stdout or sys.stdout
-        self.stderr = stderr or sys.stderr
-
-    def __enter__(self):
-        self.stdoutOrig = sys.stdout
-        self.stderrOrig = sys.stderr
-        self.stdoutOrig.flush()
-        self.stderrOrig.flush()
-        sys.stdout = self.stdout
-        sys.stderr = self.stderr
-
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        self.stdout.flush()
-        self.stderr.flush()
-        # Restore original stdout and stderr.
-        sys.stdout = self.stdoutOrig
-        sys.stderr = self.stderrOrig
-        
-class WriteStream(object):
-    def __init__(self):
-        self.io = StringIO()
-        
-    def __del__(self):
-        self.io.close()
-        
-    def getStream(self):
-        return self.io
-        
-    def getLines(self):
-        self.io.seek(0)
-        lines = [line.rstrip() for line in self.io.readlines()]
-        self.io.truncate(0)
-        return lines
         
 class CfgAction(argparse.Action):
     def __init__(self, option_strings, dest, arguments, *args, **kwargs):
@@ -331,10 +292,31 @@ class SqlCopy(threading.Thread):
         self.sdEvent.set()
         self.join(30)
 
-def dbTableExists(cursor, schema, table):
+def dbSchemaExists(conn, schema):
+    cmd = "SELECT count(*) FROM pg_catalog.pg_namespace WHERE nspname = '" + schema + "'"
+    
+    try:
+        cursor = conn.cursor()
+        cursor.execute(cmd)
+        records = cursor.fetchall()
+        if len(records) > 1:
+            raise Exception('dbResponse', 'Unexpected number of database rows returned from query: ' + cmd + '.')
+
+    except psycopg2.Error as exc:
+        raise Exception('dbCmd', exc.diag.message_primary)
+    finally:
+        conn.rollback() # closes the cursor
+        
+    if len(records) == 1:
+        return True
+    else:
+        return False
+
+def dbTableExists(conn, schema, table):
     cmd = "SELECT n.nspname, c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = '" + schema + "' AND c.relname = '" + table + "'"
 
     try:
+        cursor = conn.cursor()
         cursor.execute(cmd)
         records = cursor.fetchall()
         if len(records) > 1:
@@ -343,17 +325,18 @@ def dbTableExists(cursor, schema, table):
     except psycopg2.Error as exc:
         raise Exception('dbCmd', exc.diag.message_primary)
     finally:
-        cursor.rollback()
+        conn.rollback() # closes the cursor
         
     if len(records) == 1:
         return True
     else:
         return False
         
-def dbFunctionExists(cursor, schema, function):
+def dbFunctionExists(conn, schema, function):
     cmd = "SELECT n.nspname, c.proname FROM pg_proc c JOIN pg_namespace n ON n.oid = c.pronamespace WHERE n.nspname = '" + schema + "' AND c.proname = '" + function + "'"
     
     try:
+        cursor = conn.cursor()
         cursor.execute(cmd)
         records = cursor.fetchall()
         if len(records) > 1:
@@ -362,14 +345,14 @@ def dbFunctionExists(cursor, schema, function):
     except psycopg2.Error as exc:
         raise Exception('dbCmd', exc.diag.message_primary)
     finally:
-        cursor.rollback()
+        conn.rollback() # closes the cursor
         
     if len(records) == 1:
         return True
     else:
         return False
 
-def seriesExists(cursor, series):
+def seriesExists(conn, series):
     # Well, this is a complicated question. A remote site can subscribe to a series only if it is on the external website (i.e., jsoc.stanford.edu).
     # However, certain programs that provide lists of series put whitelisted series in these list too. However, remote sites cannot
     # subscribe to white-listed series. The best way to get the list of subscribe-able series is to query the DB directly, looking at 
@@ -385,6 +368,7 @@ def seriesExists(cursor, series):
     cmd = 'SELECT seriesname FROM ' + ns + ".drms_series WHERE lower(seriesname) = '" + series.lower() + "'"
  
     try:
+        cursor = conn.cursor()
         cursor.execute(cmd)
         records = cursor.fetchall()
         if len(records) > 1:
@@ -393,14 +377,14 @@ def seriesExists(cursor, series):
     except psycopg2.Error as exc:
         raise Exception('dbCmd', exc.diag.message_primary)
     finally:
-        cursor.rollback()
+        conn.rollback() # closes the cursor
     
     if len(records) == 1:
         return True
     else:
         return False
         
-def seriesIsPublished(cursor, serviceURL, series):
+def seriesIsPublished(serviceURL, series):
     cgiArgs = { 'qseries' : series }
     arguments = urllib.parse.urlencode(cgiArgs) # For use with HTTP GET requests (not POST).
     ans = False
@@ -412,7 +396,7 @@ def seriesIsPublished(cursor, serviceURL, series):
         
     return ans
     
-def clientIsSubscribed(cursor, client, serviceURL, series):
+def clientIsSubscribed(client, serviceURL, series):
     cgiArgs = { 'series' : series }
     arguments = urllib.parse.urlencode(cgiArgs) # For use with HTTP GET requests (not POST).
     ans = False
@@ -618,7 +602,7 @@ if __name__ == "__main__":
         # Create/Initialize the log file.
         formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
         log = Log(arguments.getArg('logfile'), arguments.getArg('loglevel'), formatter)
-        log.writeCritical(['Logging threshold level is ' + log.getLevel() + '.'])
+        log.writeCritical(['Logging threshold level is ' + log.getLevel() + '.']) # Critical - always write the log level to the log.
 
         arguments.dump(log)
         
@@ -626,255 +610,266 @@ if __name__ == "__main__":
         lockFile = os.path.join(arguments.getArg('kLocalLogDir'), LOCKFILE)
         dieFile = os.path.join(arguments.getArg('ingestion_path'), 'get_slony_logs.' + client + '.die')
         strPid = str(os.getpid())
+        
+        log.writeCritical([ 'Client is ' + client + '.' ])
 
         # In addition to handling termination signals, TerminationHandler also prevents multiple, simultaneous runs of this script.
         with TerminationHandler(lockFile, dieFile, strPid, log) as lock:
-            # del log
-            raise Exception('blah', 'trying to get out')
+            cluster = arguments.getArg('slony_cluster')
+            
+            # Connect to database.
+            try:
+                with psycopg2.connect(database=arguments.getArg('pg_dbname'), user=arguments.getArg('pg_user'), host=arguments.getArg('pg_host'), port=str(arguments.getArg('pg_port'))) as conn:                    
+                    if dbSchemaExists(conn, '_' + cluster):
+                        # Check existing installation to make sure there aren't any existing issues.
+                        # If the _jsoc schema exists, then the following should also exist:
+                        #   _jsoc.sl_sequence_offline (relation)
+                        #   _jsoc.sl_archive_tracking (relation)
+                        #   _jsoc.sequenceSetValue_offline (function)
+                        #   _jsoc.finishTableAfterCopy (function)
+                        #   _jsoc.archiveTracking_offline (function)
+                        if not dbTableExists(conn, '_' + cluster, 'sl_sequence_offline'):
+                            raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database table: _' + cluster + '.sl_sequence_offline.')
+                        if not dbTableExists(conn, '_' + cluster, 'sl_archive_tracking'):
+                            raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database table: _' + cluster + '.sl_archive_tracking.')
+                        if not dbFunctionExists(conn, '_' + cluster, 'sequenceSetValue_offline'):
+                            raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database function: _' + cluster + '.sequenceSetValue_offline.')
+                        if not dbFunctionExists(conn, '_' + cluster, 'finishTableAfterCopy'):
+                            raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database function: _' + cluster + '.finishTableAfterCopy.')
+                        if not dbFunctionExists(conn, '_' + cluster, 'archiveTracking_offline'):
+                            raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database function: _' + cluster + '.archiveTracking_offline.')
         
-            writeStream = WriteStream()
-            # with RedirectStdFileStreams(stdout=writeStream, stderr=writeStream) as stdStreams:
-            with RedirectStdFileStreams(stdout=writeStream.getStream(), stderr=writeStream.getStream()) as stdStreams:
-                print('streams managed')
-                cluster = arguments.getArg('slony_cluster')
+                        newSite = False
+                        log.writeInfo([ 'Client ' + client + ' is NOT a first-time subscriber.' ])
+                    else:
+                        newSite = True
+                        log.writeInfo([ 'Client ' + client + ' is a first-time subscriber.' ])
+            
+                    # del log
+                    raise Exception('blah', 'trying to get out')
 
-                # That was fun. Now, determine if client is a site that has never subscribed to a series before.
-                if schemaExists(cursor, '_' + cluster):
-                    # Check existing installation to make sure there aren't any existing issues.
-                    # If the _jsoc schema exists, then the following should also exist:
-                    #   _jsoc.sl_sequence_offline (relation)
-                    #   _jsoc.sl_archive_tracking (relation)
-                    #   _jsoc.sequenceSetValue_offline (function)
-                    #   _jsoc.finishTableAfterCopy (function)
-                    #   _jsoc.archiveTracking_offline (function)
-                    if not dbTableExists(cursor, '_' + cluster, 'sl_sequence_offline'):
-                        raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database table: _' + cluster + '.ssl_sequence_offline.')
-                    if not dbTableExists(cursor, '_' + cluster, 'sl_archive_tracking'):
-                        raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database table: _' + cluster + '.sl_archive_tracking.')
-                    if not dbFunctionExists(cursor, '_' + cluster, 'sequenceSetValue_offline'):
-                        raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database function: _' + cluster + '.sequenceSetValue_offline.')
-                    if not dbFunctionExists(cursor, '_' + cluster, 'finishTableAfterCopy'):
-                        raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database function: _' + cluster + '.finishTableAfterCopy.')
-                    if not dbFunctionExists(cursor, '_' + cluster, 'archiveTracking_offline'):
-                        raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database function: _' + cluster + '.archiveTracking_offline.')
+        
+                    serviceURL = arguments.getArg('kSubService')
+                    pubServiceURL = arguments.getArg('kPubListService')
+                    xferURL = arguments.getArg('kSubXfer')
+        
+                    reqType = arguments.getArg('reqtype').lower()
+                    archive = arguments.getArg('archive')
+                    retention = arguments.getArg('retention')
+                    jmdIntegration = arguments.getArg('jmd')
+
+                    if reqType == 'subscribe':
+                        # Make sure that there is only a single series in the series list and make sure that
+                        # the series is one that does not exist locally and make sure that the client is not
+                        # already subscribed to the series and make sure that the series published.
+                        seriesList = arguments.getArg('series')
+                        if len(series) > 1:
+                            raise Exception('invalidArgument', 'Please subscribe to a single series at a time.')
+                        elif len(series) == 0:
+                            raise Exception('invalidArgument', 'Please provide a series to which you would like to subscribe.')
                 
-                    newSite = False
-                else:
-                    newSite = True
-                
-                serviceURL = arguments.getArg('kSubService')
-                pubServiceURL = arguments.getArg('kPubListService')
-                xferURL = arguments.getArg('kSubXfer')
-                
-                reqType = arguments.getArg('reqtype').lower()
-                archive = arguments.getArg('archive')
-                retention = arguments.getArg('retention')
-                jmdIntegration = arguments.getArg('jmd')
+                        series = seriesList[0]
+            
+                        if seriesExists(conn, series):
+                            raise Exception('invalidArgument', series + ' already exists locally. Please select a different series.')
 
-                if reqType == 'subscribe':
-                    # Make sure that there is only a single series in the series list and make sure that
-                    # the series is one that does not exist locally and make sure that the client is not
-                    # already subscribed to the series and make sure that the series published.
-                    seriesList = arguments.getArg('series')
-                    if len(series) > 1:
-                        raise Exception('invalidArgument', 'Please subscribe to a single series at a time.')
-                    elif len(series) == 0:
-                        raise Exception('invalidArgument', 'Please provide a series to which you would like to subscribe.')
-                        
-                    series = seriesList[0]
+                        if clientIsSubscribed(client, pubServiceURL, series):
+                            raise Exception('invalidArgument', 'You are already subscribed to ' + series + '. Please select a different series.')
+
+                        if not seriesIsPubished(series):
+                            raise Exception('invalidArgument', 'Series ' + series + ' is not published and not available for subscription.')
+
+                        if newSite:
+                            # Make sure the admin.ns table exists, because we are going to insert into it. And if it is missing,
+                            # then the NetDRMS is bad.
+                            if not dbTableExists(cursor, 'admin.ns'):
+                                raise Exception('drms', 'Your DRMS is missing a required database relation (or the containing schema): admin.ns')
                     
-                    if seriesExists(cursor, series):
-                        raise Exception('invalidArgument', series + ' already exists locally. Please select a different series.')
+                            # We are also going to insert into several database tables. Make sure they exist.
+                            if not dbTableExists(conn, schema, 'drms_series'):
+                                raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database table: ' + schema + '.drms_series')
+                            if not dbTableExists(conn, schema, 'drms_keyword'):
+                                raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database table: ' + schema + '.drms_keyword')
+                            if not dbTableExists(conn, schema, 'drms_link'):
+                                raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database table: ' + schema + '.drms_link')
+                            if not dbTableExists(conn, schema, 'drms_segment'):
+                                raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database table: ' + schema + '.drms_segment')
+                            if not dbTableExists(conn, schema, 'drms_session'):
+                                raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database table: ' + schema + '.drms_session')
+                            if not dbTableExists(conn, schema, 'drms_sessionid_seq'):
+                                raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database table: ' + schema + '.drms_sessionid_seq')
 
-                    if clientIsSubscribed(cursor, client, pubServiceURL, series):
-                        raise Exception('invalidArgument', 'You are already subscribed to ' + series + '. Please select a different series.')
+                        # To subscribe to a series, provide client, series, archive, retention, tapegroup, newSite.
+                        cgiArgs = { 'op' : 'subscribe', 'client' : client, 'series' : series, 'archive' : archive, 'retention' : retention, 'tapegroup' : tapeGroup, 'newsite' : newSite }
+                    elif reqType == 'resubscribe':
+                        # Make sure that newSite is False.
+                        if newSite:
+                            raise Exception('invalidArgument', 'Cannot re-subscribe to series. Client ' + client + ' has never subscribed to any series')
+            
+                        # Make sure that there is only a single series in the series list and make sure that
+                        # the series exists locally and make sure that the client is currently subscribed to this series and
+                        # make sure the series is still published.
+                        seriesList = arguments.getArg('series')
+                        if len(series) > 1:
+                            raise Exception('invalidArgument', 'Please re-subscribe to a single series at a time.')
+                        elif len(series) == 0:
+                            raise Exception('invalidArgument', 'Please provide a series to which you would like to re-subscribe.')
 
-                    if not seriesIsPubished(cursor, series):
-                        raise Exception('invalidArgument', 'Series ' + series + ' is not published and not available for subscription.')
+                        series = seriesList[0]
 
-                    if newSite:
-                        # Make sure the admin.ns table exists, because we are going to insert into it. And if it is missing,
-                        # then the NetDRMS is bad.
-                        if not dbTableExists(cursor, 'admin.ns'):
-                            raise Exception('drms', 'Your DRMS is missing a required database relation (or the containing schema): admin.ns')
-                            
-                        # We are also going to insert into several database tables. Make sure they exist.
-                        if not dbTableExists(cursor, schema, 'drms_series'):
-                            raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database table: ' + schema + '.drms_series')
-                        if not dbTableExists(cursor, schema, 'drms_keyword'):
-                            raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database table: ' + schema + '.drms_keyword')
-                        if not dbTableExists(cursor, schema, 'drms_link'):
-                            raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database table: ' + schema + '.drms_link')
-                        if not dbTableExists(cursor, schema, 'drms_segment'):
-                            raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database table: ' + schema + '.drms_segment')
-                        if not dbTableExists(cursor, schema, 'drms_session'):
-                            raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database table: ' + schema + '.drms_session')
-                        if not dbTableExists(cursor, schema, 'drms_sessionid_seq'):
-                            raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database table: ' + schema + '.drms_sessionid_seq')
-
-                    # To subscribe to a series, provide client, series, archive, retention, tapegroup, newSite.
-                    cgiArgs = { 'op' : 'subscribe', 'client' : client, 'series' : series, 'archive' : archive, 'retention' : retention, 'tapegroup' : tapeGroup, 'newsite' : newSite }
-                elif reqType == 'resubscribe':
-                    # Make sure that newSite is False.
-                    if newSite:
-                        raise Exception('invalidArgument', 'Cannot re-subscribe to series. Client ' + client + ' has never subscribed to any series')
-                    
-                    # Make sure that there is only a single series in the series list and make sure that
-                    # the series exists locally and make sure that the client is currently subscribed to this series and
-                    # make sure the series is still published.
-                    seriesList = arguments.getArg('series')
-                    if len(series) > 1:
-                        raise Exception('invalidArgument', 'Please re-subscribe to a single series at a time.')
-                    elif len(series) == 0:
-                        raise Exception('invalidArgument', 'Please provide a series to which you would like to re-subscribe.')
-
-                    series = seriesList[0]
-
-                    if not seriesExists(cursor, series):
-                        raise Exception('invalidArgument', series + ' does not exist locally. Please select a different series to which you would like to re-subscribe.')
-                    
-                    if not clientIsSubscribed(cursor, client, pubServiceURL, series):
-                        raise Exception('invalidArgument', 'You are not subscribed to ' + series + '. Please select a different series to which you would like to re-subscribe.')
-                        
-                    if not seriesIsPubished(cursor, series):
-                        raise Exception('invalidArgument', 'Series ' + series + ' is not published and not available for re-subscription.')
-
-                    # To re-subscribe to a series, provide client, series.
-                    cgiArgs = { 'op' : 'resubscribe', 'client' : client, 'series' : series }
-                elif reqType == 'unsubscribe':
-                    # Make sure that newSite is False.
-                    if newSite:
-                        raise Exception('invalidArgument', 'Cannot un-subscribe from series. Client ' + client + ' has never subscribed to any series')
-                        
-                    # Make sure there is at least one series and make sure that the series exist locally and 
-                    # make sure that the client is currently subscribed to these series.
-                    seriesList = arguments.getArg('series')
-                    if len(series) < 1:
-                        raise Exception('invalidArgument', 'Please provide one or more series from which you would like to un-subscribe.')
-
-                    for series in seriesList:
                         if not seriesExists(cursor, series):
                             raise Exception('invalidArgument', series + ' does not exist locally. Please select a different series to which you would like to re-subscribe.')
-                    
-                        if not clientIsSubscribed(cursor, client, pubServiceURL, series):
+            
+                        if not clientIsSubscribed(client, pubServiceURL, series):
                             raise Exception('invalidArgument', 'You are not subscribed to ' + series + '. Please select a different series to which you would like to re-subscribe.')
-                    
-                    # To un-subscribe from one or more series, provide client, series.
-                    cgiArgs = { 'op' : 'unsubscribe', 'client' : client, 'series' : ','.join(seriesList) }
-                else:
-                    raise Exception('invalidArgument', 'Unknown subscription request type: ' + reqType + '.')
                 
-                urlArgs = urllib.parse.urlencode(cgiArgs) # For use with HTTP GET requests (not POST).
-                with urllib.request.urlopen(serviceURL + '?' + urlArgs) as response:
-                    info = json.loads(response.read().decode('UTF-8'))
+                        if not seriesIsPubished(series):
+                            raise Exception('invalidArgument', 'Series ' + series + ' is not published and not available for re-subscription.')
 
-                # Should receive a STATUS_REQUEST_QUEUED response.
-                if 'status' not in info or info['status'] != STATUS_REQUEST_QUEUED:
-                    raise Exception('subService', info['status'], 'Request failure: ' + info['msg'])
-                    
-                if 'reqid' not in info:
-                    raise Exception('subService', STATUS_ERR_INTERNAL, 'Request failure: ' + info['msg'])
-                    
-                time.sleep(1)
+                        # To re-subscribe to a series, provide client, series.
+                        cgiArgs = { 'op' : 'resubscribe', 'client' : client, 'series' : series }
+                    elif reqType == 'unsubscribe':
+                        # Make sure that newSite is False.
+                        if newSite:
+                            raise Exception('invalidArgument', 'Cannot un-subscribe from series. Client ' + client + ' has never subscribed to any series')
+                
+                        # Make sure there is at least one series and make sure that the series exist locally and 
+                        # make sure that the client is currently subscribed to these series.
+                        seriesList = arguments.getArg('series')
+                        if len(series) < 1:
+                            raise Exception('invalidArgument', 'Please provide one or more series from which you would like to un-subscribe.')
 
-                # Back to the case statements.
-                if reqType == 'subscribe' or reqType == 'resubscribe':
-                    # poll for dump file.
-                    cgiArgs = { 'op' : 'polldump', 'reqid' : info['reqid']}
+                        for series in seriesList:
+                            if not seriesExists(cursor, series):
+                                raise Exception('invalidArgument', series + ' does not exist locally. Please select a different series to which you would like to re-subscribe.')
+            
+                            if not clientIsSubscribed(client, pubServiceURL, series):
+                                raise Exception('invalidArgument', 'You are not subscribed to ' + series + '. Please select a different series to which you would like to re-subscribe.')
+            
+                        # To un-subscribe from one or more series, provide client, series.
+                        cgiArgs = { 'op' : 'unsubscribe', 'client' : client, 'series' : ','.join(seriesList) }
+                    else:
+                        raise Exception('invalidArgument', 'Unknown subscription request type: ' + reqType + '.')
+        
                     urlArgs = urllib.parse.urlencode(cgiArgs) # For use with HTTP GET requests (not POST).
+                    with urllib.request.urlopen(serviceURL + '?' + urlArgs) as response:
+                        info = json.loads(response.read().decode('UTF-8'))
 
-                    while info['status'] == STATUS_REQUEST_QUEUED or info['status'] == STATUS_REQUEST_PROCESSING:
-                        with urllib.request.urlopen(serviceURL + '?' + urlArgs) as response:
-                            info = json.loads(response.read().decode('UTF-8'))
-                            time.sleep(5)
-                        
-                    if info['status'] != STATUS_DUMP_READY:
-                        raise Exception('subService', info['status'], 'Unexpected response from subscription service: ' + info['status'])
+                    # Should receive a STATUS_REQUEST_QUEUED response.
+                    if 'status' not in info or info['status'] != STATUS_REQUEST_QUEUED:
+                        raise Exception('subService', info['status'], 'Request failure: ' + info['msg'])
+            
+                    if 'reqid' not in info:
+                        raise Exception('subService', STATUS_ERR_INTERNAL, 'Request failure: ' + info['msg'])
+            
+                    time.sleep(1)
 
-                    # Download create-ns/dump-file tarball.
-                    dest = os.path.join(arguments.getArg('kLocalWorkingDir'), client + '.sql.tar.gz')
-                    dl = SmarlDL(xferURL)
-                    dl.start()
+                    # Back to the case statements.
+                    if reqType == 'subscribe' or reqType == 'resubscribe':
+                        # poll for dump file.
+                        cgiArgs = { 'op' : 'polldump', 'reqid' : info['reqid']}
+                        urlArgs = urllib.parse.urlencode(cgiArgs) # For use with HTTP GET requests (not POST).
+
+                        while info['status'] == STATUS_REQUEST_QUEUED or info['status'] == STATUS_REQUEST_PROCESSING:
+                            with urllib.request.urlopen(serviceURL + '?' + urlArgs) as response:
+                                info = json.loads(response.read().decode('UTF-8'))
+                                time.sleep(5)
+                
+                        if info['status'] != STATUS_DUMP_READY:
+                            raise Exception('subService', info['status'], 'Unexpected response from subscription service: ' + info['status'])
+
+                        # Download create-ns/dump-file tarball.
+                        dest = os.path.join(arguments.getArg('kLocalWorkingDir'), client + '.sql.tar.gz')
+                        dl = SmarlDL(xferURL)
+                        dl.start()
+            
+                        # Extract files from tarball.
+                        with tarfile.open(dl.get_dest()) as tar:
+                            dest = arguments.getArg('kLocalWorkingDir')
+
+                            if reqType == 'subscribe' and not dbSchemaExists(conn, schema):
+                                # create-ns    
+                                with dest.getmember(client + '.' + schema + '.' + 'createns.sql') as createNsMember:
+                                    tar.extract(createNsMember, dest)
+
+                            with dest.getmember(client + '.subscribe_series.sql') as dumpMember:
+                                tar.extract(dumpMember, dest)
+            
+                        # Apply the series-schema-creation SQL (new subscriptions only).
+                        if reqType == 'subscribe':
+                            # Check for the existence of the schema. 
+                            if not dbSchemaExists(conn, schema):
+                                # Ingest createns.sql. Will raise if a problem occurs. When that happens, the cursor is rolled back.
+                                ingestCreateNSFile(client, schema, cursor, log)
+
+                        # Apply the series-creation (new subscriptions only) / _jsoc-creation (new site only) / series-population SQL. This is a bit tricky.
+                        # We can apply each SQL command as we read it from the file. In theory, these commands could span multiple lines. Commands are separated
+                        # by semicolons which are not necessarily followed by newlines. But there could be semicolons in the strings of commands, and various forms
+                        # of escaping to deal with. Yuck! We'd need a heavy-weight parser to do this in a general way. However, the dump file has a 
+                        # specific format which we will exploit.
+                        # 
+                        # psycopg2 does not provide a means for piping an SQL file to the database - end of story. If you read a file into memory to use the 
+                        # cursor.execute() command, it reads the WHOLE file into memory before executing cursor.execute(). So, we HAVE TO parse the SQL file
+                        # in some way. 
+                        #
+                        # If reqType == 'subscribe', then the sql will create a new series and populate it. 
+                        # If reqType == 'resubscribe', then the sql will truncate the 'series table' and reset the series-table sequence
+                        # only.
+                        #
+                        # Will raise if a problem occurs. When that happens, the cursor is rolled back.
+                        ingestDumpFile(client, series, cursor, log)
+
+                        # Send a pollcomplete request to the subscription service. After submitting this request, the Slony logs
+                        # we receive could have insert statements for newly subscribed-to series.
+                        cgiArgs = { 'op' : 'pollcomplete', 'reqid' : info['reqid']}
+                        urlArgs = urllib.parse.urlencode(cgiArgs) # For use with HTTP GET requests (not POST).
+
+                        while info['status'] == STATUS_REQUEST_FINALIZING:
+                            with urllib.request.urlopen(serviceURL + '?' + urlArgs) as response:
+                                info = json.loads(response.read().decode('UTF-8'))
+                                time.sleep(5)
                     
-                    # Extract files from tarball.
-                    with tarfile.open(dl.get_dest()) as tar:
-                        dest = arguments.getArg('kLocalWorkingDir')
-
-                        if reqType == 'subscribe' and not schemaExists(cursor, schema):
-                            # create-ns    
-                            with dest.getmember(client + '.' + schema + '.' + 'createns.sql') as createNsMember:
-                                tar.extract(createNsMember, dest)
-
-                        with dest.getmember(client + '.subscribe_series.sql') as dumpMember:
-                            tar.extract(dumpMember, dest)
-                    
-                    # Apply the series-schema-creation SQL (new subscriptions only).
-                    if reqType == 'subscribe':
-                        # Check for the existence of the schema. 
-                        if not schemaExists(cursor, schema):
-                            # Ingest createns.sql. Will raise if a problem occurs. When that happens, the cursor is rolled back.
-                            ingestCreateNSFile(client, schema, cursor, log)
-
-                    # Apply the series-creation (new subscriptions only) / _jsoc-creation (new site only) / series-population SQL. This is a bit tricky.
-                    # We can apply each SQL command as we read it from the file. In theory, these commands could span multiple lines. Commands are separated
-                    # by semicolons which are not necessarily followed by newlines. But there could be semicolons in the strings of commands, and various forms
-                    # of escaping to deal with. Yuck! We'd need a heavy-weight parser to do this in a general way. However, the dump file has a 
-                    # specific format which we will exploit.
-                    # 
-                    # psycopg2 does not provide a means for piping an SQL file to the database - end of story. If you read a file into memory to use the 
-                    # cursor.execute() command, it reads the WHOLE file into memory before executing cursor.execute(). So, we HAVE TO parse the SQL file
-                    # in some way. 
-                    #
-                    # If reqType == 'subscribe', then the sql will create a new series and populate it. 
-                    # If reqType == 'resubscribe', then the sql will truncate the 'series table' and reset the series-table sequence
-                    # only.
-                    #
-                    # Will raise if a problem occurs. When that happens, the cursor is rolled back.
-                    ingestDumpFile(client, series, cursor, log)
-
-                    # Send a pollcomplete request to the subscription service. After submitting this request, the Slony logs
-                    # we receive could have insert statements for newly subscribed-to series.
-                    cgiArgs = { 'op' : 'pollcomplete', 'reqid' : info['reqid']}
-                    urlArgs = urllib.parse.urlencode(cgiArgs) # For use with HTTP GET requests (not POST).
-
-                    while info['status'] == STATUS_REQUEST_FINALIZING:
-                        with urllib.request.urlopen(serviceURL + '?' + urlArgs) as response:
-                            info = json.loads(response.read().decode('UTF-8'))
-                            time.sleep(5)
-                            
-                    if info['status'] != STATUS_REQUEST_COMPLETE:
-                        raise Exception('subService', info['status'], 'Unexpected response from subscription service: ' + info['status'])
-                        
-                    # We have successfully subscribed/resubscribed to a series. For a subscribe request, if the 'jmd' flag is set, 
-                    # then populate the JMD's sunum queue table and install the trigger that auto-populates this table as new series 
-                    # rows are ingested. We need to stop the Slony-log ingestion script first so that no new records are ingested 
-                    # while the copy to sunum_queue is happening and the trigger is being installed.
-                    if reqType == 'subscribe' and jmdIntegration:
-                        dieFile = os.path.join(arguments.getArg('ingestion_path'), 'get_slony_logs.' + client + '.die')
-                        
+                        if info['status'] != STATUS_REQUEST_COMPLETE:
+                            raise Exception('subService', info['status'], 'Unexpected response from subscription service: ' + info['status'])
+                
+                        # We have successfully subscribed/resubscribed to a series. For a subscribe request, if the 'jmd' flag is set, 
+                        # then populate the JMD's sunum queue table and install the trigger that auto-populates this table as new series 
+                        # rows are ingested. We need to stop the Slony-log ingestion script first so that no new records are ingested 
+                        # while the copy to sunum_queue is happening and the trigger is being installed.
+                        if reqType == 'subscribe' and jmdIntegration:
+                            dieFile = os.path.join(arguments.getArg('ingestion_path'), 'get_slony_logs.' + client + '.die')
+                
+                            pass
+                    elif reqType == 'unsubscribe':
                         pass
-                elif reqType == 'unsubscribe':
-                    pass
-                
-            log.write(writeStream.getLines())
-                
-
+            except (psycopg2.DatabaseError, psycopg2.OperationalError) as exc:
+                # Closes the cursor and connection
+                if hasattr(exc, 'diag') and hasattr(exc.diag, 'message_primary') and exc.diag.message_primary:
+                    msg = exc.diag.message_primary
+                else:
+                    import traceback
+                    
+                    msg = traceback.format_exc(0)
+                raise Exception('dbConnection', msg)
 
     except Exception as exc:
-        raise
         if len(exc.args) == 2:
             type = exc.args[0]
             msg = exc.args[1]
             
-            if type == 'drmsParams':
+            if type == 'dbConnection':
+                rv = RV_DBCONNECTION
+            elif type == 'drmsParams':
                 rv = RV_DRMSPARAMS
             elif type == 'args':
                 rv = RV_ARGS
             elif type == 'clientConfig':
                 rv = RV_CLIENTCONFIG
-            elif type == 'agent':
-                rv = RV_AGENT
             elif type == 'drmsLock':
                 rv = RV_LOCK
+            elif type == 'dbCmd':
+                rv = RV_DBCMD
             
-            log.write([msg])
+            log.writeError([ msg ])
+        else:
+            raise
