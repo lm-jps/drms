@@ -7,7 +7,15 @@ class CmdlParser(argparse.ArgumentParser):
     def __init__(self, **kwargsin):
         kwargs = copy.deepcopy(kwargsin)
         
-        # Make all arguments optional (in the ArgumentParser sense).
+        # Make all arguments optional (in the ArgumentParser sense). All arguments that start with a 
+        # prefix_chars char are considered optional UNLESS the required=True argument to add_argument
+        # is specified. If we do not do this, then we cannot have program arguments of the form
+        # myvar=x be optional. Also, argparse considers all arguments that do not start with a prefix_chars 
+        # char as positional arguments, which means that the position of a value in the command-line
+        # determines which argument the value get assigned to, which is not a good thing for the 
+        # normal way we use arguments at the JSOC. At the JSOC, we like to use command-line arguments
+        # of the form <argname>=<argvalue>. Only argparse options, not positional arguments, allow the
+        # user to use the <option>=<value> syntax.
         if 'prefix_chars' not in kwargs:
             # Can't put 'h' in here for some reason. It collides with the help argument.
             kwargs['prefix_chars'] = '-ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefgijklmnopqrstuvwxyz'
