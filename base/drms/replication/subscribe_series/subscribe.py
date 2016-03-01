@@ -10,6 +10,7 @@ import re
 from datetime import datetime, timedelta
 from io import StringIO
 from pySmartDL import SmartDL
+import time
 import tarfile
 import argparse
 import threading
@@ -33,16 +34,18 @@ RV_ARGS = 3
 RV_CLIENTCONFIG = 4
 RV_LOCK = 5
 RV_DBCMD = 6
+RV_SUBSERVICE = 7
 
+STATUS_REQUEST_RESUMING = 'requestResuming'
 STATUS_REQUEST_QUEUED = 'requestQueued'
 STATUS_REQUEST_PROCESSING = 'requestProcessing'
 STATUS_DUMP_READY = 'dumpReady'
+STATUS_REQUEST_FINALIZING = 'requestFinalizing'
 STATUS_REQUEST_COMPLETE = 'requestComplete'
 STATUS_ERR_TERMINATED = 'terminated'
 STATUS_ERR_INTERNAL = 'internalError'
 STATUS_ERR_INVALID_ARG = 'invalidArgument'
 STATUS_ERR_INVALID_REQUEST = 'invalidRequest'
-
 
 
 LOCKFILE = 'clientsublock.txt'
@@ -81,8 +84,9 @@ class TerminationHandler(DrmsLock):
         # Do not do this! The call of Log::__del__ is deferred until after the program exits. If you end your program by
         # calling sys.exit(), then sys.exit() gets called BEFORE Log::__del__ is called, and this causes a race condition.
         # del self.log
-        self.log.close()
-        logging.shutdown()
+        # self.log.close()
+        # On second thought, let's not close the log either. Just flush for now, and close() at the end of the program run.
+        self.log.flush()        
     
         # Remove die file (if present).
         if os.path.exists(self.dieFile):
@@ -194,6 +198,10 @@ class Log(object):
                 self.fileHandler.close()
                 self.fileHandler = None
             self.log = None
+            
+    def flush(self):
+        if self.log and self.fileHandler:
+            self.fileHandler.flush()
             
     def getLevel(self):
         # Hacky way to get the level - make a dummy LogRecord
@@ -662,138 +670,186 @@ if __name__ == "__main__":
                         serviceURL = arguments.getArg('kSubService')
                         pubServiceURL = arguments.getArg('kPubListService')
                         xferURL = arguments.getArg('kSubXfer')
-        
-                        reqType = arguments.getArg('reqtype').lower()
-                        archive = arguments.getArg('archive')
-                        retention = arguments.getArg('retention')
-                        tapeGroup = arguments.getArg('tapegroup')
+                        
+                        # Check for pending request. Fetch any existing request from the server for this client. Then fill-in the 
+                        # various arguments to this script with the values from that request. The client can get into this state if
+                        # they kill this script before it completes. If they re-run this script, we want their existing request to 
+                        # complete. To be really safe about this, I could save a UUID on both the server and client, and make sure they
+                        # are equal before proceeding, but maybe some other time.
+                        cgiArgs = { 'action' : 'continue', 'client' : client }
+                        
+                        log.writeInfo([ 'Checking for existing request at server.' ])
+                        log.writeInfo([ 'Calling cgi with URL: ' + serviceURL ])
+                        log.writeInfo([ 'cgi args: ' + json.dumps(cgiArgs) ])
+                        urlArgs = urllib.parse.urlencode(cgiArgs) # For use with HTTP GET requests (not POST).
+                    
+                        with urllib.request.urlopen(serviceURL + '?' + urlArgs) as response:
+                            info = json.loads(response.read().decode('UTF-8'))
+
+                        if 'status' not in info or 'msg' not in info:
+                            raise Exception('subService', 'Request failure: ' + STATUS_ERR_INTERNAL + '.')
+                            
+                        if info['status'] == STATUS_REQUEST_RESUMING:
+                            # The request is 'pending'. Set the arguments to the proper values.
+                            reqId = info['reqid']
+                            reqType = info['reqtype']
+                            seriesList = info['series']
+                            archive = info['archive']
+                            retention = info['retention']
+                            tapeGroup = info['tapegroup']
+
+                            resuming = True
+                            resumeAction = info['resumeaction']
+                            log.writeInfo([ 'Found existing request at server: reqid=' + str(reqId) + ', reqtype=' + reqType + ', series=' + ','.join(seriesList) + ', archive=' + str(archive) + ', retention=' + str(retention) + ', tapegroup=' + str(tapeGroup) ])
+                        else:
+                            reqType = arguments.getArg('reqtype').lower()
+                            archive = arguments.getArg('archive')
+                            retention = arguments.getArg('retention')
+                            tapeGroup = arguments.getArg('tapegroup')
+                            seriesList = arguments.getArg('series')
+
+                            resuming = False
+                            log.writeInfo([ 'No existing request at server.' ])
+
+                        # JMD integration is a client-side feature.
                         jmdIntegration = arguments.getArg('jmd')
 
-                        if reqType == 'subscribe':
-                            # Make sure that there is only a single series in the series list and make sure that
-                            # the series is one that does not exist locally and make sure that the client is not
-                            # already subscribed to the series and make sure that the series published.
-                            seriesList = arguments.getArg('series')
-                            if len(seriesList) > 1:
-                                raise Exception('invalidArgument', 'Please subscribe to a single series at a time.')
-                            elif len(seriesList) == 0:
-                                raise Exception('invalidArgument', 'Please provide a series to which you would like to subscribe.')
+                        if not resuming:
+                            if reqType == 'subscribe':
+                                # Make sure that there is only a single series in the series list and make sure that
+                                # the series is one that does not exist locally and make sure that the client is not
+                                # already subscribed to the series and make sure that the series published.
+                                if len(seriesList) > 1:
+                                    raise Exception('invalidArgument', 'Please subscribe to a single series at a time.')
+                                elif len(seriesList) == 0:
+                                    raise Exception('invalidArgument', 'Please provide a series to which you would like to subscribe.')
                 
-                            series = seriesList[0]
+                                series = seriesList[0]
             
-                            if seriesExists(conn, series):
-                                raise Exception('invalidArgument', series + ' already exists locally. Please select a different series.')
+                                if seriesExists(conn, series):
+                                    raise Exception('invalidArgument', series + ' already exists locally. Please select a different series.')
 
-                            if clientIsSubscribed(client, pubServiceURL, series):
-                                raise Exception('invalidArgument', 'You are already subscribed to ' + series + '. Please select a different series.')
+                                if clientIsSubscribed(client, pubServiceURL, series):
+                                    raise Exception('invalidArgument', 'You are already subscribed to ' + series + '. Please select a different series.')
 
-                            if not seriesIsPublished(pubServiceURL, series):
-                                raise Exception('invalidArgument', 'Series ' + series + ' is not published and not available for subscription.')
+                                if not seriesIsPublished(pubServiceURL, series):
+                                    raise Exception('invalidArgument', 'Series ' + series + ' is not published and not available for subscription.')
 
-                            if newSite:
-                                # Make sure the admin.ns table exists, because we are going to insert into it. And if it is missing,
-                                # then the NetDRMS is bad.
-                                if not dbTableExists(cursor, 'admin.ns'):
-                                    raise Exception('drms', 'Your DRMS is missing a required database relation (or the containing schema): admin.ns')
+                                if newSite:
+                                    # Make sure the admin.ns table exists, because we are going to insert into it. And if it is missing,
+                                    # then the NetDRMS is bad.
+                                    if not dbTableExists(cursor, 'admin.ns'):
+                                        raise Exception('drms', 'Your DRMS is missing a required database relation (or the containing schema): admin.ns')
                     
-                                # We are also going to insert into several database tables. Make sure they exist.
-                                if not dbTableExists(conn, schema, 'drms_series'):
-                                    raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database table: ' + schema + '.drms_series')
-                                if not dbTableExists(conn, schema, 'drms_keyword'):
-                                    raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database table: ' + schema + '.drms_keyword')
-                                if not dbTableExists(conn, schema, 'drms_link'):
-                                    raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database table: ' + schema + '.drms_link')
-                                if not dbTableExists(conn, schema, 'drms_segment'):
-                                    raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database table: ' + schema + '.drms_segment')
-                                if not dbTableExists(conn, schema, 'drms_session'):
-                                    raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database table: ' + schema + '.drms_session')
-                                if not dbTableExists(conn, schema, 'drms_sessionid_seq'):
-                                    raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database table: ' + schema + '.drms_sessionid_seq')
+                                    # We are also going to insert into several database tables. Make sure they exist.
+                                    if not dbTableExists(conn, schema, 'drms_series'):
+                                        raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database table: ' + schema + '.drms_series')
+                                    if not dbTableExists(conn, schema, 'drms_keyword'):
+                                        raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database table: ' + schema + '.drms_keyword')
+                                    if not dbTableExists(conn, schema, 'drms_link'):
+                                        raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database table: ' + schema + '.drms_link')
+                                    if not dbTableExists(conn, schema, 'drms_segment'):
+                                        raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database table: ' + schema + '.drms_segment')
+                                    if not dbTableExists(conn, schema, 'drms_session'):
+                                        raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database table: ' + schema + '.drms_session')
+                                    if not dbTableExists(conn, schema, 'drms_sessionid_seq'):
+                                        raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database table: ' + schema + '.drms_sessionid_seq')
 
-                            # To subscribe to a series, provide client, series, archive, retention, tapegroup, newSite.
-                            cgiArgs = { 'action' : 'subscribe', 'client' : client, 'newsite' : True, 'series' : series, 'archive' : archive, 'retention' : retention, 'tapegroup' : tapeGroup, 'newsite' : newSite }
-                        elif reqType == 'resubscribe':
-                            # Make sure that newSite is False.
-                            if newSite:
-                                raise Exception('invalidArgument', 'Cannot re-subscribe to series. Client ' + client + ' has never subscribed to any series')
+                                # To subscribe to a series, provide client, series, archive, retention, tapegroup, newSite.
+                                cgiArgs = { 'action' : 'subscribe', 'client' : client, 'newsite' : True, 'series' : series, 'archive' : archive, 'retention' : retention, 'tapegroup' : tapeGroup, 'newsite' : newSite }
+                            elif reqType == 'resubscribe':
+                                # Make sure that newSite is False.
+                                if newSite:
+                                    raise Exception('invalidArgument', 'Cannot re-subscribe to series. Client ' + client + ' has never subscribed to any series')
             
-                            # Make sure that there is only a single series in the series list and make sure that
-                            # the series exists locally and make sure that the client is currently subscribed to this series and
-                            # make sure the series is still published.
-                            seriesList = arguments.getArg('series')
-                            if len(series) > 1:
-                                raise Exception('invalidArgument', 'Please re-subscribe to a single series at a time.')
-                            elif len(series) == 0:
-                                raise Exception('invalidArgument', 'Please provide a series to which you would like to re-subscribe.')
+                                # Make sure that there is only a single series in the series list and make sure that
+                                # the series exists locally and make sure that the client is currently subscribed to this series and
+                                # make sure the series is still published.
+                                if len(series) > 1:
+                                    raise Exception('invalidArgument', 'Please re-subscribe to a single series at a time.')
+                                elif len(series) == 0:
+                                    raise Exception('invalidArgument', 'Please provide a series to which you would like to re-subscribe.')
 
-                            series = seriesList[0]
+                                series = seriesList[0]
 
-                            if not seriesExists(cursor, series):
-                                raise Exception('invalidArgument', series + ' does not exist locally. Please select a different series to which you would like to re-subscribe.')
-            
-                            if not clientIsSubscribed(client, pubServiceURL, series):
-                                raise Exception('invalidArgument', 'You are not subscribed to ' + series + '. Please select a different series to which you would like to re-subscribe.')
-                
-                            if not seriesIsPubished(series):
-                                raise Exception('invalidArgument', 'Series ' + series + ' is not published and not available for re-subscription.')
-
-                            # To re-subscribe to a series, provide client, series.
-                            cgiArgs = { 'action' : 'resubscribe', 'client' : client, 'newsite' : False, 'series' : series }
-                        elif reqType == 'unsubscribe':
-                            # Make sure that newSite is False.
-                            if newSite:
-                                raise Exception('invalidArgument', 'Cannot un-subscribe from series. Client ' + client + ' has never subscribed to any series')
-                
-                            # Make sure there is at least one series and make sure that the series exist locally and 
-                            # make sure that the client is currently subscribed to these series.
-                            seriesList = arguments.getArg('series')
-                            if len(series) < 1:
-                                raise Exception('invalidArgument', 'Please provide one or more series from which you would like to un-subscribe.')
-
-                            for series in seriesList:
                                 if not seriesExists(cursor, series):
                                     raise Exception('invalidArgument', series + ' does not exist locally. Please select a different series to which you would like to re-subscribe.')
             
                                 if not clientIsSubscribed(client, pubServiceURL, series):
                                     raise Exception('invalidArgument', 'You are not subscribed to ' + series + '. Please select a different series to which you would like to re-subscribe.')
-            
-                            # To un-subscribe from one or more series, provide client, series.
-                            cgiArgs = { 'action' : 'unsubscribe', 'client' : client, 'newsite' : False, 'series' : ','.join(seriesList) }
-                        else:
-                            raise Exception('invalidArgument', 'Unknown subscription request type: ' + reqType + '.')
-        
-                        log.writeInfo([ 'cgi URL: ' + serviceURL ])
-                        log.writeInfo([ 'cgi args: ' + json.dumps(cgiArgs) ])
-                        urlArgs = urllib.parse.urlencode(cgiArgs) # For use with HTTP GET requests (not POST).
-                    
-                        # del log
-                        raise Exception('blah', 'trying to get out')
-                    
-                        with urllib.request.urlopen(serviceURL + '?' + urlArgs) as response:
-                            info = json.loads(response.read().decode('UTF-8'))
+                
+                                if not seriesIsPubished(series):
+                                    raise Exception('invalidArgument', 'Series ' + series + ' is not published and not available for re-subscription.')
 
-                        # Should receive a STATUS_REQUEST_QUEUED response.
-                        if 'status' not in info or info['status'] != STATUS_REQUEST_QUEUED:
-                            raise Exception('subService', info['status'], 'Request failure: ' + info['msg'])
+                                # To re-subscribe to a series, provide client, series.
+                                cgiArgs = { 'action' : 'resubscribe', 'client' : client, 'newsite' : False, 'series' : series }
+                            elif reqType == 'unsubscribe':
+                                # Make sure that newSite is False.
+                                if newSite:
+                                    raise Exception('invalidArgument', 'Cannot un-subscribe from series. Client ' + client + ' has never subscribed to any series')
+                
+                                # Make sure there is at least one series and make sure that the series exist locally and 
+                                # make sure that the client is currently subscribed to these series.
+                                if len(series) < 1:
+                                    raise Exception('invalidArgument', 'Please provide one or more series from which you would like to un-subscribe.')
+
+                                for series in seriesList:
+                                    if not seriesExists(cursor, series):
+                                        raise Exception('invalidArgument', series + ' does not exist locally. Please select a different series to which you would like to re-subscribe.')
             
-                        if 'reqid' not in info:
-                            raise Exception('subService', STATUS_ERR_INTERNAL, 'Request failure: ' + info['msg'])
+                                    if not clientIsSubscribed(client, pubServiceURL, series):
+                                        raise Exception('invalidArgument', 'You are not subscribed to ' + series + '. Please select a different series to which you would like to re-subscribe.')
             
-                        time.sleep(1)
+                                # To un-subscribe from one or more series, provide client, series.
+                                cgiArgs = { 'action' : 'unsubscribe', 'client' : client, 'newsite' : False, 'series' : ','.join(seriesList) }
+                            else:
+                                raise Exception('invalidArgument', 'Unknown subscription request type: ' + reqType + '.')
+        
+                            log.writeInfo([ 'Calling cgi with URL: ' + serviceURL ])
+                            log.writeInfo([ 'cgi args: ' + json.dumps(cgiArgs) ])
+                            urlArgs = urllib.parse.urlencode(cgiArgs) # For use with HTTP GET requests (not POST).
+                    
+                            with urllib.request.urlopen(serviceURL + '?' + urlArgs) as response:
+                                info = json.loads(response.read().decode('UTF-8'))
+
+                            # Should receive a STATUS_REQUEST_QUEUED response.
+                            if 'status' not in info or 'msg' not in info:
+                                raise Exception('subService', 'Request failure: ' + STATUS_ERR_INTERNAL + '.')
+                        
+                            if info['status'] != STATUS_REQUEST_QUEUED:
+                                raise Exception('subService', 'Request failure: ' + info['msg'] + ' (status ' + info['status'] + ').')
+            
+                            if 'reqid' not in info:
+                                raise Exception('subService', 'Request failure: ' + STATUS_ERR_INTERNAL + '.')
+                                
+                            reqId = info['reqid']
+                            
+                            log.writeInfo([ 'cgi response: ' + info['msg'] + ' Response status: ' + info['status'] + '.'])
+            
+                            time.sleep(1)
 
                         # Back to the case statements.
                         if reqType == 'subscribe' or reqType == 'resubscribe':
                             # poll for dump file.
-                            cgiArgs = { 'action' : 'polldump', 'reqid' : info['reqid']}
+                            log.writeInfo([ 'Polling for dump file.' ])
+                            cgiArgs = { 'action' : 'polldump', 'client' : client, 'reqid' : reqId}
                             urlArgs = urllib.parse.urlencode(cgiArgs) # For use with HTTP GET requests (not POST).
 
-                            while info['status'] == STATUS_REQUEST_QUEUED or info['status'] == STATUS_REQUEST_PROCESSING:
+                            while (resuming and info['status'] == STATUS_REQUEST_RESUMING) or info['status'] == STATUS_REQUEST_QUEUED or info['status'] == STATUS_REQUEST_PROCESSING:
+                                log.writeInfo([ 'Calling cgi with URL: ' + serviceURL ])
+                                log.writeInfo([ 'cgi args: ' + json.dumps(cgiArgs) ])
                                 with urllib.request.urlopen(serviceURL + '?' + urlArgs) as response:
                                     info = json.loads(response.read().decode('UTF-8'))
+                                    if 'status' not in info or 'msg' not in info:
+                                        raise Exception('subService', 'Request failure: ' + STATUS_ERR_INTERNAL + '.')
+                                    log.writeInfo([ 'cgi response: ' + info['msg'] + ' Response status: ' + info['status'] + '.'])
                                     time.sleep(5)
-                
+
                             if info['status'] != STATUS_DUMP_READY:
-                                raise Exception('subService', info['status'], 'Unexpected response from subscription service: ' + info['status'])
+                                raise Exception('subService', 'Unexpected response from subscription service: ' + info['status'] + '.')
+                                
+                            # del log
+                            raise Exception('blah', 'trying to get out')
 
                             # Download create-ns/dump-file tarball.
                             dest = os.path.join(arguments.getArg('kLocalWorkingDir'), client + '.sql.tar.gz')
@@ -838,7 +894,7 @@ if __name__ == "__main__":
 
                             # Send a pollcomplete request to the subscription service. After submitting this request, the Slony logs
                             # we receive could have insert statements for newly subscribed-to series.
-                            cgiArgs = { 'action' : 'pollcomplete', 'reqid' : info['reqid']}
+                            cgiArgs = { 'action' : 'pollcomplete', 'reqid' : reqId}
                             urlArgs = urllib.parse.urlencode(cgiArgs) # For use with HTTP GET requests (not POST).
 
                             while info['status'] == STATUS_REQUEST_FINALIZING:
@@ -874,25 +930,21 @@ if __name__ == "__main__":
                     type = exc.args[0]
                     msg = exc.args[1]
             
+                    if type == 'drms':
+                        rv = RV_DRMS
                     if type == 'dbConnection':
                         rv = RV_DBCONNECTION
-                    elif type == 'drmsParams':
-                        rv = RV_DRMSPARAMS
-                    elif type == 'args':
+                    elif type == 'invalidArgument' or type == 'args':
                         rv = RV_ARGS
-                    elif type == 'argFile':
-                        rv = RV_CLIENTCONFIG
-                    elif type == 'drmsLock':
-                        rv = RV_LOCK
                     elif type == 'dbCmd':
                         rv = RV_DBCMD
+                    elif type == 'subService':
+                        rv = RV_SUBSERVICE
 
                     log.writeError([ msg ])
                 else:
                     raise
-        # We are leaving the termination handler - log is dead.
-        log = None
-
+        # We are leaving the termination handler.
     except Exception as exc:
         if len(exc.args) == 2:
             type = exc.args[0]
@@ -913,5 +965,8 @@ if __name__ == "__main__":
                 print(msg)
         else:
             raise
+            
+    log.close()
+    logging.shutdown()
 
     sys.exit(rv)

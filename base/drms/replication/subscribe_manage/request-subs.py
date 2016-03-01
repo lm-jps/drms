@@ -48,6 +48,7 @@ SLONY_TABLE_NSP = 'tab_nspname'
 SLONY_TABLE_REL = 'tab_relname'
 
 # Request statuses
+STATUS_REQUEST_RESUMING = 'requestResuming'
 STATUS_REQUEST_QUEUED = 'requestQueued'
 STATUS_REQUEST_PROCESSING = 'requestProcessing'
 STATUS_DUMP_READY = 'dumpReady'
@@ -56,11 +57,11 @@ STATUS_ERR_TERMINATED = 'terminated'
 STATUS_ERR_INTERNAL = 'internalError'
 STATUS_ERR_INVALID_ARGUMENT = 'invalidArgument'
 STATUS_ERR_INVALID_REQUEST = 'invalidRequest'
+STATUS_ERR_FAILURE = 'requestFailed'
 
         
 def terminator(*args):
     # Raise the SystemExit exception (which will be caught by the __exit__() method below).
-    print('i hope we are not doing this')
     sys.exit(0)
 
 class TerminationHandler(object):
@@ -281,7 +282,69 @@ class Response(object):
         
     def logMsg(self):
         pass
+
+class ResumeResponse(Response):
+    def __init__(self, **kwargs):
+        if 'status' in kwargs:
+            self.status = kwargs['status']
+        else:
+            self.status = STATUS_REQUEST_RESUMING
             
+        if 'reqid' in kwargs:
+            self.reqid = kwargs['reqid']
+        else:
+            raise Exception('invalidArgument', 'reqid is required for ResumeResponse constructor.')
+            
+        if 'reqtype' in kwargs:
+            self.reqtype = kwargs['reqtype']
+        else:
+            raise Exception('invalidArgument', 'reqtype is required for ResumeResponse constructor.')
+            
+        if 'series' in kwargs:
+            self.series = kwargs['series']
+        else:
+            raise Exception('invalidArgument', 'series is required for ResumeResponse constructor.')
+        
+        if 'archive' in kwargs:
+            self.archive = kwargs['archive']
+        else:
+            raise Exception('invalidArgument', 'archive is required for ResumeResponse constructor.')
+        
+        if 'retention' in kwargs:
+            self.retention = kwargs['retention']
+        else:
+            raise Exception('invalidArgument', 'retention is required for ResumeResponse constructor.')
+            
+        if 'tapegroup' in kwargs:
+            self.tapegroup = kwargs['tapegroup']
+        else:
+            raise Exception('invalidArgument', 'tapegroup is required for ResumeResponse constructor.')
+            
+        if 'resumeaction' in kwargs:
+            self.resumeaction = kwargs['resumeaction']
+        else:
+            raise Exception('invalidArgument', 'resumeaction is required for ResumeResponse constructor.')
+            
+        super(ResumeResponse, self).__init__(**kwargs)
+        
+    def createContent(self):
+        if self.jsonRoot:
+            self.jsonRoot['reqid'] = self.reqid
+            self.jsonRoot['reqtype'] = self.reqtype
+            self.jsonRoot['series'] = self.series
+            self.jsonRoot['archive'] = self.archive
+            self.jsonRoot['retention'] = self.retention
+            self.jsonRoot['tapegroup'] = self.tapegroup
+            self.jsonRoot['resumeaction'] = self.resumeaction
+        else:
+            self.jsonRoot = { 'reqid' : self.reqid, 'reqtype' : self.reqtype, 'series' : self.series, 'archive' : self.archive, 'retention' : self.retention, 'tapegroup' : self.tapegroup, 'resumeaction' : self.resumeaction }
+        super(ResumeResponse, self).createContent()
+        
+    def logMsg(self):
+        if self.log:
+            msg = 'Sent resume response to ' + self.client + ' (' + self.status + ', ' + self.msg + ').'
+            self.log.writeInfo([ msg ])
+
 class WaitResponse(Response):
     def __init__(self, **kwargs):
         if 'status' in kwargs:
@@ -357,11 +420,14 @@ def getPendingRequest(conn, reqTable, client):
     pendingRequest = False
     pendAction = None
     pendSeriesList = None
+    pendArchive = None
+    pendRetention = None
+    pendTapegroup = None
     pendStatus = None
     pendErrMsg = None
     
     # Slave database.
-    cmd = 'SELECT requestid, action, series, status, errmsg FROM ' + reqTable + " WHERE lower(client) = '" + client + "'"
+    cmd = 'SELECT requestid, action, series, archive, retention, tapegroup, status, errmsg FROM ' + reqTable + " WHERE lower(client) = '" + client + "'"
         
     try:
         with conn.cursor() as cursor:
@@ -374,8 +440,11 @@ def getPendingRequest(conn, reqTable, client):
                 pendingRequest = record[0]
                 pendAction = record[1]
                 pendSeriesList = record[2]
-                pendStatus = record[3]
-                pendErrMsg = record[4]
+                pendArchive = record[3]
+                pendRetention = record[4]
+                pendTapegroup = record[5]
+                pendStatus = record[6]
+                pendErrMsg = record[7]
             elif len(records) > 1:
                 raise Exception('dbResponse', 'There is more than one pending request for client ' + client + ' (at most there should be one).')
     except psycopg2.Error as exc:
@@ -383,7 +452,7 @@ def getPendingRequest(conn, reqTable, client):
     finally:
         conn.rollback() # Closes the transaction.
         
-    return (pendingRequest, pendingRequest, pendAction, pendSeriesList, pendStatus, pendErrMsg)
+    return (pendingRequest, pendingRequest, pendAction, pendSeriesList, pendArchive, pendRetention, pendTapegroup, pendStatus, pendErrMsg)
 
 def clientIsSubscribed(arguments, conn, client, series):
     # Master database.
@@ -552,6 +621,8 @@ def insertRequest(conn, log, dbTable, **kwargs):
 
 # Main Program
 if __name__ == "__main__":
+    client = 'unknown'
+    
     try:
         requestSubsParams = RequestSubsParams()        
         arguments = Arguments()
@@ -563,8 +634,8 @@ if __name__ == "__main__":
             parser = CmdlParser(usage='%(prog)s action=<action string> [ client=<client> ] [ requestid=<id> ] [ series=<series list> ] [ archive=<archive code> ] [ retention=<number of days> ] [ tapegroup=<group id> ] [ cfg=<configuration file> ]')
             
         # Required (name does not start with a dash).
-        parser.add_argument('a', 'action', '--action', help='The request action (subscribe, unsubscribe, resubscribe, polldump, pollcomplete).', metavar='<action>', dest='action', required=True)
-        parser.add_argument('c', 'client', '--client', help='The client making the subscription request.', metavar='<client>', dest='client', required=True)
+        parser.add_argument('a', 'action', '--action', help='The request action (subscribe, unsubscribe, resubscribe, polldump, pollcomplete).', metavar='<action>', dest='action')
+        parser.add_argument('c', 'client', '--client', help='The client making the subscription request.', metavar='<client>', dest='client')
 
         # Optional (name starts with a dash).
         if not os.getenv('REQUEST_URI'):
@@ -581,20 +652,29 @@ if __name__ == "__main__":
     
         arguments.setParser(parser)
         
-        # Copy DRMSParams arguments to arguments object.
-        arguments.setArg('dbuser', requestSubsParams.get('WEB_DBUSER'))
-        
         # Add the server-side subscription arguments to arguments.
         if arguments.get('slonyCfg') is None:
             arguments.setArg('slonyCfg', requestSubsParams.get('SLONY_CONFIG'))
             arguments.addFileArgs(arguments.getArg('slonyCfg'))
-        
-        pid = os.getpid()
-        strPid = str(os.getpid())
 
         # Create/Initialize the log file.
         formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
         rsLog = Log(os.path.join(arguments.getArg('kSMcgiLogDir'), 'request-subs-log.txt'), arguments.getArg('loglevel'), formatter)
+
+        # Check for the two required arguments. Do not use required=True as an argument for these two arguments, otherwise if they are 
+        # missing, then argparse will ERROR-OUT, instead of raising an exception. We need an exception to be raised so that we
+        # can send an appropriate response to the client in the exception handler.
+        if not arguments.get('action') or not arguments.get('client'):
+            raise Exception('invalidArgument', 'To run this program, you must supply two required arguments: ' + "'action' and 'client'.")
+            
+        action = arguments.getArg('action')
+        client = arguments.getArg('client')
+        
+        # Copy DRMSParams arguments to arguments object.
+        arguments.setArg('dbuser', requestSubsParams.get('WEB_DBUSER'))
+        
+        pid = os.getpid()
+        strPid = str(os.getpid())
         
         rsLog.writeCritical(['Logging threshold level is ' + rsLog.getLevel() + '.']) # Critical - always write the log level to the log.
 
@@ -612,10 +692,6 @@ if __name__ == "__main__":
                     rsLog.writeInfo([ 'Connected to database ' + arguments.getArg('SLAVEDBNAME') + ' on ' + arguments.getArg('SLAVEHOSTNAME') + ':' + str(arguments.getArg('SLAVEPORT')) + ' as user ' + arguments.getArg('dbuser') ])
                     rsLog.writeInfo([ 'Connected to database ' + arguments.getArg('MASTERDBNAME') + ' on ' + arguments.getArg('MASTERHOSTNAME') + ':' + str(arguments.getArg('MASTERPORT')) + ' as user ' + arguments.getArg('dbuser') ])
 
-                    # Two required arguments.
-                    action = arguments.getArg('action')
-                    client = arguments.getArg('client')
-
                     # Set to None if the argument does not exist.                
                     newSite = arguments.get('newsite')
                     reqid = arguments.get('reqid')
@@ -631,19 +707,36 @@ if __name__ == "__main__":
 
                     newSiteServer = clientIsNew(arguments, connMaster, client)
                     if newSite and newSiteServer!= newSite:
-                        raise Exception('args', 'The newsite status at the client does not match the newsite status at the server.')
+                        raise Exception('invalidArgument', 'The newsite status at the client does not match the newsite status at the server.')
                     rsLog.writeInfo([ 'newSite is ' + str(newSiteServer) + '.' ])
                                 
                     # Check for an existing request. If there is such a request, return a status code telling the user to poll on the request to
                     # await completion.
-                    pendingRequest, pendRequestID, pendAction, pendSeriesList, pendStatus, pendErrMsg = getPendingRequest(connSlave, arguments.getArg('kSMreqTable'), client)
+                    pendingRequest, pendRequestID, pendAction, pendSeriesList, pendArchive, pendRetention, pendTapegroup, pendStatus, pendErrMsg = getPendingRequest(connSlave, arguments.getArg('kSMreqTable'), client)
 
                     if pendingRequest:
                         rsLog.writeInfo([ 'client ' + client + ' has a pending request:' + ' id - ' + str(pendRequestID) + ', action - ' + pendAction + ', series - ' + pendSeriesList + ', status - ' + pendStatus + ', errMsg - ' + str(pendErrMsg if pendErrMsg else "''") ])
                     else:
                         rsLog.writeInfo([ 'client ' + client + ' does NOT have a pending request.' ])                    
 
-                    if action.lower() == 'subscribe' or action.lower() == 'resubscribe':
+                    if action.lower() == 'continue':
+                        if not pendingRequest:
+                            raise Exception('invalidArgument', 'Cannot resume an existing request. There is no pending request for client ' + client + '.')
+                            
+                        # Figure out if client should make a pollDump or pollComplete request.
+                        if pendStatus.upper() == 'N' or pendStatus.upper() == 'P' or pendStatus.upper() == 'D':
+                            respAction = 'polldump'
+                        elif pendStatus.upper() == 'I' or pendStatus.upper() == 'C':
+                            respAction = 'pollcomplete'
+                        else:
+                            # Error response.
+                            raise Exception('requestFailed', 'There was an error processing your request. Please try again or contact the JSOC.')
+                        
+                        resp = ResumeResponse(log=rsLog, status=STATUS_REQUEST_RESUMING, msg='To continue, make a ' + respAction.lower() + ' request.', reqid=pendRequestID, reqtype=pendAction, series=pendSeriesList.split(','), archive=pendArchive, retention=pendRetention, tapegroup=pendTapegroup, resumeaction=respAction, client=client)
+                        resp.logMsg()
+                        resp.send()
+                        # The client now 
+                    elif action.lower() == 'subscribe' or action.lower() == 'resubscribe':
                         if pendingRequest:
                             raise Exception('invalidRequest', 'You cannot ' + action.lower() + ' to a series at this time - a ' + pendAction + ' request for ' + pendSeriesList + ' is pending. Please wait for that request to complete.')
                         if len(client) < 1:
@@ -720,7 +813,6 @@ if __name__ == "__main__":
                         resp = WaitResponse(log=rsLog, status=STATUS_REQUEST_QUEUED, msg=respMsg, reqid=reqid, client=client)
                         resp.logMsg()
                         resp.send()
-                    
                     elif action.lower() == 'polldump' or action.lower() == 'pollcomplete':
                         if reqid is None:
                             raise Exception('invalidArgument', 'Please provide a request ID.')
@@ -846,6 +938,8 @@ if __name__ == "__main__":
                         resp.setStatus(STATUS_ERR_INVALID_REQUEST)
                     elif eType == 'manage-subs':
                         resp.setStatus(STATUS_ERR_INTERNAL)
+                    elif eType == 'requestFailed':
+                        resp.setStatus(STATUS_ERR_FAILURE)
                     else:
                         raise
 

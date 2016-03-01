@@ -189,7 +189,7 @@ if __name__ == "__main__":
                                 raise Exception('tabExists', 'The database table ' + tab + '_seq already exists.')
 
                         if tab == arguments.getArg('reqtable'):
-                            sql = 'CREATE TABLE ' + tab + ' (requestid bigint NOT NULL, client text NOT NULL, starttime timestamp with time zone NOT NULL, action text NOT NULL, series text NOT NULL, status character(1) NOT NULL, errmsg text); '
+                            sql = 'CREATE TABLE ' + tab + ' (requestid bigint NOT NULL, client text NOT NULL, starttime timestamp with time zone NOT NULL, action text NOT NULL, series text NOT NULL, archive int NOT NULL, retention int NOT NULL, tapegroup int NOT NULL, status character(1) NOT NULL, errmsg text); '
                             sql += 'ALTER TABLE ' + tab + ' ADD CONSTRAINT ' + tabName + '_pkey PRIMARY KEY (requestid); '
 
                             # The web db user and the slony super user must be able to read and write to/from the reqtable.
