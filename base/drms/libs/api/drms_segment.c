@@ -744,6 +744,47 @@ DRMS_Segment_t *drms_segment_lookupnum(DRMS_Record_t *rec, int segnum)
    return seg;
 }
 
+DRMS_Segment_t *drms_segment_lookupindex(DRMS_Record_t *rec, int index, int followLink)
+{
+    HIterator_t hit;
+    DRMS_Segment_t *seg = NULL;
+    int count;
+
+    if (rec == NULL)
+    {
+        return NULL;
+    }
+
+    if (index < 0 || index > drms_record_numsegments(rec) - 1)
+    {
+        return NULL;
+    }
+
+    hiter_new_sort(&hit, &rec->segments, drms_segment_ranksort);
+    for (count = 0; count <= index; count++)
+    {
+        seg = (DRMS_Segment_t *)hiter_getnext(&hit);
+        if (!seg)
+        {
+            /* This shouldn't happen since index < drms_record_numsegments(rec). */
+            break;
+        }
+    }
+
+    if (seg && followLink)
+    {
+      /* found matching segment */
+
+      // This is to properly handle link segment and constant segment.
+      seg = drms_segment_lookup(rec, seg->info->name);
+    }
+
+    hiter_free(&hit);
+
+    return seg;
+}
+
+
 #if 0
 /* I was mistaken. See comment in drms_link_follow(). */
 

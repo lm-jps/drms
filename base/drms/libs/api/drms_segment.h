@@ -57,6 +57,8 @@ DRMS_Segment_t *drms_segment_lookup(DRMS_Record_t *record, const char *segname);
 DRMS_Segment_t *drms_segment_lookupnum(DRMS_Record_t *record, int segnum);
 /* @} */
 
+DRMS_Segment_t *drms_segment_lookupindex(DRMS_Record_t *rec, int index, int followLink);
+
 /**
    @name Create and Destroy
 */
