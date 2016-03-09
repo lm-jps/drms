@@ -963,7 +963,7 @@ class ReqTable(object):
                     self.log.writeDebug([ 'Created Request with ID ' + requestidStr + ' (' + req.dump(False) +').' ])
                 self.log.writeDebug([ '  Total number of requests read from the db: ' + str(len(self.reqDict.keys())) + '.' ])
         except psycopg2.Error as exc:
-            raise Exception('reqtableRead', exc.diag.message_primary, cmd)
+            raise Exception('reqtableRead', exc.diag.message_primary + ': ' + cmd + '.')
         finally:
             self.conn.rollback()        
 
@@ -1055,18 +1055,12 @@ class ReqTable(object):
         self.log.writeDebug([ 'Entering reqTable::getPending()' ])
         pendLst = []
     
-        if client:
-            # Return results for client only.
-            for requestidStr in self.reqDict.keys():
-                if self.reqDict[requestidStr].status == 'P' and self.reqDict[requestidStr].client == client:
-                    self.log.writeDebug([ '  Adding request (ID ' + requestidStr + ') to pendling list.' ])
-                    pendLst.append(self.reqDict[requestidStr])
-        else:
-            for requestidStr in self.reqDict.keys():
-                if self.reqDict[requestidStr].status == 'P':
-                    self.log.writeDebug([ '  Adding request (ID ' + requestidStr + ') to pendling list.' ])
-                    pendLst.append(self.reqDict[requestidStr])
-    
+        for requestidStr in self.reqDict.keys():
+            if self.reqDict[requestidStr].status == 'P' and (client is None or self.reqDict[requestidStr].client == client):
+                self.log.writeDebug([ '  Adding request (ID ' + requestidStr + ') to pendling list.' ])
+                pendLst.append(self.reqDict[requestidStr])
+
+        if len(pendLst) > 0:    
             # Sort by start time. Sorts in place - and returns None.
             pendLst.sort(key=lambda req : req.starttime.strftime('%Y-%m-%d %T'))
 
@@ -1077,44 +1071,73 @@ class ReqTable(object):
         self.log.writeDebug([ 'Entering reqTable::getNew()' ])
     
         newLst = []
-        
-        if client:
-            # Return results for client only.
-            self.log.writeDebug([ '  Looking for requests for client ' + client + '.' ])
-            for requestidStr in self.reqDict.keys():
-                self.log.writeDebug([ '  Examining request with ID ' + requestidStr + '.' ])
-                if self.reqDict[requestidStr].status == 'N' and self.reqDict[requestidStr].client == client:
-                    newLst.append(self.reqDict[requestidStr])            
-        else:
-            self.log.writeDebug([ '  Looking for all client requests.' ])
-            for requestidStr in self.reqDict.keys():
-                self.log.writeDebug([ '  Examining request with ID ' + requestidStr + '.' ])
-                if self.reqDict[requestidStr].status == 'N':
-                    newLst.append(self.reqDict[requestidStr])
 
-        # Sort by start time. Sorts in place - and returns None.
-        newLst.sort(key=lambda req : req.starttime.strftime('%Y-%m-%d %T'))
+        for requestidStr in self.reqDict.keys():
+            if self.reqDict[requestidStr].status == 'N' and (client is None or self.reqDict[requestidStr].client == client):
+                self.log.writeDebug([ '  Adding request (ID ' + requestidStr + ') to new list.' ])
+                newLst.append(self.reqDict[requestidStr])            
+        
+        if len(newLst) > 0:
+            # Sort by start time. Sorts in place - and returns None.
+            newLst.sort(key=lambda req : req.starttime.strftime('%Y-%m-%d %T'))
 
         self.log.writeDebug([ 'Leaving reqTable::getNew()' ])
         return newLst
 
     def getProcessing(self, client=None):
+        self.log.writeDebug([ 'Entering reqTable::getProcessing()' ])
+        
         procLst = []
-    
-        if client:
-            # Return results for client only.
-            for requestidStr in self.reqDict.keys():
-                if (self.reqDict[requestidStr].status == 'P' or self.reqDict[requestidStr].status == 'D' or self.reqDict[requestidStr].status == 'I') and self.reqDict[requestidStr].client == client:
-                    procLst.append(self.reqDict[requestidStr])
-        else:
-            for requestidStr in self.reqDict.keys():
-                if self.reqDict[requestidStr].status == 'P' or self.reqDict[requestidStr].status == 'D' or self.reqDict[requestidStr].status == 'I':
-                    procLst.append(self.reqDict[requestidStr])
-    
+
+        # Return results for client only.
+        for requestidStr in self.reqDict.keys():
+            if (self.reqDict[requestidStr].status == 'P' or self.reqDict[requestidStr].status == 'D' or self.reqDict[requestidStr].status == 'I') and (client is None or self.reqDict[requestidStr].client == client):
+                self.log.writeDebug([ '  Adding request (ID ' + requestidStr + ') to processing list.' ])
+                procLst.append(self.reqDict[requestidStr])
+
+        if len(procLst) > 0:    
             # Sort by start time. Sorts in place - and returns None.
             procLst.sort(key=lambda req : req.starttime.strftime('%Y-%m-%d %T'))
 
+        self.log.writeDebug([ 'Leaving reqTable::getProcessing()' ])
         return procLst
+        
+    def getInError(self, client=None):
+        self.log.writeDebug([ 'Entering reqTable::getInError()' ])
+        errLst = []
+    
+        for requestidStr in self.reqDict.keys():
+            if self.reqDict[requestidStr].status == 'E' and (client is None or self.reqDict[requestidStr].client == client):
+                self.log.writeDebug([ '  Adding request (ID ' + requestidStr + ') to in-error list.' ])
+                errLst.append(self.reqDict[requestidStr])
+
+        if len(errLst) > 0:
+            # Sort by start time. Sorts in place - and returns None.
+            errLst.sort(key=lambda req : req.starttime.strftime('%Y-%m-%d %T'))
+
+        self.log.writeDebug([ 'Leaving reqTable::getInError()' ])
+        return errLst
+
+    def deleteRequests(self, requestids):
+        for arequestid in requestids:
+            requestidStr = str(arequestid)
+    
+            if not requestidStr in self.reqDict or not self.reqDict[requestidStr]:
+                raise Exception('unknownRequestid', 'No request-table record exists for ID ' + requestidStr + '.')
+
+            try:
+                cmd = 'DELETE FROM ' + self.tableName + ' WHERE requestid=' + str(self.reqDict[requestidStr].requestid)
+                with self.conn.cursor() as cursor:
+                    cursor.execute(cmd)
+                    self.conn.commit()
+            except psycopg2.Error as exc:
+                self.conn.rollback()
+                raise Exception('reqtableWrite', exc.diag.message_primary + ': ' + cmd + '.')
+            except:
+                self.conn.rollback()
+                raise
+
+            del self.reqDict[requestidStr]
 
     def getTimeout(self):
         return self.timeOut
@@ -1260,8 +1283,7 @@ if __name__ == "__main__":
                                 msLog.writeInfo([ '  Did not find any pending requests.' ])
                             
                             for areq in reqsPending:
-                                msLog.writeInfo([ 'Found a pending request: ' ])
-                                areq.dump()
+                                msLog.writeInfo([ 'Found a pending request: ' + areq.dump(False) + '.'])
                                 timeNow = datetime.now(areq.starttime.tzinfo)
                                 if timeNow > areq.starttime + reqTable.getTimeout():
                                     msLog.writeError(['The processing of request ' + str(areq.requestid) + ' timed-out.'])
@@ -1275,7 +1297,27 @@ if __name__ == "__main__":
 
                         finally:
                             reqTable.releaseLock()
+                            
+                        # Remove old errored-out requests. The records of these errored-out requests should be
+                        # available for a while so that request-subs.py can pass the error along to the requestor,
+                        # but after a time-out, the errored-out request record should be deleted.
+                        try:
+                            reqTable.acquireLock()
+                            reqsInError = reqTable.getInError()
+                            expiredAndInError = []
 
+                            for areq in reqsInError:
+                                timeNow = datetime.now(areq.starttime.tzinfo)
+                                if timeNow > areq.starttime + reqTable.getTimeout():
+                                    msLog.writeInfo(['Deleting the record for errored-out request: (' + areq.dump(False) + ').'])
+                                    expiredAndInError.append(areq.requestid)
+                                    
+                            if len(expiredAndInError) > 0:
+                                reqTable.deleteRequests(expiredAndInError)
+                                
+                        finally:
+                            reqTable.releaseLock()
+                        
                         # If the requestor is making a subscription request, but there is already a request
                         # pending for that requestor, then send an error message back to the requestor 
                         # that will cause the client code to exit without modifying any client state. This is 
