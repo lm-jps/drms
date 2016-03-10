@@ -904,13 +904,17 @@ sub Exists
     my($self) = shift;
     my($ns);
     my($tab);
+    my($nsLower);
+    my($tabLower);
     my($rv) = 0;
     my($stmnt);
     my($rows);
     
     ($ns, $tab) = ($self->{_name} =~ /(.+)\.(.+)/);
+    $nsLower = lc($ns);
+    $tabLower = lc($tab);
     
-    $stmnt = "SELECT * FROM information_schema.tables WHERE table_schema = '$ns' AND table_name = '$tab'";
+    $stmnt = "SELECT * FROM information_schema.tables WHERE table_schema = '$nsLower' AND table_name = '$tabLower'";
     if ($self->{_dbh}->ExeQuery($stmnt, \$rows))
     {
         # Bad query.
