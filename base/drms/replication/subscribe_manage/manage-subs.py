@@ -33,9 +33,11 @@ import threading
 import argparse
 import io
 import signal
-from subprocess import check_call, Popen
+import re
+from subprocess import check_call, Popen, CalledProcessError
 import psycopg2
 from datetime import datetime, timedelta
+import shutil
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../../include'))
 from drmsparams import DRMSParams
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../../base/libs/py'))
@@ -135,10 +137,13 @@ class TerminationHandler(object):
         # On second thought, let's not close the log either. Just flush for now, and close() at the end of the program run.
         self.log.flush()
     
-        # Stop threads
+        # Wait for worker threads to complete.
         for worker in Worker.tList:
-            worker.stop() # Set a flag to halt any polling
-            worker.join(60)
+            # worker.stop() # We don't want to interrupt an ongoing request. Wait for the thread to complete. If we need to 
+            # stop manage-subs.py, then we will have to kill -9 it.
+            self.log.writeDebug([ 'Waiting for worker (request ID ' + str(worker.requestID) + ') to halt.' ])
+            worker.join()
+            self.log.writeDebug([ 'Worker (request ID ' + str(worker.requestID) + ') halted.' ])
 
 class ManageSubsParams(DRMSParams):
 
@@ -261,26 +266,31 @@ class Log(object):
         if self.log:
             for line in text:
                 self.log.debug(line)
+            self.fileHandler.flush()
             
     def writeInfo(self, text):
         if self.log:
             for line in text:
                 self.log.info(line)
+        self.fileHandler.flush()
     
     def writeWarning(self, text):
         if self.log:
             for line in text:
                 self.log.warning(line)
+            self.fileHandler.flush()
     
     def writeError(self, text):
         if self.log:
             for line in text:
                 self.log.error(line)
+            self.fileHandler.flush()
             
     def writeCritical(self, text):
         if self.log:
             for line in text:
                 self.log.critical(line)
+            self.fileHandler.flush()
 
 class RedirectStdFileStreams(object):
     def __new__(cls, stdout=None, stderr=None):
@@ -376,11 +386,11 @@ class Worker(threading.Thread):
         self.newLstPath = os.path.join(self.lstDir, self.client + '.new.lst')
         self.sqlgenArgFile = os.path.join(self.triggerDir, self.client + '-sqlgen.txt.tmp')
     
-    def __run__(self):
+    def run(self):
         # There is at most one thread per client.
+        errorMsg = None
         try:
-            raise Exception('blah', 'outta here')
-            
+            self.log.writeInfo([ 'Starting worker thread to handle request: (' + self.request.dump(False) + ').'])
             # We don't want the main thread modifying this the request part-way through the following operations.
             self.reqTable.acquireLock()
             reqStatus = self.request.getStatus()[0]
@@ -406,15 +416,16 @@ class Worker(threading.Thread):
             # We must add the series to both the lst file and to su_production.slonylst so
             # that if the parser is modified to use the su_production tables, it will see
             # series for node.new.
+            subListObj = SubscriptionList(self.clientLstDbTable, self.conn, self.client)
             if self.newSite:
-                subList = [ self.series.lower() ]
+                subList = [ series.lower() for series in self.series ]
         
                 if self.action.lower() != 'subscribe':
                     raise Exception('invalidRequest', 'As a new client, ' + self.client + ' cannot make a ' + self.action.lower() + ' request.')
             else:
                 # Read the client's subscription list from su_production.slonylst. There is no need 
                 # for a lock since only one thread can modify the subscription list for a client.
-                subList = SubscriptionList(self.clientLstDbTable, self.conn, self.client)
+                subList = subListObj.getSubscriptionList()
         
                 if self.action == 'subscribe':
                     # Append to subList.
@@ -444,7 +455,7 @@ class Worker(threading.Thread):
                 while True:
                     if self.sdEvent.isSet():
                         raise Exception('shutDown', 'Received shut-down message from main thread.')
-                
+
                     try:
                         try:
                             cmd = '(set -o noclobber; echo ' + str(os.getpid()) + ' > ' + self.subscribeLock + ') 2> /dev/null'
@@ -470,7 +481,7 @@ class Worker(threading.Thread):
                 
                         # ...and make the temporary client.new directory in the site-logs directory.
                         os.mkdir(self.newClientLogDir) # umask WILL mask-out bits if it is not 0000; os.chmod() is better.
-                        os.chmod(self.newClientLogDir, 2755)
+                        os.chmod(self.newClientLogDir, 0O2755) # This is the fucking ridiculous way you specify Octal in Py 3 (not Py 2).
                         break
                     except Exception as exc:
                         if len(exc.args) == 1 and exc.args[0] == 'subLock':
@@ -483,11 +494,14 @@ class Worker(threading.Thread):
                             # Failure to run gentables.pl create client.new dir or chmod client.new, re-raise the exception generated.
                             raise
                     finally:
+                        self.reqTable.releaseLock()
                         if os.path.exists(self.subscribeLock):
-                            os.remove(self.subcribeLock)
+                            os.remove(self.subscribeLock)
 
                 # Refresh this script's cache FROM DB.
-                subList.refreshSubscriptionList()
+                subListObj.refreshSubscriptionList()
+                
+            raise Exception('blah', 'outta here')
 
             if self.action == 'subscribe' or self.action == 'resubscribe':
                 # Time to create the DUMP. There are two dump files. One contains SQL commands 
@@ -681,9 +695,9 @@ class Worker(threading.Thread):
                     break # out of lock-acquisition loop
                 except Exception as exc:
                     if len(exc.args) == 1 and exc.args[0] == 'subLock':
-                        # Could not obtain lock; try again (up to 30 tries)
+                        # Could not obtain lock; try again (up to maxLoop tries)
                         if maxLoop <= 0:
-                            raise Exception('subLock', 'Could not obtain subscription lock after 30 tries.')
+                            raise Exception('subLock', 'Could not obtain subscription lock after ' + str(maxLoop) + ' tries.')
                         time.sleep(1)
                         maxLoop -= 1
                     else:
@@ -691,39 +705,61 @@ class Worker(threading.Thread):
                         # or os.mkdir() or os.chmod().
                         raise
                 finally:
+                    self.reqTable.releaseLock()
                     if os.path.exists(self.subscribeLock):
                         os.remove(self.subcribeLock)
                         
             # Outside of lock-acquisition loop.
-            # reqTable lock is held.
+            # reqTable lock is NOT held.
             # The request has been completely processed without error. Set status to 'C'.
+            self.reqTable.acquireLock()
             self.request.setStatus('C')
+            self.reqTable.releaseLock()
             
         except ValueError as exc:
             # Popen() and check_call() will raise this exception if arguments are bad.
-            print('Command called with invalid arguments: ' + ' '.join(cmdList) + '.')
+            errorMsg = 'Command called with invalid arguments: ' + ' '.join(cmdList) + '.'
+            self.log.writeError([ errMsg ])
         except IOError as exc:
-            print(exc.diag.message_primary)
+            errorMsg = exc.diag.message_primary
+            self.log.writeError([ errorMsg ])
         except OSError as exc:
             # Popen() and check_call() can raise this.
-            print(exc.diag.message_primary)
+            errorMsg = exc.diag.message_primary
+            self.log.writeError([ errorMsg ])
         except CalledProcessError as exc:
             # check_call() can raise this.
-            print('Command returned non-zero status code ' + str(exc.returncode) + ': '+ ' '.join(cmdList) + '.')
+            errorMsg = 'Command returned non-zero status code ' + str(exc.returncode) + ': '+ ' '.join(cmdList) + '.'
+            self.log.writeError([ errorMsg ])
         except Exception as exc:
             if len(exc.args) == 2:
                 eType, eMsg = exc.args
-                msg = 'Problem in worker thread (request ID ' + str(self.requestID) + '): ' + eMsg + ' ('+ eType + ').'
+                
+                if eType != 'shutDown':
+                    msg = 'Problem in worker thread (request ID ' + str(self.requestID) + '): ' + eMsg + ' ('+ eType + ').'
+                else:
+                    msg = 'Worker (requed ID ' + str(self.requestID) + ') received shutdown signal.'
+                errorMsg = msg
                 if self.log:
                     self.log.writeError([ msg ])
-                else:
-                    print(msg, file=sys.stderr)
             else:
+                import traceback
+                
+                errorMsg = 'Unknown error in worker thread (request ID ' + str(self.requestID) + '); thread terminating.'
                 if self.log:
-                    self.log.writeError([ 'Unknown error in worker thread (request ID ' + '); thread terminating.' ])
+                    self.log.writeError([ errorMsg ])
+                    self.log.writeError([ traceback.format_exc(5) ])
         finally:
+            self.reqTable.acquireLock()
             if self.log:
                 self.log.writeInfo([ 'Worker thread (request ID ' + str(self.requestID) + ') terminating.' ])
+                
+            if errorMsg:
+                # Set request status to error.
+                self.log.writeDebug([ 'Setting status for request ' + str(self.requestID) + ' to E.' ])
+                self.request.setStatus('E', errorMsg)
+                time.sleep(1)
+            
             # Always release reqTable lock.
             self.reqTable.releaseLock()
             maxLoop = 15
@@ -736,14 +772,18 @@ class Worker(threading.Thread):
                         raise Exception('subLock')
                         
                     # Obtained global subscription lock.
-                    
-                    # There was some kind of error. We need to clean up several things.
-                    self.cleanOnError()
+                    if errorMsg:
+                        # There was some kind of error. We need to clean up several temporary things, and we need to remove the client
+                        # entry from the configuration table IFF the client was a new subscriber.
+                        self.cleanOnError()
+                    else:
+                        self.cleanTemp()
+                    break
                 except Exception as exc:
                     if len(exc.args) == 1 and exc.args[0] == 'subLock':
-                        # Could not obtain lock; try again (up to 30 tries)
+                        # Could not obtain lock; try again (up to maxLoop tries)
                         if maxLoop <= 0:
-                            raise Exception('subLock', 'Could not obtain subscription lock after 30 tries.')
+                            raise Exception('subLock', 'Could not obtain subscription lock after ' + str(maxLoop) + ' tries.')
                         time.sleep(1)
                         maxLoop -= 1
                     else:
@@ -752,14 +792,23 @@ class Worker(threading.Thread):
                         raise
                 finally:
                     if os.path.exists(self.subscribeLock):
-                        os.remove(self.subcribeLock)
+                        os.remove(self.subscribeLock)
 
     def stop(self):
+        self.log.writeInfo([ 'Stopping worker (request ID ' + str(self.requestID) + ').'])
         self.sdEvent.set()
             
     def cleanTemp(self):
         try:
             # LEGACY - Remove the client.lst.new file entry from slon_parser.cfg.
+            (head, tail) = os.path.split(self.parserConfig)
+            if not os.path.exists(head):
+                os.mkdir(head)
+            if not os.path.exists(self.parserConfig):
+                open(self.parserConfig, 'w').close()
+            if os.path.exists(self.parserConfigTmp):
+                os.remove(self.parserConfigTmp)
+
             with open(self.parserConfigTmp, 'w') as fout, open(self.parserConfig, 'r') as fin:
                 regExp = re.compile(re.escape(self.client + '.new.lst'))
 
@@ -776,17 +825,19 @@ class Worker(threading.Thread):
             
             # Remove client.new from su_production.slonylst and su_production.slonycfg. 
             cmdList = [ os.path.join(self.repDir, 'subscribe_manage', 'gentables.pl'), 'op=remove', 'conf=' + self.slonyCfg, '--node=' + self.client + '.new' ]
+            self.log.writeDebug( [ 'Calling check_call(): ' + ' '.join(cmdList) + '.' ])
             # Raises CalledProcessError on error (non-zero returned by gentables.pl).
             check_call(cmdList)
+            self.log.writeDebug( [ 'Success calling check_call().' ])
         
             # Remove client.new site-log directory.
-            if os.path.exists(tempLogDir):
-                self.log.write(['Removing temporary site-log directory ' + self.siteLogDir + '.'])
-                shutil.rmtree(self.siteLogDir)
+            if os.path.exists(self.newClientLogDir):
+                self.log.writeInfo(['Removing temporary site-log directory ' + self.newClientLogDir + '.'])
+                shutil.rmtree(self.newClientLogDir)
         
             # LEGACY - Remove slon_parser.cfg.tmp from tables dir.
             if os.path.exists(self.parserConfigTmp):
-                os.remove(elf.parserConfigTmp)
+                os.remove(self.parserConfigTmp)
 
             # Remove client-sqlgen.txt.tmp temporary argument file from triggers directory.
             if os.path.exists(self.sqlgenArgFile):
@@ -812,7 +863,8 @@ class Worker(threading.Thread):
             raise Exception('cleanTemp', 'Command returned non-zero status code ' + str(exc.returncode) + ': '+ ' '.join(cmdList) + '.')
 
     def cleanOnError(self):
-        # Stuff to remove if an error happens anywhere during the subscription process.
+        # Stuff to remove if an error happens anywhere during the subscription process. Remove site from
+        # set of subscribers completely, if the site was a new subscriber.
         try:
             self.cleanTemp()
 
@@ -838,14 +890,16 @@ class Worker(threading.Thread):
                 cmdList = [ os.path.join(self.repDir, 'subscribe_manage', 'gentables.pl'), 'op=remove', 'conf=' + self.slonyCfg, '--node=' + self.client ]
                 # Raises CalledProcessError on error (non-zero returned by gentables.pl).
                 check_call(cmdList)
-        except:
-            pass
+        except CalledProcessError as exc:
+            self.log.writeError([ 'Error running gentables.pl, status ' +  str(exc.returncode) + '.'])
 
     @staticmethod
     def newThread(request, newSite, arguments, conn, log):
         worker = Worker(request, newSite, arguments, conn, log)
         worker.tList.append(worker)
+        log.writeDebug([ 'Calling worker.start().' ])
         worker.start()
+        log.writeDebug([ 'Successfully called worker.start().' ])
         return worker
         
 class Request(object):
@@ -864,6 +918,22 @@ class Request(object):
         self.tapegroup = tapegroup
         self.status = status
         self.errmsg = errmsg
+        
+    def copy(self, source):
+        self.conn = source.conn
+        self.log = source.log
+        self.reqtable = source.reqtable
+        self.dbtable = source.dbtable
+        self.requestid = source.requestid
+        self.client = source.client
+        self.starttime = source.starttime
+        self.action = source.action
+        self.series = source.series
+        self.archive = source.archive
+        self.retention = source.retention
+        self.tapegroup = source.tapegroup
+        self.status = source.status
+        self.errmsg = source.errmsg
         
     def setStatus(self, code, msg=None):
         # ART - Validate code
@@ -893,7 +963,7 @@ class Request(object):
         try:
             with self.conn.cursor() as cursor:
                 # The requestid column is an integer.
-                cmd = 'SELECT status, errmsg FROM ' + self.dbtable + " WHERE requestid=" + str(requestid)
+                cmd = 'SELECT status, errmsg FROM ' + self.dbtable + " WHERE requestid=" + str(self.requestid)
 
                 cursor.execute(cmd)
                 records = cursor.fetchall()
@@ -914,10 +984,12 @@ class Request(object):
             raise Exception('invalidArgument', 'Type of argument to setWorker argument must be Worker; ' + type(worker) + ' was provided.')
         self.worker = worker
         
-    def stopWorker(self):
+    def stopWorker(self, wait=False, timeout=30):
         if hasattr(self, 'worker') and self.worker:
             self.worker.stop()
-        
+            if wait:
+                 self.worker.join(timeout)
+
     def dump(self, toLog=True):
         text = 'requestID=' + str(self.requestid) + ', client=' + self.client + ', starttime=' + self.starttime.strftime('%Y-%m-%d %T') + ', series=' + ','.join(self.series) + ', action=' + self.action + ', archive=' + str(self.archive) + ', retention=' + str(self.retention) + ', tapegroup=' + str(self.tapegroup) + ', status=' + self.status + ', errmsg=' + str(self.errmsg if (self.errmsg and len(self.errmsg) > 0) else "''")
         if toLog:
@@ -957,11 +1029,8 @@ class ReqTable(object):
                     tapegroup = record[7] # int
                     status = record[8]    # text
                     errmsg = record[9]    # text
-                    self.log.writeDebug([ 'Reading request record: (' + 'requestID=' + requestidStr + ', client=' + client + ', starttime=' + starttime.strftime('%Y-%m-%d %T') + ', action=' + action + ', series=' + ','.join(series) + ', archive=' + str(archive) + ', retention=' + str(retention) + ', tapegroup=' + str(tapegroup) + ', status=' + status + ', errmsg=' + str(errmsg if (errmsg and len(errmsg) > 0) else "''") ])
                     req = Request(self.conn, self.log, self, self.tableName, requestid, client, starttime, action, series, archive, retention, tapegroup, status, errmsg)
                     self.reqDict[requestidStr] = req
-                    self.log.writeDebug([ 'Created Request with ID ' + requestidStr + ' (' + req.dump(False) +').' ])
-                self.log.writeDebug([ '  Total number of requests read from the db: ' + str(len(self.reqDict.keys())) + '.' ])
         except psycopg2.Error as exc:
             raise Exception('reqtableRead', exc.diag.message_primary + ': ' + cmd + '.')
         finally:
@@ -992,11 +1061,77 @@ class ReqTable(object):
     # all other changes to the database table (made from outside this program) that have happened. To read those changes,
     # shut down this program, then make the changes, then start this program again.
     def refresh(self):
-        # Delete existing items from self.
-        self.reqDict.clear()
+        # Get a fresh copy of the requests from the DB.
+        latestReqTable = ReqTable(self.tableName, self.timeOut, self.conn, self.log)
+        latestReqs = latestReqTable.get()
+        oldReqs = self.get()
         
-        # Read the table from the database anew.
-        self.tryRead()
+        latestReqs.sort(key=lambda req : req.requestid)
+        oldReqs.sort(key=lambda req : req.requestid)
+
+        if len(oldReqs) == 0:
+            # Copy all from latestReqs.
+            for latestReq in latestReqs:
+                req = Request(self.conn, self.log, self, self.tableName, latestReq.requestid, latestReq.client, latestReq.starttime, latestReq.action, latestReq.series, latestReq.archive, latestReq.retention, latestReq.tapegroup, latestReq.status, latestReq.errmsg)
+                self.reqDict[str(latestReq.requestid)] = req
+                
+            return
+        
+        if len(latestReqs) == 0:
+            # Delete all requests.
+            for oldReq in oldReqs:
+                # Stop any associated worker.
+                oldReq.stopWorker(True, 120)
+                
+            self.reqDict.clear()
+            
+            return
+
+        # Step through all reqs in both lists. If the current requestIDs match, then copy from latest to old, and 
+        # increment both pointers. If they do not match, then if the smaller requestID is from the latest, copy over.
+        # Increment the iLatest pointer. If the smaller requestID is from the old, delete and increment iOld.
+        toDel = []
+        toAdd = []
+        iLatest = 0
+        iOld = 0
+        
+        while iLatest < len(latestReqs) or iOld < len(oldReqs):
+            if iLatest < len(latestReqs):
+                latestReq = latestReqs[iLatest]
+            else:
+                latestReq = None
+            
+            if iOld < len(oldReqs):
+                oldReq = oldReqs[iOld]
+            else:
+                oldReq = None
+        
+            if latestReq and oldReq and (latestReq.requestid == oldReq.requestid):
+                # Don't delete the oldReq - just update its attributes. There could be a worker currently processing
+                # the request. The only thing that should change is the status (request-subs.py could change it).
+                self.reqDict[str(oldReq.requestid)].copy(latestReq)
+                iLatest += 1
+                iOld += 1
+            elif latestReq and oldReq:
+                if latestReq.requestid < oldReq.requestid:
+                    toAdd.append(latestReq)
+                    iLatest += 1
+                else:
+                    toDel.append(oldReq)
+                    iOld += 1
+            elif latestReq:
+                toAdd.append(latestReq)
+                iLatest += 1
+            else:
+                toDel.append(oldReq)
+                iOld += 1
+                
+        for req in toDel:
+            req.stopWorker(True, 120)
+            del self.reqDict[str(req.requestid)]
+            
+        for req in toAdd:
+            self.reqDict[str(req.requestid)] = req
         
     def acquireLock(self):
         self.lock.acquire()
@@ -1052,70 +1187,60 @@ class ReqTable(object):
         return toRet
     
     def getPending(self, client=None):
-        self.log.writeDebug([ 'Entering reqTable::getPending()' ])
         pendLst = []
     
         for requestidStr in self.reqDict.keys():
             if self.reqDict[requestidStr].status == 'P' and (client is None or self.reqDict[requestidStr].client == client):
-                self.log.writeDebug([ '  Adding request (ID ' + requestidStr + ') to pendling list.' ])
+                self.log.writeDebug([ 'Adding request (ID ' + requestidStr + ') to pending list.' ])
                 pendLst.append(self.reqDict[requestidStr])
 
         if len(pendLst) > 0:    
             # Sort by start time. Sorts in place - and returns None.
             pendLst.sort(key=lambda req : req.starttime.strftime('%Y-%m-%d %T'))
 
-        self.log.writeDebug([ 'Leaving reqTable::getPending()' ])
         return pendLst
     
     def getNew(self, client=None):
-        self.log.writeDebug([ 'Entering reqTable::getNew()' ])
-    
         newLst = []
 
         for requestidStr in self.reqDict.keys():
             if self.reqDict[requestidStr].status == 'N' and (client is None or self.reqDict[requestidStr].client == client):
-                self.log.writeDebug([ '  Adding request (ID ' + requestidStr + ') to new list.' ])
+                self.log.writeDebug([ 'Adding request (ID ' + requestidStr + ') to new list.' ])
                 newLst.append(self.reqDict[requestidStr])            
         
         if len(newLst) > 0:
             # Sort by start time. Sorts in place - and returns None.
             newLst.sort(key=lambda req : req.starttime.strftime('%Y-%m-%d %T'))
 
-        self.log.writeDebug([ 'Leaving reqTable::getNew()' ])
         return newLst
 
     def getProcessing(self, client=None):
-        self.log.writeDebug([ 'Entering reqTable::getProcessing()' ])
-        
         procLst = []
 
         # Return results for client only.
         for requestidStr in self.reqDict.keys():
             if (self.reqDict[requestidStr].status == 'P' or self.reqDict[requestidStr].status == 'D' or self.reqDict[requestidStr].status == 'I') and (client is None or self.reqDict[requestidStr].client == client):
-                self.log.writeDebug([ '  Adding request (ID ' + requestidStr + ') to processing list.' ])
+                self.log.writeDebug([ 'Adding request (ID ' + requestidStr + ') to processing list.' ])
                 procLst.append(self.reqDict[requestidStr])
 
         if len(procLst) > 0:    
             # Sort by start time. Sorts in place - and returns None.
             procLst.sort(key=lambda req : req.starttime.strftime('%Y-%m-%d %T'))
 
-        self.log.writeDebug([ 'Leaving reqTable::getProcessing()' ])
         return procLst
         
     def getInError(self, client=None):
-        self.log.writeDebug([ 'Entering reqTable::getInError()' ])
         errLst = []
     
         for requestidStr in self.reqDict.keys():
             if self.reqDict[requestidStr].status == 'E' and (client is None or self.reqDict[requestidStr].client == client):
-                self.log.writeDebug([ '  Adding request (ID ' + requestidStr + ') to in-error list.' ])
+                self.log.writeDebug([ 'Adding request (ID ' + requestidStr + ') to in-error list.' ])
                 errLst.append(self.reqDict[requestidStr])
 
         if len(errLst) > 0:
             # Sort by start time. Sorts in place - and returns None.
             errLst.sort(key=lambda req : req.starttime.strftime('%Y-%m-%d %T'))
 
-        self.log.writeDebug([ 'Leaving reqTable::getInError()' ])
         return errLst
 
     def deleteRequests(self, requestids):
@@ -1137,6 +1262,7 @@ class ReqTable(object):
                 self.conn.rollback()
                 raise
 
+            self.reqDict[requestidStr].stopWorker(True) # Will stop worker and clean-up temp files, if a worker exists. Waits for worker to terminate.
             del self.reqDict[requestidStr]
 
     def getTimeout(self):
@@ -1277,10 +1403,7 @@ if __name__ == "__main__":
                         # while being processed.
                         try:
                             reqTable.acquireLock()
-                            msLog.writeInfo([ 'Looking for pending requests. ' ])
                             reqsPending = reqTable.getPending()
-                            if len(reqsPending) == 0:
-                                msLog.writeInfo([ '  Did not find any pending requests.' ])
                             
                             for areq in reqsPending:
                                 msLog.writeInfo([ 'Found a pending request: ' + areq.dump(False) + '.'])
@@ -1291,7 +1414,7 @@ if __name__ == "__main__":
                                     # Kill the Worker thread (if it exists). The Worker will clean-up subscription-management files, 
                                     # like client.new.lst.
                                     areq.setStatus('E', 'Processing timed-out.')
-                                    areq.stopWorker()
+                                    areq.stopWorker(False)
 
                             # Completed requests, success and failures alike, are handled by request-subs.py. There is nothing to do here.
 
@@ -1327,10 +1450,7 @@ if __name__ == "__main__":
                         # in the first place).
                         try:
                             reqTable.acquireLock()
-                            msLog.writeInfo([ 'Looking for new requests.' ])
                             reqsNew = reqTable.getNew()
-                            if len(reqsNew) == 0:
-                                msLog.writeInfo([ '  Did not find any new requests.' ])
 
                             for areq in reqsNew:
                                 msLog.writeInfo([ 'Found a new request: (' + areq.dump(False) + ').' ])
@@ -1380,6 +1500,7 @@ if __name__ == "__main__":
                         # Refresh the requests table. This could result in new requests being added to the table, or completed requests being
                         # deleted. 
                         try:
+                            reqTable.acquireLock()
                             reqTable.refresh()
                         finally:
                             reqTable.releaseLock()
