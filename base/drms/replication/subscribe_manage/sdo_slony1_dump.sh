@@ -2,7 +2,7 @@
 # ----------
 # slony1_dump.sh
 #
-# $Id: sdo_slony1_dump.sh,v 1.12 2016/02/19 20:24:23 arta Exp $
+# $Id: sdo_slony1_dump.sh,v 1.13 2016/03/11 19:03:16 arta Exp $
 #
 #	This script creates a special data only dump from a subscriber
 #	node. The stdout of this script, fed into psql for a database that
@@ -154,7 +154,7 @@ CREATE TABLE IF NOT EXISTS $clname.sl_archive_tracking (
 -- -----------------------------------------------------------------------------
 -- FUNCTION sequenceSetValue_offline (seq_id, last_value)
 -- -----------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION $clname.sequenceSetValue_offline(int4, int8) RETURNS int4
+CREATE OR REPLACE FUNCTION $clname.sequencesetvalue_offline(int4, int8) RETURNS int4
 AS '
 declare
 	p_seq_id			alias for \$1;
@@ -192,7 +192,7 @@ language sql;
 -- ---------------------------------------------------------------------------------------
 -- FUNCTION archiveTracking_offline (new_counter, created_timestamp)
 -- ---------------------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION $clname.archiveTracking_offline(int8, timestamp) RETURNS int8
+CREATE OR REPLACE FUNCTION $clname.archivetracking_offline(int8, timestamp) RETURNS int8
 AS '
 declare
 	p_new_seq	alias for \$1;
