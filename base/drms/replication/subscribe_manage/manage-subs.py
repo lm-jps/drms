@@ -38,6 +38,7 @@ from subprocess import check_call, Popen, CalledProcessError
 import psycopg2
 from datetime import datetime, timedelta
 import shutil
+import glob
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../../include'))
 from drmsparams import DRMSParams
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../../base/libs/py'))
@@ -353,13 +354,14 @@ class Worker(threading.Thread):
     eventMaxThreads = threading.Event() # Event fired when the number of threads decreases.
     lock = threading.Lock() # Guard tList.
     
-    def __init__(self, request, newSite, arguments, conn, log):
+    def __init__(self, request, newSite, arguments, connMaster, connSlave, log):
         threading.Thread.__init__(self)
         self.request = request
         self.requestID = request.requestid
         self.newSite = newSite
         self.arguments = arguments
-        self.conn = conn # Master db
+        self.connMaster = connMaster # Master db
+        self.connSlave = connSlave # Slave db
         self.log = log
         self.sdEvent = threading.Event()
         
@@ -416,7 +418,7 @@ class Worker(threading.Thread):
             # We must add the series to both the lst file and to su_production.slonylst so
             # that if the parser is modified to use the su_production tables, it will see
             # series for node.new.
-            subListObj = SubscriptionList(self.clientLstDbTable, self.conn, self.client)
+            subListObj = SubscriptionList(self.clientLstDbTable, self.connMaster, self.client)
             if self.newSite:
                 subList = [ series.lower() for series in self.series ]
         
@@ -500,8 +502,6 @@ class Worker(threading.Thread):
 
                 # Refresh this script's cache FROM DB.
                 subListObj.refreshSubscriptionList()
-                
-            raise Exception('blah', 'outta here')
 
             if self.action == 'subscribe' or self.action == 'resubscribe':
                 # Time to create the DUMP. There are two dump files. One contains SQL commands 
@@ -535,50 +535,115 @@ class Worker(threading.Thread):
                 # sql_gen so I am using the existing, somewhat-messy interface (instead of passing arguments on the
                 # command line).            
                 if self.newSite:
-                    newSiteStr = 'true'
+                    newSiteStr = '1'
                 else:
-                    newSiteStr = 'false'
-                
-                # Create sqlgenArgFile file. It must contains two columns: 1. the series (lower-case), 2. the exact string "subscribe". The 
-                # two columns must be white-space delimited.
-                with open(self.sqlgenArgFile, 'w') as fout:
-                    print(self.series.lower() + '        subscribe', file=fout)
-            
-                # The dump could take a while to run. We should start the process asynchronously, and poll for completion, while
-                # checking for a shutdown condition.
-                cmdList = [ os.path.join(repDir, 'subscribe_manage', 'sql_gen'), self.client, self.newSiteStr, str(self.archive), str(self.retention), str(self.tapegroup), self.sqlgenArgFile ]
-                proc = Popen(cmdList)
-            
-                # Release reqTable lock to allow other client requests to be processed.
-                self.reqTable.releaseLock()
-            
-                maxLoop = 3600 # 1-hour timeout
-                while True:
-                    if maxLoop <= 0:
-                        raise Exception('sqlDump', 'Time-out waiting for dump file to be generated.')
-            
-                    if self.sdEvent.isSet():
-                        proc.kill()
-                        raise Exception('shutDown', 'Received shut-down message from main thread.')
-            
-                    if proc.returncode is not None:
-                        if proc.returncode != 0:
-                            raise Exception('sqlDump', 'Failure generating dump file, sql_gen returned ' + str(proc.returncode) + '.') 
-                        break
-
-                    maxLoop -= 1
-                    time.sleep(1)
+                    newSiteStr = '0'
                     
-                self.reqTable.acquireLock()
+                # 86 sql_gen. Instead do the work directly in manage-subs.py.
+                # 1. We are going to dump a database table. Ensure the table exists in the slave database.
+                regExp = re.compile(r'\s*(\S+)\.(\S+)\s*')
+                matchObj = regExp.match(self.series[0].lower())
+                if matchObj is not None:
+                    ns = matchObj.group(1)
+                    table = matchObj.group(2)
+                else:
+                    raise Exception('invalidArgument', 'Not a valid DRMS series name: ' + self.series[0].lower() + '.')
+                    
+                if not dbTableExists(connSlave, ns, table):
+                    raise Exception('invalidArgument', 'DB table ' + self.series[0].lower() + ' does not exist.')
+                
+                # 2. Run createns for the schema of the series being subscribed to.
+                cmdList = [ os.path.join(self.arguments.getArg('kModDir'), 'createns'), 'JSOC_DBHOST=' + self.arguments.getArg('SLAVEHOSTNAME'), 'ns=' + ns, 'nsgroup=user', 'dbusr=' + self.arguments.getArg('REPUSER') ]
+                if not os.path.exists(self.arguments.getArg('triggerdir')):
+                    os.mkdir(self.arguments.getArg('triggerdir'))
+                    os.chmod(self.arguments.getArg('triggerdir'), 0O2755)
+                outFile = os.path.join(self.arguments.getArg('triggerdir'), self.client + '.' + ns + '.createns.sql')
+                
+                with open(outFile, 'w') as fout:
+                    self.log.writeInfo([ 'Running ' + ' '.join(cmdList) + '.' ])
+                    proc = Popen(cmdList, stdout=fout)
             
-                if os.path.exists(self.sqlgenArgFile):
-                    os.remove(self.sqlgenArgFile)
+                    maxLoop = 60 # 1-minute timeout
+                    while True:
+                        if maxLoop <= 0:
+                            raise Exception('sqlDump', 'Time-out waiting for dump file to be generated.')
+            
+                        if self.sdEvent.isSet():
+                            proc.kill()
+                            raise Exception('shutDown', 'Received shut-down message from main thread.')
+            
+                        if proc.poll() is not None:
+                            if proc.returncode != 0:
+                                raise Exception('sqlDump', 'Failure generating dump file, createns returned ' + str(proc.returncode) + '.') 
+                            break
 
+                        maxLoop -= 1
+                        time.sleep(1)
+                
+                # 3. Run createtabstruct for the table of the series being subscribed to.
+                cmdList = [ os.path.join(self.arguments.getArg('kModDir'), 'createtabstructure'), 'JSOC_DBHOST=' + self.arguments.getArg('SLAVEHOSTNAME'), 'in=' + self.series[0].lower(), 'out=' + self.series[0].lower(), 'archive=' + str(self.archive), 'retention=' + str(self.retention), 'tapegroup=' + str(self.tapegroup), 'owner=' + self.arguments.getArg('REPUSER') ]
+                outFile = os.path.join(self.arguments.getArg('triggerdir'), self.client + '.subscribe_series.sql')
+
+                with open(outFile, 'w') as fout:
+                    print('BEGIN;', file=fout)
+                    self.log.writeInfo([ 'Running ' + ' '.join(cmdList) + '.' ])
+                    proc = Popen(cmdList, stdout=fout)
+                    
+                    maxLoop = 60 # 1-minute timeout
+                    while True:
+                        if maxLoop <= 0:
+                            raise Exception('sqlDump', 'Time-out waiting for dump file to be generated.')
+            
+                        if self.sdEvent.isSet():
+                            proc.kill()
+                            raise Exception('shutDown', 'Received shut-down message from main thread.')
+            
+                        if proc.poll() is not None:
+                            if proc.returncode != 0:
+                                raise Exception('sqlDump', 'Failure generating dump file, createtabstructure returned ' + str(proc.returncode) + '.') 
+                            break
+
+                        maxLoop -= 1
+                        time.sleep(1)
+                        
+                raise Exception('blah', 'outta here!')        
+
+                # 4. Run sdo_slony1_dump.sh and ensure it completed fine. APPEND output to outFile.
+                cmdList = [ os.path.join(self.arguments.getArg('kRepDir'), 'subscribe_manage', 'sdo_slony1_dump.sh'), self.arguments.getArg('SLAVEDBNAME'), self.arguments.getArg('CLUSTERNAME'), self.arguments.getArg('SLAVEPORT'), newSiteStr, os.path.join(self.arguments.getArg('SMworkDir'), 'slon_counter' + '.' + self.client + '.txt'), self.series[0].lower() ]
+                outFile = os.path.join(self.arguments.getArg('triggerdir'), self.client + '.subscribe_series.sql')
+                errFile = os.path.join(self.arguments.getArg('kSMlogDir'), 'slony1_dump.' + self.client + '.log')
+            
+                with open(outFile, 'a') as fout, open(errFile, 'w') as ferr:
+                    self.log.writeInfo([ 'Running ' + ' '.join(cmdList) + '.' ])
+                    proc = Popen(cmdList, stdout=fout, stderr=ferr)
+                    
+                    maxLoop = 3600 # 1-hour timeout
+                    while True:
+                        if maxLoop <= 0:
+                            raise Exception('sqlDump', 'Time-out waiting for dump file to be generated.')
+            
+                        if self.sdEvent.isSet():
+                            proc.kill()
+                            raise Exception('shutDown', 'Received shut-down message from main thread.')
+            
+                        if proc.poll() is not None:
+                            if proc.returncode != 0:
+                                raise Exception('sqlDump', 'Failure generating dump file, sdo_slony1_dump.sh returned ' + str(proc.returncode) + '.') 
+                            break
+
+                        maxLoop -= 1
+                        time.sleep(1)
+            
+    
+                raise Exception('blah', 'outta here!')        
+    
                 # Tell client that the dump is ready for use. We do that by setting the request status to D.
                 self.request.setStatus('D')
 
                 # Release the lock again while the client downloads and applies the SQL file.
                 self.reqTable.releaseLock()
+                
+                raise Exception('blah', 'outta here')
 
                 # Poll on the request status waiting for it to be I. This indicates that the client has successfully ingested
                 # the dump file. The client could also set the status to E if there was some error, in which case the client
@@ -720,6 +785,12 @@ class Worker(threading.Thread):
             # Popen() and check_call() will raise this exception if arguments are bad.
             errorMsg = 'Command called with invalid arguments: ' + ' '.join(cmdList) + '.'
             self.log.writeError([ errMsg ])
+        except FileNotFoundError as exc:
+            import traceback
+            
+            errorMsg = 'File not found.'
+            self.log.writeError([ errorMsg ])
+            self.log.writeError([ traceback.format_exc(5) ])
         except IOError as exc:
             errorMsg = exc.diag.message_primary
             self.log.writeError([ errorMsg ])
@@ -746,13 +817,11 @@ class Worker(threading.Thread):
                 import traceback
                 
                 errorMsg = 'Unknown error in worker thread (request ID ' + str(self.requestID) + '); thread terminating.'
-                if self.log:
-                    self.log.writeError([ errorMsg ])
-                    self.log.writeError([ traceback.format_exc(5) ])
+                self.log.writeError([ errorMsg ])
+                self.log.writeError([ traceback.format_exc(5) ])
         finally:
             self.reqTable.acquireLock()
-            if self.log:
-                self.log.writeInfo([ 'Worker thread (request ID ' + str(self.requestID) + ') terminating.' ])
+            self.log.writeInfo([ 'Worker thread (request ID ' + str(self.requestID) + ') terminating.' ])
                 
             if errorMsg:
                 # Set request status to error.
@@ -846,10 +915,15 @@ class Worker(threading.Thread):
             # LEGACY - Other crap from the initial implementation. The newer implementation does not
             # use files for passing information back and forth to/from the client.
         
-            # Remove client's dump file. Remove untar'd version.
-            if os.path.exists(os.path.join(self.triggerDir, self.client + '.sql')):
-                os.remove(os.path.join(self.triggerDir, self.client + '.sql'))
+            # Remove client's dump files. Remove untar'd version.
+            createNSFiles = glob.glob(os.path.join(self.triggerDir, self.client + '.*.createns.sql'))
+            for afile in createNSFiles:
+                os.remove(afile)
             
+            dumpFile = os.path.join(self.triggerDir, self.client + '.subscribe_series.sql')
+            if os.path.exists(dumpFile):
+                os.remove(dumpFile)
+                        
             # Remove client's dump file. Remove tar file.
             if os.path.exists(os.path.join(self.triggerDir, self.client + '.sql.tar')):
                 os.remove(os.path.join(self.triggerDir, self.client + '.sql.tar'))
@@ -866,6 +940,19 @@ class Worker(threading.Thread):
         # Stuff to remove if an error happens anywhere during the subscription process. Remove site from
         # set of subscribers completely, if the site was a new subscriber.
         try:
+            # If dump files exist, rename them for debugging purposes.
+            createNSFiles = glob.glob(os.path.join(self.triggerDir, self.client + '.*.createns.sql'))
+            dumpFile = os.path.join(self.triggerDir, self.client + '.subscribe_series.sql')
+
+            for afile in createNSFiles:
+                savedFile = afile + '.' + datetime.now().strftime('%Y-%m-%d-%T')
+                self.log.writeDebug([ 'Saving dump file ' + afile + ' as ' + savedFile + '.' ])
+                os.rename(afile, savedFile)
+            if os.path.exists(dumpFile):
+                savedFile = dumpFile + '.' + datetime.now().strftime('%Y-%m-%d-%T')
+                self.log.writeDebug([ 'Saving dump file ' + afile + ' as ' + savedFile + '.' ])
+                os.rename(dumpFile, savedFile)
+        
             self.cleanTemp()
 
             # LEGACY - If this was a newsite subscription, then we need to remove the client entry
@@ -894,8 +981,8 @@ class Worker(threading.Thread):
             self.log.writeError([ 'Error running gentables.pl, status ' +  str(exc.returncode) + '.'])
 
     @staticmethod
-    def newThread(request, newSite, arguments, conn, log):
-        worker = Worker(request, newSite, arguments, conn, log)
+    def newThread(request, newSite, arguments, connMaster, connSlave, log):
+        worker = Worker(request, newSite, arguments, connMaster, connSlave, log)
         worker.tList.append(worker)
         log.writeDebug([ 'Calling worker.start().' ])
         worker.start()
@@ -1357,6 +1444,52 @@ def clientIsNew(arguments, conn, client):
         return True
     else:
         return False
+        
+def dbTableExists(conn, schema, table):
+    cmd = "SELECT n.nspname, c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = '" + schema + "' AND c.relname = '" + table + "'"
+
+    try:
+        cursor = conn.cursor()
+        cursor.execute(cmd)
+        records = cursor.fetchall()
+        if len(records) > 1:
+            raise Exception('dbResponse', 'Unexpected number of database rows returned from query: ' + cmd + '.')
+
+    except psycopg2.Error as exc:
+        raise Exception('dbCmd', exc.diag.message_primary)
+    finally:
+        conn.rollback() # closes the cursor
+        
+    if len(records) == 1:
+        return True
+    else:
+        return False
+
+def cleanAllSavedFiles(triggerDir, log):
+    regExpNs = re.compile(r'.+\.createns\.sql\.(.+)$')
+    regExpDump = re.compile(r'.+\.subscribe_series\.sql\.(.+)$')
+    
+    for file in os.listdir(triggerDir):
+        date = None
+        matchNs = regExpNs.match(file)
+        
+        if matchNs:
+            date = matchNs.group(1)
+        else:
+            matchDump = regExpDump.match(file)
+            if matchDump:
+                date = matchDump.group(1)
+            
+        if date:
+            try:
+                # This was difficult to get right - you cannot use %T for strptime(), although you can use it for strftime().
+                datetime.strptime(date, '%Y-%m-%d-%H:%M:%S')
+
+                # OK to remove the file.
+                log.writeInfo([ 'Removing saved dump file: ' + os.path.join(triggerDir, file) + '.' ])
+                os.remove(os.path.join(triggerDir, file))
+            except ValueError:
+                pass
 
 # Main Program
 if __name__ == "__main__":
@@ -1390,6 +1523,8 @@ if __name__ == "__main__":
                 with psycopg2.connect(database=arguments.getArg('SLAVEDBNAME'), user=arguments.getArg('REPUSER'), host=arguments.getArg('SLAVEHOSTNAME'), port=str(arguments.getArg('SLAVEPORT'))) as connSlave, psycopg2.connect(database=arguments.getArg('MASTERDBNAME'), user=arguments.getArg('REPUSER'), host=arguments.getArg('MASTERHOSTNAME'), port=str(arguments.getArg('MASTERPORT'))) as connMaster:
                     msLog.writeInfo([ 'Connected to database ' + arguments.getArg('SLAVEDBNAME') + ' on ' + arguments.getArg('SLAVEHOSTNAME') + ':' + str(arguments.getArg('SLAVEPORT')) + ' as user ' + arguments.getArg('REPUSER') ])
                     msLog.writeInfo([ 'Connected to database ' + arguments.getArg('MASTERDBNAME') + ' on ' + arguments.getArg('MASTERHOSTNAME') + ':' + str(arguments.getArg('MASTERPORT')) + ' as user ' + arguments.getArg('REPUSER') ])
+
+                    cleanAllSavedFiles(arguments.getArg('triggerdir'), msLog)
 
                     # Read the requests table into memory.
                     reqTable = ReqTable(arguments.getArg('kSMreqTable'), timedelta(seconds=int(arguments.getArg('kSMreqTableTimeout'))), connSlave, msLog)
@@ -1483,7 +1618,7 @@ if __name__ == "__main__":
                                             try:
                                                 if len(Worker.tList) < Worker.maxThreads:
                                                     msLog.writeInfo([ 'Instantiating a worker thread for request ' + str(areq.requestid) + ' for client ' + areq.client + '.' ])
-                                                    areq.setWorker(Worker.newThread(areq, newSite, arguments, connMaster, msLog))
+                                                    areq.setWorker(Worker.newThread(areq, newSite, arguments, connMaster, connSlave, msLog))
                                                     reqTable.setStatus([areq.requestid], 'P') # The new request is now being processed. If there was an issue creating the new thread, an exception will have been raised, and we will not execute this line.
                                                     break # The finally clause will ensure the Worker lock is released.
                                             finally:
