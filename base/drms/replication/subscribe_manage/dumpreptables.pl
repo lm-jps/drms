@@ -4,6 +4,13 @@
 # that exist in both the dump file and the slony logs. After performing the dump, it adds $node.new.lst to slony_parser.cfg and
 # to su_production.slonycfg. It has to navigate a critical region shared by other scripts.
 
+# ***NOTE***
+# A long time ago in a land far, far away, subscription_cleanup used filectr to ensure that no records appeared both in 
+# the dump file and in the subsequent parsed site log files. However, that logic was flawed (it did not prevent duplicate records) 
+# and I since modified the way that the dump is generated. Before the dump is generated, I lock things to so the parser cannot
+# create a site log file with a record that is also in the dump file. So, there is no need for filectr at this point.
+# However, due to the fact that we need to keep legacy code around that might use this file, I haven't removed the parameter
+# from this script. But it is no longer used in this script.
 
 # Run like this:
 
@@ -198,9 +205,9 @@ else
             # I'm not sure what use it is to dump the tracking number.
             if ($rv == &kRetSuccess)
             {
-                $stmnt = "CREATE TEMP TABLE subscriber_slon_counter AS SELECT ac_num FROM $clnsp.sl_archive_counter;";
-                $stmnt = $stmnt . "COPY subscriber_slon_counter TO '$filectr';";
-                $rv = ExeStmnt($dbh, $stmnt, 1, "Dumping the current log number to $filectr: $stmnt\n");   
+                # $stmnt = "CREATE TEMP TABLE subscriber_slon_counter AS SELECT ac_num FROM $clnsp.sl_archive_counter;";
+                # $stmnt = $stmnt . "COPY subscriber_slon_counter TO '$filectr';";
+                # $rv = ExeStmnt($dbh, $stmnt, 1, "Dumping the current log number to $filectr: $stmnt\n");   
             }
                 
             if ($rv == &kRetSuccess)

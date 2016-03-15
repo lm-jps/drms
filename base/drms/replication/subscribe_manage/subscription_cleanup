@@ -175,7 +175,7 @@ cleanup_counter=$(( $cleanup_counter + 1 ))
                     done
                     rm -f $SMworkDir/slon_counter.$node.txt
                 else
-                    logwrite "ERROR:: No $SMworkDir/slon_counter.$node.txt"
+                    logwrite "NOTE:: No $SMworkDir/slon_counter.$node.txt (this is defunct)"
                 fi
                 
                 # Create the sitedir
@@ -203,7 +203,7 @@ cleanup_counter=$(( $cleanup_counter + 1 ))
 	                done
 	                rm -f $SMworkDir/slon_counter.$node.txt
 	            else
-	                logwrite "NOTE:: No $SMworkDir/slon_counter.$node.txt (only needed if adding series to subscription list)"
+	                logwrite "NOTE:: No $SMworkDir/slon_counter.$node.txt (this is defunct)"
 	            fi
 
             # COPY the newly created log files to $subscribers_dir/$node. Don't move - this is an existing node so its sitdir
