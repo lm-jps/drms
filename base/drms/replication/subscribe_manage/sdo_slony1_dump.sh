@@ -2,7 +2,7 @@
 # ----------
 # slony1_dump.sh
 #
-# $Id: sdo_slony1_dump.sh,v 1.13 2016/03/11 19:03:16 arta Exp $
+# $Id: sdo_slony1_dump.sh,v 1.14 2016/03/15 17:01:39 arta Exp $
 #
 #	This script creates a special data only dump from a subscriber
 #	node. The stdout of this script, fed into psql for a database that
@@ -245,21 +245,25 @@ for tab in $tables ; do
     if [ -z "$sublist" ] 
     then
         sublist="$tabname"
+        echo "adding $tabname to sublist" > $kSMlogDir/slony1_dump.$node.log
     else
         sublist="$sublist,$tabname"
+        echo "adding $tabname to sublist" >> $kSMlogDir/slony1_dump.$node.log
     fi
 
     if [ -z "$idlist" ]
     then
         idlist="$tab"
+        echo "adding $tab to sublist" >> $kSMlogDir/slony1_dump.$node.log
     else
         idlist="$idlist,$tab"
+        echo "adding $tab to sublist" >> $kSMlogDir/slony1_dump.$node.log
     fi
 done
 
 # The stdout of from this call will contain SQL that runs on the client end. It dumps the series tables.
 cmd="$kJSOCRoot/base/drms/replication/subscribe_manage/dumpreptables.pl config=$kJSOCRoot/proj/replication/etc/repserver.cfg client=$node sublist=$sublist idlist=$idlist newcl=$new_subscriber filectr=$output_filecounter 2>>$kSMlogDir/slony1_dump.$node.log"
-echo "Executing $cmd" > $kSMlogDir/slony1_dump.$node.log
+echo "Executing $cmd" >> $kSMlogDir/slony1_dump.$node.log
 $cmd
 
 # ----
