@@ -39,6 +39,7 @@ import psycopg2
 from datetime import datetime, timedelta
 import shutil
 import glob
+import fcntl
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../../include'))
 from drmsparams import DRMSParams
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../../base/libs/py'))
@@ -85,6 +86,9 @@ class TerminationHandler(object):
         self.pidStr = thContainer[2]
         self.log = thContainer[3]
         self.writeStream = thContainer[4]
+        self.readEndPipe = thContainer[5]
+        self.writeEndPipe =thContainer[6]
+        self.saveState = False
         super(TerminationHandler, self).__init__()
         
     def __enter__(self):
@@ -103,16 +107,26 @@ class TerminationHandler(object):
     def __exit__(self, etype, value, traceback):
         if etype == SystemExit:
             self.log.writeInfo(['Termination signal handler called.'])
-            self.container[5] = RV_TERMINATED
+            self.container[7] = RV_TERMINATED
+            self.saveState = True
         self.finalStuff()
-
+        
         # Flush writeStream, print the stream contents to the log, and close it.
         if self.writeStream:
             self.writeStream.flush()
             self.log.writeDebug([ 'Logging redirected stdout and stderr.' ])
-            self.writeStream.logLines()
+            self.writeStream.logLines() # Flushes write end of pipe.
             self.writeStream.close()
             self.writeStream = None
+            
+        if self.writeEndPipe:
+            self.writeEndPipe.flush()
+            self.writeEndPipe.close()
+            self.writeEndPipe = None
+        
+        if self.readEndPipe:
+            self.readEndPipe.close()
+            self.readEndPipe = None
 
         # Clean up subscription lock
         try:
@@ -140,10 +154,11 @@ class TerminationHandler(object):
     
         # Wait for worker threads to complete.
         for worker in Worker.tList:
-            # worker.stop() # We don't want to interrupt an ongoing request. Wait for the thread to complete. If we need to 
-            # stop manage-subs.py, then we will have to kill -9 it.
+            worker.stop(self.saveState)
             self.log.writeDebug([ 'Waiting for worker (request ID ' + str(worker.requestID) + ') to halt.' ])
-            worker.join()
+            worker.join() # Cannot interrupt threads at an unsafe point to do so. If there is a long-running thread,
+                          # then we block here and we do not process new requests. If we need to shut down for reals, 
+                          # then we have to kill -9 manage-subs.py.
             self.log.writeDebug([ 'Worker (request ID ' + str(worker.requestID) + ') halted.' ])
 
 class ManageSubsParams(DRMSParams):
@@ -294,35 +309,70 @@ class Log(object):
             self.fileHandler.flush()
 
 class RedirectStdFileStreams(object):
-    def __new__(cls, stdout=None, stderr=None):
+    def __new__(cls, stdoutFileObj=None, stderrFileObj=None):
         return super(RedirectStdFileStreams, cls).__new__(cls)
     
-    def __init__(self, stdout=None, stderr=None):
-        self.stdout = stdout or sys.stdout
-        self.stderr = stderr or sys.stderr
+    # stdoutFileObj and stderrFileObj must be file-type IO Streams.
+    def __init__(self, stdoutFileObj=None, stderrFileObj=None):
+        self.stdout = stdoutFileObj or sys.stdout
+        self.stderr = stderrFileObj or sys.stderr
 
     def __enter__(self):
         self.stdoutOrig = sys.stdout
         self.stderrOrig = sys.stderr
+
+        # Need to save the pointers to the original sys.stdout and sys.stderr by duplicating their file descriptors.
+        self.stdoutFileOrig = os.dup(self.stdoutOrig.fileno())
+        self.stderrFileOrig = os.dup(self.stderrOrig.fileno())
         self.stdoutOrig.flush()
         self.stderrOrig.flush()
+
+        # We are redirecting the stdout and stderr file descriptors to a pipe that writes into self.stdout and self.stderr so that
+        # child processes can write to stdout and stderr, which then redirects to self.stdout and self.stderr.
+        
+        # These dup2 calls will cause fd 1 and fd 2 to no longer point to the terminal window. That is why we saved pointers to the 
+        # terminal window with self.stdoutFDOrig and self.stderrFDOrig.
+        os.dup2(self.stdout.fileno(), self.stdoutOrig.fileno()) # fd 1 now redirects to the write end of the pipe (instead of the terminal window)
+        os.dup2(self.stderr.fileno(), self.stderrOrig.fileno()) # fd 2 now redirects to the write end of the pipe (instead of the terminal window)
+
         sys.stdout = self.stdout
         sys.stderr = self.stderr
 
     def __exit__(self, exc_type, exc_value, traceback):
         self.stdout.flush()
         self.stderr.flush()
+
         # Restore original stdout and stderr.
+        os.dup2(self.stdoutFileOrig, self.stdoutOrig.fileno())
+        os.close(self.stdoutFileOrig)
+        self.stdoutFileOrig = None
+        os.dup2(self.stderrFileOrig, self.stderrOrig.fileno())
+        os.close(self.stderrFileOrig)
+        self.stderrFileOrig = None
+
         sys.stdout = self.stdoutOrig
         sys.stderr = self.stderrOrig
-        
+
 class WriteStream(object):
-    def __init__(self, log):
+    def __init__(self, readEndPipe, writeEndPipe, log):
         self.log = log
         self.io = io.StringIO()
+        self.pipeReadEnd = readEndPipe
+        self.pipeWriteEnd = writeEndPipe
         
     def close(self):
+        self.pipeReadEnd = None
+        self.pipeWriteEnd = None
         self.io.close()
+        
+    def readPipe(self):
+        if self.pipeReadEnd:
+            while True:
+                pipeBytes = self.pipeReadEnd.read(4096)
+                if len(pipeBytes) > 0:
+                    self.io.write(pipeBytes)
+                else:
+                    break
         
     def flush(self):
         self.io.flush()
@@ -331,6 +381,11 @@ class WriteStream(object):
         return self.io
         
     def getLines(self):
+        # First, flush pipe into IO stream.
+        self.pipeWriteEnd.flush()
+
+        self.readPipe()
+        
         self.io.seek(0)
         lines = [ line.rstrip() for line in self.io.readlines() ]
         self.io.truncate(0)
@@ -338,6 +393,7 @@ class WriteStream(object):
         
     def logLines(self, log=None):
         lines = self.getLines()
+
         if len(lines) > 0:
             if log is None:
                 log = self.log
@@ -354,7 +410,7 @@ class Worker(threading.Thread):
     eventMaxThreads = threading.Event() # Event fired when the number of threads decreases.
     lock = threading.Lock() # Guard tList.
     
-    def __init__(self, request, newSite, arguments, connMaster, connSlave, log):
+    def __init__(self, request, newSite, arguments, connMaster, connSlave, log, writeStream, fclean):
         threading.Thread.__init__(self)
         self.request = request
         self.requestID = request.requestid
@@ -363,6 +419,7 @@ class Worker(threading.Thread):
         self.connMaster = connMaster # Master db
         self.connSlave = connSlave # Slave db
         self.log = log
+        self.writeStream = writeStream
         self.sdEvent = threading.Event()
         
         self.reqTable = self.request.reqtable
@@ -387,267 +444,301 @@ class Worker(threading.Thread):
         self.oldLstPath = os.path.join(self.lstDir, self.client + '.lst')
         self.newLstPath = os.path.join(self.lstDir, self.client + '.new.lst')
         self.sqlgenArgFile = os.path.join(self.triggerDir, self.client + '-sqlgen.txt.tmp')
+        self.saveState = False
+        self.cleanTempOnStart = fclean
     
     def run(self):
         # There is at most one thread per client.
         errorMsg = None
         try:
             self.log.writeInfo([ 'Starting worker thread to handle request: (' + self.request.dump(False) + ').'])
+            self.writeStream.logLines()
+            
+            if self.cleanTempOnStart:
+                self.cleanTemp()
+
             # We don't want the main thread modifying this the request part-way through the following operations.
             self.reqTable.acquireLock()
-            reqStatus = self.request.getStatus()[0]
+            try:
+                self.log.writeDebug([ 'Worker thread got req table lock.' ])
+                reqStatus = self.request.getStatus()[0]
+            finally:
+                self.reqTable.releaseLock()
 
             # Check for download error or completion
-            if reqStatus != 'P':
-                raise Exception('invalidRequestState', 'Request ' + str(self.requestID) + ' not pending.')
+            if reqStatus == 'P':
+                self.reqTable.acquireLock()
+                try:
+                    # Don't clean up old files - we could be resuming after a manual shutdown.
 
-            # Just in case, clean any old cruft.
-            self.cleanTemp()
+                    # Create client.new.lst so that it contains the series that the client will be subscribed to
+                    # should the request succeed. This means that client.new.lst should contain all series in
+                    # the existing client.lst, minus series being un-subscribed from (if action == unsubscribe), plus
+                    # the series being subscribed to (if action == subscribe or resubscribe).
+                    #
+                    # It is important to note that client.new.lst is not reachable and therefore will not be
+                    # used until after the dump file, which contains a dump of the series to which the client is 
+                    # subscribing, is created and successfully ingested by the client. After the dump file is
+                    # successfully ingested, then client.new.lst is put into slony_parser.cfg and su_production.slonycfg.
 
-            # Create client.new.lst so that it contains the series that the client will be subscribed to
-            # should the request succeed. This means that client.new.lst should contain all series in
-            # the existing client.lst, minus series being un-subscribed from (if action == unsubscribe), plus
-            # the series being subscribed to (if action == subscribe or resubscribe).
-            #
-            # It is important to note that client.new.lst is not reachable and therefore will not be
-            # used until after the dump file, which contains a dump of the series to which the client is 
-            # subscribing, is created and successfully ingested by the client. After the dump file is
-            # successfully ingested, then client.new.lst is put into slony_parser.cfg and su_production.slonycfg.
-
-            # Create the client.new.lst file and su_production.slonylst row.
-            # We must add the series to both the lst file and to su_production.slonylst so
-            # that if the parser is modified to use the su_production tables, it will see
-            # series for node.new.
-            subListObj = SubscriptionList(self.clientLstDbTable, self.connMaster, self.client)
-            if self.newSite:
-                subList = [ series.lower() for series in self.series ]
+                    # Create the client.new.lst file and su_production.slonylst row.
+                    # We must add the series to both the lst file and to su_production.slonylst so
+                    # that if the parser is modified to use the su_production tables, it will see
+                    # series for node.new.
+                    subListObj = SubscriptionList(self.clientLstDbTable, self.connMaster, self.client)
+                    if self.newSite:
+                        subList = [ series.lower() for series in self.series ]
         
-                if self.action.lower() != 'subscribe':
-                    raise Exception('invalidRequest', 'As a new client, ' + self.client + ' cannot make a ' + self.action.lower() + ' request.')
-            else:
-                # Read the client's subscription list from su_production.slonylst. There is no need 
-                # for a lock since only one thread can modify the subscription list for a client.
-                subList = subListObj.getSubscriptionList()
+                        if self.action.lower() != 'subscribe':
+                            raise Exception('invalidRequest', 'As a new client, ' + self.client + ' cannot make a ' + self.action.lower() + ' request.')
+                    else:
+                        # Read the client's subscription list from su_production.slonylst. There is no need 
+                        # for a lock since only one thread can modify the subscription list for a client.
+                        subList = subListObj.getSubscriptionList()
         
-                if self.action == 'subscribe':
-                    # Append to subList.
-                    subList.append(self.series.lower())
-                elif self.action == 'resubscribe':
-                    # Don't do anything.
-                    pass
-                elif self.action == 'unsubscribe':
-                    # Remove from subList.
-                    subList.remove(self.series.lower())
-                else:
-                    # Error, unknown action.
-                    raise Exception('invalidArgument', 'Invalid request action: ' + self.action + '.')
+                        if self.action == 'subscribe':
+                            # Append to subList.
+                            subList.append(self.series.lower())
+                        elif self.action == 'resubscribe':
+                            # Don't do anything.
+                            pass
+                        elif self.action == 'unsubscribe':
+                            # Remove from subList.
+                            subList.remove(self.series.lower())
+                        else:
+                            # Error, unknown action.
+                            raise Exception('invalidArgument', 'Invalid request action: ' + self.action + '.')
             
-            # If the request was successfully processed, then the cached subscription list must be updated.
-            if self.action == 'subscribe' or self.action == 'unsubscribe':
-                # We must acquire the global subscribe lock before proceeding. Loop until we obtain the lock
-                # (or time-out after some number of failed attempts). The global subscribe lock needs to be available
-                # to shell scripts, as well as Perl and Python programs, and since shell does not support
-                # flock-type of lock commands, we have to simulate an atomic locking shell command:
-                #   (set -o noclobber; echo $$ > $subscribelockpath) 2> /dev/null
+                    # If the request was successfully processed, then the cached subscription list must be updated.
+                    if self.action == 'subscribe' or self.action == 'unsubscribe':
+                        # We must acquire the global subscribe lock before proceeding. Loop until we obtain the lock
+                        # (or time-out after some number of failed attempts). The global subscribe lock needs to be available
+                        # to shell scripts, as well as Perl and Python programs, and since shell does not support
+                        # flock-type of lock commands, we have to simulate an atomic locking shell command:
+                        #   (set -o noclobber; echo $$ > $subscribelockpath) 2> /dev/null
                 
-                # Release reqTable lock to allow other client requests to be processed.
-                self.reqTable.releaseLock()
+                        # Release reqTable lock to allow other client requests to be processed.
+                        self.reqTable.releaseLock()
                 
-                maxLoop = 30
-                while True:
-                    if self.sdEvent.isSet():
-                        raise Exception('shutDown', 'Received shut-down message from main thread.')
-
-                    try:
-                        try:
-                            cmd = '(set -o noclobber; echo ' + str(os.getpid()) + ' > ' + self.subscribeLock + ') 2> /dev/null'
-                            check_call(cmd, shell=True)
-                        except CalledProcessError as exc:
-                            # Other exceptions will re-raise to the outer-most exception handler.
-                            raise Exception('subLock')
+                        maxLoop = 30
+                        while True:
+                            if self.sdEvent.isSet():
+                                raise Exception('shutDown', 'Received shut-down message from main thread.')
+                            try:
+                                try:
+                                    cmd = '(set -o noclobber; echo ' + str(os.getpid()) + ' > ' + self.subscribeLock + ') 2> /dev/null'
+                                    check_call(cmd, shell=True)
+                                except CalledProcessError as exc:
+                                    # Other exceptions will re-raise to the outer-most exception handler.
+                                    raise Exception('subLock')
                         
-                        # Obtained global subscription lock.
+                                # Obtained global subscription lock.
+
+                                self.reqTable.acquireLock()
+                        
+                                # Modify the client.lst file by creating a temporary file...
+                                with open(self.newLstPath, 'w') as fout:
+                                    # If we are unsubscribing from the only subscribed series, then len(subList) == 0, and this is OK.
+                                    for aseries in subList:
+                                        print(aseries.lower(), file=fout)
+                
+                                # ...and the su_production.slonylst rows for client.new.lst.
+                                cmdList = [ os.path.join(self.repDir, 'subscribe_manage', 'gentables.pl'), 'op=replace', 'conf=' + self.slonyCfg, '--node=' + self.client + '.new', '--lst=' + self.newLstPath ]
+                                # Raises CalledProcessError on error (non-zero returned by gentables.pl).
+                                check_call(cmdList)
+                
+                                # ...and make the temporary client.new directory in the site-logs directory.
+                                os.mkdir(self.newClientLogDir) # umask WILL mask-out bits if it is not 0000; os.chmod() is better.
+                                os.chmod(self.newClientLogDir, 0O2755) # This is the fucking ridiculous way you specify Octal in Py 3 (not Py 2).
+                                break
+                            except Exception as exc:
+                                if len(exc.args) == 1 and exc.args[0] == 'subLock':
+                                    # Could not obtain lock; try again (up to 30 tries)
+                                    if maxLoop <= 0:
+                                        raise Exception('subLock', 'Could not obtain subscription lock after 30 tries.')
+                                    time.sleep(1)
+                                    maxLoop -= 1
+                                else:
+                                    # Failure to run gentables.pl create client.new dir or chmod client.new, re-raise the exception generated.
+                                    raise
+                            finally:
+                                self.reqTable.releaseLock()
+                                if os.path.exists(self.subscribeLock):
+                                    os.remove(self.subscribeLock)
 
                         self.reqTable.acquireLock()
-                        
-                        # Modify the client.lst file by creating a temporary file...
-                        with open(self.newLstPath, 'w') as fout:
-                            # If we are unsubscribing from the only subscribed series, then len(subList) == 0, and this is OK.
-                            for aseries in subList:
-                                print(aseries.lower(), file=fout)
-                
-                        # ...and the su_production.slonylst rows for client.new.lst.
-                        cmdList = [ os.path.join(self.repDir, 'subscribe_manage', 'gentables.pl'), 'op=replace', 'conf=' + self.slonyCfg, '--node=' + self.client + '.new', '--lst=' + self.newLstPath ]
-                        # Raises CalledProcessError on error (non-zero returned by gentables.pl).
-                        check_call(cmdList)
-                
-                        # ...and make the temporary client.new directory in the site-logs directory.
-                        os.mkdir(self.newClientLogDir) # umask WILL mask-out bits if it is not 0000; os.chmod() is better.
-                        os.chmod(self.newClientLogDir, 0O2755) # This is the fucking ridiculous way you specify Octal in Py 3 (not Py 2).
-                        break
-                    except Exception as exc:
-                        if len(exc.args) == 1 and exc.args[0] == 'subLock':
-                            # Could not obtain lock; try again (up to 30 tries)
-                            if maxLoop <= 0:
-                                raise Exception('subLock', 'Could not obtain subscription lock after 30 tries.')
-                            time.sleep(1)
-                            maxLoop -= 1
+
+                        # Refresh this script's cache FROM DB.
+                        subListObj.refreshSubscriptionList()
+
+                    if self.action == 'subscribe' or self.action == 'resubscribe':
+                        # Time to create the DUMP. There are two dump files. One contains SQL commands 
+                        # that, when ingested on the client site, will create the schema containing the 
+                        # series being subscribed to. This dump file is generated only if the site's 
+                        # database does not have the series' schema at the time of subscription. 
+                        # The other dump file contains a set of SQL commands that depends on the state 
+                        # of client subscribing to the series:
+                        # COMMAND                                 APPLIES TO
+                        # -------------------------------------------------------------------------------
+                        # create Slony _jsoc schema               A client subscribing for the first time
+                        # create Slony _jsoc.sl* tables           A client subscribing for the first time
+                        # create Slony PG functions in _jsoc      A client subscribing for the first time
+                        # populate _jsoc.sl_sequence_offline      All client subscriptions
+                        # populate _jsoc.sl_archive_tracking      All client subscriptions
+                        # copy command containing series data     All client subscriptions
+        
+                        # Now that the dump file exists and is complete, tell the client that it is ready for
+                        # consumption. The client is polling by checking for a request status (via request-subs.py) 
+                        # of 'D'.
+        
+                        # The dump script wrapper is sql_gen. sql_gen calls sdo_slony1_dump.sh, which calls dumpreptables.pl. 
+                        # LOCKS: The last program calls parse_slon_logs.pl (which must obtain both the parse lock and 
+                        # the subscription lock), and it also modifies subscription files/directories (so it obtains the 
+                        # subscription lock). So, we do not need to acquire any locks before calling sql_gen (in fact, if we do that, 
+                        # we would deadlock). It could take a little time to 
+
+                        # . $kRepDir/subscribe_manage/sql_gen $node $new_site $archive $retention $tapegroup $input_file
+                        # The last argument is file containing two tab-separated columns. The first column is the series, 
+                        # and the second column is the subscribe command. This is all legacy stuff - I didn't want to modify
+                        # sql_gen so I am using the existing, somewhat-messy interface (instead of passing arguments on the
+                        # command line).            
+                        if self.newSite:
+                            newSiteStr = '1'
                         else:
-                            # Failure to run gentables.pl create client.new dir or chmod client.new, re-raise the exception generated.
-                            raise
-                    finally:
-                        self.reqTable.releaseLock()
-                        if os.path.exists(self.subscribeLock):
-                            os.remove(self.subscribeLock)
+                            newSiteStr = '0'
+                    
+                        # 86 sql_gen. Instead do the work directly in manage-subs.py.
+                        # 1. We are going to dump a database table. Ensure the table exists in the slave database.
+                        regExp = re.compile(r'\s*(\S+)\.(\S+)\s*')
+                        matchObj = regExp.match(self.series[0].lower())
+                        if matchObj is not None:
+                            ns = matchObj.group(1)
+                            table = matchObj.group(2)
+                        else:
+                            raise Exception('invalidArgument', 'Not a valid DRMS series name: ' + self.series[0].lower() + '.')
+                    
+                        if not dbTableExists(connSlave, ns, table):
+                            raise Exception('invalidArgument', 'DB table ' + self.series[0].lower() + ' does not exist.')
+                
+                        # 2. Run createns for the schema of the series being subscribed to.
+                        cmdList = [ os.path.join(self.arguments.getArg('kModDir'), 'createns'), 'JSOC_DBHOST=' + self.arguments.getArg('SLAVEHOSTNAME'), 'ns=' + ns, 'nsgroup=user', 'dbusr=' + self.arguments.getArg('REPUSER') ]
+                        if not os.path.exists(self.arguments.getArg('triggerdir')):
+                            os.mkdir(self.arguments.getArg('triggerdir'))
+                            os.chmod(self.arguments.getArg('triggerdir'), 0O2755)
+                        outFile = os.path.join(self.arguments.getArg('triggerdir'), self.client + '.' + ns + '.createns.sql')
+                
+                        wroteIntMsg = False
+                        with open(outFile, 'w') as fout:
+                            self.log.writeInfo([ 'Creating createns.sql file:' + ' '.join(cmdList) + '.' ])
+                            proc = Popen(cmdList, stdout=fout)
+            
+                            maxLoop = 60 # 1-minute timeout
+                            while True:
+                                if maxLoop <= 0:
+                                    raise Exception('sqlDump', 'Time-out waiting for dump file to be generated.')
+            
+                                if not wroteIntMsg and self.sdEvent.isSet():
+                                    self.log.writeInfo([ 'Cannot interrupt dump-file generation. Send SIGKILL message to force termination.' ])
+                                    wroteIntMsg = True
+                                    # proc.kill()
+                                    # raise Exception('shutDown', 'Received shut-down message from main thread.')
+            
+                                if proc.poll() is not None:
+                                    self.writeStream.logLines() # Log all creatns output.
+                                    if proc.returncode != 0:
+                                        raise Exception('sqlDump', 'Failure generating dump file, createns returned ' + str(proc.returncode) + '.') 
+                                    break
 
-                # Refresh this script's cache FROM DB.
-                subListObj.refreshSubscriptionList()
+                                maxLoop -= 1
+                                time.sleep(1)
+                
+                        # 3. Run createtabstruct for the table of the series being subscribed to.
+                        cmdList = [ os.path.join(self.arguments.getArg('kModDir'), 'createtabstructure'), 'JSOC_DBHOST=' + self.arguments.getArg('SLAVEHOSTNAME'), 'in=' + self.series[0].lower(), 'out=' + self.series[0].lower(), 'archive=' + str(self.archive), 'retention=' + str(self.retention), 'tapegroup=' + str(self.tapegroup), 'owner=' + self.arguments.getArg('REPUSER') ]
+                        outFile = os.path.join(self.arguments.getArg('triggerdir'), self.client + '.subscribe_series.sql')
 
-            if self.action == 'subscribe' or self.action == 'resubscribe':
-                # Time to create the DUMP. There are two dump files. One contains SQL commands 
-                # that, when ingested on the client site, will create the schema containing the 
-                # series being subscribed to. This dump file is generated only if the site's 
-                # database does not have the series' schema at the time of subscription. 
-                # The other dump file contains a set of SQL commands that depends on the state 
-                # of client subscribing to the series:
-                # COMMAND                                 APPLIES TO
-                # -------------------------------------------------------------------------------
-                # create Slony _jsoc schema               A client subscribing for the first time
-                # create Slony _jsoc.sl* tables           A client subscribing for the first time
-                # create Slony PG functions in _jsoc      A client subscribing for the first time
-                # populate _jsoc.sl_sequence_offline      All client subscriptions
-                # populate _jsoc.sl_archive_tracking      All client subscriptions
-                # copy command containing series data     All client subscriptions
+                        wroteIntMsg = False
+                        with open(outFile, 'w') as fout:
+                            print('BEGIN;', file=fout)
+                            self.log.writeInfo([ 'Dumping table structure: ' + ' '.join(cmdList) + '.' ])
+                            proc = Popen(cmdList, stdout=fout)
+                    
+                            self.reqTable.releaseLock()
+
+                            maxLoop = 60 # 1-minute timeout
+                            while True:
+                                if maxLoop <= 0:
+                                    raise Exception('sqlDump', 'Time-out waiting for dump file to be generated.')
         
-                # Now that the dump file exists and is complete, tell the client that it is ready for
-                # consumption. The client is polling by checking for a request status (via request-subs.py) 
-                # of 'D'.
+                                if not wroteIntMsg and self.sdEvent.isSet():
+                                    self.log.writeInfo([ 'Cannot interrupt dump-file generation. Send SIGKILL message to force termination.' ])
+                                    wroteIntMsg = True
+                                    # proc.kill()
+                                    # raise Exception('shutDown', 'Received shut-down message from main thread.')
         
-                # The dump script wrapper is sql_gen. sql_gen calls sdo_slony1_dump.sh, which calls dumpreptables.pl. 
-                # LOCKS: The last program calls parse_slon_logs.pl (which must obtain both the parse lock and 
-                # the subscription lock), and it also modifies subscription files/directories (so it obtains the 
-                # subscription lock). So, we do not need to acquire any locks before calling sql_gen (in fact, if we do that, 
-                # we would deadlock). It could take a little time to 
+                                if proc.poll() is not None:
+                                    self.writeStream.logLines() # Log all createtabstructure output.
+                                    if proc.returncode != 0:
+                                        raise Exception('sqlDump', 'Failure generating dump file, createtabstructure returned ' + str(proc.returncode) + '.') 
+                                    break
 
-                # . $kRepDir/subscribe_manage/sql_gen $node $new_site $archive $retention $tapegroup $input_file
-                # The last argument is file containing two tab-separated columns. The first column is the series, 
-                # and the second column is the subscribe command. This is all legacy stuff - I didn't want to modify
-                # sql_gen so I am using the existing, somewhat-messy interface (instead of passing arguments on the
-                # command line).            
-                if self.newSite:
-                    newSiteStr = '1'
-                else:
-                    newSiteStr = '0'
-                    
-                # 86 sql_gen. Instead do the work directly in manage-subs.py.
-                # 1. We are going to dump a database table. Ensure the table exists in the slave database.
-                regExp = re.compile(r'\s*(\S+)\.(\S+)\s*')
-                matchObj = regExp.match(self.series[0].lower())
-                if matchObj is not None:
-                    ns = matchObj.group(1)
-                    table = matchObj.group(2)
-                else:
-                    raise Exception('invalidArgument', 'Not a valid DRMS series name: ' + self.series[0].lower() + '.')
-                    
-                if not dbTableExists(connSlave, ns, table):
-                    raise Exception('invalidArgument', 'DB table ' + self.series[0].lower() + ' does not exist.')
-                
-                # 2. Run createns for the schema of the series being subscribed to.
-                cmdList = [ os.path.join(self.arguments.getArg('kModDir'), 'createns'), 'JSOC_DBHOST=' + self.arguments.getArg('SLAVEHOSTNAME'), 'ns=' + ns, 'nsgroup=user', 'dbusr=' + self.arguments.getArg('REPUSER') ]
-                if not os.path.exists(self.arguments.getArg('triggerdir')):
-                    os.mkdir(self.arguments.getArg('triggerdir'))
-                    os.chmod(self.arguments.getArg('triggerdir'), 0O2755)
-                outFile = os.path.join(self.arguments.getArg('triggerdir'), self.client + '.' + ns + '.createns.sql')
-                
-                with open(outFile, 'w') as fout:
-                    self.log.writeInfo([ 'Running ' + ' '.join(cmdList) + '.' ])
-                    proc = Popen(cmdList, stdout=fout)
-            
-                    maxLoop = 60 # 1-minute timeout
-                    while True:
-                        if maxLoop <= 0:
-                            raise Exception('sqlDump', 'Time-out waiting for dump file to be generated.')
-            
-                        if self.sdEvent.isSet():
-                            proc.kill()
-                            raise Exception('shutDown', 'Received shut-down message from main thread.')
-            
-                        if proc.poll() is not None:
-                            if proc.returncode != 0:
-                                raise Exception('sqlDump', 'Failure generating dump file, createns returned ' + str(proc.returncode) + '.') 
-                            break
+                                maxLoop -= 1
+                                time.sleep(1)
 
-                        maxLoop -= 1
-                        time.sleep(1)
-                
-                # 3. Run createtabstruct for the table of the series being subscribed to.
-                cmdList = [ os.path.join(self.arguments.getArg('kModDir'), 'createtabstructure'), 'JSOC_DBHOST=' + self.arguments.getArg('SLAVEHOSTNAME'), 'in=' + self.series[0].lower(), 'out=' + self.series[0].lower(), 'archive=' + str(self.archive), 'retention=' + str(self.retention), 'tapegroup=' + str(self.tapegroup), 'owner=' + self.arguments.getArg('REPUSER') ]
-                outFile = os.path.join(self.arguments.getArg('triggerdir'), self.client + '.subscribe_series.sql')
+                            self.reqTable.acquireLock()                            
 
-                with open(outFile, 'w') as fout:
-                    print('BEGIN;', file=fout)
-                    self.log.writeInfo([ 'Running ' + ' '.join(cmdList) + '.' ])
-                    proc = Popen(cmdList, stdout=fout)
-                    
-                    maxLoop = 60 # 1-minute timeout
-                    while True:
-                        if maxLoop <= 0:
-                            raise Exception('sqlDump', 'Time-out waiting for dump file to be generated.')
+                        # 4. Run sdo_slony1_dump.sh and ensure it completed fine. APPEND output to outFile. sdo_slony1_dump.sh expects
+                        # three shell variables to be set: kJSOCRoot, kSMlogDir, and node. Originally, node was a shell variable set in
+                        # sql_gen from a command-line argument. sql_gen was a wrapper around sdo_slony1_dump.sh (it sourced the latter). 
+                        # Since sdo_slony1_dump.sh is a bash script, we can set three environment variables, and bash will read them. 
+                        # Set these via the Popen env object argument. BUT we can't simply set the env vars we want in the env argument.
+                        # If we do that, then the rest of the environment in manage-subs.py is NOT passed to the child process. Instead, 
+                        # we have to copy the environment of manage-subs.py and then add the three environment variables needed
+                        # by sdo_slony1_dump.sh.
+                        cmdList = [ os.path.join(self.arguments.getArg('kRepDir'), 'subscribe_manage', 'sdo_slony1_dump.sh'), self.arguments.getArg('SLAVEDBNAME'), self.arguments.getArg('CLUSTERNAME'), self.arguments.getArg('SLAVEPORT'), newSiteStr, os.path.join(self.arguments.getArg('SMworkDir'), 'slon_counter' + '.' + self.client + '.txt'), self.series[0].lower() ]
+                        outFile = os.path.join(self.arguments.getArg('triggerdir'), self.client + '.subscribe_series.sql')
             
-                        if self.sdEvent.isSet():
-                            proc.kill()
-                            raise Exception('shutDown', 'Received shut-down message from main thread.')
-            
-                        if proc.poll() is not None:
-                            if proc.returncode != 0:
-                                raise Exception('sqlDump', 'Failure generating dump file, createtabstructure returned ' + str(proc.returncode) + '.') 
-                            break
+                        wroteIntMsg = False
+                        with open(outFile, 'a') as fout:
+                            self.log.writeInfo([ 'Dumping table data: ' + ' '.join(cmdList) + '.' ])
+                            # stderr should get written to self.writeStream.
+                            proc = Popen(cmdList, stdout=fout, env=dict(os.environ, kJSOCRoot=self.arguments.getArg('kJSOCRoot'), kSMlogDir=self.arguments.getArg('kSMlogDir'), config_file=self.arguments.getArg('slonyCfg'), node=self.client))
 
-                        maxLoop -= 1
-                        time.sleep(1)
-                        
-                raise Exception('blah', 'outta here!')        
+                            self.reqTable.releaseLock()
+                            maxLoop = 3600 # 1-hour timeout
+                            while True:
+                                if maxLoop <= 0:
+                                    raise Exception('sqlDump', 'Time-out waiting for dump file to be generated.')
+            
+                                if not wroteIntMsg and self.sdEvent.isSet():
+                                    self.log.writeInfo([ 'Cannot interrupt dump-file generation. Send SIGKILL message to force termination.' ])
+                                    wroteIntMsg = True
+                                    # proc.kill()
+                                    # raise Exception('shutDown', 'Received shut-down message from main thread.')
+            
+                                if proc.poll() is not None:
+                                    self.writeStream.flush()
+                                    self.writeStream.logLines() # Log all sdo_slony1_dump.sh output.
+                                    if proc.returncode != 0:
+                                        raise Exception('sqlDump', 'Failure generating dump file, sdo_slony1_dump.sh returned ' + str(proc.returncode) + '.') 
+                                    break
 
-                # 4. Run sdo_slony1_dump.sh and ensure it completed fine. APPEND output to outFile.
-                cmdList = [ os.path.join(self.arguments.getArg('kRepDir'), 'subscribe_manage', 'sdo_slony1_dump.sh'), self.arguments.getArg('SLAVEDBNAME'), self.arguments.getArg('CLUSTERNAME'), self.arguments.getArg('SLAVEPORT'), newSiteStr, os.path.join(self.arguments.getArg('SMworkDir'), 'slon_counter' + '.' + self.client + '.txt'), self.series[0].lower() ]
-                outFile = os.path.join(self.arguments.getArg('triggerdir'), self.client + '.subscribe_series.sql')
-                errFile = os.path.join(self.arguments.getArg('kSMlogDir'), 'slony1_dump.' + self.client + '.log')
-            
-                with open(outFile, 'a') as fout, open(errFile, 'w') as ferr:
-                    self.log.writeInfo([ 'Running ' + ' '.join(cmdList) + '.' ])
-                    proc = Popen(cmdList, stdout=fout, stderr=ferr)
-                    
-                    maxLoop = 3600 # 1-hour timeout
-                    while True:
-                        if maxLoop <= 0:
-                            raise Exception('sqlDump', 'Time-out waiting for dump file to be generated.')
-            
-                        if self.sdEvent.isSet():
-                            proc.kill()
-                            raise Exception('shutDown', 'Received shut-down message from main thread.')
-            
-                        if proc.poll() is not None:
-                            if proc.returncode != 0:
-                                raise Exception('sqlDump', 'Failure generating dump file, sdo_slony1_dump.sh returned ' + str(proc.returncode) + '.') 
-                            break
-
-                        maxLoop -= 1
-                        time.sleep(1)
-            
+                                maxLoop -= 1
+                                time.sleep(1)
+                            self.reqTable.acquireLock()
     
-                raise Exception('blah', 'outta here!')        
-    
-                # Tell client that the dump is ready for use. We do that by setting the request status to D.
-                self.request.setStatus('D')
-
-                # Release the lock again while the client downloads and applies the SQL file.
-                self.reqTable.releaseLock()
+                        # Tell client that the dump is ready for use. We do that by setting the request status to D.
+                        self.request.setStatus('D')
+                        reqStatus = 'D'
                 
-                raise Exception('blah', 'outta here')
+                        time.sleep(1)
+                finally:
+                    self.reqTable.releaseLock()
 
+            # No lock held here.
+            if reqStatus == 'D':
                 # Poll on the request status waiting for it to be I. This indicates that the client has successfully ingested
                 # the dump file. The client could also set the status to E if there was some error, in which case the client
-                # provides an error message that the server logs.
+                # provides an error message that the server logs. The loop is interruptable by a shut-down request.
                 maxLoop = 86400 # 24-hour timeout
                 while True:
                     if maxLoop <= 0:
@@ -660,12 +751,17 @@ class Worker(threading.Thread):
                     try:
                         self.reqTable.acquireLock()
                         (code, msg) = self.request.getStatus()
-                        if code.upper() == 'I':
+                        if code.upper() == 'D':
+                            self.log.writeDebug([ 'Waiting for client ' + self.client + ' to ingest dump file (request ' + str(self.requestID) + ').' ])
+                        elif code.upper() == 'I':
                             # Onto clean-up
+                            reqStatus = 'I'
                             break
                         elif code.upper() == 'E':
+                            reqStatus = 'E'
                             raise Exception('dumpApplication', self.client + ' failed to properly ingest dump file.')
                         else:
+                            reqStatus = 'E'
                             raise Exception('invalidReqStatus', 'Unexpected request status ' + code.upper() + '.')
                     finally:
                         self.reqTable.releaseLock()
@@ -673,114 +769,121 @@ class Worker(threading.Thread):
                     maxLoop -= 1
                     time.sleep(1)
             
-            # Clean-up, regardless of action.
-            # reqTable lock is not held here.
-            maxLoop = 30
-            while True:
-                if self.sdEvent.isSet():
-                    raise Exception('shutDown', 'Received shut-down message from main thread.')
+            raise Exception('blah', 'outta here!')
+            
+            # No lock held here.
+            if reqStatus == 'I' or (reqStatus == 'P' and self.action == 'unsubscribe'):
+                # Clean-up, regardless of action.
+                # reqTable lock is not held here.
+                wroteIntMsg = False
+                maxLoop = 30
+                while True:
+                    if not wroteIntMsg and self.sdEvent.isSet():
+                        self.log.writeInfo([ 'Cannot interrupt dump-file generation. Send SIGKILL message to force termination.' ])
+                        wroteIntMsg = True
 
-                try:
                     try:
-                        cmd = '(set -o noclobber; echo ' + str(os.getpid()) + ' > ' + self.subscribeLock + ') 2> /dev/null'
-                        check_call(cmd, shell=True)
-                    except CalledProcessError as exc:
-                        raise Exception('subLock')
+                        try:
+                            cmd = '(set -o noclobber; echo ' + str(os.getpid()) + ' > ' + self.subscribeLock + ') 2> /dev/null'
+                            check_call(cmd, shell=True)
+                        except CalledProcessError as exc:
+                            raise Exception('subLock')
                     
-                    # Obtained global subscription lock.
+                        # Obtained global subscription lock.
                     
-                    self.reqTable.acquireLock()
+                        self.reqTable.acquireLock()
                 
-                    # LEGACY - Remove client.new.lst from slon_parser.cfg
-                    with open(self.parserConfigTmp, 'w') as fout, open(self.parserConfig, 'r') as fin:
-                        regExp = re.compile(re.escape(self.client + '.new.lst'))
+                        # LEGACY - Remove client.new.lst from slon_parser.cfg
+                        with open(self.parserConfigTmp, 'w') as fout, open(self.parserConfig, 'r') as fin:
+                            regExp = re.compile(re.escape(self.client + '.new.lst'))
 
-                        for line in fin:
-                            matchObj = regExp.match(line)
-                            if matchObj is None:
-                                print(line, file=fout)
+                            for line in fin:
+                                matchObj = regExp.match(line)
+                                if matchObj is None:
+                                    print(line, file=fout)
                 
-                    os.rename(self.parserConfigTmp, self.parserConfig)
+                        os.rename(self.parserConfigTmp, self.parserConfig)
 
-                    # Remove client.new from su_production.slonylst and su_production.slonycfg. Do not call legacy code in
-                    # SubTableMgr::Remove. This would delete $node.new.lst, but it is still being used.
-                    # cmd="$kRepDir/subscribe_manage/gentables.pl op=remove config=$config_file --node=$node.new"
-                    cmdList = [ os.path.join(repDir, 'subscribe_manage', 'gentables.pl'), 'op=remove', 'conf=' + self.slonyCfg, '--node=' + self.client + '.new' ]
-                    # Raises CalledProcessError on error (non-zero returned by gentables.pl).
-                    check_call(cmdList)
+                        # Remove client.new from su_production.slonylst and su_production.slonycfg. Do not call legacy code in
+                        # SubTableMgr::Remove. This would delete $node.new.lst, but it is still being used.
+                        # cmd="$kRepDir/subscribe_manage/gentables.pl op=remove config=$config_file --node=$node.new"
+                        cmdList = [ os.path.join(repDir, 'subscribe_manage', 'gentables.pl'), 'op=remove', 'conf=' + self.slonyCfg, '--node=' + self.client + '.new' ]
+                        # Raises CalledProcessError on error (non-zero returned by gentables.pl).
+                        check_call(cmdList)
                 
-                    if self.newSite:
-                        # LEGACY - Add a line for client to slon_parser.cfg.
-                        with open(self.parserConfig, 'a') as fout:
-                            print(self.oldClientLogDir + '        ' + self.oldLstPath, file=fout)
+                        if self.newSite:
+                            # LEGACY - Add a line for client to slon_parser.cfg.
+                            with open(self.parserConfig, 'a') as fout:
+                                print(self.oldClientLogDir + '        ' + self.oldLstPath, file=fout)
                         
-                        # Add client to su_production.slonycfg. At the same time, insert records for client in
-                        # su_production.slonylst. The client's sitedir doesn't exit yet, but it will shortly.
-                        # Use client.new.lst to populate su_production.slonylst.
-                        # $kRepDir/subscribe_manage/gentables.pl op=add config=$config_file --node=$node --sitedir=$subscribers_dir --lst=$tables_dir/$node.new.lst
-                        cmdList = [ os.path.join(repDir, 'subscribe_manage', 'gentables.pl'), 'op=add', 'conf=' + self.slonyCfg, '--node=' + self.client, '--sitedir=' + self.siteLogDir, '--lst=' + self.newLstPath ]
-                        # Raises CalledProcessError on error (non-zero returned by gentables.pl).
-                        check_call(cmdList)
+                            # Add client to su_production.slonycfg. At the same time, insert records for client in
+                            # su_production.slonylst. The client's sitedir doesn't exit yet, but it will shortly.
+                            # Use client.new.lst to populate su_production.slonylst.
+                            # $kRepDir/subscribe_manage/gentables.pl op=add config=$config_file --node=$node --sitedir=$subscribers_dir --lst=$tables_dir/$node.new.lst
+                            cmdList = [ os.path.join(repDir, 'subscribe_manage', 'gentables.pl'), 'op=add', 'conf=' + self.slonyCfg, '--node=' + self.client, '--sitedir=' + self.siteLogDir, '--lst=' + self.newLstPath ]
+                            # Raises CalledProcessError on error (non-zero returned by gentables.pl).
+                            check_call(cmdList)
 
-                        # Rename the client.new site dir.
-                        if os.path.exists(self.oldClientLogDir):
-                            shutil.rmtree(self.oldClientLogDir)
+                            # Rename the client.new site dir.
+                            if os.path.exists(self.oldClientLogDir):
+                                shutil.rmtree(self.oldClientLogDir)
                     
-                        # We are assuming that perms on newClientLogDir were created correctly and that we
-                        # do not want to change them at this point.
-                        os.rename(self.newClientLogDir, self.oldClientLogDir)
-                    else:
-                        # Update su_production.slonylst for the client with the new list of series. 
-                        cmdList = [ os.path.join(repDir, 'subscribe_manage', 'gentables.pl'), 'op=replace', 'conf=' + self.slonyCfg, '--node=' + self.client, '--lst=' + self.newLstPath ]
-                        # Raises CalledProcessError on error (non-zero returned by gentables.pl).
-                        check_call(cmdList)
+                            # We are assuming that perms on newClientLogDir were created correctly and that we
+                            # do not want to change them at this point.
+                            os.rename(self.newClientLogDir, self.oldClientLogDir)
+                        else:
+                            # Update su_production.slonylst for the client with the new list of series. 
+                            cmdList = [ os.path.join(repDir, 'subscribe_manage', 'gentables.pl'), 'op=replace', 'conf=' + self.slonyCfg, '--node=' + self.client, '--lst=' + self.newLstPath ]
+                            # Raises CalledProcessError on error (non-zero returned by gentables.pl).
+                            check_call(cmdList)
                     
-                        # Copy all the log files in newClientLogDir to oldClientLogDir, overwriting logs of the same name.
-                        # There is a period of time where we allow the log parser to run while the client is ingesting
-                        # the dump file. During that time, two parallel universes exist - in one universe, the set of 
-                        # logs produced is identical to the one that would have been produced had the client not 
-                        # taken any subscription action. In the other universe, the set of logs produced is what you'd expect
-                        # had the subscription action succeeded. So, if we have a successful subscription, then we need to
-                        # discard the logs generated in the first universe, in the oldClientLogDir, overwriting them 
-                        # with the analogous logs in the newClientLogDir.
-                        for logFile in os.listdir(self.newClientLogDir):
-                            src = os.path.join(self.newClientLogDir, logFile)
-                            dst = os.path.join(self.oldClientLogDir, logFile)
-                            # copy() copies permissing bits as well, and the destination is overwritten if it exists.
-                            shutil.copy(src, dst)
+                            # Copy all the log files in newClientLogDir to oldClientLogDir, overwriting logs of the same name.
+                            # There is a period of time where we allow the log parser to run while the client is ingesting
+                            # the dump file. During that time, two parallel universes exist - in one universe, the set of 
+                            # logs produced is identical to the one that would have been produced had the client not 
+                            # taken any subscription action. In the other universe, the set of logs produced is what you'd expect
+                            # had the subscription action succeeded. So, if we have a successful subscription, then we need to
+                            # discard the logs generated in the first universe, in the oldClientLogDir, overwriting them 
+                            # with the analogous logs in the newClientLogDir.
+                            for logFile in os.listdir(self.newClientLogDir):
+                                src = os.path.join(self.newClientLogDir, logFile)
+                                dst = os.path.join(self.oldClientLogDir, logFile)
+                                # copy() copies permissing bits as well, and the destination is overwritten if it exists.
+                                shutil.copy(src, dst)
 
-                        # Remove newClientLogDir. I think this is better than deletion during iteration in the
-                        # previous loop. If an error happens part way through in the above loop, then we could
-                        # get in a weird, indeterminate state.
-                        shutil.rmtree(self.newClientLogDir)
+                            # Remove newClientLogDir. I think this is better than deletion during iteration in the
+                            # previous loop. If an error happens part way through in the above loop, then we could
+                            # get in a weird, indeterminate state.
+                            shutil.rmtree(self.newClientLogDir)
                     
-                    # LEGACY - Rename the client.new.lst file. If oldLstPath happens to exist, then rename() will overwrite it.
-                    os.rename(self.newLstPath, self.oldLstPath)
+                        # LEGACY - Rename the client.new.lst file. If oldLstPath happens to exist, then rename() will overwrite it.
+                        os.rename(self.newLstPath, self.oldLstPath)
                 
-                    break # out of lock-acquisition loop
-                except Exception as exc:
-                    if len(exc.args) == 1 and exc.args[0] == 'subLock':
-                        # Could not obtain lock; try again (up to maxLoop tries)
-                        if maxLoop <= 0:
-                            raise Exception('subLock', 'Could not obtain subscription lock after ' + str(maxLoop) + ' tries.')
-                        time.sleep(1)
-                        maxLoop -= 1
-                    else:
-                        # gentables.pl failed or creating client.new, re-raise the exception generated by check_call()
-                        # or os.mkdir() or os.chmod().
-                        raise
-                finally:
-                    self.reqTable.releaseLock()
-                    if os.path.exists(self.subscribeLock):
-                        os.remove(self.subcribeLock)
+                        break # out of lock-acquisition loop
+                    except Exception as exc:
+                        if len(exc.args) == 1 and exc.args[0] == 'subLock':
+                            # Could not obtain lock; try again (up to maxLoop tries)
+                            if maxLoop <= 0:
+                                raise Exception('subLock', 'Could not obtain subscription lock after ' + str(maxLoop) + ' tries.')
+                            time.sleep(1)
+                            maxLoop -= 1
+                        else:
+                            # gentables.pl failed or creating client.new, re-raise the exception generated by check_call()
+                            # or os.mkdir() or os.chmod().
+                            raise
+                    finally:
+                        self.reqTable.releaseLock()
+                        if os.path.exists(self.subscribeLock):
+                            os.remove(self.subcribeLock)
                         
             # Outside of lock-acquisition loop.
             # reqTable lock is NOT held.
             # The request has been completely processed without error. Set status to 'C'.
             self.reqTable.acquireLock()
-            self.request.setStatus('C')
-            self.reqTable.releaseLock()
-            
+            try:
+                self.request.setStatus('C')
+            finally:
+                self.reqTable.releaseLock()
         except ValueError as exc:
             # Popen() and check_call() will raise this exception if arguments are bad.
             errorMsg = 'Command called with invalid arguments: ' + ' '.join(cmdList) + '.'
@@ -792,8 +895,10 @@ class Worker(threading.Thread):
             self.log.writeError([ errorMsg ])
             self.log.writeError([ traceback.format_exc(5) ])
         except IOError as exc:
-            errorMsg = exc.diag.message_primary
-            self.log.writeError([ errorMsg ])
+            import traceback
+            
+            errorMsg = 'IO error.'
+            self.log.writeError([ traceback.format_exc(5) ])
         except OSError as exc:
             # Popen() and check_call() can raise this.
             errorMsg = exc.diag.message_primary
@@ -806,11 +911,14 @@ class Worker(threading.Thread):
             if len(exc.args) == 2:
                 eType, eMsg = exc.args
                 
-                if eType != 'shutDown':
-                    msg = 'Problem in worker thread (request ID ' + str(self.requestID) + '): ' + eMsg + ' ('+ eType + ').'
-                else:
+                if eType == 'shutDown':
                     msg = 'Worker (requed ID ' + str(self.requestID) + ') received shutdown signal.'
-                errorMsg = msg
+                    self.saveState = True # Do not clean up temp files; we shut down, perhaps in the middle of a request that was being processed.
+                                          # Resume on restart.
+                else:
+                    msg = 'Problem in worker thread (request ID ' + str(self.requestID) + '): ' + eMsg + ' ('+ eType + ').'                    
+                    errorMsg = msg
+
                 if self.log:
                     self.log.writeError([ msg ])
             else:
@@ -828,6 +936,9 @@ class Worker(threading.Thread):
                 self.log.writeDebug([ 'Setting status for request ' + str(self.requestID) + ' to E.' ])
                 self.request.setStatus('E', errorMsg)
                 time.sleep(1)
+                
+            # Detach this worker from the request that it is doing work for.
+            self.request.removeWorker()
             
             # Always release reqTable lock.
             self.reqTable.releaseLock()
@@ -845,7 +956,7 @@ class Worker(threading.Thread):
                         # There was some kind of error. We need to clean up several temporary things, and we need to remove the client
                         # entry from the configuration table IFF the client was a new subscriber.
                         self.cleanOnError()
-                    else:
+                    elif not self.saveState:
                         self.cleanTemp()
                     break
                 except Exception as exc:
@@ -862,9 +973,23 @@ class Worker(threading.Thread):
                 finally:
                     if os.path.exists(self.subscribeLock):
                         os.remove(self.subscribeLock)
+                        
+            # This thread is about to terminate. 
+            # We need to check the class tList variable to update it, so we need to acquire the lock.
+            try:
+                Worker.lock.acquire()
+                Worker.tList.remove(self) # This thread is no longer one of the running threads.
+                if len(Worker.tList) == Worker.maxThreads - 1:
+                    # Fire event so that main thread can process additional requests.
+                    Worker.eventMaxThreads.set()
+                    # Clear event so that main will block the next time it calls wait.
+                    Worker.eventMaxThreads.clear()
+            finally:
+                Worker.lock.release()
 
-    def stop(self):
+    def stop(self, saveState=False):
         self.log.writeInfo([ 'Stopping worker (request ID ' + str(self.requestID) + ').'])
+        self.saveState = saveState
         self.sdEvent.set()
             
     def cleanTemp(self):
@@ -878,19 +1003,29 @@ class Worker(threading.Thread):
             if os.path.exists(self.parserConfigTmp):
                 os.remove(self.parserConfigTmp)
 
+            self.log.writeDebug([ 'Removing ' + self.client + '.new.lst from ' + self.parserConfig + '.' ])
             with open(self.parserConfigTmp, 'w') as fout, open(self.parserConfig, 'r') as fin:
-                regExp = re.compile(re.escape(self.client + '.new.lst'))
+                regExp = re.compile(r'' + self.client + '\.new\.lst')
+                regExpSp = re.compile(r'\s*$')
 
                 for line in fin:
-                    matchObj = regExp.match(line)
+                    line = line.rstrip()
+                    matchObj = regExpSp.match(line)
+                    if matchObj is not None:
+                        continue
+                
+                    matchObj = regExp.search(line)
                     if matchObj is None:
+                        self.log.writeDebug([ 'Added ' + line + ' to ' + self.parserConfigTmp + '.'])
                         print(line, file=fout)
 
             os.rename(self.parserConfigTmp, self.parserConfig)
+            self.log.writeDebug([ 'Renamed ' + self.parserConfigTmp + ' to ' + self.parserConfig + '.' ])
 
             # LEGACY - Delete the client.lst.new file.
             if os.path.exists(self.newLstPath):
                 os.remove(self.newLstPath)
+                self.log.writeDebug([ 'Removed ' + self.newLstPath + '.' ])
             
             # Remove client.new from su_production.slonylst and su_production.slonycfg. 
             cmdList = [ os.path.join(self.repDir, 'subscribe_manage', 'gentables.pl'), 'op=remove', 'conf=' + self.slonyCfg, '--node=' + self.client + '.new' ]
@@ -945,11 +1080,11 @@ class Worker(threading.Thread):
             dumpFile = os.path.join(self.triggerDir, self.client + '.subscribe_series.sql')
 
             for afile in createNSFiles:
-                savedFile = afile + '.' + datetime.now().strftime('%Y-%m-%d-%T')
+                savedFile = afile + '.' + datetime.now().strftime('%Y-%m-%d-%H%M%S')
                 self.log.writeDebug([ 'Saving dump file ' + afile + ' as ' + savedFile + '.' ])
                 os.rename(afile, savedFile)
             if os.path.exists(dumpFile):
-                savedFile = dumpFile + '.' + datetime.now().strftime('%Y-%m-%d-%T')
+                savedFile = dumpFile + '.' + datetime.now().strftime('%Y-%m-%d-%H%M%S')
                 self.log.writeDebug([ 'Saving dump file ' + afile + ' as ' + savedFile + '.' ])
                 os.rename(dumpFile, savedFile)
         
@@ -958,19 +1093,31 @@ class Worker(threading.Thread):
             # LEGACY - If this was a newsite subscription, then we need to remove the client entry
             # from slon_parser.cfg and remove client.lst from the table dir.
             if self.newSite:
+                self.log.writeDebug([ 'Removing ' + self.client + '.lst from ' + self.parserConfig + '.' ])
                 with open(self.parserConfigTmp, 'w') as fout, open(self.parserConfig, 'r') as fin:
-                    regExp = re.compile(re.escape(self.client + '.lst'))
+                    regExp = re.compile(r'' + self.client + '\.lst')
+                    regExpSp = re.compile(r'\s*$')
 
                     for line in fin:
-                        matchObj = regExp.match(line)
+                        line = line.rstrip()
+
+                        matchObj = regExpSp.match(line)
+                        if matchObj is not None:
+                            continue
+                        
+                        matchObj = regExp.search(line)
                         if matchObj is None:
-                            print(line, file=fout)
+                            self.log.writeDebug([ 'Added ' + line + ' to ' + self.parserConfigTmp + '.'])
+                            print(line, file=fout)                            
 
                 os.rename(self.parserConfigTmp, self.parserConfig)
                 
+                if os.path.exists(self.oldLstPath):
+                    os.remove(self.oldLstPath)
+                
                 if os.path.exists(self.newLstPath):
                     os.remove(self.newLstPath)
-            
+    
             # If this was a newsite subscription, then we need to remove the client entry
             # from su_production.slonycfg and remove the client's rows from su_production.slonylst.
             if self.newSite:            
@@ -981,8 +1128,8 @@ class Worker(threading.Thread):
             self.log.writeError([ 'Error running gentables.pl, status ' +  str(exc.returncode) + '.'])
 
     @staticmethod
-    def newThread(request, newSite, arguments, connMaster, connSlave, log):
-        worker = Worker(request, newSite, arguments, connMaster, connSlave, log)
+    def newThread(request, newSite, arguments, connMaster, connSlave, log, writeStream, fclean):
+        worker = Worker(request, newSite, arguments, connMaster, connSlave, log, writeStream, fclean)
         worker.tList.append(worker)
         log.writeDebug([ 'Calling worker.start().' ])
         worker.start()
@@ -1065,17 +1212,43 @@ class Request(object):
             raise Exception('reqtableRead', exc.diag.message_primary)
         finally:
             self.conn.rollback()
-            
+    
+    def hasWorker(self):
+        return hasattr(self, 'worker') and self.worker
+        
+    def getWorker(self):
+        if self.hasWorker():
+            return self.worker
+        return None
+     
     def setWorker(self, worker):
         if not isinstance(worker, Worker):
             raise Exception('invalidArgument', 'Type of argument to setWorker argument must be Worker; ' + type(worker) + ' was provided.')
         self.worker = worker
         
-    def stopWorker(self, wait=False, timeout=30):
+    def stopWorker(self, **kwargs):
+        if 'saveState' in kwargs:
+            saveState = kwargs['saveState']
+        else:
+            saveState = False
+        if 'wait' in kwargs:
+            wait = kwargs['wait']
+        else:
+            wait = False
+        if 'timeout' in kwargs:
+            timeout = kwargs['timeout']
+        else:
+            timeout = 30;
+            
         if hasattr(self, 'worker') and self.worker:
-            self.worker.stop()
-            if wait:
+            self.worker.stop(saveState)
+            if wait and self.worker.isAlive():
                  self.worker.join(timeout)
+            self.worker = None
+                 
+    def removeWorker(self):
+        if hasattr(self, 'worker') and self.worker:
+            self.worker = None
 
     def dump(self, toLog=True):
         text = 'requestID=' + str(self.requestid) + ', client=' + self.client + ', starttime=' + self.starttime.strftime('%Y-%m-%d %T') + ', series=' + ','.join(self.series) + ', action=' + self.action + ', archive=' + str(self.archive) + ', retention=' + str(self.retention) + ', tapegroup=' + str(self.tapegroup) + ', status=' + self.status + ', errmsg=' + str(self.errmsg if (self.errmsg and len(self.errmsg) > 0) else "''")
@@ -1168,7 +1341,7 @@ class ReqTable(object):
             # Delete all requests.
             for oldReq in oldReqs:
                 # Stop any associated worker.
-                oldReq.stopWorker(True, 120)
+                oldReq.stopWorker(wait=True, timeout=120)
                 
             self.reqDict.clear()
             
@@ -1214,7 +1387,7 @@ class ReqTable(object):
                 iOld += 1
                 
         for req in toDel:
-            req.stopWorker(True, 120)
+            req.stopWorker(wait=True, timeout=120)
             del self.reqDict[str(req.requestid)]
             
         for req in toAdd:
@@ -1277,7 +1450,7 @@ class ReqTable(object):
         pendLst = []
     
         for requestidStr in self.reqDict.keys():
-            if self.reqDict[requestidStr].status == 'P' and (client is None or self.reqDict[requestidStr].client == client):
+            if (self.reqDict[requestidStr].status == 'P' or self.reqDict[requestidStr].status == 'D' or self.reqDict[requestidStr].status == 'I') and (client is None or self.reqDict[requestidStr].client == client):
                 self.log.writeDebug([ 'Adding request (ID ' + requestidStr + ') to pending list.' ])
                 pendLst.append(self.reqDict[requestidStr])
 
@@ -1349,7 +1522,7 @@ class ReqTable(object):
                 self.conn.rollback()
                 raise
 
-            self.reqDict[requestidStr].stopWorker(True) # Will stop worker and clean-up temp files, if a worker exists. Waits for worker to terminate.
+            self.reqDict[requestidStr].stopWorker(wait=True) # Will stop worker and clean-up temp files, if a worker exists. Waits for worker to terminate.
             del self.reqDict[requestidStr]
 
     def getTimeout(self):
@@ -1483,7 +1656,7 @@ def cleanAllSavedFiles(triggerDir, log):
         if date:
             try:
                 # This was difficult to get right - you cannot use %T for strptime(), although you can use it for strftime().
-                datetime.strptime(date, '%Y-%m-%d-%H:%M:%S')
+                datetime.strptime(date, '%Y-%m-%d-%H%M%S')
 
                 # OK to remove the file.
                 log.writeInfo([ 'Removing saved dump file: ' + os.path.join(triggerDir, file) + '.' ])
@@ -1503,6 +1676,7 @@ if __name__ == "__main__":
         parser = CmdlParser(usage='%(prog)s [ slonycfg=<configuration file> ] [ loglevel=<critical, error, warning, info, or debug > ]')    
         parser.add_argument('cfg', '-c', '--cfg', help='The configuration file that contains information needed to locate database information.', metavar='<slony configuration file>', dest='slonyCfg', action=CfgAction, arguments=arguments, default=manageSubsParams.get('SLONY_CONFIG'))
         parser.add_argument('loglevel', '-l', '--loglevel', help='Specifies the amount of logging to perform. In increasing order: critical, error, warning, info, debug', dest='loglevel', action=LogLevelAction, default=logging.ERROR)
+        parser.add_argument('fclean', '-f', '--fclean', help='Force clean up temporary files from an earlier run.', dest='fclean', action='store_true', default=False)
 
         arguments.setParser(parser)
     
@@ -1511,19 +1685,30 @@ if __name__ == "__main__":
         # Create/Initialize the log file.
         formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
         msLog = Log(os.path.join(arguments.getArg('kSMlogDir'), 'manage-subs-log.txt'), arguments.getArg('loglevel'), formatter)
-        writeStream = WriteStream(msLog)
-        
+        pipeReadEndFD, pipeWriteEndFD = os.pipe()
+
+        # Make these pipes not block on read.
+        flag = fcntl.fcntl(pipeReadEndFD, fcntl.F_GETFL)
+        fcntl.fcntl(pipeReadEndFD, fcntl.F_SETFL, flag | os.O_NONBLOCK)
+        flag = fcntl.fcntl(pipeWriteEndFD, fcntl.F_GETFL)
+        fcntl.fcntl(pipeWriteEndFD, fcntl.F_SETFL, flag | os.O_NONBLOCK)
+
+        pipeReadEnd = os.fdopen(pipeReadEndFD, 'r')
+        pipeWriteEnd = os.fdopen(pipeWriteEndFD, 'w')
+        writeStream = WriteStream(pipeReadEnd, pipeWriteEnd, msLog)
+
         arguments.dump(msLog)
         msLog.writeCritical(['Logging threshold level is ' + msLog.getLevel() + '.']) # Critical - always write the log level to the log.
             
-        thContainer = [ os.path.join(arguments.getArg('kServerLockDir'), 'manage-subs-lock.txt'), os.path.join(arguments.getArg('kServerLockDir'), arguments.getArg('kSubLockFile')), str(pid), msLog, writeStream, None ]
+        thContainer = [ os.path.join(arguments.getArg('kServerLockDir'), 'manage-subs-lock.txt'), os.path.join(arguments.getArg('kServerLockDir'), arguments.getArg('kSubLockFile')), str(pid), msLog, writeStream, pipeReadEnd, pipeWriteEnd, None ]
         with TerminationHandler(thContainer) as th:
             # Redirect all the output from subprocesses to writeStream.
-            with RedirectStdFileStreams(stdout=writeStream.getStream(), stderr=writeStream.getStream()) as stdStreams:
+            with RedirectStdFileStreams(stdoutFileObj=pipeWriteEnd, stderrFileObj=pipeWriteEnd) as stdStreams:
                 with psycopg2.connect(database=arguments.getArg('SLAVEDBNAME'), user=arguments.getArg('REPUSER'), host=arguments.getArg('SLAVEHOSTNAME'), port=str(arguments.getArg('SLAVEPORT'))) as connSlave, psycopg2.connect(database=arguments.getArg('MASTERDBNAME'), user=arguments.getArg('REPUSER'), host=arguments.getArg('MASTERHOSTNAME'), port=str(arguments.getArg('MASTERPORT'))) as connMaster:
                     msLog.writeInfo([ 'Connected to database ' + arguments.getArg('SLAVEDBNAME') + ' on ' + arguments.getArg('SLAVEHOSTNAME') + ':' + str(arguments.getArg('SLAVEPORT')) + ' as user ' + arguments.getArg('REPUSER') ])
                     msLog.writeInfo([ 'Connected to database ' + arguments.getArg('MASTERDBNAME') + ' on ' + arguments.getArg('MASTERHOSTNAME') + ':' + str(arguments.getArg('MASTERPORT')) + ' as user ' + arguments.getArg('REPUSER') ])
 
+                    # We hang on to old dump files only until we restart manage-subs.py, then we deleted them.
                     cleanAllSavedFiles(arguments.getArg('triggerdir'), msLog)
 
                     # Read the requests table into memory.
@@ -1532,6 +1717,7 @@ if __name__ == "__main__":
 
                     # Main dispatch loop. When a SIGINT (ctrl-c), SIGTERM, or SIGHUP is received, the 
                     # terminator context manager will be exited.
+                    firstIter = True
                     while True:
                         # Deal with pending requests first. If a request has been pending too long, then delete the request now
                         # and send an error message back to the requestor. This will clean-up requests that died somewhere
@@ -1549,12 +1735,45 @@ if __name__ == "__main__":
                                     # Kill the Worker thread (if it exists). The Worker will clean-up subscription-management files, 
                                     # like client.new.lst.
                                     areq.setStatus('E', 'Processing timed-out.')
-                                    areq.stopWorker(False)
+                                    areq.stopWorker(wait=False)
+                                else:
+                                    if not areq.hasWorker() or not areq.getWorker().isAlive():
+                                        # Spawn a worker to handle pending request that has no worker.
+                                        newSite = clientIsNew(arguments, connMaster, areq.client)
+                                    
+                                        countDown = 5
+                                        while countDown > 0:
+                                            # Must have request-table lock. The worker thread is going to check the request status to
+                                            # ensure it is pending. But we don't want to do that until the main thread has set it
+                                            # to pending.
+                                            Worker.lock.acquire()
+                                            try:
+                                                if len(Worker.tList) < Worker.maxThreads:
+                                                    msLog.writeInfo([ 'Instantiating a worker thread for request ' + str(areq.requestid) + ' for client ' + areq.client + '.' ])
+                                                    if not areq.hasWorker():
+                                                        doClean = arguments.getArg('fclean')
+                                                    else:
+                                                        # The worker thread died. Remove old Worker object.
+                                                        areq.stopWorker(wait=False)
+                                                        doClean = False
+                                                        
+                                                    areq.setWorker(Worker.newThread(areq, newSite, arguments, connMaster, connSlave, msLog, writeStream, doClean))
+                                                    if doClean:
+                                                        reqTable.setStatus([ areq.requestid ], 'P') # The new request is now being processed. If there was an issue creating the new thread, an exception will have been raised, and we will not execute this line.
+                                                    break # The finally clause will ensure the Worker lock is released.
+                                            finally:
+                                                Worker.lock.release()
+                    
+                                            # Worker.eventMaxThreads.wait() # Wakes up when a worker thread completes. Don't use.
+                                            # Poll instead so that we can get other things done while we are waiting for a thread 
+                                            # to become available.
+                                            time.sleep(1)
+                                            countDown -= 1
 
-                            # Completed requests, success and failures alike, are handled by request-subs.py. There is nothing to do here.
-
+                            # Completed requests, success and failures alike are handled by request-subs.py. There is nothing to do here.
                         finally:
                             reqTable.releaseLock()
+                    
                             
                         # Remove old errored-out requests. The records of these errored-out requests should be
                         # available for a while so that request-subs.py can pass the error along to the requestor,
@@ -1618,8 +1837,8 @@ if __name__ == "__main__":
                                             try:
                                                 if len(Worker.tList) < Worker.maxThreads:
                                                     msLog.writeInfo([ 'Instantiating a worker thread for request ' + str(areq.requestid) + ' for client ' + areq.client + '.' ])
-                                                    areq.setWorker(Worker.newThread(areq, newSite, arguments, connMaster, connSlave, msLog))
-                                                    reqTable.setStatus([areq.requestid], 'P') # The new request is now being processed. If there was an issue creating the new thread, an exception will have been raised, and we will not execute this line.
+                                                    areq.setWorker(Worker.newThread(areq, newSite, arguments, connMaster, connSlave, msLog, writeStream, arguments.getArg('fclean')))
+                                                    reqTable.setStatus([ areq.requestid ], 'P') # The new request is now being processed. If there was an issue creating the new thread, an exception will have been raised, and we will not execute this line.
                                                     break # The finally clause will ensure the Worker lock is released.
                                             finally:
                                                 Worker.lock.release()
@@ -1639,10 +1858,11 @@ if __name__ == "__main__":
                             reqTable.refresh()
                         finally:
                             reqTable.releaseLock()
-                            
-                        time.sleep(1)
+                
+                        firstIter = False            
+                        time.sleep(1)                
                         
-        if thContainer[0] == RV_TERMINATED:
+        if thContainer[7] == RV_TERMINATED:
             pass
     except FileNotFoundError as exc:
         type, value, traceback = sys.exc_info()
