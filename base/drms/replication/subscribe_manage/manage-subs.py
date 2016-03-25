@@ -34,6 +34,7 @@ import argparse
 import io
 import signal
 import re
+import tarfile
 from subprocess import check_call, Popen, CalledProcessError
 import psycopg2
 from datetime import datetime, timedelta
@@ -460,13 +461,16 @@ class Worker(threading.Thread):
             # We don't want the main thread modifying this the request part-way through the following operations.
             self.reqTable.acquireLock()
             try:
-                self.log.writeDebug([ 'Worker thread got req table lock.' ])
+                self.log.writeDebug([ 'Worker thread acquired req table lock ' + hex(id(self.reqTable.lock)) + '.'])
                 reqStatus = self.request.getStatus()[0]
             finally:
                 self.reqTable.releaseLock()
+                self.log.writeDebug([ 'Worker thread released req table lock ' + hex(id(self.reqTable.lock)) + '.'])
 
             # Check for download error or completion
-            if reqStatus == 'P':
+            self.log.writeDebug([ 'Request ' + str(self.requestID) + ' status is ' + reqStatus + '.' ])
+            if reqStatus.upper() == 'P':
+                self.log.writeDebug([ 'Processing status P for request ' + str(self.requestID) + '.' ])
                 self.reqTable.acquireLock()
                 try:
                     # Don't clean up old files - we could be resuming after a manual shutdown.
@@ -498,13 +502,14 @@ class Worker(threading.Thread):
         
                         if self.action == 'subscribe':
                             # Append to subList.
-                            subList.append(self.series.lower())
+                            subList.extend([ series.lower() for series in self.series ])
                         elif self.action == 'resubscribe':
                             # Don't do anything.
                             pass
                         elif self.action == 'unsubscribe':
                             # Remove from subList.
-                            subList.remove(self.series.lower())
+                            for series in self.series:                            
+                                subList.remove(series.lower())
                         else:
                             # Error, unknown action.
                             raise Exception('invalidArgument', 'Invalid request action: ' + self.action + '.')
@@ -549,7 +554,7 @@ class Worker(threading.Thread):
                 
                                 # ...and make the temporary client.new directory in the site-logs directory.
                                 os.mkdir(self.newClientLogDir) # umask WILL mask-out bits if it is not 0000; os.chmod() is better.
-                                os.chmod(self.newClientLogDir, 0O2755) # This is the fucking ridiculous way you specify Octal in Py 3 (not Py 2).
+                                os.chmod(self.newClientLogDir, 0O2755) # This is the way you specify Octal in Py 3 (not Py 2).
                                 break
                             except Exception as exc:
                                 if len(exc.args) == 1 and exc.args[0] == 'subLock':
@@ -694,7 +699,7 @@ class Worker(threading.Thread):
                         # If we do that, then the rest of the environment in manage-subs.py is NOT passed to the child process. Instead, 
                         # we have to copy the environment of manage-subs.py and then add the three environment variables needed
                         # by sdo_slony1_dump.sh.
-                        cmdList = [ os.path.join(self.arguments.getArg('kRepDir'), 'subscribe_manage', 'sdo_slony1_dump.sh'), self.arguments.getArg('SLAVEDBNAME'), self.arguments.getArg('CLUSTERNAME'), self.arguments.getArg('SLAVEPORT'), newSiteStr, os.path.join(self.arguments.getArg('SMworkDir'), 'slon_counter' + '.' + self.client + '.txt'), self.series[0].lower() ]
+                        cmdList = [ os.path.join(self.repDir, 'subscribe_manage', 'sdo_slony1_dump.sh'), self.arguments.getArg('SLAVEDBNAME'), self.arguments.getArg('CLUSTERNAME'), self.arguments.getArg('SLAVEPORT'), newSiteStr, os.path.join(self.arguments.getArg('SMworkDir'), 'slon_counter' + '.' + self.client + '.txt'), self.series[0].lower() ]
                         outFile = os.path.join(self.arguments.getArg('triggerdir'), self.client + '.subscribe_series.sql')
             
                         wroteIntMsg = False
@@ -725,6 +730,15 @@ class Worker(threading.Thread):
                                 maxLoop -= 1
                                 time.sleep(1)
                             self.reqTable.acquireLock()
+                            
+                        # 5. tar the two dump files together.
+                        with tarfile.open(os.path.join(self.arguments.getArg('triggerdir'), self.client + '.sql.tar.gz'), 'w:gz') as tarOut:
+                            outFile = os.path.join(self.arguments.getArg('triggerdir'), self.client + '.' + ns + '.createns.sql')
+                            tarOut.add(outFile, arcname=os.path.basename(outFile))
+                            os.remove(outFile)
+                            outFile = os.path.join(self.arguments.getArg('triggerdir'), self.client + '.subscribe_series.sql')
+                            tarOut.add(outFile, arcname=os.path.basename(outFile))
+                            os.remove(outFile)
     
                         # Tell client that the dump is ready for use. We do that by setting the request status to D.
                         self.request.setStatus('D')
@@ -735,7 +749,8 @@ class Worker(threading.Thread):
                     self.reqTable.releaseLock()
 
             # No lock held here.
-            if reqStatus == 'D':
+            if reqStatus.upper() == 'D':
+                self.log.writeDebug([ 'Processing status D for request ' + str(self.requestID) + '.' ])
                 # Poll on the request status waiting for it to be I. This indicates that the client has successfully ingested
                 # the dump file. The client could also set the status to E if there was some error, in which case the client
                 # provides an error message that the server logs. The loop is interruptable by a shut-down request.
@@ -752,7 +767,9 @@ class Worker(threading.Thread):
                         self.reqTable.acquireLock()
                         (code, msg) = self.request.getStatus()
                         if code.upper() == 'D':
-                            self.log.writeDebug([ 'Waiting for client ' + self.client + ' to ingest dump file (request ' + str(self.requestID) + ').' ])
+                            self.log.writeDebug([ 'Waiting for client ' + self.client + ' to download dump file (request ' + str(self.requestID) + '). Status ' + code.upper() + '.'])
+                        elif code.upper() == 'A':
+                            self.log.writeDebug([ 'Waiting for client ' + self.client + ' to ingest dump file (request ' + str(self.requestID) + '). Status ' + code.upper() + '.'])
                         elif code.upper() == 'I':
                             # Onto clean-up
                             reqStatus = 'I'
@@ -769,10 +786,9 @@ class Worker(threading.Thread):
                     maxLoop -= 1
                     time.sleep(1)
             
-            raise Exception('blah', 'outta here!')
-            
             # No lock held here.
             if reqStatus == 'I' or (reqStatus == 'P' and self.action == 'unsubscribe'):
+                self.log.writeDebug([ 'Cleaning up request ' + str(self.requestID) + '.' ])
                 # Clean-up, regardless of action.
                 # reqTable lock is not held here.
                 wroteIntMsg = False
@@ -807,7 +823,7 @@ class Worker(threading.Thread):
                         # Remove client.new from su_production.slonylst and su_production.slonycfg. Do not call legacy code in
                         # SubTableMgr::Remove. This would delete $node.new.lst, but it is still being used.
                         # cmd="$kRepDir/subscribe_manage/gentables.pl op=remove config=$config_file --node=$node.new"
-                        cmdList = [ os.path.join(repDir, 'subscribe_manage', 'gentables.pl'), 'op=remove', 'conf=' + self.slonyCfg, '--node=' + self.client + '.new' ]
+                        cmdList = [ os.path.join(self.repDir, 'subscribe_manage', 'gentables.pl'), 'op=remove', 'conf=' + self.slonyCfg, '--node=' + self.client + '.new' ]
                         # Raises CalledProcessError on error (non-zero returned by gentables.pl).
                         check_call(cmdList)
                 
@@ -820,7 +836,7 @@ class Worker(threading.Thread):
                             # su_production.slonylst. The client's sitedir doesn't exit yet, but it will shortly.
                             # Use client.new.lst to populate su_production.slonylst.
                             # $kRepDir/subscribe_manage/gentables.pl op=add config=$config_file --node=$node --sitedir=$subscribers_dir --lst=$tables_dir/$node.new.lst
-                            cmdList = [ os.path.join(repDir, 'subscribe_manage', 'gentables.pl'), 'op=add', 'conf=' + self.slonyCfg, '--node=' + self.client, '--sitedir=' + self.siteLogDir, '--lst=' + self.newLstPath ]
+                            cmdList = [ os.path.join(self.repDir, 'subscribe_manage', 'gentables.pl'), 'op=add', 'conf=' + self.slonyCfg, '--node=' + self.client, '--sitedir=' + self.siteLogDir, '--lst=' + self.newLstPath ]
                             # Raises CalledProcessError on error (non-zero returned by gentables.pl).
                             check_call(cmdList)
 
@@ -833,7 +849,7 @@ class Worker(threading.Thread):
                             os.rename(self.newClientLogDir, self.oldClientLogDir)
                         else:
                             # Update su_production.slonylst for the client with the new list of series. 
-                            cmdList = [ os.path.join(repDir, 'subscribe_manage', 'gentables.pl'), 'op=replace', 'conf=' + self.slonyCfg, '--node=' + self.client, '--lst=' + self.newLstPath ]
+                            cmdList = [ os.path.join(self.repDir, 'subscribe_manage', 'gentables.pl'), 'op=replace', 'conf=' + self.slonyCfg, '--node=' + self.client, '--lst=' + self.newLstPath ]
                             # Raises CalledProcessError on error (non-zero returned by gentables.pl).
                             check_call(cmdList)
                     
@@ -874,7 +890,7 @@ class Worker(threading.Thread):
                     finally:
                         self.reqTable.releaseLock()
                         if os.path.exists(self.subscribeLock):
-                            os.remove(self.subcribeLock)
+                            os.remove(self.subscribeLock)
                         
             # Outside of lock-acquisition loop.
             # reqTable lock is NOT held.
@@ -1078,15 +1094,20 @@ class Worker(threading.Thread):
             # If dump files exist, rename them for debugging purposes.
             createNSFiles = glob.glob(os.path.join(self.triggerDir, self.client + '.*.createns.sql'))
             dumpFile = os.path.join(self.triggerDir, self.client + '.subscribe_series.sql')
+            tarFile = os.path.join(self.triggerDir, self.client + '.sql.tar.gz')
 
             for afile in createNSFiles:
                 savedFile = afile + '.' + datetime.now().strftime('%Y-%m-%d-%H%M%S')
-                self.log.writeDebug([ 'Saving dump file ' + afile + ' as ' + savedFile + '.' ])
+                self.log.writeDebug([ 'Saving dump file ' + afile + ' to ' + savedFile + '.' ])
                 os.rename(afile, savedFile)
             if os.path.exists(dumpFile):
                 savedFile = dumpFile + '.' + datetime.now().strftime('%Y-%m-%d-%H%M%S')
-                self.log.writeDebug([ 'Saving dump file ' + afile + ' as ' + savedFile + '.' ])
+                self.log.writeDebug([ 'Saving dump file ' + dumpFile + ' to ' + savedFile + '.' ])
                 os.rename(dumpFile, savedFile)
+            if os.path.exists(tarFile):
+                savedFile = tarFile + '.' + datetime.now().strftime('%Y-%m-%d-%H%M%S')
+                self.log.writeDebug([ 'Saving tar file ' + tarFile + ' to ' + savedFile + '.' ])
+                os.rename(tarFile, savedFile)
         
             self.cleanTemp()
 
@@ -1333,6 +1354,7 @@ class ReqTable(object):
             # Copy all from latestReqs.
             for latestReq in latestReqs:
                 req = Request(self.conn, self.log, self, self.tableName, latestReq.requestid, latestReq.client, latestReq.starttime, latestReq.action, latestReq.series, latestReq.archive, latestReq.retention, latestReq.tapegroup, latestReq.status, latestReq.errmsg)
+                # This new request has a pointer to the old request table, which is correct.
                 self.reqDict[str(latestReq.requestid)] = req
                 
             return
@@ -1358,11 +1380,17 @@ class ReqTable(object):
         while iLatest < len(latestReqs) or iOld < len(oldReqs):
             if iLatest < len(latestReqs):
                 latestReq = latestReqs[iLatest]
+                
+                # We don't want the new request table being referenced from any new request.
+                latestReq.conn = self.conn
+                latestReq.log = self.log
+                latestReq.reqtable = self
+                latestReq.tableName = self.tableName
             else:
                 latestReq = None
-            
+                        
             if iOld < len(oldReqs):
-                oldReq = oldReqs[iOld]
+                oldReq = oldReqs[iOld]                
             else:
                 oldReq = None
         
@@ -1370,6 +1398,7 @@ class ReqTable(object):
                 # Don't delete the oldReq - just update its attributes. There could be a worker currently processing
                 # the request. The only thing that should change is the status (request-subs.py could change it).
                 self.reqDict[str(oldReq.requestid)].copy(latestReq)
+                
                 iLatest += 1
                 iOld += 1
             elif latestReq and oldReq:
@@ -1641,6 +1670,7 @@ def dbTableExists(conn, schema, table):
 def cleanAllSavedFiles(triggerDir, log):
     regExpNs = re.compile(r'.+\.createns\.sql\.(.+)$')
     regExpDump = re.compile(r'.+\.subscribe_series\.sql\.(.+)$')
+    regExpTar = re.compile(r'.+\.sql.tar.gz\.(.+)$')
     
     for file in os.listdir(triggerDir):
         date = None
@@ -1652,7 +1682,11 @@ def cleanAllSavedFiles(triggerDir, log):
             matchDump = regExpDump.match(file)
             if matchDump:
                 date = matchDump.group(1)
-            
+            else:
+                matchTar = regExpTar.match(file)
+                if matchTar:
+                    date = matchTar.group(1)
+
         if date:
             try:
                 # This was difficult to get right - you cannot use %T for strptime(), although you can use it for strftime().
@@ -1804,6 +1838,7 @@ if __name__ == "__main__":
                         # in the first place).
                         try:
                             reqTable.acquireLock()
+                            msLog.writeDebug([ 'Main thread acquired reqTable lock ' + hex(id(reqTable.lock)) + '.'])
                             reqsNew = reqTable.getNew()
 
                             for areq in reqsNew:
@@ -1839,6 +1874,7 @@ if __name__ == "__main__":
                                                     msLog.writeInfo([ 'Instantiating a worker thread for request ' + str(areq.requestid) + ' for client ' + areq.client + '.' ])
                                                     areq.setWorker(Worker.newThread(areq, newSite, arguments, connMaster, connSlave, msLog, writeStream, arguments.getArg('fclean')))
                                                     reqTable.setStatus([ areq.requestid ], 'P') # The new request is now being processed. If there was an issue creating the new thread, an exception will have been raised, and we will not execute this line.
+                                                    msLog.writeDebug([ 'Main thread set request ' + str(areq.requestid) + ' status to P.' ])
                                                     break # The finally clause will ensure the Worker lock is released.
                                             finally:
                                                 Worker.lock.release()
@@ -1850,6 +1886,7 @@ if __name__ == "__main__":
                                             countDown -= 1
                         finally:
                             reqTable.releaseLock()
+                            msLog.writeDebug([ 'Main thread released reqTable lock ' + hex(id(reqTable.lock)) + '.'])
 
                         # Refresh the requests table. This could result in new requests being added to the table, or completed requests being
                         # deleted. 

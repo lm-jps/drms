@@ -52,6 +52,7 @@ STATUS_REQUEST_RESUMING = 'requestResuming'
 STATUS_REQUEST_QUEUED = 'requestQueued'
 STATUS_REQUEST_PROCESSING = 'requestProcessing'
 STATUS_DUMP_READY = 'dumpReady'
+STATUS_REQUEST_FINALIZING = 'requestFinalizing'
 STATUS_REQUEST_COMPLETE = 'requestComplete'
 STATUS_ERR_TERMINATED = 'terminated'
 STATUS_ERR_INTERNAL = 'internalError'
@@ -95,11 +96,10 @@ class TerminationHandler(object):
         # del self.log
         # self.log.close()
         # On second thought, let's not close the log either. Just flush for now, and close() at the end of the program run.
-        self.log.flush()        
+        self.log.flush()
                 
 class Log(object):
     """Manage a logfile."""
-
     def __init__(self, file, level, formatter):
         self.fileName = file
         self.log = logging.getLogger()
@@ -396,9 +396,10 @@ class ErrorResponse(Response):
             msg = 'Sent error response to ' + self.client + ' (' + self.status + ', ' + self.msg + ').'
             self.log.writeError([ msg ])
 
-def clientIsNew(arguments, conn, client):
+def clientIsNew(arguments, conn, client, log):
     # Master database.
     cmd = 'SELECT ' + CFG_TABLE_NODE + ' FROM ' + arguments.getArg('kCfgTable') + ' WHERE ' + CFG_TABLE_NODE + " = '" + client + "'"
+    log.writeDebug([ 'Checking client-new status on master: ' + cmd + '.' ])
     
     try:
         with conn.cursor() as cursor:
@@ -428,31 +429,36 @@ def getPendingRequest(conn, reqTable, client):
     
     # Slave database.
     cmd = 'SELECT requestid, action, series, archive, retention, tapegroup, status, errmsg FROM ' + reqTable + " WHERE lower(client) = '" + client + "'"
-        
+
+    numPending = 0        
     try:
         with conn.cursor() as cursor:
             cursor.execute(cmd) # Opens a transaction.
             records = cursor.fetchall()
 
-            if len(records) == 1:
-                pendingRequest = True
-                record = records[0]                
-                pendingRequest = record[0]
-                pendAction = record[1]
-                pendSeriesList = record[2]
-                pendArchive = record[3]
-                pendRetention = record[4]
-                pendTapegroup = record[5]
-                pendStatus = record[6]
-                pendErrMsg = record[7]
-            elif len(records) > 1:
+            for record in records:
+                if record[6].upper() != 'E' and record[6].upper() != 'S':
+                    numPending += 1
+                    pendingRequestID = record[0]
+                    pendAction = record[1]
+                    pendSeriesList = record[2]
+                    pendArchive = record[3]
+                    pendRetention = record[4]
+                    pendTapegroup = record[5]
+                    pendStatus = record[6]
+                    pendErrMsg = record[7]
+
+            if numPending > 1:
                 raise Exception('dbResponse', 'There is more than one pending request for client ' + client + ' (at most there should be one).')
     except psycopg2.Error as exc:
         raise Exception('dbCmd', exc.diag.message_primary)
     finally:
         conn.rollback() # Closes the transaction.
-        
-    return (pendingRequest, pendingRequest, pendAction, pendSeriesList, pendArchive, pendRetention, pendTapegroup, pendStatus, pendErrMsg)
+    
+    if numPending > 0:
+        return (True, pendingRequestID, pendAction, pendSeriesList, pendArchive, pendRetention, pendTapegroup, pendStatus, pendErrMsg)
+    else:
+        return (False, None, None, None, None, None, None, None, None)
 
 def clientIsSubscribed(arguments, conn, client, series):
     # Master database.
@@ -684,147 +690,200 @@ if __name__ == "__main__":
         
         # We need to handle signals so we can ensure that the requestor receives a decent response in the event of an error.
         with TerminationHandler(thContainer) as th:
-            try:
-                # The connection is NOT in autocommit mode. If changes need to be saved, then conn.commit() must be called. The first
-                # db statement will open a transaction, and it will remain open until the conn.commit() or conn.rollback() call is made.
-                # Open a connection to both databases. On the master database, apache has read-only permissions.
-                with psycopg2.connect(database=arguments.getArg('SLAVEDBNAME'), user=arguments.getArg('dbuser'), host=arguments.getArg('SLAVEHOSTNAME'), port=str(arguments.getArg('SLAVEPORT'))) as connSlave, psycopg2.connect(database=arguments.getArg('MASTERDBNAME'), user=arguments.getArg('dbuser'), host=arguments.getArg('MASTERHOSTNAME'), port=str(arguments.getArg('MASTERPORT'))) as connMaster:
-                    rsLog.writeInfo([ 'Connected to database ' + arguments.getArg('SLAVEDBNAME') + ' on ' + arguments.getArg('SLAVEHOSTNAME') + ':' + str(arguments.getArg('SLAVEPORT')) + ' as user ' + arguments.getArg('dbuser') ])
-                    rsLog.writeInfo([ 'Connected to database ' + arguments.getArg('MASTERDBNAME') + ' on ' + arguments.getArg('MASTERHOSTNAME') + ':' + str(arguments.getArg('MASTERPORT')) + ' as user ' + arguments.getArg('dbuser') ])
+            # The connection is NOT in autocommit mode. If changes need to be saved, then conn.commit() must be called. The first
+            # db statement will open a transaction, and it will remain open until the conn.commit() or conn.rollback() call is made.
+            # Open a connection to both databases. On the master database, apache has read-only permissions.
+            with psycopg2.connect(database=arguments.getArg('SLAVEDBNAME'), user=arguments.getArg('dbuser'), host=arguments.getArg('SLAVEHOSTNAME'), port=str(arguments.getArg('SLAVEPORT'))) as connSlave, psycopg2.connect(database=arguments.getArg('MASTERDBNAME'), user=arguments.getArg('dbuser'), host=arguments.getArg('MASTERHOSTNAME'), port=str(arguments.getArg('MASTERPORT'))) as connMaster:
+                rsLog.writeInfo([ 'Connected to database ' + arguments.getArg('SLAVEDBNAME') + ' on ' + arguments.getArg('SLAVEHOSTNAME') + ':' + str(arguments.getArg('SLAVEPORT')) + ' as user ' + arguments.getArg('dbuser') ])
+                rsLog.writeInfo([ 'Connected to database ' + arguments.getArg('MASTERDBNAME') + ' on ' + arguments.getArg('MASTERHOSTNAME') + ':' + str(arguments.getArg('MASTERPORT')) + ' as user ' + arguments.getArg('dbuser') ])
 
-                    # Set to None if the argument does not exist.                
-                    newSite = arguments.get('newsite')
-                    reqid = arguments.get('reqid')
-                    seriesList = arguments.get('series')
-                    archive = arguments.get('archive')
-                    retention = arguments.get('retention')
-                    tapegroup = arguments.get('tapegroup')
-                
-                    pendingRequest = False    
-                    # The server should always send the create schema command. Put logic in the client side that decided whether it should be 
-                    # run or not.
-                    rsLog.writeInfo([ 'client is ' + client + '.' ])
+                # Set to None if the argument does not exist.                
+                newSite = arguments.get('newsite')
+                reqid = arguments.get('reqid')
+                seriesList = arguments.get('series')
+                archive = arguments.get('archive')
+                retention = arguments.get('retention')
+                tapegroup = arguments.get('tapegroup')
+            
+                pendingRequest = False    
+                # The server should always send the create schema command. Put logic in the client side that decided whether it should be 
+                # run or not.
+                rsLog.writeInfo([ 'client is ' + client + '.' ])
 
-                    newSiteServer = clientIsNew(arguments, connMaster, client)
-                    if newSite and newSiteServer!= newSite:
-                        raise Exception('invalidArgument', 'The newsite status at the client does not match the newsite status at the server.')
-                    rsLog.writeInfo([ 'newSite is ' + str(newSiteServer) + '.' ])
-                                
-                    # Check for an existing request. If there is such a request, return a status code telling the user to poll on the request to
-                    # await completion.
-                    pendingRequest, pendRequestID, pendAction, pendSeriesList, pendArchive, pendRetention, pendTapegroup, pendStatus, pendErrMsg = getPendingRequest(connSlave, arguments.getArg('kSMreqTable'), client)
+                newSiteServer = clientIsNew(arguments, connMaster, client, rsLog)
+                if newSite and newSiteServer!= newSite:
+                    raise Exception('invalidArgument', 'The newsite status at the client does not match the newsite status at the server.')
+                rsLog.writeInfo([ 'newSite is ' + str(newSiteServer) + '.' ])
+                            
+                # Check for an existing request. If there is such a request, return a status code telling the user to poll on the request to
+                # await completion.
+                pendingRequest, pendRequestID, pendAction, pendSeriesList, pendArchive, pendRetention, pendTapegroup, pendStatus, pendErrMsg = getPendingRequest(connSlave, arguments.getArg('kSMreqTable'), client)
 
-                    if pendingRequest:
-                        rsLog.writeInfo([ 'client ' + client + ' has a pending request:' + ' id - ' + str(pendRequestID) + ', action - ' + pendAction + ', series - ' + pendSeriesList + ', status - ' + pendStatus + ', errMsg - ' + str(pendErrMsg if pendErrMsg else "''") ])
+                if pendingRequest:
+                    rsLog.writeInfo([ 'client ' + client + ' has a pending request:' + ' id - ' + str(pendRequestID) + ', action - ' + pendAction + ', series - ' + pendSeriesList + ', status - ' + pendStatus + ', errMsg - ' + str(pendErrMsg if pendErrMsg else "''") ])
+                else:
+                    rsLog.writeInfo([ 'client ' + client + ' does NOT have a pending request.' ])
+
+                if action.lower() == 'continue':
+                    if not pendingRequest:
+                        raise Exception('invalidArgument', 'Cannot resume an existing request. There is no pending request for client ' + client + '.')
+                        
+                    # Figure out if client should make a pollDump or pollComplete request.
+                    if pendStatus.upper() == 'N' or pendStatus.upper() == 'P' or pendStatus.upper() == 'D':
+                        respAction = 'polldump'
+                    elif pendStatus.upper() == 'I' or pendStatus.upper() == 'C':
+                        respAction = 'pollcomplete'
                     else:
-                        rsLog.writeInfo([ 'client ' + client + ' does NOT have a pending request.' ])                    
+                        # Error response.
+                        raise Exception('requestFailed', 'There was an error processing your request. Please try again or contact the JSOC.')
+                    
+                    resp = ResumeResponse(log=rsLog, status=STATUS_REQUEST_RESUMING, msg='To continue, make a ' + respAction.lower() + ' request.', reqid=pendRequestID, reqtype=pendAction, series=pendSeriesList.split(','), archive=pendArchive, retention=pendRetention, tapegroup=pendTapegroup, resumeaction=respAction, client=client)
+                    resp.logMsg()
+                    resp.send()
+                elif action.lower() == 'subscribe' or action.lower() == 'resubscribe':
+                    if pendingRequest:
+                        raise Exception('invalidRequest', 'You cannot ' + action.lower() + ' to a series at this time - a ' + pendAction + ' request for ' + pendSeriesList + ' is pending. Please wait for that request to complete.')
+                    if len(client) < 1:
+                        raise Exception('invalidArgument', 'You must provide a valid client name.')
+                    if newSite and action.lower() != 'subscribe':
+                        raise Exception('invalidRequest', 'You have never subscribed to a series before. You cannot make a ' + action.lower() + ' request.')
 
-                    if action.lower() == 'continue':
-                        if not pendingRequest:
-                            raise Exception('invalidArgument', 'Cannot resume an existing request. There is no pending request for client ' + client + '.')
-                            
-                        # Figure out if client should make a pollDump or pollComplete request.
-                        if pendStatus.upper() == 'N' or pendStatus.upper() == 'P' or pendStatus.upper() == 'D':
-                            respAction = 'polldump'
-                        elif pendStatus.upper() == 'I' or pendStatus.upper() == 'C':
-                            respAction = 'pollcomplete'
-                        else:
-                            # Error response.
-                            raise Exception('requestFailed', 'There was an error processing your request. Please try again or contact the JSOC.')
-                        
-                        resp = ResumeResponse(log=rsLog, status=STATUS_REQUEST_RESUMING, msg='To continue, make a ' + respAction.lower() + ' request.', reqid=pendRequestID, reqtype=pendAction, series=pendSeriesList.split(','), archive=pendArchive, retention=pendRetention, tapegroup=pendTapegroup, resumeaction=respAction, client=client)
-                        resp.logMsg()
-                        resp.send()
-                        # The client now 
-                    elif action.lower() == 'subscribe' or action.lower() == 'resubscribe':
-                        if pendingRequest:
-                            raise Exception('invalidRequest', 'You cannot ' + action.lower() + ' to a series at this time - a ' + pendAction + ' request for ' + pendSeriesList + ' is pending. Please wait for that request to complete.')
-                        if len(client) < 1:
-                            raise Exception('invalidArgument', 'You must provide a valid client name.')
-                        if newSite and action.lower() != 'subscribe':
-                            raise Exception('invalidRequest', 'You have never subscribed to a series before. You cannot make a ' + action.lower() + ' request.')
+                    # Allow the user to subscribe/resubscribe to a single series at a time.
+                    if seriesList is None or len(seriesList) != 1:
+                        raise Exception('invalidArgument', 'You must specify a single series to which you would like to ' + action.lower() + '.')
+                    
+                    series = seriesList[0]
+                    
+                    if action.lower() == 'subscribe':
+                        rsLog.writeInfo([ 'client ' + client + ' is requesting a subscription to series ' + series + '.' ])
+                        if archive is None or (archive != 0 and archive != -1 and archive != 1):
+                            raise Exception('invalidArgument', 'You must provide an integer value of -1, 0, or 1 for the archive argument.')
+                        if retention is None or retention < 0:
+                            raise Exception('invalidArgument', 'You must provide an integer value greater than or equal to 0 for the retention argument.')
+                        if tapegroup is None or tapegroup < 0:
+                            raise Exception('invalidArgument', 'You must provide an integer value greater than or equal to 0 for the tapegroup argument.')
+                    else:
+                        rsLog.writeInfo([ 'client ' + client + ' is requesting a RE-subscription to series ' + series + '.' ])
 
-                        # Allow the user to subscribe/resubscribe to a single series at a time.
-                        if seriesList is None or len(seriesList) != 1:
-                            raise Exception('invalidArgument', 'You must specify a single series to which you would like to ' + action.lower() + '.')
-                        
-                        series = seriesList[0]
-                        
-                        if action.lower() == 'subscribe':
-                            rsLog.writeInfo([ 'client ' + client + ' is requesting a subscription to series ' + series + '.' ])
-                            if archive is None or (archive != 0 and archive != -1 and archive != 1):
-                                raise Exception('invalidArgument', 'You must provide an integer value of -1, 0, or 1 for the archive argument.')
-                            if retention is None or retention < 0:
-                                raise Exception('invalidArgument', 'You must provide an integer value greater than or equal to 0 for the retention argument.')
-                            if tapegroup is None or tapegroup < 0:
-                                raise Exception('invalidArgument', 'You must provide an integer value greater than or equal to 0 for the tapegroup argument.')
-                        else:
-                            rsLog.writeInfo([ 'client ' + client + ' is requesting a RE-subscription to series ' + series + '.' ])
-
-                        # Check for existing subscription to series.
-                        subscribed = clientIsSubscribed(arguments, connMaster, client, series)
+                    # Check for existing subscription to series.
+                    subscribed = clientIsSubscribed(arguments, connMaster, client, series)
+                    if subscribed:
+                        rsLog.writeInfo([ 'client ' + client + ' is currently subscribed to series ' + series + '.' ])
+                    else:
+                        rsLog.writeInfo([ 'client ' + client + ' is NOT currently subscribed to series ' + series + '.' ])
+                    
+                    if action.lower() == 'subscribe':
                         if subscribed:
-                            rsLog.writeInfo([ 'client ' + client + ' is currently subscribed to series ' + series + '.' ])
-                        else:
-                            rsLog.writeInfo([ 'client ' + client + ' is NOT currently subscribed to series ' + series + '.' ])
+                            raise Exception('invalidArgument', 'Cannot subscribe to ' + series + '; client ' + client + ' is already subscribed to this series.')
+                    else:
+                        if not subscribed:
+                            raise Exception('invalidArgument', 'Cannot re-subscribe to ' + series + '; client ' + client + ' is not already subscribed to this series.')
+
+                    if not seriesExists(connSlave, series):
+                        raise Exception('invalidArgument', 'Cannot ' + action.lower() + ' to ' + series + '; it does not exist.')
+                    if not seriesIsPublished(arguments, connSlave, series):
+                        raise Exception('invalidArgument', 'Cannot ' + action.lower() + ' to ' + series + '; it is not published.')
                         
-                        if action.lower() == 'subscribe':
-                            if subscribed:
-                                raise Exception('invalidArgument', 'Cannot subscribe to ' + series + '; client ' + client + ' is already subscribed to this series.')
-                        else:
-                            if not subscribed:
-                                raise Exception('invalidArgument', 'Cannot re-subscribe to ' + series + '; client ' + client + ' is not already subscribed to this series.')
+                    rsLog.writeInfo([ 'series ' + series + ' exists on the server and is published.' ])
 
-                        if not seriesExists(connSlave, series):
-                            raise Exception('invalidArgument', 'Cannot ' + action.lower() + ' to ' + series + '; it does not exist.')
-                        if not seriesIsPublished(arguments, connSlave, series):
-                            raise Exception('invalidArgument', 'Cannot ' + action.lower() + ' to ' + series + '; it is not published.')
-                            
-                        rsLog.writeInfo([ 'series ' + series + ' exists on the server and is published.' ])
-
-                        # Insert a pending row into the su_production.slonyreq table. Ensure that the series name comprises lower-case letters.
-                        # Slave database.
-                        reqid = insertRequest(connSlave, rsLog, arguments.getArg('kSMreqTable'), client=client, action=action, series=','.join(seriesList), archive=archive, retention=retention, tapegroup=tapegroup)
+                    # Insert a pending row into the su_production.slonyreq table. Ensure that the series name comprises lower-case letters.
+                    # Slave database.
+                    reqid = insertRequest(connSlave, rsLog, arguments.getArg('kSMreqTable'), client=client, action=action, series=','.join(seriesList), archive=archive, retention=retention, tapegroup=tapegroup)
+                
+                    if action.lower() == 'subscribe':
+                        respMsg = 'Request for subscription to series ' + series + ' is queued. Poll for completion with a polldump request. Please sleep between iterations when looping over this request.'
+                    else:
+                        respMsg = 'Request for re-subscription to series ' + series + ' is queued. Poll for completion with a polldump request. Please sleep between iterations when looping over this request.'
                     
-                        if action.lower() == 'subscribe':
-                            respMsg = 'Request for subscription to series ' + series + ' is queued. Poll for completion with a polldump request. Please sleep between iterations when looping over this request.'
-                        else:
-                            respMsg = 'Request for re-subscription to series ' + series + ' is queued. Poll for completion with a polldump request. Please sleep between iterations when looping over this request.'
-                        
-                        # Send a 'wait' response.
-                        resp = WaitResponse(log=rsLog, status=STATUS_REQUEST_QUEUED, msg=respMsg, reqid=reqid, client=client)
-                        resp.logMsg()
-                        resp.send()
-                    elif action.lower() == 'unsubscribe':
-                        if pendingRequest:
-                            raise Exception('invalidRequest', 'You cannot un-subscribe from series at this time - a ' + pendAction + ' request for ' + pendSeriesList + ' is pending. Please wait for that request to complete.')
-                        if len(client) < 1:
-                            raise Exception('invalidArgument', 'You must provide a valid client name.')
-                        if newSite:
-                            raise Exception('invalidArgument', 'You have never subscribed to a series before. You cannot make a ' + action.lower() + ' request.')
+                    # Send a 'wait' response.
+                    resp = WaitResponse(log=rsLog, status=STATUS_REQUEST_QUEUED, msg=respMsg, reqid=reqid, client=client)
+                    resp.logMsg()
+                    resp.send()
+                elif action.lower() == 'unsubscribe':
+                    if pendingRequest:
+                        raise Exception('invalidRequest', 'You cannot un-subscribe from series at this time - a ' + pendAction + ' request for ' + pendSeriesList + ' is pending. Please wait for that request to complete.')
+                    if len(client) < 1:
+                        raise Exception('invalidArgument', 'You must provide a valid client name.')
+                    if newSite:
+                        raise Exception('invalidArgument', 'You have never subscribed to a series before. You cannot make a ' + action.lower() + ' request.')
 
-                        # The user can unsubscribe from multiple series.
-                        if seriesList is None or len(seriesList) < 1:
-                            raise Exception('invalidArgument', 'Please provide a list of series from which you would like to unsubscribe.')
+                    # The user can unsubscribe from multiple series.
+                    if seriesList is None or len(seriesList) < 1:
+                        raise Exception('invalidArgument', 'Please provide a list of series from which you would like to unsubscribe.')
+                
+                    reqid = insertRequest(connSlave, rsLog, arguments.getArg('kSMreqTable'), client=client, action=action, series=','.join(seriesList))
                     
-                        reqid = insertRequest(connSlave, rsLog, arguments.getArg('kSMreqTable'), client=client, action=action, series=','.join(seriesList))
+                    respMsg = 'Request for un-subscription from series ' + seriesList.join(',') + ' is queued. Poll for completion with a pollcomplete request. Please sleep between iterations when looping over this request.'
+                    resp = WaitResponse(log=rsLog, status=STATUS_REQUEST_QUEUED, msg=respMsg, reqid=reqid, client=client)
+                    resp.logMsg()
+                    resp.send()
+                elif action.lower() == 'polldump' or action.lower() == 'pollcomplete':
+                    if reqid is None:
+                        raise Exception('invalidArgument', 'Please provide a request ID.')
+                    if not pendRequestID or pendRequestID != reqid:
+                        raise Exception('invalidArgument', 'The request ID provided (' + str(reqid) + ') does not match the ID of the request currently pending (' + str(pendRequestID) + ').')
+                    if not pendingRequest:
+                        if action.lower() == 'polldump':
+                            raise Exception('invalidRequest', 'You cannot poll for dump-completion of request ' + str(reqid) + '. That request is not pending.')
+                        else:
+                            raise Exception('invalidRequest', 'You cannot poll for completion of request ' + str(reqid) + '. That request is not pending.')
+                    
+
+                    # Now, we have to poll on the pending request, waiting for manage-subs.py to reply with:
+                    #   D - dump complete
+                    #   C - complete (clean-up is done)
+                    #   E - error
+                    if pendStatus.upper() == 'N' or pendStatus.upper() == 'P' or pendStatus.upper() == 'D':
+                        if action.lower() != 'polldump':
+                            raise Exception('invalidArgument', 'You must send a polldump request to continue with the subscription process.')
+                        if pendStatus.upper() == 'D':
                         
-                        respMsg = 'Request for un-subscription from series ' + seriesList.join(',') + ' is queued. Poll for completion with a pollcomplete request. Please sleep between iterations when looping over this request.'
-                        resp = WaitResponse(log=rsLog, status=STATUS_REQUEST_QUEUED, msg=respMsg, reqid=reqid, client=client)
-                        resp.logMsg()
-                        resp.send()
-                    elif action.lower() == 'polldump' or action.lower() == 'pollcomplete':
-                        if reqid is None:
-                            raise Exception('invalidArgument', 'Please provide a request ID.')
-                        if not pendRequestID or pendRequestID != reqid:
-                            raise Exception('invalidArgument', 'The request ID provided (' + str(reqid) + ') does not match the ID of the request currently pending (' + str(pendRequestID) + ').')
-                        if not pendingRequest:
-                            if action.lower() == 'polldump':
-                                raise Exception('invalidRequest', 'You cannot poll for dump-completion of request ' + str(reqid) + '. That request is not pending.')
+                            # The client acknowledges that the dump is ready to be downloaded and applied.
+                            try:
+                                # Slave database.
+                                with connSlave.cursor() as cursor:
+                                    cmd = 'UPDATE ' + arguments.getArg('kSMreqTable') + " SET status = 'A' WHERE requestid = " + str(reqid)
+                                    cursor.execute(cmd)
+                                    pendStatus = 'A'
+                            except psycopg2.Error as exc:
+                                raise Exception('dbCmd', exc.diag.message_primary)
+                            finally:                        
+                                connSlave.commit()
+                        
+                            # Send a 'continue' response.
+                            if pendAction.lower() == 'subscribe' or pendAction.lower() == 'resubscribe':
+                                resp = ContinueResponse(log=rsLog, status=STATUS_DUMP_READY, msg='The SQL dump file is ready for ingestion.', client=client)
+                            elif pendAction.lower() == 'unsubscribe':
+                                raise Exception('manage-subs', 'Unexpected request status(D)/action(unsubscribe) combination for request ' + str(reqid) + '.')
                             else:
-                                raise Exception('invalidRequest', 'You cannot poll for completion of request ' + str(reqid) + '. That request is not pending.')
- 
-                        if action.lower() == 'pollcomplete':
+                                raise Exception('manage-subs', "Unknown request action '" + pendAction.lower() + "' for request " + str(reqid) + '.')
+                        elif pendStatus.upper() == 'N':
+                            # Send a 'wait' response.
+                            if pendAction.lower() == 'subscribe':
+                                resp = WaitResponse(log=rsLog, status=STATUS_REQUEST_QUEUED, msg='Request for subscription to series ' + pendSeriesList + ' is queued. Poll for dump file with a polldump request. Please sleep between iterations when looping over this request.', client=client, reqid=reqid)
+                            elif pendAction.lower() == 'resubscribe':
+                                resp = WaitResponse(log=rsLog, status=STATUS_REQUEST_QUEUED, msg='Request for re-subscription to series ' + pendSeriesList + ' is queued. Poll for dump file with a polldump request. Please sleep between iterations when looping over this request.', client=client, reqid=reqid)
+                            elif pendAction.lower() == 'unsubscribe':
+                                resp = WaitResponse(log=rsLog, status=STATUS_REQUEST_QUEUED, msg='Request for un-subscription from series ' + pendSeriesList + ' is queued. Poll for completion with a pollcomplete request. Please sleep between iterations when looping over this request.', client=client, reqid=reqid)
+                            else:
+                                raise Exception('manage-subs', "Unknown request action '" + pendAction.lower() + "' for request " + str(reqid) + '.')
+                        else:
+                            # Send a 'wait' response.
+                            if pendAction.lower() == 'subscribe':
+                                resp = WaitResponse(log=rsLog, status=STATUS_REQUEST_PROCESSING, msg='Request for subscription to series ' + pendSeriesList + ' is being processed. Poll for dump file with a polldump request. Please sleep between iterations when looping over this request.', client=client, reqid=reqid)
+                            elif pendAction.lower() == 'resubscribe':
+                                resp = WaitResponse(log=rsLog, status=STATUS_REQUEST_PROCESSING, msg='Request for re-subscription to series ' + pendSeriesList + ' is being processed. Poll for dump file with a polldump request. Please sleep between iterations when looping over this request.', client=client, reqid=reqid)
+                            elif pendAction.lower() == 'unsubscribe':
+                                resp = WaitResponse(log=rsLog, status=STATUS_REQUEST_PROCESSING, msg='Request for un-subscription from series ' + pendSeriesList + ' is being processed. Poll for completion with a pollcomplete request. Please sleep between iterations when looping over this request.', client=client, reqid=reqid)
+                            else:
+                                raise Exception('manage-subs', "Unknown request action '" + pendAction.lower() + "' for request " + str(reqid) + '.')
+
+                        resp.logMsg() 
+                        resp.send()
+                    elif pendStatus.upper() == 'A' or pendStatus.upper() == 'I' or pendStatus.upper() == 'C':
+                        if action.lower() != 'pollcomplete':
+                            raise Exception('invalidArgument', 'You must send a pollcomplete request to continue with the subscription process.')
+                        if pendStatus.upper() == 'A':
                             # If this is a pollcomplete request, then we need to tell manage-subs.py that the client
                             # has ingested the dump file and is awaiting server clean-up. Update the request status to 'I'.
                             try:
@@ -832,121 +891,60 @@ if __name__ == "__main__":
                                 with connSlave.cursor() as cursor:
                                     cmd = 'UPDATE ' + arguments.getArg('kSMreqTable') + " SET status = 'I' WHERE requestid = " + str(reqid)
                                     cursor.execute(cmd)
+                                    pendStatus = 'I'
                             except psycopg2.Error as exc:
                                 raise Exception('dbCmd', exc.diag.message_primary)
                             finally:                        
-                                connSlave.commit()                        
-
-                        # Now, we have to poll on the pending request, waiting for manage-subs.py to reply with:
-                        #   D - dump complete
-                        #   C - complete (clean-up is done)
-                        #   E - error
-
-                        try:
-                            # Slave database.
-                            with connSlave.cursor() as cursor:
-                                cmd = 'SELECT status, errmsg FROM ' + arguments.getArg('kSMreqTable') + ' WHERE requestid = ' + str(reqid)
-                                cursor.execute(cmd)
-                                records = cursor.fetchall()
-            
-                                if len(records) == 1:
-                                    record = records[0]                
-                                    pendStatus = record[0]
-                                    pendErrMsg = record[1]
-                                elif len(records) > 1:
-                                    raise Exception('dbResponse', 'There is more than one pending request with a request ID of ' + str(reqid) + '.')
+                                connSlave.commit()
+                                
+                            if pendAction.lower() == 'unsubscribe':
+                                # Status I is not valid for an unsubscribe request.
+                                raise Exception('manage-subs', 'Unexpected request status(A)/action(unsubscribe) combination for request ' + str(reqid) + '.')
+                            elif pendAction.lower() == 'subscribe':
+                                resp = WaitResponse(log=rsLog, status=STATUS_REQUEST_FINALIZING, msg='Requesting finalization for subscription to series ' + pendSeriesList + '. Poll for completion with a pollcomplete request. Please sleep between iterations when looping over this request.', client=client, reqid=reqid)
+                            elif pendAction.lower() == 'resubscribe':
+                                resp = WaitResponse(log=rsLog, status=STATUS_REQUEST_FINALIZING, msg='Requesting finalization for re-subscription to series ' + pendSeriesList + '. Poll for completion with a pollcomplete request. Please sleep between iterations when looping over this request.', client=client, reqid=reqid)
+                            else:
+                                raise Exception('manage-subs', "Unknown request action '" + pendAction.lower() + "' for request " + str(reqid) + '.')
+                        elif pendStatus.upper() == 'I':
+                            # Send a 'wait' response.
+                            if pendAction.lower() == 'unsubscribe':
+                                # Status I is not valid for an unsubscribe request.
+                                raise Exception('manage-subs', 'Unexpected request status(I)/action(unsubscribe) combination for request ' + str(reqid) + '.')
+                            elif pendAction.lower() == 'subscribe':
+                                resp = WaitResponse(log=rsLog, status=STATUS_REQUEST_FINALIZING, msg='Request for subscription to series ' + pendSeriesList + ' is being finalized. Poll for completion with a pollcomplete request. Please sleep between iterations when looping over this request.', client=client, reqid=reqid)
+                            elif pendAction.lower() == 'resubscribe':
+                                resp = WaitResponse(log=rsLog, status=STATUS_REQUEST_FINALIZING, msg='Request for re-subscription to series ' + pendSeriesList + ' is being finalized. Poll for completion with a pollcomplete request. Please sleep between iterations when looping over this request.', client=client, reqid=reqid)
+                            else:
+                                raise Exception('manage-subs', "Unknown request action '" + pendAction.lower() + "' for request " + str(reqid) + '.')
+                        elif pendStatus.upper() == 'C':
+                            # Send a 'continue' response.
+                            resp = ContinueResponse(log=rsLog, status=STATUS_REQUEST_COMPLETE, msg='Your ' + pendAction.lower() + ' request has successfully completed.', client=client)
                             
-                            if pendStatus.upper() == 'N' or pendStatus.upper() == 'P' or pendStatus.upper() == 'D':
-                                if action.lower() != 'polldump':
-                                    raise Exception('invalidArgument', 'You must send a polldump request to continue with the subscription process.')
-                                if pendStatus.upper() == 'D':
-                                    # Send a 'continue' response.
-                                    if pendAction.lower() == 'subscribe' or pendAction.lower() == 'resubscribe':
-                                        resp = ContinueResponse(log=rsLog, status=STATUS_DUMP_READY, msg='The SQL dump file is ready for ingestion.', client=client)
-                                    elif pendAction.lower() == 'unsubscribe':
-                                        raise Exception('manage-subs', 'Unexpected request status(D)/action(unsubscribe) combination for request ' + str(reqid) + '.')
-                                    else:
-                                        raise Exception('manage-subs', "Unknown request action '" + pendAction.lower() + "' for request " + str(reqid) + '.')
-                                elif pendStatus.upper() == 'N':
-                                    # Send a 'wait' response.
-                                    if pendAction.lower() == 'subscribe':
-                                        resp = WaitResponse(log=rsLog, status=STATUS_REQUEST_QUEUED, msg='Request for subscription to series ' + pendSeriesList + ' is queued. Poll for dump file with a polldump request. Please sleep between iterations when looping over this request.', client=client, reqid=reqid)
-                                    elif pendAction.lower() == 'resubscribe':
-                                        resp = WaitResponse(log=rsLog, status=STATUS_REQUEST_QUEUED, msg='Request for re-subscription to series ' + pendSeriesList + ' is queued. Poll for dump file with a polldump request. Please sleep between iterations when looping over this request.', client=client, reqid=reqid)
-                                    elif pendAction.lower() == 'unsubscribe':
-                                        resp = WaitResponse(log=rsLog, status=STATUS_REQUEST_QUEUED, msg='Request for un-subscription from series ' + pendSeriesList + ' is queued. Poll for completion with a pollcomplete request. Please sleep between iterations when looping over this request.', client=client, reqid=reqid)
-                                    else:
-                                        raise Exception('manage-subs', "Unknown request action '" + pendAction.lower() + "' for request " + str(reqid) + '.')
-                                else:
-                                    # Send a 'wait' response.
-                                    if pendAction.lower() == 'subscribe':
-                                        resp = WaitResponse(log=rsLog, status=STATUS_REQUEST_PROCESSING, msg='Request for subscription to series ' + pendSeriesList + ' is being processed. Poll for dump file with a polldump request. Please sleep between iterations when looping over this request.', client=client, reqid=reqid)
-                                    elif pendAction.lower() == 'resubscribe':
-                                        resp = WaitResponse(log=rsLog, status=STATUS_REQUEST_PROCESSING, msg='Request for re-subscription to series ' + pendSeriesList + ' is being processed. Poll for dump file with a polldump request. Please sleep between iterations when looping over this request.', client=client, reqid=reqid)
-                                    elif pendAction.lower() == 'unsubscribe':
-                                        resp = WaitResponse(log=rsLog, status=STATUS_REQUEST_PROCESSING, msg='Request for un-subscription from series ' + pendSeriesList + ' is being processed. Poll for completion with a pollcomplete request. Please sleep between iterations when looping over this request.', client=client, reqid=reqid)
-                                    else:
-                                        raise Exception('manage-subs', "Unknown request action '" + pendAction.lower() + "' for request " + str(reqid) + '.')
+                            try:
+                                # Slave database.
+                                with connSlave.cursor() as cursor:
+                                    cmd = 'UPDATE ' + arguments.getArg('kSMreqTable') + " SET status = 'S' WHERE requestid = " + str(reqid)
+                                    cursor.execute(cmd)
+                            except psycopg2.Error as exc:
+                                raise Exception('dbCmd', exc.diag.message_primary)
+                            finally:                        
+                                connSlave.commit()
+                            
+                        resp.logMsg()
+                        resp.send()
+                    elif pendStatus.upper() == 'E':
+                        raise Exception('requestFailed', pendErrMsg)
+                    else:                                
+                        raise Exception('manage-subs', 'Unexcepted status code: ' + pendStatus.upper() + '.')
 
-                                resp.logMsg() 
-                                resp.send()
-                            elif pendStatus.upper() == 'I' or pendStatus.upper() == 'C':
-                                if action.lower() != 'pollcomplete':
-                                    raise Exception('invalidArgument', 'You must send a pollcomplete request to continue with the subscription process.')
-                                if pendStatus.upper() == 'C':
-                                    # Send a 'continue' response.
-                                    resp = ContinueResponse(log=rsLog, status=STATUS_REQUEST_COMPLETE, msg='Your ' + pendAction.lower() + ' request has successfully completed.', client=client)
-                                elif pendStatus.upper() == 'I':
-                                    # Send a 'wait' response.
-                                    if pendAction.lower() == 'unsubscribe':
-                                        # Status I is not valid for an unsubscribe request.
-                                        raise Exception('manage-subs', 'Unexpected request status(I)/action(unsubscribe) combination for request ' + str(reqid) + '.')
-                                    elif pendAction.lower() == 'subscribe':
-                                        resp = WaitResponse(log=rsLog, status=STATUS_REQUEST_FINALIZING, msg='Request for subscription to series ' + pendSeriesList + ' is being finalized. Poll for completion with a pollcomplete request. Please sleep between iterations when looping over this request.', client=client, reqid=reqid)
-                                    elif pendAction.lower() == 'resubscribe':
-                                        resp = WaitResponse(log=rsLog, status=STATUS_REQUEST_FINALIZING, msg='Request for re-subscription to series ' + pendSeriesList + ' is being finalized. Poll for completion with a pollcomplete request. Please sleep between iterations when looping over this request.', client=client, reqid=reqid)
-                                    else:
-                                        raise Exception('manage-subs', "Unknown request action '" + pendAction.lower() + "' for request " + str(reqid) + '.')
-
-                                resp.logMsg()
-                                resp.send()
-                            elif pendStatus.upper() == 'E':
-                                raise Exception('manage-subs', pendErrMsg)
-                            else:                                
-                                raise Exception('manage-subs', 'Unexcepted status code: ' + pendStatus.upper() + '.')
-
-                        except psycopg2.Error as exc:
-                            raise Exception('dbCmd', exc.diag.message_primary)
-                        finally:                        
-                            connSlave.rollback()
-                    else:
-                        # Unrecognized action.
-                        raise Exception('invalidArgument', 'Action ' + "'" + action + "'" + ' is not recognized.')
-                        
-            except Exception as exc:
-                if len(exc.args) == 2:
-                    eType, eMsg = exc.args
-                    resp = ErrorResponse(log=rsLog, msg=eMsg, client=client)
                     
-                    if eType == 'invalidArgument':
-                        resp.setStatus(STATUS_ERR_INVALID_ARGUMENT)
-                    elif eType == 'dbResponse':
-                        resp.setStatus(STATUS_ERR_INTERNAL)
-                    elif eType == 'dbCmd':
-                        resp.setStatus(STATUS_ERR_INTERNAL)
-                    elif eType == 'invalidRequest':
-                        resp.setStatus(STATUS_ERR_INVALID_REQUEST)
-                    elif eType == 'manage-subs':
-                        resp.setStatus(STATUS_ERR_INTERNAL)
-                    elif eType == 'requestFailed':
-                        resp.setStatus(STATUS_ERR_FAILURE)
-                    else:
-                        raise
-
-                    resp.logMsg()
-                    resp.send()
+                    
+                        
+                        
                 else:
-                    raise
+                    # Unrecognized action.
+                    raise Exception('invalidArgument', 'Action ' + "'" + action + "'" + ' is not recognized.')
                             
         # Check for SIGINT.
         if thContainer[0] == STATUS_ERR_TERMINATED:
@@ -975,13 +973,22 @@ if __name__ == "__main__":
                 resp.setStatus(STATUS_ERR_INVALID_REQUEST)
             elif eType == 'manage-subs':
                 resp.setStatus(STATUS_ERR_INTERNAL)
+            elif eType == 'requestFailed':
+                resp.setStatus(STATUS_ERR_FAILURE)
             else:
-                raise
-
+                if rsLog:
+                    rsLog.writeError([ traceback.format_exc(5) ])
+                
             resp.logMsg()
             resp.send()
         else:
-            raise
+            import traceback
+            
+            if rsLog:
+                rsLog.writeError([ traceback.format_exc(5) ])
+                
+            resp = ErrorResponse(log=rsLog, msg='Unknown error in subscription CGI.', client=client)
+            resp.send()
             
     rsLog.close()
     logging.shutdown()
