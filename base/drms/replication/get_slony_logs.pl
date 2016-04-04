@@ -334,7 +334,7 @@ while (defined $slony_ingest) {
       $vscp->get($tar, "./$tar_file") or die "error [$!] ", $vscp->{errstr};;
       # get list from tar file
       my $tar_test=$tar_file=~/\.gz$/? "tar tfz $tar_file" : "tar tf $tar_file";
-      my $list = `$tar_test`;
+      my $list = `$tar_test | sort`;
       if ($? != 0) {
         print "Error executing [$tar_test]\n";
         exit 1;
