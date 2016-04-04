@@ -89,4 +89,19 @@ class DrmsLock(object):
                 raise Exception('drmsLock', 'Unable to release lock.')
                     
             self.hasLock = False
-
+            
+    def close(self):
+        '''Use close() when not using DrmsLock in a context-manager context.'''
+        # Release the lock.
+        if self.hasLock:
+            self.releaseLock()
+            
+        # Close the file.
+        if self.fileObj:
+            self.fileObj.close()
+            self.fileObj = None
+        
+        # Delete the lock file.
+        if self.lockFile:
+            unlink(self.lockFile)
+            self.lockFile = None
