@@ -41,12 +41,9 @@ class CmdlParser(argparse.ArgumentParser):
                 if matchObj is not None:
                     argsMod.append(arg)
                 else:
-                    # Argument does not start with a '-'. It must be a required argument.
+                    # Argument does not start with a '-', so it must have the format arg=value
                     matchObj = regexpEqual.match(arg)
-                    if matchObj is not None:
-                        if matchObj.group(1) not in self.required:
-                            raise Exception('CmdlParser-ArgUnrecognized', 'Unrecognized argument ' + "'" + arg + "'.")
-                    else:
+                    if matchObj is  None:
                         raise Exception('CmdlParser-ArgBadformat', 'Unrecognized argument format ' + "'" + arg + "'.")
                     
                     argsMod.append(arg)
