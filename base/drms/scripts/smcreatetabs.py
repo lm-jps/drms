@@ -193,7 +193,7 @@ if __name__ == "__main__":
                             sql += 'ALTER TABLE ' + tab + ' ADD CONSTRAINT ' + tabName + '_pkey PRIMARY KEY (requestid); '
 
                             # The web db user and the slony super user must be able to read and write to/from the reqtable.
-                            sql += 'GRANT INSERT, SELECT ON ' + tab + ' TO ' + arguments.getArg('webuser') + '; '
+                            sql += 'GRANT INSERT, SELECT, UPDATE ON ' + tab + ' TO ' + arguments.getArg('webuser') + '; '
 
                             # We must also make a sequence that will be used to populate the requestid column.
                             sql += 'CREATE SEQUENCE ' + tab + '_seq; '
