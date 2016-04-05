@@ -640,8 +640,8 @@ if __name__ == "__main__":
             parser = CmdlParser(usage='%(prog)s action=<action string> [ client=<client> ] [ requestid=<id> ] [ series=<series list> ] [ archive=<archive code> ] [ retention=<number of days> ] [ tapegroup=<group id> ] [ cfg=<configuration file> ]')
             
         # Required (name does not start with a dash).
-        parser.add_argument('a', 'action', '--action', help='The request action (subscribe, unsubscribe, resubscribe, polldump, pollcomplete).', metavar='<action>', dest='action')
-        parser.add_argument('c', 'client', '--client', help='The client making the subscription request.', metavar='<client>', dest='client')
+        parser.add_argument('a', 'action', '--action', help='The request action (subscribe, unsubscribe, resubscribe, polldump, pollcomplete).', metavar='<action>', required=True, dest='action')
+        parser.add_argument('c', 'client', '--client', help='The client making the subscription request.', metavar='<client>', required=True, dest='client')
 
         # Optional (name starts with a dash).
         if not os.getenv('REQUEST_URI'):
@@ -711,9 +711,10 @@ if __name__ == "__main__":
                 rsLog.writeInfo([ 'client is ' + client + '.' ])
 
                 newSiteServer = clientIsNew(arguments, connMaster, client, rsLog)
-                if newSite and newSiteServer!= newSite:
+                if newSite is not None and newSiteServer!= newSite:
                     raise Exception('invalidArgument', 'The newsite status at the client does not match the newsite status at the server.')
-                rsLog.writeInfo([ 'newSite is ' + str(newSiteServer) + '.' ])
+                newSite = newSiteServer
+                rsLog.writeInfo([ 'newSite is ' + str(newSite) + '.' ])
                             
                 # Check for an existing request. If there is such a request, return a status code telling the user to poll on the request to
                 # await completion.
@@ -813,7 +814,7 @@ if __name__ == "__main__":
                 
                     reqid = insertRequest(connSlave, rsLog, arguments.getArg('kSMreqTable'), client=client, action=action, series=','.join(seriesList))
                     
-                    respMsg = 'Request for un-subscription from series ' + seriesList.join(',') + ' is queued. Poll for completion with a pollcomplete request. Please sleep between iterations when looping over this request.'
+                    respMsg = 'Request for un-subscription from series ' + ','.join(seriesList) + ' is queued. Poll for completion with a pollcomplete request. Please sleep between iterations when looping over this request.'
                     resp = WaitResponse(log=rsLog, status=STATUS_REQUEST_QUEUED, msg=respMsg, reqid=reqid, client=client)
                     resp.logMsg()
                     resp.send()
