@@ -1000,6 +1000,7 @@ sub readCounter {
 ## }
 
 sub loadConfigInt {
+  debug("Loading slon_parser.cfg.");
   my $cfg_file = shift;
   my $nodelstH = shift; # reference to hash of nodes whose slony logs we want to reprocess
 
@@ -1032,6 +1033,7 @@ sub loadConfigInt {
     ## /solarport/pgsql/slon_logs/site_logs//ROB 
     my @b = split('/',$a[0]);
     my $node = pop @b; ## get last element only
+    debug("Found node $node with path " . $a[0] . ".");
     my @nodelst = keys(%$nodelstH);
     
     if ($#nodelst >= 0)
