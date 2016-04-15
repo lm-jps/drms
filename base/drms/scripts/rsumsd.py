@@ -946,7 +946,7 @@ class Downloader(threading.Thread):
                     
                 gotLock = False
                 try:
-                    self.log.write(['Class Downloader acquiring SU-table lock for SU ' + str(self.sunum) + '.'])
+                    self.log.write(['(Poll completion) Class Downloader acquiring SU-table lock for SU ' + str(self.sunum) + '.'])
                     gotLock = self.suTable.acquireLock()
                     su = self.suTable.get([self.sunum])
 
@@ -957,8 +957,8 @@ class Downloader(threading.Thread):
                     # Check for download time-out.
                     timeNow = datetime.now(su[0]['starttime'].tzinfo)
                     if timeNow > su[0]['starttime'] + self.suTable.getTimeout():
-                        self.log.write(['Download of SUNUM ' + str(su[0]['sunum']) + ' timed-out.'])
-                        sus.setStatus([su[0]['sunum']], 'E', 'Download timed-out.')        
+                        self.log.write(['Download of SUNUM ' + str(self.sunum) + ' timed-out.'])
+                        self.suTable.setStatus([ self.sunum ], 'E', 'Download timed-out.')        
                         # Flush the change to disk.
                         self.suTable.updateDB()                
                         raise Exception('downloader', 'Timed-out.')
@@ -1168,7 +1168,7 @@ class Downloader(threading.Thread):
             # the state may not be 'P' due to some problem cropping up in the meantime. Only set to 'C' if the state is 'P'.
             gotLock = False
             try:
-                self.log.write(['(Updating Status) Class Downloader acquiring SU-table lock for SU ' + str(self.sunum) + '.'])            
+                self.log.write(['(Updating Status) Class Downloader acquiring SU-table lock for SU ' + str(self.sunum) + '.'])
                 gotLock = self.suTable.acquireLock()
                 
                 su = self.suTable.get([self.sunum])
@@ -1191,13 +1191,21 @@ class Downloader(threading.Thread):
                 raise
 
             if type == 'scpSU' or type == 'sumsAPI' or type == 'mvSU' or type == 'rmTmpSU':
+                gotLock = False
                 try:
-                    sus.setStatus([self.sunum], 'E', 'Error downloading storage unit ' + str(self.sunum) + ': ' + msg + '.')
+                    self.log.write(['(Updating Status to E) Class Downloader acquiring SU-table lock for SU ' + str(self.sunum) + '.'])
+                    gotLock = self.suTable.acquireLock()
+                    self.suTable.setStatus([self.sunum], 'E', 'Error downloading storage unit ' + str(self.sunum) + ': ' + msg + '.')
                     # Flush the change to disk.
                     self.suTable.updateDB()
                 except Exception:
                     # Catch everything and just let the thread pass away peacefully.
                     pass
+                finally:
+                    if gotLock:
+                        self.log.write(['(Updating Status to E) Class Downloader releasing SU-table lock for SU ' + str(self.sunum) + '.'])
+                        self.suTable.releaseLock()
+                    
             elif type == 'unknownSunum':
                 self.log.write(['Cannot download SU. No SU record.' + msg])
             elif type == 'downloader':
@@ -1610,8 +1618,8 @@ if __name__ == "__main__":
                         # been lost, and we cannot trust that the downloads completed successfully (although they might have).
                         # A fancier implementation would be some kind of download manager that can recover partially downloaded
                         # storage units, but who has the time :)
-                        rslog.write(['Setting download-timeout to ' + str(arguments.dltimeout) + ' minutes.'])
-                        sus = SuTable(suTable, timedelta(minutes=arguments.dltimeout), rslog)
+                        rslog.write(['Setting download-timeout to ' + str(arguments.dltimeout) + ' seconds.'])
+                        sus = SuTable(suTable, timedelta(seconds=arguments.dltimeout), rslog)
                         rslog.write(['Setting request-timeout to ' + str(arguments.reqtimeout) + ' minutes.'])
                         requests = ReqTable(reqTable, timedelta(minutes=arguments.reqtimeout), rslog)
                         sites = SiteTable(rslog)
@@ -1690,9 +1698,12 @@ if __name__ == "__main__":
                         # Start of main loop.
                         loopN = 0
                         while True and not shutDown:
-                            # Always lock the SU table first and do all processing that requires this lock first.
-                            gotLock = sus.acquireLock()
+                            gotLock = False
                             try:
+                                # Always lock the SU table first and do all processing that requires this lock first.
+                                gotLock = sus.acquireLock()
+                                rslog.write([ '(Main) Class Downloader acquired SU-table lock.' ])
+
                                 # For each P SU in the SU table, see if it is time to time-out. susPending are ordered by SUNUM.
                                 # I guess we could process more than one SuTable, but for now, let's assume there is only one such
                                 # table. The Downloader thread normally handles time-outs, but if the thread croaks and leaves 
@@ -1739,13 +1750,9 @@ if __name__ == "__main__":
                                             continue
                                         else:
                                             processing[str(asunum)] = True                                        
-
-                                        if reqError == True:
-                                            break
                                         
                                         if asu[0]['status'] == 'P':
-                                            if (not asu[0]['polling']) or timeToLog:
-                                                rslog.write(['Download of SU ' + str(asu[0]['sunum'])  + ' is pending.'])
+                                            rslog.write(['Download of SU ' + str(asu[0]['sunum'])  + ' is pending.'])
                                             done = False
                                         elif asu[0]['status'] == 'E':
                                             rslog.write(['Download of SU ' + str(asu[0]['sunum'])  + ' has errored-out.'])
@@ -1913,6 +1920,7 @@ if __name__ == "__main__":
                                 # Always release the lock, even if an unhandled exception crops up.
                                 if gotLock:
                                     sus.releaseLock()
+                                    rslog.write([ '(Main) Class Downloader released SU-table lock.' ])
                            
                             # Must poll for new requests to appear in requests table.
                             time.sleep(1)
