@@ -209,9 +209,9 @@ else # cases with no color table file, for now these will be AIA with mixed wave
          in_new = "${in}[? WAVELNTH=$wvl ?]"
        endif
        if ( $wvl == 171 ) then 
-         set scaling = SQRT
+         set scaling = "scaling=SQRT"
        else 
-         set scaling = LOG
+         set scaling = "scaling=LOG"
        endif
 
        render_image in="$in_new" n=$limit min=$min max=$max palette=/home/jsoc/ColorTables/AIA/aia_$wavl.lut  \
