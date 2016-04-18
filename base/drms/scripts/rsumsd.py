@@ -25,7 +25,7 @@ from drmsparams import DRMSParams
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../base/libs/py'))
 from drmsCmdl import CmdlParser
 from drmsLock import DrmsLock
-from subprocess import check_output, check_call, CalledProcessError, Popen
+from subprocess import check_output, check_call, CalledProcessError, Popen, PIPE
 
 # This script runs as a daemon at the site that has requested an SU that does not belong to the site. It is responsible for contacting
 # the owning site and requesting the path to the desired SUs. The owning site must be running the rs.sh CGI to respond to the requesting
@@ -280,7 +280,9 @@ class SuTable:
                         cursor.execute(cmd)
                     
                     except psycopg2.Error as exc:
-                        raise Exception('sutableWrite', exc.diag.message_primary)
+                        import traceback
+                        self.log.write([ traceback.format_exc(5) ])
+                        raise Exception('sutableWrite', traceback.format_exc(5))
                     
                     self.suDict[sunumStr]['dirty'] = False
                     self.suDict[sunumStr]['new'] = False
@@ -931,7 +933,7 @@ class Downloader(threading.Thread):
             try:
                 # check_call(cmdList)
                 # The scp process will inherit stdin, stdout, and stderr from this script.
-                proc = Popen(cmdList)
+                proc = Popen(cmdList, stdout=PIPE, stderr=PIPE)
             except OSError as exc:
                 raise Exception('scpSU', "Cannot run command '" + ' '.join(cmdList) + "' ")
             except ValueError as exc:
@@ -960,7 +962,7 @@ class Downloader(threading.Thread):
                         self.log.write(['Download of SUNUM ' + str(self.sunum) + ' timed-out.'])
                         self.suTable.setStatus([ self.sunum ], 'E', 'Download timed-out.')        
                         # Flush the change to disk.
-                        self.suTable.updateDB()                
+                        self.suTable.updateDB()
                         raise Exception('downloader', 'Timed-out.')
 
                 finally:
@@ -975,7 +977,11 @@ class Downloader(threading.Thread):
                 proc.poll()
                 if proc.returncode is not None:
                     if proc.returncode != 0:
-                        raise Exception('scpSU', 'Command "' + ' '.join(cmdList) + '" returned non-zero status code ' + str(proc.returncode)) 
+                        out, err = proc.communicate()
+                        msg = 'Command "' + ' '.join(cmdList) + '" returned non-zero status code ' + str(proc.returncode) + '.'
+                        if err is not None:
+                            self.log.write([ 'scp stderr msg: ' + err.decode('UTF8') ])
+                        raise Exception('scpSU', msg) 
                     break
 
                 time.sleep(1)
@@ -1187,31 +1193,33 @@ class Downloader(threading.Thread):
             if len(exc.args) == 2:
                 type = exc[0]
                 msg = exc[1]
-            else:
-                raise
 
-            if type == 'scpSU' or type == 'sumsAPI' or type == 'mvSU' or type == 'rmTmpSU':
-                gotLock = False
-                try:
-                    self.log.write(['(Updating Status to E) Class Downloader acquiring SU-table lock for SU ' + str(self.sunum) + '.'])
-                    gotLock = self.suTable.acquireLock()
-                    self.suTable.setStatus([self.sunum], 'E', 'Error downloading storage unit ' + str(self.sunum) + ': ' + msg + '.')
-                    # Flush the change to disk.
-                    self.suTable.updateDB()
-                except Exception:
-                    # Catch everything and just let the thread pass away peacefully.
-                    pass
-                finally:
-                    if gotLock:
-                        self.log.write(['(Updating Status to E) Class Downloader releasing SU-table lock for SU ' + str(self.sunum) + '.'])
-                        self.suTable.releaseLock()
+                if type == 'scpSU' or type == 'sumsAPI' or type == 'mvSU' or type == 'rmTmpSU':
+                    gotLock = False
+                    try:
+                        self.log.write(['(Updating Status to E) Class Downloader acquiring SU-table lock for SU ' + str(self.sunum) + '.'])
+                        gotLock = self.suTable.acquireLock()
+                        self.suTable.setStatus([self.sunum], 'E', 'Error downloading storage unit ' + str(self.sunum) + ': ' + msg)
+                        # Flush the change to disk.
+                        self.suTable.updateDB()
+                    except Exception:
+                        # Catch everything and just let the thread pass away peacefully.
+                        pass
+                    finally:
+                        if gotLock:
+                            self.log.write(['(Updating Status to E) Class Downloader releasing SU-table lock for SU ' + str(self.sunum) + '.'])
+                            self.suTable.releaseLock()
                     
-            elif type == 'unknownSunum':
-                self.log.write(['Cannot download SU. No SU record.' + msg])
-            elif type == 'downloader':
-                self.log.write([msg])
+                elif type == 'unknownSunum':
+                    self.log.write(['Cannot download SU. No SU record.' + msg])
+                elif type == 'downloader':
+                    self.log.write([msg])
+                else:
+                    import traceback
+                    self.log.write([ traceback.format_exc(5) ])
             else:
-                raise
+                import traceback
+                self.log.write([ traceback.format_exc(5) ])
   
         # This thread is about to terminate. 
         # We need to check the class tList variable to update it, so we need to acquire the lock.
