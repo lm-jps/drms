@@ -11,6 +11,9 @@ import filecmp
 import xml.etree.ElementTree as ET
 from subprocess import check_output, CalledProcessError
 
+if sys.version_info < (2, 7):
+    raise Exception("You must run the 2.7 release, or a more recent release, of Python.")
+
 # Constants
 VERS_FILE = 'jsoc_version.h'
 SDP_CFG = 'configsdp.txt'
