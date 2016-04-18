@@ -85,7 +85,7 @@ expr "$fil" : ".*\.c" >/dev/null || exec $CC $cmdline
 dep=$tgt.d
 rm -f $dep
 
-$CC -MD $cmdline
+$CC -MMD $cmdline
 res=$?
 
 dgcc3=`echo $tgt | sed -e 's/\.[^.]*$//'`.d
