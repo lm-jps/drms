@@ -391,7 +391,6 @@ __PROJ__
    <proj>
         <name>mag</name>
         <subdirs>
-             <subdir>apps</subdir>
              <subdir>pfss/apps</subdir>
              <subdir>ambig/apps</subdir>
              <subdir>harp/apps</subdir>
