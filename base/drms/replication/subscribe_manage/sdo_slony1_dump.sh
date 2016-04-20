@@ -2,7 +2,7 @@
 # ----------
 # slony1_dump.sh
 #
-# $Id: sdo_slony1_dump.sh,v 1.14 2016/03/15 17:01:39 arta Exp $
+# $Id: sdo_slony1_dump.sh,v 1.15 2016/04/20 18:25:17 arta Exp $
 #
 #	This script creates a special data only dump from a subscriber
 #	node. The stdout of this script, fed into psql for a database that
@@ -261,10 +261,19 @@ for tab in $tables ; do
     fi
 done
 
-# The stdout of from this call will contain SQL that runs on the client end. It dumps the series tables.
-cmd="$kJSOCRoot/base/drms/replication/subscribe_manage/dumpreptables.pl config=$kJSOCRoot/proj/replication/etc/repserver.cfg client=$node sublist=$sublist idlist=$idlist newcl=$new_subscriber filectr=$output_filecounter 2>>$kSMlogDir/slony1_dump.$node.log"
-echo "Executing $cmd" >> $kSMlogDir/slony1_dump.$node.log
+# The stdout of from this call will contain SQL that runs on the client end. It dumps the series tables. $config_file is defined in subscription_update
+# (old school system) or in manage-subs.py.
+cmd="$kJSOCRoot/base/drms/replication/subscribe_manage/dumpreptables.pl config=$config_file client=$node sublist=$sublist idlist=$idlist newcl=$new_subscriber filectr=$output_filecounter 2>>$kSMlogDir/slony1_dump.$node.log"
+echo "Executing $cmd" >&2
 $cmd
+
+if [ $? -ne 0 ]
+then
+    echo "Failure running dumpreptables.pl." >&2
+    exit 1
+else
+    echo "Success running dumpreptables.pl." >&2
+fi
 
 # ----
 # Emit the commit for the dump to stdout.

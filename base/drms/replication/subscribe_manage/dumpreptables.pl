@@ -28,6 +28,7 @@ use toolbox qw(GetCfg);
 use subtablemgr;
 use DBI;
 use DBD::Pg;
+use File::Spec;
 use drmsArgs;
 use drmsRunProg;
 
@@ -191,8 +192,12 @@ else
                 # be for records that are already in the dump.
                 #
                 # ENSURE THAT THE log-parser LOCK IS NOT BEING HELD!! Otherwise, deadlock will ensue.
-                $cmd = $cfg{kJSOCRoot} . "/base/drms/replication/parselogs/parse_slon_logs.pl $config parselock.txt subscribelock.txt > /usr/local/pgsql/replication/live/log/cron.parse_slony_logs.log 2>&1";
+                #
+                # Redirect stdout to stderr. Anything written to stdout will be written to the dump file, and anything written to 
+                # stderr will be logged. Parsing Slony logs should not cause anything to be written to the dump file.
+                $cmd = $cfg{kJSOCRoot} . "/base/drms/replication/parselogs/parse_slon_logs.pl $config parselock.txt subscribelock.txt 1>&2";
                 
+                print STDERR "Running $cmd.\n";
                 if (drmsSysRun::RunCmd($cmd) != 0)
                 {
                     # Error calling parse_slon_logs.pl.
@@ -365,14 +370,15 @@ else
                     $SIG{HUP} = "DropLock";
                     
                     # Critical region
-                    $newlst = $cfg{tables_dir} . "/$client.new.lst";
+                    $newlst = File::Spec->catfile($cfg{tables_dir}, "$client.new.lst");
                     if (defined(open($fh, ">>" . $cfg{parser_config})))
                     {
-                        print $fh $cfg{subscribers_dir} . "/$client.new        $newlst";
+                        print $fh $cfg{subscribers_dir} . "/$client.new        $newlst\n";
                         $fh->close();
 
                         # ART LST - Add $node.new.lst to su_production.slonycfg.
-                        $tblmgr = new SubTableMgr($cfg{'kServerLockDir'} . "/" . &kLockFile, $cfg{'kCfgTable'}, $cfg{'kLstTable'}, $cfg{'tables_dir'}, $cfg{'MASTERDBNAME'}, $cfg{'MASTERHOST'}, $cfg{'MASTERPORT'}, $cfg{'REPUSER'});
+                        # This constructor will print to stdout if the last argument is not 1.
+                        $tblmgr = new SubTableMgr($cfg{'kServerLockDir'} . "/" . &kLockFile, $cfg{'kCfgTable'}, $cfg{'kLstTable'}, $cfg{'tables_dir'}, $cfg{'MASTERDBNAME'}, $cfg{'MASTERHOST'}, $cfg{'MASTERPORT'}, $cfg{'REPUSER'}, 1);
 
                         unless (&SubTableMgr::kRetSuccess == ($tblmgr->GetErr()))
                         {

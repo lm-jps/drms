@@ -76,16 +76,22 @@ sub new
         my($cfgtable) = shift;
         my($lsttable) = shift;
         my($lstdir) = shift;
+        my($silent) = $_[4]; # The DBConn constructor will consume this argument.
         
         if (defined($cfgtable) && defined($lsttable))
-        {
+        {                        
             # Connect to db (all ops will require db access).
             $self->{_dbh} = new DBConn(@_);
             
             if (defined($self->{_dbh}))
-            {
+            {                
+                if (defined($silent))
+                {
+                    $self->{_silent} = $silent;
+                }
+                
                 # Create table objects.
-                $self->{_cfgtable} = new CfgTable($self->{_dbh}, $cfgtable, \@headersCfg, \@pkeyCfg);
+                $self->{_cfgtable} = new CfgTable($self->{_dbh}, $cfgtable, \@headersCfg, \@pkeyCfg, $self->{_silent});
                 
                 if (!defined($self->{_cfgtable}))
                 {
@@ -94,7 +100,7 @@ sub new
                 }
                 else
                 {
-                    $self->{_lsttable} = new LstTable($self->{_dbh}, $lsttable, \@headersLst, \@pkeyLst);
+                    $self->{_lsttable} = new LstTable($self->{_dbh}, $lsttable, \@headersLst, \@pkeyLst, $self->{_silent});
                     
                     if (!defined($self->{_lsttable}))
                     {
@@ -154,6 +160,11 @@ sub Silent
     if (defined($self->{_lsttable}))
     {
         $self->{_lsttable}->Silent();
+    }
+    
+    if (defined($self->{_dbh}))
+    {
+        $self->{_dbh}->Silent();
     }
 }
 
@@ -728,8 +739,20 @@ sub new
         _dbname => shift,
         _dbhost => shift,
         _dbport => shift,
-        _dbuser => shift
+        _dbuser => shift,
+        _silent => undef
     };
+    
+    my($silent) = shift;
+                
+    if (defined($silent))
+    {
+        $self->{_silent} = $silent;
+    }
+    else
+    {
+        $self->{_silent} = 0;
+    }
     
     bless($self, $clname);
     
@@ -741,6 +764,13 @@ sub new
     }
     
     return $self;
+}
+
+sub Silent
+{
+    my($self) = shift;
+    
+    $self->{_silent} = 1;
 }
 
 # Returns 0 upon success, 1 otherwise.
@@ -780,14 +810,24 @@ sub ExeQuery
     my($rv) = 0;
     
     $dbh = $self->{_dbh};
-        
+
     if (defined($rsp))
     {
+        if (!$self->{_silent})
+        {
+            print "Executing DB query: " . $stmnt . ".\n";
+        }
+    
         # DB should return 0 or more rows.
         $rows = $dbh->selectall_arrayref($stmnt, undef);
     }
     else
     {
+        if (!$self->{_silent})
+        {
+            print "Executing DB statement: " . $stmnt . ".\n";
+        }
+        
         # DB should not return any rows.
         $dbh->do($stmnt);
     }
@@ -854,6 +894,16 @@ sub new
     my($acol);
     my($cols) = shift;
     my($pkey) = shift;
+    my($silent) = shift;
+                
+    if (defined($silent))
+    {
+        $self->{_silent} = $silent;
+    }
+    else
+    {
+        $self->{_silent} = 0;
+    }
     
     if (defined($cols))
     {
@@ -951,7 +1001,12 @@ sub Remove
     
     if ($self->{_dbh}->ExeQuery($stmnt))
     {
+        print STDERR "Failure deleting row from " . $self->{_name} . ".\n";
         $rv = 1;
+    }
+    elsif (!$self->{_silent})
+    {
+        print "Successfully deleted row from " . $self->{_name} . ".\n";        
     }
     
     return $rv;
@@ -979,7 +1034,12 @@ sub RemoveSeries
     
     if ($self->{_dbh}->ExeQuery($stmnt))
     {
+        print STDERR "Failure deleting row from " . $self->{_name} . ".\n";
         $rv = 1;
+    }
+    elsif (!$self->{_silent})
+    {
+        print "Successfully deleted row from " . $self->{_name} . ".\n";        
     }
     
     return $rv;
@@ -1051,7 +1111,12 @@ sub Create
         
         if ($self->{_dbh}->ExeQuery($stmnt))
         {
+            print STDERR "Failure creating table " . $self->{_name} . ".\n";
             $rv = 1;
+        }
+        elsif (!$self->{_silent})
+        {
+            print "Success creating table " . $self->{_name} . ".\n";
         }
         
         if ($rv == 0)
@@ -1077,7 +1142,12 @@ sub Drop
         
         if ($self->{_dbh}->ExeQuery($stmnt))
         {
+            print STDERR "Failure dropping table " . $self->{_name} . ".\n";
             $rv = 1;
+        }
+        elsif (!$self->{_silent})
+        {
+            print "Success dropping table " . $self->{_name} . ".\n";
         }
     }
     
@@ -1151,6 +1221,15 @@ sub Replace
                             }
                         }
                     }
+                }
+                
+                if ($rv == 1)
+                {
+                    print STDERR "Failing inserting a row into " . $self->{_name} . ".\n";
+                }
+                elsif (!$self->{_silent})
+                {
+                    print "Success inserting row(s) into " . $self->{_name} . ".\n";
                 }
             }
             else
@@ -1300,6 +1379,7 @@ sub Add
                 $stmnt = "INSERT INTO $self->{_name} ($self->{_cols}->[0], $self->{_cols}->[1]) VALUES ('$node', '$sitedir')";
                 if ($self->{_dbh}->ExeQuery($stmnt))
                 {
+                    print STDERR "Failure inserting a row into " . $self->{_name} . ".\n";
                     $rv = 2;
                 }
                 else
@@ -1430,6 +1510,11 @@ sub GetSiteDir
     unless ($self->{_dbh}->ExeQuery($stmnt, \$rows))
     {
         # Good query.
+        
+        if (!$self->{_silent})
+        {
+            print "Success getting site dir from " . $self->{_name} . ".\n";
+        }
         
         # Can only be a single row/single column.
         $rv = $rows->[0]->[0];
