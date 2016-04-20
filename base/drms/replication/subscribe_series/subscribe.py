@@ -77,8 +77,12 @@ class TerminationHandler(DrmsLock):
     # __enter__() call to handle SIGTERM.
     def __exit__(self, etype, value, traceback):
         if etype == SystemExit:
-            self.log.writeInfo(['Termination signal handler called.'])    
+            self.log.writeInfo(['Termination signal handler called.'])
+        
         self.hastaLaVistaBaby()
+        
+        # Remove subscription lock file by calling parent __exit__().
+        super(TerminationHandler, self).__exit__(self, etype, value, traceback)
 
     def hastaLaVistaBaby(self):        
         # Do not do this! The call of Log::__del__ is deferred until after the program exits. If you end your program by
@@ -88,15 +92,7 @@ class TerminationHandler(DrmsLock):
         # On second thought, let's not close the log either. Just flush for now, and close() at the end of the program run.
         self.log.flush()        
     
-        # Remove die file (if present).
-        if os.path.exists(self.dieFile):
-            os.remove(self.dieFile)
-    
-        # Remove subscription lock file.
-        os.remove(self.lockFile)
-
 class SubscribeParams(DRMSParams):
-
     def __init__(self):
         super(SubscribeParams, self).__init__()
 
@@ -669,7 +665,6 @@ if __name__ == "__main__":
         
                         serviceURL = arguments.getArg('kSubService')
                         pubServiceURL = arguments.getArg('kPubListService')
-                        xferURL = arguments.getArg('kSubXfer')
                         
                         # Check for pending request. Fetch any existing request from the server for this client. Then fill-in the 
                         # various arguments to this script with the values from that request. The client can get into this state if
@@ -738,7 +733,7 @@ if __name__ == "__main__":
                                 if newSite:
                                     # Make sure the admin.ns table exists, because we are going to insert into it. And if it is missing,
                                     # then the NetDRMS is bad.
-                                    if not dbTableExists(cursor, 'admin.ns'):
+                                    if not dbTableExists(conn, 'admin', 'ns'):
                                         raise Exception('drms', 'Your DRMS is missing a required database relation (or the containing schema): admin.ns')
                     
                                     # We are also going to insert into several database tables. Make sure they exist.
@@ -772,7 +767,7 @@ if __name__ == "__main__":
 
                                 series = seriesList[0]
 
-                                if not seriesExists(cursor, series):
+                                if not seriesExists(conn, series):
                                     raise Exception('invalidArgument', series + ' does not exist locally. Please select a different series to which you would like to re-subscribe.')
             
                                 if not clientIsSubscribed(client, pubServiceURL, series):
@@ -794,7 +789,7 @@ if __name__ == "__main__":
                                     raise Exception('invalidArgument', 'Please provide one or more series from which you would like to un-subscribe.')
 
                                 for series in seriesList:
-                                    if not seriesExists(cursor, series):
+                                    if not seriesExists(conn, series):
                                         raise Exception('invalidArgument', series + ' does not exist locally. Please select a different series to which you would like to re-subscribe.')
             
                                     if not clientIsSubscribed(client, pubServiceURL, series):
@@ -852,8 +847,10 @@ if __name__ == "__main__":
                             raise Exception('blah', 'trying to get out')
 
                             # Download create-ns/dump-file tarball.
+                            scheme, netloc, path, query, frag = urllib.parse.split(arguments.getArg('kSubXfer'))
+                            xferURL = urllib.parse.unsplit((scheme, netloc, os.path.join(path, client + '.sql.tar.gz'), None, None))
                             dest = os.path.join(arguments.getArg('kLocalWorkingDir'), client + '.sql.tar.gz')
-                            dl = SmarlDL(xferURL)
+                            dl = SmartDL(xferURL, dest)
                             dl.start()
             
                             # Extract files from tarball.
@@ -862,35 +859,42 @@ if __name__ == "__main__":
 
                                 if reqType == 'subscribe' and not dbSchemaExists(conn, schema):
                                     # create-ns    
-                                    with dest.getmember(client + '.' + schema + '.' + 'createns.sql') as createNsMember:
+                                    with tar.getmember(client + '.' + schema + '.' + 'createns.sql') as createNsMember:
                                         tar.extract(createNsMember, dest)
 
-                                with dest.getmember(client + '.subscribe_series.sql') as dumpMember:
+                                with tar.getmember(client + '.subscribe_series.sql') as dumpMember:
                                     tar.extract(dumpMember, dest)
             
-                            # Apply the series-schema-creation SQL (new subscriptions only).
-                            if reqType == 'subscribe':
-                                # Check for the existence of the schema. 
-                                if not dbSchemaExists(conn, schema):
-                                    # Ingest createns.sql. Will raise if a problem occurs. When that happens, the cursor is rolled back.
-                                    ingestCreateNSFile(client, schema, cursor, log)
+                            try:
+                                cursor = conn.cursor()
+                                # Apply the series-schema-creation SQL.
+                                if reqType == 'subscribe':
+                                    # Check for the existence of the schema. 
+                                    if not dbSchemaExists(conn, schema):
+                                        # Ingest createns.sql. Will raise if a problem occurs. When that happens, the cursor is rolled back.
+                                        ingestCreateNSFile(client, schema, cursor, log)
 
-                            # Apply the series-creation (new subscriptions only) / _jsoc-creation (new site only) / series-population SQL. This is a bit tricky.
-                            # We can apply each SQL command as we read it from the file. In theory, these commands could span multiple lines. Commands are separated
-                            # by semicolons which are not necessarily followed by newlines. But there could be semicolons in the strings of commands, and various forms
-                            # of escaping to deal with. Yuck! We'd need a heavy-weight parser to do this in a general way. However, the dump file has a 
-                            # specific format which we will exploit.
-                            # 
-                            # psycopg2 does not provide a means for piping an SQL file to the database - end of story. If you read a file into memory to use the 
-                            # cursor.execute() command, it reads the WHOLE file into memory before executing cursor.execute(). So, we HAVE TO parse the SQL file
-                            # in some way. 
-                            #
-                            # If reqType == 'subscribe', then the sql will create a new series and populate it. 
-                            # If reqType == 'resubscribe', then the sql will truncate the 'series table' and reset the series-table sequence
-                            # only.
-                            #
-                            # Will raise if a problem occurs. When that happens, the cursor is rolled back.
-                            ingestDumpFile(client, series, cursor, log)
+                                # Apply the series-creation (new subscriptions only) / _jsoc-creation (new site only) / series-population SQL. This is a bit tricky.
+                                # We can apply each SQL command as we read it from the file. In theory, these commands could span multiple lines. Commands are separated
+                                # by semicolons which are not necessarily followed by newlines. But there could be semicolons in the strings of commands, and various forms
+                                # of escaping to deal with. Yuck! We'd need a heavy-weight parser to do this in a general way. However, the dump file has a 
+                                # specific format which we will exploit.
+                                # 
+                                # psycopg2 does not provide a means for piping an SQL file to the database - end of story. If you read a file into memory to use the 
+                                # cursor.execute() command, it reads the WHOLE file into memory before executing cursor.execute(). So, we HAVE TO parse the SQL file
+                                # in some way. 
+                                #
+                                # If reqType == 'subscribe', then the sql will create a new series and populate it. 
+                                # If reqType == 'resubscribe', then the sql will truncate the 'series table' and reset the series-table sequence
+                                # only.
+                                #
+                                # Will raise if a problem occurs. When that happens, the cursor is rolled back.
+                                ingestDumpFile(client, series, cursor, log)
+                            except psycopg2.Error as exc:
+                                conn.rollback() # closes the cursor
+                                raise Exception('dbCmd', exc.diag.message_primary)
+
+                            conn.commit() # closes the cursor
 
                             # Send a pollcomplete request to the subscription service. After submitting this request, the Slony logs
                             # we receive could have insert statements for newly subscribed-to series.
