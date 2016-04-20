@@ -435,7 +435,7 @@ class Worker(threading.Thread):
         self.repDir = self.arguments.getArg('kRepDir')
         self.slonyCfg = self.arguments.getArg('slonyCfg')
         self.clientLstDbTable = self.arguments.getArg('kLstTable')
-        self.triggerDir = self.arguments.getArg('triggerdir')
+        self.triggerDir = self.arguments.getArg('dumpDir')
         self.lstDir = self.arguments.getArg('tables_dir')
         self.parserConfig = self.arguments.getArg('parser_config')
         self.parserConfigTmp = self.parserConfig + '.tmp'
@@ -551,6 +551,7 @@ class Worker(threading.Thread):
                                 cmdList = [ os.path.join(self.repDir, 'subscribe_manage', 'gentables.pl'), 'op=replace', 'conf=' + self.slonyCfg, '--node=' + self.client + '.new', '--lst=' + self.newLstPath ]
                                 # Raises CalledProcessError on error (non-zero returned by gentables.pl).
                                 check_call(cmdList)
+                                self.writeStream.logLines() # Log all gentables.pl output
                 
                                 # ...and make the temporary client.new directory in the site-logs directory.
                                 os.mkdir(self.newClientLogDir) # umask WILL mask-out bits if it is not 0000; os.chmod() is better.
@@ -627,10 +628,10 @@ class Worker(threading.Thread):
                 
                         # 2. Run createns for the schema of the series being subscribed to.
                         cmdList = [ os.path.join(self.arguments.getArg('kModDir'), 'createns'), 'JSOC_DBHOST=' + self.arguments.getArg('SLAVEHOSTNAME'), 'ns=' + ns, 'nsgroup=user', 'dbusr=' + self.arguments.getArg('REPUSER') ]
-                        if not os.path.exists(self.arguments.getArg('triggerdir')):
-                            os.mkdir(self.arguments.getArg('triggerdir'))
-                            os.chmod(self.arguments.getArg('triggerdir'), 0O2755)
-                        outFile = os.path.join(self.arguments.getArg('triggerdir'), self.client + '.' + ns + '.createns.sql')
+                        if not os.path.exists(self.triggerDir):
+                            os.mkdir(self.triggerDir)
+                            os.chmod(self.triggerDir, 0O2755)
+                        outFile = os.path.join(self.triggerDir, self.client + '.' + ns + '.createns.sql')
                 
                         wroteIntMsg = False
                         with open(outFile, 'w') as fout:
@@ -659,11 +660,12 @@ class Worker(threading.Thread):
                 
                         # 3. Run createtabstruct for the table of the series being subscribed to.
                         cmdList = [ os.path.join(self.arguments.getArg('kModDir'), 'createtabstructure'), 'JSOC_DBHOST=' + self.arguments.getArg('SLAVEHOSTNAME'), 'in=' + self.series[0].lower(), 'out=' + self.series[0].lower(), 'archive=' + str(self.archive), 'retention=' + str(self.retention), 'tapegroup=' + str(self.tapegroup), 'owner=' + self.arguments.getArg('REPUSER') ]
-                        outFile = os.path.join(self.arguments.getArg('triggerdir'), self.client + '.subscribe_series.sql')
+                        outFile = os.path.join(self.triggerDir, self.client + '.subscribe_series.sql')
 
                         wroteIntMsg = False
                         with open(outFile, 'w') as fout:
                             print('BEGIN;', file=fout)
+                            fout.flush()
                             self.log.writeInfo([ 'Dumping table structure: ' + ' '.join(cmdList) + '.' ])
                             proc = Popen(cmdList, stdout=fout)
                     
@@ -700,7 +702,7 @@ class Worker(threading.Thread):
                         # we have to copy the environment of manage-subs.py and then add the three environment variables needed
                         # by sdo_slony1_dump.sh.
                         cmdList = [ os.path.join(self.repDir, 'subscribe_manage', 'sdo_slony1_dump.sh'), self.arguments.getArg('SLAVEDBNAME'), self.arguments.getArg('CLUSTERNAME'), self.arguments.getArg('SLAVEPORT'), newSiteStr, os.path.join(self.arguments.getArg('SMworkDir'), 'slon_counter' + '.' + self.client + '.txt'), self.series[0].lower() ]
-                        outFile = os.path.join(self.arguments.getArg('triggerdir'), self.client + '.subscribe_series.sql')
+                        outFile = os.path.join(self.triggerDir, self.client + '.subscribe_series.sql')
             
                         wroteIntMsg = False
                         with open(outFile, 'a') as fout:
@@ -729,14 +731,16 @@ class Worker(threading.Thread):
 
                                 maxLoop -= 1
                                 time.sleep(1)
+                            fout.flush()
+                            print('COMMIT;', file=fout)
                             self.reqTable.acquireLock()
                             
                         # 5. tar the two dump files together.
-                        with tarfile.open(os.path.join(self.arguments.getArg('triggerdir'), self.client + '.sql.tar.gz'), 'w:gz') as tarOut:
-                            outFile = os.path.join(self.arguments.getArg('triggerdir'), self.client + '.' + ns + '.createns.sql')
+                        with tarfile.open(os.path.join(self.triggerDir, self.client + '.sql.tar.gz'), 'w:gz') as tarOut:
+                            outFile = os.path.join(self.triggerDir, self.client + '.' + ns + '.createns.sql')
                             tarOut.add(outFile, arcname=os.path.basename(outFile))
                             os.remove(outFile)
-                            outFile = os.path.join(self.arguments.getArg('triggerdir'), self.client + '.subscribe_series.sql')
+                            outFile = os.path.join(self.triggerDir, self.client + '.subscribe_series.sql')
                             tarOut.add(outFile, arcname=os.path.basename(outFile))
                             os.remove(outFile)
     
@@ -788,6 +792,12 @@ class Worker(threading.Thread):
             
             # No lock held here.
             if reqStatus == 'I' or (reqStatus == 'P' and self.action == 'unsubscribe'):
+                # In the subscribe-action case, the script sdo_slony1_dump.sh puts an entry for client.new / client.new.lst into
+                # the slon_parser.cfg and su_production.slonycfg files. But for the unsubscribe-action case, we do not do that.
+                # Instead, simply make client.new.lst and the client.new.lst row in su_production.slonycfg have the post-unsubscribe
+                # list of tables, and then in clean-up, we COPY this list over client.lst and the client.lst row in su_production.slonycfg.
+                # At no point we do populate site_logs/client.new with all series minus the ones being unsubscribed from. Instead,
+                # if there are no errors, we instantaneously update the client.new.lst file and the client's row in su_production.slonycfg.
                 self.log.writeDebug([ 'Cleaning up request ' + str(self.requestID) + '.' ])
                 # Clean-up, regardless of action.
                 # reqTable lock is not held here.
@@ -826,6 +836,7 @@ class Worker(threading.Thread):
                         cmdList = [ os.path.join(self.repDir, 'subscribe_manage', 'gentables.pl'), 'op=remove', 'conf=' + self.slonyCfg, '--node=' + self.client + '.new' ]
                         # Raises CalledProcessError on error (non-zero returned by gentables.pl).
                         check_call(cmdList)
+                        self.writeStream.logLines() # Log all gentables.pl output
                 
                         if self.newSite:
                             # LEGACY - Add a line for client to slon_parser.cfg.
@@ -839,6 +850,7 @@ class Worker(threading.Thread):
                             cmdList = [ os.path.join(self.repDir, 'subscribe_manage', 'gentables.pl'), 'op=add', 'conf=' + self.slonyCfg, '--node=' + self.client, '--sitedir=' + self.siteLogDir, '--lst=' + self.newLstPath ]
                             # Raises CalledProcessError on error (non-zero returned by gentables.pl).
                             check_call(cmdList)
+                            self.writeStream.logLines() # Log all gentables.pl output
 
                             # Rename the client.new site dir.
                             if os.path.exists(self.oldClientLogDir):
@@ -852,6 +864,7 @@ class Worker(threading.Thread):
                             cmdList = [ os.path.join(self.repDir, 'subscribe_manage', 'gentables.pl'), 'op=replace', 'conf=' + self.slonyCfg, '--node=' + self.client, '--lst=' + self.newLstPath ]
                             # Raises CalledProcessError on error (non-zero returned by gentables.pl).
                             check_call(cmdList)
+                            self.writeStream.logLines() # Log all gentables.pl output
                     
                             # Copy all the log files in newClientLogDir to oldClientLogDir, overwriting logs of the same name.
                             # There is a period of time where we allow the log parser to run while the client is ingesting
@@ -1048,6 +1061,7 @@ class Worker(threading.Thread):
             self.log.writeDebug( [ 'Calling check_call(): ' + ' '.join(cmdList) + '.' ])
             # Raises CalledProcessError on error (non-zero returned by gentables.pl).
             check_call(cmdList)
+            self.writeStream.logLines() # Log all gentables.pl output
             self.log.writeDebug( [ 'Success calling check_call().' ])
         
             # Remove client.new site-log directory.
@@ -1145,6 +1159,7 @@ class Worker(threading.Thread):
                 cmdList = [ os.path.join(self.repDir, 'subscribe_manage', 'gentables.pl'), 'op=remove', 'conf=' + self.slonyCfg, '--node=' + self.client ]
                 # Raises CalledProcessError on error (non-zero returned by gentables.pl).
                 check_call(cmdList)
+                self.writeStream.logLines() # Log all gentables.pl output
         except CalledProcessError as exc:
             self.log.writeError([ 'Error running gentables.pl, status ' +  str(exc.returncode) + '.'])
 
@@ -1743,7 +1758,7 @@ if __name__ == "__main__":
                     msLog.writeInfo([ 'Connected to database ' + arguments.getArg('MASTERDBNAME') + ' on ' + arguments.getArg('MASTERHOSTNAME') + ':' + str(arguments.getArg('MASTERPORT')) + ' as user ' + arguments.getArg('REPUSER') ])
 
                     # We hang on to old dump files only until we restart manage-subs.py, then we deleted them.
-                    cleanAllSavedFiles(arguments.getArg('triggerdir'), msLog)
+                    cleanAllSavedFiles(arguments.getArg('dumpDir'), msLog)
 
                     # Read the requests table into memory.
                     reqTable = ReqTable(arguments.getArg('kSMreqTable'), timedelta(seconds=int(arguments.getArg('kSMreqTableTimeout'))), connSlave, msLog)
@@ -1838,7 +1853,6 @@ if __name__ == "__main__":
                         # in the first place).
                         try:
                             reqTable.acquireLock()
-                            msLog.writeDebug([ 'Main thread acquired reqTable lock ' + hex(id(reqTable.lock)) + '.'])
                             reqsNew = reqTable.getNew()
 
                             for areq in reqsNew:
@@ -1886,7 +1900,6 @@ if __name__ == "__main__":
                                             countDown -= 1
                         finally:
                             reqTable.releaseLock()
-                            msLog.writeDebug([ 'Main thread released reqTable lock ' + hex(id(reqTable.lock)) + '.'])
 
                         # Refresh the requests table. This could result in new requests being added to the table, or completed requests being
                         # deleted. 
