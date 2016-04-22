@@ -325,7 +325,8 @@ else
                         #   2       27804102        1     ...
                         #   3       27804102        2     ...
                         print "COPY $table $fields FROM stdin;\n";
-                        $stmnt = "COPY $table $fields TO stdout;"; # Acts like a print statement - goes to stdout. Does not return rows.
+                        # Create a UTF8 file, not a db-dependent one (which is probably LATIN-1).
+                        $stmnt = "COPY $table $fields TO stdout WITH ENCODING 'UTF8';"; # Acts like a print statement - goes to stdout. Does not return rows.
                         
                         $rv = ExeStmnt($dbh, $stmnt, 1, "Dumping table $table: $stmnt\n");
                         
