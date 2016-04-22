@@ -69,6 +69,7 @@ typedef enum
 #define kTapegroup     "tapegroup"
 #define kFile          "file"
 #define kNotSpec       "NOTSPECIFIED"
+#define kFlagUTF8      "u"
 
 ModuleArgs_t module_args[] =
 {
@@ -79,6 +80,7 @@ ModuleArgs_t module_args[] =
    {ARG_STRING, kRetention, kNotSpec,   "Series retetnion value override."},
    {ARG_STRING, kTapegroup, kNotSpec,   "Series tapgegroup value override."},
    {ARG_STRING, kFile,      kNotSpec,   "Optional output file (output printed to stdout otherwise)."},
+   {ARG_FLAG, kFlagUTF8,   NULL,       "If set, output UTF8 text, otherwise output text in database encoding."},
    {ARG_END}
 };
 
@@ -309,37 +311,124 @@ static CrtabError_t GetRows(DRMS_Env_t *env,
                             const char *series, 
                             const char *ns, 
                             const char *table, 
+                            char *oid,
                             char *colnames, 
+                            int doUtf8,
                             DB_Binary_Result_t **res)
 {
-   CrtabError_t err = kCrtabErr_Success;
-   char query[DRMS_MAXQUERYLEN];
-   DB_Binary_Result_t *qres = NULL;
-   DRMS_Session_t *session = env->session;
-   char *lcseries = strdup(series);
+    CrtabError_t err = kCrtabErr_Success;
+    char query[DRMS_MAXQUERYLEN * 2];
+    DB_Binary_Result_t *qres = NULL;
+    DRMS_Session_t *session = env->session;
+    char *lcseries = strdup(series);
 
-   if (lcseries)
-   {
-      strtolower(lcseries);
-      snprintf(query, sizeof(query), "SELECT %s FROM %s.%s WHERE lower(seriesname) = '%s'", colnames, ns, table, lcseries);
-   
-      if ((qres = drms_query_bin(session, query)) == NULL)
-      {
-         fprintf(stderr, "Invalid database query: '%s'\n", query);
-         err = kCrtabErr_DBQuery;
-      }
-      else
-      {
-         /* series table might be emtpy */
-         *res = qres;
-      }
+    if (lcseries)
+    {
+        strtolower(lcseries);
+  
+        /* If the utf8 flag is set, then we must wrap all column names with encode(convert_to(<col>, 'UTF8'), 'hex'), and 
+         * prepend each value with "\x". */
+        if (doUtf8)
+        {
+            /* If we are exporting character types, then we need to convert to UTF8. We do not need to convert types
+             * other than character types. The only character type used by DRMS is text.
+             */
+            char *thisCol = NULL;
+            char colBuf[DRMS_MAXKEYNAMELEN + 64];
+            char *wrappedColNames = NULL;
+            size_t szWrappedColNames = 1024;
+            int firstTime = 1;
+            char yesOrNo[8];
+            int doEncode = 0;
+            
+            wrappedColNames = calloc(1, szWrappedColNames);
+            if (wrappedColNames)
+            {
+                for (thisCol = strtok(colnames, " ,"); thisCol; thisCol = strtok(NULL, " ,"))
+                {
+                    if (!firstTime)
+                    {
+                        wrappedColNames = base_strcatalloc(wrappedColNames, ", ", &szWrappedColNames);
+                    }
+                    else
+                    {
+                        firstTime = 0;
+                    }
+                    
+                    /* Check the type of the column. This is so painful in C. */
+                    snprintf(query, sizeof(query), "SELECT a.atttypid = 'text'::regtype::integer FROM pg_catalog.pg_attribute a WHERE a.attrelid = '%s' AND a.attname = '%s' AND NOT a.attisdropped", oid, thisCol);
+                    if ((qres = drms_query_bin(session, query)) == NULL)
+                    {
+                        fprintf(stderr, "Invalid database query: '%s'\n", query);
+                        err = kCrtabErr_DBQuery;
+                    }
+                    else
+                    {
+                        if (qres->num_rows == 1 && qres->num_cols == 1)
+                        {
+                            char resp = db_binary_field_getchar(qres, 0, 0);
+                            if (resp)
+                            {
+                                /* 1 denotes True. */
+                                snprintf(colBuf, sizeof(colBuf), "convert_to(%s, 'UTF8')", thisCol);
+                            }
+                            else
+                            {
+                                snprintf(colBuf, sizeof(colBuf), "%s", thisCol);
+                            }
+                        }
+                        else
+                        {
+                            err = kCrtabErr_DBQuery;
+                        }
+                        
+                        db_free_binary_result(qres);
+                        qres = NULL;
+                        
+                        if (err)
+                        {
+                            break;
+                        }
+                    }
 
-      free(lcseries);
-   }
-   else
-   {
-      err = kCrtabErr_OutOfMemory;
-   }
+                    wrappedColNames = base_strcatalloc(wrappedColNames, colBuf, &szWrappedColNames);
+                }
+            
+                if (!err)
+                {
+                    snprintf(query, sizeof(query), "SELECT %s FROM %s.%s WHERE lower(seriesname) = '%s'", wrappedColNames, ns, table, lcseries);
+                }
+            }
+            else
+            {
+                err = kCrtabErr_OutOfMemory;
+            }
+        }
+        else
+        {
+            snprintf(query, sizeof(query), "SELECT %s FROM %s.%s WHERE lower(seriesname) = '%s'", colnames, ns, table, lcseries);
+        }
+
+        if (!err)
+        {
+            if ((qres = drms_query_bin(session, query)) == NULL)
+            {
+                fprintf(stderr, "Invalid database query: '%s'\n", query);
+                err = kCrtabErr_DBQuery;
+            }
+            else
+            {
+                /* series table might be emtpy */
+                *res = qres;
+            }
+        }
+
+        free(lcseries);
+    }
+    else
+    {
+        err = kCrtabErr_OutOfMemory;
+    }
 
    return err;
 }
@@ -536,7 +625,8 @@ static CrtabError_t CreateSQLInsertIntoTable(FILE *fptr,
                                              const char *series, 
                                              const char *seriesout,
                                              const char *ns, 
-                                             const char *table)
+                                             const char *table,
+                                             int doUtf8)
 {
    CrtabError_t err = kCrtabErr_Success;
    int irow;
@@ -555,7 +645,7 @@ static CrtabError_t CreateSQLInsertIntoTable(FILE *fptr,
       err = GetColumnLists(env, oid, NULL, &colnames);
    }
 
-   err = GetRows(env, series, ns, table, colnames, &rows);
+   err = GetRows(env, series, ns, table, oid, colnames, doUtf8, &rows);
 
    for (irow = 0; irow < rows->num_rows; irow++)
    {
@@ -670,7 +760,8 @@ static int CreateSQL(FILE *fptr, DRMS_Env_t *env,
                      const char *archive, 
                      const char *retention, 
                      const char *tapegroup,
-                     const char *owner)
+                     const char *owner,
+                     int doUtf8)
 {
    CrtabError_t err = kCrtabErr_Success;
    char *series = NULL;
@@ -762,7 +853,7 @@ static int CreateSQL(FILE *fptr, DRMS_Env_t *env,
 
             snprintf(where, sizeof(where), "lower(seriesname) = '%s'", lcseriesin);
             snprintf(whereout, sizeof(whereout), "lower(seriesname) = '%s'", lcseriesout);
-            err = CreateSQLInsertIntoTable(fptr, env, seriesin, seriesout, ns, DRMS_MASTER_SERIES_TABLE);
+            err = CreateSQLInsertIntoTable(fptr, env, seriesin, seriesout, ns, DRMS_MASTER_SERIES_TABLE, doUtf8);
          
             /* override archive, retention, and tapegroup if present */
             if (!err)
@@ -822,19 +913,19 @@ static int CreateSQL(FILE *fptr, DRMS_Env_t *env,
       /* Third, insert rows into drms_links */
       if (!err)
       {
-         err = CreateSQLInsertIntoTable(fptr, env, seriesin, seriesout, ns, DRMS_MASTER_LINK_TABLE);
+         err = CreateSQLInsertIntoTable(fptr, env, seriesin, seriesout, ns, DRMS_MASTER_LINK_TABLE, doUtf8);
       }
 
       /* Fourth, insert rows into drms_keywords */
       if (!err)
       {
-         err = CreateSQLInsertIntoTable(fptr, env, seriesin, seriesout, ns, DRMS_MASTER_KEYWORD_TABLE);
+         err = CreateSQLInsertIntoTable(fptr, env, seriesin, seriesout, ns, DRMS_MASTER_KEYWORD_TABLE, doUtf8);
       }
 
       /* Fifth, insert rows into drms_segments */
       if (!err)
       {
-         err = CreateSQLInsertIntoTable(fptr, env, seriesin, seriesout, ns, DRMS_MASTER_SEGMENT_TABLE);
+         err = CreateSQLInsertIntoTable(fptr, env, seriesin, seriesout, ns, DRMS_MASTER_SEGMENT_TABLE, doUtf8);
       }
 
       free(ns);
@@ -880,6 +971,7 @@ int DoIt(void)
    const char *tapegroup = NULL;
    const char *owner = NULL;
    const char *file = NULL;
+   int doUtf8 = 0;
    FILE *fptr = NULL;
 
    series = cmdparams_get_str(&cmdparams, kSeriesin, NULL);
@@ -924,6 +1016,8 @@ int DoIt(void)
          err = kCrtabErr_FileIO;
       }
    }
+   
+   doUtf8 = cmdparams_isflagset(&cmdparams, kFlagUTF8);
 
    if (!err)
    {
@@ -938,7 +1032,7 @@ int DoIt(void)
    {
       if (drms_series_exists(drms_env, series, &drmsstat))
       {
-         CreateSQL(fptr, drms_env, series, seriesout, archive, retention, tapegroup, owner);
+         CreateSQL(fptr, drms_env, series, seriesout, archive, retention, tapegroup, owner, doUtf8);
       }
       else
       {
