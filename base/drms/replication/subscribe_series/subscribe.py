@@ -18,6 +18,8 @@ import logging
 import signal
 import urllib
 import json
+from subprocess import Popen, CalledProcessError
+import fcntl
 import psycopg2
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../../include'))
 from drmsparams import DRMSParams
@@ -292,7 +294,7 @@ class SqlCopy(threading.Thread):
     def run(self):
         if not self.sdEvent.isSet():
             try:
-                with os.fdopen(self.readPipe) as readFd:
+                with os.fdopen(self.readPipe, encoding='LATIN1') as readFd:
                     self.cursor.copy_from(readFd, self.dbtable, columns=self.columns)
             except Exception as exc:
                 import traceback
@@ -425,7 +427,7 @@ def clientIsSubscribed(client, serviceURL, series):
             
     return ans
 
-def ingestCreateNSFile(createNsFile, cursor, log):
+def ingestCreateNSFileOld(createNsFile, cursor, log):
     # We are going to have to rely on a specific structure to the SQL file. Therefore, this code will not work with an arbitrary SQL file.
     # The SQL file has multiple commands, each terminated by a newline followed by a semicolon. However, there could be 
     # line-breaks within commands. So, we have to read lines until a semicolon is encountered, combine those lines into a 
@@ -448,6 +450,38 @@ def ingestCreateNSFile(createNsFile, cursor, log):
                     raise Exception('sqlDump', exc.diag.message_primary)
                     
                 command = ''
+
+def ingestCreateNSFile(createNsFile, psqlBin, dbhost, dbport, dbname, dbuser, log):
+    # Make a pipe to communicate with psql process. Open the sql file in with UTF8 encoding, 
+    # open the write-end of the pipe with UTF8 encoding, and open the read-end of the pipe with
+    # LATIN-1 encoding (the db is in LATIN-1).
+    with open(createNsFile, encoding='UTF8') as sqlIn:
+        pipeReadEndFD, pipeWriteEndFD = os.pipe()
+        
+        # Make the read-end non-blocking.
+        flag = fcntl.fcntl(pipeReadEndFD, fcntl.F_GETFL)
+        fcntl.fcntl(pipeReadEndFD, fcntl.F_SETFL, flag | os.O_NONBLOCK)
+        
+        pipeReadEnd = os.fdopen(pipeReadEndFD, 'r', encoding='LATIN1')
+        pipeWriteEnd = os.fdopen(pipeWriteEndFD, 'w', encoding='UTF8')
+
+        try:
+            cmdList = [ psqlBin, '-h', dbhost, '-p', dbport, '-d', dbname, '-U', dbuser, '-f', '-']
+            proc = Popen(cmdList, stdin=pipeReadEnd)
+        except OSError as exc:
+            raise Exception('sqlDump', "Cannot run command '" + ' '.join(cmdList) + "' ")
+        except ValueError as exc:
+            raise Exception('sqlDump', "psql command '" + ' '.join(cmdList) + "' called with invalid arguments.")            
+
+        for line in sqlIn:
+            strippedLine = line.rstrip()
+            print(strippedLine, file=pipeWriteEnd)
+            
+        pipeWriteEnd.flush()
+        pipeWriteEnd.close()
+            
+        out, err = proc.communicate()
+        pipeReadEnd.close()
 
 def ingestDumpFile(dumpFile, series, cursor, log):
     # We are going to have to rely on a specific structure to the SQL file. Therefore, this code will not work with an arbitrary SQL file.
@@ -483,6 +517,7 @@ def ingestDumpFile(dumpFile, series, cursor, log):
     try:    
         with open(dumpFile, encoding='UTF8') as sqlIn:
             for line in sqlIn:
+                log.writeInfo([ 'From dump file: ' + line ])
                 if committed:
                     raise Exception('sqlDump', 'Unexpected lines after COMMIT statement.')
         
@@ -522,21 +557,27 @@ def ingestDumpFile(dumpFile, series, cursor, log):
                     # Extract the series and the column list from the copy command. The column names must be enclosed in
                     # quotes when they are provided in the columns argument, but they are already in quotes in the 
                     # dump file.
-                    if not regExpExtractFromCopy.match(line):
+                    copyLine = regExpExtractFromCopy.match(line)
+                    if not copyLine:
                         raise Exception('sqlDump', 'Unexpected format of COPY-command line: ' + line + '.')
                     
-                    dumpSeries = regExpExtractFromCopy.group(1)
+                    dumpSeries = copyLine.group(1)
                     if dumpSeries.lower() != series.lower():
                         raise Exception('sqlDump', 'Series in dump file (' + dumpSeries + ') does not match series in subscription request (' + series + ').')
 
-                    columns = regExpExtractFromCopy.group(2).lower()
-                    columnList = columns.split(',')
+                    columns = copyLine.group(2).lower()
+                    columnList = [ col.strip(' "') for col in columns.split(',') ]
                 
                     readPipe, writePipe = os.pipe()
                     copier = SqlCopy(readPipe, cursor, series.lower(), columnList, log)
                     copier.start()
-                    writeFd = fdopen(writePipe, 'w')
+                    
+                    # The database has a LATIN-1 encoding (according to the directions). We should
+                    # should really first obtain the actual encoding, and use that here, just in
+                    # case it is not LATIN-1.
+                    writeFd = fdopen(writePipe, 'w', encoding='LATIN1')
                     copying = True
+                    log.writeInfo([ 'Start copying.' ])
                 
                     # Drop the COPY command.
                     continue
@@ -555,7 +596,8 @@ def ingestDumpFile(dumpFile, series, cursor, log):
                         copying = False
                         cursor.commit()
                     else:
-                        print(line, file=writeFd)
+                        log.writeInfo([ 'Into W pipe: ' + line ])
+                        print(line, file=writeFd, end='')
                     continue
                     
                 if firstLine:
@@ -911,7 +953,7 @@ if __name__ == "__main__":
                                     # Check for the existence of the schema. 
                                     if not dbSchemaExists(conn, schema):
                                         # Ingest createns.sql. Will raise if a problem occurs. When that happens, the cursor is rolled back.
-                                        ingestCreateNSFile(createNsFile, cursor, log)
+                                        ingestCreateNSFile(createNsFile, arguments.getArg('PSQL').strip(" '" + '"'), arguments.getArg('pg_host'), str(arguments.getArg('pg_port')), arguments.getArg('pg_dbname'), arguments.getArg('pg_user'), log)
                                         log.writeInfo([ 'Successfully ingested createNs file: ' + createNsFile + '.' ])
 
                                 # Apply the series-creation (new subscriptions only) / _jsoc-creation (new site only) / series-population SQL. This is a bit tricky.
@@ -932,8 +974,10 @@ if __name__ == "__main__":
                                 ingestDumpFile(dumpFile, series, cursor, log)
                                 log.writeInfo([ 'Successfully ingested dump file: ' + dumpFile + '.' ])
                             except psycopg2.Error as exc:
+                                import traceback
+                                log.writeError([ traceback.format_exc(5) ])
                                 conn.rollback() # closes the cursor
-                                raise Exception('dbCmd', exc.diag.message_primary)
+                                raise Exception('dbCmd', traceback.format_exc(5))
 
                             conn.commit() # closes the cursor
 
