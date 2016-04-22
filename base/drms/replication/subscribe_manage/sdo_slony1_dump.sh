@@ -2,7 +2,7 @@
 # ----------
 # slony1_dump.sh
 #
-# $Id: sdo_slony1_dump.sh,v 1.15 2016/04/20 18:25:17 arta Exp $
+# $Id: sdo_slony1_dump.sh,v 1.16 2016/04/22 06:24:18 arta Exp $
 #
 #	This script creates a special data only dump from a subscriber
 #	node. The stdout of this script, fed into psql for a database that
@@ -132,7 +132,7 @@ CREATE SCHEMA $clname;
 -- ----------------------------------------------------------------------
 -- TABLE sl_sequence_offline
 -- ----------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS $clname.sl_sequence_offline (
+CREATE TABLE $clname.sl_sequence_offline (
 	seq_id				int4,
 	seq_relname			name NOT NULL,
 	seq_nspname			name NOT NULL,
@@ -145,7 +145,7 @@ CREATE TABLE IF NOT EXISTS $clname.sl_sequence_offline (
 -- ----------------------------------------------------------------------
 -- TABLE sl_archive_tracking
 -- ----------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS $clname.sl_archive_tracking (
+CREATE TABLE $clname.sl_archive_tracking (
 	at_counter			bigint,
 	at_created			timestamp,
 	at_applied			timestamp
