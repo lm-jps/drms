@@ -28,13 +28,15 @@ sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '..'))
 from toolbox import getCfg
 
 RV_SUCCESS = 0
-RV_DBCONNECTION = 1
-RV_DRMSPARAMS = 2
-RV_ARGS = 3
-RV_CLIENTCONFIG = 4
-RV_LOCK = 5
-RV_DBCMD = 6
-RV_SUBSERVICE = 7
+RV_DRMS = 1
+RV_DBCONNECTION = 2
+RV_DRMSPARAMS = 3
+RV_ARGS = 4
+RV_CLIENTCONFIG = 5
+RV_LOCK = 6
+RV_DBCMD = 7
+RV_SUBSERVICE = 8
+
 
 STATUS_REQUEST_RESUMING = 'requestResuming'
 STATUS_REQUEST_QUEUED = 'requestQueued'
@@ -82,7 +84,7 @@ class TerminationHandler(DrmsLock):
         self.hastaLaVistaBaby()
         
         # Remove subscription lock file by calling parent __exit__().
-        super(TerminationHandler, self).__exit__(self, etype, value, traceback)
+        super(TerminationHandler, self).__exit__(etype, value, traceback)
 
     def hastaLaVistaBaby(self):        
         # Do not do this! The call of Log::__del__ is deferred until after the program exits. If you end your program by
@@ -423,7 +425,7 @@ def clientIsSubscribed(client, serviceURL, series):
             
     return ans
 
-def ingestCreateNSFile(client, schema, cursor, log):
+def ingestCreateNSFile(createNsFile, cursor, log):
     # We are going to have to rely on a specific structure to the SQL file. Therefore, this code will not work with an arbitrary SQL file.
     # The SQL file has multiple commands, each terminated by a newline followed by a semicolon. However, there could be 
     # line-breaks within commands. So, we have to read lines until a semicolon is encountered, combine those lines into a 
@@ -433,7 +435,7 @@ def ingestCreateNSFile(client, schema, cursor, log):
     regExpEndCommand = re.compile(r'[;]\s*$')
     command = ''
 
-    with open(client + '.' + schema + '.' + 'createns.sql') as sqlIn:
+    with open(createNsFile, encoding='UTF8') as sqlIn:
         for line in sqlIn:
             if regExpEmpty.match(line) or regExpComment.match(line):
                 continue
@@ -447,7 +449,7 @@ def ingestCreateNSFile(client, schema, cursor, log):
                     
                 command = ''
 
-def ingestDumpFile(client, series, cursor, log):
+def ingestDumpFile(dumpFile, series, cursor, log):
     # We are going to have to rely on a specific structure to the SQL file. Therefore, this code will not work with an arbitrary SQL file.
     # The SQL file has two types of commands: non-COPY commands, and COPY commands. The non-COPY commands all occupy a single line in the file.
     # The COPY commands all start on one line (COPY table ... FROM stdin;). Each following line is a row of tab-delimited data. Following the last
@@ -464,9 +466,9 @@ def ingestDumpFile(client, series, cursor, log):
     # and it closes the SQL file handle.
     regExpEmpty = re.compile(r'\s+$')
     regExpComment = re.compile(r'--')
-    regExpBegin = re.compile(r'\s*begin\s*$', re.IGNORECASE)
-    regExpCommit = re.compile(r'\s*commit\s*$', re.IGNORECASE)
-    regExpCopy = re.compile(r'\s*copy$', re.IGNORECASE)
+    regExpBegin = re.compile(r'\s*begin[;]\s*$', re.IGNORECASE)
+    regExpCommit = re.compile(r'\s*commit[;]\s*$', re.IGNORECASE)
+    regExpCopy = re.compile(r'\s*copy', re.IGNORECASE)
     regExpEOF = re.compile(r'\\\.')
     regExpExtractFromCopy = re.compile(r'\s*COPY\s+(\S+)\s*\(([^)]+)\)')
     firstLine = True
@@ -478,8 +480,8 @@ def ingestDumpFile(client, series, cursor, log):
     readPipe = None
     copier = None
     
-    try:
-        with open(client + '.subscribe_series.sql') as sqlIn:
+    try:    
+        with open(dumpFile, encoding='UTF8') as sqlIn:
             for line in sqlIn:
                 if committed:
                     raise Exception('sqlDump', 'Unexpected lines after COMMIT statement.')
@@ -586,7 +588,17 @@ def ingestDumpFile(client, series, cursor, log):
     if not committed:
         raise Exception('sqlDump', 'Missing COMMIT statement.')
     
-            
+def extractSchema(series):
+    regExp = re.compile(r'\s*(\S+)\.(\S+)\s*')
+    matchObj = regExp.match(series)
+    if matchObj is not None:
+        schema = matchObj.group(1)
+        table = matchObj.group(2)
+    else:
+        raise Exception('invalidArgument', 'Not a valid DRMS series name: ' + series + '.')
+        
+    return schema
+
 # Main Program
 if __name__ == "__main__":
     rv = RV_SUCCESS
@@ -708,7 +720,10 @@ if __name__ == "__main__":
 
                         # JMD integration is a client-side feature.
                         jmdIntegration = arguments.getArg('jmd')
-
+                        # For subscribe/unsubscribe only.
+                        series = None 
+                        schema = None
+                        
                         if not resuming:
                             if reqType == 'subscribe':
                                 # Make sure that there is only a single series in the series list and make sure that
@@ -720,6 +735,7 @@ if __name__ == "__main__":
                                     raise Exception('invalidArgument', 'Please provide a series to which you would like to subscribe.')
                 
                                 series = seriesList[0]
+                                schema = extractSchema(series)
             
                                 if seriesExists(conn, series):
                                     raise Exception('invalidArgument', series + ' already exists locally. Please select a different series.')
@@ -735,8 +751,9 @@ if __name__ == "__main__":
                                     # then the NetDRMS is bad.
                                     if not dbTableExists(conn, 'admin', 'ns'):
                                         raise Exception('drms', 'Your DRMS is missing a required database relation (or the containing schema): admin.ns')
-                    
-                                    # We are also going to insert into several database tables. Make sure they exist.
+                                        
+                                if dbSchemaExists(conn, schema):
+                                    # We are going to insert into several database tables in this schema. Make sure they exist.
                                     if not dbTableExists(conn, schema, 'drms_series'):
                                         raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database table: ' + schema + '.drms_series')
                                     if not dbTableExists(conn, schema, 'drms_keyword'):
@@ -766,6 +783,7 @@ if __name__ == "__main__":
                                     raise Exception('invalidArgument', 'Please provide a series to which you would like to re-subscribe.')
 
                                 series = seriesList[0]
+                                schema = extractSchema(series)
 
                                 if not seriesExists(conn, series):
                                     raise Exception('invalidArgument', series + ' does not exist locally. Please select a different series to which you would like to re-subscribe.')
@@ -775,6 +793,21 @@ if __name__ == "__main__":
                 
                                 if not seriesIsPubished(series):
                                     raise Exception('invalidArgument', 'Series ' + series + ' is not published and not available for re-subscription.')
+                                    
+                                if dbSchemaExists(conn, schema):
+                                    # The site should have all these tables, since the series exists locally.
+                                    if not dbTableExists(conn, schema, 'drms_series'):
+                                        raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database table: ' + schema + '.drms_series')
+                                    if not dbTableExists(conn, schema, 'drms_keyword'):
+                                        raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database table: ' + schema + '.drms_keyword')
+                                    if not dbTableExists(conn, schema, 'drms_link'):
+                                        raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database table: ' + schema + '.drms_link')
+                                    if not dbTableExists(conn, schema, 'drms_segment'):
+                                        raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database table: ' + schema + '.drms_segment')
+                                    if not dbTableExists(conn, schema, 'drms_session'):
+                                        raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database table: ' + schema + '.drms_session')
+                                    if not dbTableExists(conn, schema, 'drms_sessionid_seq'):
+                                        raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database table: ' + schema + '.drms_sessionid_seq')
 
                                 # To re-subscribe to a series, provide client, series.
                                 cgiArgs = { 'action' : 'resubscribe', 'client' : client, 'newsite' : False, 'series' : series }
@@ -822,6 +855,12 @@ if __name__ == "__main__":
                             log.writeInfo([ 'cgi response: ' + info['msg'] + ' Response status: ' + info['status'] + '.'])
             
                             time.sleep(1)
+                        else:
+                            # Resuming. 
+                            if reqType == 'subscribe' or reqType == 'resubscribe':
+                                # Need to re-initialize some variables (series, schema).
+                                series = seriesList[0]
+                                schema = extractSchema(series)
 
                         # Back to the case statements.
                         if reqType == 'subscribe' or reqType == 'resubscribe':
@@ -842,13 +881,10 @@ if __name__ == "__main__":
 
                             if info['status'] != STATUS_DUMP_READY:
                                 raise Exception('subService', 'Unexpected response from subscription service: ' + info['status'] + '.')
-                                
-                            # del log
-                            raise Exception('blah', 'trying to get out')
 
                             # Download create-ns/dump-file tarball.
-                            scheme, netloc, path, query, frag = urllib.parse.split(arguments.getArg('kSubXfer'))
-                            xferURL = urllib.parse.unsplit((scheme, netloc, os.path.join(path, client + '.sql.tar.gz'), None, None))
+                            scheme, netloc, path, query, frag = urllib.parse.urlsplit(arguments.getArg('kSubXfer'))
+                            xferURL = urllib.parse.urlunsplit((scheme, netloc, os.path.join(path, client + '.sql.tar.gz'), None, None))
                             dest = os.path.join(arguments.getArg('kLocalWorkingDir'), client + '.sql.tar.gz')
                             dl = SmartDL(xferURL, dest)
                             dl.start()
@@ -859,20 +895,24 @@ if __name__ == "__main__":
 
                                 if reqType == 'subscribe' and not dbSchemaExists(conn, schema):
                                     # create-ns    
-                                    with tar.getmember(client + '.' + schema + '.' + 'createns.sql') as createNsMember:
-                                        tar.extract(createNsMember, dest)
+                                    createNsMember = tar.getmember(client + '.' + schema + '.' + 'createns.sql')
+                                    tar.extract(createNsMember, dest)
 
-                                with tar.getmember(client + '.subscribe_series.sql') as dumpMember:
-                                    tar.extract(dumpMember, dest)
+                                dumpMember = tar.getmember(client + '.subscribe_series.sql')
+                                tar.extract(dumpMember, dest)
             
                             try:
+                                createNsFile = os.path.join(arguments.getArg('kLocalWorkingDir'), client + '.' + schema + '.' + 'createns.sql')
+                                dumpFile = os.path.join(arguments.getArg('kLocalWorkingDir'), client + '.subscribe_series.sql')
+                                
                                 cursor = conn.cursor()
                                 # Apply the series-schema-creation SQL.
                                 if reqType == 'subscribe':
                                     # Check for the existence of the schema. 
                                     if not dbSchemaExists(conn, schema):
                                         # Ingest createns.sql. Will raise if a problem occurs. When that happens, the cursor is rolled back.
-                                        ingestCreateNSFile(client, schema, cursor, log)
+                                        ingestCreateNSFile(createNsFile, cursor, log)
+                                        log.writeInfo([ 'Successfully ingested createNs file: ' + createNsFile + '.' ])
 
                                 # Apply the series-creation (new subscriptions only) / _jsoc-creation (new site only) / series-population SQL. This is a bit tricky.
                                 # We can apply each SQL command as we read it from the file. In theory, these commands could span multiple lines. Commands are separated
@@ -889,7 +929,8 @@ if __name__ == "__main__":
                                 # only.
                                 #
                                 # Will raise if a problem occurs. When that happens, the cursor is rolled back.
-                                ingestDumpFile(client, series, cursor, log)
+                                ingestDumpFile(dumpFile, series, cursor, log)
+                                log.writeInfo([ 'Successfully ingested dump file: ' + dumpFile + '.' ])
                             except psycopg2.Error as exc:
                                 conn.rollback() # closes the cursor
                                 raise Exception('dbCmd', exc.diag.message_primary)
@@ -968,7 +1009,11 @@ if __name__ == "__main__":
             else:
                 print(msg)
         else:
-            raise
+            import traceback
+            if log:
+                log.writeError([ traceback.format_exc(5) ])
+            else:
+                print(traceback.format_exc(5))
             
     log.close()
     logging.shutdown()
