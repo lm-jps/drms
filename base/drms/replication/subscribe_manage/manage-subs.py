@@ -23,7 +23,24 @@
 # series subscribed to. If the response is failure, then the client must run get_slony_logs.pl
 # (to download any logs with the new series in it) and then delete the series whose
 # subscription attempt failed before the client script terminates.
+#
+# [ client submits request ] --> N --> [ server starts worker ] --> P -->
+#    [ server creates the dump ] --> D --> [ client downloads dump ] --> A -->
+#    [ client ingests dump ] --> I --> [ server cleans up ] --> C -->
+#    [ client receives notice ] --> S
+#    
 
+# Responses to client polling:
+# State       Response to pollDump        Response to pollComplete
+# -----       --------------------        ------------------------
+#   N           requestQueued               invalidArgument
+#   P           requestProcessing           invalidArgument
+#   D           dumpReady                   invalidArgument
+#   A           invalidArgument             requestFinalizing
+#   I           invalidArgument             requestFinalizing
+#   C           invalidArgument             requestComplete
+#   S           internalError               internalError
+#   E           requestFailed               requestFailed
 
 import os
 import sys
