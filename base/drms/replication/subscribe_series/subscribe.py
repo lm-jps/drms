@@ -18,7 +18,7 @@ import logging
 import signal
 import urllib
 import json
-from subprocess import Popen, CalledProcessError
+from subprocess import Popen, CalledProcessError, PIPE, check_call
 import fcntl
 import psycopg2
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../../include'))
@@ -427,31 +427,7 @@ def clientIsSubscribed(client, serviceURL, series):
             
     return ans
 
-def ingestCreateNSFileOld(createNsFile, cursor, log):
-    # We are going to have to rely on a specific structure to the SQL file. Therefore, this code will not work with an arbitrary SQL file.
-    # The SQL file has multiple commands, each terminated by a newline followed by a semicolon. However, there could be 
-    # line-breaks within commands. So, we have to read lines until a semicolon is encountered, combine those lines into a 
-    # single SQL command, then execute that command.
-    regExpEmpty = re.compile(r'\s+$')
-    regExpComment = re.compile(r'--')
-    regExpEndCommand = re.compile(r'[;]\s*$')
-    command = ''
-
-    with open(createNsFile, encoding='UTF8') as sqlIn:
-        for line in sqlIn:
-            if regExpEmpty.match(line) or regExpComment.match(line):
-                continue
-            command = command + line.rstrip()
-            if regExpEndCommand.search(line):
-                # End of command, execute it.
-                try:
-                    cursor.execute(command)
-                except psycopg2.Error as exc:
-                    raise Exception('sqlDump', exc.diag.message_primary)
-                    
-                command = ''
-
-def ingestCreateNSFile(createNsFile, psqlBin, dbhost, dbport, dbname, dbuser, log):
+def ingestCreateNsFile(createNsFile, psqlBin, dbhost, dbport, dbname, dbuser, log):
     # Make a pipe to communicate with psql process. Open the sql file in with UTF8 encoding, 
     # open the write-end of the pipe with UTF8 encoding, and open the read-end of the pipe with
     # LATIN-1 encoding (the db is in LATIN-1).
@@ -467,7 +443,7 @@ def ingestCreateNSFile(createNsFile, psqlBin, dbhost, dbport, dbname, dbuser, lo
 
         try:
             cmdList = [ psqlBin, '-h', dbhost, '-p', dbport, '-d', dbname, '-U', dbuser, '-f', '-']
-            proc = Popen(cmdList, stdin=pipeReadEnd)
+            proc = Popen(cmdList, stdin=pipeReadEnd, stdout=PIPE, stderr=PIPE)
         except OSError as exc:
             raise Exception('sqlDump', "Cannot run command '" + ' '.join(cmdList) + "' ")
         except ValueError as exc:
@@ -483,152 +459,17 @@ def ingestCreateNSFile(createNsFile, psqlBin, dbhost, dbport, dbname, dbuser, lo
         out, err = proc.communicate()
         pipeReadEnd.close()
 
-def ingestDumpFile(dumpFile, series, cursor, log):
-    # We are going to have to rely on a specific structure to the SQL file. Therefore, this code will not work with an arbitrary SQL file.
-    # The SQL file has two types of commands: non-COPY commands, and COPY commands. The non-COPY commands all occupy a single line in the file.
-    # The COPY commands all start on one line (COPY table ... FROM stdin;). Each following line is a row of tab-delimited data. Following the last
-    # line of data, there is a line with two characters - "\.". The COPY commands must follow the non-COPY commands, since the latter 
-    # make database relations used by the former.
-    # 
-    # Do a line-buffered read of the SQL file. For each line read that contains a non-COPY command (except BEGIN - skip that), call cursor.execute(). 
-    # As soon as the first COPY-command line is encountered, commit the cursor. Parse the first line of the COPY command to extract the table and column names.
-    # These will be used as arguments to the cursor.copy_from() function. Make a pipe and spawn a thread to handle the cursor.copy_from()
-    # function call. Use the read-end of the pipe as the input-file argument to the cursor.copy_from() call. The main thread continues to
-    # read from the open SQL file, writing each data line to the write-end of the pipe. When the main thread encounters the "\." EOF delimiter, 
-    # it closes the write-end of the pipe and joins the spawned thread. The main thread processes the remainder of the SQL file in this manner,
-    # spawning a thread to handle each COPY command. When then main thread encounters the COMMIT command in the SQL file, it drops that command, 
-    # and it closes the SQL file handle.
-    regExpEmpty = re.compile(r'\s+$')
-    regExpComment = re.compile(r'--')
-    regExpBegin = re.compile(r'\s*begin[;]\s*$', re.IGNORECASE)
-    regExpCommit = re.compile(r'\s*commit[;]\s*$', re.IGNORECASE)
-    regExpCopy = re.compile(r'\s*copy', re.IGNORECASE)
-    regExpEOF = re.compile(r'\\\.')
-    regExpExtractFromCopy = re.compile(r'\s*COPY\s+(\S+)\s*\(([^)]+)\)')
-    firstLine = True
-    copying = False
-    committed = False
-
-    writeFd = None
-    writePipe = None
-    readPipe = None
-    copier = None
-    
-    try:    
-        with open(dumpFile, encoding='UTF8') as sqlIn:
-            for line in sqlIn:
-                log.writeInfo([ 'From dump file: ' + line ])
-                if committed:
-                    raise Exception('sqlDump', 'Unexpected lines after COMMIT statement.')
-        
-                if regExpEmpty.match(line) or regExpComment.match(line):
-                    continue
-                
-                if regExpBegin.match(line):
-                    if firstLine:
-                        firstLine = False
-                    else:
-                        raise Exception('sqlDump', 'BEGIN statement unexpected in SQL dump file.')
-
-                    # Drop the BEGIN command.                                    
-                    continue
-                    
-                if regExpCommit.match(line):
-                    if firstLine:
-                        raise Exception('sqlDump', 'COMMIT statement unexpected in SQL dump file.')
-                    else:
-                        # Done with SQL file.
-                        if copying:
-                            raise Exception('sqlDump', 'Unexpected format of SQL dump file. COMMIT encountered while copying data to ' + series + '.')
-                        
-                        committed = True
-                        
-                    # Drop the COMMIT command.
-                    continue
-                    
-                if regExpCopy.match(line):
-                    # The previous command could have been the last non-COPY command.
-                    cursor.commit()
-                
-                    # Make sure any previous COPY command completed.
-                    if writeFd or copier or writePipe or readPipe:
-                        raise Exception('sqlDump', 'Missing EOF terminator for COPY command.')
-                
-                    # Extract the series and the column list from the copy command. The column names must be enclosed in
-                    # quotes when they are provided in the columns argument, but they are already in quotes in the 
-                    # dump file.
-                    copyLine = regExpExtractFromCopy.match(line)
-                    if not copyLine:
-                        raise Exception('sqlDump', 'Unexpected format of COPY-command line: ' + line + '.')
-                    
-                    dumpSeries = copyLine.group(1)
-                    if dumpSeries.lower() != series.lower():
-                        raise Exception('sqlDump', 'Series in dump file (' + dumpSeries + ') does not match series in subscription request (' + series + ').')
-
-                    columns = copyLine.group(2).lower()
-                    columnList = [ col.strip(' "') for col in columns.split(',') ]
-                
-                    readPipe, writePipe = os.pipe()
-                    copier = SqlCopy(readPipe, cursor, series.lower(), columnList, log)
-                    copier.start()
-                    
-                    # The database has a LATIN-1 encoding (according to the directions). We should
-                    # should really first obtain the actual encoding, and use that here, just in
-                    # case it is not LATIN-1.
-                    writeFd = fdopen(writePipe, 'w', encoding='LATIN1')
-                    copying = True
-                    log.writeInfo([ 'Start copying.' ])
-                
-                    # Drop the COPY command.
-                    continue
-                if copying:
-                    if regExpEOF.match(line):
-                        writeFd.close() # Will also close the read fd and cause the copy thread to terminate.
-                        writeFd = None
-                        copier.join(60)
-                        if copier.is_alive():
-                            raise Exception('threadTO', 'Unable to terminate copier thread.')
-                        copier = None
-                        os.close(writePipe)
-                        writePipe = None
-                        os.close(readPipe)
-                        readPipe = None
-                        copying = False
-                        cursor.commit()
-                    else:
-                        log.writeInfo([ 'Into W pipe: ' + line ])
-                        print(line, file=writeFd, end='')
-                    continue
-                    
-                if firstLine:
-                    raise Exception('sqlDump', 'Unexpected format of SQL dump file. The first line must be BEGIN.')
-            
-                # A non-COPY command line.
-                try:
-                    cursor.execute(line)
-                except psycopg2.Error as exc:
-                    raise Exception('sqlDump', exc.diag.message_primary)
-                    
-        # Make sure any previous COPY command completed.
-        if writeFd or copier or writePipe or readPipe:
-            raise Exception('sqlDump', 'Missing EOF terminator for COPY command.')
-
-    finally:
-        if writeFd:
-            writeFd.close()
-            writeFd = None
-        if copier:
-            copier.join(60)
-            copier = None
-        if writePipe:
-            os.close(writePipe)
-            writePipe = None
-        if readPipe:
-            os.close(readPipe)
-            readPipe = None
-
-    if not committed:
-        raise Exception('sqlDump', 'Missing COMMIT statement.')
+# I give up. You cannot pipe the dump file into psql this way. For some reason, the COPY command will not work.
+# But the dump file is not in the correct encoding. You have to pass an actual file to the psql -f command.
+# I guess the way around this is to modify the server to print this line at the top of the dump file:
+#   SET CLIENT_ENCODING TO 'UTF8';
+# Then we simply call check_call() to cal psql with the -f flag that contains the path to the dump file.
+def ingestDumpFile(dumpFile, psqlBin, dbhost, dbport, dbname, dbuser, log):
+    try:
+        cmdList = [ psqlBin, '-h', dbhost, '-p', dbport, '-d', dbname, '-U', dbuser, '-f', dumpFile ]
+        check_call(cmdList)
+    except CalledProcessError as exc:
+        raise Exception('sqlDump', ' '.join(cmdList) + ' returned non-zero code ' + exc.returncode + '.')
     
 def extractSchema(series):
     regExp = re.compile(r'\s*(\S+)\.(\S+)\s*')
@@ -942,49 +783,46 @@ if __name__ == "__main__":
 
                                 dumpMember = tar.getmember(client + '.subscribe_series.sql')
                                 tar.extract(dumpMember, dest)
-            
-                            try:
-                                createNsFile = os.path.join(arguments.getArg('kLocalWorkingDir'), client + '.' + schema + '.' + 'createns.sql')
-                                dumpFile = os.path.join(arguments.getArg('kLocalWorkingDir'), client + '.subscribe_series.sql')
-                                
-                                cursor = conn.cursor()
-                                # Apply the series-schema-creation SQL.
-                                if reqType == 'subscribe':
-                                    # Check for the existence of the schema. 
-                                    if not dbSchemaExists(conn, schema):
-                                        # Ingest createns.sql. Will raise if a problem occurs. When that happens, the cursor is rolled back.
-                                        ingestCreateNSFile(createNsFile, arguments.getArg('PSQL').strip(" '" + '"'), arguments.getArg('pg_host'), str(arguments.getArg('pg_port')), arguments.getArg('pg_dbname'), arguments.getArg('pg_user'), log)
-                                        log.writeInfo([ 'Successfully ingested createNs file: ' + createNsFile + '.' ])
 
-                                # Apply the series-creation (new subscriptions only) / _jsoc-creation (new site only) / series-population SQL. This is a bit tricky.
-                                # We can apply each SQL command as we read it from the file. In theory, these commands could span multiple lines. Commands are separated
-                                # by semicolons which are not necessarily followed by newlines. But there could be semicolons in the strings of commands, and various forms
-                                # of escaping to deal with. Yuck! We'd need a heavy-weight parser to do this in a general way. However, the dump file has a 
-                                # specific format which we will exploit.
-                                # 
-                                # psycopg2 does not provide a means for piping an SQL file to the database - end of story. If you read a file into memory to use the 
-                                # cursor.execute() command, it reads the WHOLE file into memory before executing cursor.execute(). So, we HAVE TO parse the SQL file
-                                # in some way. 
-                                #
-                                # If reqType == 'subscribe', then the sql will create a new series and populate it. 
-                                # If reqType == 'resubscribe', then the sql will truncate the 'series table' and reset the series-table sequence
-                                # only.
-                                #
-                                # Will raise if a problem occurs. When that happens, the cursor is rolled back.
-                                ingestDumpFile(dumpFile, series, cursor, log)
-                                log.writeInfo([ 'Successfully ingested dump file: ' + dumpFile + '.' ])
-                            except psycopg2.Error as exc:
-                                import traceback
-                                log.writeError([ traceback.format_exc(5) ])
-                                conn.rollback() # closes the cursor
-                                raise Exception('dbCmd', traceback.format_exc(5))
+                            createNsFile = os.path.join(arguments.getArg('kLocalWorkingDir'), client + '.' + schema + '.' + 'createns.sql')
+                            dumpFile = os.path.join(arguments.getArg('kLocalWorkingDir'), client + '.subscribe_series.sql')
+                            
+                            # Apply the series-schema-creation SQL.
+                            if reqType == 'subscribe':
+                                # Check for the existence of the schema. 
+                                if not dbSchemaExists(conn, schema):
+                                    # Ingest createns.sql. Will raise if a problem occurs. When that happens, the cursor is rolled back.
+                                    ingestCreateNsFile(createNsFile, arguments.getArg('PSQL').strip(" '" + '"'), arguments.getArg('pg_host'), str(arguments.getArg('pg_port')), arguments.getArg('pg_dbname'), arguments.getArg('pg_user'), log)
+                                    log.writeInfo([ 'Successfully ingested createNs file: ' + createNsFile + '.' ])
 
-                            conn.commit() # closes the cursor
+                            # Apply the series-creation (new subscriptions only) / _jsoc-creation (new site only) / series-population SQL. This is a bit tricky.
+                            # We can apply each SQL command as we read it from the file. In theory, these commands could span multiple lines. Commands are separated
+                            # by semicolons which are not necessarily followed by newlines. But there could be semicolons in the strings of commands, and various forms
+                            # of escaping to deal with. Yuck! We'd need a heavy-weight parser to do this in a general way. However, the dump file has a 
+                            # specific format which we will exploit.
+                            # 
+                            # psycopg2 does not provide a means for piping an SQL file to the database - end of story. If you read a file into memory to use the 
+                            # cursor.execute() command, it reads the WHOLE file into memory before executing cursor.execute(). So, we HAVE TO parse the SQL file
+                            # in some way. 
+                            #
+                            # If reqType == 'subscribe', then the sql will create a new series and populate it. 
+                            # If reqType == 'resubscribe', then the sql will truncate the 'series table' and reset the series-table sequence
+                            # only.
+                            #
+                            # Will raise if a problem occurs. When that happens, the cursor is rolled back.
+                            ingestDumpFile(dumpFile, arguments.getArg('PSQL').strip(" '" + '"'), arguments.getArg('pg_host'), str(arguments.getArg('pg_port')), arguments.getArg('pg_dbname'), arguments.getArg('pg_user'), log)
+                            log.writeInfo([ 'Successfully ingested dump file: ' + dumpFile + '.' ])
 
-                            # Send a pollcomplete request to the subscription service. After submitting this request, the Slony logs
+                            # Send a pollcomplete request to the subscription service. This will set status to 'I' to tell the server to
+                            # clean up and finalize the request. After submitting this request, the Slony logs
                             # we receive could have insert statements for newly subscribed-to series.
-                            cgiArgs = { 'action' : 'pollcomplete', 'reqid' : reqId}
+                            cgiArgs = { 'action' : 'pollcomplete', 'client' : client, 'reqid' : reqId}
                             urlArgs = urllib.parse.urlencode(cgiArgs) # For use with HTTP GET requests (not POST).
+
+                            # We just sent the first pollcomplete request. This tells the server to clean up and finalize, so 
+                            # the request is in the STATUS_REQUEST_FINALIZING state.
+                            info = {}
+                            info['status'] = STATUS_REQUEST_FINALIZING
 
                             while info['status'] == STATUS_REQUEST_FINALIZING:
                                 with urllib.request.urlopen(serviceURL + '?' + urlArgs) as response:
@@ -992,6 +830,8 @@ if __name__ == "__main__":
                                     time.sleep(5)
                     
                             if info['status'] != STATUS_REQUEST_COMPLETE:
+                                # Must undo (If newsite, remove _jsoc. If new schema, remove schema and remove schema's entry from admin.ns. If
+                                # subscribing, remove database table.)
                                 raise Exception('subService', info['status'], 'Unexpected response from subscription service: ' + info['status'])
                 
                             # We have successfully subscribed/resubscribed to a series. For a subscribe request, if the 'jmd' flag is set, 
