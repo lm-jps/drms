@@ -659,12 +659,13 @@ class Worker(threading.Thread):
                                 time.sleep(1)
                 
                         # 3. Run createtabstruct for the table of the series being subscribed to.
-                        cmdList = [ os.path.join(self.arguments.getArg('kModDir'), 'createtabstructure'), 'JSOC_DBHOST=' + self.arguments.getArg('SLAVEHOSTNAME'), 'in=' + self.series[0].lower(), 'out=' + self.series[0].lower(), 'archive=' + str(self.archive), 'retention=' + str(self.retention), 'tapegroup=' + str(self.tapegroup), 'owner=' + self.arguments.getArg('REPUSER') ]
+                        cmdList = [ os.path.join(self.arguments.getArg('kModDir'), 'createtabstructure'), '-u', 'JSOC_DBHOST=' + self.arguments.getArg('SLAVEHOSTNAME'), 'in=' + self.series[0].lower(), 'out=' + self.series[0].lower(), 'archive=' + str(self.archive), 'retention=' + str(self.retention), 'tapegroup=' + str(self.tapegroup), 'owner=' + self.arguments.getArg('REPUSER') ]
                         outFile = os.path.join(self.triggerDir, self.client + '.subscribe_series.sql')
 
                         wroteIntMsg = False
                         with open(outFile, 'w') as fout:
                             print('BEGIN;', file=fout)
+                            print("SET CLIENT_ENCODING TO 'UTF8';", file=fout)
                             fout.flush()
                             self.log.writeInfo([ 'Dumping table structure: ' + ' '.join(cmdList) + '.' ])
                             proc = Popen(cmdList, stdout=fout)
@@ -705,10 +706,23 @@ class Worker(threading.Thread):
                         outFile = os.path.join(self.triggerDir, self.client + '.subscribe_series.sql')
             
                         wroteIntMsg = False
-                        with open(outFile, 'a') as fout:
+                        with open(outFile, 'a', encoding='UTF8') as fout:
+                            pipeReadEndFD, pipeWriteEndFD = os.pipe()
+
+                            # Make these pipes not block on read.
+                            flag = fcntl.fcntl(pipeReadEndFD, fcntl.F_GETFL)
+                            fcntl.fcntl(pipeReadEndFD, fcntl.F_SETFL, flag | os.O_NONBLOCK)
+                            # flag = fcntl.fcntl(pipeWriteEndFD, fcntl.F_GETFL)
+                            # fcntl.fcntl(pipeWriteEndFD, fcntl.F_SETFL, flag | os.O_NONBLOCK)
+
+                            # The DB is in LATIN-1, so we need to read in bytes, then decode to a string, then encode
+                            # to UTF8 bytes. Then we print these UTF8 bytes to the output file.
+                            pipeReadEnd = os.fdopen(pipeReadEndFD, 'r', encoding='LATIN1')
+                            pipeWriteEnd = os.fdopen(pipeWriteEndFD, 'w', encoding='LATIN1')
+
                             self.log.writeInfo([ 'Dumping table data: ' + ' '.join(cmdList) + '.' ])
                             # stderr should get written to self.writeStream.
-                            proc = Popen(cmdList, stdout=fout, env=dict(os.environ, kJSOCRoot=self.arguments.getArg('kJSOCRoot'), kSMlogDir=self.arguments.getArg('kSMlogDir'), config_file=self.arguments.getArg('slonyCfg'), node=self.client))
+                            proc = Popen(cmdList, stdout=pipeWriteEnd, env=dict(os.environ, kJSOCRoot=self.arguments.getArg('kJSOCRoot'), kSMlogDir=self.arguments.getArg('kSMlogDir'), config_file=self.arguments.getArg('slonyCfg'), node=self.client))
 
                             self.reqTable.releaseLock()
                             maxLoop = 3600 # 1-hour timeout
@@ -721,16 +735,39 @@ class Worker(threading.Thread):
                                     wroteIntMsg = True
                                     # proc.kill()
                                     # raise Exception('shutDown', 'Received shut-down message from main thread.')
+                                    
+                                # Read what is available from the pipe, convert to utf8, and write it to fout.
+                                while True:
+                                    pipeBytes = pipeReadEnd.read(4096)
+                                    if len(pipeBytes) > 0:
+                                        # print(pipeBytes.decode('LATIN1').encode('UTF8'), file=fout)
+                                        print(pipeBytes, file=fout, end='')
+                                    else:
+                                        break
             
                                 if proc.poll() is not None:
                                     self.writeStream.flush()
                                     self.writeStream.logLines() # Log all sdo_slony1_dump.sh output.
                                     if proc.returncode != 0:
                                         raise Exception('sqlDump', 'Failure generating dump file, sdo_slony1_dump.sh returned ' + str(proc.returncode) + '.') 
+                                        
+                                    pipeWriteEnd.flush()
+                                    pipeWriteEnd.close()
+                                    
+                                    # Read the remaining bytes from the pipe.
+                                    while True:
+                                        pipeBytes = pipeReadEnd.read(4096)
+                                        if len(pipeBytes) > 0:
+                                            # print(pipeBytes.decode('LATIN1').encode('UTF8'), file=fout)
+                                            print(pipeBytes, file=fout, end='')
+                                        else:
+                                            break
+                                    pipeReadEnd.close()                                        
                                     break
 
                                 maxLoop -= 1
                                 time.sleep(1)
+
                             fout.flush()
                             print('COMMIT;', file=fout)
                             self.reqTable.acquireLock()
