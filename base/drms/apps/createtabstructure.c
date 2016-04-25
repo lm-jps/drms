@@ -338,8 +338,6 @@ static CrtabError_t GetRows(DRMS_Env_t *env,
             char *wrappedColNames = NULL;
             size_t szWrappedColNames = 1024;
             int firstTime = 1;
-            char yesOrNo[8];
-            int doEncode = 0;
             
             wrappedColNames = calloc(1, szWrappedColNames);
             if (wrappedColNames)
