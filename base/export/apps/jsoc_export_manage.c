@@ -3674,11 +3674,11 @@ int DoIt(void)
             {
                 *rhs = '\0';
                 rhs++;
-                fprintf(fpProc, "  %s\t\t%s", lhs, rhs);
+                fprintf(fpProc, "  %s\t\t%s\n", lhs, rhs);
             }
             else
             {
-                fprintf(fpProc, "  %s", lhs);
+                fprintf(fpProc, "  %s\n", lhs);
             }
         }
         
