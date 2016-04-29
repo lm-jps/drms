@@ -669,33 +669,35 @@ static void make_qsub_call(char *requestid, /* like JSOC_20120906_199_IN*/
      snprintf(notifyStr, sizeof(notifyStr), "0");
   }
 
-  fprintf(fp, "set Notify=%s\n", notifyStr);
-  fprintf(fp, "set REQDIR = `show_info JSOC_DBHOST=%s -q -p 'jsoc.export[%s]' %s`\n", dbexporthost, requestid, dbids);
-  fprintf(fp, "if ($DRMS_ERROR) then\n");
-      fprintf(fp, "  set_info -C JSOC_DBHOST=%s  ds='jsoc.export[%s]' Status=4 %s\n", dbexporthost, requestid, dbids);
-      fprintf(fp, "if (\"$Notify\" != 0) then\n");
-      fprintf(fp, "  mail -n -s 'JSOC export FAILED - %s' \"$Notify\" <<!\n", requestid);
-      fprintf(fp, "Error status returned from DRMS session.\n");
-      fprintf(fp, "See log files at http://jsoc.stanford.edu/$REQDIR\n");
-      fprintf(fp, "Also complete log file at /home/jsoc/exports/tmp/%s.runlog\n", requestid);
-      fprintf(fp, "!\n");
-      fprintf(fp, "endif\n");
-  fprintf(fp, "else\n");
-      fprintf(fp, "if (\"$Notify\" != 0) then\n");
-      fprintf(fp, "  mail -n -s 'JSOC export complete - %s' \"$Notify\" <<!\n", requestid);
-      fprintf(fp, "JSOC export request %s is complete.\n", requestid);
-      fprintf(fp, "Results at http://jsoc.stanford.edu$REQDIR\n");
-      fprintf(fp, "!\n");
-      fprintf(fp, "endif\n");
-      
-      fprintf(fp, "  rm /home/jsoc/exports/tmp/%s.recnum\n", requestid);
-      fprintf(fp, "  mv /home/jsoc/exports/tmp/%s.reqlog /home/jsoc/exports/tmp/done \n", requestid);
-      /* The log after the call to drms_run gets lost because of the following line - should preserve this
-       * somehow (but it can't go in the new inner REQDIR because that is read-only after drms_run returns. */
-      fprintf(fp, "  mv /home/jsoc/exports/tmp/%s.runlog /home/jsoc/exports/tmp/done \n", requestid);
-  fprintf(fp, "endif\n");
-  fclose(fp);
-  chmod(qsubscript, 0555);
+    fprintf(fp, "set Notify=%s\n", notifyStr);
+    fprintf(fp, "set REQDIR = `show_info JSOC_DBHOST=%s -q -p 'jsoc.export[%s]' %s`\n", dbexporthost, requestid, dbids);
+    fprintf(fp, "if ($DRMS_ERROR) then\n");
+    /* This will clone all the stuff in the export SU, including the proc-steps.txt file. We want to
+     * delete proc-steps.txt in the drmsrun script when things are working. */
+    fprintf(fp, "  set_info -C JSOC_DBHOST=%s  ds='jsoc.export[%s]' Status=4 %s\n", dbexporthost, requestid, dbids);
+    fprintf(fp, "if (\"$Notify\" != 0) then\n");
+    fprintf(fp, "  mail -n -s 'JSOC export FAILED - %s' \"$Notify\" <<!\n", requestid);
+    fprintf(fp, "Error status returned from DRMS session.\n");
+    fprintf(fp, "See log files at http://jsoc.stanford.edu/$REQDIR\n");
+    fprintf(fp, "Also complete log file at /home/jsoc/exports/tmp/%s.runlog\n", requestid);
+    fprintf(fp, "!\n");
+    fprintf(fp, "endif\n");
+    fprintf(fp, "else\n");
+    fprintf(fp, "if (\"$Notify\" != 0) then\n");
+    fprintf(fp, "  mail -n -s 'JSOC export complete - %s' \"$Notify\" <<!\n", requestid);
+    fprintf(fp, "JSOC export request %s is complete.\n", requestid);
+    fprintf(fp, "Results at http://jsoc.stanford.edu$REQDIR\n");
+    fprintf(fp, "!\n");
+    fprintf(fp, "endif\n");
+
+    fprintf(fp, "  rm /home/jsoc/exports/tmp/%s.recnum\n", requestid);
+    fprintf(fp, "  mv /home/jsoc/exports/tmp/%s.reqlog /home/jsoc/exports/tmp/done \n", requestid);
+    /* The log after the call to drms_run gets lost because of the following line - should preserve this
+    * somehow (but it can't go in the new inner REQDIR because that is read-only after drms_run returns. */
+    fprintf(fp, "  mv /home/jsoc/exports/tmp/%s.runlog /home/jsoc/exports/tmp/done \n", requestid);
+    fprintf(fp, "endif\n");
+    fclose(fp);
+    chmod(qsubscript, 0555);
   }
 
 // Security testing.  Make sure DataSet does not contain attempt to run program
@@ -3611,23 +3613,88 @@ int DoIt(void)
       }
               
       datasetout = NULL;
+      
+      /* Create a file to hold the processing steps applied. */
+      char fname[PATH_MAX];
+      char *anArg = NULL;
+      FILE *fpProc = NULL;
+      
+      if (list_llgetnitems(proccmds) > 0)
+      {      
+          snprintf(fname, sizeof(fname), "%s/proc-steps.txt", reqdir);
+          fpProc = fopen(fname, "w");
+      
+          if (!fpProc)
+          {
+                list_llfree(&proccmds);
+                snprintf(msgbuf, sizeof(msgbuf), "Unable to open file %s.", fname);
+                ErrorOutExpRec(&export_rec, 4, msgbuf);
+                ErrorOutExpNewRec(exports_new, &export_log, irec, 4, msgbuf);
+                fclose(fp);
+                fp = NULL;
+
+                /* mem leak - need to free all strings obtained with drms_getkey_string(). */
+                continue; /* next export record */
+          }
+      }
 
       LinkedList_t *datasetkwlist = NULL;
       char *rsstr = NULL;
       int firstnode = 1;
+      char *lhs = NULL;
+      char *rhs = NULL;
 
       while (!quit && (node = list_llnext(proccmds)) != 0)
       {
         ndata = (ProcStep_t *)node->data;
+        
+        /* Write processing step info into the proc-steps.txt file. */
+        fprintf(fpProc, "\nProcessing-step applied: %s\n", ndata->name);
+        fprintf(fpProc, "  argument\t\tvalue\n");
+        fprintf(fpProc, "  --------\t\t-----\n");
+        
+        /* Parse command line. */
+        for (anArg = strtok(ndata->args, " ,"); !quit && anArg; anArg = strtok(NULL, " ,"))
+        {
+            /* For each arg that has a value, the argument name is separated from the value by an equal sign. 
+             * I hope there are no commas in the argument values. 
+             */
+            lhs = strdup(anArg);
+            if (!lhs)
+            {
+                snprintf(msgbuf, sizeof(msgbuf), "Out of memory .");
+
+                /* mem leak - need to free all strings obtained with drms_getkey_string(). */
+                quit = 1; /* next export record */
+                break;
+            }
+            
+            rhs = strchr(lhs, '=');
+            if (rhs)
+            {
+                *rhs = '\0';
+                rhs++;
+                fprintf(fpProc, "  %s\t\t%s", lhs, rhs);
+            }
+            else
+            {
+                fprintf(fpProc, "  %s", lhs);
+            }
+        }
+        
+        if (quit)
+        {
+            break;
+        }
 
         /* Put the pipeline of record-sets into a string that gets saved to the dataset column of 
         * jsoc.export. If a processing step doesn't change the record-set (like no_op), then 
         * skip that processing step's record-set. */
         if (!datasetkwlist)
         {
-        datasetkwlist = list_llcreate(sizeof(char *), (ListFreeFn_t)FreeDataSetKw);
-        rsstr = strdup(ndata->input);
-        list_llinserthead(datasetkwlist, &rsstr);
+            datasetkwlist = list_llcreate(sizeof(char *), (ListFreeFn_t)FreeDataSetKw);
+            rsstr = strdup(ndata->input);
+            list_llinserthead(datasetkwlist, &rsstr);
         }
 
         /* If this processing step will change the record-set specification, then save the new 
@@ -3635,8 +3702,8 @@ int DoIt(void)
         * column of jsoc.export. */
         if (strcmp(ndata->input, ndata->output) != 0)
         {
-        rsstr = strdup(ndata->output);
-        list_llinserthead(datasetkwlist, &rsstr);
+            rsstr = strdup(ndata->output);
+            list_llinserthead(datasetkwlist, &rsstr);
         }
 
         cdataset = ndata->input;
@@ -3820,12 +3887,19 @@ int DoIt(void)
          {
             exprecspec = strdup(dataset);
          }
+         
+         if (fpProc)
+         {
+            fclose(fpProc);
+            fpProc = NULL;
+         }
       }
 
-          if (proccmds)
-          {
-              list_llfree(&proccmds);
-          }
+      if (proccmds)
+      {
+          list_llfree(&proccmds);
+          proccmds = NULL;
+      }
 
       if (quit)
       {
