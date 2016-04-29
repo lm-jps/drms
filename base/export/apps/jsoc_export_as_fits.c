@@ -1343,6 +1343,13 @@ int DoIt(void)
         
         if (pklist)
         {
+            char procSteps[PATH_MAX];
+            FILE *fpProcSteps = NULL;
+            struct stat stBuf;
+            char *lineBuf = NULL;
+            size_t lineLen = 0;
+            ssize_t nRead = 0;
+            
             /* write packing list */
             fprintf(pklist, "# JSOC \n");
             WritePListRecord(kPL_metadata, pklist, drms_defs_getval("kMD_Version"), md_version);
@@ -1354,6 +1361,28 @@ int DoIt(void)
             WritePListRecord(kPL_metadata, pklist, drms_defs_getval("kMD_ExpTime"), md_exptime ? md_exptime : "");
             WritePListRecord(kPL_metadata, pklist, drms_defs_getval("kMD_Dir"), md_dir ? md_dir : "");
             WritePListRecord(kPL_metadata, pklist, drms_defs_getval("kMD_Status"), md_status);
+            
+            /* If the proc-steps.txt file exists, put the contents in the packing list. */
+            snprintf(procSteps, sizeof(procSteps), "%s/proc-steps.txt", md_dir);
+            if (stat(procSteps, &stBuf) == 0)
+            {
+                fprintf(pklist, "# PROCESSING \n");
+                
+                fpProcSteps = fopen(procSteps, "r");
+                if (fpProcSteps)
+                {
+                    while ((nRead = getline(&lineBuf, &lineLen, fpProcSteps)) != -1)
+                    {
+                        /* Put these in comments, otherwise jsoc_export_make_index will have issues. */
+                        fprintf(pklist, lineBuf);
+                    }
+                    
+                    if (lineBuf)
+                    {
+                        free(lineBuf);
+                    }
+                }
+            }
             
             fflush(pklist);
             
