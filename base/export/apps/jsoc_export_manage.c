@@ -3619,7 +3619,7 @@ int DoIt(void)
       char *anArg = NULL;
       FILE *fpProc = NULL;
       
-      if (list_llgetnitems(proccmds) > 0)
+      if (proccmds && list_llgetnitems(proccmds) > 0)
       {      
           snprintf(fname, sizeof(fname), "%s/proc-steps.txt", reqdir);
           fpProc = fopen(fname, "w");
@@ -3644,7 +3644,7 @@ int DoIt(void)
       char *lhs = NULL;
       char *rhs = NULL;
 
-      while (!quit && (node = list_llnext(proccmds)) != 0)
+      while (!quit && (node = list_llnext(proccmds)) != NULL)
       {
         ndata = (ProcStep_t *)node->data;
         
