@@ -3643,6 +3643,7 @@ int DoIt(void)
       int firstnode = 1;
       char *lhs = NULL;
       char *rhs = NULL;
+      char *argsDup = NULL;
 
       while (!quit && (node = list_llnext(proccmds)) != NULL)
       {
@@ -3653,8 +3654,16 @@ int DoIt(void)
         fprintf(fpProc, "  argument\t\tvalue\n");
         fprintf(fpProc, "  --------\t\t-----\n");
         
-        /* Parse command line. */
-        for (anArg = strtok(ndata->args, " ,"); !quit && anArg; anArg = strtok(NULL, " ,"))
+        /* Parse command line. ACK! strtok modifies the string it parses!! Copy it first. */
+        argsDup = strdup(ndata->args);
+        if (!argsDup)
+        {
+            snprintf(msgbuf, sizeof(msgbuf), "Out of memory .");
+            quit = 1; /* next export record */
+            break;
+        }
+        
+        for (anArg = strtok(argsDup, " ,"); !quit && anArg; anArg = strtok(NULL, " ,"))
         {
             /* For each arg that has a value, the argument name is separated from the value by an equal sign. 
              * I hope there are no commas in the argument values. 
@@ -3663,8 +3672,6 @@ int DoIt(void)
             if (!lhs)
             {
                 snprintf(msgbuf, sizeof(msgbuf), "Out of memory .");
-
-                /* mem leak - need to free all strings obtained with drms_getkey_string(). */
                 quit = 1; /* next export record */
                 break;
             }
@@ -3680,6 +3687,9 @@ int DoIt(void)
             {
                 fprintf(fpProc, "  %s\n", lhs);
             }
+            
+            free(lhs);
+            lhs = NULL;
         }
         
         if (quit)
