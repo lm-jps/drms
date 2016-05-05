@@ -117,7 +117,7 @@ cleanup_counter=$(( $cleanup_counter + 1 ))
         # SubTableMgr::Remove. This would delete $node.new.lst, but it is still being used.
         cmd="$kRepDir/subscribe_manage/gentables.pl op=remove config=$config_file --node=$node.new"
         logwrite "Running $cmd" nl
-        `$cmd`
+        $cmd
 
         if [ $? -ne 0 ]
         then
