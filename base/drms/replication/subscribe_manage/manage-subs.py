@@ -565,10 +565,13 @@ class Worker(threading.Thread):
                                 # Raises CalledProcessError on error (non-zero returned by gentables.pl).
                                 check_call(cmdList)
                                 self.writeStream.logLines() # Log all gentables.pl output
-                
-                                # ...and make the temporary client.new directory in the site-logs directory.
-                                os.mkdir(self.newClientLogDir) # umask WILL mask-out bits if it is not 0000; os.chmod() is better.
-                                os.chmod(self.newClientLogDir, 0O2755) # This is the way you specify Octal in Py 3 (not Py 2).
+
+                                if self.action == 'subscribe':
+                                    # Do not create a temp site-dir log, unless we are subscribing to a new series. During un-subscription,
+                                    # client.new.lst is not added slon_parser.cfg, so no logs are ever written to self.newClientLogDir.
+                                    # ...and make the temporary client.new directory in the site-logs directory.
+                                    os.mkdir(self.newClientLogDir) # umask WILL mask-out bits if it is not 0000; os.chmod() is better.
+                                    os.chmod(self.newClientLogDir, 0O2755) # This is the way you specify Octal in Py 3 (not Py 2).
                                 break
                             except Exception as exc:
                                 if len(exc.args) == 1 and exc.args[0] == 'subLock':
@@ -738,7 +741,7 @@ class Worker(threading.Thread):
                             proc = Popen(cmdList, stdout=pipeWriteEnd, env=dict(os.environ, kJSOCRoot=self.arguments.getArg('kJSOCRoot'), kSMlogDir=self.arguments.getArg('kSMlogDir'), config_file=self.arguments.getArg('slonyCfg'), node=self.client))
 
                             self.reqTable.releaseLock()
-                            maxLoop = 3600 # 1-hour timeout
+                            maxLoop = 43200 # 12-hour timeout, aia.lev1 takes many hours (probably 6 hours) to dump
                             while True:
                                 if maxLoop <= 0:
                                     raise Exception('sqlDump', 'Time-out waiting for dump file to be generated.')
@@ -808,7 +811,7 @@ class Worker(threading.Thread):
                 # Poll on the request status waiting for it to be I. This indicates that the client has successfully ingested
                 # the dump file. The client could also set the status to E if there was some error, in which case the client
                 # provides an error message that the server logs. The loop is interruptable by a shut-down request.
-                maxLoop = 86400 # 24-hour timeout
+                maxLoop = 172800 # 48-hour timeout
                 while True:
                     if maxLoop <= 0:
                         raise Exception('sqlAck', 'Time-out waiting for client to ingest dump file.')
@@ -889,6 +892,10 @@ class Worker(threading.Thread):
                         self.writeStream.logLines() # Log all gentables.pl output
                 
                         if self.newSite:
+                            # If we are unsubscribing, we cannot be a new site.
+                            if self.action == 'unsubscribe':
+                                raise Exception('invalidArgument', self.client + ' is a new subscriber. Cannot unsubscribe from series.')
+                        
                             # LEGACY - Add a line for client to slon_parser.cfg.
                             with open(self.parserConfig, 'a') as fout:
                                 print(self.oldClientLogDir + '        ' + self.oldLstPath, file=fout)
@@ -924,17 +931,20 @@ class Worker(threading.Thread):
                             # had the subscription action succeeded. So, if we have a successful subscription, then we need to
                             # discard the logs generated in the first universe, in the oldClientLogDir, overwriting them 
                             # with the analogous logs in the newClientLogDir.
-                            for logFile in os.listdir(self.newClientLogDir):
-                                src = os.path.join(self.newClientLogDir, logFile)
-                                dst = os.path.join(self.oldClientLogDir, logFile)
-                                # copy() copies permissing bits as well, and the destination is overwritten if it exists.
-                                shutil.copy(src, dst)
+                            #
+                            # self.newClientLogDir is not used for un-subscription, nor is it used for re-subscription.
+                            if self.action == 'subscribe':
+                                for logFile in os.listdir(self.newClientLogDir):
+                                    src = os.path.join(self.newClientLogDir, logFile)
+                                    dst = os.path.join(self.oldClientLogDir, logFile)
+                                    # copy() copies permissing bits as well, and the destination is overwritten if it exists.
+                                    shutil.copy(src, dst)
 
-                            # Remove newClientLogDir. I think this is better than deletion during iteration in the
-                            # previous loop. If an error happens part way through in the above loop, then we could
-                            # get in a weird, indeterminate state.
-                            shutil.rmtree(self.newClientLogDir)
-                    
+                                # Remove newClientLogDir. I think this is better than deletion during iteration in the
+                                # previous loop. If an error happens part way through in the above loop, then we could
+                                # get in a weird, indeterminate state.
+                                shutil.rmtree(self.newClientLogDir)
+
                         # LEGACY - Rename the client.new.lst file. If oldLstPath happens to exist, then rename() will overwrite it.
                         os.rename(self.newLstPath, self.oldLstPath)
                 
@@ -1021,7 +1031,7 @@ class Worker(threading.Thread):
             
             # Always release reqTable lock.
             self.reqTable.releaseLock()
-            maxLoop = 15
+            maxLoop = 30
             while True:
                 try:
                     try:
