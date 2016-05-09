@@ -197,6 +197,7 @@ my $complete = {
 
 ## setting log file and targets
 logThreshold("info");
+debug "Starting parse_slon_logs.pl";
 
 map { logTarget($_,$config{'kPSLprepLog'}) } qw(notice info error emergency warning debug);
 
@@ -282,7 +283,7 @@ unless ($repro) {
   }
   else
   {
-     info("Warning:: couldn't obtain SUBSCRIPTION lock; bailing.\n");
+     info("Warning:: couldn't obtain SUBSCRIPTION lock $subscribelockpath; bailing.\n");
      exit(1);
   }
 
