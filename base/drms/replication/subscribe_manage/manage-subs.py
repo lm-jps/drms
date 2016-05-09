@@ -116,7 +116,6 @@ class TerminationHandler(object):
 
         # Acquire locks.
         self.msLock = DrmsLock(self.msLockFile, self.pidStr)
-        self.subLock = DrmsLock(self.subLockFile, self.pidStr)
 
     # Normally, __exit__ is called if an exception occurs inside the with block. And since SIGINT is converted
     # into a KeyboardInterrupt exception, it will be handled by __exit__(). However, SIGTERM will not - 
@@ -147,11 +146,8 @@ class TerminationHandler(object):
             self.readEndPipe = None
 
         # Clean up subscription lock
-        try:
-            self.subLock.close()
-            self.subLock = None
-        except IOError:
-            pass
+        if os.path.exists(self.subLockFile):
+            os.remove(self.subLockFile)
             
         # Clean up manage-subs lock
         try:        
