@@ -324,7 +324,12 @@ class ResumeResponse(Response):
             self.resumeaction = kwargs['resumeaction']
         else:
             raise Exception('invalidArgument', 'resumeaction is required for ResumeResponse constructor.')
-            
+        
+        if 'resumestatus' in kwargs:
+            self.resumestatus = kwargs['resumestatus']
+        else:
+            raise Exception('invalidArgument', 'resumestatus is required for ResumeResponse constructor.')
+        
         super(ResumeResponse, self).__init__(**kwargs)
         
     def createContent(self):
@@ -336,8 +341,9 @@ class ResumeResponse(Response):
             self.jsonRoot['retention'] = self.retention
             self.jsonRoot['tapegroup'] = self.tapegroup
             self.jsonRoot['resumeaction'] = self.resumeaction
+            self.jsonRoot['resumestatus'] = self.resumestatus
         else:
-            self.jsonRoot = { 'reqid' : self.reqid, 'reqtype' : self.reqtype, 'series' : self.series, 'archive' : self.archive, 'retention' : self.retention, 'tapegroup' : self.tapegroup, 'resumeaction' : self.resumeaction }
+            self.jsonRoot = { 'reqid' : self.reqid, 'reqtype' : self.reqtype, 'series' : self.series, 'archive' : self.archive, 'retention' : self.retention, 'tapegroup' : self.tapegroup, 'resumeaction' : self.resumeaction, 'resumestatus' : self.resumestatus }
         super(ResumeResponse, self).createContent()
         
     def logMsg(self):
@@ -731,15 +737,16 @@ if __name__ == "__main__":
                             raise Exception('invalidArgument', 'Cannot resume an existing request. There is no pending request for client ' + client + '.')
                         
                         # Figure out if client should make a pollDump or pollComplete request.
+                        respStatus = pendStatus.upper()
                         if pendStatus.upper() == 'N' or pendStatus.upper() == 'P' or pendStatus.upper() == 'D':
                             respAction = 'polldump'
-                        elif pendStatus.upper() == 'I' or pendStatus.upper() == 'C':
+                        elif pendStatus.upper() == 'I' or pendStatus.upper() == 'C' or pendStatus.upper() == 'A':
                             respAction = 'pollcomplete'
                         else:
                             # Error response.
                             raise Exception('requestFailed', 'There was an error processing your request. Please try again or contact the JSOC.')
                     
-                        resp = ResumeResponse(log=rsLog, status=STATUS_REQUEST_RESUMING, msg='To continue, make a ' + respAction.lower() + ' request.', reqid=pendRequestID, reqtype=pendAction, series=pendSeriesList.split(','), archive=pendArchive, retention=pendRetention, tapegroup=pendTapegroup, resumeaction=respAction, client=client)
+                        resp = ResumeResponse(log=rsLog, status=STATUS_REQUEST_RESUMING, msg='To continue, make a ' + respAction.lower() + ' request.', reqid=pendRequestID, reqtype=pendAction, series=pendSeriesList.split(','), archive=pendArchive, retention=pendRetention, tapegroup=pendTapegroup, resumeaction=respAction, resumestatus=respStatus, client=client)
                         resp.logMsg()
                         resp.send()
                     elif action.lower() == 'subscribe' or action.lower() == 'resubscribe':
@@ -829,17 +836,21 @@ if __name__ == "__main__":
                                 raise Exception('invalidRequest', 'You cannot poll for dump-completion of request ' + str(reqid) + '. That request is not pending.')
                             else:
                                 raise Exception('invalidRequest', 'You cannot poll for completion of request ' + str(reqid) + '. That request is not pending.')
-                    
+
+                        rsLog.writeInfo([ action.lower() + ' request for a ' + pendAction.lower() + ' pending request' ])
 
                         # Now, we have to poll on the pending request, waiting for manage-subs.py to reply with:
                         #   D - dump complete
                         #   C - complete (clean-up is done)
                         #   E - error
                         if pendStatus.upper() == 'N' or pendStatus.upper() == 'P' or pendStatus.upper() == 'D':
-                            if action.lower() != 'polldump':
-                                raise Exception('invalidArgument', 'You must send a polldump request to continue with the subscription process.')
+                            if pendAction.lower() == 'unsubscribe':
+                                if action.lower() != 'pollcomplete':
+                                    raise Exception('invalidArgument', 'You must send a pollcomplete request to continue with the un-subscription process.')
+                            else:
+                                if action.lower() != 'polldump':
+                                    raise Exception('invalidArgument', 'You must send a polldump request to continue with the subscription process.')
                             if pendStatus.upper() == 'D':
-                        
                                 # The client acknowledges that the dump is ready to be downloaded and applied.
                                 try:
                                     # Slave database.
