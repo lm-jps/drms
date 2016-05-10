@@ -590,6 +590,7 @@ if __name__ == "__main__":
 
                             resuming = True
                             resumeAction = info['resumeaction']
+                            resumeStatus = info['resumestatus'].upper()
                             log.writeInfo([ 'Found existing request at server: reqid=' + str(reqId) + ', reqtype=' + reqType + ', series=' + ','.join(seriesList) + ', archive=' + str(archive) + ', retention=' + str(retention) + ', tapegroup=' + str(tapeGroup) ])
                         else:
                             reqType = arguments.getArg('reqtype').lower()
@@ -701,7 +702,7 @@ if __name__ == "__main__":
                 
                                 # Make sure there is at least one series and make sure that the series exist locally and 
                                 # make sure that the client is currently subscribed to these series.
-                                if len(series) < 1:
+                                if len(seriesList) < 1:
                                     raise Exception('invalidArgument', 'Please provide one or more series from which you would like to un-subscribe.')
 
                                 for series in seriesList:
@@ -747,71 +748,81 @@ if __name__ == "__main__":
 
                         # Back to the case statements.
                         if reqType == 'subscribe' or reqType == 'resubscribe':
-                            # poll for dump file.
-                            log.writeInfo([ 'Polling for dump file.' ])
-                            cgiArgs = { 'action' : 'polldump', 'client' : client, 'reqid' : reqId}
-                            urlArgs = urllib.parse.urlencode(cgiArgs) # For use with HTTP GET requests (not POST).
+                            if !resuming or resumeAction.lower() == 'polldump':
+                                # poll for dump file.
+                                log.writeInfo([ 'Polling for dump file.' ])
+                                cgiArgs = { 'action' : 'polldump', 'client' : client, 'reqid' : reqId}
+                                urlArgs = urllib.parse.urlencode(cgiArgs) # For use with HTTP GET requests (not POST).
 
-                            while (resuming and info['status'] == STATUS_REQUEST_RESUMING) or info['status'] == STATUS_REQUEST_QUEUED or info['status'] == STATUS_REQUEST_PROCESSING:
-                                log.writeInfo([ 'Calling cgi with URL: ' + serviceURL ])
-                                log.writeInfo([ 'cgi args: ' + json.dumps(cgiArgs) ])
-                                with urllib.request.urlopen(serviceURL + '?' + urlArgs) as response:
-                                    info = json.loads(response.read().decode('UTF-8'))
-                                    if 'status' not in info or 'msg' not in info:
-                                        raise Exception('subService', 'Request failure: ' + STATUS_ERR_INTERNAL + '.')
-                                    log.writeInfo([ 'cgi response: ' + info['msg'] + ' Response status: ' + info['status'] + '.'])
-                                    time.sleep(5)
+                                while (resuming and info['status'] == STATUS_REQUEST_RESUMING) or info['status'] == STATUS_REQUEST_QUEUED or info['status'] == STATUS_REQUEST_PROCESSING:
+                                    log.writeInfo([ 'Calling cgi with URL: ' + serviceURL ])
+                                    log.writeInfo([ 'cgi args: ' + json.dumps(cgiArgs) ])
+                                    with urllib.request.urlopen(serviceURL + '?' + urlArgs) as response:
+                                        info = json.loads(response.read().decode('UTF-8'))
+                                        if 'status' not in info or 'msg' not in info:
+                                            raise Exception('subService', 'Request failure: ' + STATUS_ERR_INTERNAL + '.')
+                                        log.writeInfo([ 'cgi response: ' + info['msg'] + ' Response status: ' + info['status'] + '.'])
+                                        time.sleep(5)
 
-                            if info['status'] != STATUS_DUMP_READY:
-                                raise Exception('subService', 'Unexpected response from subscription service: ' + info['status'] + '.')
+                                if info['status'] != STATUS_DUMP_READY:
+                                    raise Exception('subService', 'Unexpected response from subscription service: ' + info['status'] + '.')
 
                             # Download create-ns/dump-file tarball.
-                            scheme, netloc, path, query, frag = urllib.parse.urlsplit(arguments.getArg('kSubXfer'))
-                            xferURL = urllib.parse.urlunsplit((scheme, netloc, os.path.join(path, client + '.sql.tar.gz'), None, None))
-                            dest = os.path.join(arguments.getArg('kLocalWorkingDir'), client + '.sql.tar.gz')
-                            dl = SmartDL(xferURL, dest)
-                            dl.start()
+                            if !resuming or resumeStatus == 'A':
+                                scheme, netloc, path, query, frag = urllib.parse.urlsplit(arguments.getArg('kSubXfer'))
+                                xferURL = urllib.parse.urlunsplit((scheme, netloc, os.path.join(path, client + '.sql.tar.gz'), None, None))
+                                dest = os.path.join(arguments.getArg('kLocalWorkingDir'), client + '.sql.tar.gz')
+
+                                # SmartDL downloads the file via multiple streams into temporary files. It combines the multiple
+                                # files into a single destination file when the download completes. So, if the destination file
+                                # exists, the download completed and was successful.
+                                if not os.path.exists(dest):
+                                    dl = SmartDL(xferURL, dest)
+                                    dl.start()
             
-                            # Extract files from tarball.
-                            with tarfile.open(dl.get_dest()) as tar:
-                                dest = arguments.getArg('kLocalWorkingDir')
+                                # Extract files from tarball.
+                                with tarfile.open(dl.get_dest()) as tar:
+                                    dest = arguments.getArg('kLocalWorkingDir')
 
-                                if reqType == 'subscribe' and not dbSchemaExists(conn, schema):
-                                    # create-ns    
-                                    createNsMember = tar.getmember(client + '.' + schema + '.' + 'createns.sql')
-                                    tar.extract(createNsMember, dest)
+                                    if reqType == 'subscribe' and not dbSchemaExists(conn, schema):
+                                        # create-ns    
+                                        createNsMember = tar.getmember(client + '.' + schema + '.' + 'createns.sql')
+                                        tar.extract(createNsMember, dest)
 
-                                dumpMember = tar.getmember(client + '.subscribe_series.sql')
-                                tar.extract(dumpMember, dest)
+                                    dumpMember = tar.getmember(client + '.subscribe_series.sql')
+                                    tar.extract(dumpMember, dest)
 
-                            createNsFile = os.path.join(arguments.getArg('kLocalWorkingDir'), client + '.' + schema + '.' + 'createns.sql')
-                            dumpFile = os.path.join(arguments.getArg('kLocalWorkingDir'), client + '.subscribe_series.sql')
+                                createNsFile = os.path.join(arguments.getArg('kLocalWorkingDir'), client + '.' + schema + '.' + 'createns.sql')
+                                dumpFile = os.path.join(arguments.getArg('kLocalWorkingDir'), client + '.subscribe_series.sql')
                             
-                            # Apply the series-schema-creation SQL.
-                            if reqType == 'subscribe':
-                                # Check for the existence of the schema. 
-                                if not dbSchemaExists(conn, schema):
-                                    # Ingest createns.sql. Will raise if a problem occurs. When that happens, the cursor is rolled back.
-                                    ingestCreateNsFile(createNsFile, arguments.getArg('PSQL').strip(" '" + '"'), arguments.getArg('pg_host'), str(arguments.getArg('pg_port')), arguments.getArg('pg_dbname'), arguments.getArg('pg_user'), log)
-                                    log.writeInfo([ 'Successfully ingested createNs file: ' + createNsFile + '.' ])
+                                # Apply the series-schema-creation SQL.
+                                if reqType == 'subscribe':
+                                    # Check for the existence of the schema. 
+                                    if not dbSchemaExists(conn, schema):
+                                        # Ingest createns.sql. Will raise if a problem occurs. When that happens, the cursor is rolled back.
+                                        ingestCreateNsFile(createNsFile, arguments.getArg('PSQL').strip(" '" + '"'), arguments.getArg('pg_host'), str(arguments.getArg('pg_port')), arguments.getArg('pg_dbname'), arguments.getArg('pg_user'), log)
+                                        log.writeInfo([ 'Successfully ingested createNs file: ' + createNsFile + '.' ])
 
-                            # Apply the series-creation (new subscriptions only) / _jsoc-creation (new site only) / series-population SQL. This is a bit tricky.
-                            # We can apply each SQL command as we read it from the file. In theory, these commands could span multiple lines. Commands are separated
-                            # by semicolons which are not necessarily followed by newlines. But there could be semicolons in the strings of commands, and various forms
-                            # of escaping to deal with. Yuck! We'd need a heavy-weight parser to do this in a general way. However, the dump file has a 
-                            # specific format which we will exploit.
-                            # 
-                            # psycopg2 does not provide a means for piping an SQL file to the database - end of story. If you read a file into memory to use the 
-                            # cursor.execute() command, it reads the WHOLE file into memory before executing cursor.execute(). So, we HAVE TO parse the SQL file
-                            # in some way. 
-                            #
-                            # If reqType == 'subscribe', then the sql will create a new series and populate it. 
-                            # If reqType == 'resubscribe', then the sql will truncate the 'series table' and reset the series-table sequence
-                            # only.
-                            #
-                            # Will raise if a problem occurs. When that happens, the cursor is rolled back.
-                            ingestDumpFile(dumpFile, arguments.getArg('PSQL').strip(" '" + '"'), arguments.getArg('pg_host'), str(arguments.getArg('pg_port')), arguments.getArg('pg_dbname'), arguments.getArg('pg_user'), log)
-                            log.writeInfo([ 'Successfully ingested dump file: ' + dumpFile + '.' ])
+                                # Apply the series-creation (new subscriptions only) / _jsoc-creation (new site only) / series-population SQL. This is a bit tricky.
+                                # We can apply each SQL command as we read it from the file. In theory, these commands could span multiple lines. Commands are separated
+                                # by semicolons which are not necessarily followed by newlines. But there could be semicolons in the strings of commands, and various forms
+                                # of escaping to deal with. Yuck! We'd need a heavy-weight parser to do this in a general way. However, the dump file has a 
+                                # specific format which we will exploit.
+                                # 
+                                # psycopg2 does not provide a means for piping an SQL file to the database - end of story. If you read a file into memory to use the 
+                                # cursor.execute() command, it reads the WHOLE file into memory before executing cursor.execute(). So, we HAVE TO parse the SQL file
+                                # in some way. 
+                                #
+                                # If reqType == 'subscribe', then the sql will create a new series and populate it. 
+                                # If reqType == 'resubscribe', then the sql will truncate the 'series table' and reset the series-table sequence
+                                # only.
+                                #
+                                # Will raise if a problem occurs. When that happens, the cursor is rolled back.
+                                ingestDumpFile(dumpFile, arguments.getArg('PSQL').strip(" '" + '"'), arguments.getArg('pg_host'), str(arguments.getArg('pg_port')), arguments.getArg('pg_dbname'), arguments.getArg('pg_user'), log)
+                                log.writeInfo([ 'Successfully ingested dump file: ' + dumpFile + '.' ])
+
+                            # We want to issue the pollcomplete request regardless of our resuming status (if we are resuming
+                            # we already issued the polldump request above, if we needed to).
 
                             # Send a pollcomplete request to the subscription service. This will set status to 'I' to tell the server to
                             # clean up and finalize the request. After submitting this request, the Slony logs
@@ -827,7 +838,7 @@ if __name__ == "__main__":
                             while info['status'] == STATUS_REQUEST_FINALIZING:
                                 with urllib.request.urlopen(serviceURL + '?' + urlArgs) as response:
                                     info = json.loads(response.read().decode('UTF-8'))
-                                    time.sleep(5)
+                                    time.sleep(2)
                     
                             if info['status'] != STATUS_REQUEST_COMPLETE:
                                 # Must undo (If newsite, remove _jsoc. If new schema, remove schema and remove schema's entry from admin.ns. If
@@ -843,7 +854,22 @@ if __name__ == "__main__":
                 
                                 pass
                         elif reqType == 'unsubscribe':
-                            pass
+                            cgiArgs = { 'action' : 'pollcomplete', 'client' : client, 'reqid' : reqId}
+                            urlArgs = urllib.parse.urlencode(cgiArgs) # For use with HTTP GET requests (not POST).
+
+                            # We just sent the first pollcomplete request. This tells the server to clean up and finalize, so 
+                            # the request is in the STATUS_REQUEST_FINALIZING state.
+                            info = {}
+                            info['status'] = STATUS_REQUEST_PROCESSING
+
+                            while info['status'] == STATUS_REQUEST_QUEUED or info['status'] == STATUS_REQUEST_PROCESSING:
+                                with urllib.request.urlopen(serviceURL + '?' + urlArgs) as response:
+                                    info = json.loads(response.read().decode('UTF-8'))
+                                    time.sleep(2)
+                                    
+                            if info['status'] != STATUS_REQUEST_COMPLETE:
+                                raise Exception('subService', info['status'], 'Unexpected response from subscription service: ' + info['status'])
+
                 except (psycopg2.DatabaseError, psycopg2.OperationalError) as exc:
                     # Closes the cursor and connection
                     if hasattr(exc, 'diag') and hasattr(exc.diag, 'message_primary') and exc.diag.message_primary:
