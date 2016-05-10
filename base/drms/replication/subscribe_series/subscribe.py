@@ -781,7 +781,7 @@ if __name__ == "__main__":
                                     dl.start()
             
                                 # Extract files from tarball.
-                                with tarfile.open(dl.get_dest()) as tar:
+                                with tarfile.open(dest) as tar:
                                     dest = arguments.getArg('kLocalWorkingDir')
 
                                     if reqType == 'subscribe' and not dbSchemaExists(conn, schema):
