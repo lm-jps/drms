@@ -748,7 +748,7 @@ if __name__ == "__main__":
 
                         # Back to the case statements.
                         if reqType == 'subscribe' or reqType == 'resubscribe':
-                            if !resuming or resumeAction.lower() == 'polldump':
+                            if not resuming or resumeAction.lower() == 'polldump':
                                 # poll for dump file.
                                 log.writeInfo([ 'Polling for dump file.' ])
                                 cgiArgs = { 'action' : 'polldump', 'client' : client, 'reqid' : reqId}
@@ -768,7 +768,7 @@ if __name__ == "__main__":
                                     raise Exception('subService', 'Unexpected response from subscription service: ' + info['status'] + '.')
 
                             # Download create-ns/dump-file tarball.
-                            if !resuming or resumeStatus == 'A':
+                            if not resuming or resumeStatus == 'A':
                                 scheme, netloc, path, query, frag = urllib.parse.urlsplit(arguments.getArg('kSubXfer'))
                                 xferURL = urllib.parse.urlunsplit((scheme, netloc, os.path.join(path, client + '.sql.tar.gz'), None, None))
                                 dest = os.path.join(arguments.getArg('kLocalWorkingDir'), client + '.sql.tar.gz')
