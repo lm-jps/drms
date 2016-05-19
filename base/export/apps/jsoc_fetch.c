@@ -3025,40 +3025,38 @@ check for requestor to be valid remote DRMS site
         
       while (seg = drms_record_nextseg(rec, &segp, 0))
       {
-          /* If this is a linked segment, then follow the link. */
-          if (seg->info->islink)
-          {
-              tRec = drms_link_follow(rec, seg->info->linkname, &status);
-              tSeg = hcon_lookup_lower(&tRec->segments, seg->info->target_seg);
+            /* If this is a linked segment, then follow the link. */
+            if (seg->info->islink)
+            {
+                /* Do not use drms_link_follow(). That API function does not recursively follow links. And it 
+                 * does not fetch the target segment in the linked record. drms_segment_lookup() does
+                 * both of these tasks. */
+                tSeg = drms_segment_lookup(rec, seg->info->name);
+                
+                if (!tSeg)
+                {
+                    /* No link set for this record, or segment struct is missing from target record. */
 
-              if (status == DRMS_ERROR_LINKNOTSET)
-              {
-                  /* No link set for this record. */
-                  
-                  /* The whole point of this section of code is to:
-                   * 1. Determine if all segment files are online,
-                   * 2. See if there is at least one segment file to export, and 
-                   * 3. Count the number of bytes in all the segment files being exported. 
-                   *
-                   * So, if there is no link, this is the same as saying there is no segment file. */
-                  status = DRMS_SUCCESS;
-                  continue;
-              }
-              else if (status != DRMS_SUCCESS || tRec == NULL)
-              {
-                  /* This is a more serious problem where we couldn't follow the link - bail. */
-                  status = DRMS_ERROR_BADLINK;
-                  JSONDIE("Problem following link to target segment.");
-              }
-              
-              /* We have a single segment linked to a segment in another record. */
-              segrec = tRec; /* Use the target rec (aia.lev1), not the source rec (aia.lev1_euv_12s). */
-          }
-          else
-          {
-              tSeg = seg;
-              segrec = seg->record;
-          }
+                    /* The whole point of this section of code is to:
+                    * 1. Determine if all segment files are online,
+                    * 2. See if there is at least one segment file to export, and 
+                    * 3. Count the number of bytes in all the segment files being exported. 
+                    *
+                    * So, if there is no link, this is the same as saying there is no segment file. */
+                    status = DRMS_SUCCESS;
+                    continue;
+                }
+                
+                tRec = tSeg->record;
+
+                /* We have a single segment linked to a segment in another record. */
+                segrec = tRec; /* Use the target rec (aia.lev1), not the source rec (aia.lev1_euv_12s). */
+            }
+            else
+            {
+                tSeg = seg;
+                segrec = seg->record;
+            }
 
           /* If all segments being exported are stored uncompressed, note that. This will determine which payload limit is used. Err on
            * the conservative side. The smaller data limits are used if data are stored compressed (and subsequently exported), so
@@ -3078,17 +3076,40 @@ check for requestor to be valid remote DRMS site
           {
               /* There was a request for an sunum of -1. */
               all_online = 0;
+              
+              /* There is no SU. Break out of segment loop. */
+              break;
           }
           else if (*(sinfo->online_loc) == '\0')
           {
-             fprintf(stderr, "JSOC_FETCH Bad sunum %lld for recnum %s:%lld in RecordSet: %s\n", segrec->sunum, segrec->seriesinfo->seriesname, segrec->recnum, dsquery);
+              /* If we get here, then we have a bad SUNUM. */
+              fprintf(stderr, "JSOC_FETCH Bad sunum %lld for recnum %s:%lld in RecordSet: %s\n", segrec->sunum, segrec->seriesinfo->seriesname, segrec->recnum, dsquery);
               // no longer die here, leave it to the export process to deal with missing segments
               all_online = 0;
+              /* Bad SUNUM. Break out of segment loop. */
+              break;
           }
           else if (strcmp(sinfo->online_status,"N") == 0)
+          {
+              /* Good SUNUM, but data are offline. We should estimate the segment size by using the entire SU size. There is nothing else we can
+               * do since we cannot bring the SU online in jsoc_fetch (it is a CGI program that needs to return quickly) and SUMS does 
+               * not store file-size info within the SU. We should break out of the segment loop here anyway - there is no SU. */
               all_online = 0;
+              
+              /* Use sinfo to get SU size info. Must cast double to 64-bit integer - SUMS design problem. */
+              size += (long long)sinfo->bytes;
+              if ((long long)sinfo->bytes > 0)
+              {
+                  /* Assume the user wants a least one segment file in the SU. */
+                  segcount += 1;
+              }
+              
+              /* Good SUNUM, but offline. Break out of segment loop. */
+              break;
+          }
           else
-          { // found good sinfo info
+          { 
+              /* The SU is online. */
               struct stat buf;
               char path[DRMS_MAXPATHLEN];
               //drms_record_directory(segrec, path, 0); I think this was a typo.

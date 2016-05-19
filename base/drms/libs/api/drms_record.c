@@ -3848,6 +3848,9 @@ static int drms_stage_records_internal(DRMS_RecordSet_t *rs, int retrieve, int d
     if (rs->n >= 1)
     {
         DRMS_RecordSet_t *linkedrecs = NULL;
+        DRMS_RecordSet_t *mergedrecs = NULL;
+        DRMS_RecordSet_t *workingRS = NULL;
+        int iRec;
         int nSUNUMs;
         int currRec;
         DRMS_Record_t *rec = NULL;
@@ -3864,7 +3867,66 @@ static int drms_stage_records_internal(DRMS_RecordSet_t *rs, int retrieve, int d
          * have been fetched from the DRMS database. Call a function to fetch them. The function will not attempt 
          * to re-fetch records that have already been previously fetched. 
          */
-        linkedrecs = drms_record_retrievelinks(env, rs, &status);
+        workingRS = rs;
+        while (1)
+        {
+            linkedrecs = drms_record_retrievelinks(env, workingRS, &status);
+            
+            if (workingRS != rs)
+            {
+                for (iRec = 0; iRec < workingRS->n; iRec++)
+                {
+                    workingRS->records[iRec] = NULL; /* Relinquish ownership to mergedrecs. */
+                }
+            
+                drms_close_records(workingRS, DRMS_FREE_RECORD);
+            }
+
+            if (linkedrecs && linkedrecs->n > 0)
+            {
+                if (!mergedrecs)
+                {
+                    mergedrecs = calloc(1, sizeof(DRMS_RecordSet_t));
+                
+                    if (!mergedrecs)
+                    {
+                        status = DRMS_ERROR_OUTOFMEMORY;
+                        break;
+                    }
+                }
+            
+                for (iRec = 0; iRec < linkedrecs->n; iRec++)
+                {
+                    drms_merge_record(mergedrecs, linkedrecs->records[iRec]);
+                }
+                
+                workingRS = linkedrecs;
+            }
+            else
+            {
+                if (linkedrecs)
+                {
+                    drms_close_records(linkedrecs, DRMS_FREE_RECORD);
+                    linkedrecs = NULL;
+                }
+                
+                break;
+            }
+        }
+        
+        linkedrecs = mergedrecs;
+        
+        linkedrecs->ss_currentrecs = (int *)malloc(sizeof(int));
+        
+        /* drms_recordset_fetchnext() uses this. */
+        if (linkedrecs->ss_currentrecs)
+        {
+            *linkedrecs->ss_currentrecs = -1;
+        }
+        else
+        {
+            status = DRMS_ERROR_OUTOFMEMORY;
+        }
         
         if (status != DRMS_SUCCESS)
         {
@@ -4116,7 +4178,7 @@ static int drms_stage_records_internal(DRMS_RecordSet_t *rs, int retrieve, int d
                 free(linkedrecs->ss_currentrecs);
             }
             
-            /* The records array needs to be freed to. Just don't free the DRMS_Record_ts that records[iRed] point to. */
+            /* The records array needs to be freed too. Just don't free the DRMS_Record_ts that records[iRed] point to. */
             if (linkedrecs->records)
             {
                 free(linkedrecs->records);
@@ -4257,6 +4319,7 @@ static HContainer_t *FindAllRecsWithSUs(DRMS_Record_t **recs, int nRecs, int *nA
    DRMS_Segment_t *seg = NULL;
    int iRec;
    HIterator_t *lastseg = NULL;
+   DRMS_Segment_t *tSeg = NULL;
    DRMS_Record_t *tRec = NULL;
    int istat = DRMS_SUCCESS;
 
@@ -4266,19 +4329,17 @@ static HContainer_t *FindAllRecsWithSUs(DRMS_Record_t **recs, int nRecs, int *nA
       {
          if (seg->info->islink)
          {
-            tRec = drms_link_follow(recs[iRec], seg->info->linkname, &istat);
-
-            if (istat == DRMS_ERROR_LINKNOTSET)
+            // tRec = drms_link_follow(recs[iRec], seg->info->linkname, &istat);
+            tSeg = drms_segment_lookup(recs[iRec], seg->info->name);
+            
+            if (!tSeg)
             {
-               /* No link set for this record - skip and continue. */
+
+               /* No link set for this record or missing segment struct - skip and continue. */
                continue;
             }
-            else if (istat != DRMS_SUCCESS || tRec == NULL)
-            {
-               /* This is a more serious problem where we couldn't follow the link - bail. */
-               istat = DRMS_ERROR_BADLINK;
-               break;
-            }
+            
+            tRec = tSeg->record;
 
             /* We have a single segment linked to a segment in another record. */
             if (InsertRec(&allRecs, tRec, &nsunums))
