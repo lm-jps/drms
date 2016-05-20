@@ -3880,6 +3880,7 @@ static int drms_stage_records_internal(DRMS_RecordSet_t *rs, int retrieve, int d
                 }
             
                 drms_close_records(workingRS, DRMS_FREE_RECORD);
+                workingRS = NULL;
             }
 
             if (linkedrecs && linkedrecs->n > 0)
@@ -3916,16 +3917,19 @@ static int drms_stage_records_internal(DRMS_RecordSet_t *rs, int retrieve, int d
         
         linkedrecs = mergedrecs;
         
-        linkedrecs->ss_currentrecs = (int *)malloc(sizeof(int));
+        if (linkedrecs)
+        {
+            linkedrecs->ss_currentrecs = (int *)malloc(sizeof(int));
         
-        /* drms_recordset_fetchnext() uses this. */
-        if (linkedrecs->ss_currentrecs)
-        {
-            *linkedrecs->ss_currentrecs = -1;
-        }
-        else
-        {
-            status = DRMS_ERROR_OUTOFMEMORY;
+            /* drms_recordset_fetchnext() uses this. */
+            if (linkedrecs->ss_currentrecs)
+            {
+                *linkedrecs->ss_currentrecs = -1;
+            }
+            else
+            {
+                status = DRMS_ERROR_OUTOFMEMORY;
+            }
         }
         
         if (status != DRMS_SUCCESS)
