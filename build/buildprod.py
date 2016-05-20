@@ -77,7 +77,8 @@ os.environ['JSOC_DEBUG'] = '0'
 os.environ['JSOCROOT'] = PROD_ROOTDIR + '/JSOC'
 
 # Unset 'GLOBALHSTAGOVERRIDE'
-del os.environ['GLOBALHSTAGOVERRIDE']
+if 'GLOBALHSTAGOVERRIDE' in os.environ:
+    del os.environ['GLOBALHSTAGOVERRIDE']
 
 try:
     with Chdir(PROD_ROOTDIR + '/' + WAYSTATION + '/JSOC') as ret:
