@@ -16,7 +16,7 @@ use vars qw (@ISA @EXPORT $VERSION);
 require Exporter;
 
 @ISA = qw (Exporter);
-@EXPORT = qw(logMessage logTarget logThreshold logDepth fdebug debug info notice warning err error crit critical alert emerg emergency); 
+@EXPORT = qw(logMessage logTargetFD logTarget logThreshold logDepth fdebug debug info notice warning err error crit critical alert emerg emergency); 
 
 $VERSION = 1.00_00;
 our @MONTH = qw(Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec);
@@ -59,6 +59,20 @@ BEGIN
 											};
     }
 
+}
+
+sub logTargetFD
+{
+    my ($target, $fh) = @_;
+
+    unless ( $__fDescCache{$target}->{fd} ) 
+    {
+        # ART 2012.01.20 - try to turn on autoflushing of this stream.
+        $fh->autoflush(1);
+
+        $__fDescCache{$target}->{fd} = $fh;
+        $__fDescCache{$target}->{fileName} = 'NA';
+    }
 }
 
 sub logTarget

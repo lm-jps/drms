@@ -131,12 +131,13 @@ my($insubcrit);
 my($subscribelockpath);
 my($anode);
 
-my ($repro,$begin,$end,$repronodes,@repronodelst,%repronodeH);
+my ($repro,$begin,$end,$repronodes,@repronodelst,%repronodeH, $logToStdout);
 my $opts = GetOptions ("help|h|H" => \&usage,
                        "repro"    => \$repro,
                        "begin|beg=i"    => \$begin,
                        "end=i"    => \$end,
-                       "nodes=s"  => \$repronodes);
+                       "nodes=s"  => \$repronodes,
+                       "s"        => \$logToStdout);
 
 my $config_file=$ARGV[0] or die ("No config_file specified");
 my $parselock=$ARGV[1] or die ("No parse lock file specified");
@@ -197,10 +198,17 @@ my $complete = {
 
 ## setting log file and targets
 logThreshold("info");
+
+if ($logToStdout)
+{
+    map { logTargetFD($_, *STDOUT) } qw(notice info error emergency warning debug);
+}
+else
+{
+    map { logTarget($_,$config{'kPSLprepLog'}) } qw(notice info error emergency warning debug);
+}
+
 debug "Starting parse_slon_logs.pl";
-
-map { logTarget($_,$config{'kPSLprepLog'}) } qw(notice info error emergency warning debug);
-
 debug "$_=$config{$_}\n" foreach ( sort keys %config );
 debug("Checkpoint A.");
 
