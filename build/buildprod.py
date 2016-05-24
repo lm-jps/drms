@@ -76,14 +76,15 @@ os.environ['JSOC_DEBUG'] = '0'
 # Make sure the JSOCROOT is PROD_ROOTDIR + '/JSOC'
 os.environ['JSOCROOT'] = PROD_ROOTDIR + '/JSOC'
 
-# Unset 'GLOBALHSTAGOVERRIDE'
-if 'GLOBALHSTAGOVERRIDE' in os.environ:
-    del os.environ['GLOBALHSTAGOVERRIDE']
-
 try:
     with Chdir(PROD_ROOTDIR + '/' + WAYSTATION + '/JSOC') as ret:
         # os.chdir does NOT change the environment variable $PWD. But our make system relies on PWD being the current directory.
         os.environ['PWD'] = os.path.realpath(os.getcwd())
+        
+        # Set 'GLOBALHSTAGOVERRIDE'
+        if 'GLOBALHSTAGOVERRIDE' in os.environ:
+            del os.environ['GLOBALHSTAGOVERRIDE']
+        os.environ['GLOBALHSTAGOVERRIDE'] = 'globalhs'
 
         if optD['full']:
             cmdList = ['./configure']
@@ -96,6 +97,10 @@ try:
         cmdList = ['/usr/bin/make', 'dsds']
         check_call(cmdList)
         if optD['full']:
+            # Unset 'GLOBALHSTAGOVERRIDE'
+            if 'GLOBALHSTAGOVERRIDE' in os.environ:
+                del os.environ['GLOBALHSTAGOVERRIDE']
+
             cmdList = ['/usr/bin/make', 'globalhs',]
             check_call(cmdList)
 
