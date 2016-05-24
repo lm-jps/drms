@@ -3850,6 +3850,9 @@ static int drms_stage_records_internal(DRMS_RecordSet_t *rs, int retrieve, int d
         DRMS_RecordSet_t *linkedrecs = NULL;
         DRMS_RecordSet_t *mergedrecs = NULL;
         DRMS_RecordSet_t *workingRS = NULL;
+        DRMS_RecordSet_t *workingRSDupeFree = NULL; /* This will get allocated - must free. */
+        HContainer_t *mapRec = NULL; /* Keep track of which linked records were found. */
+        char hashkey[DRMS_MAXHASHKEYLEN];
         int iRec;
         int nSUNUMs;
         int currRec;
@@ -3881,10 +3884,41 @@ static int drms_stage_records_internal(DRMS_RecordSet_t *rs, int retrieve, int d
             
                 drms_close_records(workingRS, DRMS_FREE_RECORD);
                 workingRS = NULL;
+                workingRSDupeFree = NULL;
             }
 
             if (linkedrecs && linkedrecs->n > 0)
             {
+                if (!mapRec)
+                {
+                    mapRec = hcon_create(sizeof(DRMS_Record_t *), DRMS_MAXHASHKEYLEN, NULL, NULL, NULL, NULL, 0);
+                    if (!mapRec)
+                    {
+                        status = DRMS_ERROR_OUTOFMEMORY;
+                        break;
+                    }
+                }
+                
+                if (!workingRSDupeFree)
+                {
+                    workingRSDupeFree = calloc(1, sizeof(DRMS_RecordSet_t));
+                    
+                    if (!workingRSDupeFree)
+                    {
+                        status = DRMS_ERROR_OUTOFMEMORY;
+                        break;
+                    }
+                    
+                    /* Need this for drms_recordset_fetchnext(), which is called by drms_record_retrievelinks(). */
+                    workingRSDupeFree->ss_currentrecs = (int *)malloc(sizeof(int));
+                    
+                    if (!workingRSDupeFree->ss_currentrecs)
+                    {
+                        status = DRMS_ERROR_OUTOFMEMORY;
+                        break;
+                    }
+                }
+                
                 if (!mergedrecs)
                 {
                     mergedrecs = calloc(1, sizeof(DRMS_RecordSet_t));
@@ -3898,10 +3932,26 @@ static int drms_stage_records_internal(DRMS_RecordSet_t *rs, int retrieve, int d
             
                 for (iRec = 0; iRec < linkedrecs->n; iRec++)
                 {
-                    drms_merge_record(mergedrecs, linkedrecs->records[iRec]);
+                    /* Because a different records can link to the same target record, there could be duplicate
+                     * records in linkedrecs. We need to eliminate duplicate records before putting them
+                     * into mergedrecs.
+                     */
+                    drms_make_hashkey(hashkey, linkedrecs->records[iRec]->seriesinfo->seriesname, linkedrecs->records[iRec]->recnum);
+
+                    if (!hcon_member_lower(mapRec, hashkey))
+                    {
+                        drms_merge_record(mergedrecs, linkedrecs->records[iRec]);
+                        hcon_insert_lower(mapRec, hashkey, &(linkedrecs->records[iRec]));
+                        drms_merge_record(workingRSDupeFree, linkedrecs->records[iRec]);
+                    }
+                    
+                    /* Both workingRSDupeFree and mergedrecs have a pointer to this record. After we retrieve links for 
+                     * the set of records in workingRSDupeFree, we will remove the pointer from workingRSDupeFree to
+                     * this record as well, leaving only the pointer from mergedrecs to this record. */
+                    linkedrecs->records[iRec] = NULL;
                 }
-                
-                workingRS = linkedrecs;
+
+                workingRS = workingRSDupeFree;
             }
             else
             {
@@ -3913,6 +3963,11 @@ static int drms_stage_records_internal(DRMS_RecordSet_t *rs, int retrieve, int d
                 
                 break;
             }
+        }
+        
+        if (mapRec)
+        {
+            hcon_destroy(&mapRec);
         }
         
         linkedrecs = mergedrecs;
