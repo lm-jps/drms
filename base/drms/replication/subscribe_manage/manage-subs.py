@@ -51,7 +51,7 @@ import argparse
 import io
 import signal
 import re
-import tarfile
+import gzip
 from subprocess import check_call, Popen, CalledProcessError
 import psycopg2
 from datetime import datetime, timedelta
@@ -88,6 +88,106 @@ LST_TABLE_SERIES = 'series'
 LST_TABLE_NODE = 'node'
 CFG_TABLE_NODE = 'node'
 
+NEW_SITE_SQL = """\
+-- ----------------------------------------------------------------------
+-- SCHEMA _<cluster>
+-- ----------------------------------------------------------------------
+CREATE SCHEMA _<cluster>;
+
+-- ----------------------------------------------------------------------
+-- TABLE sl_sequence_offline
+-- ----------------------------------------------------------------------
+CREATE TABLE _<cluster>.sl_sequence_offline (
+	seq_id				int4,
+	seq_relname			name NOT NULL,
+	seq_nspname			name NOT NULL,
+
+	CONSTRAINT "sl_sequence-pkey"
+		PRIMARY KEY (seq_id)
+);
+
+-- ----------------------------------------------------------------------
+-- TABLE sl_archive_tracking
+-- ----------------------------------------------------------------------
+CREATE TABLE _<cluster>.sl_archive_tracking (
+	at_counter			bigint,
+	at_created			timestamp,
+	at_applied			timestamp
+);
+
+-- -----------------------------------------------------------------------------
+-- FUNCTION sequenceSetValue_offline (seq_id, last_value)
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION _<cluster>.sequencesetvalue_offline(int4, int8) RETURNS int4
+AS '
+declare
+	p_seq_id			alias for $1;
+	p_last_value		alias for $2;
+	v_fqname			text;
+begin
+	-- ----
+	-- Get the sequences fully qualified name
+	-- ----
+	select "pg_catalog".quote_ident(seq_nspname) || ''.'' ||
+			"pg_catalog".quote_ident(seq_relname) into v_fqname
+		from _<cluster>.sl_sequence_offline
+		where seq_id = p_seq_id;
+	if not found then
+		raise exception ''Slony-I: sequence % not found'', p_seq_id;
+	end if;
+
+	-- ----
+	-- Update it to the new value
+	-- ----
+	execute ''select setval('''''' || v_fqname ||
+			'''''', '''''' || p_last_value || '''''')'';
+	return p_seq_id;
+end;
+' language plpgsql;
+-- ---------------------------------------------------------------------------------------
+-- FUNCTION finishTableAfterCopy(table_id)
+-- ---------------------------------------------------------------------------------------
+-- This can just be a simple stub function; it does not need to do anything...
+-- ---------------------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION _<cluster>.finishTableAfterCopy(int4) RETURNS int4 AS
+  'select 1'
+language sql;
+
+-- ---------------------------------------------------------------------------------------
+-- FUNCTION archiveTracking_offline (new_counter, created_timestamp)
+-- ---------------------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION _<cluster>.archivetracking_offline(int8, timestamp) RETURNS int8
+AS '
+declare
+	p_new_seq	alias for $1;
+	p_created	alias for $2;
+	v_exp_seq	int8;
+	v_old_seq	int8;
+begin
+	select at_counter into v_old_seq from _<cluster>.sl_archive_tracking;
+	if not found then
+		raise exception ''Slony-I: current archive tracking status not found'';
+	end if;
+
+	v_exp_seq := p_new_seq - 1;
+	if v_old_seq <> v_exp_seq then
+		raise exception ''Slony-I: node is on archive counter %, this archive log expects %'', 
+			v_old_seq, v_exp_seq;
+	end if;
+	raise notice ''Slony-I: Process archive with counter % created %'', p_new_seq, p_created;
+
+	update _<cluster>.sl_archive_tracking
+		set at_counter = p_new_seq,
+			at_created = p_created,
+			at_applied = CURRENT_TIMESTAMP;
+	return p_new_seq;
+end;
+' language plpgsql;
+
+"""
+
+def getNewSiteSQL(cluster):
+    return NEW_SITE_SQL.replace('<client>', cluster)
 
 def terminator(*args):
     # Raise the SystemExit exception (which will be caught by the __exit__() method below).
@@ -460,7 +560,12 @@ class Worker(threading.Thread):
         self.sqlgenArgFile = os.path.join(self.triggerDir, self.client + '-sqlgen.txt.tmp')
         self.saveState = False
         self.cleanTempOnStart = fclean
-    
+        self.replicationCluster = self.arguments.getArg('CLUSTERNAME')
+
+        self.slonDaemonLock = os.path.join(self.arguments.getArg('kServerLockDir'), 'slon_daemon_lock.txt')
+        self.masterSlonPIDFile = self.arguments.getArg('kMSMasterPIDFile')
+        self.slaveSlonPIDFile = self.arguments.getArg('kMSSlavePIDFile')
+
     def run(self):
         # There is at most one thread per client.
         errorMsg = None
@@ -629,8 +734,6 @@ class Worker(threading.Thread):
                         else:
                             newSiteStr = '0'
                     
-                        # 86 sql_gen. Instead do the work directly in manage-subs.py.
-                        # 1. We are going to dump a database table. Ensure the table exists in the slave database.
                         regExp = re.compile(r'\s*(\S+)\.(\S+)\s*')
                         matchObj = regExp.match(self.series[0].lower())
                         if matchObj is not None:
@@ -638,210 +741,119 @@ class Worker(threading.Thread):
                             table = matchObj.group(2)
                         else:
                             raise Exception('invalidArgument', 'Not a valid DRMS series name: ' + self.series[0].lower() + '.')
-                    
+
+                        # 86 sql_gen. Instead do the work directly in manage-subs.py.
+                        # 1. We are going to dump a database table. Ensure the table exists in the slave database.                    
                         if not dbTableExists(connSlave, ns, table):
                             raise Exception('invalidArgument', 'DB table ' + self.series[0].lower() + ' does not exist.')
                 
-                        # 2. Run createns for the schema of the series being subscribed to.
-                        cmdList = [ os.path.join(self.arguments.getArg('kModDir'), 'createns'), 'JSOC_DBHOST=' + self.arguments.getArg('SLAVEHOSTNAME'), 'ns=' + ns, 'nsgroup=user', 'dbusr=' + self.arguments.getArg('REPUSER') ]
-                        if not os.path.exists(self.triggerDir):
-                            os.mkdir(self.triggerDir)
-                            os.chmod(self.triggerDir, 0O2755)
-                        outFile = os.path.join(self.triggerDir, self.client + '.' + ns + '.createns.sql')
+                        if self.action == 'subscribe':
+                            # 2. Run createns for the schema of the series being subscribed to.
+                            cmdList = [ os.path.join(self.arguments.getArg('kModDir'), 'createns'), 'JSOC_DBHOST=' + self.arguments.getArg('SLAVEHOSTNAME'), 'ns=' + ns, 'nsgroup=user', 'dbusr=' + self.arguments.getArg('REPUSER') ]
+                            if not os.path.exists(self.triggerDir):
+                                os.mkdir(self.triggerDir)
+                                os.chmod(self.triggerDir, 0O2755)
+                            outFile = os.path.join(self.triggerDir, self.client + '.' + ns + '.createns.sql.gz')
                 
-                        wroteIntMsg = False
-                        with open(outFile, 'w') as fout:
-                            self.log.writeInfo([ 'Creating createns.sql file:' + ' '.join(cmdList) + '.' ])
-                            proc = Popen(cmdList, stdout=fout)
+                            wroteIntMsg = False
+                            with gzip.open(outFile, mode='wt', compresslevel=9, encoding='UTF8') as fout:
+                                self.log.writeInfo([ 'Creating createns.sql file:' + ' '.join(cmdList) + '.' ])
+                                print('BEGIN;', file=fout)
+                                print("SET CLIENT_ENCODING TO 'UTF8';", file=fout)
+                                fout.flush()
+                                proc = Popen(cmdList, stdout=fout)
             
-                            maxLoop = 60 # 1-minute timeout
-                            while True:
-                                if maxLoop <= 0:
-                                    raise Exception('sqlDump', 'Time-out waiting for dump file to be generated.')
+                                try:
+                                    self.reqTable.releaseLock()
             
-                                if not wroteIntMsg and self.sdEvent.isSet():
-                                    self.log.writeInfo([ 'Cannot interrupt dump-file generation. Send SIGKILL message to force termination.' ])
-                                    wroteIntMsg = True
-                                    # proc.kill()
-                                    # raise Exception('shutDown', 'Received shut-down message from main thread.')
-            
-                                if proc.poll() is not None:
-                                    self.writeStream.logLines() # Log all creatns output.
-                                    if proc.returncode != 0:
-                                        raise Exception('sqlDump', 'Failure generating dump file, createns returned ' + str(proc.returncode) + '.') 
-                                    break
-
-                                maxLoop -= 1
-                                time.sleep(1)
-                
-                        # 3. Run createtabstruct for the table of the series being subscribed to.
-                        cmdList = [ os.path.join(self.arguments.getArg('kModDir'), 'createtabstructure'), '-u', 'JSOC_DBHOST=' + self.arguments.getArg('SLAVEHOSTNAME'), 'in=' + self.series[0].lower(), 'out=' + self.series[0].lower(), 'archive=' + str(self.archive), 'retention=' + str(self.retention), 'tapegroup=' + str(self.tapegroup), 'owner=' + self.arguments.getArg('REPUSER') ]
-                        outFile = os.path.join(self.triggerDir, self.client + '.subscribe_series.sql')
-
-                        wroteIntMsg = False
-                        with open(outFile, 'w') as fout:
-                            print('BEGIN;', file=fout)
-                            print("SET CLIENT_ENCODING TO 'UTF8';", file=fout)
-                            fout.flush()
-                            self.log.writeInfo([ 'Dumping table structure: ' + ' '.join(cmdList) + '.' ])
-                            proc = Popen(cmdList, stdout=fout)
-                    
-                            self.reqTable.releaseLock()
-
-                            maxLoop = 60 # 1-minute timeout
-                            while True:
-                                if maxLoop <= 0:
-                                    raise Exception('sqlDump', 'Time-out waiting for dump file to be generated.')
-        
-                                if not wroteIntMsg and self.sdEvent.isSet():
-                                    self.log.writeInfo([ 'Cannot interrupt dump-file generation. Send SIGKILL message to force termination.' ])
-                                    wroteIntMsg = True
-                                    # proc.kill()
-                                    # raise Exception('shutDown', 'Received shut-down message from main thread.')
-        
-                                if proc.poll() is not None:
-                                    self.writeStream.logLines() # Log all createtabstructure output.
-                                    if proc.returncode != 0:
-                                        raise Exception('sqlDump', 'Failure generating dump file, createtabstructure returned ' + str(proc.returncode) + '.') 
-                                    break
-
-                                maxLoop -= 1
-                                time.sleep(1)
-
-                            self.reqTable.acquireLock()                            
-
-                        # 4. Run sdo_slony1_dump.sh and ensure it completed fine. APPEND output to outFile. sdo_slony1_dump.sh expects
-                        # three shell variables to be set: kJSOCRoot, kSMlogDir, and node. Originally, node was a shell variable set in
-                        # sql_gen from a command-line argument. sql_gen was a wrapper around sdo_slony1_dump.sh (it sourced the latter). 
-                        # Since sdo_slony1_dump.sh is a bash script, we can set three environment variables, and bash will read them. 
-                        # Set these via the Popen env object argument. BUT we can't simply set the env vars we want in the env argument.
-                        # If we do that, then the rest of the environment in manage-subs.py is NOT passed to the child process. Instead, 
-                        # we have to copy the environment of manage-subs.py and then add the three environment variables needed
-                        # by sdo_slony1_dump.sh.
-                        cmdList = [ os.path.join(self.repDir, 'subscribe_manage', 'sdo_slony1_dump.sh'), self.arguments.getArg('SLAVEDBNAME'), self.arguments.getArg('CLUSTERNAME'), self.arguments.getArg('SLAVEPORT'), newSiteStr, os.path.join(self.arguments.getArg('SMworkDir'), 'slon_counter' + '.' + self.client + '.txt'), self.series[0].lower() ]
-                        outFile = os.path.join(self.triggerDir, self.client + '.subscribe_series.sql')
-            
-                        wroteIntMsg = False
-                        with open(outFile, 'a', encoding='UTF8') as fout:
-                            pipeReadEndFD, pipeWriteEndFD = os.pipe()
-
-                            # Make these pipes not block on read.
-                            flag = fcntl.fcntl(pipeReadEndFD, fcntl.F_GETFL)
-                            fcntl.fcntl(pipeReadEndFD, fcntl.F_SETFL, flag | os.O_NONBLOCK)
-                            # flag = fcntl.fcntl(pipeWriteEndFD, fcntl.F_GETFL)
-                            # fcntl.fcntl(pipeWriteEndFD, fcntl.F_SETFL, flag | os.O_NONBLOCK)
-
-                            # The DB is in LATIN-1, so we need to read in bytes, then decode to a string, then encode
-                            # to UTF8 bytes. Then we print these UTF8 bytes to the output file.
-                            pipeReadEnd = os.fdopen(pipeReadEndFD, 'r', encoding='LATIN1')
-                            pipeWriteEnd = os.fdopen(pipeWriteEndFD, 'w', encoding='LATIN1')
-
-                            self.log.writeInfo([ 'Dumping table data: ' + ' '.join(cmdList) + '.' ])
-                            # stderr should get written to self.writeStream.
-                            proc = Popen(cmdList, stdout=pipeWriteEnd, env=dict(os.environ, kJSOCRoot=self.arguments.getArg('kJSOCRoot'), kSMlogDir=self.arguments.getArg('kSMlogDir'), config_file=self.arguments.getArg('slonyCfg'), node=self.client))
-
-                            self.reqTable.releaseLock()
-                            maxLoop = 43200 # 12-hour timeout, aia.lev1 takes many hours (probably 6 hours) to dump
-                            while True:
-                                if maxLoop <= 0:
-                                    raise Exception('sqlDump', 'Time-out waiting for dump file to be generated.')
-            
-                                if not wroteIntMsg and self.sdEvent.isSet():
-                                    self.log.writeInfo([ 'Cannot interrupt dump-file generation. Send SIGKILL message to force termination.' ])
-                                    wroteIntMsg = True
-                                    # proc.kill()
-                                    # raise Exception('shutDown', 'Received shut-down message from main thread.')
-                                    
-                                # Read what is available from the pipe, convert to utf8, and write it to fout.
-                                while True:
-                                    pipeBytes = pipeReadEnd.read(4096)
-                                    if len(pipeBytes) > 0:
-                                        # print(pipeBytes.decode('LATIN1').encode('UTF8'), file=fout)
-                                        print(pipeBytes, file=fout, end='')
-                                    else:
-                                        break
-            
-                                if proc.poll() is not None:
-                                    self.writeStream.flush()
-                                    self.writeStream.logLines() # Log all sdo_slony1_dump.sh output.
-                                    if proc.returncode != 0:
-                                        raise Exception('sqlDump', 'Failure generating dump file, sdo_slony1_dump.sh returned ' + str(proc.returncode) + '.') 
-                                        
-                                    pipeWriteEnd.flush()
-                                    pipeWriteEnd.close()
-                                    
-                                    # Read the remaining bytes from the pipe.
+                                    maxLoop = 60 # 1-minute timeout
                                     while True:
-                                        pipeBytes = pipeReadEnd.read(4096)
-                                        if len(pipeBytes) > 0:
-                                            # print(pipeBytes.decode('LATIN1').encode('UTF8'), file=fout)
-                                            print(pipeBytes, file=fout, end='')
-                                        else:
+                                        if maxLoop <= 0:
+                                            raise Exception('sqlDump', 'Time-out waiting for dump file to be generated.')
+            
+                                        if not wroteIntMsg and self.sdEvent.isSet():
+                                            self.log.writeInfo([ 'Cannot interrupt dump-file generation. Send SIGKILL message to force termination.' ])
+                                            wroteIntMsg = True
+                                            # proc.kill()
+                                            # raise Exception('shutDown', 'Received shut-down message from main thread.')
+            
+                                        if proc.poll() is not None:
+                                            self.writeStream.logLines() # Log all createns output.
+                                            if proc.returncode != 0:
+                                                raise Exception('sqlDump', 'Failure generating dump file, createns returned ' + str(proc.returncode) + '.') 
                                             break
-                                    pipeReadEnd.close()                                        
-                                    break
 
-                                maxLoop -= 1
-                                time.sleep(1)
+                                        maxLoop -= 1
+                                        time.sleep(1)
+                                    print('COMMIT;', file=fout)
+                                    fout.flush()
+                                finally:
+                                    self.reqTable.acquireLock()                                                      
 
-                            fout.flush()
-                            print('COMMIT;', file=fout)
-                            self.reqTable.acquireLock()
+                        # 3. PORT sdo_slony1_dump.sh into this script so we can run multiple COPY TO commands within a single
+                        # database transaction. First, we need some database information, then we pass that information
+                        # to the PORT (encapsulated in dumpAndStartGeneratingClientLogs()).
+
+                        # Must get the Slony table IDs so we can call _jsoc.copyfields(). This copies the replicated table's 
+                        # column names into a string column. This is then used when dumping the replicated table.                        
+                        try:            
+                            with self.connSlave.cursor() as cursor:
+                                # Get the Slony node ID for the current replication cluster. The return value is an integer.
+                                cmd = 'SELECT _' + self.replicationCluster + ".getLocalNodeId('_" + self.replicationCluster + "')"
+                                cursor.execute(cmd)
+                                records = cursor.fetchall()
+                                if len(records) != 1:
+                                    raise Exception('dbResponse', cmd + ' did not return a valid node ID.')
+                                nodeID = records[0][0]
+                                
+                                self.log.writeInfo([ 'Node ID for replicaton cluster ' + self.replicationCluster + ' is ' + str(nodeID) + '.' ])
+                                
+                                # Get the table ID of the table being replicated in this cluster. The return value is an integer.
+                                cmd = 'SELECT tab_id FROM _' + self.replicationCluster + '.sl_table, _' + self.replicationCluster + ".sl_set WHERE tab_set = set_id AND tab_nspname = '" + ns + "' AND tab_relname = '" + table + "' AND exists (SELECT 1 FROM _" + self.replicationCluster +'.sl_subscribe WHERE sub_set = set_id AND sub_receiver = ' + str(nodeID) + ')'
+                                cursor.execute(cmd)
+                                records = cursor.fetchall()
+                                if len(records) != 1:
+                                    raise Exception('dbResponse', cmd + ' did not return a valid table ID.')
+                                tabID = records[0][0]
+                                
+                                self.log.writeInfo([ 'Replication table ID for series ' + self.series[0].lower() + ' is ' + str(tabID) + '.' ])
+                                
+                                # The comma-separated list of columns of the table being replicated. The return value is a text string.
+                                cmd = 'SELECT _' + self.replicationCluster + '.copyfields(' +  str(tabID) + ')'
+                                cursor.execute(cmd)
+                                records = cursor.fetchall()
+                                if len(records) != 1:
+                                    raise Exception('dbResponse', cmd + ' did not return a valid column list.')
+                                columnList = records[0][0].strip('()') # strip start and end parenthesis.
+                                
+                                self.log.writeInfo([ 'Column list for series table ' + self.series[0].lower() + ' is ' + columnList + '.' ])
+                                
+                                # We need to terminate transaction. dumpAndStartGeneratingClientLogs() has to run various things in a specific order
+                                # and has to time the start of a new transaction properly.
+                        except psycopg2.Error as exc:
+                            raise Exception('dbCmd', exc.diag.message_primary)
+                                
+                        finally:
+                            self.connSlave.rollback()
                             
-                        # 5. tar the two dump files together.
-                        with tarfile.open(os.path.join(self.triggerDir, self.client + '.sql.tar.gz'), 'w:gz') as tarOut:
-                            outFile = os.path.join(self.triggerDir, self.client + '.' + ns + '.createns.sql')
-                            tarOut.add(outFile, arcname=os.path.basename(outFile))
-                            os.remove(outFile)
-                            outFile = os.path.join(self.triggerDir, self.client + '.subscribe_series.sql')
-                            tarOut.add(outFile, arcname=os.path.basename(outFile))
-                            os.remove(outFile)
-    
-                        # Tell client that the dump is ready for use. We do that by setting the request status to D.
-                        self.request.setStatus('D')
-                        reqStatus = 'D'
+                        # The next part is very tricky and critical. We have to make sure that there is no overlap of series records in the series-table dump
+                        # and the Slony site-specific logs generated after the dump has completed. At the same time, we have to make sure that all series records
+                        # inserted into the slave database after the dump has completed appear in the site-specific logs generated after the dump has completed.
+                        
+                        # The request-table lock is held here. Some of the tasks in dumpAndStartGeneratingClientLogs() can be slow: stopping the slony daemons,
+                        # parsing the slony logs, generating the series dump files. Release the lock, then acquire it again after.
+                        try:
+                            self.reqTable.releaseLock()
+                            self.dumpAndStartGeneratingClientLogs(columnList)
+                        finally:
+                            self.reqTable.acquireLock()
+
+                        # If there are no errors, the request status will be 'I'.
+                        reqStatus = 'I'
                 
                         time.sleep(1)
                 finally:
                     self.reqTable.releaseLock()
-
-            # No lock held here.
-            if reqStatus.upper() == 'D':
-                self.log.writeDebug([ 'Processing status D for request ' + str(self.requestID) + '.' ])
-                # Poll on the request status waiting for it to be I. This indicates that the client has successfully ingested
-                # the dump file. The client could also set the status to E if there was some error, in which case the client
-                # provides an error message that the server logs. The loop is interruptable by a shut-down request.
-                maxLoop = 172800 # 48-hour timeout
-                while True:
-                    if maxLoop <= 0:
-                        raise Exception('sqlAck', 'Time-out waiting for client to ingest dump file.')
-                
-                    if self.sdEvent.isSet():
-                        # Stop polling if main thread is shutting down.
-                        raise Exception('shutDown', 'Received shut-down message from main thread.')
-                
-                    try:
-                        self.reqTable.acquireLock()
-                        (code, msg) = self.request.getStatus()
-                        if code.upper() == 'D':
-                            self.log.writeDebug([ 'Waiting for client ' + self.client + ' to download dump file (request ' + str(self.requestID) + '). Status ' + code.upper() + '.'])
-                        elif code.upper() == 'A':
-                            self.log.writeDebug([ 'Waiting for client ' + self.client + ' to ingest dump file (request ' + str(self.requestID) + '). Status ' + code.upper() + '.'])
-                        elif code.upper() == 'I':
-                            # Onto clean-up
-                            reqStatus = 'I'
-                            break
-                        elif code.upper() == 'E':
-                            reqStatus = 'E'
-                            raise Exception('dumpApplication', self.client + ' failed to properly ingest dump file.')
-                        else:
-                            reqStatus = 'E'
-                            raise Exception('invalidReqStatus', 'Unexpected request status ' + code.upper() + '.')
-                    finally:
-                        self.reqTable.releaseLock()
-                
-                    maxLoop -= 1
-                    time.sleep(1)
             
             # No lock held here.
             if reqStatus == 'I' or (reqStatus == 'P' and self.action == 'unsubscribe'):
@@ -1140,22 +1152,15 @@ class Worker(threading.Thread):
             # LEGACY - Other crap from the initial implementation. The newer implementation does not
             # use files for passing information back and forth to/from the client.
         
-            # Remove client's dump files. Remove untar'd version.
-            createNSFiles = glob.glob(os.path.join(self.triggerDir, self.client + '.*.createns.sql'))
+            # Remove client's dump files.
+            createNSFiles = glob.glob(os.path.join(self.triggerDir, self.client + '.*.createns.sql.gz'))
             for afile in createNSFiles:
                 os.remove(afile)
             
-            dumpFile = os.path.join(self.triggerDir, self.client + '.subscribe_series.sql')
+            dumpFile = os.path.join(self.triggerDir, self.client + '.subscribe_series.sql.gz')
             if os.path.exists(dumpFile):
                 os.remove(dumpFile)
-                        
-            # Remove client's dump file. Remove tar file.
-            if os.path.exists(os.path.join(self.triggerDir, self.client + '.sql.tar')):
-                os.remove(os.path.join(self.triggerDir, self.client + '.sql.tar'))
 
-            # Remove client's dump file. Remove tarball.
-            if os.path.exists(os.path.join(self.triggerDir, self.client + '.sql.tar.gz')):
-                os.remove(os.path.join(self.triggerDir, self.client + '.sql.tar.gz'))
         except OSError as exc:
             raise Exception('fileIO', exc.diag.message_primary)
         except CalledProcessError as exc:
@@ -1166,9 +1171,8 @@ class Worker(threading.Thread):
         # set of subscribers completely, if the site was a new subscriber.
         try:
             # If dump files exist, rename them for debugging purposes.
-            createNSFiles = glob.glob(os.path.join(self.triggerDir, self.client + '.*.createns.sql'))
-            dumpFile = os.path.join(self.triggerDir, self.client + '.subscribe_series.sql')
-            tarFile = os.path.join(self.triggerDir, self.client + '.sql.tar.gz')
+            createNSFiles = glob.glob(os.path.join(self.triggerDir, self.client + '.*.createns.sql.gz'))
+            dumpFile = os.path.join(self.triggerDir, self.client + '.subscribe_series.sql.gz')
 
             for afile in createNSFiles:
                 savedFile = afile + '.' + datetime.now().strftime('%Y-%m-%d-%H%M%S')
@@ -1178,10 +1182,6 @@ class Worker(threading.Thread):
                 savedFile = dumpFile + '.' + datetime.now().strftime('%Y-%m-%d-%H%M%S')
                 self.log.writeDebug([ 'Saving dump file ' + dumpFile + ' to ' + savedFile + '.' ])
                 os.rename(dumpFile, savedFile)
-            if os.path.exists(tarFile):
-                savedFile = tarFile + '.' + datetime.now().strftime('%Y-%m-%d-%H%M%S')
-                self.log.writeDebug([ 'Saving tar file ' + tarFile + ' to ' + savedFile + '.' ])
-                os.rename(tarFile, savedFile)
         
             self.cleanTemp()
 
@@ -1222,6 +1222,407 @@ class Worker(threading.Thread):
                 self.writeStream.logLines() # Log all gentables.pl output
         except CalledProcessError as exc:
             self.log.writeError([ 'Error running gentables.pl, status ' +  str(exc.returncode) + '.'])
+
+    def dumpAndStartGeneratingClientLogs(self, columnList):
+        doAppend = False
+                
+        if self.action == 'subscribe':
+            # Run createtabstruct for the table of the series being subscribed to.
+            cmdList = [ os.path.join(self.arguments.getArg('kModDir'), 'createtabstructure'), '-u', 'JSOC_DBHOST=' + self.arguments.getArg('SLAVEHOSTNAME'), 'in=' + self.series[0].lower(), 'out=' + self.series[0].lower(), 'archive=' + str(self.archive), 'retention=' + str(self.retention), 'tapegroup=' + str(self.tapegroup), 'owner=' + self.arguments.getArg('REPUSER') ]
+            outFile = os.path.join(self.triggerDir, self.client + '.subscribe_series.sql.gz')
+
+            wroteIntMsg = False
+            with gzip.open(outFile, mode='wt', compresslevel=5, encoding='UTF8') as fout:
+                # fout is actually a io.TextIOWrapper, a file object which I believe is incompatible with
+                # Popen(). We need to filter the stream through a pipe whose ends are real file streams.
+                pipeReadEndFD, pipeWriteEndFD = os.pipe()
+
+                # Make these pipes not block on read.
+                flag = fcntl.fcntl(pipeReadEndFD, fcntl.F_GETFL)
+                fcntl.fcntl(pipeReadEndFD, fcntl.F_SETFL, flag | os.O_NONBLOCK)
+                
+                pipeReadEnd = os.fdopen(pipeReadEndFD, 'r', encoding='UTF8')
+                pipeWriteEnd = os.fdopen(pipeWriteEndFD, 'w', encoding='UTF8')
+            
+                print('BEGIN;', file=fout)
+                print("SET CLIENT_ENCODING TO 'UTF8';", file=fout)
+            
+                if self.newSite:
+                    # Dump the database-object-creation SQL needed for a site to accept Slony data from the server.
+                    sql = getNewSiteSQL(self.replicationCluster)
+                    print(sql, file=fout)
+
+                fout.flush()
+            
+                self.log.writeInfo([ 'Dumping table structure: ' + ' '.join(cmdList) + '.' ])
+                proc = Popen(cmdList, stdout=pipeWriteEnd)
+
+                maxLoop = 60 # 1-minute timeout
+                while True:
+                    if maxLoop <= 0:
+                        raise Exception('sqlDump', 'Time-out waiting for dump file to be generated.')
+
+                    if not wroteIntMsg and self.sdEvent.isSet():
+                        self.log.writeInfo([ 'Cannot interrupt dump-file generation. Send SIGKILL message to force termination.' ])
+                        wroteIntMsg = True
+                        # proc.kill()
+                        # raise Exception('shutDown', 'Received shut-down message from main thread.')
+                        
+                    # Read what is available from the pipe, convert to utf8, and write it to fout.
+                    while True:
+                        pipeBytes = pipeReadEnd.read(4096)
+                        if len(pipeBytes) > 0:
+                            print(pipeBytes, file=fout, end='')
+                        else:
+                            break
+
+                    if proc.poll() is not None:
+                        fout.flush()
+                        self.writeStream.logLines() # Log all createtabstructure output.
+                        if proc.returncode != 0:
+                            raise Exception('sqlDump', 'Failure generating dump file, createtabstructure returned ' + str(proc.returncode) + '.') 
+                            
+                        pipeWriteEnd.flush()
+                        pipeWriteEnd.close()
+                        
+                        # Read the remaining bytes from the pipe.
+                        while True:
+                            pipeBytes = pipeReadEnd.read(4096)
+                            if len(pipeBytes) > 0:
+                                print(pipeBytes, file=fout, end='')
+                            else:
+                                break
+                        pipeReadEnd.close()
+                        break
+
+                    maxLoop -= 1
+                    time.sleep(1)
+
+                fout.flush()
+                
+            self.log.writeInfo([ 'Successfully created ' + outFile + ' and dumped tab structure commands.' ])
+
+            doAppend = True
+
+        # This is the only way to synchronize everything:
+        try:
+            # 1. Turn off Slony-log parser. We are going to manually run the parser after the slon daemons are dead. If the parser is
+            # already running at that time, it could interfere. We disable the parser by acquiring the subscription lock.
+            maxLoop = 30
+            while True:
+                if self.sdEvent.isSet():
+                    raise Exception('shutDown', 'Received shut-down message from main thread.')
+                try:
+                    try:
+                        cmd = '(set -o noclobber; echo ' + str(os.getpid()) + ' > ' + self.subscribeLock + ') 2> /dev/null'
+                        check_call(cmd, shell=True)
+                    except CalledProcessError as exc:
+                        # Other exceptions will re-raise to the outer-most exception handler.
+                        raise Exception('subLock')
+    
+                    # Obtained global subscription lock.
+                
+                    # 2. Turn off slon daemons. When this script returns, the daemons will be dead. Stopping Slony will prevent the 
+                    # Slony-log parser from doing any parsing (after we release the subscription lock). However, the parser will continue 
+                    # to run as a cron job - but it will not have any effect. Stopping the parser from running while the slon daemons 
+                    # are dead (below) would be difficult to do since we'd need to acquire the subscription lock a couple of times and 
+                    # release it in the middle the database transaction (but that would make the nesting of exception handlers tricky).
+                    # So, just allow the parser to run
+                    try:
+                        cmdList = [ os.path.join(self.arguments.getArg('kJSOCRoot'), 'base', 'drms', 'replication', 'manageslony', 'sl_stop_slon_daemons.sh'), self.slonyCfg ]
+                        check_call(cmdList)
+                    except CalledProcessError as exc:
+                        raise Exception('stopSlony', 'Failure stopping slon daemons.')
+                    finally:
+                        self.writeStream.flush()
+                        self.writeStream.logLines() # Log all sl_stop_slon_daemons.sh output.
+
+                    break
+                except Exception as exc:
+                    if len(exc.args) == 1 and exc.args[0] == 'subLock':
+                        # Could not obtain lock; try again (up to 30 tries)
+                        if maxLoop <= 0:
+                            raise Exception('subLock', 'Could not obtain subscription lock after 30 tries.')
+                        time.sleep(1)
+                        maxLoop -= 1
+                    else:
+                        # Failure to run gentables.pl, re-raise the exception generated.
+                        raise
+                finally:
+                    # 3. Turn on the Slony-log parser by releasing the subscription lock.
+                    if os.path.exists(self.subscribeLock):
+                        os.remove(self.subscribeLock)
+
+            # 4. Parse existing slony logs (just in case the series being subscribed is modified in an unparsed Slony log). The -s flag causes logging to
+            # be directed to stdout. It could be that the cron job caused the logs to be parsed, in which case the following command is a no-op.
+            try:
+                cmdList = [ os.path.join(self.arguments.getArg('kJSOCRoot'), 'base', 'drms', 'replication', 'parselogs', 'parse_slon_logs.pl'), self.slonyCfg, 'parselock.txt', 'subscribelock.txt', '-s' ]
+                self.log.writeInfo([ 'Running ' + ' '.join(cmdList) + '.' ])
+                check_call(cmdList)
+            except CalledProcessError as exc:
+                raise Exception('parseLogs', 'Failure running parse_slon_logs.pl.')
+            finally:
+                self.writeStream.flush()
+                self.writeStream.logLines() # Log all parse_slon_logs.pl output.
+
+            # There are now no unparsed logs with mods to self.series[0] in them now. The parser will continue to run, however
+            # there will be no new logs to parse since the slon daemons have been terminated.
+    
+            # 5. Start a serializable transaction. No more changes to self.series[0] will appear in the dump file. However, such changes
+            # will appear in the parsed log files. We need to make the next transaction start in the serializable isolation level, and
+            # we need to start the client with a character encoding of UTF-8. When we commit the transaction, we must switch back to 
+            # the original settings (which are likely READ COMMITTED and Latin-1).
+            oldIsolation = self.connSlave.isolation_level
+            oldEncoding = self.connSlave.encoding
+
+            try:
+                self.connSlave.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_SERIALIZABLE)
+                self.connSlave.set_client_encoding('UTF-8')
+
+                with self.connSlave.cursor() as cursor:
+                    # 6. Create an insert statement that, when run on the client, will set the client's Slony tracking number.
+                    cmd = "SELECT 'INSERT INTO _" + self.replicationCluster + ".sl_archive_tracking values (' || ac_num::text || ', ''' || ac_timestamp::text || ''', CURRENT_TIMESTAMP);' FROM _" + self.replicationCluster + ".sl_archive_counter"
+                    cursor.execute(cmd)
+                    records = cursor.fetchall()
+                    if len(records) != 1:
+                        raise Exception('dbResponse', 'Unexpected response to db command: ' + cmd + '.')
+                
+                    # Write to first dump file (below).
+                    trackingInsert = records[0][0]
+
+                    maxLoop = 30
+                    while True:
+                        if self.sdEvent.isSet():
+                            raise Exception('shutDown', 'Received shut-down message from main thread.')
+                        try:
+                            try:
+                                cmd = '(set -o noclobber; echo ' + str(os.getpid()) + ' > ' + self.subscribeLock + ') 2> /dev/null'
+                                check_call(cmd, shell=True)
+                            except CalledProcessError as exc:
+                                # Other exceptions will re-raise to the outer-most exception handler.
+                                raise Exception('subLock')
+            
+                            # Obtained global subscription lock.
+                        
+                            # 7. Add the client's sitedir/newlst file to the end of slon_parser.cfg, and add the client's sitedir
+                            #    to su_production.slonycfg.
+                            with open(self.parserConfig, 'a') as fout:
+                                print(self.newClientLogDir + '        ' + self.newLstPath, file=fout)
+    
+                            # Do not provide the --lst option. We already inserted the lst-file info into su_production.slonylst earlier.
+                            cmdList = [ os.path.join(self.repDir, 'subscribe_manage', 'gentables.pl'), 'op=add', 'conf=' + self.slonyCfg, '--node=' + self.client + '.new', '--sitedir=' + self.newClientLogDir ]
+                            # Raises CalledProcessError on error (non-zero returned by gentables.pl).
+                            check_call(cmdList)
+                            self.writeStream.logLines() # Log all gentables.pl output
+
+                            break
+                        except Exception as exc:
+                            if len(exc.args) == 1 and exc.args[0] == 'subLock':
+                                # Could not obtain lock; try again (up to 30 tries)
+                                if maxLoop <= 0:
+                                    raise Exception('subLock', 'Could not obtain subscription lock after 30 tries.')
+                                time.sleep(1)
+                                maxLoop -= 1
+                            else:
+                                # Failure to run gentables.pl, re-raise the exception generated.
+                                raise
+                        finally:
+                            if os.path.exists(self.subscribeLock):
+                                os.remove(self.subscribeLock)
+                            
+                    # 8. Turn on the slon daemons. When the Slony-log parser runs, it will generate new logs for all clients.
+                    try:
+                        cmdList = [ os.path.join(self.arguments.getArg('kJSOCRoot'), 'base', 'drms', 'replication', 'manageslony', 'sl_start_slon_daemons.sh'), self.slonyCfg ]
+                        check_call(cmdList)
+                    except CalledProcessError as exc:
+                        raise Exception('stopSlony', 'Failure starting slon daemons.')
+                    finally:
+                        self.writeStream.flush()
+                        self.writeStream.logLines() # Log all sl_stop_slon_daemons.sh output.
+
+                    # 9. Sequences - at some point in the distant past, we used to replicate sequences too. The list
+                    #    of such sequences was stored in _jsoc.sl_sequence. However, we do not replicate sequences
+                    #    so we now skip the step of dumping them.
+                
+                    # 10. Pump out chunks of the series database table.
+                    outFile = os.path.join(self.triggerDir, self.client + '.subscribe_series.sql.gz')
+                    fileNo = 0
+                    limit = 10000000 # 10 million rows at a time (for aia.lev1, this should be a little over 20GB).
+                    offset = 0
+                    done = False
+                    
+                    while not done:
+                        discardEmtpyDump = False
+                        # Append if the file exists, otherwise, create the file ('a' does this).
+                        with gzip.open(outFile, mode='at', compresslevel=5, encoding='UTF8') as fout:
+                            if fileNo == 0:
+                                # The first dump file contains the SQL that sets the correct sequence number
+                                # at the client. The remaining files contain only the COPY FROM data.
+                                if not doAppend:
+                                    print('BEGIN;', file=fout)
+                                    print("SET CLIENT_ENCODING TO 'UTF8';", file=fout)
+                                print(trackingInsert, file=fout)
+                                fout.flush()
+
+                            print('COPY ' + self.series[0].lower() + ' (' + columnList + ') FROM STDIN;', file=fout);
+                            fout.flush()
+                            
+                            # Run pyscopg2's copy_expert command to print series-table rows to the dump file. 
+                            # Create a query that breaks up the series into equal-sized chunks. Use the
+                            # limit and offset arguments to do this.
+                            limitStr = 'LIMIT ' + str(limit) + ' OFFSET ' + str(offset)
+                            copyCmd = 'SELECT ' + columnList + ' FROM ' + self.series[0].lower() + ' ' + limitStr
+                            self.log.writeInfo([ 'COPY command is ' + copyCmd ])
+                        
+                            # Because the client character encoding was set to UTF8, copy_expert() will convert
+                            # the db's server encoding from Latin-1 to UTF8.
+                            
+                            # ACK - you cannot use psycopg2 AT ALL to do a COPY TO!! The only thing psycopg2
+                            # will allow you to do is to dump an entire table. With copy_to() and with copy_expert(), 
+                            # you cannot use a query to specify rows to dump. You cannot use cursor.execute() either, 
+                            # which normally would allow you to select records with a query. psycopg2 prohibits
+                            # you from running an SQL query that contains COPY TO in it.
+                            #
+                            # Give up and use a SELECT statement and then dump into fout. This is not great because
+                            # we have to send data over the network from server to client, then the client dumps to
+                            # fout, which is on the server.
+                            
+                            # Retrieve 4K rows at a time.
+                            cursor.itersize = 4096
+                            cursor.execute(copyCmd)
+                            for record in cursor:
+                                print('\t'.join([ str(col) for col in record ]), file=fout)
+
+                            # Send an EOF to the COPY command.
+                            print('\.', file=fout)
+                            print('COMMIT;', file=fout)
+                            fout.flush()
+                        
+                            if cursor.rowcount == 0:
+                                if fileNo != 0:
+                                    # The dump file is essentially empty - discard it.
+                                    discardEmtpyDump = True
+                                done = True
+                                
+                        self.log.writeInfo([ 'Successfully created dump file ' + str(fileNo) + '.' ])
+                            
+                        if discardEmtpyDump:
+                            os.remove(outFile)
+
+                        if not done:
+                            # Set request status to 'D' to indicate, to client, that the dump is ready for
+                            # download and ingestion. The client could have sent either a polldump request (for the first
+                            # dump file) or a pollcomplete request (for all subsequent dump files). Both of those requests
+                            # should handle a 'D' status. If the client makes a pollcomplete request, and the client
+                            # sees a 'D' status, then it should go back to the code where it sets the status to 'A' and
+                            # ingests the dump file, then sets status to 'I'.
+                            try:
+                                self.reqTable.acquireLock()
+                                self.request.setStatus('D')
+                            finally:
+                                self.reqTable.releaseLock()
+
+                            # Wait for client response. They will send a pollcomplete request when they are ready for
+                            # the next chunk.
+
+                            # Poll on the request status waiting for it to be I. This indicates that the client has successfully ingested
+                            # the dump file. The client could also set the status to E if there was some error, in which case the client
+                            # provides an error message that the server logs. The loop is interruptable by a shut-down request.
+                            maxLoop = 172800 # 48-hour timeout
+                            while True:
+                                if maxLoop <= 0:
+                                    raise Exception('sqlAck', 'Time-out waiting for client to ingest dump file.')
+                
+                                if self.sdEvent.isSet():
+                                    # Stop polling if main thread is shutting down.
+                                    raise Exception('shutDown', 'Received shut-down message from main thread.')
+                
+                                try:
+                                    self.reqTable.acquireLock()
+                                    (code, msg) = self.request.getStatus()
+                                    if code.upper() == 'D':
+                                        self.log.writeDebug([ 'Waiting for client ' + self.client + ' to download dump file (request ' + str(self.requestID) + '). Status ' + code.upper() + '.'])
+                                    elif code.upper() == 'A':
+                                        self.log.writeDebug([ 'Waiting for client ' + self.client + ' to ingest dump file (request ' + str(self.requestID) + '). Status ' + code.upper() + '.'])
+                                    elif code.upper() == 'I':
+                                        # Onto next dump-file chunk.
+                                        self.log.writeDebug([ 'Client ' + self.client + ' has signaled that they have successfully ingested dump file number ' + str(fileNo) + ' (request ' + str(self.requestID) + '). Status ' + code.upper() + '.'])
+                                        if os.path.exists(outFile):
+                                            # Clean up dump file so it can be re-used.
+                                            os.remove(outFile)
+                                        break
+                                    elif code.upper() == 'E':
+                                        raise Exception('dumpApplication', self.client + ' failed to properly ingest dump file.')
+                                    else:
+                                        reqStatus = 'E'
+                                        raise Exception('invalidReqStatus', 'Unexpected request status ' + code.upper() + '.')
+                                finally:
+                                    self.reqTable.releaseLock()
+                
+                                maxLoop -= 1
+                                time.sleep(1)
+                    
+                            # Ready for next chunk
+                            fileNo += 1
+                            offset += limit
+                        else:
+                            # The client has already ingested the previous chunk and set the status to 'I'. We are ready to
+                            # exit this function and clean-up and then set the status to 'C'. There is nothing to do here, except
+                            # exit this function.
+                            if os.path.exists(outFile):
+                                # Remove last dump file.
+                                os.remove(outFile)
+                    
+            except psycopg2.Error as exc:
+                raise Exception('dbCmd', exc.diag.message_primary)                
+            finally:
+                # We never wrote anything to the database, rollback is good.
+                self.connSlave.rollback()
+                self.connSlave.set_isolation_level(oldIsolation)
+                self.connSlave.set_client_encoding(oldEncoding)
+        finally:
+            # Make sure the slon daemons have been restored, otherwise we might accidentally stop the generation of Slony logs if
+            # an error occurs.
+            restartDaemons = False
+            maxLoop = 30
+            while True:
+                try:
+                    try:
+                        cmd = '(set -o noclobber; echo ' + str(os.getpid()) + ' > ' + self.slonDaemonLock + ') 2> /dev/null'
+                        check_call(cmd, shell=True)
+                    except CalledProcessError as exc:
+                        # Other exceptions will re-raise to the outer-most exception handler.
+                        raise Exception('subLock')
+    
+                    # Obtained global slon daemon lock.
+                    if not os.path.exists(self.masterSlonPIDFile) or not os.path.exists(self.slaveSlonPIDFile):
+                        # The slon-daemon start script will only attempt to start daemons not running. We can't
+                        # try to start daemons while we are holding the slon-daemon lock.
+                        restartDaemons = True    
+                    
+                    break
+                except Exception as exc:
+                    if len(exc.args) == 1 and exc.args[0] == 'subLock':
+                        # Could not obtain lock; try again (up to 30 tries)
+                        if maxLoop <= 0:
+                            raise Exception('subLock', 'Could not obtain subscription lock after 30 tries.')
+                        time.sleep(1)
+                        maxLoop -= 1
+                    else:
+                        raise
+                finally:
+                    if os.path.exists(self.slonDaemonLock):
+                        os.remove(self.slonDaemonLock)
+            
+            if restartDaemons:
+                try:
+                    cmdList = [ os.path.join(self.arguments.getArg('kJSOCRoot'), 'base', 'drms', 'replication', 'manageslony', 'sl_start_slon_daemons.sh'), self.slonyCfg ]
+                    check_call(cmdList)
+                except CalledProcessError as exc:
+                    raise Exception('stopSlony', 'Failure starting slon daemons.')
+                finally:
+                    self.writeStream.flush()
+                    self.writeStream.logLines() # Log all sl_stop_slon_daemons.sh output.
 
     @staticmethod
     def newThread(request, newSite, arguments, connMaster, connSlave, log, writeStream, fclean):
@@ -1743,9 +2144,8 @@ def dbTableExists(conn, schema, table):
         return False
 
 def cleanAllSavedFiles(triggerDir, log):
-    regExpNs = re.compile(r'.+\.createns\.sql\.(.+)$')
-    regExpDump = re.compile(r'.+\.subscribe_series\.sql\.(.+)$')
-    regExpTar = re.compile(r'.+\.sql.tar.gz\.(.+)$')
+    regExpNs = re.compile(r'.+\.createns\.sql\.gz\.(.+)$')
+    regExpDump = re.compile(r'.+\.subscribe_series\.sql\.gz\.(.+)$')
     
     for file in os.listdir(triggerDir):
         date = None
@@ -1757,10 +2157,6 @@ def cleanAllSavedFiles(triggerDir, log):
             matchDump = regExpDump.match(file)
             if matchDump:
                 date = matchDump.group(1)
-            else:
-                matchTar = regExpTar.match(file)
-                if matchTar:
-                    date = matchTar.group(1)
 
         if date:
             try:

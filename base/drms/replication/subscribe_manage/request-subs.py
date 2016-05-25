@@ -848,8 +848,15 @@ if __name__ == "__main__":
                                 if action.lower() != 'pollcomplete':
                                     raise Exception('invalidArgument', 'You must send a pollcomplete request to continue with the un-subscription process.')
                             else:
-                                if action.lower() != 'polldump':
+                                if (pendStatus.upper() == 'N' or pendStatus.upper() == 'P') and action.lower() != 'polldump':
                                     raise Exception('invalidArgument', 'You must send a polldump request to continue with the subscription process.')
+                                elif pendStatus.upper() == 'D' and action.lower() != 'polldump' and action.lower() != 'pollcomplete':
+                                    raise Exception('invalidArgument', 'You must send a either a polldump or pollcomplete request to continue with the subscription process.')
+
+                            # If there is more than one dump file, the server will set the status to 'P' after it
+                            # sees a status of 'I'. The client will be issuing pollcomplete requests after it
+                            # sets the status to 'I'. When the server sets the status to 'P', the client needs to again
+                            # set the status ot 'A' and ingest the next dump file.                                
                             if pendStatus.upper() == 'D':
                                 # The client acknowledges that the dump is ready to be downloaded and applied.
                                 try:
@@ -956,6 +963,27 @@ if __name__ == "__main__":
                             raise Exception('requestFailed', pendErrMsg)
                         else:                                
                             raise Exception('manage-subs', 'Unexcepted status code: ' + pendStatus.upper() + '.')
+                    elif action.lower() == 'error':
+                        if reqid is None:
+                            raise Exception('invalidArgument', 'Please provide a request ID.')
+                        if not pendRequestID or pendRequestID != reqid:
+                            raise Exception('invalidArgument', 'The request ID provided (' + str(reqid) + ') does not match the ID of the request currently pending (' + str(pendRequestID) + ').')
+                        if not pendingRequest:
+                            raise Exception('invalidRequest', 'You cannot indicate a client-side error for request ' + str(reqid) + '. That request is not pending.')
+
+                        try:
+                            # Slave database.
+                            with connSlave.cursor() as cursor:
+                                cmd = 'UPDATE ' + arguments.getArg('kSMreqTable') + " SET status = 'E' WHERE requestid = " + str(reqid)
+                                cursor.execute(cmd)
+                        except psycopg2.Error as exc:
+                            connSlave.rollback()
+                            raise Exception('dbCmd', exc.diag.message_primary)
+
+                        connSlave.commit()
+                        
+                        # Send client an error response (even though the client will not look at the response).
+                        raise Exception('requestFailed', 'Client sent an error request (client indicates a client-side fatal error).')
                     else:
                         # Unrecognized action.
                         raise Exception('invalidArgument', 'Action ' + "'" + action + "'" + ' is not recognized.')
