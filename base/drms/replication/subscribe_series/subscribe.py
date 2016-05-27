@@ -22,6 +22,8 @@ from subprocess import Popen, CalledProcessError, PIPE, check_call
 import fcntl
 import psycopg2
 import gzip
+import tty
+import termios
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../../include'))
 from drmsparams import DRMSParams
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../../base/libs/py'))
@@ -39,7 +41,8 @@ RV_CLIENTCONFIG = 5
 RV_LOCK = 6
 RV_DBCMD = 7
 RV_SUBSERVICE = 8
-
+RV_GETLOGS = 9
+RV_DELSERIES = 10
 
 STATUS_REQUEST_RESUMING = 'requestResuming'
 STATUS_REQUEST_QUEUED = 'requestQueued'
@@ -95,7 +98,9 @@ class TerminationHandler(DrmsLock):
         # del self.log
         # self.log.close()
         # On second thought, let's not close the log either. Just flush for now, and close() at the end of the program run.
-        self.log.flush()        
+        self.log.flush()
+        if os.path.exists(self.dieFile):
+            os.remove(self.dieFile)
     
 class SubscribeParams(DRMSParams):
     def __init__(self):
@@ -601,6 +606,10 @@ if __name__ == "__main__":
                     else:
                         newSite = True
                         log.writeInfo([ 'Client ' + client + ' is a first-time subscriber.' ])
+                        
+                    # Create the 'die file', if it does not already exist, which prevents get_slony_logs.pl from running.
+                    with open(dieFile, 'a') as fout:
+                        pass
     
                     serviceURL = arguments.getArg('kSubService')
                     pubServiceURL = arguments.getArg('kPubListService')
@@ -897,14 +906,21 @@ if __name__ == "__main__":
                                 else:
                                     # Yay, we are done ingesting dump files. Break out of dump-file loop.
                                     break
-            
+
                             # We have successfully subscribed/resubscribed to a series. For a subscribe request, if the 'jmd' flag is set, 
                             # then populate the JMD's sunum queue table and install the trigger that auto-populates this table as new series 
                             # rows are ingested. We need to stop the Slony-log ingestion script first so that no new records are ingested 
                             # while the copy to sunum_queue is happening and the trigger is being installed.
                             if reqType == 'subscribe' and jmdIntegration:
-                                dieFile = os.path.join(arguments.getArg('ingestion_path'), 'get_slony_logs.' + client + '.die')
                                 pass
+                                
+                        if reqType == 'subscribe':
+                            msg = 'Successfully subscribed to series ' + series + '.'
+                        else:
+                            msg = 'Successfully re-subscribed to series ' + series + '.'
+                            
+                        print(msg)
+                        log.writeInfo([ msg ])
                     elif reqType == 'unsubscribe':
                         cgiArgs = { 'action' : 'pollcomplete', 'client' : client, 'reqid' : reqId}
                         urlArgs = urllib.parse.urlencode(cgiArgs) # For use with HTTP GET requests (not POST).
@@ -921,6 +937,68 @@ if __name__ == "__main__":
                                 
                         if info['status'] != STATUS_REQUEST_COMPLETE:
                             raise Exception('subService', info['status'], 'Unexpected response from subscription service: ' + info['status'])
+                            
+                        # Remove get_slony_logs die file.
+                        if os.path.exists(dieFile):
+                            os.remove(dieFile)
+                            log.writeInfo([ 'Deleted die file ' + dieFile + '.' ])
+                        
+                        # Run get_slony_logs.pl
+                        cmdList = [ arguments.getArg('kRSPerl'), arguments.getArg('kSQLIngestionProgram'), arguments.getArg('slonyCfg') ]
+
+                        try:
+                            check_call(cmdList)
+                        except CalledProcessError as exc:
+                            raise Exception('getLogs', 'Unable to run ' + arguments.getArg('kSQLIngestionProgram') + ' properly.')
+                            
+                        log.writeInfo([ 'Successfully downloaded and ingested Slony log files (' + ' '.join(cmdList) + ' ran successfully).' ])
+
+                        # Delete series. The user can skip deleting this series - however, after this script completes, the series
+                        # will no longer be under replication. Before the user can re-subscribe to the series, the user would
+                        # have to delete the series, or move it.
+                        print('Before re-subscribing to these series, you will need to either delete them, or move them out of the way.')
+                        deleteSeriesBin = arguments.getArg('kDeleteSeriesProgram')
+                        stdinFD = sys.stdin.fileno()
+                        oldAttr = termios.tcgetattr(stdinFD)
+                        for series in seriesList:
+                            try:
+                                tty.setraw(sys.stdin.fileno())
+                                print('Would you like to delete ' + series + ' now (y/n)?\r')
+                                ans = sys.stdin.read(1)
+                                if ans.lower() != 'y':
+                                    print('  ...skipping ' + series + '\r')
+                                    continue
+                                else:
+                                    print('  ...deleting ' + series + '\r')
+
+                                print('Would you like to keep the SUs (and not delete them) for ' + series + ' (y/n)?\r')
+                                ans = sys.stdin.read(1)
+                            finally:
+                                termios.tcsetattr(stdinFD, termios.TCSADRAIN, oldAttr)
+                            
+                            if ans.lower() != 'y':
+                                cmdList = [ deleteSeriesBin, series, 'JSOC_DBUSER=slony']
+                                print('  ...deleting SUs of series ' + series + '.')
+                            else:
+                                cmdList = [ deleteSeriesBin, '-k', series, 'JSOC_DBUSER=slony']
+                                print('  ...NOT deleting SUs of series ' + series + '.')
+                                
+                            log.writeInfo([ 'Running ' + ' '.join(cmdList) + '.' ])
+                            
+                            # Pipe stdout and stderr, but do not print or log their content (which is akin to 
+                            # You are about to permanently erase all metadata for the series 'mdi.fdv_avg120').
+                            proc = Popen(cmdList, stdin=PIPE, stdout=PIPE, stderr=PIPE)
+                            proc.communicate(input=b'yes\nyes\n')
+                            if proc.returncode != 0:
+                                raise Exception('delSeries', 'Failure to delete series ' + series + '.')
+                            msg = 'Successfully deleted series ' + series + '.'
+                            print(msg)
+                            log.writeInfo([ msg ])
+                            
+                        for series in seriesList:
+                            msg = 'Successfully cancelled subscription to ' + series + '.'
+                            print(msg)
+                            log.writeInfo([ msg ])
 
             except (psycopg2.DatabaseError, psycopg2.OperationalError) as exc:
                 # Closes the cursor and connection
@@ -954,17 +1032,21 @@ if __name__ == "__main__":
                 rv = RV_SUBSERVICE
             elif type == 'drmsLock':
                 rv = RV_LOCK
+            elif type == 'getLogs':
+                rv = RV_GETLOGS
+            elif type == 'delSeries':
+                rv = RV_DELSERIES
 
             if log:
                 log.writeError([ msg ])
-            else:
-                print(msg)
+
+            print(msg)
         else:
             import traceback
             if log:
                 log.writeError([ traceback.format_exc(5) ])
-            else:
-                print(traceback.format_exc(5))
+
+            print(traceback.format_exc(5))
                 
         # Send a request to tell the server that an error occurred. The server will rollback in response.
         if client and reqId and serviceURL:
