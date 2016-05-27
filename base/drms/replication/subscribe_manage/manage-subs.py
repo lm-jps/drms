@@ -1380,15 +1380,18 @@ class Worker(threading.Thread):
                 self.connSlave.set_client_encoding('UTF-8')
 
                 with self.connSlave.cursor() as cursor:
-                    # 6. Create an insert statement that, when run on the client, will set the client's Slony tracking number.
-                    cmd = "SELECT 'INSERT INTO _" + self.replicationCluster + ".sl_archive_tracking values (' || ac_num::text || ', ''' || ac_timestamp::text || ''', CURRENT_TIMESTAMP);' FROM _" + self.replicationCluster + ".sl_archive_counter"
-                    cursor.execute(cmd)
-                    records = cursor.fetchall()
-                    if len(records) != 1:
-                        raise Exception('dbResponse', 'Unexpected response to db command: ' + cmd + '.')
+                    if self.newSite:
+                        # 6. Create an insert statement that, when run on the client, will set the client's Slony tracking number.
+                        cmd = "SELECT 'INSERT INTO _" + self.replicationCluster + ".sl_archive_tracking values (' || ac_num::text || ', ''' || ac_timestamp::text || ''', CURRENT_TIMESTAMP);' FROM _" + self.replicationCluster + ".sl_archive_counter"
+                        cursor.execute(cmd)
+                        records = cursor.fetchall()
+                        if len(records) != 1:
+                            raise Exception('dbResponse', 'Unexpected response to db command: ' + cmd + '.')
                 
-                    # Write to first dump file (below).
-                    trackingInsert = records[0][0]
+                        # Write to first dump file (below).
+                        trackingInsert = records[0][0]
+                    else:
+                        trackingInsert = None
 
                     maxLoop = 30
                     while True:
@@ -1461,7 +1464,8 @@ class Worker(threading.Thread):
                                 if not doAppend:
                                     print('BEGIN;', file=fout)
                                     print("SET CLIENT_ENCODING TO 'UTF8';", file=fout)
-                                print(trackingInsert, file=fout)
+                                if trackingInsert:
+                                    print(trackingInsert, file=fout)
                                 fout.flush()
 
                             print('COPY ' + self.series[0].lower() + ' (' + columnList + ') FROM STDIN;', file=fout);
@@ -1504,10 +1508,11 @@ class Worker(threading.Thread):
                                     discardEmtpyDump = True
                                 done = True
                                 
-                        self.log.writeInfo([ 'Successfully created dump file ' + str(fileNo) + '.' ])
+                        self.log.writeInfo([ 'Successfully created dump file ' + str(fileNo) + '(' + outFile + ').' ])
                             
                         if discardEmtpyDump:
                             os.remove(outFile)
+                            self.log.writeInfo([ 'Succefully deleted empty dump file ' + str(fileNo) + '(' + outFile + ').'])
 
                         if not done:
                             # Set request status to 'D' to indicate, to client, that the dump is ready for
