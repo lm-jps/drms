@@ -462,7 +462,7 @@ def ingestSQLFile(sqlIn, psqlBin, dbhost, dbport, dbname, dbuser, log):
 
     try:
         cmdList = [ psqlBin, '-h', dbhost, '-p', dbport, '-d', dbname, '-U', dbuser, '-f', '-']
-        proc = Popen(cmdList, stdin=pipeReadEnd, stderr=pipeWriteEndErr)
+        proc = Popen(cmdList, stdin=pipeReadEnd, stderr=pipeWriteEndErr, stdout=PIPE)
     except OSError as exc:
         raise Exception('sqlDump', "Cannot run command '" + ' '.join(cmdList) + "' ")
     except ValueError as exc:
@@ -621,7 +621,9 @@ if __name__ == "__main__":
                     # are equal before proceeding, but maybe some other time.
                     cgiArgs = { 'action' : 'continue', 'client' : client }
                     
-                    log.writeInfo([ 'Checking for existing request at server.' ])
+                    msg = 'Checking for existing request at server.'
+                    print(msg)
+                    log.writeInfo([ msg ])
                     log.writeInfo([ 'Calling cgi with URL: ' + serviceURL ])
                     log.writeInfo([ 'cgi args: ' + json.dumps(cgiArgs) ])
                     urlArgs = urllib.parse.urlencode(cgiArgs) # For use with HTTP GET requests (not POST).
@@ -706,6 +708,7 @@ if __name__ == "__main__":
 
                             # To subscribe to a series, provide client, series, archive, retention, tapegroup, newSite.
                             cgiArgs = { 'action' : 'subscribe', 'client' : client, 'newsite' : True, 'series' : series, 'archive' : archive, 'retention' : retention, 'tapegroup' : tapeGroup, 'newsite' : newSite }
+                            print('Subscribing to series ' + series + '.')
                         elif reqType == 'resubscribe':
                             # Make sure that newSite is False.
                             if newSite:
@@ -748,6 +751,7 @@ if __name__ == "__main__":
 
                             # To re-subscribe to a series, provide client, series.
                             cgiArgs = { 'action' : 'resubscribe', 'client' : client, 'newsite' : False, 'series' : series }
+                            print('Re-subscribing to series ' + series + '.')
                         elif reqType == 'unsubscribe':
                             # Make sure that newSite is False.
                             if newSite:
@@ -767,6 +771,7 @@ if __name__ == "__main__":
         
                             # To un-subscribe from one or more series, provide client, series.
                             cgiArgs = { 'action' : 'unsubscribe', 'client' : client, 'newsite' : False, 'series' : ','.join(seriesList) }
+                            print('Cancelling subscription to series ' + ','.join(seriesList) + '.')
                         else:
                             raise Exception('invalidArgument', 'Unknown subscription request type: ' + reqType + '.')
     
@@ -806,6 +811,8 @@ if __name__ == "__main__":
                             log.writeInfo([ 'Polling for dump file.' ])
                             cgiArgs = { 'action' : 'polldump', 'client' : client, 'reqid' : reqId}
                             urlArgs = urllib.parse.urlencode(cgiArgs) # For use with HTTP GET requests (not POST).
+                            print('Waiting for server to create dump file.')
+                            time.sleep(2)
 
                             while (resuming and info['status'] == STATUS_REQUEST_RESUMING) or info['status'] == STATUS_REQUEST_QUEUED or info['status'] == STATUS_REQUEST_PROCESSING:
                                 log.writeInfo([ 'Calling cgi with URL: ' + serviceURL ])
@@ -815,7 +822,12 @@ if __name__ == "__main__":
                                     if 'status' not in info or 'msg' not in info:
                                         raise Exception('subService', 'Request failure: ' + STATUS_ERR_INTERNAL + '.')
                                     log.writeInfo([ 'cgi response: ' + info['msg'] + ' Response status: ' + info['status'] + '.'])
-                                    time.sleep(5)
+                                    print('.', end='')
+                                    sys.stdout.flush()
+                                    time.sleep(2)
+                                    
+                            # Print a newline.
+                            print('dump file is ready.')
 
                             if info['status'] != STATUS_REQUEST_DUMP_READY:
                                 raise Exception('subService', 'Unexpected response from subscription service: ' + info['status'] + '.')
@@ -832,15 +844,18 @@ if __name__ == "__main__":
                                 # exists, the download completed and was successful.
                                 if not os.path.exists(dest):
                                     log.writeInfo([ 'Downloading ' + dest + '.' ])
+                                    print('Downloading dump file (to ' + dest + ').')
                                     dl = SmartDL(xferURL, dest)
                                     dl.start()
-                                    
-                                log.writeInfo([ 'Successfully downloaded ' + dest + '.' ])
+                                    log.writeInfo([ 'Successfully downloaded ' + dest + '.' ])
+                                    print('  ...download complete.')
                                     
                                 with gzip.open(dest, mode='rt', encoding='UTF8') as fin:
                                     # Ingest createns.sql. Will raise if a problem occurs. When that happens, the cursor is rolled back.
                                     # The sql in fin is piped to a psql process.
+                                    print('Ingesting dump file (' + dest + ').')
                                     ingestSQLFile(fin, arguments.getArg('PSQL').strip(" '" + '"'), arguments.getArg('pg_host'), str(arguments.getArg('pg_port')), arguments.getArg('pg_dbname'), arguments.getArg('pg_user'), log)
+                                    print('  ...ingestion complete.')
                                     
                                 # Remove the create-ns file.
                                 os.remove(dest)
@@ -858,10 +873,11 @@ if __name__ == "__main__":
                                 # exists, the download completed and was successful.
                                 if not os.path.exists(dest):
                                     log.writeInfo([ 'Downloading ' + dest + '.' ])
+                                    print('Downloading dump file (to ' + dest + ').')
                                     dl = SmartDL(xferURL, dest)
                                     dl.start()
-                                    
-                                log.writeInfo([ 'Successfully downloaded ' + dest + '.' ])
+                                    log.writeInfo([ 'Successfully downloaded ' + dest + '.' ])
+                                    print('  ...download complete.')
 
                                 with gzip.open(dest, mode='rt', encoding='UTF8') as fin:
                                     # Will raise if a problem occurs. When that happens, the cursor is rolled back.
@@ -869,11 +885,13 @@ if __name__ == "__main__":
                                     # If reqType == 'subscribe', then the sql will create a new series and populate it. 
                                     # If reqType == 'resubscribe', then the sql will truncate the 'series table' and reset the series-table sequence
                                     # only.
+                                    print('Ingesting dump file (' + dest + ').')
                                     ingestSQLFile(fin, arguments.getArg('PSQL').strip(" '" + '"'), arguments.getArg('pg_host'), str(arguments.getArg('pg_port')), arguments.getArg('pg_dbname'), arguments.getArg('pg_user'), log)
+                                    log.writeInfo([ 'Successfully ingested dump file: ' + dest + ' (number ' +  str(fileNo) + ')' ])
+                                    print('  ...ingestion complete.')
                                     
                                 # Remove the dump file.
                                 os.remove(dest)
-                                log.writeInfo([ 'Successfully ingested dump file: ' + dest + ' (number ' +  str(fileNo) + ')' ])
 
                                 # We want to issue the pollcomplete request regardless of our resuming status (if we are resuming
                                 # we already issued the polldump request above, if we needed to).
@@ -883,6 +901,7 @@ if __name__ == "__main__":
                                 # we receive could have insert statements for newly subscribed-to series.
                                 cgiArgs = { 'action' : 'pollcomplete', 'client' : client, 'reqid' : reqId}
                                 urlArgs = urllib.parse.urlencode(cgiArgs) # For use with HTTP GET requests (not POST).
+                                print('Waiting for server to finalize request.')
 
                                 # We just sent the first pollcomplete request. This tells the server to clean up and finalize, so 
                                 # the request is in the STATUS_REQUEST_FINALIZING state.
@@ -892,8 +911,13 @@ if __name__ == "__main__":
                                 while info['status'] == STATUS_REQUEST_FINALIZING:
                                     with urllib.request.urlopen(serviceURL + '?' + urlArgs) as response:
                                         info = json.loads(response.read().decode('UTF-8'))
+                                        print('.', end='')
+                                        sys.stdout.flush()
                                         time.sleep(1)
-                
+                                        
+                                # Print a newline.
+                                print('server has finalized request.')
+
                                 if info['status'] != STATUS_REQUEST_COMPLETE:
                                     # The only other acceptable status is STATUS_REQUEST_DUMP_READY. This happens when there is
                                     # more than one dump file to ingest. The server will see a request status of 'I', and then 
@@ -945,6 +969,8 @@ if __name__ == "__main__":
                         
                         # Run get_slony_logs.pl
                         cmdList = [ arguments.getArg('kRSPerl'), arguments.getArg('kSQLIngestionProgram'), arguments.getArg('slonyCfg') ]
+                        log.writeInfo([ 'Running ' + ' '.join(cmdList) + '.' ])
+                        print('Getting latest Slony logs.')
 
                         try:
                             check_call(cmdList)
