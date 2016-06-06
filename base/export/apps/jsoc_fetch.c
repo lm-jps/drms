@@ -2558,6 +2558,11 @@ check for requestor to be valid remote DRMS site
     export_series = kExportSeriesNew;
     char dieStr[1024];
     int caStatus = 0;
+    HContainer_t *argsCont = NULL;
+    HIterator_t *hIter = NULL;
+    void *pCmdParamArg = NULL;
+    CmdParams_Arg_t *cmdParamArg = NULL;
+    char cmdParamArgBuf[512] = {0};
 
     if (internal)
     {
@@ -2570,6 +2575,29 @@ check for requestor to be valid remote DRMS site
 
     /* requestid was not provided on the command-line. It is created near the end of this code block. */
     LogReqInfo(lfname, fileupload, op, dsin, requestid, dbhost, from_web, webarglist, fetch_time);
+    
+    /* Write all command-line argument values so we can debug. */
+    argsCont = cmdparams_get_argscont(&cmdparams);
+    if (argsCont)
+    {
+        hIter = hiter_create(argsCont);
+        if (hIter)
+        {
+            while ((pCmdParamArg = hiter_getnext(hIter)) != NULL)
+            {
+                cmdParamArg = (CmdParams_Arg_t *)pCmdParamArg;
+                
+                if (cmdParamArg->strval)
+                {
+                    snprintf(cmdParamArgBuf, sizeof(cmdParamArgBuf), "%s=%s", cmdParamArg->name ? cmdParamArg->name : "Unnamed", cmdParamArg->strval);
+                }
+                
+                WriteLog(lfname, cmdParamArgBuf);
+            }
+            
+            hiter_destroy(&hIter);
+        }
+    }
 
     caStatus = CheckEmailAddress(lfname, requestor, notify, dieStr, sizeof(dieStr));
         
