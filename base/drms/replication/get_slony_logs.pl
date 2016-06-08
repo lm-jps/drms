@@ -157,33 +157,34 @@ sub diecheck {
 }
 
 sub get_log_list {
+  local $/ = "\n"; # We need to read the output line by line so we can check to see if the stdout returned by the ls -1 command
+                   # is what we expect given the regular expression for the file name.
   my $file_name_regex=shift;
+  my($fileNameRegexPerl) = shift;
   my $ls_string="$rmt_dir/$file_name_regex";
+  my($pathRegEx);
+  
   print "$ls_string\n";
   sshopen3("$user\@$rmt_hostname", *WRITER, *READER, *ERROR, "ls -1 $ls_string");
 
+  $pathRegEx = "$rmt_dir/$fileNameRegexPerl";
   my $output=undef;
   while(<READER>) {
-    $output .= $_ if $_ =~ /\S+/;
+    $output .= $_ if $_ =~ /$pathRegEx/;
   }
 
   my @list = defined $output? split("\n",$output) :();
-  my $error=0;
-  while (<ERROR>) {
-    next if $_ =~ /No match/;
-    if ($_ !~ /^\s*$/) {
-      print "ERROR: $_";
-      $error=1;
-    }
-  }
+  
+  # Ignore the ERROR stream - what is in there is shell-dependent. All we really care about is
+  # if the ls command returns, via READER, files that match our regex pattern. If there is an 
+  # error, then ls returns nothing and we pretend that no files are available. We won't be able
+  # to distinguish among that case and a bad regular expression and no files available, but I think
+  # we can treat all cases as 'no files available'. The chances of the reg exp being bad or the ls 
+  # command erroring out are pretty slim at this point.
 
   close(READER);
   close(WRITER);
   close(ERROR);
-
-  if ($error ==1) {
-    print "get_log_list failed ... exiting\n";
-  }
 
   return @list;
 }
@@ -285,6 +286,7 @@ $cur_counter++;
   
 print "Start Counter is $cur_counter\n";
 
+my($perlRegExp);
 
 while (defined $slony_ingest) {
 
@@ -298,7 +300,8 @@ while (defined $slony_ingest) {
   ## START with stand alone sql log files
   
   my $ls_sql_file=sprintf ("slony1_log_2_%017d[0-9][0-9]*.sql",$next_batch);
-  my @list = get_log_list($ls_sql_file);
+  $perlRegExp = sprintf("slony1_log_2_%017d\\d\\d\\S*.sql",$next_batch);
+  my @list = get_log_list($ls_sql_file, $perlRegExp);
   
   
   #print Dumper [@list];
@@ -319,7 +322,8 @@ while (defined $slony_ingest) {
   ## NOW check tar files ##
   
   my $ls_tar_name="slony*.tar*";
-  my @tar_list = get_log_list($ls_tar_name);
+  $perlRegExp = "slony\\S*.tar\\S*";
+  my @tar_list = get_log_list($ls_tar_name, $perlRegExp);
 
   for my $tar (@tar_list) {
     next unless ($tar=~/(slony_logs_(\d+)-(\d+).tar(\.gz)?)/); 
