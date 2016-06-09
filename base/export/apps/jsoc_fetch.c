@@ -1341,6 +1341,13 @@ int DoIt(void)
 
     if (from_web)
     {
+        /* Try to log the f#*(Q QUERY_STRING */
+        char *qs = getenv("QUERY_STRING");
+        if (qs)
+        {
+            WriteLog(kLogFileExpReqExt, "QUERY_STRING is %s.\n", qs);
+        }
+    
         Q_ENTRY *req = NULL;
         
         /* If we are here then one of three things is true (implied by the existence of QUERY_STRING):
