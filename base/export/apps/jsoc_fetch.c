@@ -2589,7 +2589,7 @@ check for requestor to be valid remote DRMS site
                 
                 if (cmdParamArg->strval)
                 {
-                    snprintf(cmdParamArgBuf, sizeof(cmdParamArgBuf), "%s=%s", cmdParamArg->name ? cmdParamArg->name : "Unnamed", cmdParamArg->strval);
+                    snprintf(cmdParamArgBuf, sizeof(cmdParamArgBuf), "%s=%s\n", cmdParamArg->name ? cmdParamArg->name : "Unnamed", cmdParamArg->strval);
                 }
                 
                 WriteLog(lfname, cmdParamArgBuf);
@@ -2905,7 +2905,8 @@ check for requestor to be valid remote DRMS site
         TIME timeToCompletion;
         int expSize;
 
-        existReqID = GetExistReqID(drms_env, dsquery, filenamefmt, process, protocol, method, DUP_EXPORT_WINDOW, &timeToCompletion, &expSize);
+        //existReqID = GetExistReqID(drms_env, dsquery, filenamefmt, process, protocol, method, DUP_EXPORT_WINDOW, &timeToCompletion, &expSize);
+        
 
 	/* We need rcount before we can return duplicate-export information back to the caller. */
         if (existReqID)
@@ -3231,7 +3232,6 @@ check for requestor to be valid remote DRMS site
      *
      *  -ART
      */
-        
     long long sizeLimit; // Maximum size of STORED file.
         
     compressedDownload = (strstr(protocol, "**NONE**") == NULL);
@@ -3249,6 +3249,11 @@ check for requestor to be valid remote DRMS site
     {
         sizeLimit = MAX_STRAIGHT_EXPORT_SIZE / sizeRatio;
     }
+    
+    /* Can't figure out how sizeLimit can be -2^63, but it is here. Print out a lot of stuff. */
+    WriteLog(lfname, "size is %lld.\n", size);
+    WriteLog(lfname, "sizeRatio is %lf.\n", sizeRatio);
+    WriteLog(lfname, "sizeLimit is %lld.\n", sizeLimit);
         
     if (size > sizeLimit)
       {
