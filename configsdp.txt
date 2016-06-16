@@ -200,14 +200,6 @@ TAR_LIBS:IA32           /home/jsoc/lib/linux-ia32
 TAR_LIBS:AVX            /home/jsoc/lib/linux_avx
 TAR_LIBS:IA64           /home/jsoc/lib/linux-ia64
 
-PY_LIB                  python3.4m
-PY_INCS:X86_64          /home/jsoc/ActiveStatePy/linux_x86_64/ActivePython-3.4/include/python3.4m
-PY_INCS:AVX             /home/jsoc/ActiveStatePy/linux_avx/ActivePython-3.4/include/python3.4m
-PY_LIBS:X86_64          /home/jsoc/ActiveStatePy/linux_x86_64/ActivePython-3.4/lib
-PY_LIBS:AVX             /home/jsoc/ActiveStatePy/linux_avx/ActivePython-3.4/lib
-PY_HOME:X86_64          /home/jsoc/ActiveStatePy/linux_x86_64/ActivePython-3.4
-PY_HOME:AVX             /home/jsoc/ActiveStatePy/linux_avx/ActivePython-3.4
-
 # Set custom make file to tell the make system that the gcc cfitsio library is called
 # libcfitsio_gcc.a
 _CUST_

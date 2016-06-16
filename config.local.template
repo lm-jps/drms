@@ -277,17 +277,6 @@ TAR_LIBS:X86_64         /usr/lib64
 TAR_LIBS:AVX            /usr/lib64
 ################## END TAR ##################
 
-#################### PYTHON ####################
-# Python library needed for multi-threaded SUMS (so far).
-PY_LIB                  python3.4m
-PY_INCS:X86_64          /home/jsoc/ActiveStatePy/linux_x86_64/ActivePython-3.4/include/python3.4m
-PY_INCS:AVX             /home/jsoc/ActiveStatePy/linux_avx/ActivePython-3.4/include/python3.4m
-PY_LIBS:X86_64          /home/jsoc/ActiveStatePy/linux_x86_64/ActivePython-3.4/lib
-PY_LIBS:AVX             /home/jsoc/ActiveStatePy/linux_avx/ActivePython-3.4/lib
-PY_HOME:X86_64          /home/jsoc/ActiveStatePy/linux_x86_64/ActivePython-3.4
-PY_HOME:AVX             /home/jsoc/ActiveStatePy/linux_avx/ActivePython-3.4
-################## END PYTHON ##################
-
 
 # NetDRMS users can request subdirectories from the Stanford proj directories 
 # (e.g., JSOC/proj/util). These users will need to contact Stanford and obtain
