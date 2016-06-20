@@ -461,7 +461,7 @@ def ingestSQLFile(sqlIn, psqlBin, dbhost, dbport, dbname, dbuser, log):
     pipeWriteEndErr = os.fdopen(pipeWriteEndFDErr, 'w', encoding='UTF8')    
 
     try:
-        cmdList = [ psqlBin, '-h', dbhost, '-p', dbport, '-d', dbname, '-U', dbuser, '-f', '-']
+        cmdList = [ psqlBin, '-h', dbhost, '-p', dbport, '-d', dbname, '-v ON_ERROR_STOP=1', '-U', dbuser, '-f', '-']
         proc = Popen(cmdList, stdin=pipeReadEnd, stderr=pipeWriteEndErr, stdout=PIPE)
     except OSError as exc:
         raise Exception('sqlDump', "Cannot run command '" + ' '.join(cmdList) + "' ")
