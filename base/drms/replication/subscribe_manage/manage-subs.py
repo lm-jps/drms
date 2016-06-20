@@ -825,8 +825,10 @@ class Worker(threading.Thread):
                                 if len(records) != 1:
                                     raise Exception('dbResponse', cmd + ' did not return a valid column list.')
                                 columnList = records[0][0].strip('()') # strip start and end parenthesis.
-                                
                                 self.log.writeInfo([ 'Column list for series table ' + self.series[0].lower() + ' is ' + columnList + '.' ])
+                                
+                                # Convert to a format needed by dumpAndStartGeneratingClientLogs().
+                                columns = [ col.strip() for col in columnList.split(',') ]
                                 
                                 # We need to terminate transaction. dumpAndStartGeneratingClientLogs() has to run various things in a specific order
                                 # and has to time the start of a new transaction properly.
@@ -844,7 +846,7 @@ class Worker(threading.Thread):
                         # parsing the slony logs, generating the series dump files. Release the lock, then acquire it again after.
                         try:
                             self.reqTable.releaseLock()
-                            self.dumpAndStartGeneratingClientLogs(columnList)
+                            self.dumpAndStartGeneratingClientLogs(columns)
                         finally:
                             self.reqTable.acquireLock()
 
@@ -1468,14 +1470,18 @@ class Worker(threading.Thread):
                                     print(trackingInsert, file=fout)
                                 fout.flush()
 
-                            print('COPY ' + self.series[0].lower() + ' (' + columnList + ') FROM STDIN;', file=fout);
+                            print('COPY ' + self.series[0].lower() + ' (' + ','.join(columnList) + ') FROM STDIN;', file=fout);
                             fout.flush()
                             
                             # Run pyscopg2's copy_expert command to print series-table rows to the dump file. 
                             # Create a query that breaks up the series into equal-sized chunks. Use the
                             # limit and offset arguments to do this.
                             limitStr = 'LIMIT ' + str(limit) + ' OFFSET ' + str(offset)
-                            copyCmd = 'SELECT ' + columnList + ' FROM ' + self.series[0].lower() + ' ' + limitStr
+                            
+                            # Must cast all columns to text values so they can be ingested at the client end.
+                            columnListCasted = ','.join([ col + '::text' for col in columnList ])
+                            
+                            copyCmd = 'SELECT ' + columnListCasted + ' FROM ' + self.series[0].lower() + ' ' + limitStr
                             self.log.writeInfo([ 'COPY command is ' + copyCmd ])
                         
                             # Because the client character encoding was set to UTF8, copy_expert() will convert
@@ -1495,7 +1501,16 @@ class Worker(threading.Thread):
                             cursor.itersize = 4096
                             cursor.execute(copyCmd)
                             for record in cursor:
-                                print('\t'.join([ str(col) for col in record ]), file=fout)
+                                # Missing values are Nones. Make them empty strings.
+                                
+                                # EGADS! If the text string contains a control character (e.g., '\r', '\n'), then 
+                                # we cannot simply print that character to the dump file. If we were to do that, then 
+                                # the control character would appear in the dump file. However, we want the corresponding
+                                # escape sequence to appear in the dump file instead. The dump file should contain
+                                # the two-character representation (e.g. '\\r', '\\n') instead. The repr() function
+                                # can be used to achieve this.
+                                recordString = [ '\\N' if col is None else repr(col).strip('"\'') for col in record ]
+                                print('\t'.join(recordString), file=fout)
 
                             # Send an EOF to the COPY command.
                             print('\.', file=fout)
@@ -1507,7 +1522,7 @@ class Worker(threading.Thread):
                                     # The dump file is essentially empty - discard it.
                                     discardEmtpyDump = True
                                 done = True
-                                
+
                         self.log.writeInfo([ 'Successfully created dump file ' + str(fileNo) + '(' + outFile + ').' ])
                             
                         if discardEmtpyDump:
