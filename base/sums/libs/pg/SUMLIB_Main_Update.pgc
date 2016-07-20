@@ -36,8 +36,6 @@
  */
 int SUM_Main_Update(KEY *params, KEY **results) 
 {
-  EXEC SQL TYPE myuint64_t IS unsigned long long int;
-
 EXEC SQL BEGIN DECLARE SECTION;
   VARCHAR online_status[5];
   VARCHAR arch_status[5];
@@ -47,8 +45,8 @@ EXEC SQL BEGIN DECLARE SECTION;
   int storage_set;
   int safe_id;
   double bytes;
-  myuint64_t ds_index;
-  myuint64_t create_sumid;
+  long long int ds_index;
+  long long int create_sumid;
   char *username;
   char *ccomment;
   char wd[80];
@@ -67,7 +65,7 @@ EXEC SQL END DECLARE SECTION;
 EXEC SQL INCLUDE sqlca;
 
    reqcnt = getkey_int(params, "reqcnt");
-   create_sumid = getkey_uint64(params, "uid");
+   create_sumid = (long long)getkey_uint64(params, "uid");
    safe_id = 0;			/* !!TBD check use of this */
    errflg = 0;
 
@@ -96,7 +94,7 @@ EXEC SQL INCLUDE sqlca;
    }
    ccomment = history_comment;
    sprintf(nametmp, "dsix_%d", i);
-   ds_index = getkey_uint64(params, nametmp);
+   ds_index = (long long)getkey_uint64(params, nametmp);
 
    strcpy(online_status.arr, "Y");
    online_status.len = strlen(online_status.arr);

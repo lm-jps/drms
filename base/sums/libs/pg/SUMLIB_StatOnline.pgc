@@ -13,16 +13,14 @@ int SUM_StatOnline(uint64_t ds_index, char *newwd);
 
 int SUM_StatOnline(uint64_t ds_index, char *newwd)
 {
-  EXEC SQL TYPE myuint64_t IS unsigned long long int;
-
 EXEC SQL BEGIN DECLARE SECTION;
   VARCHAR l_newwd[80];
   VARCHAR l_status[5];
   VARCHAR l_date[32];
-  myuint64_t l_ds_index;
+  long long int l_ds_index;
 EXEC SQL END DECLARE SECTION;
   
-    l_ds_index = ds_index;
+    l_ds_index = (long long)ds_index;
 
     sprintf(l_newwd.arr,"%s", newwd);
     l_newwd.len = strlen(l_newwd.arr);
@@ -59,14 +57,12 @@ int SUM_StatOffline(uint64_t ds_index);
 
 int SUM_StatOffline(uint64_t ds_index)
 {
-  EXEC SQL TYPE myuint64_t IS unsigned long long int;
-
 EXEC SQL BEGIN DECLARE SECTION;
-  myuint64_t l_ds_index;
+  long long int l_ds_index;
   VARCHAR l_status[5];
 EXEC SQL END DECLARE SECTION;
   
-    l_ds_index = ds_index;
+    l_ds_index = (long long)ds_index;
     sprintf(l_status.arr,"%s", "N");
     l_status.len = strlen(l_status.arr);
 
@@ -93,15 +89,13 @@ int SUM_GetEffDate(uint64_t ds_index, char *effarray);
 
 int SUM_GetEffDate(uint64_t ds_index, char *effarray)
 {
-  EXEC SQL TYPE myuint64_t IS unsigned long long int;
-
 EXEC SQL BEGIN DECLARE SECTION;
-  myuint64_t l_ds_index;
+  long long int l_ds_index;
   VARCHAR eff_date_str[20];
   int  daro = DARO;
 EXEC SQL END DECLARE SECTION;
 
-    l_ds_index = ds_index;
+    l_ds_index = (long long)ds_index;
     EXEC SQL WHENEVER SQLERROR GOTO sqlerror;
     EXEC SQL WHENEVER NOT FOUND GOTO sqlerror; 
 

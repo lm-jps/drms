@@ -10,13 +10,11 @@ int DS_SumMainDelete(uint64_t ds_index);
 
 int DS_SumMainDelete(uint64_t ds_index)
 {
-  EXEC SQL TYPE myuint64_t IS unsigned long long int;
-
 EXEC SQL BEGIN DECLARE SECTION;
-  myuint64_t	  l_ds_index;
+  long long int	  l_ds_index;
 EXEC SQL END DECLARE SECTION;
 
-    l_ds_index = ds_index;
+    l_ds_index = (long long)ds_index;
 
     EXEC SQL WHENEVER SQLERROR GOTO sqlerror;
     EXEC SQL WHENEVER NOT FOUND GOTO sqlerror;

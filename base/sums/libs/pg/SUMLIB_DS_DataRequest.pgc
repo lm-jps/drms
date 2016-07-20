@@ -27,17 +27,15 @@ int DS_DataRequest(KEY *params, KEY **results);
 
 int DS_DataRequest(KEY *params, KEY **results)
 {
-  EXEC SQL TYPE myuint64_t IS unsigned long long int;
-
 EXEC SQL BEGIN DECLARE SECTION;
   char stmt[8192];
   VARCHAR l_eff_date[20];
   VARCHAR eff_date_str[20];
   char *eff_date;
-  myuint64_t uid;
-  myuint64_t ds_index;
-  myuint64_t ds_index_arr[MAXSUMREQCNT];
-  myuint64_t ds_index_arr_pos[MAXSUMREQCNT];
+  long long int uid;
+  long long int ds_index;
+  long long int ds_index_arr[MAXSUMREQCNT];
+  long long int ds_index_arr_pos[MAXSUMREQCNT];
   int  touch;
   int  daro = DARO;
   struct {
@@ -46,8 +44,8 @@ EXEC SQL BEGIN DECLARE SECTION;
     VARCHAR archive_status[5];
     VARCHAR offsite_ack[5];
     double bytes;
-    myuint64_t ds_index;
-    myuint64_t create_sumid;
+    long long int ds_index;
+    long long int create_sumid;
     VARCHAR  tape_id[20];
     int  tape_file_num;
     VARCHAR tapepos[15];
@@ -76,7 +74,7 @@ char STMT[] = "SELECT ONLINE_LOC, ONLINE_STATUS, ARCHIVE_STATUS, OFFSITE_ACK, BY
    char dsix_name[128];
    int i, reqcnt, mode, tdays, posdays, offline, pos, change;
 
-   uid = getkey_uint64(params, "uid");
+   uid = (long long)getkey_uint64(params, "uid");
    mode = getkey_int(params, "mode");
    if(findkey(params, "tdays")) 
      tdays = getkey_int(params, "tdays");
@@ -106,15 +104,15 @@ char STMT[] = "SELECT ONLINE_LOC, ONLINE_STATUS, ARCHIVE_STATUS, OFFSITE_ACK, BY
         printk("Bad keylist given to DS_DataRequest()\n");
         return(DS_DATA_REQ);
       }
-      ds_index = getkey_uint64(params, dsix_name);
+      ds_index = (long long)getkey_uint64(params, dsix_name);
       ds_index_arr[i] = ds_index;         /* save in the proper position */
       ds_index_arr_pos[i] = 0;		  //keep track of any dups
       sprintf(dsix_name, "wd_%d", i);
       setkey_str(results, dsix_name, ""); /* preset blank in case doen't exist*/
       if(i == (reqcnt - 1))
-	sprintf(stmt, "%s%lu);", stmt, ds_index);
+	sprintf(stmt, "%s%lld);", stmt, ds_index);
       else
-	sprintf(stmt, "%s%lu,", stmt, ds_index);
+	sprintf(stmt, "%s%lld,", stmt, ds_index);
      }
 
      EXEC SQL WHENEVER SQLERROR GOTO sqlerror;
@@ -179,7 +177,7 @@ char STMT[] = "SELECT ONLINE_LOC, ONLINE_STATUS, ARCHIVE_STATUS, OFFSITE_ACK, BY
           change = 1;
         }
         if(change) {
-          printk("touch %lu %s %d days %s\n",
+          printk("touch %lld %s %d days %s\n",
 		ds_index, GETKEY_str(params, "username"), tdays, eff_date); 
           sprintf(l_eff_date.arr, "%s", eff_date);
           l_eff_date.len = strlen(l_eff_date.arr);
@@ -212,9 +210,9 @@ char STMT[] = "SELECT ONLINE_LOC, ONLINE_STATUS, ARCHIVE_STATUS, OFFSITE_ACK, BY
         sprintf(dsix_name, "bytes_%d", pos);
  	setkey_double(results, dsix_name, mainquery.bytes);
         sprintf(dsix_name, "create_sumid_%d", pos);
-        setkey_uint64(results, dsix_name, mainquery.create_sumid);
+        setkey_uint64(results, dsix_name, (unsigned long long)(mainquery.create_sumid));
         sprintf(dsix_name, "ds_index_%d", pos);
-    	setkey_uint64(results, dsix_name, ds_index); 
+    	setkey_uint64(results, dsix_name, (unsigned long long)ds_index); 
         sprintf(dsix_name, "wd_%d", pos);
     	setkey_str(results, dsix_name, loc);
         sprintf(dsix_name, "tapeid_%d", pos);

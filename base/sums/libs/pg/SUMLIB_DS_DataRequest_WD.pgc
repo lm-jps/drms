@@ -20,11 +20,9 @@ int DS_DataRequest_WD(KEY *params, KEY **results);
 
 int DS_DataRequest_WD(KEY *params, KEY **results)
 {
-  EXEC SQL TYPE myuint64_t IS unsigned long long int;
-
 EXEC SQL BEGIN DECLARE SECTION;
   VARCHAR online_loc[80];
-  myuint64_t ds_index;
+  long long int ds_index;
 EXEC SQL END DECLARE SECTION;
 
    char dsix_name[128];
@@ -42,7 +40,7 @@ EXEC SQL END DECLARE SECTION;
         return(DS_DATA_REQ);
         break;
       }
-      ds_index = getkey_uint64(params, dsix_name);
+      ds_index = (long long)getkey_uint64(params, dsix_name);
       EXEC SQL SELECT ONLINE_LOC
 	INTO :online_loc
 	FROM SUM_MAIN 
@@ -53,7 +51,7 @@ EXEC SQL END DECLARE SECTION;
     	setkey_str(results, dsix_name, loc);
         continue;
 sqlnotfound:
-        printk("DS_DataRequest_WD() Data Not Found for ds_index=%ld\n",
+        printk("DS_DataRequest_WD() Data Not Found for ds_index=%lld\n",
 			 ds_index);
         sprintf(dsix_name, "wd_%d", i);
     	setkey_str(results, dsix_name, "");

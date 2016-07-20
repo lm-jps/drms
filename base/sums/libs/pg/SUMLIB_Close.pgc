@@ -9,15 +9,13 @@
 
 int SUMLIB_Close(KEY *params)
 {
-  EXEC SQL TYPE myuint64_t IS unsigned long long int;
-
 EXEC SQL BEGIN DECLARE SECTION;
-  myuint64_t uid;
+  long long int uid;
 EXEC SQL END DECLARE SECTION;
   
     EXEC SQL WHENEVER SQLERROR  GOTO sqlerror;
 
-  uid = getkey_uint64(params, "uid");
+  uid = (long long)getkey_uint64(params, "uid");
 
   /* now clear all of our read-only partitions */
          EXEC SQL DELETE FROM SUM_PARTN_ALLOC

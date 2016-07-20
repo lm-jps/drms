@@ -64,8 +64,6 @@ int SUMLIB_MainTapeUpdate(KEY *params);
 
 int SUMLIB_MainTapeUpdate(KEY *params) 
 {
-  EXEC SQL TYPE myuint64_t IS unsigned long long int;
-
 EXEC SQL BEGIN DECLARE SECTION;
   VARCHAR l_eff_date[20];
   VARCHAR l_wd[80];
@@ -73,8 +71,8 @@ EXEC SQL BEGIN DECLARE SECTION;
   int storage_group;
   int safe_id;
   double bytes;
-  myuint64_t ds_index;
-  myuint64_t create_sumid;
+  long long int ds_index;
+  long long int create_sumid;
   VARCHAR arch_tape[20];
   VARCHAR l_md5cksum[48];
   int gtarblock;
@@ -106,7 +104,7 @@ char nametmp[80];
 
   for(i=0; i < reqcnt; i++) {
     sprintf(nametmp, "ds_index_%d", i);
-    ds_index = getkey_uint64(params, nametmp);
+    ds_index = (long long)getkey_uint64(params, nametmp);
 
      EXEC SQL WHENEVER SQLERROR GOTO sqlerror;
      EXEC SQL UPDATE SUM_MAIN
@@ -121,7 +119,7 @@ char nametmp[80];
     sprintf(l_wd.arr,"%s", GETKEY_str(params, nametmp));
     l_wd.len = strlen(l_wd.arr);
     sprintf(nametmp, "sumid_%d", i);
-    create_sumid = getkey_uint64(params, nametmp);
+    create_sumid = (long long)getkey_uint64(params, nametmp);
     sprintf(nametmp, "status_%d", i);
     apstatus = getkey_int(params, nametmp);
     sprintf(nametmp, "archsub_%d", i);
@@ -131,7 +129,7 @@ char nametmp[80];
     sprintf(nametmp, "group_id_%d", i);
     groupid = getkey_int(params, nametmp);
  //printk("In SUMLIB_MainTapeUpdate() delete from SUM_PARTN_ALLOC:\n");
- //printk("l_wd=%s, create_sumid=%lu, apstatus=%d\n", l_wd.arr,create_sumid,apstatus );
+ //printk("l_wd=%s, create_sumid=%lld, apstatus=%d\n", l_wd.arr,create_sumid,apstatus );
     EXEC SQL DELETE FROM SUM_PARTN_ALLOC
            WHERE WD = :l_wd
            AND SUMID = :create_sumid

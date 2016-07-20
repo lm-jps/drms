@@ -16,15 +16,12 @@ int DS_Rm_Commit()
 
 int DS_RmDoX(char *name, double bytesdel)
 {
-
-    EXEC SQL TYPE myuint64_t IS unsigned long long int;
-
 EXEC SQL BEGIN DECLARE SECTION;
   char stmt[256];
   VARCHAR l_wd[80];
   VARCHAR l_eff_date[20];
-  myuint64_t l_sumid;
-  myuint64_t ds_index;
+  long long int l_sumid;
+  long long int ds_index;
   int l_archsub;
   double l_bytes;
 EXEC SQL END DECLARE SECTION;
@@ -67,10 +64,10 @@ EXEC SQL INCLUDE sqlca;
     EXEC SQL FETCH reqcursor INTO :l_wd, :l_sumid, :l_bytes, :l_eff_date, :ds_index, :l_archsub;
     /* must save results as can't put other sql calls in this loop */
     strcpy(pcursor[i].p_wd, l_wd.arr);
-    pcursor[i].p_sumid = l_sumid;
+    pcursor[i].p_sumid = (unsigned long long)l_sumid;
     pcursor[i].p_bytes = l_bytes;
     strcpy(pcursor[i].p_effdate, l_eff_date.arr);
-    pcursor[i].p_ds_index = ds_index;
+    pcursor[i].p_ds_index = (unsigned long long)ds_index;
     pcursor[i].p_archsub = l_archsub;
   }
 
@@ -83,7 +80,7 @@ end_fetch:
       /* only rm those with Offsite_Ack, and Safe_Tape */
 
 /* !!!TEMP noop out below for testing with DDS */
-      ds_index = pcursor[j].p_ds_index;
+      ds_index = (long long)(pcursor[j].p_ds_index);
       EXEC SQL  SELECT DS_INDEX into :ds_index from sum_main
       WHERE DS_INDEX = :ds_index AND
       OFFSITE_ACK = 'Y' AND SAFE_TAPE IS NOT NULL;
@@ -95,7 +92,7 @@ end_fetch:
 		pcursor[j].p_effdate, 
 		pcursor[j].p_ds_index, pcursor[j].p_archsub, &rmbytes)) {
         //EXEC SQL ROLLBACK WORK;
-        printk("Error in DS_RmDoX() call to DS_RmNowX() ds_index=%lu\n",
+        printk("Error in DS_RmDoX() call to DS_RmNowX() ds_index=%llu\n",
 		pcursor[j].p_ds_index);
         //return DS_DATA_QRY;
         continue;
@@ -121,12 +118,10 @@ sqlerror:
 int DS_RmNowX(char *wd, uint64_t sumid, double bytes, char *effdate,
 		uint64_t ds_index, int archsub, double *rmbytes) {
 		
-    EXEC SQL TYPE myuint64_t IS unsigned long long int;
-    
 EXEC SQL BEGIN DECLARE SECTION;
   varchar target[80];
   int l_count;
-  myuint64_t l_ds_index;
+  long long int l_ds_index;
   char stmt[65536];
 EXEC SQL END DECLARE SECTION;
   FILE *rxfp;
@@ -140,7 +135,7 @@ EXEC SQL END DECLARE SECTION;
     effd = get_effdate(0);
     today_date = (uint64_t)atol(effd);
     free(effd);
-    l_ds_index = ds_index;
+    l_ds_index = (long long)ds_index;
     EXEC SQL SELECT count(*) INTO :l_count from SUM_PARTN_ALLOC
         where DS_INDEX = :l_ds_index and status = 8;
     /* !!!TBD lock the table before determine if it's DARO */
@@ -182,13 +177,13 @@ EXEC SQL END DECLARE SECTION;
     printk("eff_date=%lu today_date=%lu\n", eff_date, today_date);
     if(ds_index != 0) {         /* Don't take offline if 0*/
     if(SUM_StatOffline(ds_index)) {
-      printk("Err: SUM_StatOffline(%lu, ...)\n", ds_index);
+      printk("Err: SUM_StatOffline(%llu, ...)\n", ds_index);
     }
     }
     if(archsub == DAAEDDP || archsub == DADPDELSU) { /* a temporary dataset */
-      printk("Removing sum_main for ds_index = %ld\n", ds_index);
+      printk("Removing sum_main for ds_index = %llu\n", ds_index);
       if(DS_SumMainDelete(ds_index)) {
-        printk("**Err: DS_SumMainDelete(%ld)\n", ds_index);
+        printk("**Err: DS_SumMainDelete(%llu)\n", ds_index);
       }
     } 
 #ifndef SUMDC

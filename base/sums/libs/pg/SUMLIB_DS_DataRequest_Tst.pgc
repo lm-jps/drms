@@ -23,14 +23,12 @@ int DS_DataRequest_Tst(KEY *params, KEY **results);
 
 int DS_DataRequest_Tst(KEY *params, KEY **results)
 {
-  EXEC SQL TYPE myuint64_t IS unsigned long long int;
-
 EXEC SQL BEGIN DECLARE SECTION;
   VARCHAR l_eff_date[20];
   VARCHAR eff_date_str[20];
   char *eff_date;
-  myuint64_t uid;
-  myuint64_t ds_index;
+  long long int uid;
+  long long int ds_index;
   int  touch;
   int  daro = DARO;
   struct {
@@ -39,8 +37,8 @@ EXEC SQL BEGIN DECLARE SECTION;
     VARCHAR archive_status[5];
     VARCHAR offsite_ack[5];
     double bytes;
-    myuint64_t ds_index;
-    myuint64_t create_sumid;
+    long long int ds_index;
+    long long int create_sumid;
     VARCHAR  tape_id[20];
     int  tape_file_num;
     VARCHAR tapepos[15];
@@ -71,7 +69,7 @@ extern PADATA *pahdr_ro;
    char dsix_name[128];
    int i, reqcnt, mode, tdays, offline;
 
-   uid = getkey_uint64(params, "uid");
+   uid = (long long)getkey_uint64(params, "uid");
    mode = getkey_int(params, "mode");
    tdays = getkey_int(params, "tdays");
   /* The mode bit "TOUCH" indicates that if this dataset is 
@@ -98,8 +96,8 @@ extern PADATA *pahdr_ro;
         return(DS_DATA_REQ);
         break;
       }
-      ds_index = getkey_uint64(params, dsix_name);
-printk("ds_index = %ld\n", ds_index);
+      ds_index = (long long)getkey_uint64(params, dsix_name);
+printk("ds_index = %lld\n", ds_index);
       EXEC SQL SELECT ONLINE_LOC, ONLINE_STATUS, 
 	ARCHIVE_STATUS, OFFSITE_ACK, 
 	BYTES, DS_INDEX, CREATE_SUMID, ARCH_TAPE, 
@@ -150,14 +148,14 @@ printk("ds_index = %ld\n", ds_index);
     }
 
       /* add an entry for read-only assignment to db partn_alloc tbl */
-     if(NC_PaUpdate(mainquery.online_loc.arr,uid,mainquery.bytes,DARO,0,0,0,0,ds_index,1,0))
+     if(NC_PaUpdate(mainquery.online_loc.arr,(unsigned long long)uid,mainquery.bytes,DARO,0,0,0,0,(unsigned long long)ds_index,1,0))
       {
         /* rollback already done */
         printk("Error on NC_PaUpdate to add to r/o list\n");
         return(DS_PALC_ERR);
       }
       /* also add the entry to the in-memory list */
-      /*setpadata(&pahdr_ro,mainquery.online_loc.arr,uid,mainquery.bytes,DARO,0,0,0,0, ds_index);*/
+      /*setpadata(&pahdr_ro,mainquery.online_loc.arr,(unsigned long long)uid,mainquery.bytes,DARO,0,0,0,0, (unsigned long long)ds_index);*/
 
         sprintf(dsix_name, "online_status_%d", i);
         setkey_str(results, dsix_name, mainquery.online_status.arr);
@@ -166,9 +164,9 @@ printk("ds_index = %ld\n", ds_index);
         sprintf(dsix_name, "bytes_%d", i);
  	setkey_double(results, dsix_name, mainquery.bytes);
         sprintf(dsix_name, "create_sumid_%d", i);
-        setkey_uint64(results, dsix_name, mainquery.create_sumid);
+        setkey_uint64(results, dsix_name, (unsigned long long)mainquery.create_sumid);
         sprintf(dsix_name, "ds_index_%d", i);
-    	setkey_uint64(results, dsix_name, ds_index); 
+    	setkey_uint64(results, dsix_name, (unsigned long long)ds_index); 
         sprintf(dsix_name, "wd_%d", i);
     	setkey_str(results, dsix_name, loc);
         sprintf(dsix_name, "tapeid_%d", i);
@@ -177,7 +175,7 @@ printk("ds_index = %ld\n", ds_index);
         setkey_int(results, dsix_name, mainquery.tape_file_num);
         continue;
 sqlnotfound:
-        printk("DS_DataRequest() uid=%ld Data Not Found for ds_index=%ld\n",
+        printk("DS_DataRequest() uid=%lld Data Not Found for ds_index=%lld\n",
 			 uid, ds_index);
         sprintf(dsix_name, "archive_status_%d", i);
     	setkey_str(results, dsix_name, ""); 
@@ -188,7 +186,7 @@ sqlnotfound:
         sprintf(dsix_name, "create_sumid_%d", i);
         setkey_uint64(results, dsix_name, 0);
         sprintf(dsix_name, "ds_index_%d", i);
-    	setkey_uint64(results, dsix_name, ds_index); 
+    	setkey_uint64(results, dsix_name, (unsigned long long)ds_index); 
         sprintf(dsix_name, "wd_%d", i);
     	setkey_str(results, dsix_name, "");
     }

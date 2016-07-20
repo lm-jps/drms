@@ -18,11 +18,9 @@ int SUM_drop_series(char *tablename);
 
 int SUM_drop_series(char *tablename) 
 {
-  EXEC SQL TYPE myuint64_t IS unsigned long long int;
-
 EXEC SQL BEGIN DECLARE SECTION;
   char stmt[128];
-  myuint64_t ds_index;
+  long long int ds_index;
 EXEC SQL END DECLARE SECTION;
 
 int i, j;
@@ -37,7 +35,7 @@ int i, j;
 
   for(i=0; ; i++) {
     EXEC SQL FETCH reqcursor INTO :ds_index;
-    printk("in SUM_drop_series() ds_index = %lu\n", ds_index);
+    printk("in SUM_drop_series() ds_index = %lld\n", ds_index);
     EXEC SQL WHENEVER NOT FOUND GOTO sqllp;
     EXEC SQL UPDATE SUM_PARTN_ALLOC SET STATUS=2, ARCHIVE_SUBSTATUS=32,
 	EFFECTIVE_DATE='0' WHERE DS_INDEX=:ds_index;
@@ -47,7 +45,7 @@ sqllp:
     //no partn_alloc entry so just delete the sum_main entry
     EXEC SQL WHENEVER NOT FOUND GOTO end_loop;
     EXEC SQL DELETE FROM SUM_MAIN WHERE DS_INDEX=:ds_index;
-    printk("del SUM_MAIN for ds_index=%lu\n", ds_index);
+    printk("del SUM_MAIN for ds_index=%lld\n", ds_index);
 end_loop:
     EXEC SQL WHENEVER NOT FOUND GOTO end_fetch;
     continue;

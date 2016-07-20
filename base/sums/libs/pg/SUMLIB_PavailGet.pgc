@@ -24,14 +24,12 @@ int SUMLIB_SumsetGet(int group, int *sumset);
 
 int SUMLIB_PavailGet(double bytes, int pds_set, uint64_t uid, uint64_t sunum, KEY **results) 
 {
-  EXEC SQL TYPE myuint64_t IS unsigned long long int;
-
 EXEC SQL BEGIN DECLARE SECTION;
   VARCHAR l_name[80];
   double  l_bytes;
   double  total_bytes;
   int	  l_pnum;
-  myuint64_t ds_index;
+  long long int ds_index; /* Previously of type myuint64_t but this caused issues - Art and Niles July 2016 */
 EXEC SQL END DECLARE SECTION;
 
 extern PART ptabx[]; 		/* defined in sum_svc.c */
@@ -42,6 +40,7 @@ char mkpart[MAX_STR];
 char dirstr[MAX_STR];
 
 EXEC SQL INCLUDE sqlca;
+
     l_bytes = bytes;
     l_pnum = pds_set;
 
@@ -64,6 +63,9 @@ EXEC SQL INCLUDE sqlca;
   }
 
 end_fetch:
+        /* This printk() may be useful for debugging. It winds up in the SUMS log. Art and Niles July 2016. 
+        printk("NILES : At end_fetch I have fnum=%d and sqlca.sqlcode=%d with sqlca.sqlerrm.sqlerrmc='%s'\n",
+                fnum, sqlca.sqlcode, sqlca.sqlerrm.sqlerrmc); */
         if(fnum == 0) {
           printk("Err SUMLIB_PavailGet-can't get requested storage on SUM set %d %g bytes\n", pds_set, l_bytes);
 	  EXEC SQL CLOSE availget;
@@ -99,14 +101,14 @@ end_fetch:
       EXEC SQL SELECT NEXTVAL('SUM_DS_INDEX_SEQ') INTO :ds_index;
     }
     else {		//use the given ds_index
-      ds_index = sunum;
+      ds_index = (long long)sunum;
     }
-        setkey_uint64(results, "ds_index", ds_index);
-        sprintf(mkpart, "%s/D%ld", l_name.arr, ds_index);
+        setkey_uint64(results, "ds_index", (unsigned long long)ds_index);
+        sprintf(mkpart, "%s/D%lld", l_name.arr, ds_index);
 	setkey_str(results, "partn_name", mkpart);
         sprintf(dirstr, "mkdir %s; chmod 02775 %s", mkpart, mkpart);
         if(system(dirstr)) {
-          printk("Error in SUMLIB_PavailGet() for SUNUM %llu, cmd: %s\n", ds_index, dirstr);
+          printk("Error in SUMLIB_PavailGet() for SUNUM %lld, cmd: %s\n", ds_index, dirstr);
           EXEC SQL COMMIT;
           return DS_ALLOC_ERR;
         }
@@ -116,12 +118,24 @@ end_fetch:
 	return NO_ERROR;
     
 sqlerror:
+       /* The next printk() is just too verbose for words, you have to kill SUMS or
+          the logs bloat VERY rapidly if there is an error. Art and Niles July 2016.
+       printk("NILES : At sqlerror I have sqlca.sqlcode=%d with sqlca.sqlerrm.sqlerrmc='%s'\n",
+                sqlca.sqlcode, sqlca.sqlerrm.sqlerrmc); */
+
 	EXEC SQL CLOSE availget;
         EXEC SQL COMMIT;
 	printk("Error in SUMLIB_PavailGet\n");  
 	printk("% .70s \n", sqlca.sqlerrm.sqlerrmc);  
     return DS_PAVAIL_ERR;
 }
+
+
+
+
+
+
+
 
 /* Get the sum_set number for the given group number from the db
  * table sum_arch_group. If none found, sets sumset to 0.

@@ -14,8 +14,6 @@ int SUMLIB_TapeFindGroup(int group, double bytes, TAPE *tape);
 
 int SUMLIB_TapeFindGroup(int group, double bytes, TAPE *tape)
 {
-  EXEC SQL TYPE myuint64_t IS unsigned long long int;
-
 EXEC SQL BEGIN DECLARE SECTION;
   VARCHAR l_tapeid[20];
   VARCHAR l_tapeid2[20];
@@ -23,7 +21,7 @@ EXEC SQL BEGIN DECLARE SECTION;
   int  l_spare;
   int  l_group_id;
   int  l_closed;
-  myuint64_t  l_availblocks;
+  long long int  l_availblocks;
 EXEC SQL END DECLARE SECTION;
   int found = 0;
   int closeit = 0;
@@ -56,7 +54,7 @@ EXEC SQL END DECLARE SECTION;
         tape->nxtwrtfn = l_nxtwrtfn;
         tape->spare = l_spare;
         tape->group_id = l_group_id;
-        tape->availblocks = l_availblocks;
+        tape->availblocks = (unsigned long long)l_availblocks;
         tape->closed = l_closed;
         tape->tapeid = strdup(l_tapeid.arr);
         EXEC SQL CLOSE pfind;
@@ -98,7 +96,7 @@ end_fetch:
       tape->nxtwrtfn = l_nxtwrtfn;
       tape->spare = l_spare;
       tape->group_id = l_group_id;
-      tape->availblocks = l_availblocks;
+      tape->availblocks = (unsigned long long)l_availblocks;
       tape->closed = l_closed;
       tape->tapeid = strdup(l_tapeid2.arr);
       EXEC SQL CLOSE tfind;

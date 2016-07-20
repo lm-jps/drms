@@ -18,10 +18,8 @@ int SUMLIB_DelSeriesSU(char *file, char *series);
 
 int SUMLIB_DelSeriesSU(char *file, char *series)
 {
-  EXEC SQL TYPE myuint64_t IS unsigned long long int;
-
 EXEC SQL BEGIN DECLARE SECTION;
-  myuint64_t        l_ds_index;
+  long long int        l_ds_index;
 EXEC SQL END DECLARE SECTION;
   FILE *fp;
   uint64_t index;
@@ -44,7 +42,7 @@ EXEC SQL END DECLARE SECTION;
     if(line[0] == '#' || line[0] == '\n') continue;
     sscanf(line, "%ld", &index);
     printk("%ld\n", index); /* !!!TEMP */
-    l_ds_index = index;
+    l_ds_index = (long long)index;
 
 	EXEC SQL UPDATE SUM_PARTN_ALLOC
 		SET STATUS = 2, EFFECTIVE_DATE='0',

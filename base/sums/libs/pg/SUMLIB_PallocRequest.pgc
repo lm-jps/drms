@@ -12,16 +12,14 @@ int DS_PallocRequest();
 
 int DS_PallocRequest()
 {
-  EXEC SQL TYPE myuint64_t IS unsigned long long int;
-
 EXEC SQL BEGIN DECLARE SECTION;
   VARCHAR l_wd[80];
   VARCHAR l_eff_date[20];
-  myuint64_t l_uid;
+  long long int l_uid;
   int l_status;
   int group_id;
   int safe_id;
-  myuint64_t ds_index;
+  long long int ds_index;
   int l_archsub;
   double l_bytes;
 EXEC SQL END DECLARE SECTION;
@@ -54,19 +52,19 @@ extern PADATA *pahdr_ap;
 		/* setting up memory tables here */
 		switch(l_status) {    /* add the entry to the proper list */
 	    case DARW:
-		  setpadata(&pahdr_rw, wd, l_uid, l_bytes, l_status, l_archsub, eff_date, group_id, safe_id, ds_index);
+		  setpadata(&pahdr_rw, wd, (unsigned long long)l_uid, l_bytes, l_status, l_archsub, eff_date, group_id, safe_id, (unsigned long long)ds_index);
 		  break;
 	    case DADP:
-		  setpadata(&pahdr_dp, wd, l_uid, l_bytes, l_status, l_archsub, eff_date, group_id, safe_id, ds_index);
+		  setpadata(&pahdr_dp, wd, (unsigned long long)l_uid, l_bytes, l_status, l_archsub, eff_date, group_id, safe_id, (unsigned long long)ds_index);
 		  break;
 	    case DAAP:
-		  setpadata(&pahdr_ap, wd, l_uid, l_bytes, l_status, l_archsub, eff_date, group_id, safe_id, ds_index);
+		  setpadata(&pahdr_ap, wd, (unsigned long long)l_uid, l_bytes, l_status, l_archsub, eff_date, group_id, safe_id, (unsigned long long)ds_index);
                   break;
 	    case DASAP:
-		  setpadata(&pahdr_ap, wd, l_uid, l_bytes, l_status, l_archsub, eff_date, group_id, safe_id, ds_index);
+		  setpadata(&pahdr_ap, wd, (unsigned long long)l_uid, l_bytes, l_status, l_archsub, eff_date, group_id, safe_id, (unsigned long long)ds_index);
 		  break;
 	    case DARO:
-		  setpadata(&pahdr_ro, wd, l_uid, l_bytes, l_status, l_archsub, eff_date, group_id, safe_id, ds_index);
+		  setpadata(&pahdr_ro, wd, (unsigned long long)l_uid, l_bytes, l_status, l_archsub, eff_date, group_id, safe_id, (unsigned long long)ds_index);
 		  break;
 	    case DAPERM:
 		  break;

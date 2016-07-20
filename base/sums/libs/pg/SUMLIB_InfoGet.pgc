@@ -11,8 +11,6 @@ int SUMLIB_InfoGet(uint64_t sunum , KEY **results);
 
 int SUMLIB_InfoGet(uint64_t sunum , KEY **result)
 {
-  EXEC SQL TYPE myuint64_t IS unsigned long long int;
-
 EXEC SQL BEGIN DECLARE SECTION;
     VARCHAR online_loc[80];
     VARCHAR online_status[5];
@@ -30,7 +28,7 @@ EXEC SQL BEGIN DECLARE SECTION;
     VARCHAR safe_tape[20];
     int safe_tape_fn;
     VARCHAR safe_tape_date[32];
-    myuint64_t ds_index;
+    long long int ds_index;
     int pa_status, pa_substatus;
     VARCHAR effective_date[20];
 EXEC SQL END DECLARE SECTION;
@@ -38,7 +36,7 @@ EXEC SQL END DECLARE SECTION;
     EXEC SQL WHENEVER SQLERROR GOTO sqlerror;
     EXEC SQL WHENEVER NOT FOUND GOTO sqlerror; 
 
-   ds_index = sunum;
+   ds_index = (long long)sunum;
  
  EXEC SQL SELECT online_loc, online_status, archive_status, offsite_ack,
  history_comment, owning_series, storage_group, bytes, creat_date, username,
@@ -68,7 +66,7 @@ EXEC SQL END DECLARE SECTION;
     setkey_str(result, "safe_tape", safe_tape.arr);
     setkey_int(result, "safe_tape_fn", safe_tape_fn);
     setkey_str(result, "safe_tape_date", safe_tape_date.arr);
-    setkey_uint64(result, "SUNUM", ds_index);
+    setkey_uint64(result, "SUNUM", (unsigned long long)ds_index);
 
   //now get values in sum_partn_alloc
     EXEC SQL WHENEVER NOT FOUND GOTO noerror; 
@@ -88,7 +86,7 @@ noerror:
     return(0);
 
 sqlerror:
-	printk("Error in SUMLIB_InfoGet sunum=%lu\n", ds_index); 
+	printk("Error in SUMLIB_InfoGet sunum=%lld\n", ds_index); 
 	//printk("% .70s \n", sqlca.sqlerrm.sqlerrmc); 
     EXEC SQL WHENEVER SQLERROR CONTINUE;
     EXEC SQL ROLLBACK WORK;
