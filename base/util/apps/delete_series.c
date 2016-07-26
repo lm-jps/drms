@@ -88,15 +88,28 @@ int DoIt(void) {
       yesno[len-1]=0;
     if (!strcmp(yesno,"yes"))
     {
-      printf("Removing existing series '%s'...\n",series);  
-      if (!drms_delete_series(drms_env, series, 1, keepsums))
-	return 0;
-      else
-	printf("'%s': Failed to delete DRMS series.\n",series);
-    } else 
+        printf("Removing existing series '%s'...\n",series);  
+        if (!drms_delete_series(drms_env, series, 1, keepsums))
+        {
+            return 0;
+        }
+        else
+        {
+            printf("'%s': Failed to delete DRMS series.\n",series);
+            return 1;
+        }
+    } 
+    else 
+    {
       printf("Series %s is not removed.\n", series);
-  } else 
+      return 0;
+    }
+  } 
+  else 
+  {
     printf("Series %s is not removed.\n", series);
+    return 0;
+  }
 
   return 0;
 
