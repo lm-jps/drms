@@ -188,6 +188,9 @@ RS_MAXTHREADS                         32
 # The path to executables run by the remote-sums system.
 RS_BINPATH                            /opt/drms/bin/linux_x86_64
 
+# The number of SCP worker threads.
+RS_N_WORKERS                           4
+
 # If set to 1, then this DRMS allows access by the public to series defined in the internal database (SERVER).
 WL_HASWL                              0
 
