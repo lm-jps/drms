@@ -51,6 +51,7 @@ RS_DLTIMEOUT               a:RS_DLTIMEOUT
 RS_REQTIMEOUT              a:RS_REQTIMEOUT
 RS_MAXTHREADS              a:RS_MAXTHREADS
 RS_BINPATH                 q:RS_BINPATH
+RS_N_WORKERS               q:RS_N_WORKERS
 WL_HASWL                   a:WL_HASWL
 WL_FILE                    q:WL_FILE
 BIN_EXPORT                 q:BIN_EXPORT
