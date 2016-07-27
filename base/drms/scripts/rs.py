@@ -192,9 +192,9 @@ def runJsocfetch(**kwargs):
         rv['paths'] = []
         rv['status'] = 'pathsReady'
         regExpData = re.compile(r'\s*#\s+data', re.IGNORECASE)
-        regExpDataLine = re.compile(r'\s*(\d+)\s+(\S+)\s+(\S+)\s+(\S)')
+        regExpDataLine = re.compile(r'\s*(\d+)\s+(\S+)\s+(\S+)\s+(\S)\s+(\d+)')
         
-        # Parse out paths frmom the jsoc_fetch output. If the SU is valid, but offline and cannot be retrieved,
+        # Parse out paths from the jsoc_fetch output. If the SU is valid, but offline and cannot be retrieved,
         # then we still want to tell the client site to add an entry in its SUMS for the SU, even though the SU
         # will be empty. We indicate that by setting the second element in the SU's 'paths' element to the
         # empty string. If the SU is invalid, then we do not want the client site to add an entry into its SUMS.
@@ -220,12 +220,15 @@ def runJsocfetch(**kwargs):
                 
                 if suStatus.lower() == 'y':
                     path = matchObj.group(3)
+                    suSize = matchObj.group(5)
                 elif suStatus.lower() == 'x':
                     path = ''
+                    suSize = None
                 elif suStatus.lower() == 'i':
                     path = None
+                    suSize = None
             
-                rv['paths'].append([sunum, path, series])
+                rv['paths'].append([sunum, path, series, suSize])
     elif jfStatus == 1 or jfStatus == 2 or jfStatus == 12:
         # jsoc_fetch started an asynchronous export request. Tell the caller to poll.
         regExp = re.compile(r'\s*requestid\s*=\s*(.+)', re.IGNORECASE)
