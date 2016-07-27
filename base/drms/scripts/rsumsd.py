@@ -175,6 +175,123 @@ class Log(object):
             type, value, traceback = sys.exc_info()
             raise Exception('badLogwrite', 'Unable to write to ' + value.filename + '.')
 
+class StorageUnit(object):
+    def __init__(self, sunum, series, retention, starttime, refcount, status, errmsg):
+        self.sunum = sunum
+        self.series = series
+        self.retention = retention
+        self.starttime = starttime
+        self.refcount = refcount
+        self.status = status
+        self.errmsg = errmsg
+        
+        # Not saved in the DB.
+        self.giveUpTheGhost = False
+        self.dirty = False
+        self.new = False
+        self.polling = False
+        self.path = None
+        self.worker = None
+        
+        self.lock = thread.allocate_lock()
+        
+    def acquireLock(self):
+        return self.lock.acquire()
+    
+    def releaseLock(self):
+        self.lock.release()
+        
+    def setDirty(self, value):
+        if not isinstance(value, (bool)):
+            raise Exception('invalidArg', 'setDirty(): argument must be a bool.')
+        
+        self.dirty = value
+    
+    # Set properties that are NOT saved to the DB.
+    def setNew(self, value):
+        if not isinstance(value, (bool)):
+            raise Exception('invalidArg', 'setNew(): argument must be a bool.')
+            
+        self.new = value
+        
+    def setPolling(self, value):
+        if not isinstance(value, (bool)):
+            raise Exception('invalidArg', 'setNew(): argument must be a bool.')
+            
+        self.polling = value
+        
+    def getPath(self):
+        path = None
+        if hasattr(self, 'path'):
+            path = self.path
+        return path
+        
+    def setPath(self, value):
+        if isinstance(value, (str)) or value is None:
+            self.path = value
+        else:
+            raise Exception('invalidArg', 'setPath(): argument must be a str or None.')
+    
+    # Set properties that are saved to the DB.
+    def setStatus(self, codeValue, msgValue):
+        if not isinstance(codeValue, (str)):
+            raise Exception('invalidArg', 'setStatus(): fist argument must be a str.')
+            
+        if not isinstance(msgValue, (str)) and msgValue is not None:
+            raise Exception('invalidArg', 'setStatus(): second argument must be a str or None.')
+            
+        self.status = codeValue
+        if value is not None:
+            self.errmsg = msg
+        else:
+            self.errmsg = ''
+            
+        self.setDirty(True)
+            
+    def setSeries(self, value):
+        if not isinstance(value, (str)):
+            raise Exception('invalidArg', 'setSeries(): argument must be a str.')
+
+        self.series = value
+        self.setDirty(True)
+        
+    def setRetention(self, value):
+        if not isinstance(value, (integer)):
+            raise Exception('invalidArg', 'setRetention(): argument must be an integer.')
+            
+        self.retention = value
+        self.setDirty(True)
+    
+    def setStarttime(self, value):
+        if not isinstance(value, (datetime.datetime)):
+            raise Exception('invalidArg', 'setStarttime(): argument must be a datetime.')
+            
+        self.starttime = value
+        self.setDirty(True)
+        
+    def incrementRefcount(self):
+        self.refcount += 1
+        self.setDirty(True)
+        
+    def decrementRefcount(self):
+        if self.refcount == 0:
+            raise Exception('noReference', 'Cannot decrement refcount on unreferenced SU record ' + str(self.sunum) + '.')
+                    
+        self.refcount -= 1
+        if self.refcount == 0:
+            self.giveUpTheGhost = True
+            
+        self.setDirty(True)
+        
+    def setWorker(self, value):
+        if not isinstance(value, (Downloader)):
+            raise Exception('invalidArg', 'setWorker(): argument must be a Downloader.')
+            
+        if self.worker:
+            raise Exception('workerRef', 'Cannot set worker for SU ' + str(self.sunum) + '. Worker already exists.')
+            
+        self.worker = value
+
 class SuTable:
     cursor = None
                 
@@ -204,17 +321,24 @@ class SuTable:
             sunumStr = str(record[0])
             
             self.suDict[sunumStr] = {}
-            self.suDict[sunumStr]['sunum'] = record[0]         # integer
-            self.suDict[sunumStr]['series'] = record[1]        # text
-            self.suDict[sunumStr]['retention'] = record[2]     # integer
+            sunum = record[0]         # integer
+            series = record[1]        # text
+            retention = record[2]     # integer
             # Whoa! pyscopg returns timestamps as datetime.datetime objects already!
-            self.suDict[sunumStr]['starttime'] = record[3]     # datetime.datetime
-            self.suDict[sunumStr]['refcount'] = record[4]      # integer
-            self.suDict[sunumStr]['status'] = record[5]        # text
-            self.suDict[sunumStr]['errmsg'] = record[6]        # text
-            self.suDict[sunumStr]['dirty'] = False
-            self.suDict[sunumStr]['new'] = False
-            self.suDict[sunumStr]['polling'] = False
+            starttime = record[3]     # datetime.datetime
+            refcount = record[4]      # integer
+            status = record[5]        # text
+            errmsg = record[6]        # text
+
+            su = StorageUnit(sunum, series, retention, starttime, refcount, status, errmsg)
+            
+            # Not read from or saved to database.
+            su.setDirty(False)
+            su.setNew(False)
+            su.setPolling(False)
+            su.setPath(None)              # The server path of the SU to be downloaded.
+            su.setWorker(None)
+            self.suDict[sunumStr] = su
 
     def tryRead(self):
         nAtts = 0
@@ -240,52 +364,76 @@ class SuTable:
     # This will NOT commit database changes. You are generally going to want to do this as part of a larger db change. Commit the changes
     # after all changes that form the atomic set of changes.
     def updateDB(self, sunums=None):
+        toDel = []
+        
         if sunums:
             # Update a subset of all records.
             for asunum in sunums:
                 sunumStr = str(asunum)
-           
-                if not sunumStr in self.suDict or not self.suDict[sunumStr]:
-                    raise Exception('unknownSunum', '(updateDB) No SU-table record exists for SU ' + sunumStr + '.')
+
+                try:
+                    gotSuLock = False
+                    # Will raise if the sunum is not in the dictionary.
+                    su = self.getAndLockSU(asunum)
+                    gotSuLock = True
+                
+                    if su.giveUpTheGhost:
+                        toDel.append(asunum)
+                    elif su.dirty:
+                        if su.new:
+                            cmd = 'INSERT INTO ' + self.tableName + '(sunum, series, retention, starttime, refcount, status, errmsg) VALUES(' + sunumStr + ",'" + su.series + "', " + str(su.retention) + ", '" + su.starttime.strftime('%Y-%m-%d %T') + "', " + str(su.refcount) + ", '" + su.status + "', '" + su.errmsg + "')"
+                        else:
+                            # The fields excluded from the update statement are not modified once set.
+                            cmd = 'UPDATE ' + self.tableName + " SET series='" + su.series + "', retention=" + str(su.retention) + ", starttime='" + su.starttime.strftime('%Y-%m-%d %T') + "', refcount=" + str(su.refcount) + ", status='" + su.status + "', errmsg='" + su.errmsg + "' WHERE sunum=" + sunumStr
+                
+                        self.log.write(['Updating SU db table: ' + cmd])
+                
+                        try:
+                            cursor.execute(cmd)
             
-                if self.suDict[sunumStr]['dirty']:
-                    if self.suDict[sunumStr]['new'] == True:
-                        cmd = 'INSERT INTO ' + self.tableName + '(sunum, series, retention, starttime, refcount, status, errmsg) VALUES(' + sunumStr + ",'" + self.suDict[sunumStr]['series'] + "', " + str(self.suDict[sunumStr]['retention']) + ", '" + self.suDict[sunumStr]['starttime'].strftime('%Y-%m-%d %T') + "', " + str(self.suDict[sunumStr]['refcount']) + ", '" + self.suDict[sunumStr]['status'] + "', '" + self.suDict[sunumStr]['errmsg'] + "')"
-                    else:
-                        # The fields excluded from the update statement are not modified once set.
-                        cmd = 'UPDATE ' + self.tableName + " SET series='" + self.suDict[sunumStr]['series'] + "', retention=" + str(self.suDict[sunumStr]['retention']) + ", starttime='" + self.suDict[sunumStr]['starttime'].strftime('%Y-%m-%d %T') + "', refcount=" + str(self.suDict[sunumStr]['refcount']) + ", status='" + self.suDict[sunumStr]['status'] + "', errmsg='" + self.suDict[sunumStr]['errmsg'] + "' WHERE sunum=" + sunumStr
+                        except psycopg2.Error as exc:
+                            raise Exception('sutableWrite', exc.diag.message_primary)
                 
-                    self.log.write(['Updating SU db table: ' + cmd])
-                
-                    try:
-                        cursor.execute(cmd)
-            
-                    except psycopg2.Error as exc:
-                        raise Exception('sutableWrite', exc.diag.message_primary)
-                
-                    self.suDict[sunumStr]['dirty'] = False
-                    self.suDict[sunumStr]['new'] = False
+                        su.setDirty(False)
+                        su.setNew(False)
+                finally:
+                    if gotSuLock:
+                        su.releaseLock()
+                    
         else:
             # Update all dirty records.
             for sunumStr in self.suDict:
-                if self.suDict[sunumStr]['dirty']:
-                    if self.suDict[sunumStr]['new'] == True:
-                        cmd = 'INSERT INTO ' + self.tableName + '(sunum, series, retention, starttime, refcount, status, errmsg) VALUES(' + sunumStr + ",'" + self.suDict[sunumStr]['series'] + "', " + str(self.suDict[sunumStr]['retention']) + ", '" + self.suDict[sunumStr]['starttime'].strftime('%Y-%m-%d %T') + "', " + str(self.suDict[sunumStr]['refcount']) + ", '" + self.suDict[sunumStr]['status'] + "', '" + self.suDict[sunumStr]['errmsg'] + "')"
-                    else:
-                        cmd = 'UPDATE ' + self.tableName + " SET series='" + self.suDict[sunumStr]['series'] + "', retention=" + str(self.suDict[sunumStr]['retention']) + ", starttime='" + self.suDict[sunumStr]['starttime'].strftime('%Y-%m-%d %T') + "', refcount=" + str(self.suDict[sunumStr]['refcount']) + ", status='" + self.suDict[sunumStr]['status'] + "', errmsg='" + self.suDict[sunumStr]['errmsg'] + "' WHERE sunum=" + sunumStr
+                try:
+                    gotSuLock = False
+                    # Will raise if the sunum is not in the dictionary.
+                    su = self.getAndLockSU(asunum)
+                    gotSuLock = True
+            
+                    if su.giveUpTheGhost:
+                        toDel.append(asunum)
+                    elif su.dirty:
+                        if su.new:
+                            cmd = 'INSERT INTO ' + self.tableName + '(sunum, series, retention, starttime, refcount, status, errmsg) VALUES(' + sunumStr + ",'" + su.series + "', " + str(su.retention) + ", '" + su.starttime.strftime('%Y-%m-%d %T') + "', " + str(su.refcount) + ", '" + su.status + "', '" + su.errmsg + "')"
+                        else:
+                            cmd = 'UPDATE ' + self.tableName + " SET series='" + su.series + "', retention=" + str(su.retention) + ", starttime='" + su.starttime.strftime('%Y-%m-%d %T') + "', refcount=" + su.refcount) + ", status='" + su.status + "', errmsg='" + su.errmsg + "' WHERE sunum=" + sunumStr
                     
-                    self.log.write(['Updating SU db table: ' + cmd])
+                        self.log.write(['Updating SU db table: ' + cmd])
                     
-                    try:
-                        cursor.execute(cmd)
+                        try:
+                            cursor.execute(cmd)
                     
-                    except psycopg2.Error as exc:
-                        import traceback
-                        self.log.write([ traceback.format_exc(5) ])
-                        raise Exception('sutableWrite', traceback.format_exc(5))
+                        except psycopg2.Error as exc:
+                            import traceback
+                            self.log.write([ traceback.format_exc(5) ])
+                            raise Exception('sutableWrite', traceback.format_exc(5))
                     
-                    self.suDict[sunumStr]['dirty'] = False
-                    self.suDict[sunumStr]['new'] = False
+                        su.setDirty(False)
+                        su.setNew(False)
+                finally:
+                    if gotSuLock:
+                        su.releaseLock()
+                    
+        self.deleteDB(toDel)
 
     # This will NOT commit database changes. You are generally going to want to do this as part of a larger db change. Commit the changes
     # after all changes that form the atomic set of changes.
@@ -295,9 +443,7 @@ class SuTable:
             for asunum in sunums:
                 sunumStr = str(asunum)
                 
-                if not sunumStr in self.suDict or not self.suDict[sunumStr]:
-                    raise Exception('unknownSunum', '(deleteDB) No SU-table record exists for SU ' + sunumStr + '.')
-
+                # Will raise if the sunum is not in the dictionary.
                 del self.suDict[sunumStr]
             
             sunumLstStr = ','.join([str(asunum) for asunum in sunums])
@@ -324,138 +470,98 @@ class SuTable:
         
             if sunumStr in self.suDict:
                 raise Exception('knownSunum', 'SU-table record already exists for SU ' + sunumStr + '.')
-        
-            self.suDict[sunumStr] = {}
-            self.suDict[sunumStr]['sunum'] = asunum
-            self.suDict[sunumStr]['series'] = ''
-            self.suDict[sunumStr]['retention'] = -1
-            self.suDict[sunumStr]['starttime'] = datetime.now()
-            self.suDict[sunumStr]['refcount'] = 1
-            self.suDict[sunumStr]['status'] = 'P'
-            self.suDict[sunumStr]['errmsg'] = ''
+                
+            su = StorageUnit(asunum, '', -1, datetime.now(), 1, 'P', '')
 
-            # Set dirty flag
-            self.suDict[sunumStr]['dirty'] = True
-
+            su.setDirty(True)
             # Set the new flag (so that the record will be INSERTed into the SU database table instead of UPDATEd).
-            self.suDict[sunumStr]['new'] = True
-
+            su.setNew(True)
             # The polling flag is set only while we are waiting for a providing site to give us paths for SUs.
-            self.suDict[sunumStr]['polling'] = False
+            su.setPolling(False)
+        
+            self.suDict[sunumStr] = su
 
     def setStatus(self, sunums, code, msg=None):
         for asunum in sunums:
             sunumStr = str(asunum)
-        
-            if not sunumStr in self.suDict or not self.suDict[sunumStr]:
-                raise Exception('unknownSunum', '(setStatus) No SU-table record exists for SU ' + sunumStr + '.')
-        
-            self.suDict[sunumStr]['status'] = code
-            if msg is not None:
-                self.suDict[sunumStr]['errmsg'] = msg
-            else:
-                self.suDict[sunumStr]['errmsg'] = ''
-
-            # Set dirty flag
-            self.suDict[sunumStr]['dirty'] = True
+            
+            # Will raise if the sunum is not in the dictionary.
+            su = self.get([ asunum ])[0]
+            su.setStatus(code, msg)
 
     def setSeries(self, sunums, series):
         for asunum in sunums:
             sunumStr = str(asunum)
             
-            if not sunumStr in self.suDict or not self.suDict[sunumStr]:
-                raise Exception('unknownSunum', '(setSeries) No SU-table record exists for SU ' + sunumStr + '.')
-            
-            self.suDict[sunumStr]['series'] = series
-            
-            # Set dirty flag
-            self.suDict[sunumStr]['dirty'] = True
+            # Will raise if the sunum is not in the dictionary.
+            su = self.get([ asunum ])[0]
+            su.setSeries(series)
 
     def setRetention(self, sunums, retention):
         for asunum in sunums:
             sunumStr = str(asunum)
             
-            if not sunumStr in self.suDict or not self.suDict[sunumStr]:
-                raise Exception('unknownSunum', '(setRetention) No SU-table record exists for SU ' + sunumStr + '.')
-            
-            self.suDict[sunumStr]['retention'] = retention
-            
-            # Set dirty flag
-            self.suDict[sunumStr]['dirty'] = True
+            # Will raise if the sunum is not in the dictionary.
+            su = self.get([ asunum ])[0]
+            su.setRetention(retention)
 
     def setStarttime(self, sunums, starttime):
         for asunum in sunums:
             sunumStr = str(asunum)
-    
-            if not sunumStr in self.suDict or not self.suDict[sunumStr]:
-                raise Exception('unknownSunum', '(setStarttime) No SU-table record exists for SU ' + sunumStr + '.')
             
-            self.suDict[sunumStr]['starttime'] = starttime
-            
-            # Set dirty flag
-            self.suDict[sunumStr]['dirty'] = True
+            # Will raise if the sunum is not in the dictionary.
+            su = self.get([ asunum ])[0]
+            su.setStarttime(starttime)
+
     def incrementRefcount(self, sunums):
         for asunum in sunums:
             sunumStr = str(asunum)
             
-            if not sunumStr in self.suDict or not self.suDict[sunumStr]:
-                raise Exception('unknownSunum', '(incrementRefcount) No SU-table record exists for SU ' + sunumStr + '.')
-            
-            self.suDict[sunumStr]['refcount'] += 1
+            # Will raise if the sunum is not in the dictionary.
+            su = self.get([ asunum ])[0]
+            su.incrementRefcount()
 
     def decrementRefcount(self, sunums):
         toDel = []
         for asunum in sunums:
             sunumStr = str(asunum)
 
-            if not sunumStr in self.suDict or not self.suDict[sunumStr]:
-                raise Exception('unknownSunum', '(decrementRefcount) No SU-table record exists for SU ' + sunumStr + '.')
-            
-            if self.suDict[sunumStr]['refcount'] == 0:
-                raise Exception('noReference', 'Cannot decrement refcount on unreferenced SU record ' + sunumStr + '.')
+            # Will raise if the sunum is not in the dictionary.
+            su = self.get([ asunum ])[0]
+            su.decrementRefcount()
                     
-            self.suDict[sunumStr]['refcount'] -= 1
-            if self.suDict[sunumStr]['refcount'] == 0:
-                toDel.append(asunum)
-
-        self.deleteDB(toDel)
-        
     def getWorker(self, sunum):
         sunumStr = str(sunum)
-        if not sunumStr in self.suDict or not self.suDict[sunumStr]:
-            raise Exception('unknownSunum', '(get) No SU-table record exists for SU ' + sunumStr + '.')
         
-        if 'worker' in self.suDict[sunumStr]:
-            return self.suDict[sunumStr]['worker']
-        return None
+        # Will raise if the sunum is not in the dictionary.
+        su = self.get([ sunum ])[0]
+        return su.worker
         
     def setWorker(self, sunum, worker):
         sunumStr = str(sunum)
-        if not sunumStr in self.suDict or not self.suDict[sunumStr]:
-            raise Exception('unknownSunum', '(get) No SU-table record exists for SU ' + sunumStr + '.')
-        
-        if 'worker' in self.suDict[sunumStr]:
-            raise Exception('workerRef', 'Cannot set worker for SU ' + sunumStr + '. Worker already exists.')
-            
-        self.suDict[sunumStr]['worker'] = worker
+
+        # Will raise if the sunum is not in the dictionary.
+        su = self.get([ sunum ])[0]
+        su.setWorker(worker)
     
     def stopWorker(self, sunum):
         sunumStr = str(sunum)
-        if not sunumStr in self.suDict or not self.suDict[sunumStr]:
-            raise Exception('unknownSunum', '(get) No SU-table record exists for SU ' + sunumStr + '.')   
+        
+        # Will raise if the sunum is not in the dictionary.
+        su = self.get([ sunum ])[0]
             
-        if 'worker' in self.suDict[sunumStr] and self.suDict[sunumStr]['worker']:
-            self.suDict[sunumStr]['worker'].stop()
-            if self.suDict[sunumStr]['worker'].isAlive():
+        if su.worker:
+            su.worker.stop()
+            if su.worker.isAlive():
                 # Give the worker 15 seconds to self-terminate.
-                self.suDict[sunumStr]['worker'].join(15)
-            if self.suDict[sunumStr]['worker'].isAlive():
+                su.worker.join(15)
+            if su.worker.isAlive():
                 # Apparently, there is no way to kill a thread from another thread. So, we are just going to
                 # orphan the thread (so it doesn't use up our maxThreads quota).
                 try:
                     Downloader.lock.acquire()
                     self.log.write(['(stopWorker) Class Downloader acquired Downloader lock for SU ' + sunumStr + '.'])
-                    Downloader.tList.remove(self.suDict[sunumStr].worker) # This thread is no longer one of the running threads.
+                    Downloader.tList.remove(su.worker) # This thread is no longer one of the running threads.
                     if len(Downloader.tList) == Downloader.maxThreads - 1:
                         # Fire event so that main thread can add new SUs to the download queue.
                         Downloader.eventMaxThreads.set()
@@ -465,36 +571,87 @@ class SuTable:
                     Downloader.lock.release()
                     self.log.write(['(stopWorker) Class Downloader released Downloader lock for SU ' + sunumStr + '.'])
 
-                del self.suDict[sunumStr]['worker']
+                del su.worker
 
     def get(self, sunums=None):
         toRet = []
         
         if not sunums:
-            return self.suDict
+            for sunumStr in self.suDict.iterkeys():
+                toRet.append(self.suDict[sunumStr])
+        else:
+            for asunum in sunums:
+                sunumStr = str(asunum)
         
-        for asunum in sunums:
-            sunumStr = str(asunum)
-        
-            if not sunumStr in self.suDict or not self.suDict[sunumStr]:
-                raise Exception('unknownSunum', '(get) No SU-table record exists for SU ' + sunumStr + '.')
+                if not sunumStr in self.suDict or not self.suDict[sunumStr]:
+                    raise Exception('unknownSunum', '(get) No SU-table record exists for SU ' + sunumStr + '.')
 
-            toRet.append(self.suDict[sunumStr])
+                toRet.append(self.suDict[sunumStr])
 
         return toRet
+        
+    # This will acquire the SU lock. The caller must release it!! Because the SU lock is acquired while the 
+    # SU-table lock is held, nobody can modify the SU after this method returns and before the caller
+    # releases the SU lock.
+    def getAndLockSU(self, sunum):
+        gotTableLock = False
+
+        try:
+            gotTableLock = self.suTable.acquireLock()
+
+            if gotTableLock is None:
+                raise Exception('lock', 'Unable to acquire SU-table lock.')
+                
+            su = get([ sunum ])[0]
+            gotSULock = su.acquireLock()
+            
+            if gotSULock is None:
+                raise Exception('lock', 'Unable to acquire SU ' + str(sunum) + ' lock.')
+        finally:
+            # Always release lock.
+            if gotTableLock:
+                self.suTable.releaseLock()
+                
+        return su
 
     # Returns a dictionary of SU records.
     def getPending(self):
         pending = []
         
         for sunumStr in self.suDict.iterkeys():
-            if self.suDict[sunumStr]['status'] == 'P':
-                pending.append(self.suDict[sunumStr])
+            # Will raise if the sunum is not in the dictionary.
+            su = self.get([ int(sunumStr) ])[0]
+
+            if su.status == 'P':
+                pending.append(su)
 
         # Sorts in place - and returns None.
-        pending.sort(key=lambda(dict) : dict['sunum'])
+        pending.sort(key=lambda(su) : su.sunum)
 
         return pending
+        
+    # Returns a single SU entry whose status is 'W'.
+    def getNextWorking(self):
+        working = None
+        
+        for sunumStr in self.suDict.iterkeys():
+            # Will raise if the sunum is not in the dictionary.
+            su = self.get([ int(sunumStr) ])[0]
+
+            try:
+                # We are going to access data from the SU - get lock first.
+                gotLock = su.acquireLock()
+                if gotLock is None:
+                    raise Exception('lock', 'Unable to acquire SU ' + str(su.sunum) + ' lock.')
+
+                if su.status == 'W':
+                    working = su
+                    break
+            finally:
+                if gotLock:
+                    su.releaseLock()
+                
+        return working
 
     def getTimeout(self):
         return self.timeOut
@@ -875,9 +1032,182 @@ class Chunker(object):
         while i < len(self.chunks):
             yield self.chunks[i]
             i += 1
+            
+class ScpWorker(threading.Thread):
+    tList = [] # A list of running thread IDs.
+    maxThreads = 16
+    scpNeeded = threading.Event() # Event fired when a Downloader thread has changed the state of an SU from 'P' to 'W'
+    scpCompleted = threading.Event()  # Event fired when an ScpWorker thread had completed an SU download
+    lock = threading.Lock() # Guard tList.
+    
+    def __init__(self):
+        threading.Thread.__init__(self, suTable, scpUser, scpHost, scpPort, binPath, arguments, log)
+        self.suTable = suTable
+        self.scpUser = scpUser
+        self.scpHost = scpHost
+        self.scpPort = scpPort
+        self.binPath = binPath # scp bin path
+        self.arguments = arguments
+        self.log = log
+        
+    def run(self):
+        gotTableLock = False
+        gotSULock = False
+        sunum = None
+        shutDown = False
+        
+        while not shutDown:
+            try:
+                gotTableLock = self.suTable.acquireLock()
+                
+                if not gotTableLock:
+                    raise Exception('lock', 'Unable to acquire SU-table lock.')
+                                
+                # Look for an SU whose status is 'W' (which means that a Downloader thread is requesting an ScpWorker thread perform a 
+                # download for it). If we find one, set status to 'D' and download the SU. When the download is complete, set the status
+                # to 'P' so the requesting Downloader thread can clean-up and set the status to 'C' for the main thread to handle.
+                su = self.suTable.getNextWorking()
+                if su is not None:
+                    # Now acquire SU lock so no other thread modifies the SU while we are processing the download.
+                    gotSULock = su.acquireLock()
+                    if gotSULock is None:
+                        raise Exception('lock', 'Unable to acquire SU ' + str(su.sunum) + ' lock.')
+                        
+                    sunum = su.sunum
+            finally:
+                # Always release lock.
+                if gotTableLock:
+                    self.suTable.releaseLock()
+
+            if su is not None:
+                try:
+                    self.log.write([ 'Downloading SU ' + str(su.sunum) + '.' ])
+                    # Set status to D to prevent another ScpWorker from processing the download.
+                    su.setStatus('D', None)
+                    
+                    dlDir = '/tmp/.su' + str(su.sunum)
+                    
+                    # Make sure path is set.
+                    serverPath = su.getPath()
+                    if not serverPath:
+                        raise Exception('scpSU', 'Server SU path is not known.')
+                finally:
+                    # Always release the SU lock.
+                    if gotSULock:
+                        su.releaseLock()
+
+                # Don't forget to make the temporary directory first.
+                if os.path.exists(dlDir):
+                    self.log.write(['Removing stale temporary directory ' + dlDir + '.'])
+                    shutil.rmtree(dlDir)
+                self.log.write(['Creating temporary download directory ' + dlDir + '.'])
+                os.mkdir(dlDir)
+                                
+                cmdList = ['scp', '-r', '-P', self.scpPort, self.scpUser + '@' + self.scpHost + ':' + serverPath + '/*', dlDir]
+                self.log.write([ 'Running ' + ' '.join(cmdList) + '.' ])
+                try:
+                    # check_call(cmdList)
+                    # The scp process will inherit stdin, stdout, and stderr from this script.
+                    proc = Popen(cmdList, stdout=PIPE, stderr=PIPE)
+                except OSError as exc:
+                    raise Exception('scpSU', "Cannot run command '" + ' '.join(cmdList) + "' ")
+                except ValueError as exc:
+                    raise Exception('scpSU', "scp command '" + ' '.join(cmdList) + "' called with invalid arguments.")
+
+                # Poll for completion
+                while True:                    
+                    try:
+                        # Check for shut-down (status == 'S'). If getAndLockSU() does not raise, then the SU was locked.
+                        gotSULock = False
+                        su = self.suTable.getAndLockSU(sunum)
+                        gotSULock = True
+
+                        if gShutDown or su.status == 'S':
+                            proc.kill()
+                            self.log.write(['ScpWorker thread is observing the global shutdown and exiting now.'])
+                            shutDown = True
+                            break
+
+                        # Check for download error or completion
+                        if su.status != 'D':
+                            raise Exception('downloader', 'SU ' + str(su.sunum) + ' status is ' + str(su.status) + ' (not Downloading).')
+
+                        # Check for download time-out.
+                        timeNow = datetime.now(su.starttime.tzinfo)
+                        if timeNow > su.starttime + self.suTable.getTimeout():
+                            self.log.write(['Download of SUNUM ' + str(su.sunum) + ' timed-out.'])
+                            su.setStatus('E', 'Download timed-out.')
+                            raise Exception('downloader', 'Timed-out.')
+                    finally:
+                        # Always release SU lock.
+                        if gotSULock:
+                            su.releaseLock()
+
+                    # The Python documentation is confusing at best. I think we have to look at the proc.returncode attribute
+                    # to determine if the child process has completed. None means it hasn't. If the value is not None, then 
+                    # the child process has terminated, and the value is the child process's return code.
+                    proc.poll()
+                    if proc.returncode is not None:
+                        if proc.returncode != 0:
+                            out, err = proc.communicate()
+                            msg = 'Command "' + ' '.join(cmdList) + '" returned non-zero status code ' + str(proc.returncode) + '.'
+                            if err is not None:
+                                self.log.write([ 'scp stderr msg: ' + err.decode('UTF8') ])
+                            raise Exception('scpSU', msg) 
+                        break
+
+                    time.sleep(1)
+
+                if not shutDown:
+                    try:
+                        gotSULock = False
+                        su = self.suTable.getAndLockSU(sunum)
+                        gotSULock = True
+                    
+                        su.setStatus('P', None)
+                    finally:
+                        # Always release lock.
+                        if gotSULock:
+                            su.releaseLock()
+                        
+                    try:
+                        gotTableLock = self.suTable.acquireLock()
+
+                        if not gotTableLock:
+                            raise Exception('lock', 'Unable to acquire SU-table lock.')
+                        
+                        # Flush the change to disk.
+                        self.suTable.updateDB()
+                    finally:
+                        # Always release lock.
+                        if gotTableLock:
+                            self.suTable.releaseLock()
+
+                    self.log.write(['scp command succeeded for SU ' + str(su.sunum) + '.'])
+                
+                # Move on to the next scp without sleeping
+                
+                # Wake up a Downloader.
+                ScpWorker.scpCompleted.set()
+                # Clear event so that main will block the next time it calls wait.
+                ScpWorker.scpCompleted.clear()
+                
+            else:
+                # There were no requests for an SU download. Wait for one with ScpWorker.scpNeeded.wait().
+                ScpWorker.scpNeeded.wait()
+    
+    def newThread(suTable, scpUser, scpHost, scpPort, binPath, arguments, log):
+        worker = ScpWorker(suTable, scpUser, scpHost, scpPort, binPath, arguments, log)
+        ScpWorker.tList.append(worker)
+        worker.start()
+
+        
 
 # Downloads a single SU. Ingests it into SUMs (SUMS allows to ingestion of a single SU at a time only.). Updates
 # the SU table status for that SU.
+# The main thread sets the SU status to 'P'. The Downloader thread sets that status to 'W' to request a ScpWorker
+# thread to download the SU. The ScpWorker thread sets the status to 'D' while it is processing the download. When
+# the download is complete, the ScpWorker thread sets the status back to 'P'.
 class Downloader(threading.Thread):
     tList = [] # A list of running thread IDs.
     maxThreads = 16 # Default. Can be overriden with the Downloader.setMaxThreads() method.
@@ -897,97 +1227,64 @@ class Downloader(threading.Thread):
         self.binPath = binPath
         self.arguments = arguments
         self.log = log
-        self.sdEvent = threading.Event()
 
     def run(self):
-        dlDir = '/tmp/.su' + str(self.sunum)
-        
-        self.log.write(['Downloading SU [scp -r -P ' + self.scpPort + ' ' + self.scpUser + '@' + self.scpHost + ':' + self.path + '/* ' + dlDir])
-        
-        # Download the SU.
-        gotLock = False
+        # Sub-out the download to an ScpWorker instance. To do that, se the SU status to 'W'. The ScpWorker
+        # that is used will set the status to 'D' so that no other ScpWorker attempt to download the SU 
+        # as well. When the ScpWorker completes the download, it will set the status to 'P' again.
         try:
             try:
-                self.log.write(['Class Downloader acquiring SU-table lock for SU ' + str(self.sunum) + '.'])
-                gotLock = self.suTable.acquireLock()
+                gotSULock = False
+                su = self.suTable.getAndLockSU(self.sunum)
+                gotSULock = True
 
-                su = self.suTable.get([self.sunum])
-
-                # Check for download error or completion
-                if su[0]['status'] != 'P':
-                    raise Exception('downloader', 'SU ' + str(su[0]['sunum']) + ' not pending.')
+                if su.status != 'P':
+                    raise Exception('downloader', 'SU ' + str(su.sunum) + ' not pending.')
+                    
+                # Let an ScpWorker thread handle the download. We do that by setting the status to 'W'.
+                self.log.write(['Setting SU ' + str(self.sunum) + ' status to start scp.'])
+                su.setStatus('W', None)
+                
+                # Tell ScpWorker the server path.
+                su.setPath(self.path)
             finally:
                 # Always release lock.
-                self.log.write(['Class Downloader releasing SU-table lock for SU ' + str(self.sunum) + '.'])
-                if gotLock:
-                    self.suTable.releaseLock()
+                if gotSULock:
+                    su.releaseLock()
 
-            # Don't forget to make the temporary directory first.
-            if os.path.exists(dlDir):
-                self.log.write(['Removing stale temporary directory ' + dlDir + '.'])
-                shutil.rmtree(dlDir)
-            self.log.write(['Creating temporary download directory ' + dlDir + '.'])
-            os.mkdir(dlDir)
-            
-            cmdList = ['scp', '-r', '-P', self.scpPort, self.scpUser + '@' + self.scpHost + ':' + self.path + '/*', dlDir]
-            try:
-                # check_call(cmdList)
-                # The scp process will inherit stdin, stdout, and stderr from this script.
-                proc = Popen(cmdList, stdout=PIPE, stderr=PIPE)
-            except OSError as exc:
-                raise Exception('scpSU', "Cannot run command '" + ' '.join(cmdList) + "' ")
-            except ValueError as exc:
-                raise Exception('scpSU', "scp command '" + ' '.join(cmdList) + "' called with invalid arguments.")
+            # Wake up an ScpWorker.
+            ScpWorker.scpNeeded.set()
+            # Clear event so that main will block the next time it calls wait.
+            ScpWorker.scpNeeded.clear()
 
-            # Poll for completion
+            # Wait for the ScpWorker thread to finish downloading the SU (look for a 'P' status).
             while True:
-                if gShutDown or self.sdEvent.isSet():
-                    proc.kill()
-                    self.log.write(['Download thread is observing the global shutdown and exiting now.'])
-                    return
-                    
-                gotLock = False
                 try:
-                    self.log.write(['(Poll completion) Class Downloader acquiring SU-table lock for SU ' + str(self.sunum) + '.'])
-                    gotLock = self.suTable.acquireLock()
-                    su = self.suTable.get([self.sunum])
+                    gotSULock = False
+                    su = self.suTable.getAndLockSU(self.sunum)
+                    gotSULock = True
 
-                    # Check for download error or completion
-                    if su[0]['status'] != 'P':
-                        raise Exception('downloader', 'SU ' + str(su[0]['sunum']) + ' not pending.')
-
-                    # Check for download time-out.
-                    timeNow = datetime.now(su[0]['starttime'].tzinfo)
-                    if timeNow > su[0]['starttime'] + self.suTable.getTimeout():
-                        self.log.write(['Download of SUNUM ' + str(self.sunum) + ' timed-out.'])
-                        self.suTable.setStatus([ self.sunum ], 'E', 'Download timed-out.')        
-                        # Flush the change to disk.
-                        self.suTable.updateDB()
-                        raise Exception('downloader', 'Timed-out.')
-
+                    # Check for download error or completion. Call get() again, since the SU record could have been deleted (due to
+                    # abnormal execution).
+                    if su.status == 'W' or su.status == 'D':
+                        # ScpDownloader is still performing the download. Don't do anything
+                        pass
+                    elif su.status == 'P':
+                        # ScpDownloader is done performing the download.
+                        break
+                    else:
+                        raise Exception('downloader', 'The download of SU ' + str(su.sunum) + ' errored-out.')
                 finally:
                     # Always release lock.
-                    self.log.write(['Class Downloader releasing SU-table lock for SU ' + str(self.sunum) + '.'])
-                    if gotLock:
-                        self.suTable.releaseLock()
+                    if gotSULock:
+                        su.releaseLock()
 
-                # The Python documentation is confusing at best. I think we have to look at the proc.returncode attribute
-                # to determine if the child process has completed. None means it hasn't. If the value is not None, then 
-                # the child process has terminated, and the value is the child process's return code.
-                proc.poll()
-                if proc.returncode is not None:
-                    if proc.returncode != 0:
-                        out, err = proc.communicate()
-                        msg = 'Command "' + ' '.join(cmdList) + '" returned non-zero status code ' + str(proc.returncode) + '.'
-                        if err is not None:
-                            self.log.write([ 'scp stderr msg: ' + err.decode('UTF8') ])
-                        raise Exception('scpSU', msg) 
-                    break
-
-                time.sleep(1)
-
-            self.log.write(['scp command succeeded.'])
+                # Wait for ANY ScpWorker to complete a download. The downloaded SU might not be the one needed by
+                # this Downloader thread.
+                ScpWorker.scpCompleted.wait()
             
+            # The download has completed.
+
             # At this point, we need to allocate (mkdir) a new SU directory, move the downloaded SU content into this SUDIR, 
             # then commit the newly created SU into SUMS. The previous incarnations of remote-sums-type code all used the SUMS
             # API to achieve the first and last steps. To use the SUMS API, code need to be written in C and it needs to link
@@ -1172,43 +1469,38 @@ class Downloader(threading.Thread):
  
             # Update SU table. Set SU-table record status to 'C'. Must first lock the SU table since we are modifying it. Also,
             # the state may not be 'P' due to some problem cropping up in the meantime. Only set to 'C' if the state is 'P'.
-            gotLock = False
             try:
-                self.log.write(['(Updating Status) Class Downloader acquiring SU-table lock for SU ' + str(self.sunum) + '.'])
-                gotLock = self.suTable.acquireLock()
-                
-                su = self.suTable.get([self.sunum])
-                if su[0]['status'] == 'P':
+                gotSULock = False
+                su = self.suTable.getAndLockSU(self.sunum)
+                gotSULock = True
+                    
+                if su.status == 'P':
                     self.log.write(['Setting SU ' + str(self.sunum) + ' status to complete.'])
-                    self.suTable.setStatus([self.sunum], 'C', None)
-                    # Flush the change to disk.
-                    self.suTable.updateDB()
-                    self.log.write(['Success setting SU ' + str(self.sunum) + ' status to complete.'])
+                    su.setStatus('C', None)
             finally:
                 # Always release lock.
-                self.log.write(['(Updating Status) Class Downloader releasing SU-table lock for SU ' + str(self.sunum) + '.'])
-                if gotLock:
-                    self.suTable.releaseLock()
+                if gotSULock:
+                    su.releaseLock()
+ 
         except Exception as exc:
             if len(exc.args) == 2:
                 type = exc[0]
                 msg = exc[1]
 
                 if type == 'scpSU' or type == 'sumsAPI' or type == 'mvSU' or type == 'rmTmpSU':
-                    gotLock = False
                     try:
-                        self.log.write(['(Updating Status to E) Class Downloader acquiring SU-table lock for SU ' + str(self.sunum) + '.'])
-                        gotLock = self.suTable.acquireLock()
-                        self.suTable.setStatus([self.sunum], 'E', 'Error downloading storage unit ' + str(self.sunum) + ': ' + msg)
-                        # Flush the change to disk.
-                        self.suTable.updateDB()
+                        gotSULock = False
+                        su = self.suTable.getAndLockSU(self.sunum)
+                        gotSULock = True
+
+                        self.log.write(['Setting SU ' + str(self.sunum) + ' status to error.'])
+                        su.setStatus('E', 'Error downloading storage unit ' + str(self.sunum) + ': ' + msg)
                     except Exception:
                         # Catch everything and just let the thread pass away peacefully.
                         pass
                     finally:
-                        if gotLock:
-                            self.log.write(['(Updating Status to E) Class Downloader releasing SU-table lock for SU ' + str(self.sunum) + '.'])
-                            self.suTable.releaseLock()
+                        if gotSULock:
+                            su.releaseLock()
                     
                 elif type == 'unknownSunum':
                     self.log.write(['Cannot download SU. No SU record.' + msg])
@@ -1220,7 +1512,21 @@ class Downloader(threading.Thread):
             else:
                 import traceback
                 self.log.write([ traceback.format_exc(5) ])
-  
+                
+        # Update SU table (write-out status, error or success, to the DB).
+        try:
+            gotTableLock = self.suTable.acquireLock()
+
+            if not gotTableLock:
+                raise Exception('lock', 'Unable to acquire SU-table lock.')
+
+            # This is a no-op if no SUs were actually modified.
+            self.suTable.updateDB()
+        finally:
+            # Always release lock.
+            if gotTableLock:
+                self.suTable.releaseLock()
+
         # This thread is about to terminate. 
         # We need to check the class tList variable to update it, so we need to acquire the lock.
         try:
@@ -1240,7 +1546,31 @@ class Downloader(threading.Thread):
 
     def stop(self):
         self.log.write([ 'Stopping Downloader (SUNUM ' + str(self.sunum) + ').' ])
-        self.sdEvent.set()
+        
+        gotLock = False
+        try:
+            gotLock = self.suTable.acquireLock()
+    
+            if gotLock is None:
+                raise Exception('lock', 'Unable to acquire SU-table lock.')
+                
+            su = self.suTable.get([self.sunum])[0]
+        finally:
+            # Always release lock.
+            if gotLock:
+                self.suTable.releaseLock()
+
+        try:
+            gotLock = su.acquireLock()
+
+            if gotLock is None:
+                raise Exception('lock', 'Unable to acquire SU ' + str(su.sunum) + ' lock.')
+
+            su.setStatus('S', None)
+        finally:
+            # Always release lock.
+            if gotLock:
+                su.releaseLock()
 
     # Must acquire Downloader lock BEFORE calling newThread() since newThread() will append to tList (the Downloader threads will delete from tList as they complete).
     @staticmethod
@@ -1283,9 +1613,9 @@ class ProviderPoller(threading.Thread):
             gotLock = self.suTable.acquireLock()
             for asunum in self.sunums:
                 try:
-                    asu = self.suTable.get([asunum])
-                    asu[0]['polling'] = True
-                    self.suTable.updateDB([asunum])
+                    asu = self.suTable.get([ asunum ])[0]
+                    asu.setPolling(True)
+                    self.suTable.updateDB([ asunum ])
                 except Exception as exc:
                     if len(exc.args) != 2:
                         raise # Re-raise
@@ -1341,9 +1671,9 @@ class ProviderPoller(threading.Thread):
             # We are done polling, remove the polling flag.
             for asunum in self.sunums:
                 try:
-                    asu = self.suTable.get([asunum])
-                    asu[0]['polling'] = False
-                    self.suTable.updateDB([asunum])
+                    asu = self.suTable.get([ asunum ])[0]
+                    asu.setPolling(False)
+                    self.suTable.updateDB([ asunum ])
                 except Exception as exc:
                     if len(exc.args) != 2:
                         raise # Re-raise
@@ -1370,7 +1700,7 @@ class ProviderPoller(threading.Thread):
                 for (asunum, path, series) in paths:
                     if not path:
                         # A path of None means that the SUNUM was invalid. We want to set the SU status to 'E'.
-                        self.suTable.setStatus([asunum], 'E', 'SU ' + str(asunum) + ' is not valid at the providing site.')
+                        self.suTable.setStatus([ asunum ], 'E', 'SU ' + str(asunum) + ' is not valid at the providing site.')
                         continue
                     elif path == '':
                         # An empty-string path means that the SUNUM was valid, but that the SU referred to was offline, and could not
@@ -1387,8 +1717,8 @@ class ProviderPoller(threading.Thread):
                         retentions[series] = retention
                         
                         # Save series and retention.
-                        sus.setSeries([asunum], series)
-                        sus.setRetention([asunum], retention)
+                        sus.setSeries([ asunum ], series)
+                        sus.setRetention([ asunum ], retention)
 
                     while True:
                         Downloader.lock.acquire()
@@ -1454,15 +1784,15 @@ def processSUs(url, sunums, sus, reqTable, request, dbUser, binPath, arguments, 
     workingSunums = []
     for asunum in sunums:
         try:
-            su = sus.get([asunum])
-            if su[0]['status'] == 'P':
+            su = sus.get([ asunum ])[0]
+            if su.status == 'P':
                 if not reprocess:
                     # Accidental attempt to reprocess an SU whose processing has already started.
                     raise Exception('accidentalRepro', 'An accidental attempt to reprocess pending SU ' + str(asunum) + ' occurred.')
                 workingSunums.append(asunum)
                 # Reset start time.
                 if reset:
-                    sus.setStarttime([asunum], datetime.now())
+                    sus.setStarttime([ asunum ], datetime.now())
         except Exception as exc:
             if len(exc.args) != 2:
                 raise # Re-raise
@@ -1475,7 +1805,7 @@ def processSUs(url, sunums, sus, reqTable, request, dbUser, binPath, arguments, 
             workingSunums.append(asunum)
             # Create a new SU table record for this SU.
             log.write(['Inserting a new SU table record for ' + str(asunum)])
-            sus.insert([asunum])
+            sus.insert([ asunum ])
 
     sunumLst = ','.join(str(asunum) for asunum in workingSunums)
     values = {'requestid' : 'none', 'sunums' : sunumLst}
@@ -1495,20 +1825,20 @@ def processSUs(url, sunums, sus, reqTable, request, dbUser, binPath, arguments, 
         for (asunum, path, series) in paths:
             if not path:
                 # A path of None means that the SUNUM was invalid. We want to set the SU status to 'E'.
-                sus.setStatus([asunum], 'E', 'SU ' + str(asunum) + ' is not valid at the providing site.')
+                sus.setStatus([ asunum ], 'E', 'SU ' + str(asunum) + ' is not valid at the providing site.')
                 continue
             elif path == '':
                 # An empty-string path means that the SUNUM was valid, but that the SU referred to was offline, and could not
                 # be placed back online - it is not archived. 
                 # ART - I need to figure out how to place the SUNUM in SUMS so that its archive flag is N (not archived).
-                sus.setStatus([asunum], 'C', 'SU ' + str(asunum) + ' refers to an offline SU valid at the providing site that was not archived. It cannot be downloaded.')
+                sus.setStatus([ asunum ], 'C', 'SU ' + str(asunum) + ' refers to an offline SU valid at the providing site that was not archived. It cannot be downloaded.')
                 continue
 
             # Get retention, if it hasn't been gotten yet. If we are re-processing SUs, then the retention has already been determined and saved.
             if reprocess:
                 # We know this won't raise, because we already obtained the su object at the beginning of this method.
-                su = sus.get([asunum])
-                retention = su[0]['retention']
+                su = sus.get([ asunum ])[0]
+                retention = su.retention
             else:
                 if series in retentions:
                     retention = retentions[series]
@@ -1518,8 +1848,8 @@ def processSUs(url, sunums, sus, reqTable, request, dbUser, binPath, arguments, 
                     retentions[series] = retention
                     
                 # Save series and retention.
-                sus.setSeries([asunum], series)
-                sus.setRetention([asunum], retention)
+                sus.setSeries([ asunum ], series)
+                sus.setRetention([ asunum ], retention)
 
             while True:
                 Downloader.lock.acquire()
@@ -1577,6 +1907,7 @@ if __name__ == "__main__":
         # (which is drmsparams.py).
         parser.add_argument('r', '--reqtable', help='The database table that contains records of the SU-request being processed. If provided, overrides default specified in configuration file.', metavar='<request unit table>', dest='reqtable', default=sumsDrmsParams.get('RS_REQUEST_TABLE'))
         parser.add_argument('s', '--sutable', help='The database table that contains records of the storage units being processed. If provided, overrides default specified in configuration file.', metavar='<storage unit table>', dest='sutable', default=sumsDrmsParams.get('RS_SU_TABLE'))
+        parser.add_argument('n', '--nworkers', help='The number of scp worker threads.', metavar='<number of worker threads>', dest='nWorkers', default=sumsDrmsParams.get('RS_N_WORKERS'))
         parser.add_argument('-N', '--dbname', help='The name of the database that contains the series table from which records are to be deleted.', metavar='<db name>', dest='dbname', default=sumsDrmsParams.get('RS_DBNAME'))
         parser.add_argument('-U', '--dbuser', help='The name of the database user account.', metavar='<db user>', dest='dbuser', default=sumsDrmsParams.get('RS_DBUSER'))
         parser.add_argument('-H', '--dbhost', help='The host machine of the database that contains the series table from which records are to be deleted.', metavar='<db host machine>', dest='dbhost', default=sumsDrmsParams.get('RS_DBHOST'))
@@ -1604,8 +1935,8 @@ if __name__ == "__main__":
         with DrmsLock(arguments.lockfile, str(pid)) as lock:
             rslog = Log(arguments.logfile)
 
-            rslog.write(['Starting up daemon.']) 
-            rslog.write(['Obtained script file lock.'])
+            rslog.write([ 'Starting up daemon.' ]) 
+            rslog.write([ 'Obtained script file lock.' ])
             # Connect to the database
             try:
                 # The connection is NOT in autocommit mode. If changes need to be saved, then conn.commit() must be called.
@@ -1626,9 +1957,9 @@ if __name__ == "__main__":
                         # been lost, and we cannot trust that the downloads completed successfully (although they might have).
                         # A fancier implementation would be some kind of download manager that can recover partially downloaded
                         # storage units, but who has the time :)
-                        rslog.write(['Setting download-timeout to ' + str(arguments.dltimeout) + ' seconds.'])
+                        rslog.write([ 'Setting download-timeout to ' + str(arguments.dltimeout) + ' seconds.' ])
                         sus = SuTable(suTable, timedelta(seconds=arguments.dltimeout), rslog)
-                        rslog.write(['Setting request-timeout to ' + str(arguments.reqtimeout) + ' minutes.'])
+                        rslog.write([ 'Setting request-timeout to ' + str(arguments.reqtimeout) + ' minutes.' ])
                         requests = ReqTable(reqTable, timedelta(minutes=arguments.reqtimeout), rslog)
                         sites = SiteTable(rslog)
                         
@@ -1647,20 +1978,20 @@ if __name__ == "__main__":
                         
                         siteSunums = {}
                         for asu in susPending:
-                            timeNow = datetime.now(asu['starttime'].tzinfo)
-                            if timeNow > asu['starttime'] + sus.getTimeout():
+                            timeNow = datetime.now(asu.starttime.tzinfo)
+                            if timeNow > asu.starttime + sus.getTimeout():
                                 # Set SU status to 'E'.
-                                rslog.write(['Download of SUNUM ' + str(asu['sunum']) + ' timed-out.'])
-                                sus.setStatus([asu['sunum']], 'E', 'Download timed-out.')
+                                rslog.write(['Download of SUNUM ' + str(asu.sunum) + ' timed-out.'])
+                                sus.setStatus([ asu.sunum ], 'E', 'Download timed-out.')
                                 continue
 
-                            rslog.write(['Recovering interrupted download for SUNUM ' + str(asu['sunum']) + '.'])
-                            siteURL = sites.getURL(asu['sunum'])
+                            rslog.write(['Recovering interrupted download for SUNUM ' + str(asu.sunum) + '.'])
+                            siteURL = sites.getURL(asu.sunum)
                             
                             if siteURL not in siteSunums:
                                 siteSunums[siteURL] = []
 
-                            siteSunums[siteURL].append(asu['sunum'])
+                            siteSunums[siteURL].append(asu.sunum)
 
                         sus.updateDB()
 
@@ -1702,6 +2033,19 @@ if __name__ == "__main__":
 
                         signal.signal(signal.SIGINT, terminator)
                         signal.signal(signal.SIGTERM, terminator)
+
+                        # Make N threads that handle scp commands. Each of the worker threads will use one of these threads to perform
+                        # the actual scp command.
+                        for iter in range(1, arguments.nWorkers):
+                            ScpWorker.lock.acquire()
+                            try:
+                                if len(ScpWorker.tList) < ScpWorker.maxThreads:
+                                    self.log.write([ 'Instantiating ScpWorker ' + str(iter) + '.' ])
+                                    ScpWorker.newThread(asunum, path, series, retention, self.suTable, dlInfo['scpUser'], dlInfo['scpHost'], dlInfo['scpPort'], self.binPath, self.arguments, self.log)
+                                else:
+                                    break # The finally clause will ensure the ScpWorker lock is released.
+                            finally:
+                                ScpWorker.lock.release()                        
                         
                         # Start of main loop.
                         loopN = 0
@@ -1718,13 +2062,13 @@ if __name__ == "__main__":
                                 # the SU pending, then the following code handles the time-out.
                                 susPending = sus.getPending()
                                 for asu in susPending:
-                                    timeNow = datetime.now(asu['starttime'].tzinfo)
+                                    timeNow = datetime.now(asu.starttime.tzinfo)
 
-                                    if timeNow > asu['starttime'] + sus.getTimeout():
-                                        rslog.write(['Download of SUNUM ' + str(asu['sunum']) + ' timed-out.'])
+                                    if timeNow > asu.starttime + sus.getTimeout():
+                                        rslog.write(['Download of SUNUM ' + str(asu.sunum) + ' timed-out.'])
                                         # Kill the Downloader thread (if it exists).
-                                        sus.stopWorker(asu['sunum'])
-                                        sus.setStatus([asu['sunum']], 'E', 'Download timed-out.')
+                                        sus.stopWorker(asu.sunum)
+                                        sus.setStatus([ asu.sunum ], 'E', 'Download timed-out.')
                            
                                 try: 
                                     cursor.execute('BEGIN')
@@ -1750,7 +2094,7 @@ if __name__ == "__main__":
                                     processing = {}
 
                                     for asunum in sunums:
-                                        asu = sus.get([asunum])
+                                        asu = sus.get([ asunum ])[0]
 
                                         if str(asunum) in processing:
                                             # Skip duplicates.
@@ -1759,38 +2103,42 @@ if __name__ == "__main__":
                                         else:
                                             processing[str(asunum)] = True                                        
                                         
-                                        if asu[0]['status'] == 'P':
-                                            rslog.write(['Download of SU ' + str(asu[0]['sunum'])  + ' is pending.'])
+                                        if asu.status == 'P':
+                                            rslog.write(['Download of SU ' + str(asu.sunum)  + ' is pending.'])
                                             done = False
-                                        elif asu[0]['status'] == 'E':
-                                            rslog.write(['Download of SU ' + str(asu[0]['sunum'])  + ' has errored-out.'])
-                                            errMsg = asu[0]['errmsg']
+                                        elif asu.status == 'E':
+                                            rslog.write(['Download of SU ' + str(asu.sunum)  + ' has errored-out.'])
+                                            errMsg = asu.errmsg
                                             reqError = True
                                         else:
-                                            rslog.write(['Download of SU ' + str(asu[0]['sunum'])  + ' has completed.'])
+                                            rslog.write(['Download of SU ' + str(asu.sunum)  + ' has completed.'])
                                     
                                     if done:
                                         # There are no pending downloads for this request. Set this request's status to 'C' or 'E', and decrement
                                         # refcount on each SU.
                                         if reqError:
                                             rslog.write(['Request number ' + str(arequest['requestid']) + ' for SUNUM(s) ' + ','.join([ str(asunum) for asunum in arequest['sunums'] ]) + ' errored-out.'])
-                                            requests.setStatus([arequest['requestid']], 'E', errMsg)
+                                            requests.setStatus([ arequest['requestid'] ], 'E', errMsg)
                                         else:
                                             rslog.write(['Request number ' + str(arequest['requestid']) + ' for SUNUM(s) ' + ','.join([ str(asunum) for asunum in arequest['sunums'] ]) + ' completed successfully.'])
-                                            requests.setStatus([arequest['requestid']], 'C')
+                                            requests.setStatus([ arequest['requestid'] ], 'C')
 
                                         # These next two calls can modify the db state! Put them in a transaction so that they form an atomic
                                         # operation. We do not want an interruption to cause the first to happen, but not the second.
                                         try:
                                             cursor.execute('BEGIN')
+
+                                            # Update the statuses in the requests db table.
                                             requests.updateDB([arequest['requestid']])
                                             
                                             # Remove duplicates from list first. We do not need to preserve the order of the SUNUMs
                                             # before calling decrementRefcount() since that function uses a hash lookup on the SUNUM
-                                            # to find the associated refcount.
-                                            
+                                            # to find the associated refcount. decrementRefcount() does not modify the SU db table.
+                                            # Call updateDB() to do that.
                                             sus.decrementRefcount(list(set(sunums)))
-                                            cursor.execute('END')
+                                            sus.updateDB()
+
+                                            cursor.execute('END') # Same as cursor.execute('COMMIT')
                                         except psycopg2.Error as exc:
                                             # Handle database-command errors.
                                             raise Exception('dbUpdate', exc.diag.message_primary)
@@ -1839,12 +2187,12 @@ if __name__ == "__main__":
                                             processing[str(asunum)] = True
                                             
                                         try:
-                                            asu = sus.get([asunum]) # Will raise if asunum is unknown.
+                                            asu = sus.get([ asunum ])[0] # Will raise if asunum is unknown.
                                             
                                             # If we get here, then the SU is already being processed as part of a previous request.
                                             # If the SU is in the 'E' or 'C' state, then we cannot process this request. We must wait until
                                             # this SU has been cleared out of the sus table when the pending requests are processed.
-                                            if asu[0]['status'] != 'P':
+                                            if asu.status != 'P':
                                                 rslog.write(['Deferring request, id ' + str(arequest['requestid']) + '. At least one previous request for this SU must be completed first.'])
                                                 skipRequest = True
                                                 break
@@ -1978,6 +2326,9 @@ if __name__ == "__main__":
         elif etype == 'CmdlParser-ArgUnrecognized' or etype == 'CmdlParser-ArgBadformat':
             rslog.write([msg])
             rv = RET_INVALIDARGS
+        elif etype == 'invalidArg':
+            rslog.write([msg])
+            rv = RET_INVALIDARGS
         elif etype == 'sitetableRead':
             rslog.write(['Unable to load site table: ' + msg])
             rv = RET_SITETABLE_LOAD
@@ -2039,4 +2390,3 @@ if rslog:
 # will terminate too.
 gShutDown = True
 sys.exit(rv)
-
