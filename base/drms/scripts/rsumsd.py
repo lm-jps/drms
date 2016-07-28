@@ -11,6 +11,7 @@ import psycopg2
 import threading
 import fcntl
 from datetime import datetime, timedelta
+import pytz
 import urllib
 import urllib2
 import json
@@ -191,6 +192,7 @@ class StorageUnit(object):
         self.new = False
         self.polling = False
         self.path = None
+        self.suSize = None
         self.worker = None
         
         self.lock = thread.allocate_lock()
@@ -231,6 +233,12 @@ class StorageUnit(object):
             self.path = value
         else:
             raise Exception('invalidArg', 'setPath(): argument must be a str or None.')
+            
+    def setSUSize(self, value):
+        if isinstance(value, (int)) or value is None:
+            self.path = value
+        else:
+            raise Exception('invalidArg', 'setPath(): argument must be an int or None.')
     
     # Set properties that are saved to the DB.
     def setStatus(self, codeValue, msgValue):
@@ -614,6 +622,28 @@ class SuTable:
                 
         return su
 
+    def getAndLockSUs(self, sunums):
+        gotTableLock = False
+        sus = None
+
+        try:
+            gotTableLock = self.suTable.acquireLock()
+
+            if gotTableLock is None:
+                raise Exception('lock', 'Unable to acquire SU-table lock.')
+                
+            sus = get(sunums)
+            for su in sus:
+                gotSULock = su.acquireLock()            
+                if not gotSULock:
+                    raise Exception('lock', 'Unable to acquire SU ' + str(su.sunum) + ' lock.')
+        finally:
+            # Always release lock.
+            if gotTableLock:
+                self.suTable.releaseLock()
+                
+        return sus        
+
     # Returns a dictionary of SU records.
     def getPending(self):
         pending = []
@@ -630,28 +660,32 @@ class SuTable:
 
         return pending
         
-    # Returns a single SU entry whose status is 'W'.
-    def getNextWorking(self):
-        working = None
+    # Returns num SU entries whose status is 'W'. If fewer than num W entries exist, then all W SU entries are returned.
+    def getNextNWorking(self, num):
+        nworking = []
         
-        for sunumStr in self.suDict.iterkeys():
-            # Will raise if the sunum is not in the dictionary.
-            su = self.get([ int(sunumStr) ])[0]
+        it = iter(sorted(self.suDict.items())
+        try:
+            while num > 0:
+                su = it.next()
+            
+                try:
+                    # We are going to access data from the SU - get lock first.
+                    gotLock = su.acquireLock()
+                    if gotLock is None:
+                        raise Exception('lock', 'Unable to acquire SU ' + str(su.sunum) + ' lock.')
 
-            try:
-                # We are going to access data from the SU - get lock first.
-                gotLock = su.acquireLock()
-                if gotLock is None:
-                    raise Exception('lock', 'Unable to acquire SU ' + str(su.sunum) + ' lock.')
-
-                if su.status == 'W':
-                    working = su
-                    break
-            finally:
-                if gotLock:
-                    su.releaseLock()
+                    if su.status == 'W':
+                        nworking.append(su)
+                finally:
+                    if gotLock:
+                        su.releaseLock()
+                        
+                num -= 1
+        except StopIteration:
+            pass            
                 
-        return working
+        return nworking
 
     def getTimeout(self):
         return self.timeOut
@@ -1036,9 +1070,10 @@ class Chunker(object):
 class ScpWorker(threading.Thread):
     tList = [] # A list of running thread IDs.
     maxThreads = 16
-    scpNeeded = threading.Event() # Event fired when a Downloader thread has changed the state of an SU from 'P' to 'W'
-    scpCompleted = threading.Event()  # Event fired when an ScpWorker thread had completed an SU download
+    scpNeeded = threading.Event() # Event fired by main when a Downloader thread has changed the state of an SU from 'P' to 'W'
+    scpCompleted = threading.Event()  # Event fired by ScpWorker when an ScpWorker thread had completed an SU download
     lock = threading.Lock() # Guard tList.
+    lastDownloadTime = datetime.now(pytz.utc) # The datetime of the last time any ScpWorker downloaded a set of SUs.
     
     def __init__(self):
         threading.Thread.__init__(self, suTable, scpUser, scpHost, scpPort, binPath, arguments, log)
@@ -1047,16 +1082,23 @@ class ScpWorker(threading.Thread):
         self.scpHost = scpHost
         self.scpPort = scpPort
         self.binPath = binPath # scp bin path
+        self.tmpdir = arguments.tmpdir
         self.arguments = arguments
         self.log = log
+        self.sdEvent = threading.Event()
         
     def run(self):
         gotTableLock = False
         gotSULock = False
-        sunum = None
-        shutDown = False
+        maxNumSUs = self.arguments.scpMaxNumSUs
+        maxPayloadSUs = self.arguments.scpMaxPayload
+        scpTimeOut = self.arguments.scpTimeOut
+        doDownload = False
         
-        while not shutDown:
+        while not self.sdEvent.isSet():
+            sunums = []
+            paths = []
+
             try:
                 gotTableLock = self.suTable.acquireLock()
                 
@@ -1066,44 +1108,50 @@ class ScpWorker(threading.Thread):
                 # Look for an SU whose status is 'W' (which means that a Downloader thread is requesting an ScpWorker thread perform a 
                 # download for it). If we find one, set status to 'D' and download the SU. When the download is complete, set the status
                 # to 'P' so the requesting Downloader thread can clean-up and set the status to 'C' for the main thread to handle.
-                su = self.suTable.getNextWorking()
-                if su is not None:
-                    # Now acquire SU lock so no other thread modifies the SU while we are processing the download.
-                    gotSULock = su.acquireLock()
-                    if gotSULock is None:
-                        raise Exception('lock', 'Unable to acquire SU ' + str(su.sunum) + ' lock.')
-                        
-                    sunum = su.sunum
+                workingSUs = self.suTable.getNextNWorking(maxNumSUs)
+                
+                numSUs = len(workingSUs)
+                payload = sum([ su.suSize for su in workingSUs ])
+                currentTime = datetime.now(pytz.utc)
+                
+                doDownload = payload > maxPayloadSUs or numSUs == maxNumSUs or currentTime - lastDownloadTime > scpTimeOut
+                
+                if doDownload:
+                    # Now acquire SU lock for all SUs so no other thread modifies the SU while we are processing the download.
+                    for su in workingSUs:
+                        gotSULock = su.acquireLock()
+                        if not gotSULock:
+                            raise Exception('lock', 'Unable to acquire SU ' + str(su.sunum) + ' lock.')
+                        sunums.append(su.sunum)
             finally:
                 # Always release lock.
                 if gotTableLock:
                     self.suTable.releaseLock()
 
-            if su is not None:
+            if doDownload:
                 try:
-                    self.log.write([ 'Downloading SU ' + str(su.sunum) + '.' ])
-                    # Set status to D to prevent another ScpWorker from processing the download.
-                    su.setStatus('D', None)
+                    self.log.write([ 'Downloading SUs ' + ','.join([ str(asunum) for asunum in sunums ]) + '.' ])
                     
-                    dlDir = '/tmp/.su' + str(su.sunum)
+                    for su in workingSUs:
+                        # Set status to D to prevent another ScpWorker from processing the download.
+                        su.setStatus('D', None)
                     
-                    # Make sure path is set.
-                    serverPath = su.getPath()
-                    if not serverPath:
-                        raise Exception('scpSU', 'Server SU path is not known.')
+                        # Make sure path is set.
+                        serverPath = su.getPath()
+                        if not serverPath:
+                            raise Exception('scpSU', 'Server SU path is not known.')
+                        paths.append(serverPath)
                 finally:
-                    # Always release the SU lock.
-                    if gotSULock:
+                    # Always release the SU locks. We know we have all SU locks, otherwise we would have thrown an exception earlier.
+                    for su in workingSus:
                         su.releaseLock()
 
                 # Don't forget to make the temporary directory first.
-                if os.path.exists(dlDir):
-                    self.log.write(['Removing stale temporary directory ' + dlDir + '.'])
-                    shutil.rmtree(dlDir)
-                self.log.write(['Creating temporary download directory ' + dlDir + '.'])
-                os.mkdir(dlDir)
-                                
-                cmdList = ['scp', '-r', '-P', self.scpPort, self.scpUser + '@' + self.scpHost + ':' + serverPath + '/*', dlDir]
+                if not os.path.exists(self.tmpdir):
+                    self.log.write(['Creating temporary download directory ' + self.tmpdir + '.'])
+                    os.mkdir(self.tmpdir)
+
+                cmdList = ['scp', '-r', '-P', self.scpPort, self.scpUser + '@' + self.scpHost + ':"' + ' '.join(paths) + '"', self.tmpdir]
                 self.log.write([ 'Running ' + ' '.join(cmdList) + '.' ])
                 try:
                     # check_call(cmdList)
@@ -1117,31 +1165,36 @@ class ScpWorker(threading.Thread):
                 # Poll for completion
                 while True:                    
                     try:
-                        # Check for shut-down (status == 'S'). If getAndLockSU() does not raise, then the SU was locked.
-                        gotSULock = False
-                        su = self.suTable.getAndLockSU(sunum)
-                        gotSULock = True
+                        # If getAndLockSUs() raises, then sus is None.
+                        atLeastOneGoodSU = False
+                        sus = self.suTable.getAndLockSUs(sunums)
+                        for su in sus:
+                            if su.status == 'S':
+                                # Continue the download for the remaining SUs whose downloads are not being shutdown.
+                                pass
+                            elif su.status == 'D':                                
+                                # Check for SU download time-out. We keep doing the download, unless all SUs have timed out.
+                                timeNow = datetime.now(su.starttime.tzinfo)
+                                if timeNow > su.starttime + self.suTable.getTimeout():
+                                    self.log.write(['Download of SUNUM ' + str(su.sunum) + ' timed-out.'])
+                                    su.setStatus('E', 'Download timed-out.')
+                                else:
+                                    atLeastOneGoodSU = True
 
-                        if gShutDown or su.status == 'S':
+                        if self.sdEvent.isSet():
+                            # Kill the download and also exit the ScpWorker thread.
                             proc.kill()
-                            self.log.write(['ScpWorker thread is observing the global shutdown and exiting now.'])
-                            shutDown = True
+                            self.log.write([ 'ScpWorker thread is observing the global shutdown and exiting now.' ])
                             break
-
-                        # Check for download error or completion
-                        if su.status != 'D':
-                            raise Exception('downloader', 'SU ' + str(su.sunum) + ' status is ' + str(su.status) + ' (not Downloading).')
-
-                        # Check for download time-out.
-                        timeNow = datetime.now(su.starttime.tzinfo)
-                        if timeNow > su.starttime + self.suTable.getTimeout():
-                            self.log.write(['Download of SUNUM ' + str(su.sunum) + ' timed-out.'])
-                            su.setStatus('E', 'Download timed-out.')
-                            raise Exception('downloader', 'Timed-out.')
+                            
+                        if not atLeastOneGoodSU:
+                            # Go on to the next set of requested SUs. Don't exit the ScpWorker thread.
+                            break
                     finally:
-                        # Always release SU lock.
-                        if gotSULock:
-                            su.releaseLock()
+                        # Always release SU locks. 
+                        if sus:
+                            for su in sus:
+                                su.releaseLock()
 
                     # The Python documentation is confusing at best. I think we have to look at the proc.returncode attribute
                     # to determine if the child process has completed. None means it hasn't. If the value is not None, then 
@@ -1158,18 +1211,19 @@ class ScpWorker(threading.Thread):
 
                     time.sleep(1)
 
-                if not shutDown:
+                if atLeastOneGoodSU and not self.sdEvent.isSet():
                     try:
-                        gotSULock = False
-                        su = self.suTable.getAndLockSU(sunum)
-                        gotSULock = True
-                    
-                        su.setStatus('P', None)
+                        sus = self.suTable.getAndLockSUs(sunums)
+                        for su in sus:
+                            if su.status == 'D':
+                                # The download for this SU has not been canceled.
+                                su.setStatus('P', None)
                     finally:
                         # Always release lock.
-                        if gotSULock:
-                            su.releaseLock()
-                        
+                        if sus:
+                            for su in sus:
+                                su.releaseLock()
+
                     try:
                         gotTableLock = self.suTable.acquireLock()
 
@@ -1190,11 +1244,36 @@ class ScpWorker(threading.Thread):
                 # Wake up a Downloader.
                 ScpWorker.scpCompleted.set()
                 # Clear event so that main will block the next time it calls wait.
-                ScpWorker.scpCompleted.clear()
-                
+                ScpWorker.scpCompleted.clear()                
             else:
-                # There were no requests for an SU download. Wait for one with ScpWorker.scpNeeded.wait().
-                ScpWorker.scpNeeded.wait()
+                # There were fewer than scpBatchSize requests for an SU download. Wait for more with ScpWorker.scpNeeded.wait().
+                # Set a timeout so we can gracefully exit if the shutdown event has been triggered (just in case this thread
+                # blocks on wait - when the shutdown happens, the scpNeeded event will be triggered, however).
+                try:
+                    ScpWorker.scpNeeded.wait(10)
+                except RuntimeError:
+                    pass
+                
+    def stop(self):
+        self.log.write([ 'Stopping ScpWorker.' ])
+        
+        sus = None
+        try:
+            sus = self.suTable.getAndLockSUs(sunums)
+            for su in sus:
+                su.setStatus('S', 'Download interrupted during shutdown.')
+                 self.log.write(['Setting SU ' + str(su.sunum) + ' status to stopped.'])
+        finally:
+            # Always release lock.
+            if sus:
+                for su in sus:
+                    su.releaseLock()
+        
+        # Fire event to stop thread.
+        self.sdEvent.set()
+        
+        # Fire scpNeeded event so that the ScpWorker thread will not block on wait.
+        ScpWorker.scpNeeded.set()
     
     def newThread(suTable, scpUser, scpHost, scpPort, binPath, arguments, log):
         worker = ScpWorker(suTable, scpUser, scpHost, scpPort, binPath, arguments, log)
@@ -1214,29 +1293,31 @@ class Downloader(threading.Thread):
     eventMaxThreads = threading.Event() # Event fired when the number of threads decreases.
     lock = threading.Lock() # Guard tList.
 
-    def __init__(self, sunum, path, series, retention, sus, scpUser, scpHost, scpPort, binPath, arguments, log):
+    def __init__(self, sunum, path, series, suSize, retention, sus, scpUser, scpHost, scpPort, binPath, arguments, log):
         threading.Thread.__init__(self)
         self.sunum = sunum
         self.path = path
         self.series = series
+        self.suSize = suSize
         self.retention = retention
         self.suTable = sus
         self.scpUser = scpUser
         self.scpHost = scpHost
         self.scpPort = scpPort
         self.binPath = binPath
+        self.tmpdir = arguments.tmpdir
         self.arguments = arguments
         self.log = log
+        self.sdEvent = threading.Event()
 
     def run(self):
         # Sub-out the download to an ScpWorker instance. To do that, se the SU status to 'W'. The ScpWorker
         # that is used will set the status to 'D' so that no other ScpWorker attempt to download the SU 
         # as well. When the ScpWorker completes the download, it will set the status to 'P' again.
         try:
+            su = None
             try:
-                gotSULock = False
                 su = self.suTable.getAndLockSU(self.sunum)
-                gotSULock = True
 
                 if su.status != 'P':
                     raise Exception('downloader', 'SU ' + str(su.sunum) + ' not pending.')
@@ -1245,11 +1326,16 @@ class Downloader(threading.Thread):
                 self.log.write(['Setting SU ' + str(self.sunum) + ' status to start scp.'])
                 su.setStatus('W', None)
                 
-                # Tell ScpWorker the server path.
+                # Tell ScpWorker the source path.
                 su.setPath(self.path)
+                
+                # Tell ScpWorker the SU size.
+                su.setSUSize(self.suSize)
+                
+                suDlPath = os.path.join(self.tmpdir, 'D', str(su.sunum))
             finally:
                 # Always release lock.
-                if gotSULock:
+                if su:
                     su.releaseLock()
 
             # Wake up an ScpWorker.
@@ -1258,11 +1344,10 @@ class Downloader(threading.Thread):
             ScpWorker.scpNeeded.clear()
 
             # Wait for the ScpWorker thread to finish downloading the SU (look for a 'P' status).
-            while True:
+            while not self.sdEvent.isSet():
+                su = None
                 try:
-                    gotSULock = False
                     su = self.suTable.getAndLockSU(self.sunum)
-                    gotSULock = True
 
                     # Check for download error or completion. Call get() again, since the SU record could have been deleted (due to
                     # abnormal execution).
@@ -1276,12 +1361,17 @@ class Downloader(threading.Thread):
                         raise Exception('downloader', 'The download of SU ' + str(su.sunum) + ' errored-out.')
                 finally:
                     # Always release lock.
-                    if gotSULock:
+                    if su:
                         su.releaseLock()
 
                 # Wait for ANY ScpWorker to complete a download. The downloaded SU might not be the one needed by
-                # this Downloader thread.
-                ScpWorker.scpCompleted.wait()
+                # this Downloader thread. If a shutdown is happening, then all ScpWorker threads should fire the 
+                # scpCompleted event, releasing all blocking Downloader threads. But just in case, set a 10-second 
+                # timeout - this raises if the timeout occurs.
+                try:
+                    ScpWorker.scpCompleted.wait(10)
+                except RuntimeError:
+                    pass
             
             # The download has completed.
 
@@ -1354,12 +1444,12 @@ class Downloader(threading.Thread):
 
                         self.log.write(['Succeeded allocating a new SU: ' +  str(self.sunum) + '.'])
                         
-                        files = os.listdir('/tmp/.su' + str(self.sunum))
-                        self.log.write(['Moving downloaded SU content in /tmp/.su' + str(self.sunum) + ' into allocated SU (' + sudir  + ').'])
+                        files = os.listdir(suDlPath)
+                        self.log.write(['Moving downloaded SU content from ' + suDlPath + ' into allocated SU (' + sudir  + ').'])
 
                         try:
                             for afile in files:
-                                src = os.path.join('/tmp/.su' + str(self.sunum), afile)
+                                src = os.path.join(suDlPath, afile)
                                 shutil.move(src, sudir)
                         except shutil.Error as exc: 
                             import traceback
@@ -1442,8 +1532,8 @@ class Downloader(threading.Thread):
                         # Clean-up
                         if os.path.exists(sudir):
                             shutil.rmtree(sudir)
-                        if os.path.exists(dlDir):
-                            shutil.rmtree(dlDir)
+                        if os.path.exists(dlSuPath):
+                            shutil.rmtree(dlSuPath)
                         raise Exception('sumsAPI', exc.diag.message_primary + ': ' + cmd + '.') 
                     except Exception as exc:
                         conn.rollback()
@@ -1451,35 +1541,34 @@ class Downloader(threading.Thread):
                         # Clean-up
                         if os.path.exists(sudir):
                             shutil.rmtree(sudir)
-                        if os.path.exists(dlDir):
-                            shutil.rmtree(dlDir)
+                        if os.path.exists(dlSuPath):
+                            shutil.rmtree(dlSuPath)
                         raise
 
                     conn.commit()
 
             # Remove temporary directory.
-            self.log.write(['Removing temporary download directory ' + dlDir + '.'])
+            self.log.write(['Removing temporary download directory ' + dlSuPath + '.'])
             try:
-                if os.path.exists(dlDir):
-                    shutil.rmtree(dlDir)
+                if os.path.exists(dlSuPath):
+                    shutil.rmtree(dlSuPath)
             except OSError as exc:
                 raise Exception('rmTmpSU', exc.strerror)
            
-            self.log.write(['Removal of temporary directory ' + dlDir + ' succeeded.'])
+            self.log.write(['Removal of temporary directory ' + dlSuPath + ' succeeded.'])
  
             # Update SU table. Set SU-table record status to 'C'. Must first lock the SU table since we are modifying it. Also,
             # the state may not be 'P' due to some problem cropping up in the meantime. Only set to 'C' if the state is 'P'.
             try:
-                gotSULock = False
+                su = None
                 su = self.suTable.getAndLockSU(self.sunum)
-                gotSULock = True
                     
                 if su.status == 'P':
                     self.log.write(['Setting SU ' + str(self.sunum) + ' status to complete.'])
                     su.setStatus('C', None)
             finally:
                 # Always release lock.
-                if gotSULock:
+                if su:
                     su.releaseLock()
  
         except Exception as exc:
@@ -1547,35 +1636,23 @@ class Downloader(threading.Thread):
     def stop(self):
         self.log.write([ 'Stopping Downloader (SUNUM ' + str(self.sunum) + ').' ])
         
-        gotLock = False
+        su = None
         try:
-            gotLock = self.suTable.acquireLock()
-    
-            if gotLock is None:
-                raise Exception('lock', 'Unable to acquire SU-table lock.')
-                
-            su = self.suTable.get([self.sunum])[0]
-        finally:
-            # Always release lock.
-            if gotLock:
-                self.suTable.releaseLock()
-
-        try:
-            gotLock = su.acquireLock()
-
-            if gotLock is None:
-                raise Exception('lock', 'Unable to acquire SU ' + str(su.sunum) + ' lock.')
-
+            su = self.suTable.getAndLockSU(self.sunum)                
+            self.log.write(['Setting SU ' + str(self.sunum) + ' status to stopped.'])
             su.setStatus('S', None)
         finally:
             # Always release lock.
-            if gotLock:
+            if su:
                 su.releaseLock()
+        
+        # Fire event to stop thread.
+        self.sdEvent.set()
 
     # Must acquire Downloader lock BEFORE calling newThread() since newThread() will append to tList (the Downloader threads will delete from tList as they complete).
     @staticmethod
-    def newThread(sunum, path, series, retention, sus, scpUser, scpHost, scpPort, binPath, arguments, log):
-        dl = Downloader(sunum, path, series, retention, sus, scpUser, scpHost, scpPort, binPath, arguments, log)
+    def newThread(sunum, path, series, suSize, retention, sus, scpUser, scpHost, scpPort, binPath, arguments, log):
+        dl = Downloader(sunum, path, series, suSize, retention, sus, scpUser, scpHost, scpPort, binPath, arguments, log)
         sus.setWorker(sunum, dl)
         dl.tList.append(dl)
         dl.start()
@@ -1697,17 +1774,20 @@ class ProviderPoller(threading.Thread):
                 paths = dlInfo['paths']
 
                 retentions = {}
-                for (asunum, path, series) in paths:
+                for (asunum, path, series, suSize) in paths:
                     if not path:
-                        # A path of None means that the SUNUM was invalid. We want to set the SU status to 'E'.
+                            # A path of None means that the SUNUM was invalid. We want to set the SU status to 'E'.
                         self.suTable.setStatus([ asunum ], 'E', 'SU ' + str(asunum) + ' is not valid at the providing site.')
                         continue
                     elif path == '':
                         # An empty-string path means that the SUNUM was valid, but that the SU referred to was offline, and could not
                         # be placed back online - it is not archived.
                         # ART - I need to figure out how to place the SUNUM in SUMS so that its archive flag is N (not archived).
-                        self.suTable.setStatus([asunum], 'C', 'SU ' + str(asunum) + ' refers to an offline SU valid at the providing site that was not archived. It cannot be downloaded.')
+                        self.suTable.setStatus([ asunum ], 'C', 'SU ' + str(asunum) + ' refers to an offline SU valid at the providing site that was not archived. It cannot be downloaded.')
                         continue
+                        
+                    if suSize is None:
+                        suSize = 0
                     
                     if series in retentions:
                         retention = retentions[series]
@@ -1724,8 +1804,8 @@ class ProviderPoller(threading.Thread):
                         Downloader.lock.acquire()
                         try:
                             if len(Downloader.tList) < Downloader.maxThreads:
-                                self.log.write(['Instantiating a Downloader for SU ' + asunum + '.'])
-                                Downloader.newThread(asunum, path, series, retention, self.suTable, dlInfo['scpUser'], dlInfo['scpHost'], dlInfo['scpPort'], self.binPath, self.arguments, self.log)
+                                self.log.write(['Instantiating a Downloader for SU ' + str(asunum) + '.'])
+                                Downloader.newThread(asunum, path, series, suSize, retention, self.suTable, dlInfo['scpUser'], dlInfo['scpHost'], dlInfo['scpPort'], self.binPath, self.arguments, self.log)
                                 break # The finally clause will ensure the Downloader lock is released.
                         finally:
                             Downloader.lock.release()
@@ -1822,7 +1902,7 @@ def processSUs(url, sunums, sus, reqTable, request, dbUser, binPath, arguments, 
 
         # Start a download for each SU. If we cannot start the download for any reason, then set the SU status to 'E'.
         retentions = {}
-        for (asunum, path, series) in paths:
+        for (asunum, path, series, suSize) in paths:
             if not path:
                 # A path of None means that the SUNUM was invalid. We want to set the SU status to 'E'.
                 sus.setStatus([ asunum ], 'E', 'SU ' + str(asunum) + ' is not valid at the providing site.')
@@ -1833,6 +1913,9 @@ def processSUs(url, sunums, sus, reqTable, request, dbUser, binPath, arguments, 
                 # ART - I need to figure out how to place the SUNUM in SUMS so that its archive flag is N (not archived).
                 sus.setStatus([ asunum ], 'C', 'SU ' + str(asunum) + ' refers to an offline SU valid at the providing site that was not archived. It cannot be downloaded.')
                 continue
+                
+            if suSize is None:
+                suSize = 0
 
             # Get retention, if it hasn't been gotten yet. If we are re-processing SUs, then the retention has already been determined and saved.
             if reprocess:
@@ -1855,8 +1938,8 @@ def processSUs(url, sunums, sus, reqTable, request, dbUser, binPath, arguments, 
                 Downloader.lock.acquire()
                 try:
                     if len(Downloader.tList) < Downloader.maxThreads:
-                        log.write(['Instantiating a Downloader for SU ' + asunum + '.'])
-                        Downloader.newThread(asunum, path, series, retention, sus, dlInfo['scpUser'], dlInfo['scpHost'], dlInfo['scpPort'], binPath, arguments, log)
+                        log.write(['Instantiating a Downloader for SU ' + str(asunum) + '.'])
+                        Downloader.newThread(asunum, path, series, suSize, retention, sus, dlInfo['scpUser'], dlInfo['scpHost'], dlInfo['scpPort'], binPath, arguments, log)
                         break # The finally clause will ensure the Downloader lock is released.
                 finally:
                     Downloader.lock.release()
@@ -1872,7 +1955,7 @@ def processSUs(url, sunums, sus, reqTable, request, dbUser, binPath, arguments, 
                 # tList again.
 
         # For each SU that was requested, but for which no path was given in the response, update its SU-table record with an error status.
-        pathInResp = dict([ (str(asunum), True) for (asunum, path, series) in paths ])
+        pathInResp = dict([ (str(asunum), True) for (asunum, path, series, suSize) in paths ])
         for asunum in workingSunums:
             if str(asunum) not in pathInResp:
                 sus.setStatus([asunum], 'E', 'Providing site cannot provide a path for SU ' + str(asunum) + '.')
