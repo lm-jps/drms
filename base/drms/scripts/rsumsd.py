@@ -1069,7 +1069,7 @@ class Chunker(object):
             
 class ScpWorker(threading.Thread):
     tList = [] # A list of running thread IDs.
-    maxThreads = 16
+    maxThreads = 8
     scpNeeded = threading.Event() # Event fired by main when a Downloader thread has changed the state of an SU from 'P' to 'W'
     scpCompleted = threading.Event()  # Event fired by ScpWorker when an ScpWorker thread had completed an SU download
     lock = threading.Lock() # Guard tList.
@@ -1279,8 +1279,6 @@ class ScpWorker(threading.Thread):
         worker = ScpWorker(suTable, scpUser, scpHost, scpPort, binPath, arguments, log)
         ScpWorker.tList.append(worker)
         worker.start()
-
-        
 
 # Downloads a single SU. Ingests it into SUMs (SUMS allows to ingestion of a single SU at a time only.). Updates
 # the SU table status for that SU.
@@ -1991,12 +1989,14 @@ if __name__ == "__main__":
         parser.add_argument('r', '--reqtable', help='The database table that contains records of the SU-request being processed. If provided, overrides default specified in configuration file.', metavar='<request unit table>', dest='reqtable', default=sumsDrmsParams.get('RS_REQUEST_TABLE'))
         parser.add_argument('s', '--sutable', help='The database table that contains records of the storage units being processed. If provided, overrides default specified in configuration file.', metavar='<storage unit table>', dest='sutable', default=sumsDrmsParams.get('RS_SU_TABLE'))
         parser.add_argument('n', '--nworkers', help='The number of scp worker threads.', metavar='<number of worker threads>', dest='nWorkers', default=sumsDrmsParams.get('RS_N_WORKERS'))
+        parser.add_argument('t', '--tmpdir', help='The temporary directory to use for scp downloads.', metavar='<temporary directory>', dest='tmpdir', default=sumsDrmsParams.get('RS_TMPDIR'))
         parser.add_argument('-N', '--dbname', help='The name of the database that contains the series table from which records are to be deleted.', metavar='<db name>', dest='dbname', default=sumsDrmsParams.get('RS_DBNAME'))
         parser.add_argument('-U', '--dbuser', help='The name of the database user account.', metavar='<db user>', dest='dbuser', default=sumsDrmsParams.get('RS_DBUSER'))
         parser.add_argument('-H', '--dbhost', help='The host machine of the database that contains the series table from which records are to be deleted.', metavar='<db host machine>', dest='dbhost', default=sumsDrmsParams.get('RS_DBHOST'))
         parser.add_argument('-P', '--dbport', help='The port on the host machine that is accepting connections for the database that contains the series table from which records are to be deleted.', metavar='<db host port>', dest='dbport', default=int(sumsDrmsParams.get('RS_DBPORT')))
         parser.add_argument('-b', '--binpath', help='The path to executables run by this daemon (e.g., vso_sum_alloc, vso_sum_put).', metavar='<executable path>', dest='binpath', default=sumsDrmsParams.get('RS_BINPATH'))
         parser.add_argument('-l', '--logfile', help='The file to which logging is written.', metavar='<file name>', dest='logfile', default=os.path.join(sumsDrmsParams.get('RS_LOGDIR'), LOG_FILE_BASE_NAME + '_' + datetime.now().strftime('%Y%m%d') + '.txt'))
+        
                 
         arguments = Arguments(parser)
         

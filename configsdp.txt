@@ -71,7 +71,8 @@ a:RS_DLTIMEOUT                          30
 a:RS_REQTIMEOUT                          5
 a:RS_MAXTHREADS                         32
 q:RS_BINPATH                            /home/jsoc/cvs/Development/JSOC/bin/linux_x86_64
-q:RS_N_WORKERS                          4
+a:RS_N_WORKERS                          4
+q:RS_TMPDIR                             /tmp
 # White-list (access to internal stuff)
 a:WL_HASWL                              1
 q:WL_FILE                               /web/jsoc/htdocs/whitelist.txt

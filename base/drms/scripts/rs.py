@@ -214,13 +214,13 @@ def runJsocfetch(**kwargs):
             #     element to null.
             matchObj = regExpDataLine.match(line)
             if matchObj is not None:
-                sunum = matchObj.group(1)
+                sunum = int(matchObj.group(1))
                 series = matchObj.group(2)
                 suStatus = matchObj.group(4)
                 
                 if suStatus.lower() == 'y':
                     path = matchObj.group(3)
-                    suSize = matchObj.group(5)
+                    suSize = int(matchObj.group(5))
                 elif suStatus.lower() == 'x':
                     path = ''
                     suSize = None

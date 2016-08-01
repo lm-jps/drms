@@ -191,6 +191,10 @@ RS_BINPATH                            /opt/drms/bin/linux_x86_64
 # The number of SCP worker threads.
 RS_N_WORKERS                           4
 
+# The temporary directory into which Storage Units are downloaded. This should be on the same file system
+# in which the SUMS directories are located.
+RS_TMPDIR                             /tmp
+
 # If set to 1, then this DRMS allows access by the public to series defined in the internal database (SERVER).
 WL_HASWL                              0
 
