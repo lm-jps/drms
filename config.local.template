@@ -195,6 +195,16 @@ RS_N_WORKERS                           4
 # in which the SUMS directories are located.
 RS_TMPDIR                             /tmp
 
+# If more than this number of SUs are awaiting download, then an ScpWorker will initiate a download.
+RS_SCP_MAXSUS                         48
+
+# If the cumulative payload exceeds this many MB, then an ScpWorker will initiate a download.
+RS_SCP_MAXPAYLOAD                     512
+
+# If an ScpWorker is idle for at least this many seconds, and there are SUs pending a download, 
+# then an ScpWorker will initiate a download.
+RS_SCP_TIMEOUT                        30
+
 # If set to 1, then this DRMS allows access by the public to series defined in the internal database (SERVER).
 WL_HASWL                              0
 

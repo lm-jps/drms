@@ -68,11 +68,14 @@ q:RS_DBUSER                             production
 q:RS_LOCKFILE                           /home/jsoc/locks/remotesums.lck
 q:RS_LOGDIR                             /home/jsoc/jsoclogs/rsums
 a:RS_DLTIMEOUT                          30
-a:RS_REQTIMEOUT                          5
+a:RS_REQTIMEOUT                         5
 a:RS_MAXTHREADS                         32
 q:RS_BINPATH                            /home/jsoc/cvs/Development/JSOC/bin/linux_x86_64
 a:RS_N_WORKERS                          4
 q:RS_TMPDIR                             /tmp
+a:RS_SCP_MAXSUS                         48
+a:RS_SCP_MAXPAYLOAD                     512
+a:RS_SCP_TIMEOUT                        30
 # White-list (access to internal stuff)
 a:WL_HASWL                              1
 q:WL_FILE                               /web/jsoc/htdocs/whitelist.txt
