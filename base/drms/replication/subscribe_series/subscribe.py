@@ -43,6 +43,7 @@ RV_DBCMD = 7
 RV_SUBSERVICE = 8
 RV_GETLOGS = 9
 RV_DELSERIES = 10
+RV_INGESTSQL = 11
 
 STATUS_REQUEST_RESUMING = 'requestResuming'
 STATUS_REQUEST_QUEUED = 'requestQueued'
@@ -443,6 +444,10 @@ def ingestSQLFile(sqlIn, psqlBin, dbhost, dbport, dbname, dbuser, log):
     # sqlIn is actually a io.TextIOWrapper, a file object which I believe is incompatible with
     # Popen. We need to filter the stream through a pipe whose ends are real file streams.    
     pipeReadEndFD, pipeWriteEndFD = os.pipe()
+    
+    # Ugh. Try making this non-blocking. Then catch BlockingIOError exceptions.
+    flag = fcntl.fcntl(pipeWriteEndFD, fcntl.F_GETFL)
+    fcntl.fcntl(pipeWriteEndFD, fcntl.F_SETFL, flag | os.O_NONBLOCK)
 
     # We want to block on read. If we do that, and we the read() call returns zero bytes, then we
     # know that we've hit the EOF of sqlIn, and we can close the write end of the pipe. This will
@@ -458,25 +463,40 @@ def ingestSQLFile(sqlIn, psqlBin, dbhost, dbport, dbname, dbuser, log):
     fcntl.fcntl(pipeReadEndFDErr, fcntl.F_SETFL, flag | os.O_NONBLOCK)
 
     pipeReadEndErr = os.fdopen(pipeReadEndFDErr, 'r', encoding='UTF8')
-    pipeWriteEndErr = os.fdopen(pipeWriteEndFDErr, 'w', encoding='UTF8')    
-
+    pipeWriteEndErr = os.fdopen(pipeWriteEndFDErr, 'w', encoding='UTF8')
+    
     try:
-        cmdList = [ psqlBin, '-h', dbhost, '-p', dbport, '-d', dbname, '-v ON_ERROR_STOP=1', '-U', dbuser, '-f', '-']
+        cmdList = [ psqlBin, '-h', dbhost, '-p', dbport, '-d', dbname, '-vON_ERROR_STOP=1', '-U', dbuser, '-f', '-']
         proc = Popen(cmdList, stdin=pipeReadEnd, stderr=pipeWriteEndErr, stdout=PIPE)
     except OSError as exc:
         raise Exception('sqlDump', "Cannot run command '" + ' '.join(cmdList) + "' ")
     except ValueError as exc:
         raise Exception('sqlDump', "psql command '" + ' '.join(cmdList) + "' called with invalid arguments.")            
     
+    
+    # It turns out the psql will NOT close any of the pipes or files opened in this script. So, before we write
+    # to any pipe in a loop, we need to check if psql has died, and if so, bail out of the loop.
+    skipRead = False
     while True:
+        # It appears that psql can exit before all data are written to the write-end of the pipe. And when
+        # psql exits, it does NOT close the read-end of the pipe, nor does it close the write-end of the pipe.
+        # It does not close any of the pipes or fds opened in this script.
         if not pipeWriteEnd.closed:
-            pipeBytes = sqlIn.read(8192)
-            if len(pipeBytes) > 0:
-                print(pipeBytes, file=pipeWriteEnd, end='')
-                log.writeDebug([ 'Wrote ' + str(len(pipeBytes)) + ' to psql pipe.' ])
+            if not skipRead:
+                sqlInBytes = sqlIn.read(8192)
+                log.writeDebug([ 'Read ' + str(len(sqlInBytes)) + ' from dump file.'])
+            if len(sqlInBytes) > 0:
+                try:
+                    print(sqlInBytes, file=pipeWriteEnd, end='')
+                    pipeWriteEnd.flush()
+                    log.writeDebug([ 'Wrote ' + str(len(sqlInBytes)) + ' to psql pipe.' ])
+                    skipRead = False
+                except BlockingIOError:
+                    # Just try again later, but don't re-read from sqlIn.
+                    log.writeDebug([ 'Could not write to pipeWriteEnd.' ])
+                    skipRead = True
             else:
                 log.writeDebug([ 'Done sending data to psql.' ])
-                pipeWriteEnd.flush()
                 pipeWriteEnd.close()
                 
         # Log any stderr messages from psql. Don't worry about stdout - psql will print an insert line
@@ -484,6 +504,7 @@ def ingestSQLFile(sqlIn, psqlBin, dbhost, dbport, dbname, dbuser, log):
         if not pipeReadEndErr.closed:
             while True:
                 pipeBytes = pipeReadEndErr.read(4096)
+                log.writeDebug([ 'Read ' + str(len(pipeBytes)) + ' from psql stderr.' ])
                 if len(pipeBytes) > 0:
                     log.writeInfo([ pipeBytes ])
                 else:
@@ -491,7 +512,7 @@ def ingestSQLFile(sqlIn, psqlBin, dbhost, dbport, dbname, dbuser, log):
 
         proc.poll()
         if proc.returncode is not None:
-            # I think Popen() is going to close the write end of this pipe.
+            log.writeDebug([ 'psql finished.' ])
             if not pipeWriteEndErr.closed:
                 pipeWriteEndErr.flush()
 
@@ -507,12 +528,20 @@ def ingestSQLFile(sqlIn, psqlBin, dbhost, dbport, dbname, dbuser, log):
             # These can be called, even if the pipe is already closed.
             pipeWriteEndErr.close()
             pipeReadEndErr.close()
+
+            # This will attempt to write to the pipeWriteEnd stream if this previously could not be written to (because psql died).
+            # If this happens, ignore the error.
+            try:
+                pipeWriteEnd.close()
+            except BlockingIOError:
+                pass
+            pipeReadEnd.close()
         
             if proc.returncode != 0:
                 # Log error.
                 msg = 'Command "' + ' '.join(cmdList) + '" returned non-zero status code ' + str(proc.returncode) + '.'
                 log.writeError([ msg ])
-            pipeReadEnd.close()
+                raise Exception('ingestSQL', 'psql failed to ingest SQL file.')
             log.writeInfo([ 'psql terminated - ingestion of SQL file complete.' ])
             break
         # Do not sleep! We want to pipe the dump-file data bytes to psql as quickly as possible. We don't want
@@ -1062,6 +1091,8 @@ if __name__ == "__main__":
                 rv = RV_GETLOGS
             elif type == 'delSeries':
                 rv = RV_DELSERIES
+            elif type == 'ingestSQL':
+                rv = RV_INGESTSQL
 
             if log:
                 log.writeError([ msg ])
