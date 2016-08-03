@@ -187,7 +187,7 @@ end;
 """
 
 def getNewSiteSQL(cluster):
-    return NEW_SITE_SQL.replace('<client>', cluster)
+    return NEW_SITE_SQL.replace('<cluster>', cluster)
 
 def terminator(*args):
     # Raise the SystemExit exception (which will be caught by the __exit__() method below).
