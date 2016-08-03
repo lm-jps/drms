@@ -120,7 +120,8 @@ static double ut_leap_time[] = {
  915148833.0,                                                /*  2006.01.01  */
 1009843234.0,                                                /*  2009.01.01  */
 1120176035.0,						     /*  2012.07.01  */
-1214784036.0						     /*  2015.07.01  */
+1214784036.0,						     /*  2015.07.01  */
+1262304037.0						     /*  2017.01.01  */
 
 /*
  * IMPORTANT NOTE ---
@@ -1688,4 +1689,5 @@ int parsetimestr (const char *timestr,
  *	signed int range, force JD format
  *  12.01.29	added leap second
  *  15.06.19	added leap second
+ *  16.08.03	added leap second
  */
