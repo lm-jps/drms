@@ -477,35 +477,53 @@ def ingestSQLFile(sqlIn, psqlBin, dbhost, dbport, dbname, dbuser, log):
     # It turns out the psql will NOT close any of the pipes or files opened in this script. So, before we write
     # to any pipe in a loop, we need to check if psql has died, and if so, bail out of the loop.
     skipRead = False
+    doneWriting = False
     while True:
         # It appears that psql can exit before all data are written to the write-end of the pipe. And when
         # psql exits, it does NOT close the read-end of the pipe, nor does it close the write-end of the pipe.
         # It does not close any of the pipes or fds opened in this script.
-        if not pipeWriteEnd.closed:
+        if not pipeWriteEnd.closed and not doneWriting:
             if not skipRead:
                 sqlInBytes = sqlIn.read(8192)
-                log.writeDebug([ 'Read ' + str(len(sqlInBytes)) + ' from dump file.'])
+                log.writeDebug([ 'Read ' + str(len(sqlInBytes)) + ' bytes from dump file.'])
             if len(sqlInBytes) > 0:
                 try:
-                    print(sqlInBytes, file=pipeWriteEnd, end='')
-                    pipeWriteEnd.flush()
-                    log.writeDebug([ 'Wrote ' + str(len(sqlInBytes)) + ' to psql pipe.' ])
+                    #print(sqlInBytes, file=pipeWriteEnd, end='')
+                    bytesWritten = 0
+                    bytesWritten = pipeWriteEnd.write(sqlInBytes)
+                    pipeWriteEnd.flush() # Could raise BlockingIOError
+                    log.writeDebug([ 'Wrote ' + str(bytesWritten) + ' bytes to psql pipe.' ])
                     skipRead = False
-                except BlockingIOError:
+                except BlockingIOError as exc:
                     # Just try again later, but don't re-read from sqlIn.
                     log.writeDebug([ 'Could not write to pipeWriteEnd.' ])
+                    log.writeDebug([ 'But wrote ' + str(exc.characters_written) + ' bytes.' ])
+                    # Maybe we have to remove the bytes that got written?
+                    sqlInBytes = sqlInBytes[exc.characters_written:]
+                    # log.writeDebug([ 'MAYBE wrote ' + str(bytesWritten) + ' bytes.' ])
                     skipRead = True
             else:
                 log.writeDebug([ 'Done sending data to psql.' ])
-                pipeWriteEnd.close()
+                doneWriting = True
+                
+        if not pipeWriteEnd.closed and doneWriting:
+            try:
+                time.sleep(2)
+                pipeWriteEnd.close() # Can't do this before psql has finished reading!!
+                log.writeDebug([ 'Successfully closed pipeWriteEnd.' ])
+            except BlockingIOError:
+                log.writeDebug([ 'Cannot close pipeWriteEnd - try again later.' ])
+                
+        if pipeWriteEnd.closed:
+            time.sleep(1)
                 
         # Log any stderr messages from psql. Don't worry about stdout - psql will print an insert line
         # for every line ingested, and those don't provide any useful information
         if not pipeReadEndErr.closed:
             while True:
                 pipeBytes = pipeReadEndErr.read(4096)
-                log.writeDebug([ 'Read ' + str(len(pipeBytes)) + ' from psql stderr.' ])
                 if len(pipeBytes) > 0:
+                    log.writeDebug([ 'Read ' + str(len(pipeBytes)) + ' bytes from psql stderr.' ])
                     log.writeInfo([ pipeBytes ])
                 else:
                     break
@@ -534,6 +552,7 @@ def ingestSQLFile(sqlIn, psqlBin, dbhost, dbport, dbname, dbuser, log):
             try:
                 pipeWriteEnd.close()
             except BlockingIOError:
+                log.writeError([ 'Could not close pipeWriteEnd.' ])
                 pass
             pipeReadEnd.close()
         
@@ -871,7 +890,10 @@ if __name__ == "__main__":
                                 # SmartDL downloads the file via multiple streams into temporary files. It combines the multiple
                                 # files into a single destination file when the download completes. So, if the destination file
                                 # exists, the download completed and was successful.
-                                if not os.path.exists(dest):
+                                if not resuming or not os.path.exists(dest):
+                                    if os.path.exists(dest):
+                                        log.writeInfo([ 'Removing stale dump ' + dest + '.' ])
+                                        os.remove(dest)
                                     log.writeInfo([ 'Downloading ' + dest + '.' ])
                                     print('Downloading dump file (to ' + dest + ').')
                                     dl = SmartDL(xferURL, dest)
@@ -900,7 +922,10 @@ if __name__ == "__main__":
                                 # SmartDL downloads the file via multiple streams into temporary files. It combines the multiple
                                 # files into a single destination file when the download completes. So, if the destination file
                                 # exists, the download completed and was successful.
-                                if not os.path.exists(dest):
+                                if not resuming or not os.path.exists(dest):
+                                    if os.path.exists(dest):
+                                        log.writeInfo([ 'Removing stale dump ' + dest + '.' ])
+                                        os.remove(dest)
                                     log.writeInfo([ 'Downloading ' + dest + '.' ])
                                     print('Downloading dump file (to ' + dest + ').')
                                     dl = SmartDL(xferURL, dest)
