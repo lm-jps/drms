@@ -488,19 +488,25 @@ def ingestSQLFile(sqlIn, psqlBin, dbhost, dbport, dbname, dbuser, log):
                 log.writeDebug([ 'Read ' + str(len(sqlInBytes)) + ' bytes from dump file.'])
             if len(sqlInBytes) > 0:
                 try:
-                    #print(sqlInBytes, file=pipeWriteEnd, end='')
-                    bytesWritten = 0
+                    # Because we are flushing each write, the out buffer will never get full, 
+                    # so write() will never throw a BlockingIOError exception. 
                     bytesWritten = pipeWriteEnd.write(sqlInBytes)
-                    pipeWriteEnd.flush() # Could raise BlockingIOError
+                    
+                    # Will raise BlockingIOError if the in buffer is full.
+                    pipeWriteEnd.flush() 
+                    # Since we called flush() after write(), if we get here without an exception, 
+                    # we know that we wrote all the bytes in sqlInBytes.
                     log.writeDebug([ 'Wrote ' + str(bytesWritten) + ' bytes to psql pipe.' ])
                     skipRead = False
                 except BlockingIOError as exc:
-                    # Just try again later, but don't re-read from sqlIn.
-                    log.writeDebug([ 'Could not write to pipeWriteEnd.' ])
-                    log.writeDebug([ 'But wrote ' + str(exc.characters_written) + ' bytes.' ])
-                    # Maybe we have to remove the bytes that got written?
+                    # Just try again later, but don't re-read from sqlIn. In fact, remove the bytes
+                    # that DID get written.
+                    if exc.characters_written > 0:
+                        log.writeDebug([ 'Could not flush all bytes to pipeWriteEnd.' ])
+                        log.writeDebug([ 'But wrote ' + str(exc.characters_written) + ' bytes.' ])
+                        
+                    # Remove the bytes that DID get written.
                     sqlInBytes = sqlInBytes[exc.characters_written:]
-                    # log.writeDebug([ 'MAYBE wrote ' + str(bytesWritten) + ' bytes.' ])
                     skipRead = True
             else:
                 log.writeDebug([ 'Done sending data to psql.' ])
@@ -508,14 +514,11 @@ def ingestSQLFile(sqlIn, psqlBin, dbhost, dbport, dbname, dbuser, log):
                 
         if not pipeWriteEnd.closed and doneWriting:
             try:
-                time.sleep(2)
-                pipeWriteEnd.close() # Can't do this before psql has finished reading!!
+                pipeWriteEnd.close()
                 log.writeDebug([ 'Successfully closed pipeWriteEnd.' ])
             except BlockingIOError:
+                # We probably can no longer get here, since we flush() each write above.
                 log.writeDebug([ 'Cannot close pipeWriteEnd - try again later.' ])
-                
-        if pipeWriteEnd.closed:
-            time.sleep(1)
                 
         # Log any stderr messages from psql. Don't worry about stdout - psql will print an insert line
         # for every line ingested, and those don't provide any useful information
