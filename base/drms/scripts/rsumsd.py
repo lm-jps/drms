@@ -1396,6 +1396,8 @@ class ScpWorker(threading.Thread):
     scpNeeded = threading.Event() # Event fired by main when a Downloader thread has changed the state of an SU from 'P' to 'W'
     scpCompleted = threading.Event()  # Event fired by ScpWorker when an ScpWorker thread had completed an SU download
     lock = threading.Lock() # Guard tList.
+    lastDlLock = threading.Lock()
+    lastDownloadTime = None # The datetime of the last time the ScpWorker downloaded a set of SUs
     
     def __init__(self, id, suTable, arguments, log):
         threading.Thread.__init__(self)
@@ -1412,8 +1414,16 @@ class ScpWorker(threading.Thread):
         maxNumSUs = self.arguments.scpMaxNumSUs
         maxPayloadSUs = self.arguments.scpMaxPayload
         scpTimeOut = self.arguments.scpTimeOut
-        lastDownloadTime = datetime.now(timezone.utc) # The datetime of the last time the ScpWorker downloaded a set of SUs.
         doDownload = False
+        
+        try:
+            gotDlLock = ScpWorker.lastDlLock.acquire()
+            if gotDlLock:
+                if ScpWorker.lastDownloadTime is None:
+                    ScpWorker.lastDownloadTime = datetime.now(timezone.utc)
+        finally:
+            if gotDlLock:
+                ScpWorker.lastDlLock.release()
         
         while not self.sdEvent.isSet():
             self.sunums = []
@@ -1430,19 +1440,48 @@ class ScpWorker(threading.Thread):
                 # to 'P' so the requesting Downloader thread can clean-up and set the status to 'C' for the main thread to handle.
                 (workingSUs, (user, host, port)) = self.suTable.getNextNWorking(maxNumSUs)
                 
+                doDownload = False
+                
                 numSUs = len(workingSUs)
                 # No need to lock su for suSize - that gets set before ScpWorker sees the SU.
                 payload = sum([ su.worker.suSize for su in workingSUs ])
                 currentTime = datetime.now(timezone.utc)
+                
+                try:
+                    gotDlLock = ScpWorker.lastDlLock.acquire()
+                    if gotDlLock:
+                        if numSUs > 0:
+                            doDownload = payload > maxPayloadSUs or numSUs == maxNumSUs
+                            self.log.writeDebug([ 'doDownload calc (payload, maxPayLoadSUs, numSUs, maxNumSUs, currentTime, lastDownloadTime, scpTimeOut): ' + str(payload) + ',' + str(maxPayloadSUs) + ',' + str(numSUs) + ',' + str(maxNumSUs) + ',' + str(currentTime) + ',' + str(ScpWorker.lastDownloadTime) + ',' + str(scpTimeOut) + ')' ])
 
-                if numSUs > 0:
-                    doDownload = payload > maxPayloadSUs or numSUs == maxNumSUs or currentTime - lastDownloadTime > scpTimeOut
-                    self.log.writeDebug([ 'doDownload calc (payload, maxPayLoadSUs, numSUs, maxNumSUs, currentTime, lastDownloadTime, scpTimeOut): ' + str(payload) + ',' + str(maxPayloadSUs) + ',' + str(numSUs) + ',' + str(maxNumSUs) + ',' + str(currentTime) + ',' + str(lastDownloadTime) + ',' + str(scpTimeOut) + ')' ])
-                else:
-                    doDownload = False
+                            if doDownload:                            
+                                # Set lastDownloadTime. If another ScpWorker is about to run a download, it will have to wait.
+                                ScpWorker.lastDownloadTime = datetime.now(timezone.utc)
+                            else:
+                                # Now it could be that at least one SU has been waiting a long time. If that is true, then 
+                                # do a download.
+                                oldSUs = []
+                                for su in workingSUs:
+                                    try:
+                                        gotSULock = su.acquireLock()
+                                        if not gotSULock:
+                                            raise Exception('lock', 'Unable to acquire SU ' + str(su.sunum) + ' lock.')
+                                        if currentTime - su.starttime > scpTimeOut:
+                                            oldSUs.append(su)
+                                    finally:
+                                        if gotSULock:
+                                            su.releaseLock()
+                                if len(oldSUs) > 0:
+                                    workingSUs = oldSUs
+                                    doDownload = True
+                        else:
+                            doDownload = False
+                finally:
+                    if gotDlLock:
+                        ScpWorker.lastDlLock.release()
                 
                 if doDownload:
-                    self.log.writeInfo([ 'Collected ' + str(len(workingSUs)) + ' for download.' ])
+                    self.log.writeInfo([ 'Time for a download! Collected ' + str(len(workingSUs)) + ' for download.' ])
                     
                     # Now acquire SU lock for all SUs so no other thread modifies the SU while we are processing the download.
                     for su in workingSUs:
@@ -1482,12 +1521,15 @@ class ScpWorker(threading.Thread):
                         self.log.writeInfo([ 'Creating temporary download directory ' + self.tmpdir + '.' ])
                         os.mkdir(self.tmpdir)
 
-                    cmdList = [ 'scp', '-r', '-P', port, user + '@' + host + ':"' + ' '.join(paths) + '"', self.tmpdir ]
-                    self.log.writeInfo([ 'Running ' + ' '.join(cmdList) + '.' ])
+                    # cmdList = [ 'scp', '-r', '-P', port, user + '@' + host + ':"' + ' '.join(paths) + '"', self.tmpdir ]
+                    cmd = 'scp -r -P ' + port + ' ' + user + '@' + host + ':"' + ' '.join(paths) + '" ' + self.tmpdir
+                    # self.log.writeInfo([ 'Running ' + ' '.join(cmdList) + '.' ])
+                    self.log.writeInfo([ 'Running ' + cmd + '.' ])
                     try:
                         # check_call(cmdList)
                         # The scp process will inherit stdin, stdout, and stderr from this script.
-                        proc = Popen(cmdList, stdout=PIPE, stderr=PIPE)
+                        # proc = Popen(cmdList, stdout=PIPE, stderr=PIPE)
+                        proc = Popen(cmd, shell=True, stdout=PIPE, stderr=PIPE)
                     except OSError as exc:
                         import traceback
                         self.log.writeError([ traceback.format_exc(5) ])
@@ -1694,6 +1736,10 @@ class Downloader(threading.Thread):
         # that is used will set the status to 'D' so that no other ScpWorker attempt to download the SU 
         # as well. When the ScpWorker completes the download, it will set the status to 'P' again.
         self.log.writeInfo([ 'Downloader running for SU ' + str(self.sunum) + '.' ])
+        
+        suDlPath = None
+        sudir = None
+
         try:
             su = None
             try:
@@ -1983,9 +2029,9 @@ class Downloader(threading.Thread):
                 
             # Must clean-up SU dir and the downloaded files.
             try:
-                if os.path.exists(sudir):
+                if sudir and os.path.exists(sudir):
                     shutil.rmtree(sudir)
-                if os.path.exists(suDlPath):
+                if suDlPath and os.path.exists(suDlPath):
                     shutil.rmtree(suDlPath)
             except OSError as exc:
                 pass
