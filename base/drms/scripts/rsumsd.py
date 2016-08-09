@@ -570,7 +570,7 @@ class SuTable:
 
             nAtts += 1
             time.sleep(1)
-
+    
     # This will NOT commit database changes. You are generally going to want to do this as part of a larger db change. Commit the changes
     # after all changes that form the atomic set of changes.
     #
@@ -656,6 +656,20 @@ class SuTable:
                         su.releaseLock()
                     
         self.deleteDB(toDel)
+        
+    # This WILL commit changes to the db.
+    def updateDbAndCommit(self, sunums=None):
+        try:
+            gotLock = SuTable.suTableClassLock.acquire()
+            if gotLock:
+                cursor = SuTable.cursor
+                if cursor:
+                    cursor.execute('BEGIN')
+                    self.updateDB(sunums)
+                    cursor.execute('END') # Same as commit.
+        finally:
+            if gotLock:
+                SuTable.suTableClassLock.release()
 
     # This will NOT commit database changes. You are generally going to want to do this as part of a larger db change. Commit the changes
     # after all changes that form the atomic set of changes.
@@ -1158,6 +1172,20 @@ class ReqTable:
                             ReqTable.reqTableClassLock.release()
                     
                     self.reqDict[requestidStr]['dirty'] = False
+                    
+    # This WILL commit changes to the db.
+    def updateDbAndCommit(self, requestids=None):
+        try:
+            gotLock = ReqTable.reqTableClassLock.acquire()
+            if gotLock:
+                cursor = ReqTable.cursor
+                if cursor:
+                    cursor.execute('BEGIN')
+                    self.updateDB(requestids)
+                    cursor.execute('END') # Same as commit.
+        finally:
+            if gotLock:
+                ReqTable.reqTableClassLock.release()
 
     # This will NOT commit database changes. You are generally going to want to do this as part of a larger db change. Commit the changes
     # after all changes that form the atomic set of changes.
@@ -1611,7 +1639,7 @@ class ScpWorker(threading.Thread):
                     
                     # Flush the change to disk.
                     self.log.writeDebug([ 'Updating SU table.' ])
-                    self.suTable.updateDB()
+                    self.suTable.updateDbAndCommit()
 
                     self.log.writeInfo([ 'scp command succeeded for SUs ' + ','.join([ str(asunum) for asunum in self.sunums ]) + '.' ])
                 
@@ -1815,6 +1843,7 @@ class Downloader(threading.Thread):
             # SU, and then we can call the equivalent of the SUM_close() API call to end the SUMS session.
             
             # We need to connect to the SUMS database before we can modify SUMS objects.
+            # The DB transaction is NOT in autocommit mode.
             with psycopg2.connect(database=arguments.sumsdbname, user=arguments.sumsdbuser, host=arguments.sumsdbhost, port=arguments.sumsdbport) as conn:
                 rslog.writeInfo([ 'Connected to database ' + arguments.sumsdbname + ' on ' + arguments.sumsdbhost + ':' + str(arguments.sumsdbport) + ' as user ' + arguments.sumsdbuser ])
                 with conn.cursor() as cursor:
@@ -2038,7 +2067,7 @@ class Downloader(threading.Thread):
                 
         # Update SU table (write-out status, error or success, to the DB).
         # This is a no-op if no SUs were actually modified.
-        self.suTable.updateDB()
+        self.suTable.updateDbAndCommit()
 
         # This thread is about to terminate. 
         # We need to check the class tList variable to update it, so we need to acquire the lock.
@@ -2127,9 +2156,6 @@ class ProviderPoller(threading.Thread):
             finally:
                 if su:
                     su.releaseLock()
-                    
-        # This locks and releases all SUs
-        self.suTable.updateDB(self.sunums)
 
         dlInfo = {}
         dlInfo['status'] = 'pending'
@@ -2189,9 +2215,6 @@ class ProviderPoller(threading.Thread):
                 errMsg = 'The providing site failed to return paths to requests SUs.'
             # SuTable::setStatus() will acquire and release all SU locks.
             self.suTable.setStatus(self.sunums, 'E', errMsg)
-
-            # Flush the change to disk.
-            self.suTable.updateDB(self.sunums)
         else:
             # Start a download for each SU. If we cannot start the download for any reason, then set the SU status to 'E'.
             self.log.writeInfo([ 'The SU paths are ready.' ])
@@ -2244,8 +2267,8 @@ class ProviderPoller(threading.Thread):
                     # We woke up, but we do not know if there are any open threads in the thread pool. Loop and check
                     # tList again.
             
-            # Flush the change to disk.
-            self.suTable.updateDB(self.sunums)
+        # Flush the change to disk.
+        self.suTable.updateDbAndCommit()
                 
     def stop(self):
         self.log.writeInfo([ 'Stopping ProviderPoller (requestID ' + str(self.requestID) + ').' ])
@@ -2509,14 +2532,29 @@ if __name__ == "__main__":
                     continue
 
                 rslog.writeInfo([ 'Recovering interrupted download for SUNUM ' + str(asu.sunum) + '.' ])
-                siteURL = sites.getURL(asu.sunum)
+
+                try:
+                    siteURL = sites.getURL(asu.sunum)
+                except Exception as exc:
+                    if len(exc.args) != 2:
+                        raise # Re-raise
+
+                    etype = exc.args[0]
+                    msg = exc.args[1]
+                
+                    if etype is not 'unknownSitecode':
+                        raise
+                        
+                    # Skip this SU. No need to acquire lock since no other threads are operating on SUs at this point.
+                    asu.setStatus('E', 'Uknown site code for SU ' + str(asu.sunum) + '.')
+                    continue
                 
                 if siteURL not in siteSunums:
                     siteSunums[siteURL] = []
 
                 siteSunums[siteURL].append(asu.sunum)
 
-            sus.updateDB()
+            sus.updateDbAndCommit()
 
             # There is no need to acquire the SU-table lock. processSUs() will start new threads that can modify the
             # SU-record statuses, but by the time that happens, the main thread will be done reading those statuses.
@@ -2631,9 +2669,6 @@ if __name__ == "__main__":
                                     cursor.execute('END') # Same as cursor.execute('COMMIT')
                                 else:
                                     raise Exception('dbUpdate', 'cursor does not exist.')
-                        except psycopg2.Error as exc:
-                            # Handle database-command errors.
-                            raise Exception('dbUpdate', exc.diag.message_primary)
                         finally:
                             if gotLock:
                                 ReqTable.reqTableClassLock.release()                                
@@ -2657,7 +2692,7 @@ if __name__ == "__main__":
                         rslog.writeInfo([ 'Request number ' + str(arequest['requestid']) + ' timed-out.' ])
                         requests.setStatus([arequest['requestid']], 'E', 'Request timed-out.')
                         try:
-                            gotLock = ReqTable.suTableClassLock.acquire()
+                            gotLock = ReqTable.reqTableClassLock.acquire()
                             if gotLock:
                                 cursor = ReqTable.cursor
                                 if cursor:
@@ -2666,13 +2701,11 @@ if __name__ == "__main__":
                                     cursor.execute('END')
                                 else:
                                     raise Exception('dbUpdate', 'cursor does not exist.')
-                        except psycopg2.Error as exc:
-                            # Handle database-command errors.
-                            raise Exception('dbUpdate', exc.diag.message_primary)
                         finally:
                             if gotLock:
-                                ReqTable.suTableClassLock.release()                                
-                        
+                                ReqTable.reqTableClassLock.release()
+                                
+                        # On to next request.
                         continue
                     
                     sunums = arequest['sunums']
@@ -2742,12 +2775,35 @@ if __name__ == "__main__":
                     # Start downloads for all unknown, offline SUs
                     siteSunums = {}
                     for asunum in dlsToStart:
-                        siteURL = sites.getURL(asunum)
+                        try:
+                            siteURL = sites.getURL(asunum)
+                        except Exception as exc:
+                            if len(exc.args) != 2:
+                                raise # Re-raise
+
+                            etype = exc.args[0]
+                            msg = exc.args[1]
+                
+                            if etype is not 'unknownSitecode':
+                                raise
+                        
+                            # Skip this request - invalid SU.
+                            msg = 'Uknown site code for SU ' + str(asunum) + '. Skipping request ' + str(arequest['requestid']) + '.'
+                            rslog.writeError([ msg ])
+                            requests.setStatus([ arequest['requestid'] ], 'E', msg)
+                            skipRequest = True
+                            break
                         
                         if siteURL not in siteSunums:
                             siteSunums[siteURL] = []
                         
                         siteSunums[siteURL].append(asunum)
+                        
+                    requests.updateDbAndCommit()
+                        
+                    if skipRequest:
+                        # On to next new request.
+                        continue
                         
                     for url, sunumList in siteSunums.items():
                         if len(sunumList) > 0:
@@ -2776,9 +2832,6 @@ if __name__ == "__main__":
                                 cursor.execute('END')
                             else:
                                 raise Exception('dbUpdate', 'cursor does not exist.')
-                    except psycopg2.Error as exc:
-                        # Handle database-command errors.
-                        raise Exception('dbUpdate', exc.diag.message_primary)
                     finally:
                         if gotLock:
                             SuTable.suTableClassLock.release()
@@ -2809,9 +2862,6 @@ if __name__ == "__main__":
                         cursor.execute('END')
                     else:
                         raise Exception('dbUpdate', 'cursor does not exist.')
-            except psycopg2.Error as exc:
-                # Handle database-command errors.
-                raise Exception('dbUpdate', exc.diag.message_primary)
             finally:
                 if gotLock:
                     SuTable.suTableClassLock.release()
