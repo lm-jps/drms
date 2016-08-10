@@ -758,11 +758,24 @@ class Worker(threading.Thread):
                             wroteIntMsg = False
                             with gzip.open(outFile, mode='wt', compresslevel=9, encoding='UTF8') as fout:
                                 self.log.writeInfo([ 'Creating createns.sql file:' + ' '.join(cmdList) + '.' ])
+                                
+                                # You can't use a GzipFile to receive the stdout from createns. Instead, make a 
+                                # pair of pipes - createns writes to the write end of the pipe, and then this script
+                                # reads from the read end, and then it writes to the GzipFile.
+                                pipeReadEndFD, pipeWriteEndFD = os.pipe()
+                                
+                                # Make the read-pipe not block.
+                                flag = fcntl.fcntl(pipeReadEndFD, fcntl.F_GETFL)
+                                fcntl.fcntl(pipeReadEndFD, fcntl.F_SETFL, flag | os.O_NONBLOCK)
+
+                                pipeReadEnd = os.fdopen(pipeReadEndFD, 'r', encoding='UTF8')
+                                pipeWriteEnd = os.fdopen(pipeWriteEndFD, 'w', encoding='UTF8')
+
                                 print('BEGIN;', file=fout)
                                 print("SET CLIENT_ENCODING TO 'UTF8';", file=fout)
                                 fout.flush()
-                                proc = Popen(cmdList, stdout=fout)
-            
+                                proc = Popen(cmdList, stdout=pipeWriteEnd)
+
                                 try:
                                     self.reqTable.releaseLock()
             
@@ -776,11 +789,32 @@ class Worker(threading.Thread):
                                             wroteIntMsg = True
                                             # proc.kill()
                                             # raise Exception('shutDown', 'Received shut-down message from main thread.')
+
+                                        # Read what is available from the pipe, convert to utf8, and write it to fout.
+                                        while True:
+                                            pipeBytes = pipeReadEnd.read(4096)
+                                            if len(pipeBytes) > 0:
+                                                print(pipeBytes, file=fout, end='')
+                                            else:
+                                                break
             
                                         if proc.poll() is not None:
                                             self.writeStream.logLines() # Log all createns output.
                                             if proc.returncode != 0:
                                                 raise Exception('sqlDump', 'Failure generating dump file, createns returned ' + str(proc.returncode) + '.') 
+                                            
+                                            pipeWriteEnd.flush()
+                                            pipeWriteEnd.close()
+                                            
+                                            # Read the remaining bytes from the pipe.
+                                            while True:
+                                                pipeBytes = pipeReadEnd.read(4096)
+                                                if len(pipeBytes) > 0:
+                                                    print(pipeBytes, file=fout, end='')
+                                                else:
+                                                    break
+                                            pipeReadEnd.close()
+                                            
                                             break
 
                                         maxLoop -= 1
