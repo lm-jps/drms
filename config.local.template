@@ -176,11 +176,11 @@ RS_LOCKFILE                           /usr/share/drms/locks/remotesums.lck
 # The directory in which remote-sums log files are written.
 RS_LOGDIR                             /usr/share/drms/logs/rsums
 
-# The number of minutes after which a storage-unit download will time-out.
-RS_DLTIMEOUT                          30
+# The number of seconds after which a storage-unit scp download will time-out.
+RS_DLTIMEOUT                          120
 
-# The number of minutes after which a new remote-sums fetch will time-out if no download has yet started.
-RS_REQTIMEOUT                          5
+# The number of seconds after which a new remote-sums fetch will time-out if the daemon has not started a download within this interval.
+RS_REQTIMEOUT                         300
 
 # The maximum number of simultaneously storage unit downloads to process at once.
 RS_MAXTHREADS                         32
