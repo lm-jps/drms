@@ -522,8 +522,8 @@ def seriesIsPublished(arguments, conn, series):
     regExp = re.compile(r'\s*(\S+)\.(\S+)\s*')
     matchObj = regExp.match(series)
     if matchObj is not None:
-        nsp = matchObj.group(1)
-        table = matchObj.group(2)
+        nsp = matchObj.group(1).lower()
+        table = matchObj.group(2).lower()
     else:
         raise Exception('args', 'Not a valid DRMS series name: ' + series + '.')
 
