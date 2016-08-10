@@ -67,8 +67,8 @@ a:RS_DBPORT                             5432
 q:RS_DBUSER                             production
 q:RS_LOCKFILE                           /home/jsoc/locks/remotesums.lck
 q:RS_LOGDIR                             /home/jsoc/jsoclogs/rsums
-a:RS_DLTIMEOUT                          30
-a:RS_REQTIMEOUT                         5
+a:RS_DLTIMEOUT                          120
+a:RS_REQTIMEOUT                         300
 a:RS_MAXTHREADS                         32
 q:RS_BINPATH                            /home/jsoc/cvs/Development/JSOC/bin/linux_x86_64
 a:RS_N_WORKERS                          4
