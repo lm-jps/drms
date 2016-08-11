@@ -183,7 +183,7 @@ RS_DLTIMEOUT                          120
 RS_REQTIMEOUT                         300
 
 # The maximum number of simultaneously storage unit downloads to process at once.
-RS_MAXTHREADS                         32
+RS_MAXTHREADS                         216
 
 # The path to executables run by the remote-sums system.
 RS_BINPATH                            /opt/drms/bin/linux_x86_64
@@ -203,7 +203,7 @@ RS_SCP_MAXPAYLOAD                     512
 
 # If an ScpWorker is idle for at least this many seconds, and there are SUs pending a download, 
 # then an ScpWorker will initiate a download.
-RS_SCP_TIMEOUT                        30
+RS_SCP_TIMEOUT                        2
 
 # If set to 1, then this DRMS allows access by the public to series defined in the internal database (SERVER).
 WL_HASWL                              0
