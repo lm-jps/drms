@@ -1424,8 +1424,6 @@ class ScpWorker(threading.Thread):
     scpNeeded = threading.Event() # Event fired by main when a Downloader thread has changed the state of an SU from 'P' to 'W'
     scpCompleted = threading.Event()  # Event fired by ScpWorker when an ScpWorker thread had completed an SU download
     lock = threading.Lock() # Guard tList.
-    lastDlLock = threading.Lock()
-    lastDownloadTime = None # The datetime of the last time the ScpWorker downloaded a set of SUs
     
     def __init__(self, id, suTable, arguments, log):
         threading.Thread.__init__(self)
@@ -1443,15 +1441,7 @@ class ScpWorker(threading.Thread):
         maxPayloadSUs = self.arguments.scpMaxPayload
         scpTimeOut = self.arguments.scpTimeOut
         doDownload = False
-        
-        try:
-            gotDlLock = ScpWorker.lastDlLock.acquire()
-            if gotDlLock:
-                if ScpWorker.lastDownloadTime is None:
-                    ScpWorker.lastDownloadTime = datetime.now(timezone.utc)
-        finally:
-            if gotDlLock:
-                ScpWorker.lastDlLock.release()
+        lastDownloadTime = None
         
         while not self.sdEvent.isSet():
             self.sunums = []
@@ -1474,42 +1464,28 @@ class ScpWorker(threading.Thread):
                 # No need to lock su for suSize - that gets set before ScpWorker sees the SU.
                 payload = sum([ su.worker.suSize for su in workingSUs ])
                 currentTime = datetime.now(timezone.utc)
-                
-                try:
-                    gotDlLock = ScpWorker.lastDlLock.acquire()
-                    if gotDlLock:
-                        if numSUs > 0:
-                            doDownload = payload > maxPayloadSUs or numSUs == maxNumSUs
-                            self.log.writeDebug([ 'doDownload calc (payload, maxPayLoadSUs, numSUs, maxNumSUs, currentTime, lastDownloadTime, scpTimeOut): ' + str(payload) + ',' + str(maxPayloadSUs) + ',' + str(numSUs) + ',' + str(maxNumSUs) + ',' + str(currentTime) + ',' + str(ScpWorker.lastDownloadTime) + ',' + str(scpTimeOut) + ')' ])
 
-                            if doDownload:                            
-                                # Set lastDownloadTime. If another ScpWorker is about to run a download, it will have to wait.
-                                ScpWorker.lastDownloadTime = datetime.now(timezone.utc)
-                            else:
-                                # Now it could be that at least one SU has been waiting a long time. If that is true, then 
-                                # do a download.
-                                oldSUs = []
-                                for su in workingSUs:
-                                    try:
-                                        gotSULock = su.acquireLock()
-                                        if not gotSULock:
-                                            raise Exception('lock', 'Unable to acquire SU ' + str(su.sunum) + ' lock.')
-                                        if currentTime - su.starttime > scpTimeOut:
-                                            oldSUs.append(su)
-                                    finally:
-                                        if gotSULock:
-                                            su.releaseLock()
-                                if len(oldSUs) > 0:
-                                    workingSUs = oldSUs
-                                    doDownload = True
-                        else:
-                            doDownload = False
-                finally:
-                    if gotDlLock:
-                        ScpWorker.lastDlLock.release()
+                if numSUs > 0:
+                    doDownload = payload > maxPayloadSUs or numSUs == maxNumSUs
+                    self.log.writeDebug([ 'doDownload calc (payload, maxPayLoadSUs, numSUs, maxNumSUs, currentTime, lastDownloadTime, scpTimeOut): ' + str(payload) + ',' + str(maxPayloadSUs) + ',' + str(numSUs) + ',' + str(maxNumSUs) + ',' + str(currentTime) + ',' + str(lastDownloadTime) + ',' + str(scpTimeOut) + ')' ])
+
+                    if doDownload:                            
+                        # Set lastDownloadTime. We will keep setting this, until we complete the scp - that is the best place to
+                        # set it, but errors before that could cause us to not set it.
+                        lastDownloadTime = datetime.now(timezone.utc)
+                    else:
+                        # Now it could be that at least one SU has been waiting a long time. If that is true, then 
+                        # do a download.
+                        if lastDownloadTime is None:
+                            lastDownloadTime = datetime.now(timezone.utc)
+                            
+                        if currentTime - lastDownloadTime > scpTimeOut:
+                            doDownload = True
+                else:
+                    doDownload = False
                 
                 if doDownload:
-                    self.log.writeInfo([ 'Time for a download! Collected ' + str(len(workingSUs)) + ' for download.' ])
+                    self.log.writeInfo([ 'ScpWorker ' + str(self.id) + ' - Time for a download! Collected ' + str(len(workingSUs)) + ' for download.' ])
                     
                     # Now acquire SU lock for all SUs so no other thread modifies the SU while we are processing the download.
                     for su in workingSUs:
@@ -1549,7 +1525,8 @@ class ScpWorker(threading.Thread):
                         self.log.writeInfo([ 'Creating temporary download directory ' + self.tmpdir + '.' ])
                         os.mkdir(self.tmpdir)
 
-                    # cmdList = [ 'scp', '-r', '-P', port, user + '@' + host + ':"' + ' '.join(paths) + '"', self.tmpdir ]
+                    lastDownloadTime = datetime.now(timezone.utc)
+                    
                     cmd = 'scp -r -P ' + port + ' ' + user + '@' + host + ':"' + ' '.join(paths) + '" ' + self.tmpdir
                     # self.log.writeInfo([ 'Running ' + ' '.join(cmdList) + '.' ])
                     self.log.writeInfo([ 'Running ' + cmd + '.' ])
@@ -1572,9 +1549,12 @@ class ScpWorker(threading.Thread):
                         # The Python documentation is confusing at best. I think we have to look at the proc.returncode attribute
                         # to determine if the child process has completed. None means it hasn't. If the value is not None, then 
                         # the child process has terminated, and the value is the child process's return code.
+                        lastDownloadTime = datetime.now(timezone.utc)
+                        
                         proc.poll()
                         if proc.returncode is not None:
-                            self.log.writeInfo([ 'spc process exited with return code ' + str(proc.returncode) + '.' ])
+                            self.log.writeInfo([ 'ScpWorker ' + str(self.id) + ' - spc process exited with return code ' + str(proc.returncode) + '.' ])
+                            lastDownloadTime = datetime.now(timezone.utc)
                             if proc.returncode != 0:
                                 out, err = proc.communicate()
                                 msg = 'Command "' + ' '.join(cmdList) + '" returned non-zero status code ' + str(proc.returncode) + '.'
@@ -1636,12 +1616,11 @@ class ScpWorker(threading.Thread):
                             for su in sus:
                                 su.releaseLock()
 
-                    
                     # Flush the change to disk.
                     self.log.writeDebug([ 'Updating SU table.' ])
                     self.suTable.updateDbAndCommit()
 
-                    self.log.writeInfo([ 'scp command succeeded for SUs ' + ','.join([ str(asunum) for asunum in self.sunums ]) + '.' ])
+                    self.log.writeInfo([ 'ScpWorker ' + str(self.id) + ' - scp command succeeded for SUs ' + ','.join([ str(asunum) for asunum in self.sunums ]) + '.' ])
                 
                 except Exception as exc:
                     if len(exc.args) == 2:
@@ -1697,8 +1676,15 @@ class ScpWorker(threading.Thread):
                 # There were fewer than scpBatchSize requests for an SU download. Wait for more with ScpWorker.scpNeeded.wait().
                 # Set a timeout so we can gracefully exit if the shutdown event has been triggered (just in case this thread
                 # blocks on wait - when the shutdown happens, the scpNeeded event will be triggered, however).
+                
+                # It could be the case that the last Downloader has fired scpNeeded, but there still aren't enough SUs
+                # to trigger a download. If that is the case, then we must let scpNeeded time-out before we do check to see
+                # if it is time to do a download. If the scpNeeded.wait() timeout is long, then we won't check for the 
+                # ScpWorker timeout for a long time, even though the ScpWorker timeout might be short.
+                timeOutToUse = min(scpTimeOut, timedelta(seconds=10))
+                
                 try:
-                    ScpWorker.scpNeeded.wait(10)
+                    ScpWorker.scpNeeded.wait(timeOutToUse.total_seconds())
                 except RuntimeError:
                     pass
                 
