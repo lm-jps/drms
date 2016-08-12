@@ -440,20 +440,9 @@ def ingestSQLFile(sqlIn, psqlBin, dbhost, dbport, dbname, dbuser, log):
     # which starts the underlying transaction with the server encoding (Latin-1), but when the 
     # sql file is ingested, the client encoding will be changed to UTF8, and then when the text data 
     # are sent to the server, they are converted to Latin-1 automagically.
-
-    # sqlIn is actually a io.TextIOWrapper, a file object which I believe is incompatible with
-    # Popen. We need to filter the stream through a pipe whose ends are real file streams.    
-    pipeReadEndFD, pipeWriteEndFD = os.pipe()
     
-    # Ugh. Try making this non-blocking. Then catch BlockingIOError exceptions.
-    flag = fcntl.fcntl(pipeWriteEndFD, fcntl.F_GETFL)
-    fcntl.fcntl(pipeWriteEndFD, fcntl.F_SETFL, flag | os.O_NONBLOCK)
-
-    # We want to block on read. If we do that, and we the read() call returns zero bytes, then we
-    # know that we've hit the EOF of sqlIn, and we can close the write end of the pipe. This will
-    # cause Popen() to terminate.    
-    pipeReadEnd = os.fdopen(pipeReadEndFD, 'r', encoding='UTF8')
-    pipeWriteEnd = os.fdopen(pipeWriteEndFD, 'w', encoding='UTF8')
+    # sqlIn is actually a io.TextIOWrapper, a file object which I believe is incompatible with
+    # Popen(). Filter this through a stdin PIPE to Popen().
     
     # Make a pipe for capturing psql stderr as well.
     pipeReadEndFDErr, pipeWriteEndFDErr = os.pipe()
@@ -467,7 +456,7 @@ def ingestSQLFile(sqlIn, psqlBin, dbhost, dbport, dbname, dbuser, log):
     
     try:
         cmdList = [ psqlBin, '-h', dbhost, '-p', dbport, '-d', dbname, '-vON_ERROR_STOP=1', '-U', dbuser, '-f', '-']
-        proc = Popen(cmdList, stdin=pipeReadEnd, stderr=pipeWriteEndErr, stdout=PIPE)
+        proc = Popen(cmdList, stdin=PIPE, stderr=pipeWriteEndErr, stdout=PIPE)
     except OSError as exc:
         raise Exception('sqlDump', "Cannot run command '" + ' '.join(cmdList) + "' ")
     except ValueError as exc:
@@ -476,49 +465,31 @@ def ingestSQLFile(sqlIn, psqlBin, dbhost, dbport, dbname, dbuser, log):
     
     # It turns out the psql will NOT close any of the pipes or files opened in this script. So, before we write
     # to any pipe in a loop, we need to check if psql has died, and if so, bail out of the loop.
-    skipRead = False
     doneWriting = False
     while True:
         # It appears that psql can exit before all data are written to the write-end of the pipe. And when
         # psql exits, it does NOT close the read-end of the pipe, nor does it close the write-end of the pipe.
         # It does not close any of the pipes or fds opened in this script.
-        if not pipeWriteEnd.closed and not doneWriting:
-            if not skipRead:
-                sqlInBytes = sqlIn.read(8192)
-                log.writeDebug([ 'Read ' + str(len(sqlInBytes)) + ' bytes from dump file.'])
+        if not doneWriting:
+            sqlInBytes = sqlIn.read(8192) # Returns str.
+            log.writeDebug([ 'Read ' + str(len(sqlInBytes)) + ' bytes from dump file.'])
             if len(sqlInBytes) > 0:
                 try:
-                    # Because we are flushing each write, the out buffer will never get full, 
-                    # so write() will never throw a BlockingIOError exception. 
-                    bytesWritten = pipeWriteEnd.write(sqlInBytes)
-                    
-                    # Will raise BlockingIOError if the in buffer is full.
-                    pipeWriteEnd.flush() 
-                    # Since we called flush() after write(), if we get here without an exception, 
-                    # we know that we wrote all the bytes in sqlInBytes.
-                    log.writeDebug([ 'Wrote ' + str(bytesWritten) + ' bytes to psql pipe.' ])
-                    skipRead = False
-                except BlockingIOError as exc:
-                    # Just try again later, but don't re-read from sqlIn. In fact, remove the bytes
-                    # that DID get written.
-                    if exc.characters_written > 0:
-                        log.writeDebug([ 'Could not flush all bytes to pipeWriteEnd.' ])
-                        log.writeDebug([ 'But wrote ' + str(exc.characters_written) + ' bytes.' ])
-                        
-                    # Remove the bytes that DID get written.
-                    sqlInBytes = sqlInBytes[exc.characters_written:]
-                    skipRead = True
+                    # If there is a problem writing to the proc's stdin (like psql has died), this will raise.
+                    # The only exception to handle is BrokenPipeError. proc.stdin is a blocking pipe.
+                    # proc.stdin.write() needs a bytes object, not a str.
+                    bytesWritten = proc.stdin.write(bytes(sqlInBytes, 'UTF8'))
+                    proc.stdin.flush() 
+                    log.writeDebug([ 'Wrote ' + str(bytesWritten) + ' bytes to psql pipe.' ])                    
+                except BrokenPipeError as exc:
+                    # psql terminated. Time to error out. Let the proc.poll() block of code handle this.
+                    log.writeError([ 'The psql child process terminated - cannot send data to psql.' ])
+                    doneWriting = True
             else:
                 log.writeDebug([ 'Done sending data to psql.' ])
                 doneWriting = True
-                
-        if not pipeWriteEnd.closed and doneWriting:
-            try:
-                pipeWriteEnd.close()
-                log.writeDebug([ 'Successfully closed pipeWriteEnd.' ])
-            except BlockingIOError:
-                # We probably can no longer get here, since we flush() each write above.
-                log.writeDebug([ 'Cannot close pipeWriteEnd - try again later.' ])
+        else:
+            proc.stdin.close()
                 
         # Log any stderr messages from psql. Don't worry about stdout - psql will print an insert line
         # for every line ingested, and those don't provide any useful information
@@ -549,15 +520,6 @@ def ingestSQLFile(sqlIn, psqlBin, dbhost, dbport, dbname, dbuser, log):
             # These can be called, even if the pipe is already closed.
             pipeWriteEndErr.close()
             pipeReadEndErr.close()
-
-            # This will attempt to write to the pipeWriteEnd stream if this previously could not be written to (because psql died).
-            # If this happens, ignore the error.
-            try:
-                pipeWriteEnd.close()
-            except BlockingIOError:
-                log.writeError([ 'Could not close pipeWriteEnd.' ])
-                pass
-            pipeReadEnd.close()
         
             if proc.returncode != 0:
                 # Log error.
