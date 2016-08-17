@@ -59,8 +59,9 @@ RS_SCP_TIMEOUT             a:RS_SCP_TIMEOUT
 WL_HASWL                   a:WL_HASWL
 WL_FILE                    q:WL_FILE
 BIN_EXPORT                 q:BIN_EXPORT
-SCRIPTS_EXPORT                 q:SCRIPTS_EXPORT
+SCRIPTS_EXPORT             q:SCRIPTS_EXPORT
 BIN_PY                     q:BIN_PY
+BIN_PY3                    q:BIN_PY3
 REGEMAIL_TIMEOUT           a:REGEMAIL_TIMEOUT
 SUMS_USEMTSUMS             a:SUMS_USEMTSUMS
 SUMSD_MAX_THREADS          a:SUMSD_MAX_THREADS

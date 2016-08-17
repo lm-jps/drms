@@ -217,6 +217,8 @@ SCRIPTS_EXPORT                        /opt/drms/scripts
 # The Python binary must be at least version 2.7. 3.x binaries will work.
 BIN_PY                                /usr/bin/python
 
+BIN_PY3                               /usr/bin/python3
+
 # The number of minutes after which a new email registration attempt will time-out if the registering user does
 # not respond to the verification email sent to them.
 REGEMAIL_TIMEOUT                      5
