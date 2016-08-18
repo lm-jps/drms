@@ -117,6 +117,9 @@ static inline int IsNegHugeVal(double d)
    return d == -HUGE_VAL;
 }
 
+int base_floatIsEqual(const float val1, const float val2);
+int base_doubleIsEqual(const double val1, const double val2);
+
 #ifdef ICCCOMP
 #pragma warning (default : 1572)
 #endif

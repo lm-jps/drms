@@ -1107,3 +1107,31 @@ int base_isvers(const char *vers, const char *minvers)
     
     return ok;
 }
+
+int base_floatIsEqual(const float val1, const float val2)
+{
+    union 
+    {
+        int32_t integer;
+        float singlePrecFP;
+    } conv1, conv2;
+    
+    conv1.singlePrecFP = val1;
+    conv2.singlePrecFP = val2;
+    
+    return (conv1.integer == conv2.integer);
+}
+
+int base_doubleIsEqual(const double val1, const double val2)
+{
+    union 
+    {
+        int64_t integer;
+        float doublePrecFP;
+    } conv1, conv2;
+    
+    conv1.doublePrecFP = val1;
+    conv2.doublePrecFP = val2;
+    
+    return (conv1.integer == conv2.integer);
+}
