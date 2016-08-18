@@ -22,6 +22,11 @@ endif
 
 # set up $JSOC_MACHINE
 set JSOC_MACHINE = `build/jsoc_machine.csh`
+if ($? != 0) then
+    echo "Unable to determine machine type."
+    exit 1
+endif
+
 echo "Machine type is $JSOC_MACHINE"
 echo ""
 
@@ -36,6 +41,10 @@ set CUSTOMDEFSFILE = ""
 foreach THEARG ($argv)
     set LITERALSTR = '{ my($argin) = "'${THEARG}'"; my($flagout); $flagout = ($argin =~ /^-(.+)/)[0]; print $flagout; }'
     set FLAG = `$PERLBIN -e "$LITERALSTR"`
+    if ($? != 0) then
+        echo "Unable to parse command-line arguments."
+        exit 1
+    endif
     
     if ($FLAG == $CLEANCMD) then
         set CLEAN = "no"
@@ -141,10 +150,20 @@ endif
     # Make include directories here, since they are used by multiple script blocks below
     if (!(-d base/include)) then
         mkdir -p base/include
+        if ($? != 0) then
+            echo "Unable to make base/include directory."            
+            exit 1        
+        endif
     endif
 
     if (!(-d include)) then
         mkdir -p include
+        if ($? != 0) then
+            echo "Unable to make include directory."            
+            exit 1        
+        endif
+
+        
     endif
 
     echo "Setting links to man pages..."
@@ -209,6 +228,7 @@ endif
             mkdir ${LOCALIZATIONDIR}
             if ($? != 0) then
                 echo "Error creating localization directory."
+                exit 1
             endif
         endif
 
@@ -248,15 +268,26 @@ endif
         
         # We now call localize.py for both Stanford and NetDRMS builds.
         if ($CFGSERVER == "yes") then
-            $PYBIN ./localize.py -d ${LOCALIZATIONDIR} -b drmsparams -s
+            set cmd = "$PYBIN ./localize.py -d ${LOCALIZATIONDIR} -b drmsparams -s"
         else
-            $PYBIN ./localize.py -d ${LOCALIZATIONDIR} -b drmsparams
+            set cmd = "$PYBIN ./localize.py -d ${LOCALIZATIONDIR} -b drmsparams"
         endif
+        
+        $cmd
+        if ($? != 0) then
+            echo "Failure running localize.py."            
+            exit 1        
+        endif
+
     endif # End reset localization
 
     echo "Setting links to scripts..."
     if (!(-d scripts)) then
         mkdir scripts
+        if ($? != 0) then
+            echo "Unable to create scripts directory."
+            exit 1        
+        endif
     endif
     
     if ($CLEAN == "yes") then 
@@ -295,6 +326,10 @@ endif
     if (!(-l base/drms/apps/serverdefs.h)) then
         cd base/drms/apps
         ln -s ../../../${RELLOCALIZATIONDIR}/drmsparams.h serverdefs.h
+        if ($? != 0) then
+            echo "Failure creating link to "
+            exit 1
+        endif
         cd ../../..
     endif
 
