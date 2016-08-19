@@ -133,7 +133,13 @@ class TerminationHandler(object):
         self.dbhost = arguments.dbhost
         self.dbport = arguments.dbport
         self.conn = None
-        self.cursor = None
+        
+        self.sumsdbname = arguments.sumsdbname
+        self.sumsdbuser = arguments.sumsdbuser
+        self.sumsdbhost = arguments.sumsdbhost
+        self.sumsdbport = arguments.sumsdbport
+        self.sumsconn = None
+
         super(TerminationHandler, self).__init__()
         
     def __enter__(self):
@@ -144,35 +150,34 @@ class TerminationHandler(object):
         # Acquire locks.
         self.rsLock = DrmsLock(self.lockFile, self.pidStr)
         
-        # Make main DB connection.
-        # The connection is NOT in autocommit mode. If changes need to be saved, then conn.commit() must be called.
+        # Make main DB connection to RS database. We also have to connect to the SUMS database, so connect to that too.
+        # The connections are NOT in autocommit mode. If changes need to be saved, then conn.commit() must be called.
+        # Do this instead of using BEGIN and END/COMMIT statements, cuz I don't know if the psycopg2/libpq interaction
+        # supports this properly.
         try:
             self.conn = psycopg2.connect(database=self.dbname, user=self.dbuser, host=self.dbhost, port=self.dbport)
-            rslog.writeInfo([ 'Connected to database ' + self.dbname + ' on ' + self.dbhost + ':' + str(self.dbport) + ' as user ' + self.dbuser + '.' ])
-            self.cursor = self.conn.cursor()
-            ReqTable.cursor = self.cursor
-            SuTable.cursor = self.cursor
+            rslog.writeInfo([ 'Connected to DRMS database ' + self.dbname + ' on ' + self.dbhost + ':' + str(self.dbport) + ' as user ' + self.dbuser + '.' ])
+
+            self.sumsconn = psycopg2.connect(database=self.sumsdbname, user=self.sumsdbuser, host=self.sumsdbhost, port=self.sumsdbport)
+            rslog.writeInfo([ 'Connected to SUMS database ' + self.sumsdbname + ' on ' + self.sumsdbhost + ':' + str(self.sumsdbport) + ' as user ' + self.sumsdbuser + '.' ])            
         except psycopg2.DatabaseError as exc:
-            if self.cursor:
-                self.cursor.close()
-                self.cursor = None
-            if SuTable.cursor:
-                SuTable.cursor = None
-            if ReqTable.cursor:
-                ReqTable.cursor = None
+            if self.sumsconn:
+                self.sumsconn.close()
+                self.sumsconn = None
     
             if self.conn:
                 self.conn.close()
                 self.conn = None
 
-            self.log.writeError([ 'Unable to connect to the database (no, I do not know why).' ])
+            self.log.writeError([ 'Unable to connect to a database (no, I do not know why).' ])
 
             # No need to close cursor - leaving the with block does that.
             self.container[3] = RET_DBCONNECT
         except psycopg2.Error as exc:
-            if SuTable.cursor:
-                SuTable.cursor.close()
-                SuTable.cursor = None
+            if self.sumsconn:
+                self.sumsconn.close()
+                self.sumsconn = None
+        
             if self.conn:
                 self.conn.close()
                 self.conn = None
@@ -180,7 +185,8 @@ class TerminationHandler(object):
             # Handle database-command errors.
             self.log.writeError([ exc.diag.message_primary ])
             self.container[3] = RET_DBCOMMAND
-        
+
+        return self
 
     # Normally, __exit__ is called if an exception occurs inside the with block. And since SIGINT is converted
     # into a KeyboardInterrupt exception, it will be handled by __exit__(). However, SIGTERM will not - 
@@ -201,27 +207,9 @@ class TerminationHandler(object):
             pass
         
     def finalStuff(self):
-        try:
-            gotLock = SuTable.suTableClassLock.acquire()
-            if gotLock:
-                if SuTable.cursor:
-                    SuTable.cursor = None
-        finally:
-            if gotLock:
-                SuTable.suTableClassLock.release()
-
-        try:
-            gotLock = ReqTable.reqTableClassLock.acquire()
-            if gotLock:
-                if ReqTable.cursor:
-                    ReqTable.cursor = None
-        finally:
-            if gotLock:
-                ReqTable.reqTableClassLock.release()
-
-        if self.cursor:
-                self.cursor.close()
-                self.cursor = None
+        if self.sumsconn:
+            self.sumsconn.close()
+            self.sumsconn = None
                 
         if self.conn:
             self.conn.close()
@@ -251,6 +239,13 @@ class TerminationHandler(object):
             self.log.writeInfo([ 'Poller (request ID ' + str(poller.requestID) + ') halted.' ])
             
         self.log.flush()
+
+    def rsConn(self):
+        return self.conn
+
+    def sumsConn(self):
+        return self.sumsconn
+
 
 class SumsDrmsParams(DRMSParams):
     def __init__(self):
@@ -498,9 +493,9 @@ class StorageUnit(object):
         self.worker = value
 
 class SuTable:
-    cursor = None
-    suTableClassLock = threading.RLock() # So we can modify the cursor.
-                
+    # There is only one SuTable object, so don't worry about locking rsConn.
+    rsConn = None
+    
     def __init__(self, tableName, timeOut, log):
         self.tableName = tableName
         self.timeOut = timeOut # A timedelta object - the length of time to wait for a download to complete.
@@ -508,47 +503,40 @@ class SuTable:
         self.log = log
         self.suDict = {}
     
-    @classmethod
-    def setCursor(cls, cursorIn):
-        cls.cursor = cursorIn
-
     def read(self):
         # sus(sunum, starttime, refcount, status, errmsg)
         cmd = 'SELECT sunum, series, retention, starttime, refcount, status, errmsg FROM ' + self.tableName
     
         try:
-            gotLock = SuTable.suTableClassLock.acquire()
-            if gotLock:
-                if SuTable.cursor:
-                    SuTable.cursor.execute(cmd)
-                
-                    for record in SuTable.cursor:
-                        sunumStr = str(record[0])
+            with SuTable.rsConn.cursor() as cursor:
+                cursor.execute(cmd)
+            
+                for record in cursor:
+                    sunumStr = str(record[0])
 
-                        self.suDict[sunumStr] = {}
-                        sunum = record[0]         # integer
-                        series = record[1]        # text
-                        retention = record[2]     # integer
-                        # Whoa! pyscopg returns timestamps as datetime.datetime objects already!
-                        starttime = record[3]     # datetime.datetime
-                        refcount = record[4]      # integer
-                        status = record[5]        # text
-                        errmsg = record[6]        # text
+                    self.suDict[sunumStr] = {}
+                    sunum = record[0]         # integer
+                    series = record[1]        # text
+                    retention = record[2]     # integer
+                    # Whoa! pyscopg returns timestamps as datetime.datetime objects already!
+                    starttime = record[3]     # datetime.datetime
+                    refcount = record[4]      # integer
+                    status = record[5]        # text
+                    errmsg = record[6]        # text
 
-                        su = StorageUnit(sunum, series, retention, starttime, refcount, status, errmsg)
+                    su = StorageUnit(sunum, series, retention, starttime, refcount, status, errmsg)
 
-                        # Not read from or saved to database.
-                        su.setDirty(False)
-                        su.setNew(False)
-                        su.setPolling(False)
-                        su.setPath(None)              # The server path of the SU to be downloaded.
-                        # worker is already None
-                        self.suDict[sunumStr] = su
+                    # Not read from or saved to database.
+                    su.setDirty(False)
+                    su.setNew(False)
+                    su.setPolling(False)
+                    su.setPath(None)              # The server path of the SU to be downloaded.
+                    # worker is already None
+                    self.suDict[sunumStr] = su
         except psycopg2.Error as exc:
             raise Exception('sutableRead', exc.diag.message_primary)
         finally:
-            if gotLock:
-                SuTable.suTableClassLock.release()
+            SuTable.rsConn.rollback() # We read from the DB only, so no need to commit anything.
 
     def tryRead(self):
         nAtts = 0
@@ -572,7 +560,7 @@ class SuTable:
             time.sleep(1)
     
     # This will NOT commit database changes. You are generally going to want to do this as part of a larger db change. Commit the changes
-    # after all changes that form the atomic set of changes.
+    # after all changes that form the atomic set of changes. Do not call rsConn.commit().
     #
     # ACQUIRES THE SU TABLE LOCK.
     def updateDB(self, sunums=None):
@@ -600,16 +588,17 @@ class SuTable:
                 
                         self.log.writeInfo(['Updating SU db table: ' + cmd])
                 
+                        needsRollback = True
                         try:
-                            gotLock = SuTable.suTableClassLock.acquire()
-                            if gotLock:
-                                if SuTable.cursor:
-                                    SuTable.cursor.execute(cmd)
+                            with SuTable.rsConn.cursor() as cursor:
+                                cursor.execute(cmd)
+                            needsRollback = False
+                            # The cursor has been closed, but the transaction has not been committed, as designed.
                         except psycopg2.Error as exc:
                             raise Exception('sutableWrite', exc.diag.message_primary)
                         finally:
-                            if gotLock:
-                                SuTable.suTableClassLock.release()
+                            if needsRollback:
+                                SuTable.rsConn.rollback()
                 
                         su.setDirty(False)
                         su.setNew(False)
@@ -636,19 +625,20 @@ class SuTable:
                     
                         self.log.writeInfo(['Updating SU db table: ' + cmd])
                     
+                        needsRollback = True
                         try:
-                            gotLock = SuTable.suTableClassLock.acquire()
-                            if gotLock:
-                                if SuTable.cursor:
-                                    SuTable.cursor.execute(cmd)
+                            with SuTable.rsConn.cursor() as cursor:
+                                cursor.execute(cmd)
+                            needsRollback = False
+                            # The cursor has been closed, but the transaction has not been committed, as designed.
                         except psycopg2.Error as exc:
                             import traceback
                             self.log.writeError([ traceback.format_exc(5) ])
                             raise Exception('sutableWrite', traceback.format_exc(5))
                         finally:
-                            if gotLock:
-                                SuTable.suTableClassLock.release()
-                    
+                            if needsRollback:
+                                SuTable.rsConn.rollback()
+
                         su.setDirty(False)
                         su.setNew(False)
                 finally:
@@ -659,17 +649,16 @@ class SuTable:
         
     # This WILL commit changes to the db.
     def updateDbAndCommit(self, sunums=None):
+        needsCommit = False
+        
         try:
-            gotLock = SuTable.suTableClassLock.acquire()
-            if gotLock:
-                cursor = SuTable.cursor
-                if cursor:
-                    cursor.execute('BEGIN')
-                    self.updateDB(sunums)
-                    cursor.execute('END') # Same as commit.
+            self.updateDB(sunums)
+            needsCommit = True
         finally:
-            if gotLock:
-                SuTable.suTableClassLock.release()
+            if needsCommit:
+                SuTable.rsConn.commit()
+            else:
+                SuTable.rsConn.rollback()
 
     # This will NOT commit database changes. You are generally going to want to do this as part of a larger db change. Commit the changes
     # after all changes that form the atomic set of changes.
@@ -685,17 +674,17 @@ class SuTable:
             sunumLstStr = ','.join([str(asunum) for asunum in sunums])
         
             cmd = 'DELETE FROM ' + self.tableName + ' WHERE sunum IN (' + sunumLstStr + ')'
-        
+            needsRollback = True
             try:
-                gotLock = SuTable.suTableClassLock.acquire()
-                if gotLock:
-                    if SuTable.cursor:
-                        SuTable.cursor.execute(cmd)
+                with SuTable.rsConn.cursor() as cursor:
+                    cursor.execute(cmd)
+                needsRollback = False
+                # The cursor has been closed, but the transaction has not been committed, as designed.
             except psycopg2.Error as exc:
                 raise Exception('sutableWrite', exc.diag.message_primary)
             finally:
-                if gotLock:
-                    SuTable.suTableClassLock.release()
+                if needsRollback:
+                    SuTable.rsConn.rollback()
 
     def acquireLock(self):
         return self.lock.acquire()
@@ -1043,48 +1032,40 @@ class SuTable:
         return rv
 
 class ReqTable:
-    cursor = None
-    reqTableClassLock = threading.RLock() # So we can modify the cursor.
-    
+    rsConn = None
+
     def __init__(self, tableName, timeOut, log):
         self.tableName = tableName
         self.timeOut = timeOut
         self.log = log
         self.reqDict = {}
     
-    @classmethod
-    def setCursor(cls, cursorIn):
-        cls.cursor = cursorIn
-    
     def read(self):
         # requests(requestid, starttime, sunums, status, errmsg)
         cmd = 'SELECT requestid, dbhost, dbport, dbname, starttime, sunums, status, errmsg FROM ' + self.tableName
         
         try:
-            gotLock = ReqTable.reqTableClassLock.acquire()
-            if gotLock:
-                if ReqTable.cursor:
-                    ReqTable.cursor.execute(cmd)
-            
-                    for record in ReqTable.cursor:
-                        requestidStr = str(record[0])
+            with ReqTable.rsConn.cursor() as cursor:
+                cursor.execute(cmd)
+        
+                for record in cursor:
+                    requestidStr = str(record[0])
 
-                        self.reqDict[requestidStr] = {}
-                        self.reqDict[requestidStr]['requestid'] = record[0] # integer
-                        self.reqDict[requestidStr]['dbhost'] = record[1]    # text
-                        self.reqDict[requestidStr]['dbport'] = record[2]    # integer
-                        self.reqDict[requestidStr]['dbname'] = record[3]    # text
-                        # Whoa! pyscopg returns timestamps as datetime.datetime objects already!
-                        self.reqDict[requestidStr]['starttime'] = record[4] # datetime.datetime
-                        self.reqDict[requestidStr]['sunums'] = [int(asunum) for asunum in record[5].split(',')] # text (originally)
-                        self.reqDict[requestidStr]['status'] = record[6]    # text
-                        self.reqDict[requestidStr]['errmsg'] = record[7]    # text
-                        self.reqDict[requestidStr]['dirty'] = False
+                    self.reqDict[requestidStr] = {}
+                    self.reqDict[requestidStr]['requestid'] = record[0] # integer
+                    self.reqDict[requestidStr]['dbhost'] = record[1]    # text
+                    self.reqDict[requestidStr]['dbport'] = record[2]    # integer
+                    self.reqDict[requestidStr]['dbname'] = record[3]    # text
+                    # Whoa! pyscopg returns timestamps as datetime.datetime objects already!
+                    self.reqDict[requestidStr]['starttime'] = record[4] # datetime.datetime
+                    self.reqDict[requestidStr]['sunums'] = [int(asunum) for asunum in record[5].split(',')] # text (originally)
+                    self.reqDict[requestidStr]['status'] = record[6]    # text
+                    self.reqDict[requestidStr]['errmsg'] = record[7]    # text
+                    self.reqDict[requestidStr]['dirty'] = False
         except psycopg2.Error as exc:
             raise Exception('reqtableRead', exc.diag.message_primary, cmd)
         finally:
-            if gotLock:
-                ReqTable.reqTableClassLock.release()
+            ReqTable.rsConn.rollback()
 
     def tryRead(self):
         nAtts = 0
@@ -1111,15 +1092,6 @@ class ReqTable:
     # all other changes to the database table (made from outside this program) that have happened. To read those changes,
     # shut down this program, then make the changes, then start this program again.
     def refresh(self):
-        try:
-            gotLock = ReqTable.reqTableClassLock.acquire()
-            if gotLock:                
-                if not ReqTable.cursor:
-                    raise Exception('noCursor', 'Cannot refresh the requests table because no database cursor exists.')
-        finally:
-            if gotLock:
-                ReqTable.reqTableClassLock.release()
-        
         # Delete existing items from self.
         self.reqDict = {}
         
@@ -1141,17 +1113,18 @@ class ReqTable:
                     # The only columns that this daemon will modify are status and errmsg.
                     cmd = 'UPDATE ' + self.tableName + " SET status='" + self.reqDict[requestidStr]['status'] + "', errmsg='" + self.reqDict[requestidStr]['errmsg'] + "' WHERE requestid=" + requestidStr
                     
+                    needsRollback = True
                     try:
-                        gotLock = ReqTable.reqTableClassLock.acquire()
-                        if gotLock: 
-                            if ReqTable.cursor:
-                                ReqTable.cursor.execute(cmd)                    
+                        with ReqTable.rsConn.cursor() as cursor:
+                            cursor.execute(cmd)
+                        needsRollback = False
+                        # The cursor has been closed, but the transaction has not been committed, as designed.
                     except psycopg2.Error as exc:
                         raise Exception('reqtableWrite', exc.diag.message_primary)
                     finally:
-                        if gotLock:
-                            ReqTable.reqTableClassLock.release()
-                    
+                        if needsRollback:
+                            ReqTable.rsConn.rollback()
+
                     self.reqDict[requestidStr]['dirty'] = False
         else:
             # Update all dirty records.
@@ -1160,35 +1133,36 @@ class ReqTable:
                     # The only columns that this daemon will modify are status and errmsg.
                     cmd = 'UPDATE ' + self.tableName + " SET status='" + self.reqDict[requestidStr]['status'] + "', errmsg='" + self.reqDict[requestidStr]['errmsg'] + "' WHERE requestid='" + requestidStr + "'"
                     
+                    needsRollback = True
                     try:
-                        gotLock = ReqTable.reqTableClassLock.acquire()
-                        if gotLock: 
-                            if ReqTable.cursor:
-                                ReqTable.cursor.execute(cmd)
+                        with ReqTable.rsConn.cursor() as cursor:
+                            cursor.execute(cmd)
+                        needsRollback = False
+                        # The cursor has been closed, but the transaction has not been committed, as designed.
                     except psycopg2.Error as exc:
                         raise Exception('reqtableWrite', exc.diag.message_primary)
                     finally:
-                        if gotLock:
-                            ReqTable.reqTableClassLock.release()
+                        if needsRollback:
+                            ReqTable.rsConn.rollback()
                     
                     self.reqDict[requestidStr]['dirty'] = False
                     
     # This WILL commit changes to the db.
     def updateDbAndCommit(self, requestids=None):
+        needsCommit = False
+        
         try:
-            gotLock = ReqTable.reqTableClassLock.acquire()
-            if gotLock:
-                cursor = ReqTable.cursor
-                if cursor:
-                    cursor.execute('BEGIN')
-                    self.updateDB(requestids)
-                    cursor.execute('END') # Same as commit.
+            self.updateDB(requestids)
+            needsCommit = True
         finally:
-            if gotLock:
-                ReqTable.reqTableClassLock.release()
+            if needsCommit:
+                ReqTable.rsConn.commit()
+            else:
+                ReqTable.rsConn.rollback()
+
 
     # This will NOT commit database changes. You are generally going to want to do this as part of a larger db change. Commit the changes
-    # after all changes that form the atomic set of changes.
+    # after all changes that form the atomic set of changes. Do not call rsConn.commit().
     def deleteDB(self, requestids):
         if len(requestids) > 0:
             for arequestid in requestids:
@@ -1203,17 +1177,18 @@ class ReqTable:
             
             cmd = 'DELETE FROM ' + self.tableName + ' WHERE requestid=' + reqidLstStr
             
+            needsRollback = True
             try:
-                gotLock = ReqTable.reqTableClassLock.acquire()
-                if gotLock: 
-                    if ReqTable.cursor:
-                        ReqTable.cursor.execute(cmd)            
+                with ReqTable.rsConn.cursor() as cursor:
+                    cursor.execute(cmd)
+                needsRollback = False
+                # The cursor has been closed, but the transaction has not been committed, as designed.
             except psycopg2.Error as exc:
                 raise Exception('reqtableWrite', exc.diag.message_primary + ': ' + cmd)
             finally:
-                if gotLock:
-                    ReqTable.reqTableClassLock.release()
-        
+                if needsRollback:
+                    ReqTable.rsConn.rollback()
+
     def setStatus(self, requestids, code, msg=None):
         for arequestid in requestids:
             requestidStr = str(arequestid)
@@ -1297,6 +1272,8 @@ class ReqTable:
         ns, tab = series.split('.')
 
         try:
+            # We need to get information from the DRMS database, which might not be the same database as the remote SUMS database.
+            # The class variable ReqTable.rsConn is the connection to the remote SUMS database.
             with psycopg2.connect(database=request['dbname'], user=dbuser, host=request['dbhost'], port=request['dbport']) as conn:
                 with conn.cursor() as cursor:
                     # We want the new-SU retention too, not the staging retention. So extract the bottom 15 bits.
@@ -1310,7 +1287,7 @@ class ReqTable:
                     except psycopg2.Error as exc:
                         # Handle database-command errors.
                         raise Exception('getRetention', exc.diag.message_primary)
-
+            # The connection is read-only, so there is not need to commit a transaction.
         except psycopg2.DatabaseError as exc:
             # Closes the cursor and connection
 
@@ -1723,6 +1700,10 @@ class ScpWorker(threading.Thread):
 # thread to download the SU. The ScpWorker thread sets the status to 'D' while it is processing the download. When
 # the download is complete, the ScpWorker thread sets the status back to 'P'.
 class Downloader(threading.Thread):
+    sumsConn = None
+    sumsDbLock = threading.Lock() # Since all Downloader threads share the same connection, their cursors on these connections
+                                  # are not isolated. Use a lock to ensure that only one Download is modifying SUMS at one time.
+
     tList = [] # A list of running thread IDs.
     maxThreads = 16 # Default. Can be overriden with the Downloader.setMaxThreads() method.
     eventMaxThreads = threading.Event() # Event fired when the number of threads decreases.
@@ -1830,163 +1811,172 @@ class Downloader(threading.Thread):
             
             # We need to connect to the SUMS database before we can modify SUMS objects.
             # The DB transaction is NOT in autocommit mode.
-            with psycopg2.connect(database=arguments.sumsdbname, user=arguments.sumsdbuser, host=arguments.sumsdbhost, port=arguments.sumsdbport) as conn:
-                rslog.writeInfo([ 'Connected to database ' + arguments.sumsdbname + ' on ' + arguments.sumsdbhost + ':' + str(arguments.sumsdbport) + ' as user ' + arguments.sumsdbuser ])
-                with conn.cursor() as cursor:
-                    try: 
-                        # Put all of this in one transaction. If everything is good, commit the transaction. If an 
-                        # exception occurs, roll back.
-                        
-                        ##### SUM_open() port #####
-                        # This increments the sequence that supplies the sumid and inserts that sumid into the sum_open table.
-                        cmd = "SELECT NEXTVAL('public.sum_seq')"
-                        cursor.execute(cmd)
-                        records = cursor.fetchall()
-                        if len(records) != 1:
-                            raise Exception('sumsAPI', 'Unexpected response when fetching sumid from sequence.')
-                            
-                        sumid = records[0][0]
-    
-                        currentTimeStr = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                        cmd = 'INSERT INTO public.sum_open(sumid, open_date) VALUES (' + str(sumid) + ", '" + currentTimeStr + "')"
-                        cursor.execute(cmd)
-                        ##### SUM_open() port - end #####
-                        
-                        self.log.writeInfo([ 'Successfully called SUM_open() port for SU ' +  str(self.sunum) + '.'])
-                        self.log.writeInfo([ 'sumid is ' + str(sumid) + '.' ])
-                
-                        ##### SUM_alloc2() port #####
-                        #   First, find a partition that has enough available space for the size of the SU to be downloaded.
-                        cmd = 'SELECT PARTN_NAME FROM public.sum_partn_avail WHERE AVAIL_BYTES >= 1024 AND PDS_SET_NUM = 0'
-                        cursor.execute(cmd)
-                        records = cursor.fetchall()
-                        if len(records) < 1:
-                            raise Exception('sumsAPI', 'Cannot allocate a new Storage Unit in SUMS - out of space.')
-                            
-                        partitions = []
-                        for rec in records:
-                            partitions.append(rec[0])
-                            
-                        #   Second, randomly choose one of the partitions to put the new SU into. We want to spread the write load over available 
-                        #   partitions.
-                        randIndex = random.randint(0, len(partitions) - 1)
-                        partition = partitions[randIndex]
-                        sudir = os.path.join(partition, 'D' + str(self.sunum))
-                        os.mkdir(sudir)
-                        os.chmod(sudir, 0O2755)
-            
-                        #   Third, insert a record into the sum_partn_alloc table for this SU. status is DARW, which is 1. effective_date is "0".
-                        cmd = "INSERT INTO public.sum_partn_alloc(wd, sumid, status, bytes, effective_date, archive_substatus, group_id, safe_id, ds_index) VALUES ('" + sudir + "', '" + str(sumid) + "', 1, 1024, '0', 0, 0, 0, 0)"
-                        cursor.execute(cmd)
-                        ##### SUM_alloc2() port - end #####
-
-                        self.log.writeInfo([ 'Succeeded allocating a new SU: ' +  str(self.sunum) + '.' ])
-                        
-                        #    Fourth, move the downloaded SU files into the chosen SUMS partition. SUM_alloc2() code calls mkdir, so we cannot
-                        #    move the top-level D___ directory into the SUMS partition. Instead we have to move, recursively,  all files and directories in 
-                        #    the downloaded D___ directory into the SUMS D___ directory.
-                        files = os.listdir(suDlPath)
-                        self.log.writeInfo([ 'Moving downloaded SU content from ' + suDlPath + ' into allocated SU (' + sudir  + ').' ])
-
-                        try:
-                            for afile in files:
-                                src = os.path.join(suDlPath, afile)
-                                shutil.move(src, sudir)
-                        except shutil.Error as exc: 
-                            import traceback
-                            self.log.writeError([ traceback.format_exc(5) ])
-                            raise Exception('mvSU', 'Unable to move SU file ' + afile + ' into SUdir ' + sudir + '.')
-
-                        self.log.writeInfo([ 'Move of SU ' + str(self.sunum) + ' content succeeded.' ])
-                        
-                        ##### SUM_put() port #####
-                        # The original SUM_put() call called "chmown" to change the ownership of the
-                        # files in the SU dir to the SUM_MANAGER. However, this is not necessary since rsumsd.py is run by the 
-                        # SUM_MANAGER.
-                        
-                        #   First, chmod all directories to 0755. All regular files get their user/group/other read enabled, and their
-                        #   user write enabled, and their group and other write disabled.
-                        for root, dirs, files in os.walk(sudir):
-                            for adir in dirs:
-                                fullPath = os.path.join(root, adir)
-                                os.chmod(fullPath, 0O0755)
-                            for afile in files:
-                                fullPath = os.path.join(root, afile)
-                                st = os.stat(fullPath)
-                                newMod = st.st_mode | stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH | stat.S_IWUSR & ~stat.S_IWGRP & ~stat.S_IWOTH
-                                os.chmod(fullPath, newMod)
-                                
-                        #   Second, update SUMS sum_main database table - Calculate SU dir number of bytes, set online status to 'Y', set archstatus to 'N', 
-                        #   set offsiteack to 'N', set dsname to seriesname, set storagegroup to tapegroup, set storageset to tapegroup / 10000,
-                        #   set username to getenv('USER') or nouser if no USER env, set mode to TEMP + TOUCH, set apstatus: if SUMS_TAPE_AVAILABLE ==>
-                        #   DAAP (4), else DADP (2), set archsub ==> DAAEDDP (32), set effective_date to tdays in the future (with format "%04d%02d%02d%02d%02d").
-                        #   Insert all of this into sum_main.
-                        numBytes = os.path.getsize(sudir) + sum([ os.path.getsize(fullPath) for fullPath in [ os.path.join(root, afile) for root, dirs, files in os.walk(sudir) for afile in files ] ]) + sum([ os.path.getsize(fullPath) for fullPath in [ os.path.join(root, adir) for root, dirs, files in os.walk(sudir) for adir in dirs ] ])
-                        if self.arguments.tapesysexists:
-                            apStatus = 4 # DAAP
-                        else:
-                            apStatus = 2 # DADP
-            
-                        createDate = datetime.now()
-                        createDateStr = createDate.strftime('%Y-%m-%d %H:%M:%S')
-                        expDate = createDate + timedelta(days=self.retention)
-                        effDate = expDate.strftime('%Y%m%d%H%M')
-
-                        # storage_group is the tape group. It should come from the series definition, but remote sites have been using 0 for years.            
-                        cmd = "INSERT INTO public.sum_main(online_loc, online_status, archive_status, offsite_ack, history_comment, owning_series, storage_group, storage_set, bytes, ds_index, create_sumid, creat_date, access_date, username) VALUES ('" + sudir + "', 'Y', 'N', 'N', '', '" + self.series + "', 0, 0, " + str(numBytes) + ', ' + str(self.sunum) + ', ' + str(sumid) + ", '" + createDateStr + "', '" + createDateStr + "', '" + os.getenv('USER', 'nouser') + "')"
-                        cursor.execute(cmd)
-                        
-                        self.log.writeInfo([ 'Successfully inserted record into sum_main for SU ' + str(self.sunum) + '.' ])
-            
-                        #    Third, update SUMS sum_partn_alloc table - Insert a new row into sum_partn_alloc for this SU. The SUM_alloc2() port will result in
-                        #    a row in sum_partn_alloc with a ds_index of 0, which does not make sense to me. But the SUM_close() port will delete
-                        #    that row. By the time this thread terminates, there will be only a single row for this SU in sum_partn_alloc. substatus is DAAEDDP (32).
-                        #    But first, delete any existing DADP (delete pending) rows for this sunum if the status of the SU for the new row is DADP.
-                        if apStatus == 2:
-                            cmd = 'DELETE FROM public.sum_partn_alloc WHERE ds_index = ' + str(self.sunum) + ' AND STATUS = 2'
+            # We might need to put all of this in a lock to keep other Downloader objects from modifying the same DB tables
+            # at the same time (cursors held by different Downloaders are not isolated).
+            try:
+                gotSumsDbLock = Downloader.sumsDbLock.acquire()
+                if gotSumsDbLock:
+                    with Downloader.sumsConn.cursor() as cursor:
+                        needsCommit = False
+                        try: 
+                            # Put all of this in one transaction. If everything is good, commit the transaction. If an 
+                            # exception occurs, roll back.
+                    
+                            ##### SUM_open() port #####
+                            # This increments the sequence that supplies the sumid and inserts that sumid into the sum_open table.
+                            cmd = "SELECT NEXTVAL('public.sum_seq')"
                             cursor.execute(cmd)
-                            self.log.writeInfo([ 'Successfully deleted old DADP record from sum_partn_alloc for SU ' + str(self.sunum) + '.' ])
+                            records = cursor.fetchall()
+                            if len(records) != 1:
+                                raise Exception('sumsAPI', 'Unexpected response when fetching sumid from sequence.')
                         
-                        cmd = "INSERT INTO public.sum_partn_alloc(wd, sumid, status, bytes, effective_date, archive_substatus, group_id, safe_id, ds_index) VALUES ('" + sudir + "', " + str(sumid) + ', ' + str(apStatus) + ', ' + str(numBytes) + ", '" + effDate + "', 32, 0, 0, " + str(self.sunum) + ')'
-                        cursor.execute(cmd)
-                        self.log.writeInfo([ 'Successfully inserted record into sum_partn_alloc for SU ' + str(self.sunum) + '.' ])
-                        ##### SUM_put() port - end #####
-                        
-                        self.log.writeInfo([ 'Commit of SU ' + str(self.sunum) + ' succeeded.' ])
-                        
-                        ##### SUM_close() port #####
-                        # Delete sum_partn_alloc records for read-only partitions (status == 8) and read-write partitions (status == 1).
-                        cmd = 'DELETE FROM public.sum_partn_alloc WHERE sumid = ' + str(sumid) + ' AND (status = 8 OR status = 1)'
-                        cursor.execute(cmd)
-                        self.log.writeInfo([ 'Successfully deleted read-only and read-write records from sum_partn_alloc for SU ' + str(self.sunum) + '.' ])
-                        
-                        # Delete the temporary ds_index = 0 records created during the SUM_put() port. I still do not know why this record
-                        # was created in the first place.
-                        cmd = 'DELETE FROM public.sum_open WHERE sumid = ' + str(sumid)
-                        cursor.execute(cmd)
-                        self.log.writeInfo([ 'Successfully deleted temporary (ds_index == 0) records from sum_open for SU ' + str(self.sunum) + '.' ])
-                        ##### SUM_close() port - end #####
-                    except psycopg2.Error as exc:
-                        # Handle database-command errors. These are all due to problems communicating with the SUMS db.
-                        conn.rollback()
-                        
-                        # Clean-up
-                        if os.path.exists(sudir):
-                            shutil.rmtree(sudir)
-                        if os.path.exists(suDlPath):
-                            shutil.rmtree(suDlPath)
-                        raise Exception('sumsAPI', exc.diag.message_primary + ': ' + cmd + '.') 
-                    except Exception as exc:
-                        conn.rollback()
-                        
-                        # Clean-up
-                        if os.path.exists(sudir):
-                            shutil.rmtree(sudir)
-                        if os.path.exists(suDlPath):
-                            shutil.rmtree(suDlPath)
-                        raise
+                            sumid = records[0][0]
 
-                    conn.commit()
+                            currentTimeStr = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                            cmd = 'INSERT INTO public.sum_open(sumid, open_date) VALUES (' + str(sumid) + ", '" + currentTimeStr + "')"
+                            cursor.execute(cmd)
+                            ##### SUM_open() port - end #####
+                    
+                            self.log.writeInfo([ 'Successfully called SUM_open() port for SU ' +  str(self.sunum) + '.'])
+                            self.log.writeInfo([ 'sumid is ' + str(sumid) + '.' ])
+            
+                            ##### SUM_alloc2() port #####
+                            #   First, find a partition that has enough available space for the size of the SU to be downloaded.
+                            cmd = 'SELECT PARTN_NAME FROM public.sum_partn_avail WHERE AVAIL_BYTES >= 1024 AND PDS_SET_NUM = 0'
+                            cursor.execute(cmd)
+                            records = cursor.fetchall()
+                            if len(records) < 1:
+                                raise Exception('sumsAPI', 'Cannot allocate a new Storage Unit in SUMS - out of space.')
+                        
+                            partitions = []
+                            for rec in records:
+                                partitions.append(rec[0])
+                        
+                            #   Second, randomly choose one of the partitions to put the new SU into. We want to spread the write load over available 
+                            #   partitions.
+                            randIndex = random.randint(0, len(partitions) - 1)
+                            partition = partitions[randIndex]
+                            sudir = os.path.join(partition, 'D' + str(self.sunum))
+                            os.mkdir(sudir)
+                            os.chmod(sudir, 0O2755)
+        
+                            #   Third, insert a record into the sum_partn_alloc table for this SU. status is DARW, which is 1. effective_date is "0".
+                            cmd = "INSERT INTO public.sum_partn_alloc(wd, sumid, status, bytes, effective_date, archive_substatus, group_id, safe_id, ds_index) VALUES ('" + sudir + "', '" + str(sumid) + "', 1, 1024, '0', 0, 0, 0, 0)"
+                            cursor.execute(cmd)
+                            ##### SUM_alloc2() port - end #####
+
+                            self.log.writeInfo([ 'Succeeded allocating a new SU: ' +  str(self.sunum) + '.' ])
+                    
+                            #    Fourth, move the downloaded SU files into the chosen SUMS partition. SUM_alloc2() code calls mkdir, so we cannot
+                            #    move the top-level D___ directory into the SUMS partition. Instead we have to move, recursively,  all files and directories in 
+                            #    the downloaded D___ directory into the SUMS D___ directory.
+                            files = os.listdir(suDlPath)
+                            self.log.writeInfo([ 'Moving downloaded SU content from ' + suDlPath + ' into allocated SU (' + sudir  + ').' ])
+
+                            try:
+                                for afile in files:
+                                    src = os.path.join(suDlPath, afile)
+                                    shutil.move(src, sudir)
+                            except shutil.Error as exc: 
+                                import traceback
+                                self.log.writeError([ traceback.format_exc(5) ])
+                                raise Exception('mvSU', 'Unable to move SU file ' + afile + ' into SUdir ' + sudir + '.')
+
+                            self.log.writeInfo([ 'Move of SU ' + str(self.sunum) + ' content succeeded.' ])
+                    
+                            ##### SUM_put() port #####
+                            # The original SUM_put() call called "chmown" to change the ownership of the
+                            # files in the SU dir to the SUM_MANAGER. However, this is not necessary since rsumsd.py is run by the 
+                            # SUM_MANAGER.
+                    
+                            #   First, chmod all directories to 0755. All regular files get their user/group/other read enabled, and their
+                            #   user write enabled, and their group and other write disabled.
+                            for root, dirs, files in os.walk(sudir):
+                                for adir in dirs:
+                                    fullPath = os.path.join(root, adir)
+                                    os.chmod(fullPath, 0O0755)
+                                for afile in files:
+                                    fullPath = os.path.join(root, afile)
+                                    st = os.stat(fullPath)
+                                    newMod = st.st_mode | stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH | stat.S_IWUSR & ~stat.S_IWGRP & ~stat.S_IWOTH
+                                    os.chmod(fullPath, newMod)
+                            
+                            #   Second, update SUMS sum_main database table - Calculate SU dir number of bytes, set online status to 'Y', set archstatus to 'N', 
+                            #   set offsiteack to 'N', set dsname to seriesname, set storagegroup to tapegroup, set storageset to tapegroup / 10000,
+                            #   set username to getenv('USER') or nouser if no USER env, set mode to TEMP + TOUCH, set apstatus: if SUMS_TAPE_AVAILABLE ==>
+                            #   DAAP (4), else DADP (2), set archsub ==> DAAEDDP (32), set effective_date to tdays in the future (with format "%04d%02d%02d%02d%02d").
+                            #   Insert all of this into sum_main.
+                            numBytes = os.path.getsize(sudir) + sum([ os.path.getsize(fullPath) for fullPath in [ os.path.join(root, afile) for root, dirs, files in os.walk(sudir) for afile in files ] ]) + sum([ os.path.getsize(fullPath) for fullPath in [ os.path.join(root, adir) for root, dirs, files in os.walk(sudir) for adir in dirs ] ])
+                            if self.arguments.tapesysexists:
+                                apStatus = 4 # DAAP
+                            else:
+                                apStatus = 2 # DADP
+        
+                            createDate = datetime.now()
+                            createDateStr = createDate.strftime('%Y-%m-%d %H:%M:%S')
+                            expDate = createDate + timedelta(days=self.retention)
+                            effDate = expDate.strftime('%Y%m%d%H%M')
+
+                            # storage_group is the tape group. It should come from the series definition, but remote sites have been using 0 for years.            
+                            cmd = "INSERT INTO public.sum_main(online_loc, online_status, archive_status, offsite_ack, history_comment, owning_series, storage_group, storage_set, bytes, ds_index, create_sumid, creat_date, access_date, username) VALUES ('" + sudir + "', 'Y', 'N', 'N', '', '" + self.series + "', 0, 0, " + str(numBytes) + ', ' + str(self.sunum) + ', ' + str(sumid) + ", '" + createDateStr + "', '" + createDateStr + "', '" + os.getenv('USER', 'nouser') + "')"
+                            cursor.execute(cmd)
+                    
+                            self.log.writeInfo([ 'Successfully inserted record into sum_main for SU ' + str(self.sunum) + '.' ])
+        
+                            #    Third, update SUMS sum_partn_alloc table - Insert a new row into sum_partn_alloc for this SU. The SUM_alloc2() port will result in
+                            #    a row in sum_partn_alloc with a ds_index of 0, which does not make sense to me. But the SUM_close() port will delete
+                            #    that row. By the time this thread terminates, there will be only a single row for this SU in sum_partn_alloc. substatus is DAAEDDP (32).
+                            #    But first, delete any existing DADP (delete pending) rows for this sunum if the status of the SU for the new row is DADP.
+                            if apStatus == 2:
+                                cmd = 'DELETE FROM public.sum_partn_alloc WHERE ds_index = ' + str(self.sunum) + ' AND STATUS = 2'
+                                cursor.execute(cmd)
+                                self.log.writeInfo([ 'Successfully deleted old DADP record from sum_partn_alloc for SU ' + str(self.sunum) + '.' ])
+                    
+                            cmd = "INSERT INTO public.sum_partn_alloc(wd, sumid, status, bytes, effective_date, archive_substatus, group_id, safe_id, ds_index) VALUES ('" + sudir + "', " + str(sumid) + ', ' + str(apStatus) + ', ' + str(numBytes) + ", '" + effDate + "', 32, 0, 0, " + str(self.sunum) + ')'
+                            cursor.execute(cmd)
+                            self.log.writeInfo([ 'Successfully inserted record into sum_partn_alloc for SU ' + str(self.sunum) + '.' ])
+                            ##### SUM_put() port - end #####
+                    
+                            self.log.writeInfo([ 'Commit of SU ' + str(self.sunum) + ' succeeded.' ])
+                    
+                            ##### SUM_close() port #####
+                            # Delete sum_partn_alloc records for read-only partitions (status == 8) and read-write partitions (status == 1).
+                            cmd = 'DELETE FROM public.sum_partn_alloc WHERE sumid = ' + str(sumid) + ' AND (status = 8 OR status = 1)'
+                            cursor.execute(cmd)
+                            self.log.writeInfo([ 'Successfully deleted read-only and read-write records from sum_partn_alloc for SU ' + str(self.sunum) + '.' ])
+                    
+                            # Delete the temporary ds_index = 0 records created during the SUM_put() port. I still do not know why this record
+                            # was created in the first place.
+                            cmd = 'DELETE FROM public.sum_open WHERE sumid = ' + str(sumid)
+                            cursor.execute(cmd)
+                            self.log.writeInfo([ 'Successfully deleted temporary (ds_index == 0) records from sum_open for SU ' + str(self.sunum) + '.' ])
+                            ##### SUM_close() port - end #####
+                            
+                            needsCommit = True
+                        except psycopg2.Error as exc:
+                            # Handle database-command errors. These are all due to problems communicating with the SUMS db.
+                    
+                            # Clean-up
+                            if os.path.exists(sudir):
+                                shutil.rmtree(sudir)
+                            if os.path.exists(suDlPath):
+                                shutil.rmtree(suDlPath)
+                            raise Exception('sumsAPI', exc.diag.message_primary + ': ' + cmd + '.') 
+                        except Exception as exc:
+                            # Clean-up
+                            if os.path.exists(sudir):
+                                shutil.rmtree(sudir)
+                            if os.path.exists(suDlPath):
+                                shutil.rmtree(suDlPath)
+                            raise
+                        finally:
+                            if needsCommit:
+                                Downloader.sumsConn.commit()
+                            else:
+                                Downloader.sumsConn.rollback()
+            finally:
+                if gotSumsDbLock:
+                    Downloader.sumsDbLock.release()
 
             # Remove temporary directory.
             self.log.writeInfo([ 'Removing empty temporary download directory ' + suDlPath + '.' ])
@@ -2425,7 +2415,7 @@ if __name__ == "__main__":
         sumsDrmsParams = SumsDrmsParams()
         if sumsDrmsParams is None:
             raise Exception('drmsParams', 'Unable to locate DRMS parameters file (drmsparams.py).')
-            
+
         parser = CmdlParser(usage='%(prog)s [ -h ] [ sutable=<storage unit table> ] [ reqtable=<request table> ] [ --dbname=<db name> ] [ --dbhost=<db host> ] [ --dbport=<db port> ] [ --binpath=<executable path> ] [ --logfile=<base log-file name> ]')
     
         # Optional parameters - no default argument is provided, so the default is None, which will trigger the use of what exists in the configuration file
@@ -2476,6 +2466,9 @@ if __name__ == "__main__":
         
         # TerminationHandler opens a DB connection to the RS database (which is the same as the DRMS database, most likely).
         with TerminationHandler(thContainer) as th:
+            rsConn = th.rsConn()
+            sumsConn = th.sumsConn()
+            
             rslog.writeInfo([ 'Obtained script file lock.' ])
 
             suTable = arguments.sutable
@@ -2493,8 +2486,14 @@ if __name__ == "__main__":
             # A fancier implementation would be some kind of download manager that can recover partially downloaded
             # storage units, but who has the time :)
 
+            SuTable.rsConn = rsConn # Class variable
             sus = SuTable(suTable, arguments.dltimeout, rslog)
+
+            ReqTable.rsConn = rsConn # Class variable
             requests = ReqTable(reqTable, arguments.reqtimeout, rslog)
+            
+            Downloader.sumsConn = sumsConn
+
             sites = SiteTable(rslog)
 
             # This function will try to read each table 10 times before giving up (and raising an exception).
@@ -2631,34 +2630,28 @@ if __name__ == "__main__":
 
                         # These next two calls can modify the db state! Put them in a transaction so that they form an atomic
                         # operation. We do not want an interruption to cause the first to happen, but not the second.
+                        needsCommit = False
                         try:
-                            gotLock = ReqTable.reqTableClassLock.acquire()
-                            if gotLock:
-                                cursor = ReqTable.cursor
-                                if cursor:
-                                    cursor.execute('BEGIN')
-
-                                    # Update the statuses in the requests db table.
-                                    rslog.writeDebug([ 'Updating Requests Table for request ' + str(arequest['requestid']) + '.' ])
-                                    requests.updateDB([ arequest['requestid'] ])
-                            
-                                    # Remove duplicates from list first. We do not need to preserve the order of the SUNUMs
-                                    # before calling decrementRefcount() since that function uses a hash lookup on the SUNUM
-                                    # to find the associated refcount. decrementRefcount() does not modify the SU db table.
-                                    # Call updateDB() to do that.
-                                    rslog.writeDebug([ 'Decrementing refcount for SUs: ' + ','.join([ str(ansunum) for ansunum in list(set(sunums)) ]) ])
-                                    sus.decrementRefcount(list(set(sunums)))
-                                    rslog.writeDebug([ 'Flushing SU changes to SU Table.' ])
-                                    sus.updateDB()
-                                    rslog.writeDebug([ 'Updated SU Table.' ])
-
-                                    cursor.execute('END') # Same as cursor.execute('COMMIT')
-                                else:
-                                    raise Exception('dbUpdate', 'cursor does not exist.')
+                            # Update the statuses in the requests db table.
+                            rslog.writeDebug([ 'Updating Requests Table for request ' + str(arequest['requestid']) + '.' ])
+                            requests.updateDB([ arequest['requestid'] ])
+                    
+                            # Remove duplicates from list first. We do not need to preserve the order of the SUNUMs
+                            # before calling decrementRefcount() since that function uses a hash lookup on the SUNUM
+                            # to find the associated refcount. decrementRefcount() does not modify the SU db table.
+                            # Call updateDB() to do that.
+                            rslog.writeDebug([ 'Decrementing refcount for SUs: ' + ','.join([ str(ansunum) for ansunum in list(set(sunums)) ]) ])
+                            sus.decrementRefcount(list(set(sunums)))
+                            rslog.writeDebug([ 'Flushing SU changes to SU Table.' ])
+                            sus.updateDB()
+                            rslog.writeDebug([ 'Updated SU Table.' ])
+                            needsCommit = True
                         finally:
-                            if gotLock:
-                                ReqTable.reqTableClassLock.release()                                
-                            
+                            if needsCommit:
+                                rsConn.commit()
+                            else:
+                                rsConn.rollback()
+
                 # Right here is where we can find orphaned sus records and delete them. We have a list of all reachable SUs now that we've 
                 # iterated through the pending requests. We now iterate through ALL sus records and delete any that are not reachable.
                 # xxx
@@ -2677,19 +2670,16 @@ if __name__ == "__main__":
                     if timeNow > arequest['starttime'] + requests.getTimeout():
                         rslog.writeInfo([ 'Request number ' + str(arequest['requestid']) + ' timed-out.' ])
                         requests.setStatus([arequest['requestid']], 'E', 'Request timed-out.')
+                        needsCommit = False
                         try:
-                            gotLock = ReqTable.reqTableClassLock.acquire()
-                            if gotLock:
-                                cursor = ReqTable.cursor
-                                if cursor:
-                                    cursor.execute('BEGIN')
-                                    requests.updateDB([ arequest['requestid'] ])
-                                    cursor.execute('END')
-                                else:
-                                    raise Exception('dbUpdate', 'cursor does not exist.')
+                            with rsConn.cursor() as cursor:
+                                requests.updateDB([ arequest['requestid'] ])
+                            needsCommit = True
                         finally:
-                            if gotLock:
-                                ReqTable.reqTableClassLock.release()
+                            if needsCommit:
+                                rsConn.commit()
+                            else:
+                                rsConn.rollback()
                                 
                         # On to next request.
                         continue
@@ -2807,20 +2797,16 @@ if __name__ == "__main__":
 
                     # At this point, both the requests and sus object have been modified, but have not been flushed to disk.
                     # Flush them, but do this inside a transaction so that the first does not happen without the second.
+                    needsCommit = False
                     try:
-                        gotLock = SuTable.suTableClassLock.acquire()
-                        if gotLock:
-                            cursor = SuTable.cursor
-                            if cursor:                        
-                                cursor.execute('BEGIN')
-                                sus.updateDB(sunums)
-                                requests.updateDB([ arequest['requestid'] ])
-                                cursor.execute('END')
-                            else:
-                                raise Exception('dbUpdate', 'cursor does not exist.')
+                        sus.updateDB(sunums)
+                        requests.updateDB([ arequest['requestid'] ])
+                        needsCommit = True
                     finally:
-                        if gotLock:
-                            SuTable.suTableClassLock.release()
+                        if needsCommit:
+                            rsConn.commit()
+                        else:
+                            rsConn.rollback()
 
                 # Delete all request-table records whose state is 'D'. It doesn't matter if this operation gets interrupted. If
                 # that happens, then these delete-pending records will be deleted the next time this code runs uninterrupted.
@@ -2837,21 +2823,17 @@ if __name__ == "__main__":
             
             # Save the db state when exiting.
             rslog.writeInfo([ 'Remote-sums daemon is exiting. Saving database tables.' ])
+            needsCommit = False
             try:
-                gotLock = SuTable.suTableClassLock.acquire()
-                if gotLock:
-                    cursor = SuTable.cursor
-                    if cursor: 
-                        cursor.execute('BEGIN')
-                        sus.updateDB()
-                        requests.updateDB()
-                        cursor.execute('END')
-                    else:
-                        raise Exception('dbUpdate', 'cursor does not exist.')
+                sus.updateDB()
+                requests.updateDB()
+                needsCommit = True
             finally:
-                if gotLock:
-                    SuTable.suTableClassLock.release()
-        
+                if needsCommit:
+                    rsConn.commit()
+                else:
+                    rsConn.rollback()
+
         # DB connection was terminated.            
         # Lock was released
         if thContainer[3] is not None:
