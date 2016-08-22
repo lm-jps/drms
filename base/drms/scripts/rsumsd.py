@@ -113,6 +113,9 @@ RET_UNKNOWNSTATUS = 20
 
 LOG_FILE_BASE_NAME = 'rslog'
 
+SUM_MAIN = 'public.sum_main'
+SUM_PARTN_ALLOC = 'public.sum_partn_alloc'
+
 def terminator(*args):
     # Raise the SystemExit exception (which will be caught by the __exit__() method below).
     sys.exit(0)
@@ -495,6 +498,11 @@ class StorageUnit(object):
 class SuTable:
     # There is only one SuTable object, so don't worry about locking rsConn.
     rsConn = None
+    sumsConn = None
+    
+    sumsDbLock = threading.Lock() # Since all Downloader threads and the main thread share the same connection, their cursors 
+                                  # on these connections are not isolated. Use a lock to ensure a consistent view in the
+                                  # offline() method.
     
     def __init__(self, tableName, timeOut, log):
         self.tableName = tableName
@@ -998,37 +1006,38 @@ class SuTable:
         rv = []        
 
         if len(sunums) > 0:
-            cmd = [binPath + '/jsoc_fetch', 'op=exp_su', 'requestid=NOASYNCREQUEST', 'format=json', 'formatvar=dataobj', 'method=url_quick', 'protocol=as-is', 'sunum=' + ','.join([str(asunum) for asunum in sunums])]
-            log.writeInfo(['Checking online disposition: ' + ' '.join(cmd)])
-        
+            # Ok, 86 jsoc_fetch. Using it is ridiculous (lots and lots of overhead for what is a simple DB query), and 
+            # sometimes it crashes. We simply need to query the SUMS db and check to see which of the SUs in sunums 
+            # are present in the sum_main/sum_partn_alloc table.             
+            cmd = "SELECT T1.ds_index, T1.online_loc, T1.online_status, T1.archive_status, T1.offsite_ack, T1.history_comment, T1.owning_series, T1.storage_group, T1.bytes, T1.create_sumid, T1.creat_date, T1.username, COALESCE(T1.arch_tape, 'N/A'), COALESCE(T1.arch_tape_fn, 0), COALESCE(T1.arch_tape_date, '1958-01-01 00:00:00'), COALESCE(T1.safe_tape, 'N/A'), COALESCE(T1.safe_tape_fn, 0), COALESCE(T1.safe_tape_date, '1958-01-01 00:00:00'), COALESCE(T2.effective_date, '195801010000'), coalesce(T2.status, 0), coalesce(T2.archive_substatus, 0) FROM " + SUM_MAIN + " AS T1 LEFT OUTER JOIN " + SUM_PARTN_ALLOC + " AS T2 ON (T1.ds_index = T2.ds_index) WHERE T1.ds_index IN (" + ','.join([ str(asunum) for asunum in sunums ]) + ')'
+
             try:
-                resp = check_output(cmd)
-                output = resp.decode('utf-8')
-                lines = output.split('\n')
-        
-            except ValueError:
-                raise Exception('findOffline', "Unable to run command: '" + ' '.join(cmd) + "'.")
-            except CalledProcessError as exc:
-                raise Exception('findOffline', "Command '" + ' '.join(cmd) + "' returned non-zero status code " + str(exc.returncode))
-        
-            jsonRsp = []
-        
-            # output is not strictly JSON. There is an HTTP header we need to remove.
-            regExp = re.compile(r'Content-type')
-            for line in lines:
-                if len(line) == 0:
-                    continue
-                match = regExp.match(line)
-                if match:
-                    continue
-                jsonRsp.append(line)
-        
-            jsonObj = json.loads(''.join(jsonRsp))
-            for sunum in jsonObj['data']:
-                # sustatus could be 'I' (the local SUMS knows nothing about this SU) or 'Y' (it is in the SUMS db, and it is online). It cannot be 'N' or 'X'
-                # because if it were retrievable from tape, it would have been retrieved instead of finding its way into the requests table.
-                if jsonObj['data'][sunum]['sustatus'] == 'I':
-                    rv.append(sunum)
+                gotSumsDbLock = SuTable.sumsDbLock.acquire()
+                if gotSumsDbLock:
+                    with SuTable.sumsConn.cursor() as cursor:
+                        knownSUs = {} # bitmap of SUs known to the SUMS db.
+                        try:                    
+                            cursor.execute(cmd)
+                            log.writeDebug([ 'Successfully queried SUMS db for known SUs.' ])
+                        
+                            # Put each SU in the result into the bitmap.
+                            for row in cursor:
+                                knownSUs[str(row[0])] = True
+                        
+                            # Determine which SUs for which we are going to initiate Downloaders that are not already in SUMS.
+                            for ansunum in sunums:                        
+                                if str(ansunum) not in knownSUs:
+                                    rv.append(ansunum)
+                        except psycopg2.Error as exc:
+                            # Handle database-command errors. These are all due to problems communicating with the SUMS db.
+                            raise Exception('sumsAPI', exc.diag.message_primary + ': ' + cmd + '.') 
+                        finally:
+                            # Not making changes, so rollback always.
+                            SuTable.sumsConn.rollback()
+            finally:
+                if gotSumsDbLock:
+                    SuTable.sumsDbLock.release()
+
         return rv
 
 class ReqTable:
@@ -2487,6 +2496,7 @@ if __name__ == "__main__":
             # storage units, but who has the time :)
 
             SuTable.rsConn = rsConn # Class variable
+            SuTable.sumsConn = sumsConn # Class variable
             sus = SuTable(suTable, arguments.dltimeout, rslog)
 
             ReqTable.rsConn = rsConn # Class variable
