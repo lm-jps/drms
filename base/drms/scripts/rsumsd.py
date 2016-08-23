@@ -196,6 +196,11 @@ class TerminationHandler(object):
     # __exit__() will be bypassed if a SIGTERM signal is received. Use the signal handler installed in the
     # __enter__() call to handle SIGTERM.
     def __exit__(self, etype, value, traceback):
+        if etype is not None:
+            # If the context manager was exited without an exception, then etype is None
+            import traceback
+            self.log.writeDebug([ traceback.format_exc(5) ])
+                            
         if etype == SystemExit:
             self.log.writeInfo([ 'Termination signal handler called.' ])
             self.container[3] = RET_TERMINATED
@@ -210,14 +215,6 @@ class TerminationHandler(object):
             pass
         
     def finalStuff(self):
-        if self.sumsconn:
-            self.sumsconn.close()
-            self.sumsconn = None
-                
-        if self.conn:
-            self.conn.close()
-            self.conn = None
-    
         self.log.writeInfo([ 'Halting threads.' ])
 
         # Shut-down ScpWorker threads.
@@ -240,8 +237,17 @@ class TerminationHandler(object):
             self.log.writeInfo([ 'Waiting for poller (request ID ' + str(poller.requestID) + ') to halt.' ])
             poller.join()
             self.log.writeInfo([ 'Poller (request ID ' + str(poller.requestID) + ') halted.' ])
-            
+        
+        if self.sumsconn:
+            self.sumsconn.close()
+            self.sumsconn = None
+                
+        if self.conn:
+            self.conn.close()
+            self.conn = None
+    
         self.log.flush()
+        
 
     def rsConn(self):
         return self.conn
@@ -867,7 +873,7 @@ class SuTable:
                     Downloader.lock.acquire()
                     self.log.writeDebug(['(stopWorker) Class Downloader acquired Downloader lock for SU ' + sunumStr + '.'])
                     Downloader.tList.remove(su.worker) # This thread is no longer one of the running threads.
-                    if len(Downloader.tList) == Downloader.maxThreads - 1:
+                    if len(Downloader.tList) <= Downloader.maxThreads - 1:
                         # Fire event so that main thread can add new SUs to the download queue.
                         Downloader.eventMaxThreads.set()
                         # Clear event so that main will block the next time it calls wait.
@@ -876,7 +882,8 @@ class SuTable:
                     Downloader.lock.release()
                     self.log.writeDebug(['(stopWorker) Class Downloader released Downloader lock for SU ' + sunumStr + '.'])
 
-                del su.worker
+            del su.worker
+            su.worker = None
 
     def get(self, sunums=None):
         toRet = []
@@ -1144,9 +1151,11 @@ class ReqTable:
                     
                     needsRollback = True
                     try:
+                        self.log.writeDebug([ 'Running DB command: ' + cmd +'.' ])
                         with ReqTable.rsConn.cursor() as cursor:
                             cursor.execute(cmd)
                         needsRollback = False
+                        self.log.writeDebug([ 'DB command succeeded: ' + cmd +'.' ])
                         # The cursor has been closed, but the transaction has not been committed, as designed.
                     except psycopg2.Error as exc:
                         raise Exception('reqtableWrite', exc.diag.message_primary)
@@ -2060,7 +2069,9 @@ class Downloader(threading.Thread):
             Downloader.lock.acquire()
             self.log.writeDebug([ 'Class Downloader acquired Downloader lock for SU ' + str(self.sunum) + '.' ])
             Downloader.tList.remove(self) # This thread is no longer one of the running threads.
-            if len(Downloader.tList) == Downloader.maxThreads - 1:
+            # Use <= because we don't know if we were able to reach Downloader.maxThreads thread running due 
+            # to system-resource limitations.
+            if len(Downloader.tList) <= Downloader.maxThreads - 1:
                 # Fire event so that main thread can add new SUs to the download queue.
                 self.log.writeDebug([ 'OK to start new download threads.' ])
                 Downloader.eventMaxThreads.set()
@@ -2093,7 +2104,26 @@ class Downloader(threading.Thread):
         dl = Downloader(sunum, path, series, suSize, retention, sus, scpUser, scpHost, scpPort, binPath, arguments, log)
         sus.setWorker(sunum, dl)
         dl.tList.append(dl)
-        dl.start()
+        
+        try:
+            dl.start()
+        except RuntimeError:
+            # Cannot start a new thread, so rollback and re-raise so the calling thread can handle the error.
+            Downloader.tList.remove(dl)
+            su = sus.get([ sunum ])[0]
+        
+            try:
+                gotSULock = su.acquireLock()
+        
+                if gotSULock is None:
+                    raise Exception('lock', 'Unable to acquire SU ' + str(sunum) + ' lock.')
+                del su.worker
+                su.worker = None
+            finally:
+                if gotSULock:
+                    su.releaseLock()
+
+            raise Exception('startThread', 'Cannot start a new Downloader thread due to system resource limitations.')
 
     @classmethod
     def setMaxThreads(cls, maxThreads):
@@ -2245,6 +2275,16 @@ class ProviderPoller(threading.Thread):
                             self.log.writeInfo([ 'Instantiating a Downloader for SU ' + str(asunum) + '.' ])
                             Downloader.newThread(asunum, path, series, suSize, retention, self.suTable, dlInfo['scpUser'], dlInfo['scpHost'], dlInfo['scpPort'], self.binPath, self.arguments, self.log)
                             break # The finally clause will ensure the Downloader lock is released.
+                    except Exception as exc:
+                        if len(exc.args) != 2:
+                            raise # Re-raise
+
+                        etype = exc.args[0]
+
+                        if etype != 'startThread':
+                            raise
+                    
+                        # Ran out of system resources - could not start new thread. Just wait for a thread slot to become free.
                     finally:
                         Downloader.lock.release()
 
@@ -2263,7 +2303,12 @@ class ProviderPoller(threading.Thread):
     def newThread(url, requestID, sunums, sus, reqTable, request, dbUser, binPath, arguments, log):
         poller = ProviderPoller(url, requestID, sunums, sus, reqTable, request, dbUser, binPath, arguments, log)
         poller.tList.append(poller)
-        poller.start()
+        try:
+            poller.start()
+        except RuntimeError:
+            poller.tList.remove(poller)
+            del poller
+            raise Exception('startThread', 'Cannot start a new ProviderPoller thread due to system resource limitations.')
 
 def readTables(sus, requests, sites):
     if sus:
@@ -2373,11 +2418,22 @@ def processSUs(url, sunums, sus, reqTable, request, dbUser, binPath, arguments, 
                         log.writeInfo([ 'Instantiating a Downloader for SU ' + str(asunum) + '.' ])
                         Downloader.newThread(asunum, path, series, suSize, retention, sus, dlInfo['scpUser'], dlInfo['scpHost'], dlInfo['scpPort'], binPath, arguments, log)
                         break # The finally clause will ensure the Downloader lock is released.
+                except Exception as exc:
+                    if len(exc.args) != 2:
+                        raise # Re-raise
+
+                    etype = exc.args[0]
+
+                    if etype != 'startThread':
+                        raise
+                    
+                    log.writeError([ 'Cannot start Downloader thread. Out of system resources. Will try again when existing Downloaders complete.' ])
+                    # Ran out of system resources - could not start new thread. Just wait for a thread slot to become free.
                 finally:
                     Downloader.lock.release()
 
+                log.writeDebug([ 'Main thread waiting for thread slot for SU ' + str(asunum) + '.' ])
                 Downloader.eventMaxThreads.wait()
-
                 # We woke up, but we do not know if there are any open threads in the thread pool. Loop and check
                 # tList again.
 
@@ -2591,7 +2647,7 @@ if __name__ == "__main__":
             
             # Start of main loop.
             loopN = 0
-            while True:                             
+            while True:
                 # For each 'P' request in the request table, check to see if the requested downloads have completed yet.
 
                 # Log every 5 seconds.
@@ -2654,11 +2710,13 @@ if __name__ == "__main__":
                             sus.decrementRefcount(list(set(sunums)))
                             rslog.writeDebug([ 'Flushing SU changes to SU Table.' ])
                             sus.updateDB()
-                            rslog.writeDebug([ 'Updated SU Table.' ])
+                            rslog.writeDebug([ 'Updated Req and SU tables.' ])
                             needsCommit = True
                         finally:
                             if needsCommit:
+                                rslog.writeDebug([ 'Committing Req and SU changes to DB.' ])
                                 rsConn.commit()
+                                rslog.writeDebug([ 'Successfully committed Req and SU changes to DB.' ])
                             else:
                                 rsConn.rollback()
 
