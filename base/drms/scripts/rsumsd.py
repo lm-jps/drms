@@ -583,36 +583,32 @@ class SuTable:
     #
     # ACQUIRES THE SU TABLE LOCK.
     def updateDB(self, sunums=None):
-        toDel = []
-        
-        if sunums:
-            # Update a subset of all records.
-            for asunum in sunums:
-                sunumStr = str(asunum)
+        gotTableLock = False
 
+        try:
+            gotTableLock = self.acquireLock()
+
+            if gotTableLock is None:
+                raise Exception('lock', 'Unable to acquire SU-table lock.')
+            
+            # Will get all SUs if sunums is None.
+            sus = self.get(sunums)
+
+            for su in sus:
                 try:
-                    gotSuLock = False
-                    # Will raise if the sunum is not in the dictionary.
-                    su = self.getAndLockSU(asunum)
-                    gotSuLock = True
-                
+                    gotSULock = su.acquireLock()            
+                    if not gotSULock:
+                        raise Exception('lock', 'Unable to acquire SU ' + str(su.sunum) + ' lock.')
+                    
                     if su.giveUpTheGhost:
-                        toDel.append(asunum)
-                    elif su.dirty:
-                        if su.new:
-                            cmd = 'INSERT INTO ' + self.tableName + '(sunum, series, retention, starttime, refcount, status, errmsg) VALUES(' + sunumStr + ",'" + su.series + "', " + str(su.retention) + ", '" + su.starttime.strftime('%Y-%m-%d %T') + "', " + str(su.refcount) + ", '" + su.status + "', '" + su.errmsg + "')"
-                        else:
-                            # The fields excluded from the update statement are not modified once set.
-                            cmd = 'UPDATE ' + self.tableName + " SET series='" + su.series + "', retention=" + str(su.retention) + ", starttime='" + su.starttime.strftime('%Y-%m-%d %T') + "', refcount=" + str(su.refcount) + ", status='" + su.status + "', errmsg='" + su.errmsg + "' WHERE sunum=" + sunumStr
-                
-                        self.log.writeInfo(['Updating SU db table: ' + cmd])
-                
+                        cmd = 'DELETE FROM ' + self.tableName + ' WHERE sunum = ' + str(su.sunum)
                         needsRollback = True
                         try:
                             gotRsDbLock = SuTable.rsDbLock.acquire()
                             if gotRsDbLock:
                                 with SuTable.rsConn.cursor() as cursor:
                                     cursor.execute(cmd)
+
                                 needsRollback = False
                                 # The cursor has been closed, but the transaction has not been committed, as designed.
                         except psycopg2.Error as exc:
@@ -622,32 +618,16 @@ class SuTable:
                                 SuTable.rsConn.rollback()
                             if gotRsDbLock:
                                 SuTable.rsDbLock.release()
-
-                        su.setDirty(False)
-                        su.setNew(False)
-                finally:
-                    if gotSuLock:
-                        su.releaseLock()
-                    
-        else:
-            # Update all dirty records.
-            for sunumStr in self.suDict:
-                try:
-                    gotSuLock = False
-                    # Will raise if the sunum is not in the dictionary.
-                    su = self.getAndLockSU(int(sunumStr))
-                    gotSuLock = True
-            
-                    if su.giveUpTheGhost:
-                        toDel.append(int(sunumStr))
+                            
+                        del self.suDict[str(su.sunum)]
                     elif su.dirty:
                         if su.new:
-                            cmd = 'INSERT INTO ' + self.tableName + '(sunum, series, retention, starttime, refcount, status, errmsg) VALUES(' + sunumStr + ",'" + su.series + "', " + str(su.retention) + ", '" + su.starttime.strftime('%Y-%m-%d %T') + "', " + str(su.refcount) + ", '" + su.status + "', '" + su.errmsg + "')"
+                            cmd = 'INSERT INTO ' + self.tableName + '(sunum, series, retention, starttime, refcount, status, errmsg) VALUES(' + str(su.sunum) + ",'" + su.series + "', " + str(su.retention) + ", '" + su.starttime.strftime('%Y-%m-%d %T') + "', " + str(su.refcount) + ", '" + su.status + "', '" + su.errmsg + "')"
                         else:
-                            cmd = 'UPDATE ' + self.tableName + " SET series='" + su.series + "', retention=" + str(su.retention) + ", starttime='" + su.starttime.strftime('%Y-%m-%d %T') + "', refcount=" + str(su.refcount) + ", status='" + su.status + "', errmsg='" + su.errmsg + "' WHERE sunum=" + sunumStr
-                    
+                            cmd = 'UPDATE ' + self.tableName + " SET series='" + su.series + "', retention=" + str(su.retention) + ", starttime='" + su.starttime.strftime('%Y-%m-%d %T') + "', refcount=" + str(su.refcount) + ", status='" + su.status + "', errmsg='" + su.errmsg + "' WHERE sunum=" + str(su.sunum)
+                
                         self.log.writeInfo(['Updating SU db table: ' + cmd])
-                    
+                
                         needsRollback = True
                         try:
                             gotRsDbLock = SuTable.rsDbLock.acquire()
@@ -669,10 +649,12 @@ class SuTable:
                         su.setDirty(False)
                         su.setNew(False)
                 finally:
-                    if gotSuLock:
+                    if gotSULock:
                         su.releaseLock()
-                    
-        self.deleteDB(toDel)
+        finally:
+            # Always release lock.
+            if gotTableLock:
+                self.releaseLock()
         
     # This WILL commit changes to the db.
     def updateDbAndCommit(self, sunums=None):
@@ -687,36 +669,6 @@ class SuTable:
             else:
                 SuTable.rsConn.rollback()
 
-    # This will NOT commit database changes. You are generally going to want to do this as part of a larger db change. Commit the changes
-    # after all changes that form the atomic set of changes.
-    def deleteDB(self, sunums):
-        if len(sunums) > 0:
-            # Delete the in-memory cache of these sunums
-            for asunum in sunums:
-                sunumStr = str(asunum)
-                
-                # Will raise if the sunum is not in the dictionary.
-                del self.suDict[sunumStr]
-            
-            sunumLstStr = ','.join([str(asunum) for asunum in sunums])
-        
-            cmd = 'DELETE FROM ' + self.tableName + ' WHERE sunum IN (' + sunumLstStr + ')'
-            needsRollback = True
-            try:
-                gotRsDbLock = SuTable.rsDbLock.acquire()
-                if gotRsDbLock:
-                    with SuTable.rsConn.cursor() as cursor:
-                        cursor.execute(cmd)
-                    needsRollback = False
-                    # The cursor has been closed, but the transaction has not been committed, as designed.
-            except psycopg2.Error as exc:
-                raise Exception('sutableWrite', exc.diag.message_primary)
-            finally:
-                if needsRollback:
-                    SuTable.rsConn.rollback()
-                if gotRsDbLock:
-                    SuTable.rsDbLock.release()
-
     def acquireLock(self):
         return self.lock.acquire()
         # self.log.writeDebug(['Acquired SU-Table lock.'])
@@ -725,22 +677,30 @@ class SuTable:
         self.lock.release()
         # self.log.writeDebug(['Released SU-Table lock.'])
     
+    # Main thread only.
     def insert(self, sunums):
-        for asunum in sunums:
-            sunumStr = str(asunum)
+        try:
+            # Get lock because we are modifying self.suDict.
+            gotTableLock = self.acquireLock()
+            for asunum in sunums:
+                sunumStr = str(asunum)
         
-            if sunumStr in self.suDict:
-                raise Exception('knownSunum', 'SU-table record already exists for SU ' + sunumStr + '.')
+                if sunumStr in self.suDict:
+                    raise Exception('knownSunum', 'SU-table record already exists for SU ' + sunumStr + '.')
                 
-            su = StorageUnit(asunum, '', -1, datetime.now(timezone.utc), 1, 'P', '')
+                su = StorageUnit(asunum, '', -1, datetime.now(timezone.utc), 1, 'P', '')
 
-            su.setDirty(True)
-            # Set the new flag (so that the record will be INSERTed into the SU database table instead of UPDATEd).
-            su.setNew(True)
-            # The polling flag is set only while we are waiting for a providing site to give us paths for SUs.
-            su.setPolling(False)
+                su.setDirty(True)
+                # Set the new flag (so that the record will be INSERTed into the SU database table instead of UPDATEd).
+                su.setNew(True)
+                # The polling flag is set only while we are waiting for a providing site to give us paths for SUs.
+                su.setPolling(False)
         
-            self.suDict[sunumStr] = su
+                self.suDict[sunumStr] = su
+        finally:
+            # Always release lock.
+            if gotTableLock:
+                self.releaseLock()
 
     def setStatus(self, sunums, code, msg=None):
         for asunum in sunums:
@@ -1067,7 +1027,7 @@ class SuTable:
 class ReqTable:
     rsConn = None
     rsDbLock = None # There is one global lock for the rs connection. Since the main thread and the Downloader and ScpWorker threads
-                # all share the rs connection, they all need to use the same lock.
+                    # all share the rs connection, they all need to use the same lock.
 
 
     def __init__(self, tableName, timeOut, log):
@@ -1081,7 +1041,7 @@ class ReqTable:
         cmd = 'SELECT requestid, dbhost, dbport, dbname, starttime, sunums, status, errmsg FROM ' + self.tableName
         
         try:
-            gotRsDbLock = SuTable.rsDbLock.acquire()
+            gotRsDbLock = ReqTable.rsDbLock.acquire()
             if gotRsDbLock:
                 with ReqTable.rsConn.cursor() as cursor:
                     cursor.execute(cmd)
@@ -1106,7 +1066,7 @@ class ReqTable:
             ReqTable.rsConn.rollback()
             
             if gotRsDbLock:
-                SuTable.rsDbLock.release()
+                ReqTable.rsDbLock.release()
 
     def tryRead(self):
         nAtts = 0
@@ -1210,7 +1170,6 @@ class ReqTable:
                 ReqTable.rsConn.commit()
             else:
                 ReqTable.rsConn.rollback()
-
 
     # This will NOT commit database changes. You are generally going to want to do this as part of a larger db change. Commit the changes
     # after all changes that form the atomic set of changes. Do not call rsConn.commit().
@@ -2509,8 +2468,78 @@ class LogLevelAction(argparse.Action):
             level = logging.ERROR
 
         setattr(namespace, self.dest, level)
+        
+        rv = RET_SUCCESS
+        
+def updateDBAndCommit(log, rsConn, rsDbLock, requests, suTable, reqID, sunums):
+    try:
+        sql = []
 
-rv = RET_SUCCESS
+        # There is no requests table lock since only the main thread accesses the requests table.            
+        gotSUTableLock = suTable.acquireLock()
+
+        if gotSUTableLock is None:
+            raise Exception('lock', 'Unable to acquire SU-table lock.')
+
+        # Will get all SUs if sunums is None.
+        sus = suTable.get(sunums)
+
+        for su in sus:
+            try:
+                gotSULock = su.acquireLock()
+                if not gotSULock:
+                    raise Exception('lock', 'Unable to acquire SU ' + str(su.sunum) + ' lock.')
+                
+                if su.giveUpTheGhost:
+                    sql.append('DELETE FROM ' + suTable.tableName + ' WHERE sunum = ' + str(su.sunum))                        
+                    del suTable.suDict[str(su.sunum)]
+                elif su.dirty:
+                    if su.new:
+                        sql.append('INSERT INTO ' + suTable.tableName + '(sunum, series, retention, starttime, refcount, status, errmsg) VALUES(' + str(su.sunum) + ",'" + su.series + "', " + str(su.retention) + ", '" + su.starttime.strftime('%Y-%m-%d %T') + "', " + str(su.refcount) + ", '" + su.status + "', '" + su.errmsg + "')")
+                    else:
+                        sql.append('UPDATE ' + suTable.tableName + " SET series='" + su.series + "', retention=" + str(su.retention) + ", starttime='" + su.starttime.strftime('%Y-%m-%d %T') + "', refcount=" + str(su.refcount) + ", status='" + su.status + "', errmsg='" + su.errmsg + "' WHERE sunum=" + str(su.sunum))
+
+                    su.setDirty(False)
+                    su.setNew(False)
+            finally:
+                if gotSULock:
+                    su.releaseLock()
+                    
+        if requests.reqDict[str(reqID)]['dirty']:
+            # The only columns that this daemon will modify are status and errmsg.
+            log.writeDebug([ 'Updating Requests Table for request ' + str(reqID) + '.' ])
+            sql.append('UPDATE ' + requests.tableName + " SET status='" + requests.reqDict[str(reqID)]['status'] + "', errmsg='" + requests.reqDict[str(reqID)]['errmsg'] + "' WHERE requestid='" + str(reqID) + "'")
+
+            requests.reqDict[str(reqID)]['dirty'] = False
+            
+        # Do the SQL.
+        needsRollback = True
+        try:
+            gotRsDbLock = rsDbLock.acquire()
+            if gotRsDbLock:
+                for cmd in sql:
+                    log.writeDebug([ 'Running DB command: ' + cmd + '.' ])
+                    with rsConn.cursor() as cursor:
+                        cursor.execute(cmd)
+                    log.writeDebug([ 'DB command succeeded: ' + cmd + '.' ])
+                needsRollback = False
+
+                # The cursor has been closed, but the transaction has not been committed, as designed.
+        except psycopg2.Error as exc:
+            raise Exception('reqtableWrite', exc.diag.message_primary)
+        finally:
+            if needsRollback:
+                rsConn.rollback()
+            else:
+                log.writeDebug([ 'Committing Req and SU changes to DB.' ])
+                rsConn.commit()
+                log.writeDebug([ 'Successfully committed Req and SU changes to DB.' ])
+            if gotRsDbLock:
+                rsDbLock.release()
+    finally:
+        # Always release locks.
+        if gotSUTableLock:
+            suTable.releaseLock()
 
 if __name__ == "__main__":
     try:
@@ -2741,34 +2770,17 @@ if __name__ == "__main__":
                         # These next two calls can modify the db state! Put them in a transaction so that they form an atomic
                         # operation. We do not want an interruption to cause the first to happen, but not the second.
                         needsCommit = False
-                        gotRsDbLock = False
-                        try:
-                            gotRsDbLock = rsDbLock.acquire()
-                            if gotRsDbLock:
-                                # Update the statuses in the requests db table.
-                                rslog.writeDebug([ 'Updating Requests Table for request ' + str(arequest['requestid']) + '.' ])
-                                requests.updateDB([ arequest['requestid'] ])
-                    
-                                # Remove duplicates from list first. We do not need to preserve the order of the SUNUMs
-                                # before calling decrementRefcount() since that function uses a hash lookup on the SUNUM
-                                # to find the associated refcount. decrementRefcount() does not modify the SU db table.
-                                # Call updateDB() to do that.
-                                rslog.writeDebug([ 'Decrementing refcount for SUs: ' + ','.join([ str(ansunum) for ansunum in list(set(sunums)) ]) ])
-                                sus.decrementRefcount(list(set(sunums)))
-                                rslog.writeDebug([ 'Flushing SU changes to SU Table.' ])
-                                sus.updateDB()
-                                rslog.writeDebug([ 'Updated Req and SU tables.' ])
-                                needsCommit = True
-                        finally:
-                            if needsCommit:
-                                rslog.writeDebug([ 'Committing Req and SU changes to DB.' ])
-                                rsConn.commit()
-                                rslog.writeDebug([ 'Successfully committed Req and SU changes to DB.' ])
-                            else:
-                                rsConn.rollback()
+                        
+                        # ART - Do not hold rsDbLock here! The functions called may acquire other locks, leading to deadlock.
+                        # The rsDbLock should be for executing SQL only.
+                        rslog.writeDebug([ 'Decrementing refcount for SUs: ' + ','.join([ str(ansunum) for ansunum in list(set(sunums)) ]) ])
+                        # Remove duplicates from list first. We do not need to preserve the order of the SUNUMs
+                        # before calling decrementRefcount() since that function uses a hash lookup on the SUNUM
+                        # to find the associated refcount. Does not modify SU db table.
+                        sus.decrementRefcount(list(set(sunums)))
 
-                            if gotRsDbLock:
-                                rsDbLock.release()
+                        # Commit both DB tables to DB in a single transaction.
+                        updateDBAndCommit(rslog, rsConn, rsDbLock, requests, sus, arequest['requestid'], None)
 
                 # Right here is where we can find orphaned sus records and delete them. We have a list of all reachable SUs now that we've 
                 # iterated through the pending requests. We now iterate through ALL sus records and delete any that are not reachable.
