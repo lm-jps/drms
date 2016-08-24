@@ -502,13 +502,14 @@ class StorageUnit(object):
         self.worker = value
 
 class SuTable:
-    # There is only one SuTable object, so don't worry about locking rsConn.
     rsConn = None
+    rsDbLock = None # There is one global lock for the rs connection. Since the main thread and the Downloader and ScpWorker threads
+                    # all share the rs connection, they all need to use the same lock.
+
     sumsConn = None
-    
-    sumsDbLock = threading.Lock() # Since all Downloader threads and the main thread share the same connection, their cursors 
-                                  # on these connections are not isolated. Use a lock to ensure a consistent view in the
-                                  # offline() method.
+    sumsDbLock = None # Since all Downloader threads and the main thread share the same connection, their cursors 
+                      # on these connections are not isolated. Use a lock to ensure a consistent view in the
+                      # offline() method.
     
     def __init__(self, tableName, timeOut, log):
         self.tableName = tableName
@@ -522,35 +523,39 @@ class SuTable:
         cmd = 'SELECT sunum, series, retention, starttime, refcount, status, errmsg FROM ' + self.tableName
     
         try:
-            with SuTable.rsConn.cursor() as cursor:
-                cursor.execute(cmd)
+            gotRsDbLock = SuTable.rsDbLock.acquire()
+            if gotRsDbLock:
+                with SuTable.rsConn.cursor() as cursor:
+                    cursor.execute(cmd)
             
-                for record in cursor:
-                    sunumStr = str(record[0])
+                    for record in cursor:
+                        sunumStr = str(record[0])
 
-                    self.suDict[sunumStr] = {}
-                    sunum = record[0]         # integer
-                    series = record[1]        # text
-                    retention = record[2]     # integer
-                    # Whoa! pyscopg returns timestamps as datetime.datetime objects already!
-                    starttime = record[3]     # datetime.datetime
-                    refcount = record[4]      # integer
-                    status = record[5]        # text
-                    errmsg = record[6]        # text
+                        self.suDict[sunumStr] = {}
+                        sunum = record[0]         # integer
+                        series = record[1]        # text
+                        retention = record[2]     # integer
+                        # Whoa! pyscopg returns timestamps as datetime.datetime objects already!
+                        starttime = record[3]     # datetime.datetime
+                        refcount = record[4]      # integer
+                        status = record[5]        # text
+                        errmsg = record[6]        # text
 
-                    su = StorageUnit(sunum, series, retention, starttime, refcount, status, errmsg)
+                        su = StorageUnit(sunum, series, retention, starttime, refcount, status, errmsg)
 
-                    # Not read from or saved to database.
-                    su.setDirty(False)
-                    su.setNew(False)
-                    su.setPolling(False)
-                    su.setPath(None)              # The server path of the SU to be downloaded.
-                    # worker is already None
-                    self.suDict[sunumStr] = su
+                        # Not read from or saved to database.
+                        su.setDirty(False)
+                        su.setNew(False)
+                        su.setPolling(False)
+                        su.setPath(None)              # The server path of the SU to be downloaded.
+                        # worker is already None
+                        self.suDict[sunumStr] = su
         except psycopg2.Error as exc:
             raise Exception('sutableRead', exc.diag.message_primary)
         finally:
             SuTable.rsConn.rollback() # We read from the DB only, so no need to commit anything.
+            if gotRsDbLock:
+                SuTable.rsDbLock.release()
 
     def tryRead(self):
         nAtts = 0
@@ -604,16 +609,20 @@ class SuTable:
                 
                         needsRollback = True
                         try:
-                            with SuTable.rsConn.cursor() as cursor:
-                                cursor.execute(cmd)
-                            needsRollback = False
-                            # The cursor has been closed, but the transaction has not been committed, as designed.
+                            gotRsDbLock = SuTable.rsDbLock.acquire()
+                            if gotRsDbLock:
+                                with SuTable.rsConn.cursor() as cursor:
+                                    cursor.execute(cmd)
+                                needsRollback = False
+                                # The cursor has been closed, but the transaction has not been committed, as designed.
                         except psycopg2.Error as exc:
                             raise Exception('sutableWrite', exc.diag.message_primary)
                         finally:
                             if needsRollback:
                                 SuTable.rsConn.rollback()
-                
+                            if gotRsDbLock:
+                                SuTable.rsDbLock.release()
+
                         su.setDirty(False)
                         su.setNew(False)
                 finally:
@@ -641,10 +650,12 @@ class SuTable:
                     
                         needsRollback = True
                         try:
-                            with SuTable.rsConn.cursor() as cursor:
-                                cursor.execute(cmd)
-                            needsRollback = False
-                            # The cursor has been closed, but the transaction has not been committed, as designed.
+                            gotRsDbLock = SuTable.rsDbLock.acquire()
+                            if gotRsDbLock:
+                                with SuTable.rsConn.cursor() as cursor:
+                                    cursor.execute(cmd)
+                                needsRollback = False
+                                # The cursor has been closed, but the transaction has not been committed, as designed.
                         except psycopg2.Error as exc:
                             import traceback
                             self.log.writeError([ traceback.format_exc(5) ])
@@ -652,6 +663,8 @@ class SuTable:
                         finally:
                             if needsRollback:
                                 SuTable.rsConn.rollback()
+                            if gotRsDbLock:
+                                SuTable.rsDbLock.release()
 
                         su.setDirty(False)
                         su.setNew(False)
@@ -690,15 +703,19 @@ class SuTable:
             cmd = 'DELETE FROM ' + self.tableName + ' WHERE sunum IN (' + sunumLstStr + ')'
             needsRollback = True
             try:
-                with SuTable.rsConn.cursor() as cursor:
-                    cursor.execute(cmd)
-                needsRollback = False
-                # The cursor has been closed, but the transaction has not been committed, as designed.
+                gotRsDbLock = SuTable.rsDbLock.acquire()
+                if gotRsDbLock:
+                    with SuTable.rsConn.cursor() as cursor:
+                        cursor.execute(cmd)
+                    needsRollback = False
+                    # The cursor has been closed, but the transaction has not been committed, as designed.
             except psycopg2.Error as exc:
                 raise Exception('sutableWrite', exc.diag.message_primary)
             finally:
                 if needsRollback:
                     SuTable.rsConn.rollback()
+                if gotRsDbLock:
+                    SuTable.rsDbLock.release()
 
     def acquireLock(self):
         return self.lock.acquire()
@@ -1049,6 +1066,9 @@ class SuTable:
 
 class ReqTable:
     rsConn = None
+    rsDbLock = None # There is one global lock for the rs connection. Since the main thread and the Downloader and ScpWorker threads
+                # all share the rs connection, they all need to use the same lock.
+
 
     def __init__(self, tableName, timeOut, log):
         self.tableName = tableName
@@ -1061,27 +1081,32 @@ class ReqTable:
         cmd = 'SELECT requestid, dbhost, dbport, dbname, starttime, sunums, status, errmsg FROM ' + self.tableName
         
         try:
-            with ReqTable.rsConn.cursor() as cursor:
-                cursor.execute(cmd)
+            gotRsDbLock = SuTable.rsDbLock.acquire()
+            if gotRsDbLock:
+                with ReqTable.rsConn.cursor() as cursor:
+                    cursor.execute(cmd)
         
-                for record in cursor:
-                    requestidStr = str(record[0])
+                    for record in cursor:
+                        requestidStr = str(record[0])
 
-                    self.reqDict[requestidStr] = {}
-                    self.reqDict[requestidStr]['requestid'] = record[0] # integer
-                    self.reqDict[requestidStr]['dbhost'] = record[1]    # text
-                    self.reqDict[requestidStr]['dbport'] = record[2]    # integer
-                    self.reqDict[requestidStr]['dbname'] = record[3]    # text
-                    # Whoa! pyscopg returns timestamps as datetime.datetime objects already!
-                    self.reqDict[requestidStr]['starttime'] = record[4] # datetime.datetime
-                    self.reqDict[requestidStr]['sunums'] = [int(asunum) for asunum in record[5].split(',')] # text (originally)
-                    self.reqDict[requestidStr]['status'] = record[6]    # text
-                    self.reqDict[requestidStr]['errmsg'] = record[7]    # text
-                    self.reqDict[requestidStr]['dirty'] = False
+                        self.reqDict[requestidStr] = {}
+                        self.reqDict[requestidStr]['requestid'] = record[0] # integer
+                        self.reqDict[requestidStr]['dbhost'] = record[1]    # text
+                        self.reqDict[requestidStr]['dbport'] = record[2]    # integer
+                        self.reqDict[requestidStr]['dbname'] = record[3]    # text
+                        # Whoa! pyscopg returns timestamps as datetime.datetime objects already!
+                        self.reqDict[requestidStr]['starttime'] = record[4] # datetime.datetime
+                        self.reqDict[requestidStr]['sunums'] = [int(asunum) for asunum in record[5].split(',')] # text (originally)
+                        self.reqDict[requestidStr]['status'] = record[6]    # text
+                        self.reqDict[requestidStr]['errmsg'] = record[7]    # text
+                        self.reqDict[requestidStr]['dirty'] = False
         except psycopg2.Error as exc:
             raise Exception('reqtableRead', exc.diag.message_primary, cmd)
         finally:
             ReqTable.rsConn.rollback()
+            
+            if gotRsDbLock:
+                SuTable.rsDbLock.release()
 
     def tryRead(self):
         nAtts = 0
@@ -1131,15 +1156,19 @@ class ReqTable:
                     
                     needsRollback = True
                     try:
-                        with ReqTable.rsConn.cursor() as cursor:
-                            cursor.execute(cmd)
-                        needsRollback = False
-                        # The cursor has been closed, but the transaction has not been committed, as designed.
+                        gotRsDbLock = ReqTable.rsDbLock.acquire()
+                        if gotRsDbLock:
+                            with ReqTable.rsConn.cursor() as cursor:
+                                cursor.execute(cmd)
+                            needsRollback = False
+                            # The cursor has been closed, but the transaction has not been committed, as designed.
                     except psycopg2.Error as exc:
                         raise Exception('reqtableWrite', exc.diag.message_primary)
                     finally:
                         if needsRollback:
                             ReqTable.rsConn.rollback()
+                        if gotRsDbLock:
+                            ReqTable.rsDbLock.release()
 
                     self.reqDict[requestidStr]['dirty'] = False
         else:
@@ -1151,17 +1180,21 @@ class ReqTable:
                     
                     needsRollback = True
                     try:
-                        self.log.writeDebug([ 'Running DB command: ' + cmd +'.' ])
-                        with ReqTable.rsConn.cursor() as cursor:
-                            cursor.execute(cmd)
-                        needsRollback = False
-                        self.log.writeDebug([ 'DB command succeeded: ' + cmd +'.' ])
-                        # The cursor has been closed, but the transaction has not been committed, as designed.
+                        gotRsDbLock = ReqTable.rsDbLock.acquire()
+                        if gotRsDbLock:
+                            self.log.writeDebug([ 'Running DB command: ' + cmd +'.' ])
+                            with ReqTable.rsConn.cursor() as cursor:
+                                cursor.execute(cmd)
+                            needsRollback = False
+                            self.log.writeDebug([ 'DB command succeeded: ' + cmd +'.' ])
+                            # The cursor has been closed, but the transaction has not been committed, as designed.
                     except psycopg2.Error as exc:
                         raise Exception('reqtableWrite', exc.diag.message_primary)
                     finally:
                         if needsRollback:
                             ReqTable.rsConn.rollback()
+                        if gotRsDbLock:
+                            ReqTable.rsDbLock.release()
                     
                     self.reqDict[requestidStr]['dirty'] = False
                     
@@ -1197,15 +1230,19 @@ class ReqTable:
             
             needsRollback = True
             try:
-                with ReqTable.rsConn.cursor() as cursor:
-                    cursor.execute(cmd)
-                needsRollback = False
-                # The cursor has been closed, but the transaction has not been committed, as designed.
+                gotRsDbLock = ReqTable.rsDbLock.acquire()
+                if gotRsDbLock:
+                    with ReqTable.rsConn.cursor() as cursor:
+                        cursor.execute(cmd)
+                    needsRollback = False
+                    # The cursor has been closed, but the transaction has not been committed, as designed.
             except psycopg2.Error as exc:
                 raise Exception('reqtableWrite', exc.diag.message_primary + ': ' + cmd)
             finally:
                 if needsRollback:
                     ReqTable.rsConn.rollback()
+                if gotRsDbLock:
+                    ReqTable.rsDbLock.release()
 
     def setStatus(self, requestids, code, msg=None):
         for arequestid in requestids:
@@ -1533,11 +1570,11 @@ class ScpWorker(threading.Thread):
                     except OSError as exc:
                         import traceback
                         self.log.writeError([ traceback.format_exc(5) ])
-                        raise Exception('scpSU', "Cannot run command '" + ' '.join(cmdList) + "' ")
+                        raise Exception('scpSU', "Cannot run command '" + cmd + "' ")
                     except ValueError as exc:
                         import traceback
                         self.log.writeError([ traceback.format_exc(5) ])
-                        raise Exception('scpSU', "scp command '" + ' '.join(cmdList) + "' called with invalid arguments.")
+                        raise Exception('scpSU', "scp command '" + cmd + "' called with invalid arguments.")
 
                     # Poll for completion
                     while True:
@@ -1719,8 +1756,8 @@ class ScpWorker(threading.Thread):
 # the download is complete, the ScpWorker thread sets the status back to 'P'.
 class Downloader(threading.Thread):
     sumsConn = None
-    sumsDbLock = threading.Lock() # Since all Downloader threads share the same connection, their cursors on these connections
-                                  # are not isolated. Use a lock to ensure that only one Download is modifying SUMS at one time.
+    sumsDbLock = None # Since all Downloader threads share the same connection, their cursors on these connections
+                      # are not isolated. Use a lock to ensure that only one Download is modifying SUMS at one time.
 
     tList = [] # A list of running thread IDs.
     maxThreads = 16 # Default. Can be overriden with the Downloader.setMaxThreads() method.
@@ -2533,6 +2570,9 @@ if __name__ == "__main__":
         with TerminationHandler(thContainer) as th:
             rsConn = th.rsConn()
             sumsConn = th.sumsConn()
+
+            rsDbLock = threading.RLock() # global
+            sumsDbLock = threading.Lock() # global
             
             rslog.writeInfo([ 'Obtained script file lock.' ])
 
@@ -2553,12 +2593,16 @@ if __name__ == "__main__":
 
             SuTable.rsConn = rsConn # Class variable
             SuTable.sumsConn = sumsConn # Class variable
+            SuTable.rsDbLock = rsDbLock # Class variable
+            SuTable.sumsDbLock = sumsDbLock # Class variable
             sus = SuTable(suTable, arguments.dltimeout, rslog)
 
             ReqTable.rsConn = rsConn # Class variable
+            ReqTable.rsDbLock = rsDbLock # Class variable
             requests = ReqTable(reqTable, arguments.reqtimeout, rslog)
             
             Downloader.sumsConn = sumsConn
+            Downloader.sumsDbLock = sumsDbLock # Class variable
 
             sites = SiteTable(rslog)
 
@@ -2697,21 +2741,24 @@ if __name__ == "__main__":
                         # These next two calls can modify the db state! Put them in a transaction so that they form an atomic
                         # operation. We do not want an interruption to cause the first to happen, but not the second.
                         needsCommit = False
+                        gotRsDbLock = False
                         try:
-                            # Update the statuses in the requests db table.
-                            rslog.writeDebug([ 'Updating Requests Table for request ' + str(arequest['requestid']) + '.' ])
-                            requests.updateDB([ arequest['requestid'] ])
+                            gotRsDbLock = rsDbLock.acquire()
+                            if gotRsDbLock:
+                                # Update the statuses in the requests db table.
+                                rslog.writeDebug([ 'Updating Requests Table for request ' + str(arequest['requestid']) + '.' ])
+                                requests.updateDB([ arequest['requestid'] ])
                     
-                            # Remove duplicates from list first. We do not need to preserve the order of the SUNUMs
-                            # before calling decrementRefcount() since that function uses a hash lookup on the SUNUM
-                            # to find the associated refcount. decrementRefcount() does not modify the SU db table.
-                            # Call updateDB() to do that.
-                            rslog.writeDebug([ 'Decrementing refcount for SUs: ' + ','.join([ str(ansunum) for ansunum in list(set(sunums)) ]) ])
-                            sus.decrementRefcount(list(set(sunums)))
-                            rslog.writeDebug([ 'Flushing SU changes to SU Table.' ])
-                            sus.updateDB()
-                            rslog.writeDebug([ 'Updated Req and SU tables.' ])
-                            needsCommit = True
+                                # Remove duplicates from list first. We do not need to preserve the order of the SUNUMs
+                                # before calling decrementRefcount() since that function uses a hash lookup on the SUNUM
+                                # to find the associated refcount. decrementRefcount() does not modify the SU db table.
+                                # Call updateDB() to do that.
+                                rslog.writeDebug([ 'Decrementing refcount for SUs: ' + ','.join([ str(ansunum) for ansunum in list(set(sunums)) ]) ])
+                                sus.decrementRefcount(list(set(sunums)))
+                                rslog.writeDebug([ 'Flushing SU changes to SU Table.' ])
+                                sus.updateDB()
+                                rslog.writeDebug([ 'Updated Req and SU tables.' ])
+                                needsCommit = True
                         finally:
                             if needsCommit:
                                 rslog.writeDebug([ 'Committing Req and SU changes to DB.' ])
@@ -2719,6 +2766,9 @@ if __name__ == "__main__":
                                 rslog.writeDebug([ 'Successfully committed Req and SU changes to DB.' ])
                             else:
                                 rsConn.rollback()
+
+                            if gotRsDbLock:
+                                rsDbLock.release()
 
                 # Right here is where we can find orphaned sus records and delete them. We have a list of all reachable SUs now that we've 
                 # iterated through the pending requests. We now iterate through ALL sus records and delete any that are not reachable.
@@ -2740,14 +2790,19 @@ if __name__ == "__main__":
                         requests.setStatus([arequest['requestid']], 'E', 'Request timed-out.')
                         needsCommit = False
                         try:
-                            with rsConn.cursor() as cursor:
-                                requests.updateDB([ arequest['requestid'] ])
-                            needsCommit = True
+                            gotRsDbLock = rsDbLock.acquire()
+                            if gotRsDbLock:
+                                with rsConn.cursor() as cursor:
+                                    requests.updateDB([ arequest['requestid'] ])
+                                needsCommit = True
                         finally:
                             if needsCommit:
                                 rsConn.commit()
                             else:
                                 rsConn.rollback()
+                                
+                            if gotRsDbLock:
+                                rsDbLock.release()
                                 
                         # On to next request.
                         continue
