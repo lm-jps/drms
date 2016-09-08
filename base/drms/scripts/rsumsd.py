@@ -109,7 +109,8 @@ RET_DUPLICATESUNUM = 16
 RET_DBUPDATE = 17
 RET_SUMS = 18
 RET_TERMINATED = 19
-RET_UNKNOWNSTATUS = 20
+RET_TOOMANYTHREADS = 20
+RET_UNKNOWNSTATUS = 21
 
 LOG_FILE_BASE_NAME = 'rslog'
 
@@ -213,13 +214,18 @@ class TerminationHandler(object):
             self.rsLock = None
         except IOError:
             pass
+            
+        self.log.writeDebug([ 'Exiting TerminationHandler.' ])
         
     def finalStuff(self):
         self.log.writeInfo([ 'Halting threads.' ])
 
-        # Shut-down ScpWorker threads.
+        # Shut-down ScpWorker threads. Send the sdEvent to all threads first, then wait after they have ALL received the message.
+        # Otherwise, later threads could try to download SUs whose download was aborted by earlier threads.
         for worker in ScpWorker.tList:
             worker.stop()
+
+        for worker in ScpWorker.tList:
             self.log.writeInfo([ 'Waiting for worker (ID ' + str(worker.id) + ') to halt.' ])
             worker.join()
             self.log.writeInfo([ 'Worker (ID ' +  str(worker.id) + ') halted.' ])
@@ -227,6 +233,8 @@ class TerminationHandler(object):
         # Shut-down Downloader threads.
         for downloader in Downloader.tList:
             downloader.stop()
+
+        for downloader in Downloader.tList:
             self.log.writeInfo([ 'Waiting for downloader (SUNUM ' + str(downloader.sunum) + ') to halt.' ])
             downloader.join()
             self.log.writeInfo([ 'Downloader (SUNUM ' + str(downloader.sunum) + ') halted.' ])
@@ -234,6 +242,8 @@ class TerminationHandler(object):
         # Shut-down ProviderPoller threads.
         for poller in ProviderPoller.tList:
             poller.stop()
+
+        for poller in ProviderPoller.tList:
             self.log.writeInfo([ 'Waiting for poller (request ID ' + str(poller.requestID) + ') to halt.' ])
             poller.join()
             self.log.writeInfo([ 'Poller (request ID ' + str(poller.requestID) + ') halted.' ])
@@ -934,7 +944,8 @@ class SuTable:
                 
         return sus        
 
-    # Returns a dictionary of SU records.
+    # Returns a list of SU objects.
+    # NOT THREAD SAFE! This method is called by the main thread on start-up, before any other threads have been started.
     def getPending(self):
         pending = []
         
@@ -943,11 +954,28 @@ class SuTable:
                 su.touch()
                 pending.append(su)
 
-        # Sorts in place - and returns None.
+        # Sorts in place - and returns None. The SUs will be sorted by starttime later, before Downloader threads are created
+        # for them.
         pending.sort(key=lambda ansu : ansu.sunum)
 
         return pending
         
+    # Returns a list of SU objects.
+    # NOT THREAD SAFE! This method is called by the main thread on start-up, before any other threads have been started.
+    def getWorking(self):
+        working = []
+        
+        for sunumStr, su in self.suDict.items():                
+            if su.status == 'W':
+                su.touch()
+                working.append(su)
+
+        # Sorts in place - and returns None. The SUs will be sorted by starttime later, before Downloader threads are created
+        # for them.
+        working.sort(key=lambda ansu : ansu.sunum)
+
+        return working
+    
     # Returns num SU entries whose status is 'W'. If fewer than num W entries exist, then all W SU entries are returned.
     # Must acquire SU table lock before calling this method. There is no need to lock the individual SUs because the ScpWorker
     # threads must acquire the SU Table lock before calling getNextNWorking(). No other ScpWorker thread can 
@@ -1532,7 +1560,7 @@ class ScpWorker(threading.Thread):
 
             if doDownload:
                 try:
-                    self.log.writeInfo([ 'Downloading SUs ' + ','.join([ str(asunum) for asunum in self.sunums ]) + '.' ])                        
+                    self.log.writeInfo([ 'ScpWorker ' + str(self.id) + ' downloading SUs ' + ','.join([ str(asunum) for asunum in self.sunums ]) + '.' ])                        
 
                     # Don't forget to make the temporary directory first.
                     if not os.path.exists(self.tmpdir):
@@ -1542,12 +1570,12 @@ class ScpWorker(threading.Thread):
                     lastDownloadTime = datetime.now(timezone.utc)
                     
                     cmd = 'scp -r -P ' + port + ' ' + user + '@' + host + ':"' + ' '.join(paths) + '" ' + self.tmpdir
-                    self.log.writeInfo([ 'Running ' + cmd + '.' ])
+                    self.log.writeInfo([ 'ScpWorker ' + str(self.id) + ' running ' + cmd + '.' ])
                     try:
                         # check_call(cmdList)
                         # The scp process will inherit stdin, stdout, and stderr from this script.
                         # proc = Popen(cmdList, stdout=PIPE, stderr=PIPE)
-                        proc = Popen(cmd, shell=True, stdout=PIPE, stderr=PIPE)
+                        proc = Popen(cmd, shell=True, stdout=PIPE, stderr=PIPE, start_new_session=True)
                     except OSError as exc:
                         import traceback
                         self.log.writeError([ traceback.format_exc(5) ])
@@ -1566,7 +1594,7 @@ class ScpWorker(threading.Thread):
                         
                         proc.poll()
                         if proc.returncode is not None:
-                            self.log.writeInfo([ 'ScpWorker ' + str(self.id) + ' - spc process exited with return code ' + str(proc.returncode) + '.' ])
+                            self.log.writeInfo([ 'ScpWorker ' + str(self.id) + ' - scp process exited with return code ' + str(proc.returncode) + '.' ])
                             lastDownloadTime = datetime.now(timezone.utc)
                             if proc.returncode != 0:
                                 out, err = proc.communicate()
@@ -1594,8 +1622,15 @@ class ScpWorker(threading.Thread):
 
                             if self.sdEvent.isSet():
                                 # Kill the download and also exit the ScpWorker thread.
+                                self.log.writeDebug([ 'ScpWorker ' + str(self.id) + ' received sdEvent. Killing scp.'])
                                 proc.kill()
-                                raise Exception('shutDown', 'ScpWorker thread is observing the global shutdown and exiting now.')
+                                try:
+                                    proc.communicate(timeout=2)
+                                    self.log.writeInfo([ 'Successfully killed ScpWorker ' + str(self.id) + ' download.' ])
+                                except TimeoutExpired:
+                                    self.log.writeWarn([ 'Unable to kill scp for ScpWorker ' + str(self.id) + '.' ])
+                                    
+                                raise Exception('shutDown', 'ScpWorker ' + str(self.id) + ' is observing the global shutdown and exiting now.')
                             
                             if not atLeastOneGoodSU:
                                 # Go on to the next set of requested SUs. Don't exit the ScpWorker thread.
@@ -1664,7 +1699,7 @@ class ScpWorker(threading.Thread):
                                         # The ScpWorker was in the middle of downloading the SU when rsumds.py was shut-down.
                                         # Set the status back to 'W' - we basically want to pretend that the download
                                         # never started.                                
-                                        self.log.writeInfo([ 'Shutting down - ScpWorker setting SU ' + str(su.sunum) + ' status to W.' ])
+                                        self.log.writeInfo([ 'Shutting down - ScpWorker ' + str(self.id) +' setting SU ' + str(su.sunum) + ' status to W. Daemon will initiate SU download upon restart.' ])
                                         su.setStatus('W', None)
                                     else:
                                         # If the status was P, then the download for this SU already succeeded. Or the Downloader
@@ -1710,6 +1745,7 @@ class ScpWorker(threading.Thread):
         
         # Fire event to stop thread.
         self.sdEvent.set()
+        self.log.writeDebug([ 'Set sdEvent in ScpWorker ' + str(self.id) + '.' ])
         
         # Fire scpNeeded event so that the ScpWorker thread will not block on wait.
         ScpWorker.scpNeeded.set()
@@ -1767,14 +1803,17 @@ class Downloader(threading.Thread):
                 self.log.writeDebug([ 'Downloader acquiring lock for SU ' + str(self.sunum) + '.' ])
                 su = self.suTable.getAndLockSU(self.sunum)
 
-                if su.status != 'P':
+                if su.status != 'P' and su.status != 'W':
                     raise Exception('downloader', 'SU ' + str(su.sunum) + ' not pending.')
-                    
-                # Let an ScpWorker thread handle the download. We do that by setting the status to 'W'.
-                self.log.writeInfo([ 'Setting SU ' + str(self.sunum) + " status to W." ])
                 
-                # The ScpWorker learns of the source path, the SU size, the scp user, etc., from su.worker.
-                su.setStatus('W', None)
+                if su.status != 'W':
+                    # Let an ScpWorker thread handle the download. We do that by setting the status to 'W'.
+                    # Upon recovery from a daemon shutdown, we may start certain SUs in the W state, in which
+                    # case we do not need to set the status to W.
+                    self.log.writeInfo([ 'Setting SU ' + str(self.sunum) + " status to W." ])
+                
+                    # The ScpWorker learns of the source path, the SU size, the scp user, etc., from su.worker.
+                    su.setStatus('W', None)
                 
                 suDlPath = os.path.join(self.tmpdir, 'D' + str(su.sunum))
             finally:
@@ -2051,18 +2090,10 @@ class Downloader(threading.Thread):
                 msg = exc.args[1]
 
                 if type == 'shutDown':
-                    # If the status is W, then either the download never happened, or it got canceled part-way through. We need to
-                    # set the status back to P so that when rsumsd.py starts up, it starts a new Downloader thread for this 
-                    # SU.
-                    su = None
-                    try:
-                        su = self.suTable.getAndLockSU(self.sunum)
-                        if su.status == 'W':
-                            su.setStatus('P', 'Download was canceled for forced shut-down. Status set to P for re-try upon daemon restart.')
-                    finally:
-                        # Always release lock.
-                        if su:
-                            su.releaseLock()
+                    # If the status is W, then either the download never happened, or it got canceled part-way through and
+                    # the ScpWorker thread set its status back to W. The daemon will resume upon restart, starting
+                    # Downloader threads for each SU that has status W.
+                    pass
                 else:
                     if type == 'scpSU' or type == 'sumsAPI' or type == 'mvSU' or type == 'rmTmpSU':
                         msg = 'Error downloading storage unit ' + str(self.sunum) + ': ' + msg
@@ -2138,6 +2169,9 @@ class Downloader(threading.Thread):
         
         # Fire event to stop thread.
         self.sdEvent.set()
+        
+        # Fire scpCompleted event so that the Downloader thread will not block on wait.
+        ScpWorker.scpCompleted.set()
 
     # Must acquire Downloader lock BEFORE calling newThread() since newThread() will append to tList (the Downloader threads will delete from tList as they complete).
     @staticmethod
@@ -2382,7 +2416,7 @@ def processSUs(url, sunums, sus, reqTable, request, dbUser, binPath, arguments, 
     for asunum in sunums:
         try:
             su = sus.get([ asunum ])[0]
-            if su.status == 'P':
+            if su.status == 'P' or su.status == 'W':
                 if not reprocess:
                     # Accidental attempt to reprocess an SU whose processing has already started.
                     raise Exception('accidentalRepro', 'An accidental attempt to reprocess pending SU ' + str(asunum) + ' occurred.')
@@ -2402,6 +2436,7 @@ def processSUs(url, sunums, sus, reqTable, request, dbUser, binPath, arguments, 
             workingSunums.append(asunum)
             # Create a new SU table record for this SU.
             log.writeInfo([ 'Inserting a new SU table record for ' + str(asunum) + '.' ])
+            # Will set status to P.
             sus.insert([ asunum ])
 
     sunumLst = ','.join(str(asunum) for asunum in workingSunums)
@@ -2685,7 +2720,94 @@ if __name__ == "__main__":
 
             # Set max number of threads we can process at once.
             Downloader.setMaxThreads(arguments.maxthreads)
+            
+            #################
+            # RESTART W SUS #
+            #################
+            # Recover working downloads that got disrupted from a daemon crash/shutdown. The number of working thread must
+            # be fewer than the max number of threads allowed (# P plus # W status threads <= max number threads).
+            susWorking = sus.getWorking()
+            if len(susWorking) > Downloader.maxThreads:
+                raise Exception('maxThreads', 'There are too many SU records with status W. Please delete all records from ' + suTable + ' and ' + reqTable + ' and start daemon again.')
 
+            siteSunums = {}
+            for asu in susWorking:
+                timeNow = datetime.now(asu.starttime.tzinfo)
+                if timeNow > asu.starttime + sus.getTimeout():
+                    # Set SU status to 'E'.
+                    rslog.writeInfo([ 'Download of SUNUM ' + str(asu.sunum) + ' timed-out.' ])
+                    asu.setStatus('E', 'Download timed-out.')
+                    continue
+
+                rslog.writeInfo([ 'Recovering interrupted download for SUNUM ' + str(asu.sunum) + '.' ])
+
+                try:
+                    siteURL = sites.getURL(asu.sunum)
+                except Exception as exc:
+                    if len(exc.args) != 2:
+                        raise # Re-raise
+
+                    etype = exc.args[0]
+                    msg = exc.args[1]
+                
+                    if etype is not 'unknownSitecode':
+                        raise
+                        
+                    # Skip this SU. No need to acquire lock since no other threads are operating on SUs at this point.
+                    asu.setStatus('E', 'Uknown site code for SU ' + str(asu.sunum) + '.')
+                    continue
+                
+                if siteURL not in siteSunums:
+                    siteSunums[siteURL] = []
+
+                siteSunums[siteURL].append(asu.sunum)
+
+            sus.updateDbAndCommit()
+            
+            # There is no need to acquire the SU-table lock. processSUs() will start new threads that can modify the
+            # SU-record statuses, but by the time that happens, the main thread will be done reading those statuses.
+            for url, sunumList in siteSunums.items():
+                if len(sunumList) > 0:
+                    # Chunk is a list of SUNUMs (up to 64 of them).
+                    sunumList.sort()
+                    chunker = Chunker(sunumList, 64)
+                    for chunk in chunker:
+                        # processSUs(..., reprocess=False) would attempt to insert a new record in the sus table for each SUNUM. By
+                        # setting the last reprocess argument to True, we do not insert a new record, but instead continue to use
+                        # the existing record. 
+                        try:
+                            processSUs(url, chunk, sus, requests, None, arguments.dbuser, arguments.binpath, arguments, rslog, True)
+                        except Exception as exc:
+                            if len(exc.args) != 2:
+                                raise # Re-raise
+
+                            etype = exc.args[0]
+                            msg = exc.args[1]
+
+                            # Do not die - just reject reprocess attempt of the request. Eventually, the downloads will time-out, and the 
+                            # status of the request will be marked 'E'.
+                            rslog.writeInfo([ 'Failed to reprocess SUs ' + ','.join([ str(asunum) for asunum in chunk ]) + '.' ])                    
+                
+            # Make N threads that handle scp commands. Each of the worker threads will use one of these threads to perform
+            # the actual scp command.
+            # MUST do this here, after all 'W' SU Downloader threads have been started, but before 'P' Downloader threads have been
+            # started. The ScpWorker threads need the parent Downloader threads to exist before it can process 'W' SUs. But if there
+            # are more than maxThreads 'P' SUs, then the processSUs code will block until threads free up, and that cannot happen
+            # if the ScpWorker threads are not running.
+            for nthread in range(1, arguments.nWorkers + 1):
+                ScpWorker.lock.acquire()
+                try:
+                    if len(ScpWorker.tList) < ScpWorker.maxThreads:
+                        rslog.writeInfo([ 'Instantiating ScpWorker ' + str(nthread) + '.' ])
+                        ScpWorker.newThread(nthread, sus, arguments, rslog)
+                    else:
+                        break # The finally clause will ensure the ScpWorker lock is released.
+                finally:
+                    ScpWorker.lock.release()    
+
+            #################
+            # RESTART P SUS #
+            #################
             # Recover pending downloads that got disrupted from a daemon crash. All SU downloads that are in the pending
             # state at the time the tables are read were disrupted. There are no other threads running at this point, so 
             # there is no need to acquire a lock.
@@ -2738,7 +2860,6 @@ if __name__ == "__main__":
                         # the existing record. 
                         try:
                             processSUs(url, chunk, sus, requests, None, arguments.dbuser, arguments.binpath, arguments, rslog, True)
-
                         except Exception as exc:
                             if len(exc.args) != 2:
                                 raise # Re-raise
@@ -2749,19 +2870,6 @@ if __name__ == "__main__":
                             # Do not die - just reject reprocess attempt of the request. Eventually, the downloads will time-out, and the 
                             # status of the request will be marked 'E'.
                             rslog.writeInfo([ 'Failed to reprocess SUs ' + ','.join([ str(asunum) for asunum in chunk ]) + '.' ])
-
-            # Make N threads that handle scp commands. Each of the worker threads will use one of these threads to perform
-            # the actual scp command.
-            for nthread in range(1, arguments.nWorkers + 1):
-                ScpWorker.lock.acquire()
-                try:
-                    if len(ScpWorker.tList) < ScpWorker.maxThreads:
-                        rslog.writeInfo([ 'Instantiating ScpWorker ' + str(nthread) + '.' ])
-                        ScpWorker.newThread(nthread, sus, arguments, rslog)
-                    else:
-                        break # The finally clause will ensure the ScpWorker lock is released.
-                finally:
-                    ScpWorker.lock.release()                        
             
             # Start of main loop.
             loopN = 0
@@ -3086,6 +3194,9 @@ if __name__ == "__main__":
         elif etype == 'sumsAPI':
             rslog.writeError([ msg ])
             rv = RET_SUMS
+        elif etype == 'maxThreads':
+            rslog.writeError([ msg ])
+            rv = RET_TOOMANYTHREADS
         elif etype == 'unknownStatus':
             rs.log.writeError([ msg ])
             rv = RET_UNKNOWNSTATUS
