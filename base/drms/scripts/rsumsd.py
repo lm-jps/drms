@@ -222,31 +222,89 @@ class TerminationHandler(object):
 
         # Shut-down ScpWorker threads. Send the sdEvent to all threads first, then wait after they have ALL received the message.
         # Otherwise, later threads could try to download SUs whose download was aborted by earlier threads.
-        for worker in ScpWorker.tList:
-            worker.stop()
+        gotLock = False
+        try:
+            gotLock = ScpWorker.lock.acquire()
+            if gotLock:
+                for worker in ScpWorker.tList:
+                    worker.stop()
+        finally:
+            if gotLock:
+                ScpWorker.lock.release()
 
-        for worker in ScpWorker.tList:
+        while True:
+            gotLock = False
+            try:
+                gotLock = ScpWorker.lock.acquire()
+                if gotLock:
+                    if len(ScpWorker.tList) > 0:
+                        worker = ScpWorker.tList[0]
+                    else:
+                        break 
+            finally:
+                if gotLock:
+                    ScpWorker.lock.release()
+                    
             self.log.writeInfo([ 'Waiting for worker (ID ' + str(worker.id) + ') to halt.' ])
             worker.join()
-            self.log.writeInfo([ 'Worker (ID ' +  str(worker.id) + ') halted.' ])
+            self.log.writeInfo([ 'Worker (ID ' +  str(worker.id) + ') halted.' ])   
         
         # Shut-down Downloader threads.
-        for downloader in Downloader.tList:
-            downloader.stop()
+        gotLock = False
+        try:
+            gotLock = Downloader.lock.acquire()
+            if gotLock:
+                for downloader in Downloader.tList:
+                    downloader.stop()
+        finally:
+            if gotLock:
+                Downloader.lock.release() 
 
-        for downloader in Downloader.tList:
+        while True:
+            gotLock = False
+            try:
+                gotLock = Downloader.lock.acquire()
+                if gotLock:
+                    if len(Downloader.tList) > 0:
+                        downloader = Downloader.tList[0]
+                    else:
+                        break 
+            finally:
+                if gotLock:
+                    Downloader.lock.release()
+                    
             self.log.writeInfo([ 'Waiting for downloader (SUNUM ' + str(downloader.sunum) + ') to halt.' ])
             downloader.join()
-            self.log.writeInfo([ 'Downloader (SUNUM ' + str(downloader.sunum) + ') halted.' ])
+            self.log.writeInfo([ 'Downloader (SUNUM ' + str(downloader.sunum) + ') halted.' ])     
+                                    
             
         # Shut-down ProviderPoller threads.
-        for poller in ProviderPoller.tList:
-            poller.stop()
+        gotLock = False
+        try:
+            gotLock = ProviderPoller.lock.acquire()
+            if gotLock:
+                for poller in ProviderPoller.tList:
+                    poller.stop()
+        finally:
+            if gotLock:
+                ProviderPoller.lock.release()
 
-        for poller in ProviderPoller.tList:
+        while True:
+            gotLock = False
+            try:
+                gotLock = ProviderPoller.lock.acquire()
+                if gotLock:
+                    if len(ProviderPoller.tList) > 0:
+                        poller = ProviderPoller.tList[0]
+                    else:
+                        break 
+            finally:
+                if gotLock:
+                    ProviderPoller.lock.release()
+
             self.log.writeInfo([ 'Waiting for poller (request ID ' + str(poller.requestID) + ') to halt.' ])
             poller.join()
-            self.log.writeInfo([ 'Poller (request ID ' + str(poller.requestID) + ') halted.' ])
+            self.log.writeInfo([ 'Poller (request ID ' + str(poller.requestID) + ') halted.' ])   
         
         if self.sumsconn:
             self.sumsconn.close()
@@ -1738,7 +1796,15 @@ class ScpWorker(threading.Thread):
                     ScpWorker.scpNeeded.wait(timeOutToUse.total_seconds())
                 except RuntimeError:
                     pass
-
+        
+        # This thread is about to terminate. 
+        # We need to check the class tList variable to update it, so we need to acquire the lock.
+        try:
+            ScpWorker.lock.acquire()
+            ScpWorker.tList.remove(self) # This thread is no longer one of the running threads.
+        finally:
+            ScpWorker.lock.release()        
+        
     # Called from main thread
     def stop(self):
         self.log.writeInfo([ 'Stopping ScpWorker ' + str(self.id) + ' - (it may take 10 seconds for the ScpWorker to stop).' ])
@@ -2149,7 +2215,6 @@ class Downloader(threading.Thread):
         # We need to check the class tList variable to update it, so we need to acquire the lock.
         try:
             Downloader.lock.acquire()
-            self.log.writeDebug([ 'Class Downloader acquired Downloader lock for SU ' + str(self.sunum) + '.' ])
             Downloader.tList.remove(self) # This thread is no longer one of the running threads.
             # Use <= because we don't know if we were able to reach Downloader.maxThreads thread running due 
             # to system-resource limitations.
@@ -2159,10 +2224,10 @@ class Downloader(threading.Thread):
                 Downloader.eventMaxThreads.set()
                 # Clear event so that main will block the next time it calls wait.
                 Downloader.eventMaxThreads.clear()
+                
+            self.log.writeInfo([ 'Downloader for SU ' + str(self.sunum) + ' exiting.' ])
         finally:
             Downloader.lock.release()
-            self.log.writeDebug([ 'Class Downloader released Downloader lock for SU ' + str(self.sunum) + '.' ])
-
 
     def stop(self):
         self.log.writeInfo([ 'Stopping Downloader (SUNUM ' + str(self.sunum) + '). It may take 10 seconds for Downloader to stop.' ])
@@ -2206,6 +2271,9 @@ class Downloader(threading.Thread):
 
 class ProviderPoller(threading.Thread):
     tList = [] # A list of running thread IDs.
+    maxThreads = 32 
+    eventMaxThreads = threading.Event() # Event fired when the number of threads decreases.
+    lock = threading.Lock() # Guard tList.
     
     def __init__(self, url, requestID, sunums, sus, reqTable, request, dbUser, binPath, arguments, log):
         threading.Thread.__init__(self)
@@ -2369,7 +2437,20 @@ class ProviderPoller(threading.Thread):
             
         # Flush the change to disk.
         self.suTable.updateDbAndCommit()
-                
+        
+        try:
+            ProviderPoller.lock.acquire()
+            ProviderPoller.tList.remove(self) # This thread is no longer one of the running threads.
+            # Use <= because we don't know if we were able to reach Downloader.maxThreads thread running due 
+            # to system-resource limitations.
+            if len(ProviderPoller.tList) <= ProviderPoller.maxThreads - 1:
+                # Fire event so that main thread can add new sunums to the ProviderPoller queue.
+                ProviderPoller.eventMaxThreads.set()
+                # Clear event so that main will block the next time it calls wait.
+                ProviderPoller.eventMaxThreads.clear()
+        finally:
+            ProviderPoller.lock.release()
+
     def stop(self):
         self.log.writeInfo([ 'Stopping ProviderPoller (requestID ' + str(self.requestID) + ').' ])
         self.sdEvent.set()
@@ -2525,7 +2606,27 @@ def processSUs(url, sunums, sus, reqTable, request, dbUser, binPath, arguments, 
         # su-table lock when it is finally time to start downloads.
         log.writeInfo([ 'Request includes one or more SUs that are offline at the providing site. Waiting for providing site to put them online.' ])
 
-        ProviderPoller.newThread(url, dlInfo['requestid'], workingSunums, sus, reqTable, request, dbUser, binPath, arguments, log)
+        while True:
+            ProviderPoller.lock.acquire()
+            try:
+                if len(ProviderPoller.tList) < ProviderPoller.maxThreads:
+                    log.writeInfo([ 'Instantiating a PollerProvider for sunums ' + ','.join(workingSunums) + '.' ])
+                    ProviderPoller.newThread(url, dlInfo['requestid'], workingSunums, sus, reqTable, request, dbUser, binPath, arguments, log)
+                    break
+            except Exception as exc:
+                if len(exc.args) != 2:
+                    raise # Re-raise
+
+                etype = exc.args[0]
+
+                if etype != 'startThread':
+                    raise
+                    
+                log.writeError([ 'Cannot start ProviderPoller thread. Out of system resources. Will try again when existing ProviderPollers complete.' ])
+            finally:
+                ProviderPoller.lock.release()
+
+            ProviderPoller.eventMaxThreads.wait()
     else:
         # Error of some kind.
         # Update the SU-table status of the SUs to 'E'.
@@ -2803,7 +2904,7 @@ if __name__ == "__main__":
                     else:
                         break # The finally clause will ensure the ScpWorker lock is released.
                 finally:
-                    ScpWorker.lock.release()    
+                    ScpWorker.lock.release()
 
             #################
             # RESTART P SUS #
