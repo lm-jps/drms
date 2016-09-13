@@ -3349,8 +3349,11 @@ DRMS_RecordSet_t *drms_clone_records_nosums(DRMS_RecordSet_t *rs_in,
 /* Call drms_close_record for each record in a record set. */
 int drms_close_records(DRMS_RecordSet_t *rs, int action)
 {
-  int i, status=0;
-  DRMS_Record_t *rec;
+    int i, status=0;
+    DRMS_Record_t *rec = NULL;
+    DRMS_Segment_t *seg = NULL;
+    HIterator_t hit;
+    char filename[DRMS_MAXPATHLEN] = {0}; 
   
   CHECKNULL(rs);
 
@@ -3359,8 +3362,30 @@ int drms_close_records(DRMS_RecordSet_t *rs, int action)
   {
   case DRMS_FREE_RECORD:
     for (i=0; i<rs->n; i++)
-    {
-      rec = rs->records[i];
+    {    
+        rec = rs->records[i];
+      
+        if (rec)
+        {
+            /* Close all open records in this record-set. If slice-writing was in progress, then seg->filename != NULL
+             * and drms_segment_filename() returns the path to the file that was being written to. Don't try to 
+             * close files where seg->filename is NULL. Those files cannot be open for reading or writing. */
+            hiter_new_sort(&hit, &(rec->segments), drms_segment_ranksort);
+        
+            while ((seg = hiter_getnext(&hit)) != NULL)
+            {
+                if (seg->filename && strlen(seg->filename) > 0)
+                {
+                    drms_segment_filename(seg, filename);
+
+                    if (strlen(filename) > 0)
+                    {
+                        drms_fitsrw_close(rec->env->verbose, filename);
+                    }
+                }
+            }
+        }
+
       /* If this record was temporarily created by this session then
 	 free its storage unit slot. */
       /* if (rec && !rec->readonly && rec->su) 
@@ -3383,6 +3408,29 @@ int drms_close_records(DRMS_RecordSet_t *rs, int action)
   case DRMS_INSERT_RECORD:
     for (i=0; i<rs->n; i++)
     {
+        rec = rs->records[i];
+      
+        if (rec)
+        {
+            /* Close all open records in this record-set. If slice-writing was in progress, then seg->filename != NULL
+             * and drms_segment_filename() returns the path to the file that was being written to. Don't try to 
+             * close files where seg->filename is NULL. Those files cannot be open for reading or writing. */
+            hiter_new_sort(&hit, &(rec->segments), drms_segment_ranksort);
+        
+            while ((seg = hiter_getnext(&hit)) != NULL)
+            {
+                if (seg->filename && strlen(seg->filename) > 0)
+                {
+                    drms_segment_filename(seg, filename);
+
+                    if (strlen(filename) > 0)
+                    {
+                        drms_fitsrw_close(rec->env->verbose, filename);
+                    }
+                }
+            }
+        }
+
       if (rs->records[i]->readonly)
       {
 	fprintf(stderr,"ERROR in drms_close_record: trying to commit a "
@@ -8021,14 +8069,13 @@ char *drms_query_string(DRMS_Env_t *env,
         pidx_names_desc_bare = base_strcatalloc(pidx_names_desc_bare, template->seriesinfo->pidx_keywords[i]->info->name, &namesDescBareSz); XASSERT(pidx_names_desc_bare);
         pidx_names_desc_bare = base_strcatalloc(pidx_names_desc_bare, " DESC", &namesDescBareSz); XASSERT(pidx_names_desc_bare);        
     }
-  }
-
-  if (qtype == DRMS_QUERY_N)
-  {
-     int fudge = kQUERYNFUDGE;
-     cmdSz = 1024;
-     limitedtable = calloc(1, cmdSz);
-     XASSERT(limitedtable);
+    
+    if (qtype == DRMS_QUERY_N)
+    {
+        int fudge = kQUERYNFUDGE;
+        cmdSz = 1024;
+        limitedtable = calloc(1, cmdSz);
+        XASSERT(limitedtable);
 
         /* plimtab += snprintf(limitedtable, 
                          sizeof(limitedtable),
@@ -8036,20 +8083,19 @@ char *drms_query_string(DRMS_Env_t *env,
                          pidx_names_bare,
                          series_lower); 
          */
-                         
+             
         limitedtable = base_strcatalloc(limitedtable, "select recnum,", &cmdSz); XASSERT(limitedtable);
         limitedtable = base_strcatalloc(limitedtable, pidx_names_bare, &cmdSz); XASSERT(limitedtable);
         limitedtable = base_strcatalloc(limitedtable, " from ", &cmdSz); XASSERT(limitedtable);
         limitedtable = base_strcatalloc(limitedtable, series_lower, &cmdSz); XASSERT(limitedtable);
         limitedtable = base_strcatalloc(limitedtable, " where 1=1", &cmdSz); XASSERT(limitedtable);
-                         
-     if (where && *where)
-     {
-        /* plimtab += sprintf(plimtab, " and %s", where); */
-        limitedtable = base_strcatalloc(limitedtable, " and ", &cmdSz); XASSERT(limitedtable);
-        limitedtable = base_strcatalloc(limitedtable, where, &cmdSz); XASSERT(limitedtable);
-
-     }
+             
+        if (where && *where)
+        {
+            /* plimtab += sprintf(plimtab, " and %s", where); */
+            limitedtable = base_strcatalloc(limitedtable, " and ", &cmdSz); XASSERT(limitedtable);
+            limitedtable = base_strcatalloc(limitedtable, where, &cmdSz); XASSERT(limitedtable);
+        }
 
         /* plimtab += sprintf(plimtab, 
                         " order by %s limit %d",
@@ -8058,9 +8104,10 @@ char *drms_query_string(DRMS_Env_t *env,
         limitedtable = base_strcatalloc(limitedtable, " order by ", &cmdSz); XASSERT(limitedtable);
         limitedtable = base_strcatalloc(limitedtable, nrecs > 0 ? pidx_names_bare : pidx_names_desc_bare, &cmdSz); XASSERT(limitedtable);
         limitedtable = base_strcatalloc(limitedtable, " limit ", &cmdSz); XASSERT(limitedtable);
-        
+
         snprintf(numBuf, sizeof(numBuf), "%d", abs(nrecs) * fudge);
         limitedtable = base_strcatalloc(limitedtable, numBuf, &cmdSz); XASSERT(limitedtable);
+    }
   }
 
   /* Do query to retrieve record meta-data. */

@@ -365,6 +365,11 @@ void drms_fitsrw_term(int verbose)
    fitsrw_closefptrs(verbose);
 }
 
+void drms_fitsrw_close(int verbose, const char *filename)
+{
+    fitsrw_closefptrByName(verbose, filename);
+}
+
 DRMS_Array_t *drms_fitsrw_read(DRMS_Env_t *env,
                                const char *filename,
                                int readraw,

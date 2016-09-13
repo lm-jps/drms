@@ -1071,6 +1071,30 @@ int fitsrw_closefptr(int verbose, fitsfile *fptr)
     return error_code;
 }
 
+int fitsrw_closefptrByName(int verbose, const char *filename)
+{
+    char filehashkeyOnefile[PATH_MAX + 2];
+    fitsfile **pfptr = NULL;
+                                                          
+    /* Delete the FITS file identified by filename. We don't know if it is writeable or not, so try both file hashes - ending
+     * with w and r. */
+    snprintf(filehashkeyOnefile, sizeof(filehashkeyOnefile), "%s:w", filename);
+    pfptr = (fitsfile **)hcon_lookup(gFFiles, filehashkeyOnefile);
+    if (!pfptr || !*pfptr)
+    {
+        snprintf(filehashkeyOnefile, sizeof(filehashkeyOnefile), "%s:r", filename);
+        pfptr = (fitsfile **)hcon_lookup(gFFiles, filehashkeyOnefile);
+    }
+
+    if (pfptr && *pfptr)
+    {
+        return fitsrw_closefptr(verbose, *pfptr);
+    }
+    
+    /* Don't error out if the file to be closed cannot be found. */
+    return CFITSIO_SUCCESS;
+}
+
 int fitsrw_closefptrs(int verbose)
 {
     int exit_code = CFITSIO_SUCCESS;
@@ -1079,7 +1103,7 @@ int fitsrw_closefptrs(int verbose)
     {
         if (hcon_size(gFFiles) > 0)
         {
-            HIterator_t *hit = hiter_create(gFFiles);
+            HIterator_t *hit = NULL;
             fitsfile **pfptr = NULL;
             int stat = 0; /* fitsrw error code. */
             int fiostat = 0; /* fitsio error code. */
@@ -1088,33 +1112,41 @@ int fitsrw_closefptrs(int verbose)
             int ifile;
             char cfitsiostat[FLEN_STATUS];
             TASRW_FilePtrInfo_t fpinfo;
+
+            LinkedList_t *llist = NULL;
+            ListNode_t *node = NULL;
+            char *onefile = NULL;
             
-            if (hit)
+            llist = list_llcreate(sizeof(char *), NULL);
+
+            if (llist)
             {
-                LinkedList_t *llist = list_llcreate(sizeof(char *), NULL);
-                ListNode_t *node = NULL;
-                char *onefile = NULL;
+                /* Delete all open FITS files. */
+                hit = hiter_create(gFFiles);
                 
-                if (verbose)
+                if (hit)
                 {
-                    fprintf(stdout, "fitsrw_closefptrs(): Attempting to close %d fitsfile pointers.\n", gFFiles->num_total);
+                    if (verbose)
+                    {
+                        fprintf(stdout, "fitsrw_closefptrs(): Attempting to close %d fitsfile pointers.\n", gFFiles->num_total);
+                    }
+            
+                    ifile = 0;
+                    while ((pfptr = (fitsfile **)hiter_extgetnext(hit, &filehashkey)) != NULL)
+                    {
+                        /* Don't call hcon_remove(gFFiles, filehashkey) here! Can't remove items from 
+                         * a hash container if you're iterating through the container. */
+                
+                        /* Save the filehashkey for each file being removed from the cache - 
+                         * must remove from gFFiles AFTER existing the loop that is iterating
+                         * over gFFiles. */
+                        list_llinserttail(llist, (void *)&filehashkey);               
+                        ifile++;
+                    }
+            
+                    hiter_destroy(&hit);
                 }
-                
-                ifile = 0;
-                while ((pfptr = (fitsfile **)hiter_extgetnext(hit, &filehashkey)) != NULL)
-                {
-                    /* Don't call hcon_remove(gFFiles, filehashkey) here! Can't remove items from 
-                     * a hash container if you're iterating through the container. */
-                    
-                    /* Save the filehashkey for each file being removed from the cache - 
-                     * must remove from gFFiles AFTER existing the loop that is iterating
-                     * over gFFiles. */
-                    list_llinserttail(llist, (void *)&filehashkey);               
-                    ifile++;
-                }
-                
-                hiter_destroy(&hit);
-                
+
                 /* free all the file pointers saved in gFFiles */
                 list_llreset(llist);
                 while ((node = list_llnext(llist)) != NULL)
