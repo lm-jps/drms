@@ -1461,172 +1461,187 @@ class Worker(threading.Thread):
             # will appear in the parsed log files. We need to make the next transaction start in the serializable isolation level, and
             # we need to start the client with a character encoding of UTF-8. When we commit the transaction, we must switch back to 
             # the original settings (which are likely READ COMMITTED and Latin-1).
-            oldIsolation = self.connSlave.isolation_level
-            oldEncoding = self.connSlave.encoding
 
             try:
-                self.connSlave.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_SERIALIZABLE)
-                self.connSlave.set_client_encoding('UTF-8')
+                # Make a new database connection - hopefully this will fix the problem with server-side cursors becoming
+                # invalid part-way through use.
+                with psycopg2.connect(database=self.arguments.getArg('SLAVEDBNAME'), user=self.arguments.getArg('REPUSER'), host=self.arguments.getArg('SLAVEHOSTNAME'), port=str(self.arguments.getArg('SLAVEPORT'))) as connSlave:
+                    connSlave.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_SERIALIZABLE)
+                    connSlave.set_client_encoding('UTF-8')
 
-                with self.connSlave.cursor() as cursor:
-                    self.log.writeInfo([ 'Starting a new serializable transaction to slave db.' ])
-                    self.log.writeDebug([ 'Memory usage (MB) ' + str(self.proc.memory_info().vms / 1024) + '.' ])
-                    if self.newSite:
-                        # 6. Create an insert statement that, when run on the client, will set the client's Slony tracking number.
-                        cmd = "SELECT 'INSERT INTO _" + self.replicationCluster + ".sl_archive_tracking values (' || ac_num::text || ', ''' || ac_timestamp::text || ''', CURRENT_TIMESTAMP);' FROM _" + self.replicationCluster + ".sl_archive_counter"
-                        cursor.execute(cmd)
-                        records = cursor.fetchall()
-                        if len(records) != 1:
-                            raise Exception('dbResponse', 'Unexpected response to db command: ' + cmd + '.')
-                
-                        # Write to first dump file (below).
-                        trackingInsert = records[0][0]
-                    else:
-                        trackingInsert = None
-                        
-                    self.log.writeInfo([ 'Success running ' + cmd + '.' ])
-                    self.log.writeDebug([ 'Memory usage (MB) ' + str(self.proc.memory_info().vms / 1024) + '.' ])
-
-                    maxLoop = 30
-                    while True:
-                        if self.sdEvent.isSet():
-                            raise Exception('shutDown', 'Received shut-down message from main thread.')
-                        try:
-                            try:
-                                cmd = '(set -o noclobber; echo ' + str(os.getpid()) + ' > ' + self.subscribeLock + ') 2> /dev/null'
-                                check_call(cmd, shell=True)
-                            except CalledProcessError as exc:
-                                # Other exceptions will re-raise to the outer-most exception handler.
-                                raise Exception('subLock')
-            
-                            # Obtained global subscription lock.
-                        
-                            # 7. Add the client's sitedir/newlst file to the end of slon_parser.cfg, and add the client's sitedir
-                            #    to su_production.slonycfg.
-                            with open(self.parserConfig, 'a') as fout:
-                                print(self.newClientLogDir + '        ' + self.newLstPath, file=fout)
-    
-                            # Do not provide the --lst option. We already inserted the lst-file info into su_production.slonylst earlier.
-                            cmdList = [ os.path.join(self.repDir, 'subscribe_manage', 'gentables.pl'), 'op=add', 'conf=' + self.slonyCfg, '--node=' + self.client + '.new', '--sitedir=' + self.newClientLogDir ]
-                            # Raises CalledProcessError on error (non-zero returned by gentables.pl).
-                            check_call(cmdList)
-                            self.log.writeInfo([ 'Success running ' + ' '.join(cmdList) + '.' ])
-                            self.log.writeDebug([ 'Memory usage (MB) ' + str(self.proc.memory_info().vms / 1024) + '.' ])
-                            self.writeStream.logLines() # Log all gentables.pl output
-
-                            break
-                        except Exception as exc:
-                            if len(exc.args) == 1 and exc.args[0] == 'subLock':
-                                # Could not obtain lock; try again (up to 30 tries)
-                                if maxLoop <= 0:
-                                    raise Exception('subLock', 'Could not obtain subscription lock after 30 tries.')
-                                time.sleep(1)
-                                maxLoop -= 1
-                            else:
-                                # Failure to run gentables.pl, re-raise the exception generated.
-                                raise
-                        finally:
-                            if os.path.exists(self.subscribeLock):
-                                os.remove(self.subscribeLock)
-                            
-                    # 8. Turn on the slon daemons. When the Slony-log parser runs, it will generate new logs for all clients.
-                    try:
-                        cmdList = [ os.path.join(self.arguments.getArg('kJSOCRoot'), 'base', 'drms', 'replication', 'manageslony', 'sl_start_slon_daemons.sh'), self.slonyCfg ]
-                        check_call(cmdList)
-                    except CalledProcessError as exc:
-                        raise Exception('stopSlony', 'Failure starting slon daemons.')
-                    finally:
-                        self.writeStream.flush()
-                        self.writeStream.logLines() # Log all sl_stop_slon_daemons.sh output.
-
-                    # 9. Sequences - at some point in the distant past, we used to replicate sequences too. The list
-                    #    of such sequences was stored in _jsoc.sl_sequence. However, we do not replicate sequences
-                    #    so we now skip the step of dumping them.
-                
-                    # 10. Pump out chunks of the series database table.
-                    outFile = os.path.join(self.triggerDir, self.client + '.subscribe_series.sql.gz')
-                    fileNo = 0
-                    limit = 10000000 # 10 million rows at a time (for aia.lev1, this should be a little over 20GB).
-                    offset = 0
-                    done = False
+                    self.log.writeDebug([ 'Memory usage BEFORE ss-cursor (MB) ' + str(self.proc.memory_info().vms / 1024) + '.' ])
+                    with connSlave.cursor('makeThisAServerSideCursor') as cursor:
+                        self.log.writeInfo([ 'Starting a new serializable transaction to slave db.' ])
+                        self.log.writeDebug([ 'Memory usage (MB) ' + str(self.proc.memory_info().vms / 1024) + '.' ])
                     
-                    while not done:
-                        self.log.writeInfo([ 'Generating dump file ' + str(fileNo) + '.' ])
+                        # Retrieve 4K rows at a time (during dump SELECT statement).
+                        cursor.itersize = 4096
+
+                        if self.newSite:
+                            # 6. Create an insert statement that, when run on the client, will set the client's Slony tracking number.
+                            cmd = "SELECT 'INSERT INTO _" + self.replicationCluster + ".sl_archive_tracking values (' || ac_num::text || ', ''' || ac_timestamp::text || ''', CURRENT_TIMESTAMP);' FROM _" + self.replicationCluster + ".sl_archive_counter"
+                            cursor.execute(cmd)
+                            records = cursor.fetchall()
+                            if len(records) != 1:
+                                raise Exception('dbResponse', 'Unexpected response to db command: ' + cmd + '.')
+                
+                            # Write to first dump file (below).
+                            trackingInsert = records[0][0]
+                            self.log.writeInfo([ 'Got Slony tracking number ' + trackingInsert + '.' ])
+                        else:
+                            trackingInsert = None
+                        
+                        self.log.writeInfo([ 'Success running ' + cmd + '.' ])
                         self.log.writeDebug([ 'Memory usage (MB) ' + str(self.proc.memory_info().vms / 1024) + '.' ])
-                        discardEmtpyDump = False
-                        # Append if the file exists, otherwise, create the file ('a' does this).
-                        with gzip.open(outFile, mode='at', compresslevel=5, encoding='UTF8') as fout:
-                            if fileNo == 0:
-                                # The first dump file contains the SQL that sets the correct sequence number
-                                # at the client. The remaining files contain only the COPY FROM data.
-                                if not doAppend:
-                                    print('BEGIN;', file=fout)
-                                    print("SET CLIENT_ENCODING TO 'UTF8';", file=fout)
-                                if trackingInsert:
-                                    print(trackingInsert, file=fout)
+
+                        maxLoop = 30
+                        while True:
+                            if self.sdEvent.isSet():
+                                raise Exception('shutDown', 'Received shut-down message from main thread.')
+                            try:
+                                try:
+                                    cmd = '(set -o noclobber; echo ' + str(os.getpid()) + ' > ' + self.subscribeLock + ') 2> /dev/null'
+                                    check_call(cmd, shell=True)
+                                except CalledProcessError as exc:
+                                    # Other exceptions will re-raise to the outer-most exception handler.
+                                    raise Exception('subLock')
+            
+                                # Obtained global subscription lock.
+                        
+                                # 7. Add the client's sitedir/newlst file to the end of slon_parser.cfg, and add the client's sitedir
+                                #    to su_production.slonycfg.
+                                with open(self.parserConfig, 'a') as fout:
+                                    print(self.newClientLogDir + '        ' + self.newLstPath, file=fout)
+    
+                                # Do not provide the --lst option. We already inserted the lst-file info into su_production.slonylst earlier.
+                                cmdList = [ os.path.join(self.repDir, 'subscribe_manage', 'gentables.pl'), 'op=add', 'conf=' + self.slonyCfg, '--node=' + self.client + '.new', '--sitedir=' + self.newClientLogDir ]
+                                # Raises CalledProcessError on error (non-zero returned by gentables.pl).
+                                check_call(cmdList)
+                                self.log.writeInfo([ 'Success running ' + ' '.join(cmdList) + '.' ])
+                                self.log.writeDebug([ 'Memory usage (MB) ' + str(self.proc.memory_info().vms / 1024) + '.' ])
+                                self.writeStream.logLines() # Log all gentables.pl output
+
+                                break
+                            except Exception as exc:
+                                if len(exc.args) == 1 and exc.args[0] == 'subLock':
+                                    # Could not obtain lock; try again (up to 30 tries)
+                                    if maxLoop <= 0:
+                                        raise Exception('subLock', 'Could not obtain subscription lock after 30 tries.')
+                                    time.sleep(1)
+                                    maxLoop -= 1
+                                else:
+                                    # Failure to run gentables.pl, re-raise the exception generated.
+                                    raise
+                            finally:
+                                if os.path.exists(self.subscribeLock):
+                                    os.remove(self.subscribeLock)
+                            
+                        # 8. Turn on the slon daemons. When the Slony-log parser runs, it will generate new logs for all clients.
+                        try:
+                            cmdList = [ os.path.join(self.arguments.getArg('kJSOCRoot'), 'base', 'drms', 'replication', 'manageslony', 'sl_start_slon_daemons.sh'), self.slonyCfg ]
+                            check_call(cmdList)
+                        except CalledProcessError as exc:
+                            raise Exception('stopSlony', 'Failure starting slon daemons.')
+                        finally:
+                            self.writeStream.flush()
+                            self.writeStream.logLines() # Log all sl_stop_slon_daemons.sh output.
+
+                        # 9. Sequences - at some point in the distant past, we used to replicate sequences too. The list
+                        #    of such sequences was stored in _jsoc.sl_sequence. However, we do not replicate sequences
+                        #    so we now skip the step of dumping them.
+                
+                        # 10. Pump out chunks of the series database table.
+                        outFile = os.path.join(self.triggerDir, self.client + '.subscribe_series.sql.gz')
+                        fileNo = 0
+                        limit = 10000000 # 10 million rows at a time (for aia.lev1, this should be a little over 20GB).
+                        done = False
+                        
+                        # Use the server-side cursor to create an iterator that will efficiently pass data from
+                        # the server to the client.
+                        
+                        # Must cast all columns to text values so they can be ingested at the client end.
+                        columnListCasted = ','.join([ col + '::text' for col in columnList ])
+                    
+                        # Select all records from series.
+                        copyCmd = 'SELECT ' + columnListCasted + ' FROM ' + self.series[0].lower()
+                        self.log.writeInfo([ 'COPY command is ' + copyCmd ])
+                
+                        # Because the client character encoding was set to UTF8, copy_expert() will convert
+                        # the db's server encoding from Latin-1 to UTF8.
+                    
+                        # ACK - you cannot use psycopg2 AT ALL to do a COPY TO!! The only thing psycopg2
+                        # will allow you to do is to dump an entire table. With copy_to() and with copy_expert(), 
+                        # you cannot use a query to specify rows to dump. You cannot use cursor.execute() either, 
+                        # which normally would allow you to select records with a query. psycopg2 prohibits
+                        # you from running an SQL query that contains COPY TO in it.
+                        #
+                        # Give up and use a SELECT statement and then dump into fout. This is not great because
+                        # we have to send data over the network from server to client, then the client dumps to
+                        # fout, which is on the server.
+                        #
+                        # BTW, cursor.rowcount does not get properly set.
+                        cursor.execute(copyCmd)
+                    
+                        while not done:
+                            self.log.writeInfo([ 'Generating dump file ' + str(fileNo) + '.' ])
+                            self.log.writeDebug([ 'Memory usage (MB) ' + str(self.proc.memory_info().vms / 1024) + '.' ])
+                            offset = 0
+
+                            # Append if the file exists, otherwise, create the file ('a' does this).
+                            with gzip.open(outFile, mode='at', compresslevel=5, encoding='UTF8') as fout:
+                                if fileNo == 0:
+                                    # The first dump file contains the SQL that sets the correct sequence number
+                                    # at the client. The remaining files contain only the COPY FROM data.
+                                    if not doAppend:
+                                        print('BEGIN;', file=fout)
+                                        print("SET CLIENT_ENCODING TO 'UTF8';", file=fout)
+                                    if trackingInsert:
+                                        print(trackingInsert, file=fout)
+                                    fout.flush()
+
+                                print('COPY ' + self.series[0].lower() + ' (' + ','.join(columnList) + ') FROM STDIN;', file=fout);
                                 fout.flush()
-
-                            print('COPY ' + self.series[0].lower() + ' (' + ','.join(columnList) + ') FROM STDIN;', file=fout);
-                            fout.flush()
-                            
-                            # Run pyscopg2's copy_expert command to print series-table rows to the dump file. 
-                            # Create a query that breaks up the series into equal-sized chunks. Use the
-                            # limit and offset arguments to do this.
-                            limitStr = 'LIMIT ' + str(limit) + ' OFFSET ' + str(offset)
-                            
-                            # Must cast all columns to text values so they can be ingested at the client end.
-                            columnListCasted = ','.join([ col + '::text' for col in columnList ])
-                            
-                            copyCmd = 'SELECT ' + columnListCasted + ' FROM ' + self.series[0].lower() + ' ' + limitStr
-                            self.log.writeInfo([ 'COPY command is ' + copyCmd ])
                         
-                            # Because the client character encoding was set to UTF8, copy_expert() will convert
-                            # the db's server encoding from Latin-1 to UTF8.
+                                # Because the client character encoding was set to UTF8, copy_expert() will convert
+                                # the db's server encoding from Latin-1 to UTF8.
                             
-                            # ACK - you cannot use psycopg2 AT ALL to do a COPY TO!! The only thing psycopg2
-                            # will allow you to do is to dump an entire table. With copy_to() and with copy_expert(), 
-                            # you cannot use a query to specify rows to dump. You cannot use cursor.execute() either, 
-                            # which normally would allow you to select records with a query. psycopg2 prohibits
-                            # you from running an SQL query that contains COPY TO in it.
-                            #
-                            # Give up and use a SELECT statement and then dump into fout. This is not great because
-                            # we have to send data over the network from server to client, then the client dumps to
-                            # fout, which is on the server.
-                            
-                            # Retrieve 4K rows at a time.
-                            cursor.itersize = 4096
-                            cursor.execute(copyCmd)
-                            for record in cursor:
-                                # Missing values are Nones. Make them empty strings.
+                                # ACK - you cannot use psycopg2 AT ALL to do a COPY TO!! The only thing psycopg2
+                                # will allow you to do is to dump an entire table. With copy_to() and with copy_expert(), 
+                                # you cannot use a query to specify rows to dump. You cannot use cursor.execute() either, 
+                                # which normally would allow you to select records with a query. psycopg2 prohibits
+                                # you from running an SQL query that contains COPY TO in it.
+                                #
+                                # Give up and use a SELECT statement and then dump into fout. This is not great because
+                                # we have to send data over the network from server to client, then the client dumps to
+                                # fout, which is on the server.
+                                for record in cursor:
+                                    # Missing values are Nones. Make them empty strings.
                                 
-                                # EGADS! If the text string contains a control character (e.g., '\r', '\n'), then 
-                                # we cannot simply print that character to the dump file. If we were to do that, then 
-                                # the control character would appear in the dump file. However, we want the corresponding
-                                # escape sequence to appear in the dump file instead. The dump file should contain
-                                # the two-character representation (e.g. '\\r', '\\n') instead. The repr() function
-                                # can be used to achieve this.
-                                recordString = [ '\\N' if col is None else repr(col).strip('"\'') for col in record ]
-                                print('\t'.join(recordString), file=fout)
+                                    # EGADS! If the text string contains a control character (e.g., '\r', '\n'), then 
+                                    # we cannot simply print that character to the dump file. If we were to do that, then 
+                                    # the control character would appear in the dump file. However, we want the corresponding
+                                    # escape sequence to appear in the dump file instead. The dump file should contain
+                                    # the two-character representation (e.g. '\\r', '\\n') instead. The repr() function
+                                    # can be used to achieve this.
+                                    recordString = [ '\\N' if col is None else repr(col).strip('"\'') for col in record ]
+                                    print('\t'.join(recordString), file=fout)
+                                    offset += 1
+                                    
+                                    if offset >= limit:
+                                        break
 
-                            # Send an EOF to the COPY command.
-                            print('\.', file=fout)
-                            print('COMMIT;', file=fout)
-                            fout.flush()
+                                # Send an EOF to the COPY command.
+                                print('\.', file=fout)
+                                print('COMMIT;', file=fout)
+                                fout.flush()
                         
-                            if cursor.rowcount == 0:
-                                if fileNo != 0:
-                                    # The dump file is essentially empty - discard it.
-                                    discardEmtpyDump = True
-                                done = True
+                                if cursor.rownumber == 0:
+                                    self.log.writeDebug([ 'No more rows to dump.' ])
+                                    done = True
 
-                        self.log.writeInfo([ 'Successfully created dump file ' + str(fileNo) + '(' + outFile + ').' ])
-                        self.log.writeDebug([ 'Memory usage (MB) ' + str(self.proc.memory_info().vms / 1024) + '.' ])
-                            
-                        if discardEmtpyDump:
-                            os.remove(outFile)
-                            self.log.writeInfo([ 'Succefully deleted empty dump file ' + str(fileNo) + '(' + outFile + ').'])
+                            self.log.writeInfo([ 'Successfully created dump file ' + str(fileNo) + ' (' + outFile + ').' ])
+                            self.log.writeDebug([ 'Memory usage (MB) ' + str(self.proc.memory_info().vms / 1024) + '.' ])
 
-                        if not done:
                             # Set request status to 'D' to indicate, to client, that the dump is ready for
                             # download and ingestion. The client could have sent either a polldump request (for the first
                             # dump file) or a pollcomplete request (for all subsequent dump files). Both of those requests
@@ -1654,16 +1669,16 @@ class Worker(threading.Thread):
                             while True:
                                 if maxLoop <= 0:
                                     raise Exception('sqlAck', 'Time-out waiting for client to ingest dump file.')
-                
+            
                                 if self.sdEvent.isSet():
                                     # Stop polling if main thread is shutting down.
                                     raise Exception('shutDown', 'Received shut-down message from main thread.')
-                
+            
                                 try:
                                     gotLock = self.reqTable.acquireLock()
                                     if not gotLock:
                                         raise Exception('lock', 'Unable to acquire req-table lock.')
-                                    
+                                
                                     (code, msg) = self.request.getStatus()
                                     if code.upper() == 'D':
                                         self.log.writeDebug([ 'Waiting for client ' + self.client + ' to download dump file (request ' + str(self.requestID) + '). Status ' + code.upper() + '.'])
@@ -1685,28 +1700,17 @@ class Worker(threading.Thread):
                                     if gotLock:
                                         self.reqTable.releaseLock()
                                         gotLock = None
-                
+            
                                 maxLoop -= 1
                                 time.sleep(1)
-                    
+                
                             # Ready for next chunk
                             fileNo += 1
-                            offset += limit
-                        else:
-                            # The client has already ingested the previous chunk and set the status to 'I'. We are ready to
-                            # exit this function and clean-up and then set the status to 'C'. There is nothing to do here, except
-                            # exit this function.
-                            if os.path.exists(outFile):
-                                # Remove last dump file.
-                                os.remove(outFile)
-                    
+
+                    # After cursor.close()         
+                    self.log.writeDebug([ 'Memory usage AFTER ss-cursor (MB) ' + str(self.proc.memory_info().vms / 1024) + '.' ])
             except psycopg2.Error as exc:
                 raise Exception('dbCmd', exc.diag.message_primary)                
-            finally:
-                # We never wrote anything to the database, rollback is good.
-                self.connSlave.rollback()
-                self.connSlave.set_isolation_level(oldIsolation)
-                self.connSlave.set_client_encoding(oldEncoding)
         finally:
             # Make sure the slon daemons have been restored, otherwise we might accidentally stop the generation of Slony logs if
             # an error occurs.
