@@ -58,6 +58,7 @@ from datetime import datetime, timedelta
 import shutil
 import glob
 import fcntl
+import psutil
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../../include'))
 from drmsparams import DRMSParams
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../../base/libs/py'))
@@ -82,7 +83,8 @@ RV_UNKNOWNREQUESTID = 7
 RV_GETSUBLIST = 8
 RV_DBRESPONSE = 9
 RV_DBCOMMAND = 10
-RV_UKNOWNERROR = 11
+RV_LOCK = 11
+RV_UKNOWNERROR = 12
 
 LST_TABLE_SERIES = 'series'
 LST_TABLE_NODE = 'node'
@@ -188,14 +190,17 @@ end;
 
 def getNewSiteSQL(cluster):
     return NEW_SITE_SQL.replace('<cluster>', cluster)
+    
+class InstanceRunning(Exception):
+    pass
 
 def terminator(*args):
     # Raise the SystemExit exception (which will be caught by the __exit__() method below).
     sys.exit(0)
 
-class TerminationHandler(object):
+class TerminationHandler(DrmsLock):
     def __new__(cls, thContainer):
-        return super(TerminationHandler, cls).__new__(cls)
+        return super(TerminationHandler, cls).__new__(cls, thContainer[0], thContainer[2], False)
 
     def __init__(self, thContainer):
         self.container = thContainer
@@ -205,17 +210,22 @@ class TerminationHandler(object):
         self.log = thContainer[3]
         self.writeStream = thContainer[4]
         self.readEndPipe = thContainer[5]
-        self.writeEndPipe =thContainer[6]
+        self.writeEndPipe = thContainer[6]
+        self.proc = thContainer[7]
         self.saveState = False
-        super(TerminationHandler, self).__init__()
+
+        super(TerminationHandler, self).__init__(self.msLockFile, self.pidStr, False)
         
     def __enter__(self):
         signal.signal(signal.SIGINT, terminator)
         signal.signal(signal.SIGTERM, terminator)
         signal.signal(signal.SIGHUP, terminator)
-
-        # Acquire locks.
-        self.msLock = DrmsLock(self.msLockFile, self.pidStr)
+        
+        # Returns self if lock was acquired.
+        if not super(TerminationHandler, self).__enter__():
+            # Unable to acquire lock.
+            self.__exit__(None, None, None)
+            raise InstanceRunning
 
     # Normally, __exit__ is called if an exception occurs inside the with block. And since SIGINT is converted
     # into a KeyboardInterrupt exception, it will be handled by __exit__(). However, SIGTERM will not - 
@@ -224,7 +234,7 @@ class TerminationHandler(object):
     def __exit__(self, etype, value, traceback):
         if etype == SystemExit:
             self.log.writeInfo(['Termination signal handler called.'])
-            self.container[7] = RV_TERMINATED
+            self.container[8] = RV_TERMINATED
             self.saveState = True
         self.finalStuff()
         
@@ -248,13 +258,9 @@ class TerminationHandler(object):
         # Clean up subscription lock
         if os.path.exists(self.subLockFile):
             os.remove(self.subLockFile)
-            
-        # Clean up manage-subs lock
-        try:        
-            self.msLock.close()
-            self.msLock = None
-        except IOError:
-            pass
+
+        # Remove subscription lock file by calling parent __exit__().
+        super(TerminationHandler, self).__exit__(etype, value, traceback)
         
     def finalStuff(self):
         self.log.writeInfo(['Halting threads.'])
@@ -515,7 +521,7 @@ class WriteStream(object):
                 log.writeInfo(lines)
             return lines
         return None
-        
+
 class Worker(threading.Thread):
     """ This kinda does what the old subscription Updater code did. """
 
@@ -523,8 +529,8 @@ class Worker(threading.Thread):
     maxThreads = 16 # Default. Can be overriden with the Downloader.setMaxThreads() method.
     eventMaxThreads = threading.Event() # Event fired when the number of threads decreases.
     lock = threading.Lock() # Guard tList.
-    
-    def __init__(self, request, newSite, arguments, connMaster, connSlave, log, writeStream, fclean):
+
+    def __init__(self, request, newSite, arguments, connMaster, connSlave, log, writeStream, fclean, msProc):
         threading.Thread.__init__(self)
         self.request = request
         self.requestID = request.requestid
@@ -534,6 +540,7 @@ class Worker(threading.Thread):
         self.connSlave = connSlave # Slave db
         self.log = log
         self.writeStream = writeStream
+        self.proc = msProc
         self.sdEvent = threading.Event()
         
         self.reqTable = self.request.reqtable
@@ -577,20 +584,29 @@ class Worker(threading.Thread):
                 self.cleanTemp()
 
             # We don't want the main thread modifying this the request part-way through the following operations.
-            self.reqTable.acquireLock()
             try:
+                gotLock = self.reqTable.acquireLock()
+                
+                if not gotLock:
+                    raise Exception('lock', 'Unable to acquire req-table lock.')
+                
                 self.log.writeDebug([ 'Worker thread acquired req table lock ' + hex(id(self.reqTable.lock)) + '.'])
                 reqStatus = self.request.getStatus()[0]
             finally:
-                self.reqTable.releaseLock()
-                self.log.writeDebug([ 'Worker thread released req table lock ' + hex(id(self.reqTable.lock)) + '.'])
+                if gotLock:
+                    self.reqTable.releaseLock()
+                    gotLock = None
+                    self.log.writeDebug([ 'Worker thread released req table lock ' + hex(id(self.reqTable.lock)) + '.'])
 
             # Check for download error or completion
             self.log.writeDebug([ 'Request ' + str(self.requestID) + ' status is ' + reqStatus + '.' ])
             if reqStatus.upper() == 'P':
                 self.log.writeDebug([ 'Processing status P for request ' + str(self.requestID) + '.' ])
-                self.reqTable.acquireLock()
                 try:
+                    gotLock = self.reqTable.acquireLock()
+                    
+                    if not gotLock:
+                        raise Exception('lock', 'Unable to acquire req-table lock.')
                     # Don't clean up old files - we could be resuming after a manual shutdown.
 
                     # Create client.new.lst so that it contains the series that the client will be subscribed to
@@ -641,7 +657,9 @@ class Worker(threading.Thread):
                         #   (set -o noclobber; echo $$ > $subscribelockpath) 2> /dev/null
                 
                         # Release reqTable lock to allow other client requests to be processed.
-                        self.reqTable.releaseLock()
+                        if gotLock:
+                            self.reqTable.releaseLock()
+                            gotLock = None
                 
                         maxLoop = 30
                         while True:
@@ -657,7 +675,10 @@ class Worker(threading.Thread):
                         
                                 # Obtained global subscription lock.
 
-                                self.reqTable.acquireLock()
+                                gotLock = self.reqTable.acquireLock()
+                                
+                                if not gotLock:
+                                    raise Exception('lock', 'Unable to acquire req-table lock.')
                         
                                 # Modify the client.lst file by creating a temporary file...
                                 with open(self.newLstPath, 'w') as fout:
@@ -675,6 +696,7 @@ class Worker(threading.Thread):
                                     # Do not create a temp site-dir log, unless we are subscribing to a new series. During un-subscription,
                                     # client.new.lst is not added slon_parser.cfg, so no logs are ever written to self.newClientLogDir.
                                     # ...and make the temporary client.new directory in the site-logs directory.
+                                    self.log.writeInfo([ 'Making directory ' +  self.newClientLogDir + '.' ])
                                     os.mkdir(self.newClientLogDir) # umask WILL mask-out bits if it is not 0000; os.chmod() is better.
                                     os.chmod(self.newClientLogDir, 0O2755) # This is the way you specify Octal in Py 3 (not Py 2).
                                 break
@@ -689,11 +711,16 @@ class Worker(threading.Thread):
                                     # Failure to run gentables.pl create client.new dir or chmod client.new, re-raise the exception generated.
                                     raise
                             finally:
-                                self.reqTable.releaseLock()
+                                if gotLock:
+                                    self.reqTable.releaseLock()
+                                    gotLock = None
                                 if os.path.exists(self.subscribeLock):
                                     os.remove(self.subscribeLock)
 
-                        self.reqTable.acquireLock()
+                        gotLock = self.reqTable.acquireLock()
+                        
+                        if not gotLock:
+                            raise Exception('lock', 'Unable to acquire req-table lock.')
 
                         # Refresh this script's cache FROM DB.
                         subListObj.refreshSubscriptionList()
@@ -777,7 +804,9 @@ class Worker(threading.Thread):
                                 proc = Popen(cmdList, stdout=pipeWriteEnd)
 
                                 try:
-                                    self.reqTable.releaseLock()
+                                    if gotLock:
+                                        self.reqTable.releaseLock()
+                                        gotLock = None
             
                                     maxLoop = 60 # 1-minute timeout
                                     while True:
@@ -822,7 +851,9 @@ class Worker(threading.Thread):
                                     print('COMMIT;', file=fout)
                                     fout.flush()
                                 finally:
-                                    self.reqTable.acquireLock()                                                      
+                                    gotLock = self.reqTable.acquireLock()
+                                    if not gotLock:
+                                        raise Exception('lock', 'Unable to acquire req-table lock.')
 
                         # 3. PORT sdo_slony1_dump.sh into this script so we can run multiple COPY TO commands within a single
                         # database transaction. First, we need some database information, then we pass that information
@@ -879,17 +910,24 @@ class Worker(threading.Thread):
                         # The request-table lock is held here. Some of the tasks in dumpAndStartGeneratingClientLogs() can be slow: stopping the slony daemons,
                         # parsing the slony logs, generating the series dump files. Release the lock, then acquire it again after.
                         try:
-                            self.reqTable.releaseLock()
+                            if gotLock:
+                                self.reqTable.releaseLock()
+                                gotLock = None
+                            self.log.writeDebug([ 'Memory usage (MB) before initial dump ' + str(self.proc.memory_info().vms / 1024) + '.' ])
                             self.dumpAndStartGeneratingClientLogs(columns)
                         finally:
-                            self.reqTable.acquireLock()
+                            gotLock = self.reqTable.acquireLock()
+                            if not gotLock:
+                                raise Exception('lock', 'Unable to acquire req-table lock.')
 
                         # If there are no errors, the request status will be 'I'.
                         reqStatus = 'I'
                 
                         time.sleep(1)
                 finally:
-                    self.reqTable.releaseLock()
+                    if gotLock:
+                        self.reqTable.releaseLock()
+                        gotLock = None
             
             # No lock held here.
             if reqStatus == 'I' or (reqStatus == 'P' and self.action == 'unsubscribe'):
@@ -918,7 +956,9 @@ class Worker(threading.Thread):
                     
                         # Obtained global subscription lock.
                     
-                        self.reqTable.acquireLock()
+                        gotLock = self.reqTable.acquireLock()
+                        if not gotLock:
+                            raise Exception('lock', 'Unable to acquire req-table lock.')
                 
                         # LEGACY - Remove client.new.lst from slon_parser.cfg
                         with open(self.parserConfigTmp, 'w') as fout, open(self.parserConfig, 'r') as fin:
@@ -1009,18 +1049,25 @@ class Worker(threading.Thread):
                             # or os.mkdir() or os.chmod().
                             raise
                     finally:
-                        self.reqTable.releaseLock()
+                        if gotLock:
+                            self.reqTable.releaseLock()
+                            gotLock = None
                         if os.path.exists(self.subscribeLock):
                             os.remove(self.subscribeLock)
                         
             # Outside of lock-acquisition loop.
             # reqTable lock is NOT held.
             # The request has been completely processed without error. Set status to 'C'.
-            self.reqTable.acquireLock()
             try:
+                gotLock = self.reqTable.acquireLock()
+                if not gotLock:
+                    raise Exception('lock', 'Unable to acquire req-table lock.')
+
                 self.request.setStatus('C')
             finally:
-                self.reqTable.releaseLock()
+                if gotLock:
+                    self.reqTable.releaseLock()
+                    gotLock = None
         except ValueError as exc:
             # Popen() and check_call() will raise this exception if arguments are bad.
             errorMsg = 'Command called with invalid arguments: ' + ' '.join(cmdList) + '.'
@@ -1065,12 +1112,15 @@ class Worker(threading.Thread):
                 self.log.writeError([ errorMsg ])
                 self.log.writeError([ traceback.format_exc(5) ])
         finally:
-            self.reqTable.acquireLock()
+            gotLock = self.reqTable.acquireLock()
+            if not gotLock:
+                raise Exception('lock', 'Unable to acquire req-table lock.')
+            
             self.log.writeInfo([ 'Worker thread (request ID ' + str(self.requestID) + ') terminating.' ])
                 
             if errorMsg:
                 # Set request status to error.
-                self.log.writeDebug([ 'Setting status for request ' + str(self.requestID) + ' to E.' ])
+                self.log.writeDebug([ 'Setting status for request ' + str(self.requestID) + ' to E (' + errorMsg + ').' ])
                 self.request.setStatus('E', errorMsg)
                 time.sleep(1)
                 
@@ -1078,7 +1128,9 @@ class Worker(threading.Thread):
             self.request.removeWorker()
             
             # Always release reqTable lock.
-            self.reqTable.releaseLock()
+            if gotLock:
+                self.reqTable.releaseLock()
+                gotLock = None
             maxLoop = 30
             while True:
                 try:
@@ -1337,6 +1389,7 @@ class Worker(threading.Thread):
                 fout.flush()
                 
             self.log.writeInfo([ 'Successfully created ' + outFile + ' and dumped tab structure commands.' ])
+            self.log.writeDebug([ 'Memory usage (MB) ' + str(self.proc.memory_info().vms / 1024) + '.' ])
 
             doAppend = True
 
@@ -1416,6 +1469,8 @@ class Worker(threading.Thread):
                 self.connSlave.set_client_encoding('UTF-8')
 
                 with self.connSlave.cursor() as cursor:
+                    self.log.writeInfo([ 'Starting a new serializable transaction to slave db.' ])
+                    self.log.writeDebug([ 'Memory usage (MB) ' + str(self.proc.memory_info().vms / 1024) + '.' ])
                     if self.newSite:
                         # 6. Create an insert statement that, when run on the client, will set the client's Slony tracking number.
                         cmd = "SELECT 'INSERT INTO _" + self.replicationCluster + ".sl_archive_tracking values (' || ac_num::text || ', ''' || ac_timestamp::text || ''', CURRENT_TIMESTAMP);' FROM _" + self.replicationCluster + ".sl_archive_counter"
@@ -1428,6 +1483,9 @@ class Worker(threading.Thread):
                         trackingInsert = records[0][0]
                     else:
                         trackingInsert = None
+                        
+                    self.log.writeInfo([ 'Success running ' + cmd + '.' ])
+                    self.log.writeDebug([ 'Memory usage (MB) ' + str(self.proc.memory_info().vms / 1024) + '.' ])
 
                     maxLoop = 30
                     while True:
@@ -1452,6 +1510,8 @@ class Worker(threading.Thread):
                             cmdList = [ os.path.join(self.repDir, 'subscribe_manage', 'gentables.pl'), 'op=add', 'conf=' + self.slonyCfg, '--node=' + self.client + '.new', '--sitedir=' + self.newClientLogDir ]
                             # Raises CalledProcessError on error (non-zero returned by gentables.pl).
                             check_call(cmdList)
+                            self.log.writeInfo([ 'Success running ' + ' '.join(cmdList) + '.' ])
+                            self.log.writeDebug([ 'Memory usage (MB) ' + str(self.proc.memory_info().vms / 1024) + '.' ])
                             self.writeStream.logLines() # Log all gentables.pl output
 
                             break
@@ -1491,6 +1551,8 @@ class Worker(threading.Thread):
                     done = False
                     
                     while not done:
+                        self.log.writeInfo([ 'Generating dump file ' + str(fileNo) + '.' ])
+                        self.log.writeDebug([ 'Memory usage (MB) ' + str(self.proc.memory_info().vms / 1024) + '.' ])
                         discardEmtpyDump = False
                         # Append if the file exists, otherwise, create the file ('a' does this).
                         with gzip.open(outFile, mode='at', compresslevel=5, encoding='UTF8') as fout:
@@ -1558,6 +1620,7 @@ class Worker(threading.Thread):
                                 done = True
 
                         self.log.writeInfo([ 'Successfully created dump file ' + str(fileNo) + '(' + outFile + ').' ])
+                        self.log.writeDebug([ 'Memory usage (MB) ' + str(self.proc.memory_info().vms / 1024) + '.' ])
                             
                         if discardEmtpyDump:
                             os.remove(outFile)
@@ -1571,10 +1634,15 @@ class Worker(threading.Thread):
                             # sees a 'D' status, then it should go back to the code where it sets the status to 'A' and
                             # ingests the dump file, then sets status to 'I'.
                             try:
-                                self.reqTable.acquireLock()
+                                gotLock = self.reqTable.acquireLock()
+                                if not gotLock:
+                                    raise Exception('lock', 'Unable to acquire req-table lock.')
+
                                 self.request.setStatus('D')
                             finally:
-                                self.reqTable.releaseLock()
+                                if gotLock:
+                                    self.reqTable.releaseLock()
+                                    gotLock = None
 
                             # Wait for client response. They will send a pollcomplete request when they are ready for
                             # the next chunk.
@@ -1592,7 +1660,10 @@ class Worker(threading.Thread):
                                     raise Exception('shutDown', 'Received shut-down message from main thread.')
                 
                                 try:
-                                    self.reqTable.acquireLock()
+                                    gotLock = self.reqTable.acquireLock()
+                                    if not gotLock:
+                                        raise Exception('lock', 'Unable to acquire req-table lock.')
+                                    
                                     (code, msg) = self.request.getStatus()
                                     if code.upper() == 'D':
                                         self.log.writeDebug([ 'Waiting for client ' + self.client + ' to download dump file (request ' + str(self.requestID) + '). Status ' + code.upper() + '.'])
@@ -1611,7 +1682,9 @@ class Worker(threading.Thread):
                                         reqStatus = 'E'
                                         raise Exception('invalidReqStatus', 'Unexpected request status ' + code.upper() + '.')
                                 finally:
-                                    self.reqTable.releaseLock()
+                                    if gotLock:
+                                        self.reqTable.releaseLock()
+                                        gotLock = None
                 
                                 maxLoop -= 1
                                 time.sleep(1)
@@ -1679,8 +1752,8 @@ class Worker(threading.Thread):
                     self.writeStream.logLines() # Log all sl_stop_slon_daemons.sh output.
 
     @staticmethod
-    def newThread(request, newSite, arguments, connMaster, connSlave, log, writeStream, fclean):
-        worker = Worker(request, newSite, arguments, connMaster, connSlave, log, writeStream, fclean)
+    def newThread(request, newSite, arguments, connMaster, connSlave, log, writeStream, fclean, msProc):
+        worker = Worker(request, newSite, arguments, connMaster, connSlave, log, writeStream, fclean, msProc)
         worker.tList.append(worker)
         log.writeDebug([ 'Calling worker.start().' ])
         worker.start()
@@ -1953,13 +2026,10 @@ class ReqTable(object):
             self.reqDict[str(req.requestid)] = req
         
     def acquireLock(self):
-        self.lock.acquire()
-        self.locked = True
+        return self.lock.acquire()
     
     def releaseLock(self):
-        if self.locked:
-            self.lock.release()
-            self.locked = False
+        self.lock.release()
         
     def setStatus(self, requestids, code, msg=None):
         for arequestid in requestids:
@@ -2240,6 +2310,7 @@ if __name__ == "__main__":
         arguments.setParser(parser)
     
         pid = os.getpid()
+        proc = psutil.Process(pid)
         
         # Create/Initialize the log file.
         formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
@@ -2258,14 +2329,16 @@ if __name__ == "__main__":
 
         arguments.dump(msLog)
         msLog.writeCritical(['Logging threshold level is ' + msLog.getLevel() + '.']) # Critical - always write the log level to the log.
+        msLog.writeDebug([ 'Initial memory usage (MB) ' + str(proc.memory_info().vms / 1024) + '.' ])
             
-        thContainer = [ os.path.join(arguments.getArg('kServerLockDir'), 'manage-subs-lock.txt'), os.path.join(arguments.getArg('kServerLockDir'), arguments.getArg('kSubLockFile')), str(pid), msLog, writeStream, pipeReadEnd, pipeWriteEnd, None ]
+        thContainer = [ os.path.join(arguments.getArg('kServerLockDir'), 'manage-subs-lock.txt'), os.path.join(arguments.getArg('kServerLockDir'), arguments.getArg('kSubLockFile')), str(pid), msLog, writeStream, pipeReadEnd, pipeWriteEnd, proc, None ]
         with TerminationHandler(thContainer) as th:
             # Redirect all the output from subprocesses to writeStream.
             with RedirectStdFileStreams(stdoutFileObj=pipeWriteEnd, stderrFileObj=pipeWriteEnd) as stdStreams:
                 with psycopg2.connect(database=arguments.getArg('SLAVEDBNAME'), user=arguments.getArg('REPUSER'), host=arguments.getArg('SLAVEHOSTNAME'), port=str(arguments.getArg('SLAVEPORT'))) as connSlave, psycopg2.connect(database=arguments.getArg('MASTERDBNAME'), user=arguments.getArg('REPUSER'), host=arguments.getArg('MASTERHOSTNAME'), port=str(arguments.getArg('MASTERPORT'))) as connMaster:
                     msLog.writeInfo([ 'Connected to database ' + arguments.getArg('SLAVEDBNAME') + ' on ' + arguments.getArg('SLAVEHOSTNAME') + ':' + str(arguments.getArg('SLAVEPORT')) + ' as user ' + arguments.getArg('REPUSER') ])
                     msLog.writeInfo([ 'Connected to database ' + arguments.getArg('MASTERDBNAME') + ' on ' + arguments.getArg('MASTERHOSTNAME') + ':' + str(arguments.getArg('MASTERPORT')) + ' as user ' + arguments.getArg('REPUSER') ])
+                    msLog.writeDebug([ 'Memory usage (MB) ' + str(proc.memory_info().vms / 1024) + '.' ])
 
                     # We hang on to old dump files only until we restart manage-subs.py, then we deleted them.
                     cleanAllSavedFiles(arguments.getArg('dumpDir'), msLog)
@@ -2273,6 +2346,7 @@ if __name__ == "__main__":
                     # Read the requests table into memory.
                     reqTable = ReqTable(arguments.getArg('kSMreqTable'), timedelta(seconds=int(arguments.getArg('kSMreqTableTimeout'))), connSlave, msLog)
                     msLog.writeInfo([ 'Requests table ' + arguments.getArg('kSMreqTable') + ' loaded from ' + arguments.getArg('SLAVEHOSTNAME') + '.'])
+                    msLog.writeDebug([ 'Memory usage (MB) ' + str(proc.memory_info().vms / 1024) + '.' ])
 
                     # Main dispatch loop. When a SIGINT (ctrl-c), SIGTERM, or SIGHUP is received, the 
                     # terminator context manager will be exited.
@@ -2282,7 +2356,11 @@ if __name__ == "__main__":
                         # and send an error message back to the requestor. This will clean-up requests that died somewhere
                         # while being processed.
                         try:
-                            reqTable.acquireLock()
+                            gotLock = reqTable.acquireLock()
+                            
+                            if not gotLock:
+                                raise Exception('lock', 'Unable to acquire req-table lock.')
+                            
                             reqsPending = reqTable.getPending()
                             
                             for areq in reqsPending:
@@ -2293,6 +2371,7 @@ if __name__ == "__main__":
                 
                                     # Kill the Worker thread (if it exists). The Worker will clean-up subscription-management files, 
                                     # like client.new.lst.
+                                    msLog.writeError([ 'Setting status to E (request ' + str(areq.requestid) + ' timed-out).' ])
                                     areq.setStatus('E', 'Processing timed-out.')
                                     areq.stopWorker(wait=False)
                                 else:
@@ -2308,7 +2387,7 @@ if __name__ == "__main__":
                                             Worker.lock.acquire()
                                             try:
                                                 if len(Worker.tList) < Worker.maxThreads:
-                                                    msLog.writeInfo([ 'Instantiating a worker thread for request ' + str(areq.requestid) + ' for client ' + areq.client + '.' ])
+                                                    msLog.writeInfo([ 'Instantiating a worker thread for request ' + str(areq.requestid) + ' for client ' + areq.client + ' (LOST WORKER RECOVERY).' ])
                                                     if not areq.hasWorker():
                                                         doClean = arguments.getArg('fclean')
                                                     else:
@@ -2316,7 +2395,7 @@ if __name__ == "__main__":
                                                         areq.stopWorker(wait=False)
                                                         doClean = False
                                                         
-                                                    areq.setWorker(Worker.newThread(areq, newSite, arguments, connMaster, connSlave, msLog, writeStream, doClean))
+                                                    areq.setWorker(Worker.newThread(areq, newSite, arguments, connMaster, connSlave, msLog, writeStream, doClean, proc))
                                                     if doClean:
                                                         reqTable.setStatus([ areq.requestid ], 'P') # The new request is now being processed. If there was an issue creating the new thread, an exception will have been raised, and we will not execute this line.
                                                     break # The finally clause will ensure the Worker lock is released.
@@ -2331,14 +2410,19 @@ if __name__ == "__main__":
 
                             # Completed requests, success and failures alike are handled by request-subs.py. There is nothing to do here.
                         finally:
-                            reqTable.releaseLock()
+                            if gotLock:
+                                reqTable.releaseLock()
+                                gotLock = None
                     
                             
                         # Remove old errored-out requests. The records of these errored-out requests should be
                         # available for a while so that request-subs.py can pass the error along to the requestor,
                         # but after a time-out, the errored-out request record should be deleted.
                         try:
-                            reqTable.acquireLock()
+                            gotLock = reqTable.acquireLock()
+                            if not gotLock:
+                                raise Exception('lock', 'Unable to acquire req-table lock.')
+                            
                             reqsInError = reqTable.getInError()
                             expiredAndInError = []
 
@@ -2352,7 +2436,9 @@ if __name__ == "__main__":
                                 reqTable.deleteRequests(expiredAndInError)
                                 
                         finally:
-                            reqTable.releaseLock()
+                            if gotLock:
+                                reqTable.releaseLock()
+                                gotLock = None
                         
                         # If the requestor is making a subscription request, but there is already a request
                         # pending for that requestor, then send an error message back to the requestor 
@@ -2362,7 +2448,11 @@ if __name__ == "__main__":
                         # by killing the request (that should not have been allowed to get to the manager
                         # in the first place).
                         try:
-                            reqTable.acquireLock()
+                            gotLock = reqTable.acquireLock()
+                            
+                            if not gotLock:
+                                raise Exception('lock', 'Unable to acquire req-table lock.')
+                            
                             reqsNew = reqTable.getNew()
 
                             for areq in reqsNew:
@@ -2376,6 +2466,7 @@ if __name__ == "__main__":
                                     # Start a Worker thread to handle the subscription request.
                                     if reqTable.getProcessing([ areq.client ]):                        
                                         # Set the status of this pending request to an error code.
+                                        msLog.writeError([ 'Server busy processing request for client ' + areq.client + ' already.' ])
                                         areq.setStatus('E', 'Server busy processing request for client ' + areq.client + ' already.')
                                     else:
                                         # At this point, the wrapper CGI, request-subs.py, has ensured that all requests in 
@@ -2396,7 +2487,7 @@ if __name__ == "__main__":
                                             try:
                                                 if len(Worker.tList) < Worker.maxThreads:
                                                     msLog.writeInfo([ 'Instantiating a worker thread for request ' + str(areq.requestid) + ' for client ' + areq.client + '.' ])
-                                                    areq.setWorker(Worker.newThread(areq, newSite, arguments, connMaster, connSlave, msLog, writeStream, arguments.getArg('fclean')))
+                                                    areq.setWorker(Worker.newThread(areq, newSite, arguments, connMaster, connSlave, msLog, writeStream, arguments.getArg('fclean'), proc))
                                                     reqTable.setStatus([ areq.requestid ], 'P') # The new request is now being processed. If there was an issue creating the new thread, an exception will have been raised, and we will not execute this line.
                                                     msLog.writeDebug([ 'Main thread set request ' + str(areq.requestid) + ' status to P.' ])
                                                     break # The finally clause will ensure the Worker lock is released.
@@ -2409,21 +2500,34 @@ if __name__ == "__main__":
                                             time.sleep(1)
                                             countDown -= 1
                         finally:
-                            reqTable.releaseLock()
+                            if gotLock:
+                                reqTable.releaseLock()
+                                gotLock = None
 
                         # Refresh the requests table. This could result in new requests being added to the table, or completed requests being
                         # deleted. 
                         try:
-                            reqTable.acquireLock()
+                            gotLock = reqTable.acquireLock()
+                            
+                            if not gotLock:
+                                raise Exception('lock', 'Unable to acquire req-table lock.')
+                            
                             reqTable.refresh()
                         finally:
-                            reqTable.releaseLock()
+                            if gotLock:
+                                reqTable.releaseLock()
+                                gotLock = None
                 
                         firstIter = False            
                         time.sleep(1)                
                         
-        if thContainer[7] == RV_TERMINATED:
+        if thContainer[8] == RV_TERMINATED:
             pass
+    except InstanceRunning:
+        msg = 'An instance of the server is already running. The current instance will be terminated.'
+        msLog.writeError([ msg ])
+        print(msg)
+        rv = RV_TERMINATED
     except FileNotFoundError as exc:
         type, value, traceback = sys.exc_info()
         if msLog:
@@ -2454,6 +2558,8 @@ if __name__ == "__main__":
                 rv = RV_DBRESPONSE
             elif eType == 'dbCmd':
                 rv = RV_DBCOMMAND
+            elif eType == 'lock':
+                rv = RV_LOCK
             else:
                 raise
             
