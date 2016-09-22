@@ -59,13 +59,12 @@ import shutil
 import glob
 import fcntl
 import psutil
+import gc
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../../include'))
 from drmsparams import DRMSParams
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../../base/libs/py'))
 from drmsCmdl import CmdlParser
 from drmsLock import DrmsLock
-
-
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '..'))
 from toolbox import getCfg
 
@@ -575,6 +574,7 @@ class Worker(threading.Thread):
 
     def run(self):
         # There is at most one thread per client.
+        self.log.writeDebug([ 'Memory usage at Worker thread start (MB) for request ' + str(self.requestID) + ': ' + str(self.proc.memory_info().vms / 1048576) + '.' ])
         errorMsg = None
         try:
             self.log.writeInfo([ 'Starting worker thread to handle request: (' + self.request.dump(False) + ').'])
@@ -913,7 +913,7 @@ class Worker(threading.Thread):
                             if gotLock:
                                 self.reqTable.releaseLock()
                                 gotLock = None
-                            self.log.writeDebug([ 'Memory usage (MB) before initial dump ' + str(self.proc.memory_info().vms / 1024) + '.' ])
+                            self.log.writeDebug([ 'Memory usage (MB) before initial dump ' + str(self.proc.memory_info().vms / 1048576) + '.' ])
                             self.dumpAndStartGeneratingClientLogs(columns)
                         finally:
                             gotLock = self.reqTable.acquireLock()
@@ -1162,7 +1162,9 @@ class Worker(threading.Thread):
                 finally:
                     if os.path.exists(self.subscribeLock):
                         os.remove(self.subscribeLock)
-                        
+
+            self.log.writeDebug([ 'Memory usage at Worker thread termination (MB) for request ' + str(self.requestID) + ': ' + str(self.proc.memory_info().vms / 1048576) + '.' ])
+   
             # This thread is about to terminate. 
             # We need to check the class tList variable to update it, so we need to acquire the lock.
             try:
@@ -1389,7 +1391,7 @@ class Worker(threading.Thread):
                 fout.flush()
                 
             self.log.writeInfo([ 'Successfully created ' + outFile + ' and dumped tab structure commands.' ])
-            self.log.writeDebug([ 'Memory usage (MB) ' + str(self.proc.memory_info().vms / 1024) + '.' ])
+            self.log.writeDebug([ 'Memory usage (MB) ' + str(self.proc.memory_info().vms / 1048576) + '.' ])
 
             doAppend = True
 
@@ -1463,37 +1465,36 @@ class Worker(threading.Thread):
             # the original settings (which are likely READ COMMITTED and Latin-1).
 
             try:
-                # Make a new database connection - hopefully this will fix the problem with server-side cursors becoming
-                # invalid part-way through use.
                 with psycopg2.connect(database=self.arguments.getArg('SLAVEDBNAME'), user=self.arguments.getArg('REPUSER'), host=self.arguments.getArg('SLAVEHOSTNAME'), port=str(self.arguments.getArg('SLAVEPORT'))) as connSlave:
                     connSlave.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_SERIALIZABLE)
                     connSlave.set_client_encoding('UTF-8')
+                    self.log.writeInfo([ 'Starting a new serializable transaction to slave db.' ])
+                    self.log.writeDebug([ 'Memory usage (MB) ' + str(self.proc.memory_info().vms / 1048576) + '.' ])
 
-                    self.log.writeDebug([ 'Memory usage BEFORE ss-cursor (MB) ' + str(self.proc.memory_info().vms / 1024) + '.' ])
-                    with connSlave.cursor('makeThisAServerSideCursor') as cursor:
-                        self.log.writeInfo([ 'Starting a new serializable transaction to slave db.' ])
-                        self.log.writeDebug([ 'Memory usage (MB) ' + str(self.proc.memory_info().vms / 1024) + '.' ])
+                    if self.newSite:
+                        with connSlave.cursor('makeThisAServerSideCursor') as cursor:
+                            self.log.writeDebug([ 'Memory usage AFTER creating ss-cursor 1 (MB) ' + str(self.proc.memory_info().vms / 1048576) + '.' ])
+                            # Retrieve 4K rows at a time (during dump SELECT statement).
+                            cursor.itersize = 4096
                     
-                        # Retrieve 4K rows at a time (during dump SELECT statement).
-                        cursor.itersize = 4096
-
-                        if self.newSite:
                             # 6. Create an insert statement that, when run on the client, will set the client's Slony tracking number.
                             cmd = "SELECT 'INSERT INTO _" + self.replicationCluster + ".sl_archive_tracking values (' || ac_num::text || ', ''' || ac_timestamp::text || ''', CURRENT_TIMESTAMP);' FROM _" + self.replicationCluster + ".sl_archive_counter"
                             cursor.execute(cmd)
                             records = cursor.fetchall()
                             if len(records) != 1:
                                 raise Exception('dbResponse', 'Unexpected response to db command: ' + cmd + '.')
-                
+            
                             # Write to first dump file (below).
                             trackingInsert = records[0][0]
                             self.log.writeInfo([ 'Got Slony tracking number ' + trackingInsert + '.' ])
-                        else:
-                            trackingInsert = None
-                        
-                        self.log.writeInfo([ 'Success running ' + cmd + '.' ])
-                        self.log.writeDebug([ 'Memory usage (MB) ' + str(self.proc.memory_info().vms / 1024) + '.' ])
+                            self.log.writeInfo([ 'Success running ' + cmd + '.' ])
+                        self.log.writeDebug([ 'Memory usage AFTER freeing ss-cursor 1 (MB) ' + str(self.proc.memory_info().vms / 1048576) + '.' ])
+                    else:
+                        trackingInsert = None
 
+                    with connSlave.cursor('makeThisAServerSideCursor') as cursor:
+                        self.log.writeDebug([ 'Memory usage AFTER creating ss-cursor 2 (MB) ' + str(self.proc.memory_info().vms / 1048576) + '.' ])
+                        cursor.itersize = 4096
                         maxLoop = 30
                         while True:
                             if self.sdEvent.isSet():
@@ -1518,7 +1519,7 @@ class Worker(threading.Thread):
                                 # Raises CalledProcessError on error (non-zero returned by gentables.pl).
                                 check_call(cmdList)
                                 self.log.writeInfo([ 'Success running ' + ' '.join(cmdList) + '.' ])
-                                self.log.writeDebug([ 'Memory usage (MB) ' + str(self.proc.memory_info().vms / 1024) + '.' ])
+                                self.log.writeDebug([ 'Memory usage (MB) ' + str(self.proc.memory_info().vms / 1048576) + '.' ])
                                 self.writeStream.logLines() # Log all gentables.pl output
 
                                 break
@@ -1584,7 +1585,7 @@ class Worker(threading.Thread):
                     
                         while not done:
                             self.log.writeInfo([ 'Generating dump file ' + str(fileNo) + '.' ])
-                            self.log.writeDebug([ 'Memory usage (MB) ' + str(self.proc.memory_info().vms / 1024) + '.' ])
+                            self.log.writeDebug([ 'Memory usage (MB) ' + str(self.proc.memory_info().vms / 1048576) + '.' ])
                             offset = 0
 
                             # Append if the file exists, otherwise, create the file ('a' does this).
@@ -1640,7 +1641,7 @@ class Worker(threading.Thread):
                                     done = True
 
                             self.log.writeInfo([ 'Successfully created dump file ' + str(fileNo) + ' (' + outFile + ').' ])
-                            self.log.writeDebug([ 'Memory usage (MB) ' + str(self.proc.memory_info().vms / 1024) + '.' ])
+                            self.log.writeDebug([ 'Memory usage (MB) ' + str(self.proc.memory_info().vms / 1048576) + '.' ])
 
                             # Set request status to 'D' to indicate, to client, that the dump is ready for
                             # download and ingestion. The client could have sent either a polldump request (for the first
@@ -1707,8 +1708,13 @@ class Worker(threading.Thread):
                             # Ready for next chunk
                             fileNo += 1
 
-                    # After cursor.close()         
-                    self.log.writeDebug([ 'Memory usage AFTER ss-cursor (MB) ' + str(self.proc.memory_info().vms / 1024) + '.' ])
+                    # After cursor.close()
+                    self.log.writeDebug([ 'Memory usage AFTER freeing ss-cursor 2 (MB) ' + str(self.proc.memory_info().vms / 1048576) + '.' ])
+                # After connection with block. EXITING THE with BLOCK DOES NOT FREE THE CONNECTION!! Must call conn.close().
+                connSlave.close()
+                self.log.writeDebug([ 'Memory usage AFTER closing DB connection (MB) ' + str(self.proc.memory_info().vms / 1048576) + '.' ])
+                gc.collect()
+                self.log.writeDebug([ 'Memory usage AFTER garbage collection (MB) ' + str(self.proc.memory_info().vms / 1048576) + '.' ])
             except psycopg2.Error as exc:
                 raise Exception('dbCmd', exc.diag.message_primary)                
         finally:
@@ -2333,7 +2339,7 @@ if __name__ == "__main__":
 
         arguments.dump(msLog)
         msLog.writeCritical(['Logging threshold level is ' + msLog.getLevel() + '.']) # Critical - always write the log level to the log.
-        msLog.writeDebug([ 'Initial memory usage (MB) ' + str(proc.memory_info().vms / 1024) + '.' ])
+        msLog.writeDebug([ 'Initial memory usage (MB) ' + str(proc.memory_info().vms / 1048576) + '.' ])
             
         thContainer = [ os.path.join(arguments.getArg('kServerLockDir'), 'manage-subs-lock.txt'), os.path.join(arguments.getArg('kServerLockDir'), arguments.getArg('kSubLockFile')), str(pid), msLog, writeStream, pipeReadEnd, pipeWriteEnd, proc, None ]
         with TerminationHandler(thContainer) as th:
@@ -2342,7 +2348,7 @@ if __name__ == "__main__":
                 with psycopg2.connect(database=arguments.getArg('SLAVEDBNAME'), user=arguments.getArg('REPUSER'), host=arguments.getArg('SLAVEHOSTNAME'), port=str(arguments.getArg('SLAVEPORT'))) as connSlave, psycopg2.connect(database=arguments.getArg('MASTERDBNAME'), user=arguments.getArg('REPUSER'), host=arguments.getArg('MASTERHOSTNAME'), port=str(arguments.getArg('MASTERPORT'))) as connMaster:
                     msLog.writeInfo([ 'Connected to database ' + arguments.getArg('SLAVEDBNAME') + ' on ' + arguments.getArg('SLAVEHOSTNAME') + ':' + str(arguments.getArg('SLAVEPORT')) + ' as user ' + arguments.getArg('REPUSER') ])
                     msLog.writeInfo([ 'Connected to database ' + arguments.getArg('MASTERDBNAME') + ' on ' + arguments.getArg('MASTERHOSTNAME') + ':' + str(arguments.getArg('MASTERPORT')) + ' as user ' + arguments.getArg('REPUSER') ])
-                    msLog.writeDebug([ 'Memory usage (MB) ' + str(proc.memory_info().vms / 1024) + '.' ])
+                    msLog.writeDebug([ 'Memory usage (MB) ' + str(proc.memory_info().vms / 1048576) + '.' ])
 
                     # We hang on to old dump files only until we restart manage-subs.py, then we deleted them.
                     cleanAllSavedFiles(arguments.getArg('dumpDir'), msLog)
@@ -2350,7 +2356,7 @@ if __name__ == "__main__":
                     # Read the requests table into memory.
                     reqTable = ReqTable(arguments.getArg('kSMreqTable'), timedelta(seconds=int(arguments.getArg('kSMreqTableTimeout'))), connSlave, msLog)
                     msLog.writeInfo([ 'Requests table ' + arguments.getArg('kSMreqTable') + ' loaded from ' + arguments.getArg('SLAVEHOSTNAME') + '.'])
-                    msLog.writeDebug([ 'Memory usage (MB) ' + str(proc.memory_info().vms / 1024) + '.' ])
+                    msLog.writeDebug([ 'Memory usage (MB) ' + str(proc.memory_info().vms / 1048576) + '.' ])
 
                     # Main dispatch loop. When a SIGINT (ctrl-c), SIGTERM, or SIGHUP is received, the 
                     # terminator context manager will be exited.
@@ -2524,7 +2530,9 @@ if __name__ == "__main__":
                 
                         firstIter = False            
                         time.sleep(1)                
-                        
+                
+                connSlave.close()
+                connMaster.close()
         if thContainer[8] == RV_TERMINATED:
             pass
     except InstanceRunning:
