@@ -609,15 +609,9 @@ def parseConfig(fin, keymap, addenda, defs, cDefs, mDefsGen, mDefsMake, projCfg,
             raise
 
     if not rv:
-        # Always create a Rules.mk and target.mk, even if no proj XML is provided. All builds should have the proj/example and
-        # proj/cookbook directories.
-        projRules.extend(list(RULESPREFIX))
-        projTarget.extend(list(TARGETPREFIX))
-        
         if not xml is None:
             # Process xml.
             rv = processXML(xml, projRules, projTarget)
-        projRules.extend(RULESSUFFIX)
 
     # Process addenda - these are parameters that are not configurable and must be set in the 
     # NetDRMS build.
@@ -1042,8 +1036,17 @@ def configureNet(cfgfile, cfile, mfile, pfile, pyfile, shfile, pCfile, pMfile, p
     try:
         with open(cfgfile, 'r') as fin:
             # Process configuration parameters
+
+            # Always create a Rules.mk and target.mk, even if no proj XML is provided. All builds should have the proj/example and
+            # proj/cookbook directories. The required make information is in RULESPREFIX, TARGETPREFIX, and RULESSUFFIX. RULESSUFFIX
+            # must be added after the xml has been parsed.
+            projRules.extend(list(RULESPREFIX))
+            projTarget.extend(list(TARGETPREFIX))
+
             rv = parseConfig(fin, keymap, addenda, defs, cDefs, mDefsGen, mDefsMake, projCfg, projMkRules, projRules, projTarget, perlConstSection, perlInitSection, pyConstSection, pyInitSection, shConstSection)
             if not rv:
+                projRules.extend(RULESSUFFIX)
+            
                 # Must add a parameter for the SUMS_MANAGER UID (for some reason). This must be done after the
                 # config file is processed since an input to getMgrUIDLine() is one of the config file's
                 # parameter values.
@@ -1125,9 +1128,18 @@ def configureSdp(cfgfile, cfile, mfile, pfile, pyfile, shfile, pCfile, pMfile, p
     
     try:
         with open(cfgfile, 'r') as fin:
+        
+            # Always create a Rules.mk and target.mk, even if no proj XML is provided. All builds should have the proj/example and
+            # proj/cookbook directories. The required make information is in RULESPREFIX, TARGETPREFIX, and RULESSUFFIX. RULESSUFFIX
+            # must be added after the xml has been parsed.
+            projRules.extend(list(RULESPREFIX))
+            projTarget.extend(list(TARGETPREFIX))
+            
             rv = parseConfig(fin, None, addenda, defs, cDefs, mDefsGen, mDefsMake, projCfg, projMkRules, projRules, projTarget, perlConstSection, perlInitSection, pyConstSection, pyInitSection, shConstSection)
             
             if not rv:
+                projRules.extend(RULESSUFFIX)
+            
                 # Must add a parameter for the SUMS_MANAGER UID (for some reason)
                 uidParam = {}
                 rv = getMgrUIDLine(defs, uidParam)
