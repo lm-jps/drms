@@ -35,6 +35,9 @@ $(SERVEROBJ_$(d)):	$(d)/server/%.o	: $(d)/%.c
 $(CLIENTOBJ_$(d)):	$(d)/client/%.o : $(d)/%.c
 			$(COMP)
 
+$(d)/client/fdrms.o:	$(d)/fdrms.f
+			$(FCOMP)
+
 $(COMMOBJ_$(d)):	$(SRCDIR)/$(d)/Rules.mk
 $(COMMOBJ_$(d)):	CF_TGT := $(CF_TGT) -D$(DBMS) $(CFITSIOH)
 $(SERVEROBJ_$(d)):		$(SRCDIR)/$(d)/Rules.mk
