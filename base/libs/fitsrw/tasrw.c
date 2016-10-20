@@ -1075,20 +1075,23 @@ int fitsrw_closefptrByName(int verbose, const char *filename)
 {
     char filehashkeyOnefile[PATH_MAX + 2];
     fitsfile **pfptr = NULL;
-                                                          
-    /* Delete the FITS file identified by filename. We don't know if it is writeable or not, so try both file hashes - ending
-     * with w and r. */
-    snprintf(filehashkeyOnefile, sizeof(filehashkeyOnefile), "%s:w", filename);
-    pfptr = (fitsfile **)hcon_lookup(gFFiles, filehashkeyOnefile);
-    if (!pfptr || !*pfptr)
-    {
-        snprintf(filehashkeyOnefile, sizeof(filehashkeyOnefile), "%s:r", filename);
-        pfptr = (fitsfile **)hcon_lookup(gFFiles, filehashkeyOnefile);
-    }
 
-    if (pfptr && *pfptr)
+    if (gFFiles)
     {
-        return fitsrw_closefptr(verbose, *pfptr);
+        /* Delete the FITS file identified by filename. We don't know if it is writeable or not, so try both file hashes - ending
+         * with w and r. */
+        snprintf(filehashkeyOnefile, sizeof(filehashkeyOnefile), "%s:w", filename);
+        pfptr = (fitsfile **)hcon_lookup(gFFiles, filehashkeyOnefile);
+        if (!pfptr || !*pfptr)
+        {
+            snprintf(filehashkeyOnefile, sizeof(filehashkeyOnefile), "%s:r", filename);
+            pfptr = (fitsfile **)hcon_lookup(gFFiles, filehashkeyOnefile);
+        }
+
+        if (pfptr && *pfptr)
+        {
+            return fitsrw_closefptr(verbose, *pfptr);
+        }
     }
     
     /* Don't error out if the file to be closed cannot be found. */
