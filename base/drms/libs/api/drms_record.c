@@ -3374,14 +3374,84 @@ int drms_close_records(DRMS_RecordSet_t *rs, int action)
         
             while ((seg = hiter_getnext(&hit)) != NULL)
             {
-                if (seg->filename && strlen(seg->filename) > 0)
-                {
-                    drms_segment_filename(seg, filename);
+                /* Don't call SUM_get() here. If we were to do that, then we would add tons of stress on wimpy SUMS. 
+                 * We have to assume that if a file was opened, that the path was obtained 
+                 * via a previous call to SUM_get() or SUM_infoArray() (which may not be true). The results of SUM_get()
+                 * are stored in a DRMS_StorageUnit_t struct in env->storageunit_cache IFF the SUM_get() was called via the drms_getunit() or
+                 * drms_newslot() function calls. There may or may not be a pointer from rec->su to this corresponding
+                 * SUM_info_t struct in env->storageunit_cache. 
+                 * The caller could have called SUM_get() directly, however, in which case there is nothing we can do to 
+                 * close any open FITS file pointer obtained via SUM_get(). The responsibility to do that lies with the caller.
+                 * 
+                 * The results of the SUM_infoArray() call are stored in rec->suinfo. There is no corresponding 
+                 * cache, like storageunit_cache, in the environment for these SUM_info_t structs. We extract the path
+                 * directly from the SUM_info_t structs.
+                 *
+                 * Algorithm to locate open segment files:
+                 * 1. If rec->suinfo exists, check paths in rec->suinfo struct. The paths in this struct are for SU directories, 
+                 *    not segment files so we need to append the segment file name to the SU directory, which involves 
+                 *    segment-protocol code.
+                 * 2. If rec->su exists, call drms_segment_filename(). This will not make a SUM_get() call since rec->su exists.
+                 * 3. Check env->storageunit_cache. It is possible that the SU has been cached, but rec->su is not pointing
+                 *    to it. We can call rec->su = drms_su_lookup(), and then call drms_segment_filename(), ir rec->su
+                 *    is not NULL.  
+                 */
+                *filename = '\0';
 
-                    if (strlen(filename) > 0)
+                if (rec->sunum != -1LL && seg->info->protocol != DRMS_DSDS && seg->info->protocol != DRMS_LOCAL)
+                {
+                    /* rec->suinfo */
+                    if (rec->suinfo && strlen(rec->suinfo->online_loc) > 0)
                     {
-                        drms_fitsrw_close(rec->env->verbose, filename);
+                        if (strlen(seg->filename)) 
+                        {
+                            if (seg->info->protocol == DRMS_TAS)
+                            {
+                                CHECKSNPRINTF(snprintf(filename, DRMS_MAXPATHLEN, "%s/%s", rec->suinfo->online_loc, seg->filename), DRMS_MAXPATHLEN);
+                            }
+                            else
+                            {
+                                CHECKSNPRINTF(snprintf(filename, DRMS_MAXPATHLEN, "%s/" DRMS_SLOTDIR_FORMAT "/%s", rec->suinfo->online_loc, rec->slotnum, seg->filename), DRMS_MAXPATHLEN);
+                            }
+                        }
+                        else 
+                        {
+                            if (seg->info->protocol == DRMS_TAS)
+                            {
+                                CHECKSNPRINTF(snprintf(filename, DRMS_MAXPATHLEN, "%s/%s.tas", rec->suinfo->online_loc, seg->info->name), DRMS_MAXPATHLEN);
+                            }
+                            else
+                            {
+                                CHECKSNPRINTF(snprintf(filename, DRMS_MAXPATHLEN, "%s/" DRMS_SLOTDIR_FORMAT "/%s%s", rec->suinfo->online_loc, rec->slotnum, seg->info->name, drms_prot2ext(seg->info->protocol)), DRMS_MAXPATHLEN);
+                            }
+                        }
+                    
                     }
+                    
+                    /* rec->su */
+                    if (strlen(filename) == 0)
+                    {
+                        if (rec->su != NULL)
+                        {
+                            drms_segment_filename(seg, filename);
+                        }
+                    }
+
+                    /* env->storageunit_cache */
+                    if (strlen(filename) == 0)
+                    {
+                        rec->su = drms_su_lookup(rec->env, rec->seriesinfo->seriesname, rec->sunum, NULL);
+                        if (rec->su)
+                        {
+                            rec->su->refcount++;
+                            drms_segment_filename(seg, filename);
+                        }
+                    }
+                }
+
+                if (strlen(filename) > 0)
+                {
+                    drms_fitsrw_close(rec->env->verbose, filename);
                 }
             }
         }
@@ -3419,14 +3489,84 @@ int drms_close_records(DRMS_RecordSet_t *rs, int action)
         
             while ((seg = hiter_getnext(&hit)) != NULL)
             {
-                if (seg->filename && strlen(seg->filename) > 0)
-                {
-                    drms_segment_filename(seg, filename);
+                /* Don't call SUM_get() here. If we were to do that, then we would add tons of stress on wimpy SUMS. 
+                 * We have to assume that if a file was opened, that the path was obtained 
+                 * via a previous call to SUM_get() or SUM_infoArray() (which may not be true). The results of SUM_get()
+                 * are stored in a DRMS_StorageUnit_t struct in env->storageunit_cache IFF the SUM_get() was called via the drms_getunit() or
+                 * drms_newslot() function calls. There may or may not be a pointer from rec->su to this corresponding
+                 * SUM_info_t struct in env->storageunit_cache. 
+                 * The caller could have called SUM_get() directly, however, in which case there is nothing we can do to 
+                 * close any open FITS file pointer obtained via SUM_get(). The responsibility to do that lies with the caller.
+                 * 
+                 * The results of the SUM_infoArray() call are stored in rec->suinfo. There is no corresponding 
+                 * cache, like storageunit_cache, in the environment for these SUM_info_t structs. We extract the path
+                 * directly from the SUM_info_t structs.
+                 *
+                 * Algorithm to locate open segment files:
+                 * 1. If rec->suinfo exists, check paths in rec->suinfo struct. The paths in this struct are for SU directories, 
+                 *    not segment files so we need to append the segment file name to the SU directory, which involves 
+                 *    segment-protocol code.
+                 * 2. If rec->su exists, call drms_segment_filename(). This will not make a SUM_get() call since rec->su exists.
+                 * 3. Check env->storageunit_cache. It is possible that the SU has been cached, but rec->su is not pointing
+                 *    to it. We can call rec->su = drms_su_lookup(), and then call drms_segment_filename(), ir rec->su
+                 *    is not NULL.  
+                 */
+                *filename = '\0';
 
-                    if (strlen(filename) > 0)
+                if (rec->sunum != -1LL && seg->info->protocol != DRMS_DSDS && seg->info->protocol != DRMS_LOCAL)
+                {
+                    /* rec->suinfo */
+                    if (rec->suinfo && strlen(rec->suinfo->online_loc) > 0)
                     {
-                        drms_fitsrw_close(rec->env->verbose, filename);
+                        if (strlen(seg->filename)) 
+                        {
+                            if (seg->info->protocol == DRMS_TAS)
+                            {
+                                CHECKSNPRINTF(snprintf(filename, DRMS_MAXPATHLEN, "%s/%s", rec->suinfo->online_loc, seg->filename), DRMS_MAXPATHLEN);
+                            }
+                            else
+                            {
+                                CHECKSNPRINTF(snprintf(filename, DRMS_MAXPATHLEN, "%s/" DRMS_SLOTDIR_FORMAT "/%s", rec->suinfo->online_loc, rec->slotnum, seg->filename), DRMS_MAXPATHLEN);
+                            }
+                        }
+                        else 
+                        {
+                            if (seg->info->protocol == DRMS_TAS)
+                            {
+                                CHECKSNPRINTF(snprintf(filename, DRMS_MAXPATHLEN, "%s/%s.tas", rec->suinfo->online_loc, seg->info->name), DRMS_MAXPATHLEN);
+                            }
+                            else
+                            {
+                                CHECKSNPRINTF(snprintf(filename, DRMS_MAXPATHLEN, "%s/" DRMS_SLOTDIR_FORMAT "/%s%s", rec->suinfo->online_loc, rec->slotnum, seg->info->name, drms_prot2ext(seg->info->protocol)), DRMS_MAXPATHLEN);
+                            }
+                        }
+                    
                     }
+                    
+                    /* rec->su */
+                    if (strlen(filename) == 0)
+                    {
+                        if (rec->su != NULL)
+                        {
+                            drms_segment_filename(seg, filename);
+                        }
+                    }
+
+                    /* env->storageunit_cache */
+                    if (strlen(filename) == 0)
+                    {
+                        rec->su = drms_su_lookup(rec->env, rec->seriesinfo->seriesname, rec->sunum, NULL);
+                        if (rec->su)
+                        {
+                            rec->su->refcount++;
+                            drms_segment_filename(seg, filename);
+                        }
+                    }
+                }
+
+                if (strlen(filename) > 0)
+                {
+                    drms_fitsrw_close(rec->env->verbose, filename);
                 }
             }
         }
@@ -4677,7 +4817,7 @@ static int TrackerRecDeleted(Tracker_t tracker, DRMS_Record_t *rec)
     }
 }
 
-static int TrackerInsertRec(Tracker_t tracker, DRMS_Record_t *rec)
+static void TrackerInsertRec(Tracker_t tracker, DRMS_Record_t *rec)
 {
     char hashkey[DRMS_MAXHASHKEYLEN];
     char yes = 'y';
