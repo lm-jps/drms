@@ -21,13 +21,13 @@ CREATE INDEX export_md5_exporttime ON jsoc.export_md5 USING btree (exporttime);
 GRANT SELECT ON jsoc.export_md5 TO public;
 
 -- jsoc_fetch, which is run by DB user apache, inserts new md5 hashes.
-GRANT INSERT ON  jsoc.export_md5 TO apache;
+GRANT INSERT ON jsoc.export_md5 TO apache;
 
 -- jsoc_fetch,  which is run by DB user apache, deletes old md5 hashes.
-GRANT INSERT ON  jsoc.export_md5 TO apache;
+GRANT DELETE ON jsoc.export_md5 TO apache;
 
 -- jsoc_fetch could be run manually by the DB user production.
-GRANT INSERT ON  jsoc.export_md5 TO production;
+GRANT INSERT ON jsoc.export_md5 TO production;
 
 -- jsoc_export_manage, which is run by DB user production, deletes md5 hashes for exports that have errored-out.
-GRANT DELETE ON  jsoc.export_md5 TO production;
+GRANT DELETE ON jsoc.export_md5 TO production;
