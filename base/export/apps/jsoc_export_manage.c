@@ -537,6 +537,11 @@ int nice_intro ()
   // jsoc.export
 static void ErrorOutExpRec(DRMS_Record_t **exprec, int expstatus, const char *mbuf)
 {
+    char cmd[DRMS_MAXQUERYLEN];
+    DRMS_Keyword_t *key = NULL;
+    char *requestid = NULL;
+    int istat = DRMS_SUCCESS;
+    
     // Print mbuf to stderr
     if (mbuf)
     {
@@ -546,6 +551,30 @@ static void ErrorOutExpRec(DRMS_Record_t **exprec, int expstatus, const char *mb
     // Write to export record in jsoc.export
     if (exprec && *exprec)
     {
+        // Clear out the md5 hash for this export.
+
+        // There is no good way to get the string value without allocating memory. So we have to alloc and free this.
+        requestid = drms_getkey_string(*exprec, "requestid", &istat);
+    
+        if (!requestid)
+        {
+            fprintf(stderr, "Out of memory in ErrorOutExpRec().");
+        }
+        else
+        {
+            if (istat == DRMS_SUCCESS && strlen(requestid) > 0)
+            {
+                snprintf(cmd, sizeof(cmd), "DELETE FROM jsoc.export_md5 WHERE requestid='%s'", requestid);
+                if (drms_dms((*exprec)->env->session, NULL, cmd))
+                {
+                   fprintf(stderr, "Failure deleting expired recent export md5s: %s.\n", cmd);
+                }
+            }
+            
+            free(requestid);
+            requestid = NULL;
+        }
+
         drms_setkey_string(*exprec, "errmsg", mbuf);
         drms_setkey_int(*exprec, "Status", expstatus);
         

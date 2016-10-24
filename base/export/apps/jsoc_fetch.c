@@ -37,6 +37,7 @@
 #include <time.h>
 #include <sys/file.h>
 #include <regex.h>
+#include <openssl/md5.h>
 
 #define kDefRegexp         "JSOC_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_[0-9]+(_IN)?"
 
@@ -959,98 +960,196 @@ int dieRoll(int range)
 
 /* Caller owns the returned string. */
 /* If an error occurs, we treat this as if there is no duplicate record. The new request will start a full export. */
-static char *GetExistReqID(DRMS_Env_t *env, const char *dsquery, const char *filenamefmt, const char *process, const char *protocol, const char *method, int window, TIME *timeToCompletion, int *expSize)
+
+/* Do not use dsquery as is. It may have wildcards, like '$', in it which make it difficult to perform future comparisons, i.e., 
+ * dsquery is not canonical. To convert dsquery to the canonical form, we have to open the records (drms_open_records()) and
+ * make a list of recnums for each series described by dsquery. 
+ *
+ * Saving this canonical form is not practical (it could be a very large string). Instead, we save the md5 hash of dsquery, along
+ * with other identifying information (filenamefmt, process, protocol, method), in jsoc.export_md5. That db table maps
+ * the md5 hash of all 5 fields of information to an existing request ID, if one exists. Records in jsoc.export_md5 expire after 
+ * DUP_EXPORT_WINDOW hours. This function first removes those expired records.
+ *
+ * jsoc.export_md5:
+ *   md5   text (prime key)
+ *   requestid   text (unique key)
+ *   exporttime   timestamp with time zone
+ */
+
+static char *GetExistReqID(DRMS_Env_t *env, const char *md5, int window, TIME *timeToCompletion, int *expSize)
 {
     char *id = NULL;
     char cmd[DRMS_MAXQUERYLEN];
-    TIME beginWindow = 0;
     DB_Text_Result_t *tres = NULL;
+    DB_Text_Result_t *tresInner = NULL;
+    int istat;
+    char *end = NULL;
     long long status;
     long long sunum;
     SUM_info_t *infostruct = NULL;
-    char *end = NULL;
-    int istat;
     
     istat = DRMS_SUCCESS;
     
-    beginWindow = timenow() - window * 60 * 60;
+    *timeToCompletion = DRMS_MISSING_TIME;
+    *expSize = 0;
     
-    /* Look at only one DRMS record. Once this code is all working, then there will not be more than one identical export in the time window that ends
-     * with the current time. If we find an existing identical export, but somebody has deleted the SU for it, then this function will not
-     * find an existing export and the new export will be processed. And then if there is a third attempt to perform an identical export,
-     * the previous export will be used, and the third attempt will be skipped. So, there is always just one valid identical export, at most, 
-     * in the specified time window. */
-
-    /* Check for the allowed forms of final record all of which are not repeated requests in most cases.  Allow these. */
-    char *bracket = strchr(dsquery, '[');
-    if (bracket && (strncmp(bracket,"[$]",3) == 0 || strncmp(bracket, "[:$]",4) == 0 || strncmp(bracket,"[:#$]",5) == 0))
-        return id;
-
-    
-    snprintf(cmd, sizeof(cmd), "SELECT requestid, filenamefmt, processing, protocol, method, sunum, esttime, size, status FROM %s WHERE recnum = (SELECT max(recnum) AS recnum FROM %s WHERE requestid = (SELECT requestid FROM %s WHERE reqtime > %lf AND dataset ILIKE $engayify$%%%s%%$engayify$ ORDER BY requestid DESC LIMIT 1))", kExportSeries, kExportSeries, kExportSeries, beginWindow, dsquery);
-    
-    if ((tres = drms_query_txt(drms_env->session, cmd)) != NULL && tres->num_rows == 1 && tres->num_cols == 9)
+    /* delete expired md5s from jsoc.export_md5 */
+    snprintf(cmd, sizeof(cmd), "DELETE FROM jsoc.export_md5 WHERE exporttime + interval '%d hours' <= statement_timestamp()", window);
+    if (drms_dms(drms_env->session, NULL, cmd))
     {
-        /* Make sure status is 0 (complete), or 1 (pending). */
-        status = strtoll(tres->field[0][8], &end, 10);
+       fprintf(stderr, "Failure deleting expired recent export md5s: %s.\n", cmd);
+       istat = DRMS_ERROR_BADDBQUERY;
+    }
+    
+    /* search jsoc.export_md5 for the md5 - map md5->requestID and return the id */
+    if (istat == DRMS_SUCCESS)
+    {
+        snprintf(cmd, sizeof(cmd), "SELECT requestid FROM jsoc.export_md5 WHERE md5 = '%s'", md5);
         
-        if (end != tres->field[0][8] && (status == 0 || status == 1))
+        if ((tres = drms_query_txt(drms_env->session, cmd)) != NULL)
         {
-            if (strcasecmp(tres->field[0][1], filenamefmt) == 0 && strcasecmp(tres->field[0][2], process) == 0 && strcasecmp(tres->field[0][3], protocol) == 0 && strcasecmp(tres->field[0][4], method) == 0)
+            if (tres->num_rows == 1)
             {
-                /* Make sure that the SU is online. */
-                sunum = strtoll(tres->field[0][5], &end, 10);
-                
-                if (end != tres->field[0][5] && sunum >= 0 && sunum != LLONG_MAX)
+                if (tres->num_cols == 1)
                 {
-                    /* We parsed at least some part of the sunum value, there is an associated SU, and we did not underflow or overflow. */
+                    id = strdup(tres->field[0][0]);
                     
-                    /* This function runs in the op == exp_request branch of code in DoIt(). drms_getsuinfo() has never been called in that branch,
-                     * so call it here. */
-                    istat = drms_getsuinfo(env, &sunum, 1, &infostruct);
-                    
-                    if (istat == DRMS_SUCCESS && infostruct)
+                    /* We now need to extract the estimated completion time (we can't actually provide an accurate estimate), 
+                     * and the SUNUM of the pending/complete original export SU. This will allow us to provide estimates to
+                     * the export requestor. Account for obsolete DRMS records. */
+                    snprintf(cmd, sizeof(cmd), "SELECT status, esttime, size, sunum FROM jsoc.export T2 WHERE recnum = (SELECT max(recnum) AS recnum FROM jsoc.export T1 WHERE T1.requestid = '%s')", id);
+                     
+                    if ((tresInner = drms_query_txt(drms_env->session, cmd)) == NULL)
                     {
-                        if (*(infostruct->online_loc) != '\0' && *(infostruct->online_status) == 'Y')
+                       fprintf(stderr, "Failure obtaining estimated completion time and size: %s.\n", cmd);
+                       istat = DRMS_ERROR_BADDBQUERY;
+                    }
+                    else
+                    {
+                        if (tresInner->num_rows == 1 && tresInner->num_cols == 4) 
                         {
-                            /* SUMS recognizes the SUNUM as valid, and the SU is online. */
-                            *timeToCompletion = strtod(tres->field[0][6], &end);
+                            status = strtoll(tresInner->field[0][0], &end, 10);
                             
-                            if (end == tres->field[0][6] || *timeToCompletion == HUGE_VAL || *timeToCompletion == -HUGE_VAL)
+                            if (end != tresInner->field[0][0] && (status == 0 || status == 1 || status == 2 || status == 12))
                             {
-                                *timeToCompletion = DRMS_MISSING_TIME;
+                                /* Make sure that the SU is online. */
+                                sunum = strtoll(tresInner->field[0][3], &end, 10);
+                
+                                if (end != tresInner->field[0][3] && sunum >= 0 && sunum != LLONG_MAX)
+                                {
+                                    /* We parsed at least some part of the sunum value, there is an associated SU, and we did not underflow or overflow. */
+                    
+                                    /* This function runs in the op == exp_request branch of code in DoIt(). drms_getsuinfo() has never been called in that branch,
+                                     * so call it here. */
+                                    status = drms_getsuinfo(env, &sunum, 1, &infostruct);
+                    
+                                    if (status == DRMS_SUCCESS && infostruct)
+                                    {
+                                        if (*(infostruct->online_loc) != '\0' && *(infostruct->online_status) == 'Y')
+                                        {
+                                            /* SUMS recognizes the SUNUM as valid, and the SU is online. */
+                                            *timeToCompletion = strtod(tresInner->field[0][1], &end);
+                            
+                                            if (end == tresInner->field[0][1] || *timeToCompletion == HUGE_VAL || *timeToCompletion == -HUGE_VAL)
+                                            {
+                                                *timeToCompletion = DRMS_MISSING_TIME;
+                                            }
+                            
+                                            *expSize = strtoll(tresInner->field[0][2], &end, 10);
+                            
+                                            if (end == tresInner->field[0][2] || *expSize < INT_MIN || *expSize > INT_MAX)
+                                            {
+                                                *expSize = DRMS_MISSING_INT;
+                                            }
+                                        }
+                                    }
+                                    else
+                                    {
+                                        /* We couldn't get estimated completion time and/or size information. There is still an existing, 
+                                         * valid request, so we still want to return the request ID to the caller. */
+                                    }
+                                    
+                                    if (infostruct)
+                                    {
+                                        free(infostruct);
+                                        infostruct = NULL;
+                                    }
+                                }
                             }
-                            
-                            *expSize = strtoll(tres->field[0][7], &end, 10);
-                            
-                            if (end == tres->field[0][7] || *expSize < INT_MIN || *expSize > INT_MAX)
+                            else
                             {
-                                *expSize = DRMS_MISSING_INT;
+                                /* Couldn't get status from jsoc.export - we need to do a fresh export. */
+                                istat = DRMS_ERROR_BADDBQUERY;
                             }
-                            
-                            id = strdup(tres->field[0][0]);
+                        }
+                        else
+                        {
+                            /* There is a request in jsoc.export_md5 for this hash, but there is no such request in jsoc.export. Treat 
+                             * this as if there is no such request in jsoc.export_md5 and have the user start a new export request. */
+                            istat = DRMS_ERROR_BADDBQUERY;
+                        }
+                        
+                        if (tresInner)
+                        {
+                            db_free_text_result(tresInner);
+                            tresInner = NULL;
                         }
                     }
                     
-                    if (infostruct)
+                    if (istat != DRMS_SUCCESS)
                     {
-                        free(infostruct);
-                        infostruct = NULL;
+                        if (id)
+                        {
+                            free(id);
+                            id = NULL;
+                        }
+                    }
+                }
+                else
+                {
+                    istat = DRMS_ERROR_BADDBQUERY;
+                }
+                
+                if (istat != DRMS_SUCCESS)
+                {
+                    /* We may have a record in jsoc.export_md5 indicating an existing request, however we cannot find the 
+                     * valid, existing request in jsoc.export. So, we need to 86 the record in jsoc.export_md5 - it is stale, 
+                     * or invalid or something. */
+                    snprintf(cmd, sizeof(cmd), "DELETE FROM jsoc.export_md5 WHERE md5 = '%s'", md5);
+                    if (drms_dms(drms_env->session, NULL, cmd))
+                    {
+                       fprintf(stderr, "Failure deleting invalid recent export md5: %s.\n", cmd);
                     }
                 }
             }
+            else if (tres->num_rows != 0)
+            {
+                /* We cannot actually get here, since (md5) is the DB primary key. */
+                istat = DRMS_ERROR_BADDBQUERY;
+            }
+            else
+            {
+                /* There is no existing identical export whose ID we're going to re-use. Since we are going to perform a full, fresh 
+                 * export, we need to insert a row for the current MD5. However, we do not have the actual ID at this point. 
+                 * Do this later. */
+            }
+        
+            db_free_text_result(tres);
+            tres = NULL;
+        }
+        else
+        {
+            istat = DRMS_ERROR_BADDBQUERY;
+        }
+        
+        if (istat == DRMS_ERROR_BADDBQUERY)
+        {
+            fprintf(stderr, "Unexpected result returned from DB query: %s.\n", cmd);
         }
     }
 
-    if (tres)
-    {
-        db_free_text_result(tres);
-        tres = NULL;
-    }
-    
     return id;
 }
-
 
 static int CheckEmailAddress(const char *logfile, const char *requestor, const char *notify, char *dieStr, int sz)
 {
@@ -2447,12 +2546,40 @@ int DoIt(void)
 
     // initiate a new asynchronous request, which requires a new requestid
     // Get RequestID
-   
-        /* This call to GetJsocRequestID is in kOpExpSu. */
-    FILE *fp = popen("/home/phil/cvs/JSOC/bin/linux_ia32/GetJsocRequestID", "r");
-    if (fscanf(fp, "%s", new_requestid) != 1)
-      JSONDIE("Cant get new RequestID");
-    pclose(fp);
+    char jsocFetchPath[PATH_MAX];
+    char reqidGenPath[PATH_MAX];
+    char *binPath = NULL;
+    
+    memset(jsocFetchPath, '\0', sizeof(jsocFetchPath));
+
+    /* This call to GetJsocRequestID is in kOpExpSu. */
+    if (readlink("/proc/self/exe", jsocFetchPath, sizeof(jsocFetchPath)) == -1)
+    {
+        JSONDIE("Cannot obtain jsoc_fetch path.\n");
+    }
+    else
+    {
+        binPath = dirname(jsocFetchPath); // can modify jsocFetchPath
+        snprintf(reqidGenPath, sizeof(reqidGenPath), "%s/GetJsocRequestID", binPath);
+    }
+        
+    FILE *fp = popen(reqidGenPath, "r");
+    
+    if (fp)
+    {
+        if (fscanf(fp, "%s", new_requestid) != 1)
+        {
+            pclose(fp);
+            JSONDIE("Cant get new RequestID");
+        }
+  
+        pclose(fp);
+    }
+    else
+    {
+        JSONDIE("Cant get new RequestID");
+    }
+    
     strcat(new_requestid, "_SU");
     requestid = new_requestid;
 
@@ -2524,6 +2651,7 @@ check for requestor to be valid remote DRMS site
     // Create new record in export control series
     // This will be copied into the cluster-side series on first use.
     /* jsoc.export_new */
+    /* We are in kOpExpSu. */
     exprec = drms_create_record(drms_env, export_series, DRMS_PERMANENT, &status);
     if (!exprec)
       JSONDIE("Cant create new export control record");
@@ -2859,44 +2987,51 @@ check for requestor to be valid remote DRMS site
     /* We've got the records to be exported open already - if the user has used a FIRSTLAST symbol, like '$' or '^', 
      * then convert the record-set specification to one that contains a list of recnums. There are some bugs in 
      * jsoc_export_manage having to do with characters like '$' gumming up DB queries and shell command-lines. Let's 
-     * get rid of these characters as much as possible as upstream as possible. */
-     if (firstlastExists)
-     {
-        char *newSpec = NULL;
-        size_t szNewSpec = DRMS_MAXQUERYLEN;
-        char recnumStr[64];
-        
-        newSpec = calloc(1, szNewSpec);
-        if (!newSpec)
-        {
-            JSONDIE("Out of memory.\n");
-        }
-        
-        newSpec = base_strcatalloc(newSpec, setName, &szNewSpec);
-        newSpec = base_strcatalloc(newSpec, "[", &szNewSpec);
+     * get rid of these characters as much as possible as upstream as possible. 
+     *
+     * Even if there is no first-last symbol, we still want to convert to a record list so that we can create
+     * a hash of the record-set query so that we can effectively compare export requests for identity.
+     * Do not use dsquery as is for this purpose. It may have wildcards, like '$', in it which make it difficult to perform 
+     * future comparisons, i.e., dsquery is not canonical. To convert dsquery to the canonical form, we have to open the 
+     * records (drms_open_records()) and make a list of recnums for each series described by dsquery. 
+     */
+    char *newSpec = NULL;
+    size_t szNewSpec = DRMS_MAXQUERYLEN;
+    char recnumStr[64];
+    
+    newSpec = calloc(1, szNewSpec);
+    
+    if (newSpec) newSpec = base_strcatalloc(newSpec, setName, &szNewSpec);
+    if (newSpec) newSpec = base_strcatalloc(newSpec, "[", &szNewSpec);
 
-        for (irec = 0; irec < rs->n; irec++)
+    for (irec = 0; irec < rs->n && newSpec; irec++)
+    {
+        snprintf(recnumStr, sizeof(recnumStr), "%lld", rs->records[irec]->recnum);
+        
+        if (irec == 0)
         {
-            snprintf(recnumStr, sizeof(recnumStr), "%lld", rs->records[irec]->recnum);
-            
-            if (irec == 0)
-            {
-                newSpec = base_strcatalloc(newSpec, ":#" , &szNewSpec);
-            }
-            else
-            {
-                newSpec = base_strcatalloc(newSpec, ",#" , &szNewSpec);
-            }
-            
-            newSpec = base_strcatalloc(newSpec, recnumStr, &szNewSpec);
+            newSpec = base_strcatalloc(newSpec, ":#" , &szNewSpec);
+        }
+        else
+        {
+            newSpec = base_strcatalloc(newSpec, ",#" , &szNewSpec);
         }
         
-        newSpec = base_strcatalloc(newSpec, "]", &szNewSpec);
+        if (newSpec) newSpec = base_strcatalloc(newSpec, recnumStr, &szNewSpec);
+    }
+    
+    if (newSpec) newSpec = base_strcatalloc(newSpec, "]", &szNewSpec);
+    
+    if (!newSpec)
+    {
+        JSONDIE("Out of memory.\n");
+    }
+
+    if (firstlastExists)
+    {
         snprintf(dsquery, sizeof(dsquery), "%s", newSpec);
-        
-        free(newSpec);
-     }
-
+    }
+     
     rcount = rs->n;
         
         /* Check for duplicate exports within the last DUP_EXPORT_WINDOW hours. If a duplicate is found, then simply return the
@@ -2911,8 +3046,57 @@ check for requestor to be valid remote DRMS site
         char *existReqID = NULL;
         TIME timeToCompletion;
         int expSize;
-
-        //existReqID = GetExistReqID(drms_env, dsquery, filenamefmt, process, protocol, method, DUP_EXPORT_WINDOW, &timeToCompletion, &expSize);
+        size_t szInput = 64;        
+        char *md5Input = NULL;
+        unsigned char md5[MD5_DIGEST_LENGTH]; // A byte string.
+        char md5Str[2 * MD5_DIGEST_LENGTH + 1]; // A null-terminated hex string representation of the md5.
+    
+        /* create md5 from canonicalQuery, filenamefmt, process, protocol, and method */
+        memset(md5, '\0', sizeof(md5));
+        md5Input = calloc(szInput, sizeof(char));
+    
+        if (md5Input) md5Input = base_strcatalloc(md5Input, newSpec, &szInput);
+        
+        if (filenamefmt && *filenamefmt)
+        {
+            if (md5Input) md5Input = base_strcatalloc(md5Input, filenamefmt, &szInput);
+        }
+        
+        if (process && *process)
+        {
+            if (md5Input) md5Input = base_strcatalloc(md5Input, process, &szInput);
+        }
+        
+        if (protocol && *protocol)
+        {
+            if (md5Input) md5Input = base_strcatalloc(md5Input, protocol, &szInput);
+        }
+        
+        if (method && *method)
+        {
+            if (md5Input) md5Input = base_strcatalloc(md5Input, method, &szInput);
+        }
+    
+        if (md5Input) 
+        {
+            MD5((const unsigned char *)md5Input, strlen(md5Input), md5);
+            
+            // Ack C!!
+            int ibyte;
+            
+            for (ibyte = 0; ibyte < MD5_DIGEST_LENGTH; ibyte++)
+            {
+                snprintf(md5Str + ibyte * 2, sizeof(md5Str) - ibyte * 2, "%02x", md5[ibyte]);
+            }
+        }
+        else
+        {
+            JSONDIE("Out of memory.\n");
+        }
+        
+        existReqID = GetExistReqID(drms_env, md5Str, DUP_EXPORT_WINDOW, &timeToCompletion, &expSize);
+        
+        free(newSpec);
         
 
 	/* We need rcount before we can return duplicate-export information back to the caller. */
@@ -3384,13 +3568,41 @@ check for requestor to be valid remote DRMS site
 
      // Must do full export processing
 
-     // Get RequestID
-     {
-        /* This call to GetJsocRequestID is in kOpExpRequest. */
-     FILE *fp = popen("/home/phil/cvs/JSOC/bin/linux_ia32/GetJsocRequestID", "r");
-     if (fscanf(fp, "%s", new_requestid) != 1)
-       JSONDIE("Cant get new RequestID");
-     pclose(fp);
+    // Get RequestID
+    char jsocFetchPath[PATH_MAX];
+    char reqidGenPath[PATH_MAX];
+    char *binPath = NULL;
+    
+    memset(jsocFetchPath, '\0', sizeof(jsocFetchPath));
+
+    /* This call to GetJsocRequestID is in kOpExpRequest. */
+    if (readlink("/proc/self/exe", jsocFetchPath, sizeof(jsocFetchPath)) == -1)
+    {
+        JSONDIE("Cannot obtain jsoc_fetch path.\n");
+    }
+    else
+    {
+        binPath = dirname(jsocFetchPath); // can modify jsocFetchPath
+        snprintf(reqidGenPath, sizeof(reqidGenPath), "%s/GetJsocRequestID", binPath);
+    }
+
+    FILE *fp = popen(reqidGenPath, "r");
+     
+    if (fp)
+    {
+        if (fscanf(fp, "%s", new_requestid) != 1)
+        {
+            pclose(fp);
+            JSONDIE("Cant get new RequestID");
+        }
+
+        pclose(fp);
+    }
+    else
+    {
+        JSONDIE("Cant get new RequestID");
+    }
+
      if (strcmp(dbhost, SERVER) == 0)
      {
         if (passthrough)
@@ -3403,9 +3615,28 @@ check for requestor to be valid remote DRMS site
 
         strcat(new_requestid, "_IN");
      }
-     }
-     requestid = new_requestid;
 
+     requestid = new_requestid;
+     
+    /* Insert a row into jsoc.export_md5 for this new request. If there is a failure in jsoc_export_manage, we'll have to 
+     * delete this row. */
+    char cmd[DRMS_MAXQUERYLEN];
+    char timeStrBuf[64];
+        
+    time_t secs;
+    struct tm *currentUT;
+
+    secs = time(NULL);
+    currentUT = gmtime(&secs);
+    
+    strftime(timeStrBuf, sizeof(timeStrBuf), "%Y-%m-%d %H:%M:%S UTC", currentUT);
+    snprintf(cmd, sizeof(cmd), "INSERT INTO jsoc.export_md5 (md5, requestid, exporttime) VALUES('%s', '%s', '%s')", md5Str, requestid, timeStrBuf);
+    if (drms_dms(drms_env->session, NULL, cmd))
+    {
+       fprintf(stderr, "Failure obtaining estimated completion time and size: %s.\n", cmd);
+       JSONDIE("Cant save new export-request hash.");
+    }
+    
     // Log this export request
     if (1)
       {
@@ -3482,10 +3713,11 @@ check for requestor to be valid remote DRMS site
     if (strcmp(dsin, "Not Specified") == 0)
       JSONDIE("Must have Recordset specified");
         /* jsoc.export_new */
+        /* We are in kOpExpRequest. */
      exprec = drms_create_record(drms_env, export_series, DRMS_PERMANENT, &status);
      if (!exprec)
       JSONDIE("Cant create new export control record");
-     drms_setkey_string(exprec, "RequestID", requestid);
+     drms_setkey_string(exprec, "RequestID", requestid);     
      drms_setkey_string(exprec, "DataSet", dsquery);
      drms_setkey_string(exprec, "Processing", process);
      drms_setkey_string(exprec, "Protocol", protocol);
