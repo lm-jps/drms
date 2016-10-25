@@ -113,8 +113,8 @@ EXEC SQL INCLUDE sqlca;
    storage_set = getkey_int(params, "storage_set");
    username = getkey_str(params, "username");
    mode = getkey_int(params, "mode");
-   if (SUMS_TAPE_AVAILABLE) apstatus = DAAP;
-   else apstatus = DADP; 
+   if (SUMS_TAPE_AVAILABLE) apstatus = DAAP; /* archive if mode & ARCH or mode & PERM */
+   else apstatus = DADP; /* dont' archive */
    if(mode & ARCH) {
      archsub = DAADP;
    }
@@ -122,6 +122,7 @@ EXEC SQL INCLUDE sqlca;
      archsub = DAAEDDP;
    }
    if(mode & PERM) {
+     /* Used in tape system. */
      archsub = DAAPERM;
    }
    if(findkey(params, "tdays")) touch = abs(getkey_int(params, "tdays"));

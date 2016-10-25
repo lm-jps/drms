@@ -98,9 +98,15 @@ char STMT[] = "SELECT ONLINE_LOC, ONLINE_STATUS, ARCHIVE_STATUS, OFFSITE_ACK, BY
     /* Make the query statement. Remember that the wd returned may not be
      * in the same order as requested here.
      */
-    for(i=0; i < reqcnt ; i++) {
+     
+    /* sum_main query cursor. This cursor will loop over all SUs in the request.
+     *
+     */
+    for(i=0; i < reqcnt ; i++) 
+    {
       sprintf(dsix_name, "dsix_%d", i);
-      if(!findkey(params, dsix_name)) {
+      if(!findkey(params, dsix_name)) 
+      {
         printk("Bad keylist given to DS_DataRequest()\n");
         return(DS_DATA_REQ);
       }
@@ -109,11 +115,16 @@ char STMT[] = "SELECT ONLINE_LOC, ONLINE_STATUS, ARCHIVE_STATUS, OFFSITE_ACK, BY
       ds_index_arr_pos[i] = 0;		  //keep track of any dups
       sprintf(dsix_name, "wd_%d", i);
       setkey_str(results, dsix_name, ""); /* preset blank in case doen't exist*/
-      if(i == (reqcnt - 1))
-	sprintf(stmt, "%s%lld);", stmt, ds_index);
+
+      if (i == (reqcnt - 1))
+      {
+	    sprintf(stmt, "%s%lld);", stmt, ds_index);
+	  }
       else
-	sprintf(stmt, "%s%lld,", stmt, ds_index);
-     }
+      {
+	    sprintf(stmt, "%s%lld,", stmt, ds_index);
+      }
+    }
 
      EXEC SQL WHENEVER SQLERROR GOTO sqlerror;
      EXEC SQL PREPARE query FROM :stmt;
@@ -122,35 +133,52 @@ char STMT[] = "SELECT ONLINE_LOC, ONLINE_STATUS, ARCHIVE_STATUS, OFFSITE_ACK, BY
   	 
      EXEC SQL WHENEVER NOT FOUND GOTO end_fetch;
 
-     for(i=0; ; i++) {
+     /* For each SU in the request... */
+     for(i=0; ; i++) 
+     {
        EXEC SQL FETCH reqcursor INTO :mainquery :mainind;
 
        strcpy(loc, mainquery.online_loc.arr);
        strcpy(l_tapepos, mainquery.tapepos.arr);
        strcpy(l_tape_id, mainquery.tape_id.arr);
        ds_index = mainquery.ds_index;
+       
        /* find the position of the ds_index in the orig array */
-       for(pos=0; pos < reqcnt; pos++) {
+       /* OK, this is a horrible N^2 algorithm, inside an N algorithm - so we have a O(N^3) algorithm! */
+       for(pos=0; pos < reqcnt; pos++) 
+       {
          if(ds_index == ds_index_arr[pos]) break;
        }
-       if(ds_index_arr_pos[pos] == 0) { 
+       if(ds_index_arr_pos[pos] == 0) 
+       { 
          ds_index_arr_pos[pos] = 1;
        }
-       else { continue; }	//skip a dup ds_index
-     if (strcmp(mainquery.online_status.arr, "N")==0) { /* not on-line */
-       if(mode & NORETRIEVE) strcpy(loc, "");	/* give back empty wd */
-       else {
-	 //!!TEMP print out for debug
-         //printk("!!TEMP online_status=%s archive_status=%s XX\n",
-	 //	mainquery.online_status.arr, mainquery.archive_status.arr); 
-         /* ck for not online & not archived! */
-  	 if(strcmp(mainquery.archive_status.arr, "N")==0) {
-           strcpy(loc, "");			/* give back empty wd */
+       else 
+       { 
+         continue; //skip a dup ds_index
+       }	
+
+       if (strcmp(mainquery.online_status.arr, "N")==0) 
+       { /* not on-line */
+         if(mode & NORETRIEVE) 
+         {
+           strcpy(loc, "");	/* give back empty wd */
          }
-         else offline = 1;
+         else 
+         {
+           /* ck for not online & not archived! */
+           if(strcmp(mainquery.archive_status.arr, "N")==0) 
+           {
+             strcpy(loc, "");			/* give back empty wd */
+           }
+           else 
+           {
+             offline = 1;
+           }
+         }
        }
-     }
-     else {                                      /* on-line */		
+       else 
+       {                                      /* on-line */		
 
       /* If "touch" given then make deletable in tdays days. 
        * Update all entries
