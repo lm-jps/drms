@@ -2841,13 +2841,14 @@ check for requestor to be valid remote DRMS site
         DRMS_RecordSetType_t *settypes = NULL; /* a maximum doesn't make sense */
         char **snames = NULL;
         char **filts = NULL;
+        char **segs = NULL;
         int nsets = 0;
         DRMS_RecQueryInfo_t rsinfo; /* Filled in by parser as it encounters elements. */
         int iset;
         int firstlastExists = 0;
         const char *setName = NULL;
         
-        if (drms_record_parserecsetspec(dsquery, &allvers, &sets, &settypes, &snames, &filts, &nsets, &rsinfo) == DRMS_SUCCESS)
+        if (drms_record_parserecsetspec_plussegs(dsquery, &allvers, &sets, &settypes, &snames, &filts, &segs, &nsets, &rsinfo) == DRMS_SUCCESS)
         {
             /* Below, we need to know whether or not there was a FIRSTLAST symbol in the record-set specification. 
              * But because record-set subsets may exist, we need to iterate through them. If any subset contains 
@@ -2976,11 +2977,11 @@ check for requestor to be valid remote DRMS site
             char errmsg[100];
             
             sprintf(errmsg, "%d is too many records in one request.", rcount);
-            drms_record_freerecsetspecarr(&allvers, &sets, &settypes, &snames, &filts, nsets);
+            drms_record_freerecsetspecarr_plussegs(&allvers, &sets, &settypes, &snames, &filts, &segs, nsets);
             JSONDIE2("Can not open RecordSet ",errmsg);
         }
         status = tmpstatus;
-        drms_record_freerecsetspecarr(&allvers, &sets, &settypes, &snames, &filts, nsets);
+        drms_record_freerecsetspecarr_plussegs(&allvers, &sets, &settypes, &snames, &filts, &segs, nsets);
         JSONDIE2("Can not open RecordSet, bad query or too many records: ", dsquery);
     }
     
@@ -3021,6 +3022,11 @@ check for requestor to be valid remote DRMS site
     }
     
     if (newSpec) newSpec = base_strcatalloc(newSpec, "]", &szNewSpec);
+    
+    if (segs && segs[0])
+    {
+        if (newSpec) newSpec = base_strcatalloc(newSpec, segs[0], &szNewSpec);
+    }
     
     if (!newSpec)
     {
@@ -3190,12 +3196,12 @@ check for requestor to be valid remote DRMS site
             CleanUp(&sunumarr, &infostructs, &webarglist, &series, &paths, &susize, arrsize, userhandle);
             free(existReqID);
             existReqID = NULL;
-            drms_record_freerecsetspecarr(&allvers, &sets, &settypes, &snames, &filts, nsets);
+            drms_record_freerecsetspecarr_plussegs(&allvers, &sets, &settypes, &snames, &filts, &segs, nsets);
             drms_close_records(rs, DRMS_FREE_RECORD);
             return(0);
         }
         
-        drms_record_freerecsetspecarr(&allvers, &sets, &settypes, &snames, &filts, nsets);
+        drms_record_freerecsetspecarr_plussegs(&allvers, &sets, &settypes, &snames, &filts, &segs, nsets);
         
     drms_stage_records(rs, 0, 0);
         

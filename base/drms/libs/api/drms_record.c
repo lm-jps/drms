@@ -91,6 +91,7 @@ static int CopySegments(DRMS_Record_t *target, DRMS_Record_t *source);
 static int CopyLinks(DRMS_Record_t *target, DRMS_Record_t *source);
 static int CopyKeywords(DRMS_Record_t *target, DRMS_Record_t *source);
 static int CopyPrimaryIndex(DRMS_Record_t *target, DRMS_Record_t *source);
+static int ParseRecSetDescInternal(const char *recsetsStr, char **allvers, char ***sets, DRMS_RecordSetType_t **types, char ***snames, char ***filts, char ***segs, int *nsets, DRMS_RecQueryInfo_t *info);
 static int ParseRecSetDesc(const char *recsetsStr, 
                            char **allvers, 
                            char ***sets, 
@@ -105,6 +106,7 @@ static int FreeRecSetDescArr(char **allvers,
                              char ***snames, 
                              char ***filts,
                              int nsets);
+static int FreeRecSetDescArrInternal(char **allvers, char ***sets, DRMS_RecordSetType_t **types, char ***snames, char ***filts, char *** segs, int nsets);
 
 /* drms_open_records() helpers */
 static int IsValidPlainFileSpec(const char *recSetSpec, 
@@ -11099,14 +11101,7 @@ static int DSElem_SkipComment(char **c)
  * location where ParseRecSetDesc() is first called - but too late for that.
  */
 /* Caller owns sets. */
-int ParseRecSetDesc(const char *recsetsStr, 
-                    char **allvers, 
-                    char ***sets, 
-                    DRMS_RecordSetType_t **settypes, 
-                    char ***snames,
-                    char ***filts,
-                    int *nsets, 
-                    DRMS_RecQueryInfo_t *info)
+int ParseRecSetDescInternal(const char *recsetsStr, char **allvers, char ***sets, DRMS_RecordSetType_t **settypes, char ***snames, char ***filts, char ***segs, int *nsets, DRMS_RecQueryInfo_t *info)
 {
     int status = DRMS_SUCCESS;
     RSParseState_t state = kRSParseState_Begin;
@@ -11118,12 +11113,16 @@ int ParseRecSetDesc(const char *recsetsStr,
     LinkedList_t *intAllVers = NULL;
     LinkedList_t *intSnames = NULL;
     LinkedList_t *intFilts = NULL;
+    LinkedList_t *intSegs = NULL;
     char *pset = NULL;
     char *sname = NULL;
     char *pfiltstr = NULL;
     char *filtstr = NULL;
+    char *psegliststr = NULL;
+    char *segliststr = NULL;
     int currfiltsz; /* The size of the CURRENT filter string inside buf (not in rsstr) */
     size_t filtstrsz = 64;
+    size_t seglistsz; /* The size of the seglist string, including braces, inside buf and rsstr. */
     int count = 0;
     char buf[kMAXRSETSPEC] = {0};
     char *pcBuf = buf;
@@ -11132,6 +11131,7 @@ int ParseRecSetDesc(const char *recsetsStr,
     LinkedList_t *multiRSAllVers = NULL;
     LinkedList_t *multiRSSnames = NULL;
     LinkedList_t *multiRSFilts = NULL;
+    LinkedList_t *multiRSSegs = NULL;
     DRMS_RecordSetType_t currSettype;
     char currAllVers = 'n';
     int countMultiRS = 0;
@@ -11161,7 +11161,8 @@ int ParseRecSetDesc(const char *recsetsStr,
                     intAllVers = list_llcreate(sizeof(char), NULL);
                     intSnames = list_llcreate(sizeof(char *), NULL);
                     intFilts = list_llcreate(sizeof(char *), NULL);
-                    if (!intSets || !intSettypes || !intAllVers || !intSnames || !intFilts)
+                    intSegs = list_llcreate(sizeof(char *), NULL);
+                    if (!intSets || !intSettypes || !intAllVers || !intSnames || !intFilts || !intSegs)
                     {
                         state = kRSParseState_Error;
                         status = DRMS_ERROR_OUTOFMEMORY;
@@ -11773,6 +11774,12 @@ int ParseRecSetDesc(const char *recsetsStr,
                             *(sname + len - 1) = '\0';
                         }
                         
+                        if (psegliststr == NULL)
+                        {
+                            /* We haven't started the filter capture yet. Do so now. */
+                            psegliststr = pcBuf - 1;
+                        }
+                        
                         DSElem_SkipWS(&pc); /* ingore ws, if any */
                         
                         while (*pc != '}' && pc < endInput)
@@ -11813,28 +11820,45 @@ int ParseRecSetDesc(const char *recsetsStr,
                     {
                         /* *pc == '}' */
                         *pcBuf++ = *pc++;
-                    }
-                    
-                    if (DSElem_SkipWS(&pc))
-                    {
-                        if (DSElem_IsDelim((const char **)&pc))
+                        
+                        /* capture seglist */
+                        seglistsz = pcBuf - psegliststr + 1;
+                        segliststr = calloc(seglistsz, sizeof(char) + 1);
+                        
+                        if (!segliststr)
                         {
-                            pc++;
-                            state = kRSParseState_EndElem;
-                        }
-                        else if (DSElem_IsComment((const char **)&pc))
-                        {
-                            DSElem_SkipComment(&pc);
-                            state = kRSParseState_EndElem;
+                            status = DRMS_ERROR_OUTOFMEMORY;
+                            state = kRSParseState_Error;
                         }
                         else
                         {
-                            state = kRSParseState_Error;
+                            strncpy(segliststr, psegliststr, seglistsz);
                         }
                     }
-                    else
+                    
+                    if (state != kRSParseState_Error)
                     {
-                        state= kRSParseState_EndElem;
+                        if (DSElem_SkipWS(&pc))
+                        {
+                            if (DSElem_IsDelim((const char **)&pc))
+                            {
+                                pc++;
+                                state = kRSParseState_EndElem;
+                            }
+                            else if (DSElem_IsComment((const char **)&pc))
+                            {
+                                DSElem_SkipComment(&pc);
+                                state = kRSParseState_EndElem;
+                            }
+                            else
+                            {
+                                state = kRSParseState_Error;
+                            }
+                        }
+                        else
+                        {
+                            state = kRSParseState_EndElem;
+                        }
                     }
                     
                     if (state == kRSParseState_EndElem)
@@ -12049,6 +12073,7 @@ int ParseRecSetDesc(const char *recsetsStr,
                     DRMS_RecordSetType_t *typesAtFile = NULL;
                     char **snamesAtFile = NULL;
                     char **filtsAtFile = NULL;
+                    char **segsAtFile = NULL;
                     char *allversAtFile = NULL;
                     int nsetsAtFile = 0;
                     int iSet = 0;
@@ -12073,6 +12098,7 @@ int ParseRecSetDesc(const char *recsetsStr,
                         multiRSAllVers = list_llcreate(sizeof(char), NULL);
                         multiRSSnames = list_llcreate(sizeof(char *), NULL);
                         multiRSFilts = list_llcreate(sizeof(char *), NULL);
+                        multiRSSegs = list_llcreate(sizeof(char *), NULL);
                         
                         /* buf has filename */
                         *pcBuf = '\0';
@@ -12189,14 +12215,7 @@ int ParseRecSetDesc(const char *recsetsStr,
                                                 fullline[len - 1] = '\0';
                                             }
                                             
-                                            status = ParseRecSetDesc(fullline, 
-                                                                     &allversAtFile, 
-                                                                     &queriesAtFile, 
-                                                                     &typesAtFile, 
-                                                                     &snamesAtFile,
-                                                                     &filtsAtFile,
-                                                                     &nsetsAtFile,
-                                                                     &infoAtFile);
+                                            status = ParseRecSetDescInternal(fullline, &allversAtFile, &queriesAtFile, &typesAtFile, &snamesAtFile, &filtsAtFile, &segsAtFile, &nsetsAtFile, &infoAtFile);
                                             
                                             if (status == DRMS_SUCCESS)
                                             {
@@ -12240,6 +12259,16 @@ int ParseRecSetDesc(const char *recsetsStr,
                                                     }
                                                     list_llinserttail(multiRSFilts, &pset);
                                                     
+                                                    if (segsAtFile[iSet])
+                                                    {
+                                                        pset = strdup(segsAtFile[iSet]);
+                                                    }
+                                                    else
+                                                    {
+                                                        pset = NULL;
+                                                    }
+                                                    list_llinserttail(multiRSSegs, &pset);
+                                                    
                                                     countMultiRS++;
                                                 }
                                                 
@@ -12251,7 +12280,7 @@ int ParseRecSetDesc(const char *recsetsStr,
                                                 break;
                                             }
                                             
-                                            FreeRecSetDescArr(&allversAtFile, &queriesAtFile, &typesAtFile, &snamesAtFile, &filtsAtFile, nsetsAtFile);
+                                            FreeRecSetDescArrInternal(&allversAtFile, &queriesAtFile, &typesAtFile, &snamesAtFile, &filtsAtFile, &segsAtFile, nsetsAtFile);
                                         }
                                         
                                         if (fullline)
@@ -12353,6 +12382,7 @@ int ParseRecSetDesc(const char *recsetsStr,
                         list_llinserttail(intAllVers, &currAllVers);
                         list_llinserttail(intSnames, &sname);
                         list_llinserttail(intFilts, &filtstr);
+                        list_llinserttail(intSegs, &segliststr);
                         currAllVers = 'n';
                         count++;
                     }
@@ -12404,6 +12434,14 @@ int ParseRecSetDesc(const char *recsetsStr,
                                 list_llfreenode(&node);
                             }
                             
+                            node = list_llgethead(multiRSSegs);
+                            if (node)
+                            {
+                                list_llinserttail(intSegs, node->data);
+                                list_llremove(multiRSSegs, node);
+                                list_llfreenode(&node);
+                            }
+                            
                             count++;
                         }
                         
@@ -12417,6 +12455,8 @@ int ParseRecSetDesc(const char *recsetsStr,
                         multiRSSnames = NULL;
                         free(multiRSFilts);
                         multiRSFilts = NULL;
+                        free(multiRSSegs);
+                        multiRSSegs = NULL;
                         countMultiRS = 0;
                     }
                     
@@ -12447,6 +12487,9 @@ int ParseRecSetDesc(const char *recsetsStr,
                     pfiltstr = NULL;
                     filtstr = NULL;
                     
+                    /* Reset segliststr to parse the next element. */
+                    segliststr = NULL;
+                    
                     break;
                 case kRSParseState_End:
                     if (DSElem_SkipWS(&pc))
@@ -12475,8 +12518,12 @@ int ParseRecSetDesc(const char *recsetsStr,
         *allvers = (char *)malloc(sizeof(char) * count + 1);
         *snames = (char **)malloc(sizeof(char *) * count);
         *filts = (char **)malloc(sizeof(char *) * count);
+        if (segs)
+        {
+            *segs = (char **)malloc(sizeof(char *) * count);
+        }
         
-        if (*sets && *settypes && *allvers && *snames && *filts)
+        if (*sets && *settypes && *allvers && *snames && *filts && (!segs || *segs))
         {
             int iset;
             ListNode_t *node = NULL;
@@ -12524,6 +12571,17 @@ int ParseRecSetDesc(const char *recsetsStr,
                     list_llremove(intFilts, node);
                     list_llfreenode(&node);
                 }
+                
+                node = list_llgethead(intSegs);
+                if (node)
+                {
+                    if (segs)
+                    {
+                        memcpy(&((*segs)[iset]), node->data, sizeof(char *));
+                    }
+                    list_llremove(intSegs, node);
+                    list_llfreenode(&node);
+                }
             }
             
             (*allvers)[count] = '\0';
@@ -12569,10 +12627,27 @@ int ParseRecSetDesc(const char *recsetsStr,
         list_llfree(&intFilts);
     }
     
+    if (intSegs)
+    {
+        list_llfree(&intSegs);
+    }
+    
     return status;
 }
 
-int FreeRecSetDescArr(char **allvers, char ***sets, DRMS_RecordSetType_t **types, char ***snames, char ***filts, int nsets)
+int ParseRecSetDesc(const char *recsetsStr, 
+                    char **allvers, 
+                    char ***sets, 
+                    DRMS_RecordSetType_t **settypes, 
+                    char ***snames,
+                    char ***filts,
+                    int *nsets, 
+                    DRMS_RecQueryInfo_t *info)
+{
+    return ParseRecSetDescInternal(recsetsStr, allvers, sets, settypes, snames, filts, NULL, nsets, info);
+}
+
+int FreeRecSetDescArrInternal(char **allvers, char ***sets, DRMS_RecordSetType_t **types, char ***snames, char ***filts, char ***segs, int nsets)
 {
     int error = 0;
     
@@ -12656,8 +12731,36 @@ int FreeRecSetDescArr(char **allvers, char ***sets, DRMS_RecordSetType_t **types
         
         *filts = NULL;
     }
+
+    if (segs)
+    {
+        int iSet;
+        char **segsArr = *segs;
+
+        if (segsArr)
+        {
+            for (iSet = 0; iSet < nsets; iSet++)
+            {
+                char *oneSeg = segsArr[iSet];
+
+                if (oneSeg)
+                {
+                   free(oneSeg);
+                }
+            }
+
+            free(segsArr);
+        }
+
+        *segs = NULL;
+    }
     
     return error;
+}
+
+int FreeRecSetDescArr(char **allvers, char ***sets, DRMS_RecordSetType_t **types, char ***snames, char ***filts, int nsets)
+{
+   return FreeRecSetDescArrInternal(allvers, sets, types, snames, filts, NULL, nsets);
 }
 
 int drms_recproto_setseriesinfo(DRMS_Record_t *rec, 
@@ -14351,6 +14454,11 @@ int drms_record_parserecsetspec(const char *recsetsStr,
    return ParseRecSetDesc(recsetsStr, allvers, sets, types, snames, filts, nsets, info);
 }
 
+int drms_record_parserecsetspec_plussegs(const char *recsetsStr, char **allvers, char ***sets, DRMS_RecordSetType_t **types, char ***snames, char ***filts, char ***segs, int *nsets, DRMS_RecQueryInfo_t *info)
+{
+    return ParseRecSetDescInternal(recsetsStr, allvers, sets, types, snames, filts, segs, nsets, info);
+}
+
 int drms_record_freerecsetspecarr(char **allvers, 
                                   char ***sets, 
                                   DRMS_RecordSetType_t **types, 
@@ -14361,4 +14469,7 @@ int drms_record_freerecsetspecarr(char **allvers,
    return FreeRecSetDescArr(allvers, sets, types, snames, filts, nsets);
 }
 
-
+int drms_record_freerecsetspecarr_plussegs(char **allvers, char ***sets, DRMS_RecordSetType_t **types, char ***snames, char ***filts, char ***segs, int nsets)
+{
+    return FreeRecSetDescArrInternal(allvers, sets, types, snames, filts, segs, nsets);
+}

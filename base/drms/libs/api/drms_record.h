@@ -247,12 +247,16 @@ int drms_record_parserecsetspec(const char *recsetsStr,
                                 int *nsets,
                                 DRMS_RecQueryInfo_t *info);
 
+int drms_record_parserecsetspec_plussegs(const char *recsetsStr, char **allvers, char ***sets, DRMS_RecordSetType_t **types, char ***snames, char ***filts, char ***segs, int *nsets, DRMS_RecQueryInfo_t *info);
+
 int drms_record_freerecsetspecarr(char **allvers, 
                                   char ***sets, 
                                   DRMS_RecordSetType_t **types, 
                                   char ***snames, 
                                   char ***filts, 
                                   int nsets);
+
+int drms_record_freerecsetspecarr_plussegs(char **allvers, char ***sets, DRMS_RecordSetType_t **types, char ***snames, char ***filts, char ***segs, int nsets);
 
 /* DSDS */
 int drms_record_isdsds(DRMS_Record_t *rec);
