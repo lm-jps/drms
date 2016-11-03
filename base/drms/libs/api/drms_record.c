@@ -3403,9 +3403,9 @@ int drms_close_records(DRMS_RecordSet_t *rs, int action)
                 if (rec->sunum != -1LL && seg->info->protocol != DRMS_DSDS && seg->info->protocol != DRMS_LOCAL)
                 {
                     /* rec->suinfo */
-                    if (rec->suinfo && strlen(rec->suinfo->online_loc) > 0)
+                    if (rec->suinfo && *rec->suinfo->online_loc)
                     {
-                        if (strlen(seg->filename)) 
+                        if (*seg->filename)
                         {
                             if (seg->info->protocol == DRMS_TAS)
                             {
@@ -3431,27 +3431,36 @@ int drms_close_records(DRMS_RecordSet_t *rs, int action)
                     }
                     
                     /* rec->su */
-                    if (strlen(filename) == 0)
+                    if (*filename == '\0')
                     {
                         if (rec->su != NULL)
                         {
-                            drms_segment_filename(seg, filename);
+                            if (*seg->filename)
+                            {
+                                /* If a user is writing (or reading) a file, then seg->filename cannot be the empty string. The
+                                 * user must have already called drms_segment_filename() in both the segment-read and segment-write
+                                 * cases, and this always results in seg->filename being set. */
+                                drms_segment_filename(seg, filename);
+                            }
                         }
                     }
 
                     /* env->storageunit_cache */
-                    if (strlen(filename) == 0)
+                    if (*filename == '\0')
                     {
                         rec->su = drms_su_lookup(rec->env, rec->seriesinfo->seriesname, rec->sunum, NULL);
                         if (rec->su)
                         {
                             rec->su->refcount++;
-                            drms_segment_filename(seg, filename);
+                            if (*seg->filename)
+                            {
+                                drms_segment_filename(seg, filename);
+                            }
                         }
                     }
                 }
 
-                if (strlen(filename) > 0)
+                if (*filename)
                 {
                     drms_fitsrw_close(rec->env->verbose, filename);
                 }
@@ -3518,9 +3527,9 @@ int drms_close_records(DRMS_RecordSet_t *rs, int action)
                 if (rec->sunum != -1LL && seg->info->protocol != DRMS_DSDS && seg->info->protocol != DRMS_LOCAL)
                 {
                     /* rec->suinfo */
-                    if (rec->suinfo && strlen(rec->suinfo->online_loc) > 0)
+                    if (rec->suinfo && *rec->suinfo->online_loc)
                     {
-                        if (strlen(seg->filename)) 
+                        if (*seg->filename)
                         {
                             if (seg->info->protocol == DRMS_TAS)
                             {
@@ -3546,27 +3555,33 @@ int drms_close_records(DRMS_RecordSet_t *rs, int action)
                     }
                     
                     /* rec->su */
-                    if (strlen(filename) == 0)
+                    if (*filename == '\0')
                     {
                         if (rec->su != NULL)
                         {
-                            drms_segment_filename(seg, filename);
+                            if (*seg->filename)
+                            {
+                                drms_segment_filename(seg, filename);
+                            }
                         }
                     }
 
                     /* env->storageunit_cache */
-                    if (strlen(filename) == 0)
+                    if (*filename == '\0')
                     {
                         rec->su = drms_su_lookup(rec->env, rec->seriesinfo->seriesname, rec->sunum, NULL);
                         if (rec->su)
                         {
                             rec->su->refcount++;
-                            drms_segment_filename(seg, filename);
+                            if (*seg->filename)
+                            {
+                                drms_segment_filename(seg, filename);
+                            }
                         }
                     }
                 }
 
-                if (strlen(filename) > 0)
+                if (*filename)
                 {
                     drms_fitsrw_close(rec->env->verbose, filename);
                 }
