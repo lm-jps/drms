@@ -419,6 +419,9 @@ if (DEBUG) fprintf(stderr,"   starting all keywords\n");
     json_t *keytype;
     json_t *defval, *recscope;
     char rawval[100], *jsonstr;
+    char *scopework;
+    char *unitswork;
+    char *defvalwork;
     int persegment = key->info->kwflags & kKeywordFlag_PerSegment;
     if (DEBUG) fprintf(stderr,"   starting keyword %s\n",key->info->name);
     /* If a keyword is a linked keyword, then it cannot be a per-segment keyword also. */
@@ -435,7 +438,7 @@ if (DEBUG) fprintf(stderr,"   starting all keywords\n");
     keyinfo = json_new_object();
     json_insert_pair_into_object(keyinfo, "name", json_new_string(persegment ? baseKeyName : key->info->name));
     if (key->info->islink)
-    {
+       {
        /* provide link name and target keyword name */
        char linknames[100], *tmpstr;
        json_t *linkinfo;
@@ -449,42 +452,47 @@ if (DEBUG) fprintf(stderr,"   starting all keywords\n");
        int lnkstat = DRMS_SUCCESS;
        DRMS_Keyword_t *linkedkw = drms_template_keyword_followlink(key, &lnkstat);
 
+       /* accumulate strings for keytype, default, units, and description from link target */
        if (lnkstat == DRMS_SUCCESS && linkedkw)
-       {
+          {
           keytype = json_new_string(drms_type_names[linkedkw->info->type]);
-       }
+          scopework = string_to_json((char *)drms_keyword_getrecscopestr(linkedkw, NULL));
+          drms_keyword_snprintfval(linkedkw, rawval, sizeof(rawval));
+          defvalwork = string_to_json(rawval);
+          unitswork = string_to_json(linkedkw->info->unit);
+          /* if present keyword has description, use it.  else use target keyword description. */
+          if (*(key->info->description) == '\0' || *(key->info->description) == ' ')
+             notework = string_to_json(linkedkw->info->description);
+          else
+             notework = string_to_json(key->info->description);
+          }
        else
-       {
+          {
           keytype = json_new_string("link");
+          }
        }
-    }
     else
+       {
+       /* accumulate strings for keytype, default val, units, and description from template record */
        keytype = json_new_string(drms_type_names[key->info->type]);
+       if (persegment)
+         scopework = string_to_json("segment");
+       else
+         scopework = string_to_json((char *)drms_keyword_getrecscopestr(key, NULL));
+       drms_keyword_snprintfval(key, rawval, sizeof(rawval));
+       defvalwork = string_to_json(rawval);
+       unitswork = string_to_json(key->info->unit);
+       notework = string_to_json(key->info->description);
+       }
     json_insert_pair_into_object(keyinfo, "type", keytype);
     // scope                                                                                                                      
     // redundant - persegment = key->info->kwflags & kKeywordFlag_PerSegment;
-    if (persegment)
-      {
-      recscope = json_new_string("segment");
-      }
-    else
-      {
-      jsonstr = string_to_json((char *)drms_keyword_getrecscopestr(key, NULL));
-      recscope = json_new_string(jsonstr);
-      free(jsonstr);
-      }
-    json_insert_pair_into_object(keyinfo, "recscope", recscope);
-    // default                                                                                                                    
-    drms_keyword_snprintfval(key, rawval, sizeof(rawval));
-    jsonstr = string_to_json(rawval);
-    defval = json_new_string(jsonstr);
-    free(jsonstr);
-    json_insert_pair_into_object(keyinfo, "defval", defval);
-
-    notework = string_to_json(key->info->unit);
-    json_insert_pair_into_object(keyinfo, "units", json_new_string(notework));
-    free(notework);
-    notework = string_to_json(key->info->description);
+    json_insert_pair_into_object(keyinfo, "recscope", json_new_string(scopework));
+    free(scopework);
+    json_insert_pair_into_object(keyinfo, "defval", json_new_string(defvalwork));
+    free(defvalwork);
+    json_insert_pair_into_object(keyinfo, "units", json_new_string(unitswork));
+    free(unitswork);
     json_insert_pair_into_object(keyinfo, "note", json_new_string(notework));
     free(notework);
     json_insert_child(keyarray, keyinfo);
