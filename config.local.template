@@ -227,6 +227,28 @@ REGEMAIL_TIMEOUT                      5
 # These are parameters needed when using the multi-threaded SUMS daemon.
 # Use the MT SUMS daemon (which serves SUM_infoArray() requests).
 SUMS_USEMTSUMS                        0
+
+# Use the MT SUMS daemon for the SUM_open() and SUM_close() API function.
+SUMS_USEMTSUMS_CONNECTION             0
+
+# Use the MT SUMS daemon for the SUM_infoArray() API function.
+SUMS_USEMTSUMS_INFO                   0
+
+# Use the MT SUMS daemon for the SUM_get() API function.
+SUMS_USEMTSUMS_GET                    0
+
+# Use the MT SUMS daemon for the SUM_alloc() and SUM_alloc2() API function.
+SUMS_USEMTSUMS_ALLOC                  0
+
+# Use the MT SUMS daemon for the SUM_put() API function.
+SUMS_USEMTSUMS_PUT                    0
+
+# Use the MT SUMS daemon for the SUM_delete_series() API function.
+SUMS_USEMTSUMS_DELETESUS              0
+
+# Use the MT SUMS daemon for the SUM_open() and SUM_close() API function.
+SUMS_USEMTSUMS_ALL                    0
+
 # The maximum number of SUs to process in parallel.
 SUMSD_MAX_THREADS                    32
 # The port to be used by the MT SUMS daemon for incoming requests.
