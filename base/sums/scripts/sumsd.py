@@ -594,6 +594,36 @@ class PollRequest(Request):
         super(PollRequest, self).generateResponse(dest)
 
 
+class InfoRequestOLD(Request):
+    """
+    unjsonized is:
+    {
+       'reqtype' : 'infoArray',
+       'sulist' : [ '3039', '5BA0' ]
+    }
+    """
+    def __init__(self, unjsonized, collector):
+        super(InfoRequestOLD, self).__init__('infoarray', unjsonized, collector)
+        
+        if len(self.unjsonized['sulist']) > MAX_MTSUMS_NSUS:
+            raise ExtractRequestException('Too many SUs in request (maximum of ' + str(MAX_MTSUMS_NSUS) + ' allowed).')
+        
+        self.data.sus = [ Request.hexToInt(hexStr) for hexStr in self.unjsonized['sulist'] ]
+
+        processed = set()
+        self.data.sulist = []
+         
+        # sus may contain duplicates. They must be removed.
+        for su in self.data.sus:
+            if str(su) not in processed:        
+                self.data.sulist.append(str(su)) # Make a list of strings - we'll need to concatenate the elements into a comma-separated list for the DB query.
+                processed.add(str(su))
+
+    def generateResponse(self, dest=None):
+        resp = InfoResponseOLD(self, dest)
+        super(InfoRequestOLD, self).generateResponse(dest)
+        return resp
+
 class RequestFactory(object):
     def __init__(self, collector):
         self.collector = collector
@@ -620,6 +650,9 @@ class RequestFactory(object):
             return PingRequest(unjsonized, self.collector)
         elif reqType == 'poll':
             return PollRequest(unjsonized, self.collector)
+        elif reqType == 'infoarray':
+            # Backward compatibility with first version of sumsd.py client.
+            return InfoRequestOLD(unjsonized, self.collector)
         else:
             raise RequestTypeException('The request type ' + reqType + ' is not supported.')
             
@@ -1127,6 +1160,98 @@ class DeleteseriesResponse(Response):
         
         # To send to client.
         # Just 'ok'.
+
+class InfoResponseOLD(Response):
+    def __init__(self, request, dest=None):
+        super(InfoResponseOLD, self).__init__(request)
+        
+        # Extract response data from the DB.
+        dbInfo = [] # In theory there could be multiple DB requests.
+        self.dbRes = []
+        # Get DB info for unique SUs only (the sulist list does not contain duplicates).
+        self.cmd = "SELECT T1.ds_index, T1.online_loc, T1.online_status, T1.archive_status, T1.offsite_ack, T1.history_comment, T1.owning_series, T1.storage_group, T1.bytes, T1.create_sumid, T1.creat_date, T1.username, COALESCE(T1.arch_tape, 'N/A'), COALESCE(T1.arch_tape_fn, 0), COALESCE(T1.arch_tape_date, '1958-01-01 00:00:00'), COALESCE(T1.safe_tape, 'N/A'), COALESCE(T1.safe_tape_fn, 0), COALESCE(T1.safe_tape_date, '1958-01-01 00:00:00'), COALESCE(T2.effective_date, '195801010000'), coalesce(T2.status, 0), coalesce(T2.archive_substatus, 0) FROM " + SUM_MAIN + " AS T1 LEFT OUTER JOIN " + SUM_PARTN_ALLOC + " AS T2 ON (T1.ds_index = T2.ds_index) WHERE T1.ds_index IN (" + ','.join(self.request.data.sulist) + ')'
+        self.exeDbCmd()
+        dbInfo.append(self.dbRes)
+        self.parse(dbInfo)
+        
+    def parse(self, dbInfo):
+        infoList = []
+        processed = {}
+        
+        # Make an object from the lists returned by the database. dbResponse is a list of lists.
+        for row in dbInfo[0]:
+            rowIter = iter(row)
+            infoDict = {}
+            sunum = next(rowIter)
+            infoDict['sunum'] = Response.intToHex(sunum) # Convert to hex string since some parsers do not support 64-bit integers.
+            infoDict['onlineLoc'] = next(rowIter)
+            infoDict['onlineStatus'] = next(rowIter)
+            infoDict['archiveStatus'] = next(rowIter)
+            infoDict['offsiteAck'] = next(rowIter)
+            infoDict['historyComment'] = next(rowIter)
+            infoDict['owningSeries'] = next(rowIter)
+            infoDict['storageGroup'] = next(rowIter)
+            infoDict['bytes'] = Response.intToHex(next(rowIter)) # Convert to hex string since some parsers do not support 64-bit integers.
+            infoDict['createSumid'] = next(rowIter)
+            # The db returns a datetime object. Convert the datetime to a str object.
+            infoDict['creatDate'] = next(rowIter).strftime('%Y-%m-%d %T')
+            infoDict['username'] = next(rowIter)
+            infoDict['archTape'] = next(rowIter)
+            infoDict['archTapeFn'] = next(rowIter)
+            # The db returns a datetime object. Convert the datetime to a str object.
+            infoDict['archTapeDate'] = next(rowIter).strftime('%Y-%m-%d %T')
+            infoDict['safeTape'] = next(rowIter)
+            infoDict['safeTapeFn'] = next(rowIter)
+            # The db returns a datetime object. Convert the datetime to a str object.
+            infoDict['safeTapeDate'] = next(rowIter).strftime('%Y-%m-%d %T')
+            infoDict['effectiveDate'] = next(rowIter)
+            infoDict['paStatus'] = next(rowIter)
+            infoDict['paSubstatus'] = next(rowIter)
+            
+            # Put SU in hash of processed SUs.
+            suStr = str(sunum) # Convert hexadecimal string to decimal string.
+            processed[suStr] = infoDict
+        
+        # Loop through ALL SUs, even duplicates (the sus list may contain duplicates).
+        for su in self.request.data.sus:
+            if str(su) in processed:
+                infoList.append(processed[str(su)])
+            else:
+                # Must check for an invalid SU and set some appropriate values if the SU is indeed invalid:
+                #   sunum --> sunum
+                #   paStatus --> 0
+                #   paSubstatus --> 0
+                #   onlineLoc --> ''
+                #   effectiveDate --> 'N/A'
+                # The other attributes do not matter.
+                # If the SUNUM was invalid, then there was no row in the response for that SU. So, we
+                # have to create dummy rows for those SUs.
+                infoDict = {}
+                infoDict['sunum'] = Response.intToHex(su) # Convert to hex string since some parsers do not support 64-bit integers.
+                infoDict['onlineLoc'] = ''
+                infoDict['onlineStatus'] = ''
+                infoDict['archiveStatus'] = ''
+                infoDict['offsiteAck'] = ''
+                infoDict['historyComment'] = ''
+                infoDict['owningSeries'] = ''
+                infoDict['storageGroup'] = -1
+                infoDict['bytes'] = Response.intToHex(0) # In sum_main, bytes is a 64-bit integer. In SUM_info, it is a double. sum_open.c converts the integer (long) to a floating-point number.
+                infoDict['createSumid'] = -1
+                infoDict['creatDate'] = '1966-12-25 00:54'
+                infoDict['username'] = ''
+                infoDict['archTape'] = ''
+                infoDict['archTapeFn'] = -1
+                infoDict['archTapeDate'] = '1966-12-25 00:54'
+                infoDict['safeTape'] = ''
+                infoDict['safeTapeFn'] = -1
+                infoDict['safeTapeDate'] = '1966-12-25 00:54'
+                infoDict['effectiveDate'] = 'N/A'
+                infoDict['paStatus'] = 0
+                infoDict['paSubstatus'] = 0
+
+                infoList.append(infoDict)
+                
+        self.data['suinfolist'] = infoList
 
 
 class PingResponse(Response):
