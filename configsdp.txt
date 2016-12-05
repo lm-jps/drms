@@ -218,7 +218,7 @@ endif
 _ENDCUST_
 
 __PROJ_MK_RULES__
-$(CEXESUMS):                    $(LIBSUMSAPI) $(LIBCJSON) $(LIBSUM) $(LIBDSTRUCT)
+$(CEXESUMS):                    $(LIBSUMSAPI) $(LIBCJSON) $(LIBSUM) $(LIBDSTRUCT) $(LIBMISC)
 $(MODEXESUMS):                  $(LIBSUMSAPI) $(LIBCJSON) $(LIBSUM)
 
 $(MODEXEDROBJ):                 CF_TGT := $(CF_TGT) -I$(SRCDIR)/proj/libs/dr
