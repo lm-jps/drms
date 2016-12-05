@@ -994,7 +994,7 @@ if __name__ == "__main__":
                         try:
                             # Slave database.
                             with connSlave.cursor() as cursor:
-                                cmd = 'UPDATE ' + arguments.getArg('kSMreqTable') + " SET status = 'E', SET errmsg = 'Exception in request-subs.py.' WHERE requestid = " + str(reqid)
+                                cmd = 'UPDATE ' + arguments.getArg('kSMreqTable') + " SET status = 'E', errmsg = 'Exception in request-subs.py.' WHERE requestid = " + str(reqid)
                                 cursor.execute(cmd)
                         except psycopg2.Error as exc:
                             connSlave.rollback()
