@@ -31,6 +31,7 @@ SUM_PARTN_ALLOC = 'public.sum_partn_alloc'
 SUM_ARCH_GROUP = 'public.sum_arch_group'
 SUM_PARTN_AVAIL = 'public.sum_partn_avail'
 
+DARW = 1
 DADP = 2
 DAAP = 4
 DAAEDDP = 32
@@ -342,6 +343,11 @@ class Request(object):
 
     def __str__(self):
         return str(self.unjsonized)
+        
+    def generateResponse(self, dest=None):
+        # Commit changes to the DB. The DB connection is closed when the Collector thread terminates, but the transaction
+        # is rolled back at that time.
+        self.collector.dbconn.commit()
 
     def generateErrorResponse(self, status, errMsg):
         return ErrorResponse(self, status, errMsg)
@@ -363,7 +369,9 @@ class OpenRequest(Request):
         # No data for this request.
         
     def generateResponse(self, dest=None):
-        return OpenResponse(self, dest)
+        resp = OpenResponse(self, dest)
+        super(OpenRequest, self).generateResponse(dest)
+        return resp
 
 
 class CloseRequest(Request):
@@ -378,7 +386,9 @@ class CloseRequest(Request):
         super(CloseRequest, self).__init__('close', unjsonized, collector)
         
     def generateResponse(self, dest=None):
-        return CloseResponse(self, dest)
+        resp = CloseResponse(self, dest)
+        super(CloseRequest, self).generateResponse(dest)
+        return resp
 
 
 class InfoRequest(Request):
@@ -408,7 +418,9 @@ class InfoRequest(Request):
                 processed.add(str(su))
 
     def generateResponse(self, dest=None):
-        return InfoResponse(self, dest)
+        resp = InfoResponse(self, dest)
+        super(InfoRequest, self).generateResponse(dest)
+        return resp
 
 class GetRequest(Request):
     """
@@ -443,7 +455,9 @@ class GetRequest(Request):
                 processed.add(str(su))
                 
     def generateResponse(self, dest=None):
-        return GetResponse(self, dest)
+        resp = GetResponse(self, dest)
+        super(GetRequest, self).generateResponse(dest)
+        return resp
 
 
 class AllocRequest(Request):
@@ -480,7 +494,9 @@ class AllocRequest(Request):
         self.data.numbytes = self.unjsonized['numbytes']
         
     def generateResponse(self, dest=None):
-        return AllocResponse(self, dest)
+        resp = AllocResponse(self, dest)
+        super(AllocRequest, self).generateResponse(dest)
+        return resp
         
 
 class PutRequest(Request):
@@ -523,7 +539,9 @@ class PutRequest(Request):
         self.data.archivetype = self.unjsonized['archivetype']
         
     def generateResponse(self, dest=None):
-        return PutResponse(self, dest)
+        resp = PutResponse(self, dest)
+        super(PutRequest, self).generateResponse(dest)
+        return resp
         
     @classmethod
     def suSort(cls, elem):
@@ -546,7 +564,9 @@ class DeleteseriesRequest(Request):
         self.data.series = self.unjsonized['series']
         
     def generateResponse(self, dest=None):
-        return DeleteseriesResponse(self, dest)
+        resp = DeleteseriesResponse(self, dest)
+        super(DeleteseriesRequest, self).generateResponse(dest)
+        return resp
 
 
 class PingRequest(Request):
@@ -554,7 +574,9 @@ class PingRequest(Request):
         super(PingRequest, self).__init__('ping', unjsonized, collector)
         
     def generateResponse(self, dest=None):
-        return PingResponse(self, dest)
+        resp = PingResponse(self, dest)
+        super(PingRequest, self).generateResponse(dest)
+        return resp
 
 
 class PollRequest(Request):
@@ -564,7 +586,8 @@ class PollRequest(Request):
         self.data.requestid = self.unjsonized['requestid']
         
     def generateResponse(self, dest=None):
-        return PollResponse(self, dest)
+        resp = PollResponse(self, dest)
+        super(PollRequest, self).generateResponse(dest)
 
 
 class RequestFactory(object):
@@ -940,7 +963,7 @@ class AllocResponse(Response):
         os.chmod(sudir, 0O2755)
         
         # Insert a record into the sum_partn_alloc table for this SU. status is DARW, which is 1. effective_date is "0". arch_sub is 0. group_id is 0. safe_id is 0. ds_index is 0.
-        self.cmd = 'INSERT INTO ' + SUM_PARTN_ALLOC + "(wd, sumid, status, bytes, effective_date, archive_substatus, group_id, safe_id, ds_index) VALUES ('" + sudir + "', '" + str(self.request.data.sessionid) + "', 1, " + str(self.request.data.numbytes) + ", '0', 0, 0, 0, 0)"
+        self.cmd = 'INSERT INTO ' + SUM_PARTN_ALLOC + "(wd, sumid, status, bytes, effective_date, archive_substatus, group_id, safe_id, ds_index) VALUES ('" + sudir + "', '" + str(self.request.data.sessionid) + "', " + str(DARW) + ", " + str(self.request.data.numbytes) + ", '0', 0, 0, 0, 0)"
         self.exeDbCmdNoResult()
         
         # To send to client.
@@ -954,13 +977,18 @@ class PutResponse(Response):
         try:    
             # We have to change ownership of the SU files to the production user - ACK! This is really bad design. It seems like
             # the only solution without a better design is to call an external program that runs as setuid root. This program calls
-            # chown recursively. It also make files read-only by calling chmod on all regular files.        
+            # chown recursively. It also make files read-only by calling chmod on all regular files. 
+            
+            # Save a mapping from SUDIR to SUNUM.
+            sunums = {}
+            
             partitionsNoDupes = set()
             for elem in self.request.data.sudirsNoDupes:
                 [(suStr, path)] = elem.items()
                 parts = Path(path).parts
                 partition = os.path.join(parts[0], parts[1])
                 partitionsNoDupes.add(partition)
+                sunums[path] = suStr
 
             # sum_chmown does not do a good job of preventing the caller from changing ownership of an arbitrary
             # directory, so add a little more checking here. Make sure that all partitions containing the SUs being committed 
@@ -998,29 +1026,38 @@ class PutResponse(Response):
             # If all file permission and ownership changes succeed, then commit the SUs to the SUMS database.
 
             # The tape group was determined during the SUM_alloc() call and is now stored in SUM_PARTN_ALLOC (keyed by wd NOT ds_index).
-            storageGroup = {} # Map SU to storage group.
+            storageGroup = {} # Map SUNUM to storage group.
             allStorageGroups = set()
             self.dbRes = []
-            self.cmd = 'SELECT ds_index, group_id FROM ' + SUM_PARTN_ALLOC + ' WHERE wd IN (' +  ','.join(sudirs) + ')'
+            # Ugh. SUMS does not insert the SUNUM during the SUM_alloc() call. It sets ds_index to 0. Use wd as the key.
+            self.cmd = 'SELECT wd, group_id FROM ' + SUM_PARTN_ALLOC + ' WHERE wd IN (' +  ','.join(sudirs) + ')'
             self.exeDbCmd()
         
             if len(self.dbRes) != len(sudirs):
                 raise DBCommandException('Unexpected DB response to cmd: ' + self.cmd + '. Rows returned: ' + str(len(self.dbRes)))
 
             for row in self.dbRes:
-                storageGroup[str(row[0])] = row[1]
-                allStorageGroups.add(str(row[0]))
+                # map sunum to group
+                storageGroup[sunums[row[0]]] = row[1]
+                if str(row[1]) not in allStorageGroups:
+                    allStorageGroups.add(str(row[1]))
             
             storageSet = {} # Map storage group to storage set.
+            for group in allStorageGroups:
+                # default to storage set 0 for all groups
+                storageSet[group] = 0
+
             self.dbRes = []
             self.cmd = 'SELECT group_id, sum_set FROM ' + SUM_ARCH_GROUP + ' WHERE group_id IN (' + ','.join(allStorageGroups) + ')'
             self.exeDbCmd()
     
-            if len(self.dbRes) != len(allStorageGroups):
-                raise DBCommandException('Unexpected DB response to cmd: ' + self.cmd)
+            if len(self.dbRes) > 0:
+                if len(self.dbRes) != len(allStorageGroups):
+                    raise DBCommandException('Unexpected DB response to cmd: ' + self.cmd)
 
-            for row in self.dbRes:
-                storageSet[str(row[0])] = row[1]
+                for row in self.dbRes:
+                    # map group to storage set
+                    storageSet[str(row[0])] = row[1]
         
             # Update SUMS sum_main database table - Calculate SU dir number of bytes, set online status to 'Y', set archstatus to 'N', 
             # set offsiteack to 'N', set dsname to seriesname, set storagegroup to tapegroup (determined in SUM_alloc()), set storageset 
@@ -1036,7 +1073,7 @@ class PutResponse(Response):
                 self.cmd = 'INSERT INTO ' + SUM_MAIN + "(online_loc, online_status, archive_status, offsite_ack, history_comment, owning_series, storage_group, storage_set, bytes, ds_index, create_sumid, creat_date, access_date, username) VALUES ('" + path + "', 'Y', 'N', 'N', '', '" + self.request.data.series + "', " + str(storageGroup[suStr]) + ', ' + str(storageSet[str(storageGroup[suStr])]) + ', ' + str(numBytes) + ', ' + suStr + ', ' + str(self.request.data.sessionid) + ", localtimestamp, localtimestamp, '" + os.getenv('USER', 'nouser') + "')"
                 self.exeDbCmdNoResult()
             
-            if apStatus == 2:
+            if apStatus == DADP:
                 # We do this simply to ensure that we do not have two sum_partn_alloc records with status DADP (delete pending).
                 self.cmd = 'DELETE FROM ' + SUM_PARTN_ALLOC + ' WHERE ds_index IN (' + ','.join(sus) + ') AND STATUS = ' + str(DADP)
                 self.exeDbCmdNoResult()
@@ -1063,6 +1100,14 @@ class PutResponse(Response):
         except:
             # We have to clean up db rows that were created in SUM_alloc() and SUM_put(). The SUM_alloc() request was processed in 
             # a previous DB transaction, so it will have been committed by this point. Then re-raise so an error response is generated.
+            
+            # Undo SUM_alloc() insertions.
+            self.cmd = 'DELETE FROM ' + SUM_PARTN_ALLOC + ' WHERE ds_index IN (' + ','.join(sus) + ')'
+            self.exeDbCmdNoResult()
+            
+            self.cmd = 'DELETE FROM ' + SUM_MAIN + ' WHERE ds_index IN (' + ','.join(sus) + ')'
+            self.exeDbCmdNoResult()
+            
             raise
 
 
