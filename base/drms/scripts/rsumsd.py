@@ -2076,6 +2076,7 @@ class Downloader(threading.Thread):
                             #    that row. By the time this thread terminates, there will be only a single row for this SU in sum_partn_alloc. substatus is DAAEDDP (32).
                             #    But first, delete any existing DADP (delete pending) rows for this sunum if the status of the SU for the new row is DADP.
                             if apStatus == 2:
+                                # We do this simply to ensure that we do not have two sum_partn_alloc records with status DADP (delete pending).
                                 cmd = 'DELETE FROM public.sum_partn_alloc WHERE ds_index = ' + str(self.sunum) + ' AND STATUS = 2'
                                 cursor.execute(cmd)
                                 self.log.writeInfo([ 'Successfully deleted old DADP record from sum_partn_alloc for SU ' + str(self.sunum) + '.' ])
