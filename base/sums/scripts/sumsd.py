@@ -155,79 +155,83 @@ class Log(object):
             type, value, traceback = sys.exc_info()
             raise Exception('badLogwrite', 'Unable to write to ' + value.filename + '.')
 
+class SDException(Exception):
 
-class ParamsException(Exception):
+    def __init__(self, msg):
+        super(SDException, self).__init__(msg)
+
+class ParamsException(SDException):
 
     def __init__(self, msg):
         super(ParamsException, self).__init__(msg)
 
 
-class ArgsException(Exception):
+class ArgsException(SDException):
 
     def __init__(self, msg):
         super(ArgsException, self).__init__(msg)
 
 
-class PollException(Exception):
+class PollException(SDException):
 
     def __init__(self, msg):
         super(PollException, self).__init__(msg)
 
 
-class SocketConnectionException(Exception):
+class SocketConnectionException(SDException):
 
     def __init__(self, msg):
         super(SocketConnectionException, self).__init__(msg)
 
 
-class DBConnectionException(Exception):
+class DBConnectionException(SDException):
 
     def __init__(self, msg):
         super(DBConnectionException, self).__init__(msg)
 
 
-class DBCommandException(Exception):
+class DBCommandException(SDException):
 
     def __init__(self, msg):
         super(DBCommandException, self).__init__(msg)
 
 
-class ReceiveJsonException(Exception):
+class ReceiveJsonException(SDException):
 
     def __init__(self, msg):
         super(ReceiveJsonException, self).__init__(msg)
         
         
-class ClientInfoException(Exception):
+class ClientInfoException(SDException):
 
     def __init__(self, msg):
         super(ClientInfoException, self).__init__(msg)
 
 
-class ExtractRequestException(Exception):
+class ExtractRequestException(SDException):
 
     def __init__(self, msg):
         super(ExtractRequestException, self).__init__(msg)
 
 
-class RequestTypeException(Exception):
+class RequestTypeException(SDException):
 
     def __init__(self, msg):
         super(RequestTypeException, self).__init__(msg)
 
 
-class GenerateResponseException(Exception):
+class GenerateResponseException(SDException):
 
     def __init__(self, msg):
         super(GenerateResponseException, self).__init__(msg)
 
-class ImplementationException(Exception):
+class ImplementationException(SDException):
 
     def __init__(self, msg):
         super(ImplementationException, self).__init__(msg)
 
 
-class TaperequestException(Exception):
+class TaperequestException(SDException):
 
     def __init__(self, msg):
         super(TaperequestException, self).__init__(msg)
@@ -1115,7 +1119,7 @@ class DeleteseriesResponse(Response):
     def __init__(self, request, dest=None):
         super(DeleteseriesResponse, self).__init__(request)
         
-        series = lower(self.request.data.series)
+        series = self.request.data.series.lower()
 
         # This update/join is a very quick operation. And if the series has no records, it is a quick noop.
         self.cmd = 'UPDATE ' + SUM_PARTN_ALLOC + ' AS T1 SET status = ' + str(DADP) + ", effective_date = '0', archive_substatus = " + str(DAADP) + ' FROM ' + SUM_MAIN + " AS T2 WHERE lower(T2.owning_series) = '" + series + "' AND T1.ds_index = T2.ds_index"
@@ -1330,9 +1334,12 @@ class Collector(threading.Thread):
         try:
             self.response = self.request.generateResponse()
             self.response.setStatus(RESPSTATUS_OK)
-        except Exception as exc:
+        except SDException as exc:
             # Create a response with a non-OK status and an error message.
             raise GenerateResponseException(exc.args[0])
+        except Exception as exc:
+            import traceback
+            raise GenerateResponseException(traceback.format_exc(2))
         return self.response.getJSON()
         
     def generateErrorResponse(self, status, errMsg):
