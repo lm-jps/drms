@@ -144,7 +144,7 @@ char STMT[] = "SELECT ONLINE_LOC, ONLINE_STATUS, ARCHIVE_STATUS, OFFSITE_ACK, BY
        ds_index = mainquery.ds_index;
        
        /* find the position of the ds_index in the orig array */
-       /* OK, this is a horrible N^2 algorithm, inside an N algorithm - so we have a O(N^3) algorithm! */
+       /* OK, this is a horrible N^2 algorithm, inside an N algorithm - so we have an O(N^3) algorithm! */
        for(pos=0; pos < reqcnt; pos++) 
        {
          if(ds_index == ds_index_arr[pos]) break;
@@ -154,7 +154,8 @@ char STMT[] = "SELECT ONLINE_LOC, ONLINE_STATUS, ARCHIVE_STATUS, OFFSITE_ACK, BY
          ds_index_arr_pos[pos] = 1;
        }
        else 
-       { 
+       {
+         /* This means that duplicates have an empty string for their wd values. */
          continue; //skip a dup ds_index
        }	
 
@@ -186,6 +187,7 @@ char STMT[] = "SELECT ONLINE_LOC, ONLINE_STATUS, ARCHIVE_STATUS, OFFSITE_ACK, BY
       */
       if(touch) {
         /* get the original effective_date and see if ok to change */
+        /* UGH, ds_index should have a primary key or unique key constraint, but it does not. */
         EXEC SQL SELECT DISTINCT EFFECTIVE_DATE INTO :eff_date_str
         FROM SUM_PARTN_ALLOC where DS_INDEX = :ds_index 
 	and STATUS != :daro;
@@ -196,7 +198,7 @@ char STMT[] = "SELECT ONLINE_LOC, ONLINE_STATUS, ARCHIVE_STATUS, OFFSITE_ACK, BY
             change = 1; 
             //New 5/5/2014 Add 3 days grace, so likely subsequent calls
             //won't have to touch it again
-            eff_date = (char *)get_effdate(posdays+3); //add 3 days grace
+            eff_date = (char *)get_effdate(posdays+3); //add 3 days grace (Did Jim really know about the rock band by this name - Art)
           }
           else change = 0;
         }

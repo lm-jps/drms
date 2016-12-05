@@ -17,7 +17,7 @@
 
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
     /* Macros for the multi-threaded SUMS daemon. */
-    #define MAX_MTSUMS_NSUS 262144 /* 2^18 - the easiest way to say 'unlimited'. */
+    #define MAX_MTSUMS_NSUS 32768 /* 2^15 */
 #endif
 
 #define OFFSITEDIR "/dds/socdc" /* offsite dir to put .md5 files */
@@ -212,7 +212,6 @@ bool_t xdr_sum_info_t(XDR *xdrs, SUM_info_t *objp);
 #define SUMRESPDO ((uint32_t)5)
 #define ALLOCDO ((uint32_t)6)
 #define PUTDO ((uint32_t)7)
-#define ARCHSUDO ((uint32_t)8)
 /**********************************
 #define APUPDO ((uint32_t)8)
 #define DPUPDO ((uint32_t)9)
@@ -451,13 +450,90 @@ extern KEY *jmtxdo_1(KEY *params);
 
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
 typedef int MSUMSCLIENT_t;
+
+#if defined(SUMS_USEMTSUMS_ALL) && SUMS_USEMTSUMS_ALL
+// The SUMS API family that opens and closes SUMS connections:
+//    SUM_open() - Open a (socket) connection to MT SUMS.
+//    SUM_close() - Close the MT SUMS connection (For RPC SUMS, uses same the same RPC client as does SUM_open().)
+#undef SUMS_USEMTSUMS_CONNECTION
+#define SUMS_USEMTSUMS_CONNECTION 1
+
+// The SUMS API family that obtains information about asynchronously running services:
+//    SUM_nop() - Check to see if the MT SUMS server is alive. Returns 0 if it is alive and responding, 1 if the client times-out attempting to 
+// communicate with the server, 4 on error, and 5 if the tape service is not responding. THE FUNCTION OF THE ORIGINAL SUMS SEEMS WHACKED!
+// THESE RETURN VALUES ARE JUST A GUESS.
+// (For RPC SUMS, queries the server processing the in-progress request (the one being used currently and asynchronously.))
+// The user cannot actually specify whether the MT or the RPC version of the SUMS API should be used. If the currently
+// executing API is an RPC version (executing in the clprev RPC client), then the RPC version must be used. And if the
+// currently executing API is an MT version, then the MT version must be used. So, BOTH the RPC and MT versions must exist.
+//    SUM_poll() - If the MT SUMS server has completed processing an asynchronous request, then this service returns 0. Otherwise it returns 3
+// on timeout and 4 on error. THE FUNCTION OF THE ORIGINAL SUMS SEEMS WHACKED! THESE RETURN VALUES ARE JUST A GUESS.
+// (For RPC SUMS, uses getanymsg(), which uses select().) Like SUM_nop(), the user cannot specify whether the RPC version or the 
+// MT version should be used.
+//
+// Don't expose the SUM_wait() API function. It is not used.
+
+// The SUMS API family that obtains Storage Unit information: 
+//    SUM_infoArray() - Request SU information from the MT SUMS server.
+#undef SUMS_USEMTSUMS_INFO
+#define SUMS_USEMTSUMS_INFO 1
+
+// The SUMS API family that obtains SU paths:
+//    SUM_get() - Request the SU path from the MT SUMS server, and cause a tape read if necessary (TAPE READ IS NOT IMPLEMENTED YET!).
+#undef SUMS_USEMTSUMS_GET
+#define SUMS_USEMTSUMS_GET 1
+
+// The SUMS API family that allocates new SU directories:
+//    SUM_alloc() - Request a new SUDIR from the MT SUMS server. The SUNUM is the next in the monotonically increasing sequence.
+//    SUM_alloc2() - Request a new SUDIR from the MT SUMS server that has the specified SUNUM.
+// (For RPC SUMS, ALLOC2 uses the same RPC client as does the ALLOC API function.)
+#undef SUMS_USEMTSUMS_ALLOC
+#define SUMS_USEMTSUMS_ALLOC 1
+
+// The SUMS API family that commits new SU directories:
+//    SUM_put() - Request the MT SUMS server to commit the allocated SUs.
+#undef SUMS_USEMTSUMS_PUT
+#define SUMS_USEMTSUMS_PUT 1
+
+// The SUMS API family that deletes SUs:
+//    SUM_delete_series() - Request the MT SUMS server to mark for deletion all SUs that belong to the specified DRMS series.
+#undef SUMS_USEMTSUMS_DELETESUS
+#define SUMS_USEMTSUMS_DELETESUS 1
+// Don't expose the REPARTITION or REPARTITIONCHECKERROR API functions. It makes no sense that they should be in the API - those are private SUMS services.
+#else /* SUMS_USEMTSUMS_ALL */
+
+#if (defined(SUMS_USEMTSUMS_CONNECTION) && SUMS_USEMTSUMS_CONNECTION) && (defined(SUMS_USEMTSUMS_INFO) && SUMS_USEMTSUMS_INFO) && (defined(SUMS_USEMTSUMS_GET) && SUMS_USEMTSUMS_GET) && (defined(SUMS_USEMTSUMS_ALLOC) && SUMS_USEMTSUMS_ALLOC) && (defined(SUMS_USEMTSUMS_PUT) && SUMS_USEMTSUMS_PUT) && (defined(SUMS_USEMTSUMS_DELETESUS) && SUMS_USEMTSUMS_DELETESUS)
+/* The client has SUMS_USEMTSUMS_ALL set to 0, but all MT service macros are defined */
+#error DRMS is not configured correctly. It is configured to use at least one RPC service, but all MT SUMS parameters are set.
+#endif
+
+/* Using MT SUMS, but not all services.*/
+
+/* Since we are using RPC SUMS for at least one server, we must use the RPC version of the CONNECTION family of API functions */
+#if defined(SUMS_USEMTSUMS_CONNECTION) && SUMS_USEMTSUMS_CONNECTION
+#error DRMS is not configured correctly. It is configured to use at least one RPC service, but the CONNECTION parameter is not set for the RPC interface.
+#endif
+
+#endif /* SUMS_USEMTSUMS_ALL == 0 */
+
+// If the configuration calls for MT SUMS, then the configuration must call for at least east one MT service.
+#if (!defined(SUMS_USEMTSUMS_CONNECTION) || !SUMS_USEMTSUMS_CONNECTION) && (!defined(SUMS_USEMTSUMS_INFO) || !SUMS_USEMTSUMS_INFO) && (!defined(SUMS_USEMTSUMS_GET) || !SUMS_USEMTSUMS_GET) && (!defined(SUMS_USEMTSUMS_ALLOC) || !SUMS_USEMTSUMS_ALLOC) && (!defined(SUMS_USEMTSUMS_PUT) || !SUMS_USEMTSUMS_PUT) && (!defined(SUMS_USEMTSUMS_DELETESUS) || !SUMS_USEMTSUMS_DELETESUS)
+/* Using MT SUMS, but not using any MT services */
+#error DRMS is not configured correctly. If DRMS is configured to use MT SUMS, then at least one MT SUMS service must be enabled.
+#endif
+#else /* Using MT SUMS */
+/* Not using MT SUMS at all */
 #endif
 
 //NOTE: Must be client handles for MAXNUMSUM (defined in SUM.h) servers
 typedef struct SUM_struct
 {
   SUMID_t uid;
+
+#if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || (!defined(SUMS_USEMTSUMS_ALL) || !SUMS_USEMTSUMS_ALL)
   CLIENT *cl;            /* client handle for calling sum_svc */
+#endif
+#if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || (!defined(SUMS_USEMTSUMS_CONNECTION) || !SUMS_USEMTSUMS_CONNECTION)
   CLIENT *clopen;           /* client handle for calling sum_svc open */
   CLIENT *clopen1;          /* client handle for calling sum_svc open */
   CLIENT *clopen2;          /* client handle for calling sum_svc open */
@@ -466,6 +542,9 @@ typedef struct SUM_struct
   CLIENT *clopen5;          /* client handle for calling sum_svc open */
   CLIENT *clopen6;          /* client handle for calling sum_svc open */
   CLIENT *clopen7;          /* client handle for calling sum_svc open */
+  CLIENT *clclose;          /* client handle used to open this SUMS session - it must be used to close the SUMS session. */
+#endif
+#if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || (!defined(SUMS_USEMTSUMS_ALLOC) || !SUMS_USEMTSUMS_ALLOC)
   CLIENT *clalloc;       /* client handle for calling sum_svc allocate */
   CLIENT *clalloc1;       /* client handle for calling sum_svc allocate */
   CLIENT *clalloc2;       /* client handle for calling sum_svc allocate */
@@ -474,6 +553,8 @@ typedef struct SUM_struct
   CLIENT *clalloc5;       /* client handle for calling sum_svc allocate */
   CLIENT *clalloc6;       /* client handle for calling sum_svc allocate */
   CLIENT *clalloc7;       /* client handle for calling sum_svc allocate */
+#endif
+#if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || (!defined(SUMS_USEMTSUMS_GET) || !SUMS_USEMTSUMS_GET)
   CLIENT *clget;         /* client handle for calling sum_svc get */
   CLIENT *clget1;        /* client handle for calling sum_svc get */
   CLIENT *clget2;        /* client handle for calling sum_svc get */
@@ -482,6 +563,8 @@ typedef struct SUM_struct
   CLIENT *clget5;        /* client handle for calling sum_svc get */
   CLIENT *clget6;        /* client handle for calling sum_svc get */
   CLIENT *clget7;        /* client handle for calling sum_svc get */
+#endif
+#if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || (!defined(SUMS_USEMTSUMS_PUT) || !SUMS_USEMTSUMS_PUT)
   CLIENT *clput;         /* client handle for calling sum_svc put */
   CLIENT *clput1;        /* client handle for calling sum_svc put */
   CLIENT *clput2;        /* client handle for calling sum_svc put */
@@ -490,7 +573,8 @@ typedef struct SUM_struct
   CLIENT *clput5;        /* client handle for calling sum_svc put */
   CLIENT *clput6;        /* client handle for calling sum_svc put */
   CLIENT *clput7;        /* client handle for calling sum_svc put */
-#if !defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS
+#endif
+#if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || (!defined(SUMS_USEMTSUMS_INFO) || !SUMS_USEMTSUMS_INFO)
   CLIENT *clinfo;        /* client handle for calling sum_svc info */
   CLIENT *clinfo1;       /* client handle for calling sum_svc info */
   CLIENT *clinfo2;       /* client handle for calling sum_svc info */
@@ -500,7 +584,9 @@ typedef struct SUM_struct
   CLIENT *clinfo6;       /* client handle for calling sum_svc info */
   CLIENT *clinfo7;       /* client handle for calling sum_svc info */
 #endif
+#if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || (!defined(SUMS_USEMTSUMS_DELETESUS) || !SUMS_USEMTSUMS_DELETESUS)
   CLIENT *cldelser;      /* client handle for calling sum_svc del series */
+#endif
   SUM_info_t *sinfo;	 /* info from sum_main for SUM_info() call */
   int debugflg;		 /* verbose debug mode if set */
   int mode;              /* bit map of various modes */
@@ -518,7 +604,6 @@ typedef struct SUM_struct
   char **wd;		 /* ptr to array of char * */
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
   MSUMSCLIENT_t mSumsClient;   /* A handle to sumsd.py (a socket file descriptor actually ) */
-  struct Pickler_struct *pickler; /* An OPAQUE handle to stuff that needs to be decremented when we tear-down Py environment. */
 #endif
 } SUM_t;
 
@@ -634,12 +719,11 @@ int SUM_shutdown(int query, int (*history)(const char *fmt, ...));
 int SUM_close(SUM_t *sum, int (*history)(const char *fmt, ...));
 int SUM_get(SUM_t *sum, int (*history)(const char *fmt, ...));
 int SUM_put(SUM_t *sum, int (*history)(const char *fmt, ...));
-int SUM_archSU(SUM_t *sum, int (*history)(const char *fmt, ...));
 int SUM_alloc(SUM_t *sum, int (*history)(const char *fmt, ...));
 int SUM_alloc2(SUM_t *sum, uint64_t sunum, int (*history)(const char *fmt, ...));
 int SUM_poll(SUM_t *sum);
 int SUM_wait(SUM_t *sum);
-int SUM_delete_series(char *filename, char *seriesname, int (*history)(const char *fmt, ...));
+int SUM_delete_series(SUM_t *sum, char *filename, char *seriesname, int (*history)(const char *fmt, ...));
 int SUM_export(SUMEXP_t *sumexp, int (*history)(const char *fmt, ...));
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
 int SUM_infoArray(SUM_t *sums, uint64_t *sunums, int reqcnt, int (*history)(const char *fmt, ...));

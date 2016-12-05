@@ -1,4 +1,8 @@
 /* SUMLIB_drop_series.pgc
+ *
+ * WRONG!! This file is not used at all!
+ *   -Art
+ *
  * This is a function used by the delete_series program.
  * It is passed a DB table that has the list of sunum (aka ds_index)
  * values to be removed from the SUMS.

@@ -242,12 +242,21 @@ static int EmptyDir(const char *dir, int depth)
 long long drms_su_alloc(DRMS_Env_t *env, uint64_t size, char **sudir, int *tapegroup, int *status)
 {
   int stat;
-  DRMS_SumRequest_t *request, *reply;
-  request = malloc(sizeof(DRMS_SumRequest_t));
-  XASSERT(request);
   long long sunum;
+  
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_ALLOC) && SUMS_USEMTSUMS_ALLOC
+    DRMS_MtSumsRequest_t *request = NULL;
+    DRMS_MtSumsRequest_t *reply = NULL;
+    
+    request = calloc(1, sizeof(DRMS_MtSumsRequest_t));
+#else
+    DRMS_SumRequest_t *request = NULL;
+    DRMS_SumRequest_t *reply = NULL;
+    
+    request = malloc(sizeof(DRMS_SumRequest_t));
+#endif
 
-  //  printf("************** HERE I AM *******************\n");
+    XASSERT(request);
 
   /* No free slot was found, allocate a new storage unit from SUMS. */
   request->opcode = DRMS_SUMALLOC;
@@ -295,35 +304,60 @@ long long drms_su_alloc(DRMS_Env_t *env, uint64_t size, char **sudir, int *tapeg
   drms_unlock_server(env);
   tqueueDel(env->sum_outbox, (long) pthread_self(), (char **)&reply);
 
-  if (reply->opcode)
-  {
-      if (reply->opcode == -2)
-      {
-          fprintf(stderr, "Cannot access SUMS in this DRMS session - a tape read is pending.\n");
-          stat = DRMS_ERROR_PENDINGTAPEREAD;
-      }
-      else
-      {
-          fprintf(stderr,"SUM ALLOC failed with error code %d.\n",reply->opcode);
-          stat = reply->opcode;
-      }
-      sunum = 0;
-      if (sudir)
-          *sudir = NULL;
-  }
-  else
-  {
-    stat = DRMS_SUCCESS;
-    sunum = reply->sunum[0];
-    if (sudir)
-      *sudir =  reply->sudir[0];
+    if (reply->opcode)
+    {
+        if (reply->opcode == -2)
+        {
+            fprintf(stderr, "Cannot access SUMS in this DRMS session - a tape read is pending.\n");
+            stat = DRMS_ERROR_PENDINGTAPEREAD;
+        }
+        else
+        {
+            fprintf(stderr,"SUM ALLOC failed with error code %d.\n",reply->opcode);
+            stat = reply->opcode;
+        }
+        
+        sunum = 0;
+        
+        if (sudir)
+        {
+            *sudir = NULL;
+        }
+    }
+    else
+    {
+        stat = DRMS_SUCCESS;
+        sunum = reply->sunum[0];
+        
+        if (sudir)
+        {
+            /* STEAL the allocated path string, so do not free it here (caller will free it). */
+            *sudir =  reply->sudir[0];
+        }
+        
 #ifdef DEBUG
-    printf("Allocated Storage unit #%lld, dir='%s'\n",sunum, reply->sudir[0]);
+        printf("Allocated Storage unit #%lld, dir='%s'\n",sunum, reply->sudir[0]);
 #endif
-  }
+    }
 
   if (status)
     *status = stat;
+    
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_ALLOC) && SUMS_USEMTSUMS_ALLOC
+    /* For MT SUMS, we alloc the sunum and sudir fields. */
+    if (reply->sunum)
+    {
+        free(reply->sunum);
+        reply->sunum = NULL;
+    }
+
+    if (reply->sudir)
+    {
+        free(reply->sudir);
+        reply->sudir = NULL;
+    }    
+#endif
+    
   free(reply);
   return sunum;   
 }
@@ -337,12 +371,23 @@ int drms_su_alloc2(DRMS_Env_t *env,
                    int *tapegroup,
                    int *status)
 {
-   int stat;
-   DRMS_SumRequest_t *request = NULL;
-   DRMS_SumRequest_t *reply = NULL;
-   request = malloc(sizeof(DRMS_SumRequest_t));
-   XASSERT(request);
+    int stat;
 
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_ALLOC) && SUMS_USEMTSUMS_ALLOC
+    DRMS_MtSumsRequest_t *request = NULL;
+    DRMS_MtSumsRequest_t *reply = NULL;
+    
+    request = calloc(1, sizeof(DRMS_MtSumsRequest_t));
+    XASSERT(request);
+    request->sunum = calloc(1, sizeof(uint64_t));
+    XASSERT(request->sunum);
+#else
+    DRMS_SumRequest_t *request = NULL;
+    DRMS_SumRequest_t *reply = NULL;
+
+    request = malloc(sizeof(DRMS_SumRequest_t));
+    XASSERT(request);
+#endif
    request->opcode = DRMS_SUMALLOC2;
    request->dontwait = 0;
    request->reqcnt = 1;
@@ -406,6 +451,7 @@ int drms_su_alloc2(DRMS_Env_t *env,
       stat = DRMS_SUCCESS;
       if (sudir)
       {
+        /* Steal - yoink! */
          *sudir = reply->sudir[0];
       }
    }
@@ -414,6 +460,15 @@ int drms_su_alloc2(DRMS_Env_t *env,
    {
       *status = stat;
    }
+
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_ALLOC) && SUMS_USEMTSUMS_ALLOC
+    /* For MT SUMS, we alloc the sudir field. */
+    if (reply->sudir)
+    {
+        free(reply->sudir);
+        reply->sudir = NULL;
+    }    
+#endif
 
    if (reply)
    {
@@ -1014,12 +1069,19 @@ static int processRemoteSums(DRMS_RsHandle_t *handle, int64_t *sunums, unsigned 
 
 int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
 {  
-  int sustatus = DRMS_SUCCESS;
-  DRMS_SumRequest_t *request, *reply;
-  int tryagain;
-  int natts;
-  int16_t stagingRet = INT16_MIN;
+    int sustatus = DRMS_SUCCESS;
+    int tryagain;
+    int natts;
+    int16_t stagingRet = INT16_MIN;
     int status = 0; /* For pthread_create() only. */
+    
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_GET) && SUMS_USEMTSUMS_GET
+    DRMS_MtSumsRequest_t *request = NULL;
+    DRMS_MtSumsRequest_t *reply = NULL;
+#else
+    DRMS_SumRequest_t *request = NULL;
+    DRMS_SumRequest_t *reply = NULL;
+#endif
 
   /*
   NILES OIEN oien@nso.edu : These declarations used to happen in the executable code, C++ style. I pulled
@@ -1063,8 +1125,16 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
   {
      tryagain = 0;
 
-     request = malloc(sizeof(DRMS_SumRequest_t));
-     XASSERT(request);
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_GET) && SUMS_USEMTSUMS_GET
+        request = calloc(1, sizeof(DRMS_MtSumsRequest_t));
+        XASSERT(request);
+        request->sunum = calloc(1, sizeof(uint64_t)); /* This may be larger than needed, but don't sweat it. */
+        XASSERT(request->sunum);
+#else
+        request = malloc(sizeof(DRMS_SumRequest_t));
+        XASSERT(request);
+#endif
+
      request->opcode = DRMS_SUMGET;
      request->reqcnt = 1;
      request->sunum[0] = su->sunum;
@@ -1121,6 +1191,24 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
          if (reply->opcode == 3)
          {
              /* We waited over two hours for a tape fetch to complete, then we timed-out. */
+            if (reply->sudir)
+            {
+                /* Client is waiting for reply, so client must clean-up sudirs. */
+                for (int i = 0; i < request->reqcnt; i++) 
+                {
+                    if ((reply->sudir)[i])
+                    {
+                        free((reply->sudir)[i]);
+                        (reply->sudir)[i] = NULL;
+                    }
+                }
+
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_GET) && SUMS_USEMTSUMS_GET
+                free(reply->sudir);
+                reply->sudir = NULL;
+#endif
+            }
+            
              free(reply);
              drms_unlock_server(env);
              return DRMS_ERROR_SUMSTRYLATER;
@@ -1128,6 +1216,23 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
          else if (reply->opcode == -2)
          {
              fprintf(stderr, "Cannot access SUMS in this DRMS session - a tape read is pending.\n");
+
+            if (reply->sudir)
+            {
+                for (int i = 0; i < request->reqcnt; i++) 
+                {
+                    if ((reply->sudir)[i])
+                    {
+                        free((reply->sudir)[i]);
+                        (reply->sudir)[i] = NULL;
+                    }
+                }
+
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_GET) && SUMS_USEMTSUMS_GET
+                free(reply->sudir);
+                reply->sudir = NULL;
+#endif
+            }
              free(reply);
              drms_unlock_server(env);
              return DRMS_ERROR_PENDINGTAPEREAD;
@@ -1135,6 +1240,24 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
          else
          {
              fprintf(stderr, "SUM GET failed with error code %d.\n", reply->opcode);
+
+            if (reply->sudir)
+            {
+                for (int i = 0; i < request->reqcnt; i++) 
+                {
+                    if ((reply->sudir)[i])
+                    {
+                        free((reply->sudir)[i]);
+                        (reply->sudir)[i] = NULL;
+                    }
+                }
+
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_GET) && SUMS_USEMTSUMS_GET
+                free(reply->sudir);
+                reply->sudir = NULL;
+#endif
+            }
+
              free(reply);
              drms_unlock_server(env);
              return DRMS_ERROR_SUMGET;
@@ -1144,10 +1267,9 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
      {
         su->sudir[0] = '\0';
 
-        if (strlen(reply->sudir[0]) > 0)
+        if (reply->sudir && strlen(reply->sudir[0]) > 0)
         {
            snprintf(su->sudir, sizeof(su->sudir), "%s", reply->sudir[0]);
-           free(reply->sudir[0]);
         }
         else if (retrieve && natts < 2 && su->sunum >= 0 && drms_su_isremotesu(su->sunum))
         {
@@ -1253,9 +1375,25 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
             (su->sudir)[0] = '\0';
         }
      }
+     
+    /* Since dontwait == 0, need to free up reply sudir field. */
+    for (int i = 0; i < request->reqcnt; i++) 
+    {
+        if ((reply->sudir)[i])
+        {
+            free((reply->sudir)[i]);
+            (reply->sudir)[i] = NULL;
+        }
+    }
 
-     free(reply);
-     natts++;
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_GET) && SUMS_USEMTSUMS_GET
+    free(reply->sudir);
+    reply->sudir = NULL;
+#endif
+
+    /* request is shallow-freed by the SUMS thread, so don't free here. */
+    free(reply);
+    natts++;
   }
 
   drms_unlock_server(env);
@@ -1270,7 +1408,6 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
 int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retrieve, int dontwait)
 {  
   int sustatus = DRMS_SUCCESS;
-  DRMS_SumRequest_t *request, *reply;
   DRMS_StorageUnit_t **workingsus = NULL;
   DRMS_StorageUnit_t **rsumssus = NULL;
   //LinkedList_t *retrysunums = NULL;
@@ -1281,6 +1418,17 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
   int natts;
   int16_t maxRet;
   int16_t stagingRet = INT16_MIN;
+  int maxNoSus = 0;
+  
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_GET) && SUMS_USEMTSUMS_GET
+    DRMS_MtSumsRequest_t *request = NULL;
+    DRMS_MtSumsRequest_t *reply = NULL;
+    maxNoSus = MAX_MTSUMS_NSUS;
+#else
+    DRMS_SumRequest_t *request = NULL;
+    DRMS_SumRequest_t *reply = NULL;
+    maxNoSus = MAXSUMREQCNT;
+#endif
 
   /*
   NILES OIEN oien@nso.edu These declarations used to happen in the executable code, C++ style. I pulled
@@ -1338,9 +1486,10 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
      *(onesu->sudir) = '\0';
   }
 
-  /* There is a maximum no. of SUs that can be requested from SUMS, MAXSUMREQCNT. So, loop. */
+  /* There is a maximum no. of SUs that can be requested from SUMS, MAXSUMREQCNT (for RPC SUMS) and 
+   * MAX_MTSUMS_NSUS (for MT SUMS). So, loop. */
   start = 0;
-  end = SUMIN(MAXSUMREQCNT, n); /* index of SU one past the last one to be processed */
+  end = SUMIN(maxNoSus, n); /* index of SU one past the last one to be processed */
 
   workingsus = su;
   workingn = n;
@@ -1359,12 +1508,19 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
   {
      tryagain = 0;
 
-     /* Ask SUMS for ALL SUS in workingsus (in chunks of MAXSUMREQCNT) */
+     /* Ask SUMS for ALL SUS in workingsus (in chunks of MAXSUMREQCNT/MAX_MTSUMS_NSUS) */
      while (start < workingn)
      {
         /* create SUMS request (apparently, SUMS frees this request) */
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_GET) && SUMS_USEMTSUMS_GET
+        request = calloc(1, sizeof(DRMS_MtSumsRequest_t));
+        XASSERT(request);
+        request->sunum = calloc(maxNoSus, sizeof(uint64_t)); /* This may be larger than needed, but don't sweat it. */
+        XASSERT(request->sunum);
+#else
         request = malloc(sizeof(DRMS_SumRequest_t));
         XASSERT(request);
+#endif
 
         request->opcode = DRMS_SUMGET;
         request->reqcnt = end - start;
@@ -1429,39 +1585,127 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
            {
                if (reply->opcode == 3)
                {
-                   free(reply);
-                   drms_unlock_server(env);
-                   
-                   /* We waited over two hours for a tape fetch to complete, then we timed-out. */
-                   return DRMS_ERROR_SUMSTRYLATER;
+                    if (reply->sudir)
+                    {
+                        for (int i = 0; i < request->reqcnt; i++) 
+                        {
+                            if ((reply->sudir)[i])
+                            {
+                                free((reply->sudir)[i]);
+                                (reply->sudir)[i] = NULL;
+                            }
+                        }
+
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_GET) && SUMS_USEMTSUMS_GET
+                        free(reply->sudir);
+                        reply->sudir = NULL;
+#endif
+                    }
+               
+                    free(reply);
+                    drms_unlock_server(env);
+
+                    /* We waited over two hours for a tape fetch to complete, then we timed-out. */
+                    return DRMS_ERROR_SUMSTRYLATER;
                }
                else if (reply->opcode == -2)
                {
                    fprintf(stderr, "Cannot access SUMS in this DRMS session - a tape read is pending.\n");
-                   free(reply);
-                   drms_unlock_server(env);
-                   return DRMS_ERROR_PENDINGTAPEREAD;
+                   
+                    if (reply->sudir)
+                    {
+                        for (int i = 0; i < request->reqcnt; i++) 
+                        {
+                            if ((reply->sudir)[i])
+                            {
+                                free((reply->sudir)[i]);
+                                (reply->sudir)[i] = NULL;
+                            }
+                        }
+
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_GET) && SUMS_USEMTSUMS_GET
+                        free(reply->sudir);
+                        reply->sudir = NULL;
+#endif
+                    }
+                   
+                    free(reply);
+                    drms_unlock_server(env);
+                    return DRMS_ERROR_PENDINGTAPEREAD;
                }
                else if (reply->opcode == -3)
                {
-                   fprintf(stderr, "Failure setting sum-get-pending flag.\n");
-                   free(reply);
-                   drms_unlock_server(env);
-                   return DRMS_ERROR_SUMGET;
+                    fprintf(stderr, "Failure setting sum-get-pending flag.\n");
+                   
+                    if (reply->sudir)
+                    {
+                        for (int i = 0; i < request->reqcnt; i++) 
+                        {
+                            if ((reply->sudir)[i])
+                            {
+                                free((reply->sudir)[i]);
+                                (reply->sudir)[i] = NULL;
+                            }
+                        }
+
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_GET) && SUMS_USEMTSUMS_GET
+                        free(reply->sudir);
+                        reply->sudir = NULL;
+#endif
+                    }
+                    
+                    free(reply);
+                    drms_unlock_server(env);
+                    return DRMS_ERROR_SUMGET;
                }
                else if (reply->opcode == -4)
                {
-                  fprintf(stderr, "Failure UNsetting sum-get-pending flag.\n");
+                    fprintf(stderr, "Failure UNsetting sum-get-pending flag.\n");
+
+                    if (reply->sudir)
+                    {
+                        for (int i = 0; i < request->reqcnt; i++) 
+                        {
+                            if ((reply->sudir)[i])
+                            {
+                                free((reply->sudir)[i]);
+                                (reply->sudir)[i] = NULL;
+                            }
+                        }
+
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_GET) && SUMS_USEMTSUMS_GET
+                        free(reply->sudir);
+                        reply->sudir = NULL;
+#endif
+                    }
                   free(reply);
                   drms_unlock_server(env);
                   return DRMS_ERROR_SUMGET;
                }
                else
                {
-                   fprintf(stderr, "SUM GET failed with error code %d.\n", reply->opcode);
-                   free(reply);
-                   drms_unlock_server(env);
-                   return DRMS_ERROR_SUMGET;
+                    fprintf(stderr, "SUM GET failed with error code %d.\n", reply->opcode);
+                   
+                    if (reply->sudir)
+                    {
+                        for (int i = 0; i < request->reqcnt; i++) 
+                        {
+                            if ((reply->sudir)[i])
+                            {
+                                free((reply->sudir)[i]);
+                                (reply->sudir)[i] = NULL;
+                            }
+                        }
+
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_GET) && SUMS_USEMTSUMS_GET
+                        free(reply->sudir);
+                        reply->sudir = NULL;
+#endif
+                    }
+                   
+                    free(reply);
+                    drms_unlock_server(env);
+                    return DRMS_ERROR_SUMGET;
                }
            }
            else
@@ -1503,15 +1747,26 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
                      (workingsus[isu]->sudir)[0] = '\0';
                  }
 
-                 free(reply->sudir[iSUMSsunum]);
+                if (reply->sudir[iSUMSsunum])
+                {
+                    free(reply->sudir[iSUMSsunum]);
+                    reply->sudir[iSUMSsunum] = NULL;
+                }
               }
            }
 
-           free(reply);
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_GET) && SUMS_USEMTSUMS_GET
+            free(reply->sudir);
+            reply->sudir = NULL;
+#endif
+
+            free(reply);
         } /* !dontwait*/
 
         start = end;
-        end = SUMIN(MAXSUMREQCNT + start, workingn);
+        end = SUMIN(maxNoSus + start, workingn);
+        
+        /* request is shallow-freed by the SUMS thread, so don't free here. */        
      } /* while */
 
      /* At this point, there may be some off-site SUNUMs - if so, run master script
@@ -1563,7 +1818,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
 
            start = 0;
            /* index of SU one past the last one to be processed */
-           end = SUMIN(MAXSUMREQCNT, nretrySUNUMS);
+           end = SUMIN(maxNoSus, nretrySUNUMS);
            rsumssus = (DRMS_StorageUnit_t **)malloc(sizeof(DRMS_StorageUnit_t *) * nretrySUNUMS);
 
            isu = 0;
@@ -1597,7 +1852,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
              rsu = NULL;
              
              nretrySUNUMS = list_llgetnitems(retrysus);
-             sunums = calloc(SUMIN(MAXSUMREQCNT, nretrySUNUMS), sizeof(int64_t));
+             sunums = calloc(SUMIN(maxNoSus, nretrySUNUMS), sizeof(int64_t));
              
              if (!sunums)
              {
@@ -1616,7 +1871,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
                          rsu = *((DRMS_StorageUnit_t **)(node->data));
                          sunums[iSUMSsunum++] = rsu->sunum;
                          
-                         if (iSUMSsunum > 0 && (iSUMSsunum % MAXSUMREQCNT == 0 || isu == nretrySUNUMS - 1))
+                         if (iSUMSsunum > 0 && (iSUMSsunum % maxNoSus == 0 || isu == nretrySUNUMS - 1))
                          {
                              /* if isu == nretrySUNUMS - 1, then about to exit loop. */
                              sustatus = processRemoteSums(rsHandle, sunums, iSUMSsunum);
@@ -1632,7 +1887,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
                              
                              if (isu < nretrySUNUMS - 1)
                              {
-                                 sunums = calloc(SUMIN(MAXSUMREQCNT, nretrySUNUMS - isu - 1), sizeof(int64_t));
+                                 sunums = calloc(SUMIN(maxNoSus, nretrySUNUMS - isu - 1), sizeof(int64_t));
                                  
                                  if (!sunums)
                                  {
@@ -1663,7 +1918,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
                      
                      start = 0;
                      /* index of SU one past the last one to be processed */
-                     end = SUMIN(MAXSUMREQCNT, nretrySUNUMS);
+                     end = SUMIN(maxNoSus, nretrySUNUMS);
                      rsumssus = (DRMS_StorageUnit_t **)malloc(sizeof(DRMS_StorageUnit_t *) * nretrySUNUMS);
                      
                      isu = 0;
@@ -1741,9 +1996,18 @@ int drms_su_setretention(DRMS_Env_t *env, int16_t newRetention, int nsus, long l
     int drmsStatus;
     int isu;
     int start;
+    int szChunk;
+    int maxNoSus = 0;
+    
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_GET) && SUMS_USEMTSUMS_GET
+    maxNoSus = MAX_MTSUMS_NSUS;
+    DRMS_MtSumsRequest_t *request = NULL;
+    DRMS_MtSumsRequest_t *reply = NULL;
+#else
+    maxNoSus = MAXSUMREQCNT;
     DRMS_SumRequest_t *request = NULL;
     DRMS_SumRequest_t *reply = NULL;
-    int szChunk;
+#endif
     
     drmsStatus = DRMS_SUCCESS;
     
@@ -1779,12 +2043,18 @@ int drms_su_setretention(DRMS_Env_t *env, int16_t newRetention, int nsus, long l
             while (start < nsus)
             {
                 /* create SUMS request (SUMS frees this request) */
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_GET) && SUMS_USEMTSUMS_GET
+                request = calloc(1, sizeof(DRMS_MtSumsRequest_t));
+                XASSERT(request);
+                request->sunum = calloc(maxNoSus, sizeof(uint64_t));
+                XASSERT(request->sunum);
+#else
                 request = malloc(sizeof(DRMS_SumRequest_t));
                 XASSERT(request);
-                
+#endif          
                 request->opcode = DRMS_SUMGET;
                 
-                for (isu = start, szChunk = 0; szChunk < MAXSUMREQCNT && isu < nsus; isu++)
+                for (isu = start, szChunk = 0; szChunk < maxNoSus && isu < nsus; isu++)
                 {
                     /* Some of these SUs may not even belong to the local SUMS. We don't care if that happens. We
                      * want to modify the retention of local SUs only. */
@@ -1859,22 +2129,28 @@ int drms_su_setretention(DRMS_Env_t *env, int16_t newRetention, int nsus, long l
                         drmsStatus = DRMS_ERROR_SUMGET;
                     }
                 }
-                else
+
+                /* success setting new retention */
+                
+                /* free returned SUDIRs (which are not needed by this call) */
+                if (reply->sudir)
                 {
-                    /* success setting new retention */
-                    
-                    /* free returned SUDIRs (which are not needed by this call) */
-                    if (reply->sudir)
+                    for (isu = 0; isu < szChunk; isu++)
                     {
-                        for (isu = 0; isu < szChunk; isu++)
+                        if (reply->sudir[isu])
                         {
-                            if (reply->sudir[isu])
-                            {
-                                free(reply->sudir[isu]);
-                            }
+                            free(reply->sudir[isu]);
                         }
                     }
                 }
+                
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_GET) && SUMS_USEMTSUMS_GET
+                if (reply->sudir)
+                {
+                    free(reply->sudir);
+                    reply->sudir = NULL;
+                }
+#endif
                 
                 free(reply);
             }
@@ -1910,9 +2186,9 @@ int drms_su_getinfo(DRMS_Env_t *env, long long *sunums, int nsunums, SUM_info_t 
    char key[128];
    SUM_info_t *nulladdr = NULL;
    SUM_info_t **pinfo = NULL;
-   int maxNoSus;
+   int maxNoSus = 0;
    
-#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_INFO) && SUMS_USEMTSUMS_INFO
     maxNoSus = MAX_MTSUMS_NSUS;
     DRMS_MtSumsRequest_t *request = NULL;
     DRMS_MtSumsRequest_t *reply = NULL;
@@ -1944,7 +2220,7 @@ int drms_su_getinfo(DRMS_Env_t *env, long long *sunums, int nsunums, SUM_info_t 
    {
       if (nReqs == 0)
       {
-#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_INFO) && SUMS_USEMTSUMS_INFO
         request = (DRMS_MtSumsRequest_t *)calloc(1, sizeof(DRMS_MtSumsRequest_t));
         XASSERT(request);
         
@@ -1990,21 +2266,22 @@ int drms_su_getinfo(DRMS_Env_t *env, long long *sunums, int nsunums, SUM_info_t 
                  fprintf(stderr, "Cannot access SUMS in this DRMS session - a tape read is pending.\n");
                  if (reply)
                  {
-#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
                     if (reply->sudir)
                     {
+                        /* Client is waiting for reply, so client must clean-up sudirs. */
                         for (int i = 0; i < request->reqcnt; i++) 
                         {
-                            if ((((DRMS_MtSumsRequest_t *)reply)->sudir)[i])
+                            if ((reply->sudir)[i])
                             {
-                                free((((DRMS_MtSumsRequest_t *)reply)->sudir)[i]);
+                                free((reply->sudir)[i]);
+                                (reply->sudir)[i] = NULL;
                             }
                         }
-                    
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_INFO) && SUMS_USEMTSUMS_INFO
                         free(reply->sudir);
                         reply->sudir = NULL;
-                    }
 #endif
+                    }
                     
                      free(reply);
                  }
@@ -2016,21 +2293,21 @@ int drms_su_getinfo(DRMS_Env_t *env, long long *sunums, int nsunums, SUM_info_t 
              
              if (reply)
              {
-#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
                 if (reply->sudir)
                 {
                     for (int i = 0; i < request->reqcnt; i++) 
                     {
-                        if ((((DRMS_MtSumsRequest_t *)reply)->sudir)[i])
+                        if ((reply->sudir)[i])
                         {
-                            free((((DRMS_MtSumsRequest_t *)reply)->sudir)[i]);
+                            free((reply->sudir)[i]);
+                            (reply->sudir)[i] = NULL;
                         }
                     }
-
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_INFO) && SUMS_USEMTSUMS_INFO
                     free(reply->sudir);
                     reply->sudir = NULL;
-                }
 #endif
+                }
                     
                  free(reply);
              }
@@ -2069,9 +2346,9 @@ int drms_su_getinfo(DRMS_Env_t *env, long long *sunums, int nsunums, SUM_info_t 
          /* Caller's responsibility to clean up the reply since caller is waiting for the reply. */
          if (reply)
          {
-#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_INFO) && SUMS_USEMTSUMS_INFO
             if (reply->sudir)
-            {        
+            {
                 free(reply->sudir);
                 reply->sudir = NULL;
             }
@@ -2125,12 +2402,19 @@ int drms_su_getinfo(DRMS_Env_t *env, long long *sunums, int nsunums, SUM_info_t 
 int drms_commitunit(DRMS_Env_t *env, DRMS_StorageUnit_t *su)
 {
   int i;
-  DRMS_SumRequest_t *request, *reply;
   FILE *fp;
   char filename[DRMS_MAXPATHLEN];
   int actualarchive = 0;
   int docommit = 0;
   int16_t newSuRet = INT16_MIN;
+  
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_PUT) && SUMS_USEMTSUMS_PUT
+    DRMS_MtSumsRequest_t *request = NULL;
+    DRMS_MtSumsRequest_t *reply = NULL;
+#else
+    DRMS_SumRequest_t *request = NULL;
+    DRMS_SumRequest_t *reply = NULL;
+#endif
 
   docommit = !EmptyDir(su->sudir, 0);
   if (docommit)
@@ -2172,14 +2456,27 @@ int drms_commitunit(DRMS_Env_t *env, DRMS_StorageUnit_t *su)
         }
         fclose(fp);
      }
-
+     
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_PUT) && SUMS_USEMTSUMS_PUT
+     request = calloc(1, sizeof(DRMS_MtSumsRequest_t));
+     XASSERT(request);
+     request->sunum = calloc(1, sizeof(uint64_t));
+     XASSERT(request->sunum);
+     request->sudir = calloc(1, sizeof(char *));
+     XASSERT(request->sudir);
+#else
      request = malloc(sizeof(DRMS_SumRequest_t));
      XASSERT(request);
+#endif
      request->opcode = DRMS_SUMPUT;
      request->dontwait = 0;
      request->reqcnt = 1;
      request->dsname = su->seriesinfo->seriesname;
      request->group = su->seriesinfo->tapegroup;
+     
+     /* SUMS does not examine the mode TOUCH bit at all. It uses the tdays field to calculate the effective date.
+      *   -Art
+      */
      if (actualarchive == 1) 
        request->mode = ARCH + TOUCH;
      else
@@ -2256,8 +2553,6 @@ static int CommitUnits(DRMS_Env_t *env,
 {
    ListNode_t *node = NULL;
    DRMS_StorageUnit_t *sunit = NULL;
-   DRMS_SumRequest_t *request = NULL;
-   DRMS_SumRequest_t *reply = NULL;
    int actualarchive;
    char filename[DRMS_MAXPATHLEN];
    FILE *fp = NULL;
@@ -2265,7 +2560,17 @@ static int CommitUnits(DRMS_Env_t *env,
    int statint;
    int isu;
    int islot;
-   DRMS_StorageUnit_t *punits[DRMS_MAX_REQCNT]; /* hold pointers to submitted SUs. */
+
+   
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_PUT) && SUMS_USEMTSUMS_PUT
+    DRMS_MtSumsRequest_t *request = NULL;
+    DRMS_MtSumsRequest_t *reply = NULL;
+    DRMS_StorageUnit_t **punits = NULL; /* hold pointers to submitted SUs. */
+#else
+    DRMS_SumRequest_t *request = NULL;
+    DRMS_SumRequest_t *reply = NULL;
+    DRMS_StorageUnit_t *punits[DRMS_MAX_REQCNT]; /* hold pointers to submitted SUs. */
+#endif
 
    actualarchive = 0;
 
@@ -2273,20 +2578,33 @@ static int CommitUnits(DRMS_Env_t *env,
 
    if (ll->nitems > 0)
    {
-      /* Use series archive flag, but override with cmd-line flag. */
-      if (env->archive != INT_MIN)
-      {
-         actualarchive = env->archive;
-      }
-      else
-      {
-         actualarchive = seriesArch;
-      }
+        /* Use series archive flag, but override with cmd-line flag. */
+        if (env->archive != INT_MIN)
+        {
+            actualarchive = env->archive;
+        }
+        else
+        {
+            actualarchive = seriesArch;
+        }
 
-      request = malloc(sizeof(DRMS_SumRequest_t));
-      XASSERT(request);
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_PUT) && SUMS_USEMTSUMS_PUT
+        request = calloc(1, sizeof(DRMS_MtSumsRequest_t));
+        XASSERT(request);
+        request->sunum = calloc(ll->nitems, sizeof(uint64_t));
+        XASSERT(request->sunum);
+        request->sudir = calloc(ll->nitems, sizeof(char *));
+        XASSERT(request->sudir);
+#else
+        request = malloc(sizeof(DRMS_SumRequest_t));
+        XASSERT(request);
+#endif
+
       nsus = 0;
       list_llreset(ll);
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_PUT) && SUMS_USEMTSUMS_PUT
+      punits = calloc(list_llgetnitems(ll), sizeof(DRMS_StorageUnit_t *));
+#endif
       while ((node = list_llnext(ll)) != NULL)
       {
          sunit = *((DRMS_StorageUnit_t **)(node->data));
@@ -2409,6 +2727,13 @@ static int CommitUnits(DRMS_Env_t *env,
          free(reply);
          /* No need to free request - sums thread does that. */
       }
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_PUT) && SUMS_USEMTSUMS_PUT
+      if (punits)
+      {
+        free(punits);
+        punits = NULL;        
+      }
+#endif
    }
 
    return statint;
@@ -2437,7 +2762,14 @@ int drms_commit_all_units(DRMS_Env_t *env, int *archive, int *status)
     int16_t newSuRetentionRaw = INT16_MIN;
     int16_t newSuRetention = INT16_MIN;
     int16_t maxNewSuRetention = INT16_MIN;
+    int maxNoSus = 0;
     
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_PUT) && SUMS_USEMTSUMS_PUT
+    maxNoSus = MAX_MTSUMS_NSUS;
+#else
+    maxNoSus = MAXSUMREQCNT;
+#endif
+
     XASSERT(env->session->db_direct==1);
     hiter_new(&hit_outer, &env->storageunit_cache);
     if (archive)
@@ -2529,7 +2861,7 @@ int drms_commit_all_units(DRMS_Env_t *env, int *archive, int *status)
                 
                 /* When SUMS batches, it uses keylist.c, which is inefficient. Empirically, 64
                  * is an optimal batch size. */
-                if (nsus == MAXSUMREQCNT)
+                if (nsus == maxNoSus)
                 {
                     statint = CommitUnits(env, sulist, seriesName, si->archive, si->unitsize, si->tapegroup, maxNewSuRetention);
                     list_llfree(&sulist);
@@ -2801,13 +3133,20 @@ int drms_su_commitsu(DRMS_Env_t *env,
                      long long sunum,
                      const char *sudir)
 {
-  DRMS_SumRequest_t *request, *reply;
   int actualarchive = 0;
   DRMS_SeriesInfo_t *seriesinfo = NULL;
   DRMS_Record_t *templaterec = NULL;
   int drmsst = DRMS_SUCCESS;
   int docommit = 0;
   int16_t newSuRet = INT16_MIN;
+  
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_PUT) && SUMS_USEMTSUMS_PUT
+    DRMS_MtSumsRequest_t *request = NULL;
+    DRMS_MtSumsRequest_t *reply = NULL;
+#else
+    DRMS_SumRequest_t *request = NULL;
+    DRMS_SumRequest_t *reply = NULL;
+#endif
 
   /* Don't commit a unit if its directory is empty */
   docommit = !EmptyDir(sudir, 0);
@@ -2833,8 +3172,18 @@ int drms_su_commitsu(DRMS_Env_t *env,
            actualarchive = seriesinfo->archive;
         }   
 
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_PUT) && SUMS_USEMTSUMS_PUT
+        request = calloc(1, sizeof(DRMS_MtSumsRequest_t));
+        XASSERT(request);
+        request->sunum = calloc(1, sizeof(uint64_t));
+        XASSERT(request->sunum);
+        request->sudir = calloc(1, sizeof(char *));
+        XASSERT(request->sudir);
+#else
         request = malloc(sizeof(DRMS_SumRequest_t));
         XASSERT(request);
+#endif
+        
         request->opcode = DRMS_SUMPUT;
         request->dontwait = 0;
         request->reqcnt = 1;
