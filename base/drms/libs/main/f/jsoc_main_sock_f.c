@@ -106,6 +106,10 @@ static ModuleArgs_Type_t TokenToArgType (const char *token) {
       hcon_insert(gMargTokenMap, "doubles", &value);
       nArgTypes++;
 
+      value = ARG_STRINGS;
+      hcon_insert(gMargTokenMap, "strings", &value);
+      nArgTypes++;
+
       value = ARG_NUME;
       hcon_insert(gMargTokenMap, "nume", &value);
       nArgTypes++;
@@ -125,7 +129,7 @@ static ModuleArgs_Type_t TokenToArgType (const char *token) {
       if (nArgTypes != ARG_NUMARGS)
       {
 	 /* couldn't create token map, can't proceed. */
-	 fprintf(stderr, "Missing items in token map, bailing out\n");
+         fprintf(stderr, "Missing items in token map, bailing out");
 	 exit(1);
       }
    }
