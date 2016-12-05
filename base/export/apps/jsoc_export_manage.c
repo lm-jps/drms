@@ -1226,7 +1226,9 @@ void FreeArgInfo(const void *data)
    }
 }
 
-/* pvarsargs - arguments/values from jsoc.export_new. */
+/* args - input arguments/values from the processing column of jsoc.export_new.
+ * pvarsargs - output arguments/values from jsoc.export_new. 
+ */
 static int InitVarConts(const char *args, 
                         HContainer_t **pvarsargs /* both req and opt args. */)
 {
@@ -1312,7 +1314,8 @@ static void DestroyVarConts(HContainer_t **pvarsargs)
 
 /* Returns 1 on success, 0 on failure. */
 /*   pinfo - information from the processing-step series specific to the current procsessing step. 
-*    args - argument values from the processing keyword of jsoc.export_new. 
+*    args - argument values from the processing keyword of jsoc.export_new. A=1 ==> arg named 'A' with default value 1.
+*           -c ==> arg named '-c' with no default value.
 *    argsout - final argument string (comma-separated list of arguments/values).
 *    stepdata - has program name, input record-set, output record-set.
 */
