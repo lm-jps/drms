@@ -8,20 +8,36 @@ import threading
 import socket
 import signal
 import select
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import re
+import random
 import json
+import uuid
+from subprocess import check_call, CalledProcessError
+from pathlib import Path
 import psycopg2
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../include'))
 from drmsparams import DRMSParams
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../base/libs/py'))
 from drmsCmdl import CmdlParser
 
+if sys.version_info < (3, 2):
+    raise Exception('You must run the 3.2 release, or a more recent release, of Python.')
+
 
 SUMSD = 'sumsd'
 SUM_MAIN = 'public.sum_main'
 SUM_PARTN_ALLOC = 'public.sum_partn_alloc'
-            
+SUM_ARCH_GROUP = 'public.sum_arch_group'
+SUM_PARTN_AVAIL = 'public.sum_partn_avail'
+
+DADP = 2
+DAAP = 4
+DAAEDDP = 32
+DAAPERM = 64
+DAADP = 128
+
+# Return code
 RV_SUCCESS = 0
 RV_DRMSPARAMS = 1
 RV_ARGS = 2
@@ -34,6 +50,17 @@ RV_SOCKETCONN = 8
 RV_REQUESTTYPE = 9
 RV_POLL = 10
 
+# Exception status codes
+RESPSTATUS_OK = 'ok'
+RESPSTATUS_JSON = 'bad-json'
+RESPSTATUS_CLIENTINFO = 'bad-clientinfo'
+RESPSTATUS_REQ = 'bad-request'
+RESPSTATUS_REQTYPE = 'bad-request-type'
+RESPSTATUS_GENRESPONSE = 'cant-generate-response'
+
+# Maximum number of DB rows returned
+MAX_MTSUMS_NSUS = 32768
+
 class SumsDrmsParams(DRMSParams):
 
     def __init__(self):
@@ -43,7 +70,7 @@ class SumsDrmsParams(DRMSParams):
         val = super(SumsDrmsParams, self).get(name)
 
         if val is None:
-            raise Exception('drmsParams', 'Unknown DRMS parameter: ' + name + '.')
+            raise ParamsException('Unknown DRMS parameter: ' + name + '.')
         return val
         
 
@@ -69,7 +96,7 @@ class Arguments(object):
                 if type != 'CmdlParser-ArgUnrecognized' and type != 'CmdlParser-ArgBadformat':
                     raise # Re-raise
 
-                raise Exception('args', msg)
+                raise ArgsException(msg)
             else:
                 raise # Re-raise
 
@@ -128,28 +155,87 @@ class Log(object):
             raise Exception('badLogwrite', 'Unable to write to ' + value.filename + '.')
 
 
-class RowGenerator(object):
+class ParamsException(Exception):
 
-    def __init__(self, listOfRows):
-        self.rows = listOfRows
-    
-    def __iter__(self):
-        return self.iterate()
-    
-    # Iterate through rows.
-    def iterate(self):
-        i = 0
-        while i < len(self.rows):
-            yield self.rows[i]
-            i += 1
+    def __init__(self, msg):
+        super(ParamsException, self).__init__(msg)
+
+
+class ArgsException(Exception):
+
+    def __init__(self, msg):
+        super(ArgsException, self).__init__(msg)
+
+
+class PollException(Exception):
+
+    def __init__(self, msg):
+        super(PollException, self).__init__(msg)
+
+
+class SocketConnectionException(Exception):
+
+    def __init__(self, msg):
+        super(SocketConnectionException, self).__init__(msg)
+
+
+class DBConnectionException(Exception):
+
+    def __init__(self, msg):
+        super(DBConnectionException, self).__init__(msg)
+
+
+class DBCommandException(Exception):
+
+    def __init__(self, msg):
+        super(DBCommandException, self).__init__(msg)
+
+
+class ReceiveJsonException(Exception):
+
+    def __init__(self, msg):
+        super(ReceiveJsonException, self).__init__(msg)
+        
+        
+class ClientInfoException(Exception):
+
+    def __init__(self, msg):
+        super(ClientInfoException, self).__init__(msg)
+
+
+class ExtractRequestException(Exception):
+
+    def __init__(self, msg):
+        super(ExtractRequestException, self).__init__(msg)
+
+
+class RequestTypeException(Exception):
+
+    def __init__(self, msg):
+        super(RequestTypeException, self).__init__(msg)
+
+
+class GenerateResponseException(Exception):
+
+    def __init__(self, msg):
+        super(GenerateResponseException, self).__init__(msg)
+
+class ImplementationException(Exception):
+
+    def __init__(self, msg):
+        super(ImplementationException, self).__init__(msg)
+
+
+class TaperequestException(Exception):
+
+    def __init__(self, msg):
+        super(TaperequestException, self).__init__(msg)
 
 
 class Dbconnection(object):
 
     def __init__(self, host, port, database, user):
         self.conn = None
-        self.cursor = None
-        self.destroy = False # If True, then the destructor has been called.
         
         # Connect to the db. If things succeed, then save the db-connection information.
         self.host = host
@@ -157,101 +243,388 @@ class Dbconnection(object):
         self.database = database
         self.user = user
         self.openConnection()
-        self.openCursor()
-        
-    def __del__(self):
-        self.destroy = True
-        self.close()
         
     def commit(self):
+        # Does not close DB connection. It can be used after the commit() call.
         if not self.conn:
-            raise Exception('dbCommand', 'Cannot commit - no database connection exists.')
+            raise DBCommandException('Cannot commit - no database connection exists.')
             
         if self.conn:
             self.conn.commit()
 
     def rollback(self):
+        # Does not close DB connection. It can be used after the rollback() call.
         if not self.conn:
-            raise Exception('dbCommand', 'Cannot rollback - no database connection exists.')
+            raise DBCommandException('Cannot rollback - no database connection exists.')
 
         if self.conn:
             self.conn.rollback()
 
     def close(self):
-        self.closeCursor()
+        # Does a rollback, then closes DB connection so that it can no longer be used.
         self.closeConnection()
             
     def openConnection(self):
         if self.conn:
-            raise Exception('dbConnection', 'Already connected to the database.')
+            raise DBConnectionException('Already connected to the database.')
             
         try:
-            conn = psycopg2.connect(host=self.host, port=self.port, database=self.database, user=self.user)
+            self.conn = psycopg2.connect(host=self.host, port=self.port, database=self.database, user=self.user)
         except psycopg2.DatabaseError as exc:
             # Closes the cursor and connection
             if hasattr(exc, 'diag') and hasattr(exc.diag, 'message_primary'):
                 msg = exc.diag.message_primary
             else:
                 msg = 'Unable to connect to the database (no, I do not know why).'
-            raise Exception('dbConnection', msg)
-        
-        self.conn = conn
+            raise DBConnectionException(msg)
     
     def closeConnection(self):    
-        if not self.destroy and not self.conn:
-            raise Exception('dbConnection', 'There is no database connection.')
+        if not self.conn:
+            raise DBConnectionException('There is no database connection.')
         
         if self.conn:
             self.conn.close()
-            
-    def openCursor(self):
-        if self.cursor:
-            raise Exception('dbCursor', 'Cursor already exists.')
 
+    def exeCmd(self, cmd, results, result=True):
         if not self.conn:
-            raise Exception('dbCursor', 'Cannot create cursor - no database connection exists.')
+            raise DBCommandException('Cannot execute database command ' + cmd + ' - no database connection exists.')
+        
+        if result:
+            try:
+                with self.conn.cursor('namedCursor') as cursor:
+                    cursor.itersize = 4096
 
-        try:
-            self.cursor = self.conn.cursor()
-        except psycopg2.DatabaseError as exc:
-            raise Exception('dbCursor', exc.diag.message_primary)
-            
-    def closeCursor(self):
-        if not self.destroy and not self.cursor:
-            raise Exception('dbCursor', 'Cursor does not exist.')
-            
-        if self.cursor:
-            self.cursor.close()
-
-    def exeCmd(self, cmd):
-        if not self.conn or not self.cursor:
-            raise Exception('dbCommand', 'Cannot execute database command ' + cmd + ' - no database connection exists.')
-
-        try:
-            self.cursor.execute(cmd)
-            rows = self.cursor.fetchall()
-        except psycopg2.Error as exc:
-            # Handle database-command errors.
-            raise Exception('dbCommand', exc.diag.message_primary)
-
-        return RowGenerator(rows)    
+                    try:
+                        cursor.execute(cmd)
+                        for row in cursor:
+                            results.append(row) # results is a list of lists
+                    except psycopg2.Error as exc:
+                        # Handle database-command errors.
+                        raise DBCommandException(exc.diag.message_primary)
+            except psycopg2.Error as exc:
+                raise DBCommandException(exc.diag.message_primary)
+        else:
+            try:
+                with self.conn.cursor() as cursor:
+                    try:
+                        cursor.execute(cmd)
+                    except psycopg2.Error as exc:
+                        # Handle database-command errors.
+                        raise DBCommandException(exc.diag.message_primary)
+            except psycopg2.Error as exc:
+                raise DBCommandException(exc.diag.message_primary)
 
 class DataObj(object):
     pass
     
 class Jsonizer(object):
-    def __init__(self, response, sus):
-        self.response = response
-        self.sus = sus
-        self.json = None
-        self.data = None
-    
-    def jsonize(self):
-        self.json = json.dumps(self.data)
+    def __init__(self, dataObj):
+        self.data = dataObj
+        self.json = json.dumps(dataObj)
         
     def getJSON(self):
         return self.json
+        
+class Unjsonizer(object):
+    def __init__(self, jsonStr):
+        self.json = jsonStr
+        self.unjsonized = json.loads(jsonStr) # JSON objects are converted to Python dictionaries!
+        
+class Request(object):
+    def __init__(self, reqType, unjsonized, collector):
+        self.reqType = reqType
+        self.unjsonized = unjsonized.unjsonized # a request-specific dictionary
+        self.collector = collector
+        self.data = DataObj()
+        if 'sessionid' in self.unjsonized:
+            # Only the OpenRequest will not have a sessionid.
+            self.data.sessionid = self.unjsonized['sessionid']
+
+    def __str__(self):
+        return str(self.unjsonized)
+
+    def generateErrorResponse(self, status, errMsg):
+        return ErrorResponse(self, status, errMsg)
+            
+    @staticmethod
+    def hexToInt(hexStr):
+        return int(hexStr, 16)
+
+
+class OpenRequest(Request):
+    """
+    unjsonized is:
+    {
+        'reqtype' : 'open'
+    }
+    """
+    def __init__(self, unjsonized, collector):
+        super(OpenRequest, self).__init__('open', unjsonized, collector)
+        # No data for this request.
+        
+    def generateResponse(self, dest=None):
+        return OpenResponse(self, dest)
+
+
+class CloseRequest(Request):
+    """
+    unjsonized is:
+    {
+        'reqtype' : 'close',
+        'sessionid' : 2895025
+    }
+    """
+    def __init__(self, unjsonized, collector):
+        super(CloseRequest, self).__init__('close', unjsonized, collector)
+        
+    def generateResponse(self, dest=None):
+        return CloseResponse(self, dest)
+
+
+class InfoRequest(Request):
+    """
+    unjsonized is:
+    {
+       'reqtype' : 'info',
+       'sessionid' : 2895025,
+       'sus' : [ '3039', '5BA0' ]
+    }
+    """
+    def __init__(self, unjsonized, collector):
+        super(InfoRequest, self).__init__('info', unjsonized, collector)
+        
+        if len(self.unjsonized['sus']) > MAX_MTSUMS_NSUS:
+            raise ExtractRequestException('Too many SUs in request (maximum of ' + str(MAX_MTSUMS_NSUS) + ' allowed).')
+        
+        self.data.sus = [ Request.hexToInt(hexStr) for hexStr in self.unjsonized['sus'] ]
+
+        processed = set()
+        self.data.sulist = []
+         
+        # sus may contain duplicates. They must be removed.
+        for su in self.data.sus:
+            if str(su) not in processed:        
+                self.data.sulist.append(str(su)) # Make a list of strings - we'll need to concatenate the elements into a comma-separated list for the DB query.
+                processed.add(str(su))
+
+    def generateResponse(self, dest=None):
+        return InfoResponse(self, dest)
+
+class GetRequest(Request):
+    """
+    unjsonized is:
+    {
+       'reqtype' : 'get',
+       'sessionid' : 2895025,
+       'touch' : True,
+       'retrieve' : False,
+       'retention' : 60,
+       'sus' : ['1DE2D412', '1AA72414']
+    }
+    """
+    def __init__(self, unjsonized, collector):
+        super(GetRequest, self).__init__('get', unjsonized, collector)
+
+        if len(self.unjsonized['sus']) > MAX_MTSUMS_NSUS:
+            raise ExtractRequestException('Too many SUs in request (maximum of ' + str(MAX_MTSUMS_NSUS) + ' allowed).')
+        
+        self.data.touch = self.unjsonized['touch']
+        self.data.retrieve = self.unjsonized['retrieve']
+        self.data.retention = self.unjsonized['retention']
+        self.data.sus = [ Request.hexToInt(hexStr) for hexStr in self.unjsonized['sus'] ]
+
+        processed = set()
+        self.data.susNoDupes = []
+         
+        # sus may contain duplicates. They must be removed.
+        for su in self.data.sus:
+            if str(su) not in processed:        
+                self.data.susNoDupes.append(str(su)) # Make a list of strings - we'll need to concatenate the elements into a comma-separated list for the DB query.
+                processed.add(str(su))
+                
+    def generateResponse(self, dest=None):
+        return GetResponse(self, dest)
+
+
+class AllocRequest(Request):
+    """
+    unjsonized is:
+    {
+        'reqtype' : 'alloc',
+        'sessionid' : 7035235,
+        'sunum' : '82C5E02A',
+        'sugroup' : 22,
+        'numbytes' : 1024
+    }
     
+    or
+    
+    unjsonized is:
+    {
+        'reqtype' : 'alloc',
+        'sessionid' : 7035235,
+        'sunum' : null,
+        'sugroup' : 22,
+        'numbytes' : 1024
+    }
+    """
+    def __init__(self, unjsonized, collector):
+        super(AllocRequest, self).__init__('alloc', unjsonized, collector)
+
+        if self.unjsonized['sunum']:
+            self.data.sunum = Request.hexToInt(self.unjsonized['sunum'])
+        else:
+            # Do not create the sunum attribute. A check later looks for sunum existence.
+            pass
+        self.data.sugroup = self.unjsonized['sugroup']
+        self.data.numbytes = self.unjsonized['numbytes']
+        
+    def generateResponse(self, dest=None):
+        return AllocResponse(self, dest)
+        
+
+class PutRequest(Request):
+    """
+    unjsonized is:
+    {
+        'reqtype' : 'put',
+        'sessionid' : 7035235,
+        'sudirs' : [ {'2B13493A' : '/SUM19/D722684218'}, {'2B15A227' : '/SUM12/D722838055'} ],
+        'series' : 'hmi.M_720s',
+        'retention' : 14,
+        'archivetype' : 'temporary+archive'
+    }
+    """
+    def __init__(self, unjsonized, collector):
+        super(PutRequest, self).__init__('put', unjsonized, collector)
+        
+        if len(self.unjsonized['sudirs']) > MAX_MTSUMS_NSUS:
+            raise ExtractRequestException('Too many SUs in request (maximum of ' + str(MAX_MTSUMS_NSUS) + ' allowed).')
+        
+        sudirsNoDupes = []
+        processed = set()
+
+        # self.unjsonized['sudirs'] may contain duplicates. They must be removed. We do not need to keep track of the 
+        # original list with duplicates, however, since we won't be returning any information back to caller.
+        for elem in sorted(self.unjsonized['sudirs'], key=self.suSort):
+            [(hexStr, path)] = elem.items()
+            suStr = str(Request.hexToInt(hexStr))
+            if suStr not in processed:
+                sudirsNoDupes.append({ suStr : path}) # Make a list of strings - we'll need to concatenate the elements into a comma-separated list for the DB query.
+                processed.add(suStr)
+                
+        self.data.sudirsNoDupes = sudirsNoDupes
+        self.data.series = self.unjsonized['series']
+        if 'retention' in self.unjsonized:
+            self.data.retention = self.unjsonized['retention']
+        else:
+            # Don't know why the RPC SUMS has a default for this parameter, but not most others.
+            self.data.retention = 2
+        self.data.archivetype = self.unjsonized['archivetype']
+        
+    def generateResponse(self, dest=None):
+        return PutResponse(self, dest)
+        
+    @classmethod
+    def suSort(cls, elem):
+        [(hexStr, path)] = elem.items()
+        return Request.hexToInt(hexStr)
+        
+
+class DeleteseriesRequest(Request):
+    """
+    unjsonized is:
+    {
+    'reqtype' : 'deleteseries',
+    'sessionid' : 7035235,
+    'series' : 'hmi.M_720s'
+    }
+    """
+    def __init__(self, unjsonized, collector):
+        super(DeleteseriesRequest, self).__init__('deleteseries', unjsonized, collector)
+        
+        self.data.series = self.unjsonized['series']
+        
+    def generateResponse(self, dest=None):
+        return DeleteseriesResponse(self, dest)
+
+
+class PingRequest(Request):
+    def __init__(self, unjsonized, collector):
+        super(PingRequest, self).__init__('ping', unjsonized, collector)
+        
+    def generateResponse(self, dest=None):
+        return PingResponse(self, dest)
+
+
+class PollRequest(Request):
+    def __init__(self, unjsonized, collector):
+        super(PollRequest, self).__init__('poll', unjsonized, collector)
+
+        self.data.requestid = self.unjsonized['requestid']
+        
+    def generateResponse(self, dest=None):
+        return PollResponse(self, dest)
+
+
+class RequestFactory(object):
+    def __init__(self, collector):
+        self.collector = collector
+
+    def getRequest(self, jsonStr):
+        unjsonized = Unjsonizer(jsonStr)
+        
+        reqType = unjsonized.unjsonized['reqtype'].lower()
+        if reqType == 'open':
+            return OpenRequest(unjsonized, self.collector)
+        elif reqType == 'close':
+            return CloseRequest(unjsonized, self.collector)
+        elif reqType == 'info':
+            return InfoRequest(unjsonized, self.collector)
+        elif reqType == 'get':
+            return GetRequest(unjsonized, self.collector)
+        elif reqType == 'alloc':
+            return AllocRequest(unjsonized, self.collector)
+        elif reqType == 'put':
+            return PutRequest(unjsonized, self.collector)
+        elif reqType == 'deleteseries':
+            return DeleteseriesRequest(unjsonized, self.collector)
+        elif reqType == 'ping':
+            return PingRequest(unjsonized, self.collector)
+        elif reqType == 'poll':
+            return PollRequest(unjsonized, self.collector)
+        else:
+            raise RequestTypeException('The request type ' + reqType + ' is not supported.')
+            
+
+class Response(object):
+    def __init__(self, request):
+        self.request = request
+        self.cmd = None
+        self.dbRes = None
+        self.data = {} # A Py dictionary containing the response to the request. Will be JSONized before being sent to client.
+        self.jsonizer = None
+        
+    def exeDbCmd(self):
+        if hasattr(self.request.collector, 'debugLog') and self.request.collector.debugLog:
+            self.request.collector.debugLog.write(['db command is: ' + self.cmd])
+
+        self.request.collector.dbconn.exeCmd(self.cmd, self.dbRes, True)
+        
+    def exeDbCmdNoResult(self):
+        if hasattr(self.request.collector, 'debugLog') and self.request.collector.debugLog:
+            self.request.collector.debugLog.write(['db command is: ' + self.cmd])
+
+        self.request.collector.dbconn.exeCmd(self.cmd, None, False)
+
+        
+    def getJSON(self, error=False, errMsg=None):
+        self.jsonizer = Jsonizer(self.data)
+        return self.jsonizer.getJSON()
+        
+    def setStatus(self, status):
+        self.data['status'] = status
+        
     @staticmethod    
     def stripHexPrefix(hexadecimal):
         regexp = re.compile(r'^\s*0x(\S+)', re.IGNORECASE)
@@ -260,48 +633,106 @@ class Jsonizer(object):
             return match.group(1)
         else:
             return hexadecimal
+            
+    @staticmethod
+    def intToHex(bigint):
+        return Response.stripHexPrefix(hex(bigint))
+            
+class ErrorResponse(Response):
+    def __init__(self, request, status, errMsg):
+        super(ErrorResponse, self).__init__(request)
+        msg = 'Unable to create ' + request.reqType + ' response: ' + errMsg
+        
+        if request.collector.debugLog:
+            request.collector.debugLog.write([ 'Error: status (' + str(status) + '), msg (' + msg + ')' ])
+        
+        self.data['status'] = status
+        self.data['errmsg'] = msg
+
+
+class OpenResponse(Response):
+    def __init__(self, request, dest=None):
+        super(OpenResponse, self).__init__(request)
+
+        self.dbRes = []
+        self.cmd = "SELECT nextval('public.sum_seq')"
+        self.exeDbCmd()
+        
+        if len(self.dbRes) != 1 or len(self.dbRes[0]) != 1:
+            raise DBCommandException('Unexpected DB response to cmd: ' + self.cmd)
+            
+        sessionid = self.dbRes[0][0] # self.dbRes is a list of lists (or a 'table')
+        
+        self.cmd = 'INSERT INTO public.sum_open(sumid, open_date) VALUES (' + str(sessionid) + ', localtimestamp)'
+        self.exeDbCmdNoResult()
+        
+        self.data['sessionid'] = sessionid
+
+
+class CloseResponse(Response):
+    def __init__(self, request, dest=None):
+        super(CloseResponse, self).__init__(request)
+
+        self.cmd = 'DELETE FROM public.sum_partn_alloc WHERE sumid = ' + str(self.request.data.sessionid) + ' AND (status = 8 OR status = 1)'
+        self.exeDbCmdNoResult()
     
-class SuminfoJsonizer(Jsonizer):
-    # response is a SuminfoResponse object. The db response text is in response.response.
-    def __init__(self, response, sus):
-        super(SuminfoJsonizer, self).__init__(response, sus)
+        self.cmd = 'DELETE FROM public.sum_open WHERE sumid = ' + str(self.request.data.sessionid)
+        self.exeDbCmdNoResult()
+    
+
+class InfoResponse(Response):
+    def __init__(self, request, dest=None):
+        super(InfoResponse, self).__init__(request)
+        
+        # Extract response data from the DB.
+        dbInfo = [] # In theory there could be multiple DB requests.
+        self.dbRes = []
+        # Get DB info for unique SUs only (the sulist list does not contain duplicates).
+        self.cmd = "SELECT T1.ds_index, T1.online_loc, T1.online_status, T1.archive_status, T1.offsite_ack, T1.history_comment, T1.owning_series, T1.storage_group, T1.bytes, T1.create_sumid, T1.creat_date, T1.username, COALESCE(T1.arch_tape, 'N/A'), COALESCE(T1.arch_tape_fn, 0), COALESCE(T1.arch_tape_date, '1958-01-01 00:00:00'), COALESCE(T1.safe_tape, 'N/A'), COALESCE(T1.safe_tape_fn, 0), COALESCE(T1.safe_tape_date, '1958-01-01 00:00:00'), COALESCE(T2.effective_date, '195801010000'), coalesce(T2.status, 0), coalesce(T2.archive_substatus, 0) FROM " + SUM_MAIN + " AS T1 LEFT OUTER JOIN " + SUM_PARTN_ALLOC + " AS T2 ON (T1.ds_index = T2.ds_index) WHERE T1.ds_index IN (" + ','.join(self.request.data.sulist) + ')'
+        self.exeDbCmd()
+        dbInfo.append(self.dbRes)
+        self.parse(dbInfo)
+        
+    def parse(self, dbInfo):
         infoList = []
         processed = {}
         
-        # Make an object from the arrays returned by the database.
-        for row in response.getDbResponse():
+        # Make an object from the lists returned by the database. dbResponse is a list of lists.
+        for row in dbInfo[0]:
             rowIter = iter(row)
             infoDict = {}
-            infoDict['sunum'] = Jsonizer.stripHexPrefix(hex(rowIter.__next__())) # Convert to hex string since some parsers do not support 64-bit integers.
-            infoDict['onlineLoc'] = rowIter.__next__()
-            infoDict['onlineStatus'] = rowIter.__next__()
-            infoDict['archiveStatus'] = rowIter.__next__()
-            infoDict['offsiteAck'] = rowIter.__next__()
-            infoDict['historyComment'] = rowIter.__next__()
-            infoDict['owningSeries'] = rowIter.__next__()
-            infoDict['storageGroup'] = rowIter.__next__()
-            infoDict['bytes'] = Jsonizer.stripHexPrefix(hex(rowIter.__next__())) # Convert to hex string since some parsers do not support 64-bit integers.
-            infoDict['createSumid'] = rowIter.__next__()
+            sunum = next(rowIter)
+            infoDict['sunum'] = Response.intToHex(sunum) # Convert to hex string since some parsers do not support 64-bit integers.
+            infoDict['onlineLoc'] = next(rowIter)
+            infoDict['onlineStatus'] = next(rowIter)
+            infoDict['archiveStatus'] = next(rowIter)
+            infoDict['offsiteAck'] = next(rowIter)
+            infoDict['historyComment'] = next(rowIter)
+            infoDict['owningSeries'] = next(rowIter)
+            infoDict['storageGroup'] = next(rowIter)
+            infoDict['bytes'] = Response.intToHex(next(rowIter)) # Convert to hex string since some parsers do not support 64-bit integers.
+            infoDict['createSumid'] = next(rowIter)
             # The db returns a datetime object. Convert the datetime to a str object.
-            infoDict['creatDate'] = rowIter.__next__().strftime('%Y-%m-%d %T')
-            infoDict['username'] = rowIter.__next__()
-            infoDict['archTape'] = rowIter.__next__()
-            infoDict['archTapeFn'] = rowIter.__next__()
+            infoDict['creatDate'] = next(rowIter).strftime('%Y-%m-%d %T')
+            infoDict['username'] = next(rowIter)
+            infoDict['archTape'] = next(rowIter)
+            infoDict['archTapeFn'] = next(rowIter)
             # The db returns a datetime object. Convert the datetime to a str object.
-            infoDict['archTapeDate'] = rowIter.__next__().strftime('%Y-%m-%d %T')
-            infoDict['safeTape'] = rowIter.__next__()
-            infoDict['safeTapeFn'] = rowIter.__next__()
+            infoDict['archTapeDate'] = next(rowIter).strftime('%Y-%m-%d %T')
+            infoDict['safeTape'] = next(rowIter)
+            infoDict['safeTapeFn'] = next(rowIter)
             # The db returns a datetime object. Convert the datetime to a str object.
-            infoDict['safeTapeDate'] = rowIter.__next__().strftime('%Y-%m-%d %T')
-            infoDict['effectiveDate'] = rowIter.__next__()
-            infoDict['paStatus'] = rowIter.__next__()
-            infoDict['paSubstatus'] = rowIter.__next__()
+            infoDict['safeTapeDate'] = next(rowIter).strftime('%Y-%m-%d %T')
+            infoDict['effectiveDate'] = next(rowIter)
+            infoDict['paStatus'] = next(rowIter)
+            infoDict['paSubstatus'] = next(rowIter)
             
             # Put SU in hash of processed SUs.
-            suStr = str(int(infoDict['sunum'], 16)) # Convert hexadecimal string to decimal string.
+            suStr = str(sunum) # Convert hexadecimal string to decimal string.
             processed[suStr] = infoDict
         
-        for su in sus:
+        # Loop through ALL SUs, even duplicates (the sus list may contain duplicates).
+        for su in self.request.data.sus:
             if str(su) in processed:
                 infoList.append(processed[str(su)])
             else:
@@ -315,7 +746,7 @@ class SuminfoJsonizer(Jsonizer):
                 # If the SUNUM was invalid, then there was no row in the response for that SU. So, we
                 # have to create dummy rows for those SUs.
                 infoDict = {}
-                infoDict['sunum'] = Jsonizer.stripHexPrefix(hex(su)) # Convert to hex string since some parsers do not support 64-bit integers.
+                infoDict['sunum'] = Response.intToHex(su) # Convert to hex string since some parsers do not support 64-bit integers.
                 infoDict['onlineLoc'] = ''
                 infoDict['onlineStatus'] = ''
                 infoDict['archiveStatus'] = ''
@@ -323,7 +754,7 @@ class SuminfoJsonizer(Jsonizer):
                 infoDict['historyComment'] = ''
                 infoDict['owningSeries'] = ''
                 infoDict['storageGroup'] = -1
-                infoDict['bytes'] = Jsonizer.stripHexPrefix(hex(0)) # In sum_main, bytes is a 64-bit integer. In SUM_info, it is a double. sum_open.c converts the integer (long) to a floating-point number.
+                infoDict['bytes'] = Response.intToHex(0) # In sum_main, bytes is a 64-bit integer. In SUM_info, it is a double. sum_open.c converts the integer (long) to a floating-point number.
                 infoDict['createSumid'] = -1
                 infoDict['creatDate'] = '1966-12-25 00:54'
                 infoDict['username'] = ''
@@ -338,82 +769,376 @@ class SuminfoJsonizer(Jsonizer):
                 infoDict['paSubstatus'] = 0
 
                 infoList.append(infoDict)
-        self.data = { 'suinfolist' : infoList }
-        self.jsonize()
-        
-class Unjsonizer(object):
-    def __init__(self, jsonStr):
-        self.json = jsonStr
-        self.unjsonized = json.loads(jsonStr) # JSON objects are converted to Python dictionaries!
-        self.data = DataObj()
-        
-class ClientinfoUnjsonizer(Unjsonizer):
-    # msg is JSON:
-    # {
-    #    "pid" : 1946,
-    #    "user" : "TheDonald"
-    # }
-    # 
-    # The pid is a JSON number, which could be a double string. But the client
-    # will make sure that the number is a 32-bit integer.
-    def __init__(self, jsonStr):
-        super(ClientinfoUnjsonizer, self).__init__(jsonStr)
-        self.data.pid = self.unjsonized['pid']
-        self.data.user = self.unjsonized['user']
-        
-class SuminfoUnjsonizer(Unjsonizer):
-    # msg is JSON:
-    # {
-    #    "reqtype" : "infoArray",
-    #    "sulist" : [ "3039", "5BA0" ]
-    # }
-    def __init__(self, jsonStr=None, unjsonizer=None):
-        if jsonStr:
-            super(SuminfoUnjsonizer, self).__init__(jsonStr)
-        elif unjsonizer:
-            self.json = unjsonizer.json
-            self.unjsonized = unjsonizer.unjsonized
-            self.data = DataObj()
-        else:
-            raise Exception('invalidArgument', 'Must supply either json or Unjsonizer to SuminfoUnjsonizer().')
-            
-        self.data.reqType = self.unjsonized['reqtype']
-        # Convert array of hexadecimal strings to array of integers.
-        self.data.sus = [ int(suStr, 16) for suStr in self.unjsonized['sulist'] ]
-    
-    @classmethod
-    def fromJson(cls, msg):
-        # Check that obj is an instance of cls.
-        return cls(jsonStr=msg)
-            
-    @classmethod
-    def fromObj(cls, obj):
-        # Check that obj is an instance of cls.
-        return cls(unjsonizer=obj)
-        
-class Response(object):
-    def __init__(self, debugLog, dbconn, suList):
-        self.debugLog = debugLog
-        self.dbconn = dbconn
-        self.suList = suList
-        self.response = None
+                
+        self.data['suinfo'] = infoList
 
-    def exeDbCmd(self):
-        if self.debugLog:
-            self.debugLog.write(['db command is: ' + self.cmd])
-        return self.dbconn.exeCmd(self.cmd)
+class GetResponse(Response):
+    def __init__(self, request, dest=None):
+        super(GetResponse, self).__init__(request)
         
-    def getDbResponse(self):
-        return self.response
+        # Extract response data from the DB.
+        dbInfo = []
+        self.dbRes = []
+        # sum_main query first. The DB response will be used to generate the SUM_get() response.
+        self.cmd = 'SELECT T1.ds_index, T1.online_loc, T1.online_status, T1.archive_status, T1.arch_tape, T1.arch_tape_fn FROM ' + SUM_MAIN + ' AS T1 WHERE ds_index IN (' + ','.join(self.request.data.susNoDupes) + ')'
+        self.exeDbCmd()
+        dbInfo.append(self.dbRes)
         
-class SuminfoResponse(Response):
-    def __init__(self, debugLog, dbconn, suList):
-        super(SuminfoResponse, self).__init__(debugLog, dbconn, suList)
+        self.parse(dbInfo)
+        
+        if dest:
+            dest.data['supaths'] = self.data['supaths']
+
+        # SUM_get() has a side effect: if the SU is online, then we update the retention, otherwise, we read the SU from tape (if the
+        # DRMS has a tape system).
+
+        # sum_partn_alloc UPDATE query second. This is one side-effect of the SUM_get(). It potentially modifies the effective_date of the
+        # SUs.
+        if self.request.data.touch:
+            if self.request.data.retention < 0:
+                # If the retention value is negative, then set the effective_date to max(today + -retention, current effective date).
+                # WTAF! effective_date is a DB string! A string! It has the format YYYYMMDDHHMM - no time zone. Use DB's timestamp
+                # functions to use math on effective_date.
+                # 
+                # A status of 8 implies a read-only SU. Add "3 days grace".
+                # susNoDupes does not contain duplicates.
+                self.cmd = 'UPDATE ' + SUM_PARTN_ALLOC + " AS T1 SET effective_date = to_char(CURRENT_TIMESTAMP + interval '" + str(-self.request.data.retention + 3) + " days', 'YYYYMMDDHH24MI') FROM " + SUM_MAIN + " AS T2 WHERE T1.status != 8 AND (T1.effective_date = '0' OR CURRENT_TIMESTAMP + interval '" + str(-self.request.data.retention) + " days' >  to_timestamp(T1.effective_date, 'YYYYMMDDHH24MI')) AND T1.ds_index IN (" + ','.join(self.request.data.susNoDupes) + ") AND T1.ds_index = T2.ds_index AND T2.online_status = 'Y'"
+            else:
+                # Set the effective date to today + retention.
+                self.cmd = 'UPDATE ' + SUM_PARTN_ALLOC + " AS T1 SET effective_date = to_char(CURRENT_TIMESTAMP + interval '" + str(self.request.data.retention + 3) + " days', 'YYYYMMDDHH24MI') FROM " + SUM_MAIN + " AS T2 WHERE T1.status != 8 AND T1.ds_index IN (" + ','.join(self.request.data.susNoDupes) + ") AND T1.ds_index = T2.ds_index AND T2.online_status = 'Y'"
+                
+            self.exeDbCmdNoResult()
+            
+        # Tape read. Send a request to the tape system for all SUs that have the readfromtape attribute.
+        tapeRequest = {}
+        for sunum in self.info:
+            if self.info[str(sunum)]['readfromtape']:
+                # Insert the SUNUM, the tape ID, and the tape file number into a contain to be passed to the tape service.
+                tapeRequest[str(sunum)] = { 'tapeid' : self.info[str(sunum)]['tapeid'], 'tapefn' : self.info[str(sunum)]['tapefn'] }
+        
+        if len(tapeRequest) > 0:
+            self.data['taperead-requestid'] = uuid.uuid1()
+            if dest:
+                dest.data['taperead-requestid'] = self.data['taperead-requestid']
+            
+            # Make tape-service request. NOT IMPLEMENTED!
+            raise ImplementationException('SUMS is configured to provide tape service, but the tape service is not implemented.')
+            
+            # Spawn a thread to process the tape-read request. Store the thread ID and a status, initially 'pending', in a hash array 
+            # in a class variable of the TapeRequestClient class. The key for this hash-array entry is the taperead-requestid value. 
+            # When the TapeRequest thread completes successfully, the thread ID of the entry is set to None. The status is
+            # either set to success or failure. The PollRequest looks for the entry in the hash array. If it does not find it, 
+            # the PollRequest errors out. If it finds it, it then it looks at the status. If it is 'pending', then the PollRequest
+            # code returns the taperead-requestid back to the client. If the status is 'complete', then the PollRequest
+            # code returns a valid GetResponse formed from the information returned from the tape service.
+            # tapeRequestClient = TapeRequestClient(self.data['taperead-requestid'], self.request)
+
+    def parse(self, dbInfo):
+        supaths = []
+        processed = {}
+        self.info = {}
+        
+        for row in dbInfo[0]:
+            rowIter = iter(row)
+            suPathDict = {}
+            
+            sunum = next(rowIter)
+            self.info[str(sunum)] = {}
+            self.info[str(sunum)]['path'] = next(rowIter)
+            
+            # Save the online and archive status for side-effect changes.
+            self.info[str(sunum)]['online'] = (next(rowIter).lower() == 'y')
+            self.info[str(sunum)]['archived'] = (next(rowIter).lower() == 'y')
+            self.info[str(sunum)]['tapeid'] = next(rowIter) # String
+            self.info[str(sunum)]['tapefn'] = next(rowIter) # Integer
+            
+            suPathDict['sunum'] = Response.intToHex(sunum) # Convert to hex string since some parsers do not support 64-bit integers.
+            # Gotta deal with offline SUs. Despite the fact these are offline, SUM_MAIN::online_loc has a path. We need to remove that path.
+            if self.info[str(sunum)]['online']:
+                suPathDict['path'] = self.info[str(sunum)]['path']
+                self.info[str(sunum)]['readfromtape'] = False
+            else:
+                suPathDict['path'] = None
+                if not self.request.data.retrieve:
+                    self.info[str(sunum)]['readfromtape'] = False
+                else:
+                    # If the DRMS does not have a tape system, then archive_status should never be anything other than 'N'. But
+                    # just to be sure, check the tape-system attribute of SUMS.
+                    if self.request.collector.hasTapeSys and self.info[str(sunum)]['archived']:
+                        self.info[str(sunum)]['readfromtape'] = True
+                    else:
+                        self.info[str(sunum)]['readfromtape'] = False
+            
+            if str(sunum) not in processed:
+                processed[str(sunum)] = suPathDict
+        
+        # sus may contain duplicates.
+        for su in self.request.data.sus:
+            if str(su) in processed:
+                supaths.append(processed[str(su)])
+            else:
+                # Set the path to the None for all invalid/unknown SUs.
+                suPathDict = {}
+                suPathDict['sunum'] = Response.intToHex(su)
+                suPathDict['path'] = None
+                
+                supaths.append(suPathDict)
+        
+        # To send to client.
+        self.data['supaths'] = supaths
+        
+class AllocResponse(Response):
+    def __init__(self, request, dest=None):
+        super(AllocResponse, self).__init__(request)
+        
+        partSet = 0
+        
+        if self.request.collector.hasMultPartSets:
+            if sugroup in self.request.data:
+                self.dbRes = []
+                self.cmd = 'SELECT sum_set FROM ' + SUM_ARCH_GROUP + ' WHERE group_id = ' + self.request.data.sugroup
+                self.exeDbCmd()
+
+                if len(self.dbRes) != 1 or len(self.dbRes[0]) != 1:
+                    raise DBCommandException('Unexpected DB response to cmd: ' + self.cmd)
+            
+                partSet = self.dbRes[0][0]
+                
+        self.dbRes = []
+        self.cmd = 'SELECT partn_name FROM ' + SUM_PARTN_AVAIL + ' WHERE avail_bytes >= ' + str(self.request.data.numbytes) + ' AND pds_set_num = ' + str(partSet)
         self.exeDbCmd()
         
-    def exeDbCmd(self):
-        self.cmd = "SELECT T1.ds_index, T1.online_loc, T1.online_status, T1.archive_status, T1.offsite_ack, T1.history_comment, T1.owning_series, T1.storage_group, T1.bytes, T1.create_sumid, T1.creat_date, T1.username, COALESCE(T1.arch_tape, 'N/A'), COALESCE(T1.arch_tape_fn, 0), COALESCE(T1.arch_tape_date, '1958-01-01 00:00:00'), COALESCE(T1.safe_tape, 'N/A'), COALESCE(T1.safe_tape_fn, 0), COALESCE(T1.safe_tape_date, '1958-01-01 00:00:00'), COALESCE(T2.effective_date, '195801010000'), coalesce(T2.status, 0), coalesce(T2.archive_substatus, 0) FROM " + SUM_MAIN + " AS T1 LEFT OUTER JOIN " + SUM_PARTN_ALLOC + " AS T2 ON (T1.ds_index = T2.ds_index) WHERE T1.ds_index IN (" + ','.join(self.suList) + ')'
-        self.response = super(SuminfoResponse, self).exeDbCmd()
+        if len(self.dbRes) < 1:
+            raise DBCommandException('Unexpected DB response to cmd: ' + self.cmd)
+    
+        partitions = []
+        for row in self.dbRes:
+            if len(row) != 1:
+                raise DBCommandException('Unexpected DB response to cmd: ' + self.cmd)
+        
+            partitions.append(row[0])
+            
+        # Create sunum, if needed.
+        if hasattr(self.request.data, 'sunum'):
+            sunum = self.request.data.sunum
+        else:
+            self.dbRes = []
+            self.cmd = "SELECT nextval('public.sum_ds_index_seq')"
+            self.exeDbCmd()
+            
+            if len(self.dbRes) != 1 or len(self.dbRes[0]) != 1:
+                raise DBCommandException('Unexpected DB response to cmd: ' + self.cmd)
+
+            sunum = self.dbRes[0][0]
+
+        # Randomly choose one of the partitions to put the new SU into. We want to spread the write load over available 
+        # partitions.
+        randIndex = random.randint(0, len(partitions) - 1)
+        partition = partitions[randIndex]
+        sudir = os.path.join(partition, 'D' + str(sunum))
+        os.mkdir(sudir)
+        os.chmod(sudir, 0O2755)
+        
+        # Insert a record into the sum_partn_alloc table for this SU. status is DARW, which is 1. effective_date is "0". arch_sub is 0. group_id is 0. safe_id is 0. ds_index is 0.
+        self.cmd = 'INSERT INTO ' + SUM_PARTN_ALLOC + "(wd, sumid, status, bytes, effective_date, archive_substatus, group_id, safe_id, ds_index) VALUES ('" + sudir + "', '" + str(self.request.data.sessionid) + "', 1, " + str(self.request.data.numbytes) + ", '0', 0, 0, 0, 0)"
+        self.exeDbCmdNoResult()
+        
+        # To send to client.
+        self.data['sunum'] = Response.intToHex(sunum)
+        self.data['sudir'] = sudir
+    
+class PutResponse(Response):
+    def __init__(self, request, dest=None):
+        super(PutResponse, self).__init__(request)
+
+        try:    
+            # We have to change ownership of the SU files to the production user - ACK! This is really bad design. It seems like
+            # the only solution without a better design is to call an external program that runs as setuid root. This program calls
+            # chown recursively. It also make files read-only by calling chmod on all regular files.        
+            partitionsNoDupes = set()
+            for elem in self.request.data.sudirsNoDupes:
+                [(suStr, path)] = elem.items()
+                parts = Path(path).parts
+                partition = os.path.join(parts[0], parts[1])
+                partitionsNoDupes.add(partition)
+
+            # sum_chmown does not do a good job of preventing the caller from changing ownership of an arbitrary
+            # directory, so add a little more checking here. Make sure that all partitions containing the SUs being committed 
+            # are valid SUMS partitions.
+            self.dbRes = []
+            self.cmd = 'SELECT count(*) FROM ' + SUM_PARTN_AVAIL + ' WHERE partn_name IN (' + ','.join([ "'" + partition + "'" for partition in partitionsNoDupes] ) + ')'
+            self.exeDbCmd()
+        
+            if len(self.dbRes) != 1 or len(self.dbRes[0]) != 1:
+                raise DBCommandException('Unexpected DB response to cmd: ' + self.cmd)
+        
+            if self.dbRes[0][0] != len(partitionsNoDupes):
+                raise 'One or more invalid paritition paths.'
+
+            if self.request.collector.hasTapeSys:
+                apStatus = DAAP
+            else:
+                apStatus = DADP
+
+            # This horrible program operates on a single SU at a time, so we have to call it in a loop.
+            sudirs = []
+            sus = []
+            for elem in self.request.data.sudirsNoDupes:
+                [(suStr, path)] = elem.items()
+                sudirs.append("'" + path + "'")
+                sus.append(suStr)
+
+                cmdList = [ os.path.join(self.request.collector.sumsBinDir, 'sum_chmown'), path ]
+
+                try:
+                    check_call(cmdList)
+                except CalledProcessError as exc:
+                    raise Exception()
+
+            # If all file permission and ownership changes succeed, then commit the SUs to the SUMS database.
+
+            # The tape group was determined during the SUM_alloc() call and is now stored in SUM_PARTN_ALLOC (keyed by wd NOT ds_index).
+            storageGroup = {} # Map SU to storage group.
+            allStorageGroups = set()
+            self.dbRes = []
+            self.cmd = 'SELECT ds_index, group_id FROM ' + SUM_PARTN_ALLOC + ' WHERE wd IN (' +  ','.join(sudirs) + ')'
+            self.exeDbCmd()
+        
+            if len(self.dbRes) != len(sudirs):
+                raise DBCommandException('Unexpected DB response to cmd: ' + self.cmd + '. Rows returned: ' + str(len(self.dbRes)))
+
+            for row in self.dbRes:
+                storageGroup[str(row[0])] = row[1]
+                allStorageGroups.add(str(row[0]))
+            
+            storageSet = {} # Map storage group to storage set.
+            self.dbRes = []
+            self.cmd = 'SELECT group_id, sum_set FROM ' + SUM_ARCH_GROUP + ' WHERE group_id IN (' + ','.join(allStorageGroups) + ')'
+            self.exeDbCmd()
+    
+            if len(self.dbRes) != len(allStorageGroups):
+                raise DBCommandException('Unexpected DB response to cmd: ' + self.cmd)
+
+            for row in self.dbRes:
+                storageSet[str(row[0])] = row[1]
+        
+            # Update SUMS sum_main database table - Calculate SU dir number of bytes, set online status to 'Y', set archstatus to 'N', 
+            # set offsiteack to 'N', set dsname to seriesname, set storagegroup to tapegroup (determined in SUM_alloc()), set storageset 
+            # to set determined in SUM_alloc(), set username to getenv('USER') or nouser if no USER env. Insert all of this into sum_main.
+            suSize = {}
+            for elem in self.request.data.sudirsNoDupes:
+                [(suStr, path)] = elem.items()
+                resolved = os.path.realpath(path)
+                numBytes = os.path.getsize(resolved) + sum([ os.path.getsize(fullPath) for fullPath in [ os.path.join(root, afile) for root, dirs, files in os.walk(resolved) for afile in files ] ]) + sum([ os.path.getsize(fullPath) for fullPath in [ os.path.join(root, adir) for root, dirs, files in os.walk(resolved) for adir in dirs ] ])
+                # Need to use to save this number into SUM_PARTN_ALLOC too.
+                suSize[suStr] = numBytes
+
+                self.cmd = 'INSERT INTO ' + SUM_MAIN + "(online_loc, online_status, archive_status, offsite_ack, history_comment, owning_series, storage_group, storage_set, bytes, ds_index, create_sumid, creat_date, access_date, username) VALUES ('" + path + "', 'Y', 'N', 'N', '', '" + self.request.data.series + "', " + str(storageGroup[suStr]) + ', ' + str(storageSet[str(storageGroup[suStr])]) + ', ' + str(numBytes) + ', ' + suStr + ', ' + str(self.request.data.sessionid) + ", localtimestamp, localtimestamp, '" + os.getenv('USER', 'nouser') + "')"
+                self.exeDbCmdNoResult()
+            
+            if apStatus == 2:
+                # We do this simply to ensure that we do not have two sum_partn_alloc records with status DADP (delete pending).
+                self.cmd = 'DELETE FROM ' + SUM_PARTN_ALLOC + ' WHERE ds_index IN (' + ','.join(sus) + ') AND STATUS = ' + str(DADP)
+                self.exeDbCmdNoResult()
+
+            # Set apstatus: if SUMS_TAPE_AVAILABLE ==> DAAP (4), else DADP (2), set archsub to one of DAAPERM, DAAEDDP, or DAADP, 
+            # depending on flags, set effective_date to tdays in the future (with format "%04d%02d%02d%02d%02d"). safe_id is 0
+            # (it looks obsolete). Insert all of this into sum_partn_alloc.
+            if self.request.data.archivetype == 'permanent+archive' and self.request.collector.hasTapeSys:
+                archsub = DAAPERM
+            elif self.request.data.archivetype == 'temporary+noarchive':
+                archsub = DAAEDDP
+            elif self.request.data.archivetype == 'temporary+archive' and self.request.collector.hasTapeSys:
+                archsub = DAADP
+            else:
+                archsub = DAAEDDP
+        
+            for elem in self.request.data.sudirsNoDupes:
+                [(suStr, path)] = elem.items()
+                self.cmd = 'INSERT INTO ' + SUM_PARTN_ALLOC + "(wd, sumid, status, bytes, effective_date, archive_substatus, group_id, safe_id, ds_index) VALUES ('" + path + "', " + str(self.request.data.sessionid) + ', ' + str(apStatus) + ', ' + str(suSize[suStr]) + ", to_char(CURRENT_TIMESTAMP + interval '" + str(abs(self.request.data.retention)) + " days', 'YYYYMMDDHH24MI'), " + str(archsub) + ', ' + str(storageGroup[suStr]) + ', 0, ' + suStr + ')'
+                self.exeDbCmdNoResult()
+            
+            # To send to client.
+            # Just 'ok'.
+        except:
+            # We have to clean up db rows that were created in SUM_alloc() and SUM_put(). The SUM_alloc() request was processed in 
+            # a previous DB transaction, so it will have been committed by this point. Then re-raise so an error response is generated.
+            raise
+
+
+class DeleteseriesResponse(Response):
+    def __init__(self, request, dest=None):
+        super(DeleteseriesResponse, self).__init__(request)
+        
+        series = lower(self.request.data.series)
+
+        # This update/join is a very quick operation. And if the series has no records, it is a quick noop.
+        self.cmd = 'UPDATE ' + SUM_PARTN_ALLOC + ' AS T1 SET status = ' + str(DADP) + ", effective_date = '0', archive_substatus = " + str(DAADP) + ' FROM ' + SUM_MAIN + " AS T2 WHERE lower(T2.owning_series) = '" + series + "' AND T1.ds_index = T2.ds_index"
+        self.exeDbCmdNoResult()
+        
+        # To send to client.
+        # Just 'ok'.
+
+
+class PingResponse(Response):
+    """
+    As long as we can respond with an 'ok', then SUMS is up and running.
+    """
+    def __init__(self, request, dest=None):
+        super(PingResponse, self).__init__(request)
+
+        # To send to client.
+        # Just 'ok'.
+
+
+class PollResponse(Response):
+    def __init__(self, request, dest=None):
+        super(PollResponse, self).__init__(request)
+        
+        tapeRequestID = self.request.data.requestID
+        
+        # Check with TapeRequestClient class to see if request has completed.
+        reqStatus = TapeRequestClient.getTapeRequestStatus(tapeRequestID)
+        if reqStatus == 'pending':
+            self.data['taperead-requestid'] = tapeRequestID
+        elif reqStatus == 'complete':
+            origRequest = TapeRequestClient.getOrigRequest(tapeRequestID)
+            origRequest.generateResponse(self) # This will make a GetResponse (so far, you can poll for GetResponse only).
+        else:
+            raise TaperequestException('Unexpected status returned by tape system: ' + reqStatus + '.')
+        
+
+class TapeRequestClient(threading.Thread):
+    tMap = {} # Map taperead-requestid to (status, TapeRequestClient object)
+    tMapLock = threading.Lock() # Guard tList access.
+    maxThreads = 16
+    
+    def __init__(self, origRequest):
+        self.origRequest = origRequest
+        
+    def run(self):
+        # When the tape-request has completed, update the SUMS db tables, and set the request's status to 'complete'.
+        pass
+    
+    @classmethod 
+    def getTapeRequestStatus(cls, requestID):
+        status = None
+        try:
+            TapeRequestClient.tMapLock.acquire()
+            status = cls.tMap[requestID].status
+        finally:
+            TapeRequestClient.tMapLock.release()
+                
+        return status
+        
+    @classmethod
+    def getOrigRequest(cls, requestID):
+        try:
+            TapeRequestClient.tMapLock.acquire()
+            origRequest = cls.tMap[requestID].tapeRequest.origRequest
+        finally:
+            TapeRequestClient.tMapLock.release()
+
 
 class Collector(threading.Thread):
 
@@ -425,32 +1150,57 @@ class Collector(threading.Thread):
     MSGLEN_NUMBYTES = 8 # This is the hex-text version of the number of bytes in the response message.
                         # So, we can send back 4 GB of response!
     MAX_MSG_BUFSIZE = 4096 # Don't receive more than this in one call!
-    REQUEST_TYPE = { '0':'none', '1': 'infoArray'}
     
-    def __init__(self, sock, host, port, database, user, log, debugLog):
+    def __init__(self, sock, host, port, database, user, hasTapeSys, hasMultPartSets, sumsBinDir, log, debugLog):
         threading.Thread.__init__(self)
         # Could raise. Handle in the code that creates the thread.
         self.dbconn = Dbconnection(host, port, database, user)            
         self.sock = sock
+        self.hasTapeSys = hasTapeSys
+        self.hasMultPartSets = hasMultPartSets
+        self.sumsBinDir = sumsBinDir
         self.log = log
         self.debugLog = debugLog
+        self.reqFactory = None
                 
     def run(self):
         try:
             # The client must pass in some identifying information (other than their IP address).
             # Receive that information now.
-            msgStr = self.receiveJson() # msgStr is a string object.
-            self.extractClientInfo(msgStr)
+            try:
+                msgStr = self.receiveJson() # msgStr is a string object.
+                self.extractClientInfo(msgStr)
 
-            # First, obtain request.
-            msgStr = self.receiveJson() # msgStr is a string object.
-            self.extractRequest(msgStr) # Will raise if reqtype is not supported.
+                # First, obtain request.
+                msgStr = self.receiveJson() # msgStr is a string object.
+                
+                if self.debugLog:
+                    self.debugLog.write([ 'Request:\n' + msgStr ])
+                
+                self.extractRequest(msgStr) # Will raise if reqtype is not supported.
 
-            if self.log:
-                self.log.write(['New ' + self.request.data.reqType + ' request from process ' + str(self.clientInfo.data.pid) + ' by user ' + self.clientInfo.data.user + ' at ' + str(self.sock.getpeername()) + ': ' + ','.join(self.suList) + '.'])
+                if self.log:
+                    self.log.write(['New ' + self.request.reqType + ' request from process ' + str(self.clientInfo.data.pid) + ' by user ' + self.clientInfo.data.user + ' at ' + str(self.sock.getpeername()) + ':\n' + str(self.request) ])
 
-            msgStr = self.generateResponse() # A str object.
+                msgStr = self.generateResponse() # A str object.
+            except ReceiveJsonException as exc:
+                msgStr = self.generateErrorResponse(RESPSTATUS_JSON, exc.args[0])
+            except ClientInfoException as exc:
+                msgStr = self.generateErrorResponse(RESPSTATUS_CLIENTINFO, exc.args[0])
+            except ExtractRequestException as exc:
+                msgStr = self.generateErrorResponse(RESPSTATUS_REQ, exc.args[0])
+            except RequestTypeException as exc:
+                msgStr = self.generateErrorResponse(RESPSTATUS_REQTYPE, exc.args[0])
+            except GenerateResponseException as exc:
+                log.write([ 'Failure creating response.' ])
+                log.write([ exc.args[0] ])
+                import traceback
+                log.write([ traceback.format_exc(3) ])
+                msgStr = self.generateErrorResponse(RESPSTATUS_GENRESPONSE, exc.args[0])
 
+
+            if self.debugLog:
+                self.debugLog.write([ 'Response:\n' + msgStr ])
             # Send results back on the socket, which is connected to a single DRMS module. By sending the results
             # back, the client request is completed. We want to construct a list of "SUM_info" objects. Each object
             # { sunum:12592029, onlineloc:'/SUM52/D12592029', ...}
@@ -465,14 +1215,17 @@ class Collector(threading.Thread):
             if textReceived == b'':
                 # The client closed their end of the socket.
                 if self.debugLog:
-                    self.debugLog.write(['Client at ' + str(self.sock.getpeername()) + ' terminated connection.'])
+                    self.debugLog.write(['Client at ' + str(self.sock.getpeername()) + ' properly terminated connection.'])
             else:
-                raise Exception('socketConnection', 'Client sent extraneous data over socket connection.')
+                raise SocketConnectionException('Client sent extraneous data over socket connection.')
 
+        except SocketConnectionException as exc:
+            # Don't send message back - we can't communicate with the client properly, so only log a message on the server side.
+            log.write(['There was a problem communicating with client ' + str(self.sock.getpeername()) + '.'])
+            log.write([ exc.args[0] ])
         except Exception as exc:
             import traceback
-            log.write(['There was a problem communicating with client ' + str(self.sock.getpeername()) + '.'])
-            log.write([traceback.format_exc(0)])
+            log.write([ traceback.format_exc(5) ])
 
         # We need to check the class tList variable to update it, so we need to acquire the lock.
         try:
@@ -488,11 +1241,14 @@ class Collector(threading.Thread):
         except Exception as exc:
             import traceback
             log.write(['There was a problem closing the Collector thread for client ' + str(self.sock.getpeername()) + '.'])
-            log.write([traceback.format_exc(0)])
+            log.write([ traceback.format_exc(0) ])
         finally:
             Collector.tListLock.release()
             if self.debugLog:
                 self.debugLog.write(['Class Collector released Collector lock for client ' + str(self.sock.getpeername()) + '.'])
+                
+            # Close DB connection.
+            self.dbconn.close()
 
             # Always shut-down server-side of client socket pair.
             if self.debugLog:
@@ -500,40 +1256,43 @@ class Collector(threading.Thread):
             self.sock.shutdown(socket.SHUT_RDWR)
             self.sock.close()
             
-    def extractRequest(self, msg):
-        request = Unjsonizer(msg)
-
-        if request.unjsonized['reqtype'] == Collector.REQUEST_TYPE['1']:
-            self.request = SuminfoUnjsonizer.fromObj(request)
-        else:
-            raise Exception('unknownRequestType', 'The request type ' + request.unjsonized['reqtype'] + ' is not supported.')
-            
-        processed = {}
-        self.suList = []
-        
-        if self.debugLog:
-            self.debugLog.write([str(self.sock.getpeername()) + ' - requested SUs: ' + ','.join([str(item) for item in self.request.data.sus])])
-         
-        # suList may contain duplicates. They must be removed.
-        for su in self.request.data.sus:
-            if str(su) not in processed:        
-                self.suList.append(str(su)) # Make a list of strings - we'll need to concatenate the elements into a comma-separated list for the DB query.
-                
     def extractClientInfo(self, msg):
+        # msg is JSON:
+        # {
+        #    "pid" : 1946,
+        #    "user" : "TheDonald"
+        # }
+        # 
+        # The pid is a JSON number, which could be a double string. But the client
+        # will make sure that the number is a 32-bit integer.
         if self.debugLog:
             self.debugLog.write([str(self.sock.getpeername()) + ' extracting client info.'])
-        self.clientInfo = ClientinfoUnjsonizer(msg);
+        
+        clientInfo = Unjsonizer(msg)
+        
+        self.clientInfo = DataObj()
+        self.clientInfo.data = DataObj()
+        self.clientInfo.data.pid = clientInfo.unjsonized['pid']
+        self.clientInfo.data.user = clientInfo.unjsonized['user']
+
+    def extractRequest(self, msg):
+        if not self.reqFactory:
+            self.reqFactory = RequestFactory(self)
+            
+        self.request = self.reqFactory.getRequest(msg)
         
     def generateResponse(self):
-        if self.request.data.reqType == Collector.REQUEST_TYPE['1']:
-            # response contains the database-command Pythonized response, unjsonized.
-            response = SuminfoResponse(self.debugLog, self.dbconn, self.suList)
-            # Jsonize response.
-            jsonizer = SuminfoJsonizer(response, self.request.data.sus)
-        else:
-            raise Exception('unknownRequestType', 'The request type ' + self.request.data.reqType + ' is not supported.')
-            
-        return jsonizer.getJSON()
+        try:
+            self.response = self.request.generateResponse()
+            self.response.setStatus(RESPSTATUS_OK)
+        except Exception as exc:
+            # Create a response with a non-OK status and an error message.
+            raise GenerateResponseException(exc.args[0])
+        return self.response.getJSON()
+        
+    def generateErrorResponse(self, status, errMsg):
+        self.response = self.request.generateErrorResponse(status, errMsg)
+        return self.response.getJSON()
         
     # msg is a bytes object.
     def sendMsg(self, msg):
@@ -544,7 +1303,7 @@ class Collector(threading.Thread):
         while bytesSentTotal < Collector.MSGLEN_NUMBYTES:
             bytesSent = self.sock.send(bytearray(numBytesMessage[bytesSentTotal:], 'UTF-8'))
             if not bytesSent:
-                raise Exception('socketConnection', 'Socket broken.')
+                raise SocketConnectionException('Socket broken - cannot send message-length data to client.')
             bytesSentTotal += bytesSent
         
         # Then send the message.
@@ -552,7 +1311,7 @@ class Collector(threading.Thread):
         while bytesSentTotal < len(msg):
             bytesSent = self.sock.send(msg[bytesSentTotal:])
             if not bytesSent:
-                raise Exception('socketConnection', 'Socket broken.')
+                raise SocketConnectionException('Socket broken - cannot send message data to client.')
             bytesSentTotal += bytesSent
             
         if self.debugLog:
@@ -567,7 +1326,7 @@ class Collector(threading.Thread):
         while bytesReceivedTotal < Collector.MSGLEN_NUMBYTES:
             textReceived = self.sock.recv(min(Collector.MSGLEN_NUMBYTES - bytesReceivedTotal, Collector.MAX_MSG_BUFSIZE))
             if textReceived == b'':
-                raise Exception('socketConnection', 'Socket broken.')
+                raise SocketConnectionException('Socket broken - cannot receive message-length data from client.')
             allTextReceived += textReceived
             bytesReceivedTotal += len(textReceived)
             
@@ -581,7 +1340,7 @@ class Collector(threading.Thread):
         while bytesReceivedTotal < numBytesMessage:
             textReceived = self.sock.recv(min(numBytesMessage - bytesReceivedTotal, Collector.MAX_MSG_BUFSIZE))
             if textReceived == b'':
-                raise Exception('socketConnection', 'Socket broken.')
+                raise SocketConnectionException('Socket broken - cannot receive message data from client.')
             allTextReceived += textReceived
             bytesReceivedTotal += len(textReceived)
         # Return a bytes object (not a string). The unjsonize function will need a str object for input.
@@ -598,8 +1357,8 @@ class Collector(threading.Thread):
             
     # Must acquire Collector lock BEFORE calling newThread() since newThread() will append to tList (the Collector threads will be deleted from tList as they complete).
     @staticmethod
-    def newThread(sock, host, port, database, user, log, debugLog):
-        coll = Collector(sock, host, port, database, user, log, debugLog)
+    def newThread(sock, host, port, database, user, hasTapeSys, hasMultPartSets, sumsBinDir, log, debugLog):
+        coll = Collector(sock, host, port, database, user, hasTapeSys, hasMultPartSets, sumsBinDir, log, debugLog)
         coll.tList.append(coll)
         coll.start()
         
@@ -690,7 +1449,7 @@ class TestClient(threading.Thread):
         while bytesSentTotal < TestClient.MSGLEN_NUMBYTES:
             bytesSent = self.sock.send(bytearray(numBytesMessage[bytesSentTotal:], 'UTF-8'))
             if not bytesSent:
-                raise Exception('socketConnection', 'Socket broken.')
+                raise SocketConnectionException('Socket broken.')
             bytesSentTotal += bytesSent
         
         # Then send the message.
@@ -698,7 +1457,7 @@ class TestClient(threading.Thread):
         while bytesSentTotal < len(msg):
             bytesSent = self.sock.send(msg[bytesSentTotal:])
             if not bytesSent:
-                raise Exception('socketConnection', 'Socket broken.')
+                raise SocketConnectionException('Socket broken.')
             bytesSentTotal += bytesSent
     
     # Returns a bytes object.
@@ -710,7 +1469,7 @@ class TestClient(threading.Thread):
         while bytesReceivedTotal < TestClient.MSGLEN_NUMBYTES:
             textReceived = self.sock.recv(min(TestClient.MSGLEN_NUMBYTES - bytesReceivedTotal, TestClient.MAX_MSG_BUFSIZE))
             if textReceived == b'':
-                raise Exception('socketConnection', 'Socket broken.')
+                raise SocketConnectionException('Socket broken.')
             allTextReceived += textReceived
             bytesReceivedTotal += len(textReceived)
             
@@ -724,7 +1483,7 @@ class TestClient(threading.Thread):
         while bytesReceivedTotal < numBytesMessage:
             textReceived = self.sock.recv(min(numBytesMessage - bytesReceivedTotal, TestClient.MAX_MSG_BUFSIZE))
             if textReceived == b'':
-                raise Exception('socketConnection', 'Socket broken.')
+                raise SocketConnectionException('Socket broken.')
             allTextReceived += textReceived
             bytesReceivedTotal += len(textReceived)
         return allTextReceived
@@ -798,7 +1557,7 @@ if __name__ == "__main__":
     try:
         sumsDrmsParams = SumsDrmsParams()
         if sumsDrmsParams is None:
-            raise Exception('drmsParams', 'Unable to locate DRMS parameters file (drmsparams.py).')
+            raise ParamsException('Unable to locate DRMS parameters file (drmsparams.py).')
             
         parser = CmdlParser(usage='%(prog)s [ -dht ] [ --dbhost=<db host> ] [ --dbport=<db port> ] [ --dbname=<db name> ] [ --dbuser=<db user>] [ --logfile=<log-file name> ]')
         parser.add_argument('-H', '--dbhost', help='The host machine of the database that contains the series table from which records are to be deleted.', metavar='<db host machine>', dest='dbhost', default=sumsDrmsParams.get('SUMS_DB_HOST'))
@@ -858,7 +1617,7 @@ if __name__ == "__main__":
                 try:
                     fdList = pollObj.poll(500)
                 except IOError as exc:
-                    raise Exception('poll', 'A failure occurred while checking for new client connections.')
+                    raise PollException('A failure occurred while checking for new client connections.')
             
                 if len(fdList) == 0:
                     # Nobody knocking on the door.
@@ -874,7 +1633,7 @@ if __name__ == "__main__":
                             if Collector.freeThreadExists():
                                 if debugLog:
                                     debugLog.write(['Instantiating a Collector for client ' + str(address) + '.'])
-                                Collector.newThread(clientSock, arguments.getArg('dbhost'), arguments.getArg('dbport'), arguments.getArg('database'), arguments.getArg('dbuser'), log, debugLog)
+                                Collector.newThread(clientSock, arguments.getArg('dbhost'), arguments.getArg('dbport'), arguments.getArg('database'), arguments.getArg('dbuser'), int(sumsDrmsParams.get('SUMS_TAPE_AVAILABLE')) == 1, int(sumsDrmsParams.get('SUMS_MULTIPLE_PARTNSETS')) == 1, sumsDrmsParams.get('SUMBIN_BASEDIR'), log, debugLog)
                                 break # The finally clause will ensure the Collector lock is released.
                         finally:
                             Collector.unlockTList()
