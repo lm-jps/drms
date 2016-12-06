@@ -3635,6 +3635,12 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
                    ((DRMS_MtSumsRequest_t *)reply)->sudir[i] = strdup("NA (shuttingdown)");
                 }
              }
+             
+             reply->reqcnt = request->reqcnt;
+        }
+        else
+        {
+            reply->reqcnt = 0;
         }
 #else
         reply->opcode = replyOp;
@@ -3656,6 +3662,12 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
                  reply->sudir[i] = strdup("NA (shuttingdown)");
               }
            }
+           
+           reply->reqcnt = request->reqcnt;
+        }
+        else
+        {
+            reply->reqcnt = 0;
         }
 #endif
 
@@ -4359,6 +4371,12 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
                        break; // from loop
                    }
                 }
+                
+                reply->reqcnt = request->reqcnt;
+            }
+            else
+            {
+                reply->reqcnt = 0;
             }
 #else
             reply->opcode = replyOp;
@@ -4394,6 +4412,12 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
                        break; // from loop
                    }
                }
+               
+               reply->reqcnt = request->reqcnt;
+            }
+            else
+            {
+                reply->reqcnt = 0;
             }
 #endif
           SUM_infoArray_free(sum); /* This will free all the SUM_info_t structs owned by SUMS. */

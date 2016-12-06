@@ -1194,7 +1194,7 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
             if (reply->sudir)
             {
                 /* Client is waiting for reply, so client must clean-up sudirs. */
-                for (int i = 0; i < request->reqcnt; i++) 
+                for (int i = 0; i < reply->reqcnt; i++) 
                 {
                     if ((reply->sudir)[i])
                     {
@@ -1219,7 +1219,7 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
 
             if (reply->sudir)
             {
-                for (int i = 0; i < request->reqcnt; i++) 
+                for (int i = 0; i < reply->reqcnt; i++) 
                 {
                     if ((reply->sudir)[i])
                     {
@@ -1243,7 +1243,7 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
 
             if (reply->sudir)
             {
-                for (int i = 0; i < request->reqcnt; i++) 
+                for (int i = 0; i < reply->reqcnt; i++) 
                 {
                     if ((reply->sudir)[i])
                     {
@@ -1377,7 +1377,7 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
      }
      
     /* Since dontwait == 0, need to free up reply sudir field. */
-    for (int i = 0; i < request->reqcnt; i++) 
+    for (int i = 0; i < reply->reqcnt; i++) 
     {
         if ((reply->sudir)[i])
         {
@@ -1587,7 +1587,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
                {
                     if (reply->sudir)
                     {
-                        for (int i = 0; i < request->reqcnt; i++) 
+                        for (int i = 0; i < reply->reqcnt; i++) 
                         {
                             if ((reply->sudir)[i])
                             {
@@ -1614,7 +1614,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
                    
                     if (reply->sudir)
                     {
-                        for (int i = 0; i < request->reqcnt; i++) 
+                        for (int i = 0; i < reply->reqcnt; i++) 
                         {
                             if ((reply->sudir)[i])
                             {
@@ -1639,7 +1639,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
                    
                     if (reply->sudir)
                     {
-                        for (int i = 0; i < request->reqcnt; i++) 
+                        for (int i = 0; i < reply->reqcnt; i++) 
                         {
                             if ((reply->sudir)[i])
                             {
@@ -1664,7 +1664,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
 
                     if (reply->sudir)
                     {
-                        for (int i = 0; i < request->reqcnt; i++) 
+                        for (int i = 0; i < reply->reqcnt; i++) 
                         {
                             if ((reply->sudir)[i])
                             {
@@ -1688,7 +1688,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
                    
                     if (reply->sudir)
                     {
-                        for (int i = 0; i < request->reqcnt; i++) 
+                        for (int i = 0; i < reply->reqcnt; i++) 
                         {
                             if ((reply->sudir)[i])
                             {
