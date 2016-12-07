@@ -13,8 +13,8 @@
 
 #define JSOC_VERSION_INCL 1
 
-#define jsoc_version "V8R11X"
-#define jsoc_vers_num (-811)
+#define jsoc_version "V8R12"
+#define jsoc_vers_num (812)
 
 
 static inline const char *jsoc_getversion(char *verstr, int size, int *isdev)
