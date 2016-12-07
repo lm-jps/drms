@@ -2269,7 +2269,7 @@ int drms_su_getinfo(DRMS_Env_t *env, long long *sunums, int nsunums, SUM_info_t 
                     if (reply->sudir)
                     {
                         /* Client is waiting for reply, so client must clean-up sudirs. */
-                        for (int i = 0; i < request->reqcnt; i++) 
+                        for (int i = 0; i < reply->reqcnt; i++) 
                         {
                             if ((reply->sudir)[i])
                             {
@@ -2295,7 +2295,7 @@ int drms_su_getinfo(DRMS_Env_t *env, long long *sunums, int nsunums, SUM_info_t 
              {
                 if (reply->sudir)
                 {
-                    for (int i = 0; i < request->reqcnt; i++) 
+                    for (int i = 0; i < reply->reqcnt; i++) 
                     {
                         if ((reply->sudir)[i])
                         {
