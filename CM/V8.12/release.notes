@@ -53,8 +53,53 @@ Changes since previous release (V8.11 -  June 3, 2016)
 ----------------------------------------------------------
 
 NEW FEATURES:
+- Remote SUMS: The download of SUs are now chunked so that a single SCP worker downloads multiple SUs to increase efficiency. There is a new Python class that handles the scps needed by multiple request.
+- Modified the localization script to produce a defines file appropriate for bash (in addition to the existing files for Python, C, C-shell, and make) .
+- Modified the series-subscription manager code to use server-side Python cursors (to avoid client-side memory bloat).
+- Fixed DRMS lockfile Python code.
+- Added the Storage Unit size to the rs.py CGI server program (which provides SU information to the remote-SUMS daemon at remote sites).
+- Replaced a call to jsoc_fetch with a direct SQL command to the SUMS DB in the remote SUMS server.
+- Converted remote SUMS from a Python 2 program to a Python 3 program.
+- Added more logging in jsoc_fetch to help track down issues.
+- Added a function to libmisc to compare floats for bit-wise equality.
+- Added Kolja's drms_json library to our base/lib directory. The qmaps project uses it now.
+- Added an entry for Jan 1, 2017 leap second to timeio library.
+- This release contains prep work for the new non-RPC SUMS (aka the MT SUMS). At this point, this feature is disabled. It will be enabled for the next release.
+- This release contains changes for the 8.12 version of the rings project.
 
 LOCALIZATION:
 - There are a few new config.local parameters for MT SUMS: 
-
+  RS_N_WORKERS - Remote SUMS: The number of parallel SCP worker threads.
+  RS_TMPDIR - Remote SUMS: The temporary directory into which Storage Units are downloaded. This should be on the same file system in which the SUMS directories are located.
+  RS_SCP_MAXSUS - Remote SUMS: If more than this number of SUs are awaiting download, then an ScpWorker will initiate a download.
+  RS_SCP_MAXPAYLOAD - Remote SUMS: If the cumulative payload exceeds this many MB, then an ScpWorker will initiate a download.
+  RS_SCP_TIMEOUT - Remote SUMS: If an ScpWorker is idle for at least this many seconds, and there are SUs pending a download, then an ScpWorker will initiate a download.
+  BIN_PY3 - The path of the Python 3 binary to be used by DRMS.
+- Made some changes to the observables code to allow for localization of binary file paths. This was needed for Pete Schuck to work on the "24-hour-oscillation" issue.
+  
 DEFECTS FIXED:
+- All RS_* timeout values are now expressed in seconds.
+- Fixed make-dependency issue for libraries used by SUMS executables.
+- Modified the configure script to return 1, and not 0, when an error occurs.
+- Modified the close-records function to ensure that all open segment files are closed. This prevents DRMS modules from terminating with open files.
+- Replaced shell-dependent code with shell-independent code in get_slony_logs.pl.
+- Fixed a large memory leak in the series-subscription manager Python code.
+- Fixed a problem with the usage of pipes in the generation of dump files by the series-subscription manager.
+- Fixed a problem with the text in the dump files produced by the series-subscription manager. We now use the official Python/psycopg2 method for representing data values in text format.
+- Fixed a syntax issue with a DB UPDATE statement in the series-subscription CGI server code.
+- Made series-name comparisons case-insensitive in the series-subscription CGI server code.
+- Fixed the ingestion of SQL in the series-subscription client code. There were issues of pipes filling up or pipes breaking if psql dies with an error.
+- Fixed two thread-synchronization issues in the remote SUMS server.
+- Fixed an issue with download-failure restarts in the remote SUMS server.
+- Fixed an issue with download-failure error handling in the remote SUMS server.
+- Fixed a deadlock in the remote SUMS server.
+- Modified the remote SUMS server to handle the case where there are not enough resources to spawn a new worker thread.
+- Fixed a threading issue in remote SUMS. A psycopg2 cursor was being shared between threads, and these cursors are not thread safe.
+- Added functions to remote SUMS to commit changes to the db, and use them where necessary. Some changes the to DB were not being committed.
+- Fixed issues related to the locking of certain table objects in remote SUMS.
+- Fixed the export-system code that re-uses existing requests if a new request is identical to an existing, recent one.
+- Added default information for linked keywords to jsoc_info.
+- Modified fits-file support code to not bother looking for cached and opened FITS files in DRMS if the cache struct is NULL to begin with.
+- Worked-around a PostgreSQL bug that incorrectly determine the type of integer in the ECPG compiler.
+- Fixed a bug in im_patch registration.
+- Fixed a bug in jsoc_resize.
