@@ -1,0 +1,60 @@
+                       Release Notes JSOC V8.12        7DEC2016
+                       ------------------------        ---------
+
+
+A release is a set of binary and text files, each having a specific version. The release itself is
+also versioned to facilitate the identification of the release. For example, release 1.3 may 
+contain fileA#1.8, fileB#1.2, and fileC#2.2 and release 1.4 may contain fileA#2.5, fileB#2.1, 
+and fileC#2.9. JSOC releases are similarly versioned and contain a set of such files.  JSOC release
+code is guaranteed to compile on cluster nodes (e.g., n04 and solar3).  At the time of the 
+creation of the release, the versions of each file will be very recent - most will be the
+"head" versions. The set of files is stable. They have been tested and verified to work properly
+on the supported systems. As time passes, newer versions of files will be committed to the 
+code repository and there is no guarantee that these changes will not destabilize JSOC 
+(i.e., they may cause JSOC to no longer compile or execute properly).  
+
+There are several ways to use this release.  If you wish to simply use pre-built
+binaries, you can use the production binaries, which are located at 
+/home/jsoc/cvs/Development/JSOC (The release binaries are actually in
+/home/jsoc/cvs/JSOC, but as our production code changes more quickly
+than releases are generated, we put critical fixes in the
+"Development" tree. To be sure you use code that has been built with
+these critical fixes, you'll need to use the "Development" tree. As
+time passes our production code will stabilize. When that happens, you should use
+/home/jsoc/cvs/JSOC. But for now, you should use the "Development"
+tree.). Every time a release is created, the binaries in this location get updated
+by the jsoc user. To use these binaries, you can run them directly, 
+"/home/jsoc/cvs/JSOC/Development/bin/linux_x86_64/show_info -j hmi.M_45s", 
+for example. Or you can put /home/jsoc/cvs/JSOC/Development/bin/linux_x86_64 in 
+your path environment variable.
+
+If instead you want to work with stable source files, then you must have a local copy (e.g., 
+in your home directory) of the source code in the CVS code repository. You must "build" or "make" 
+the code this local code before it can be used. You will want to work with a local copy if you 
+plan on making changes to the repository files (i.e., you plan on doing development). Changes you 
+make to your local copy are not visible to other users until you commit those changes back to the 
+CVS repository.  
+
+Obtaining the Release
+---------------------
+To update your working directory to this release, or to check-out this release anew, 
+please visit http://jsoc.stanford.edu/jsocwiki/CvsInit (please see the section entitled
+Update Your Existing Working Directory ("Sandbox")). Please keep in mind that
+users may have modified files since the release was created, so use of the 
+scripts documented in the web page may result in a working directory whose
+content is not identical to the release.  
+
+Additional Info
+---------------
+Use the Apache CVS gui to see diffs between file revisions. For example, go to http://jsoc2.stanford.edu/cvs/JSOC/base/drms/
+and click on the name in the File column and then click on "diffs to previous #" to see the diffs.
+
+Changes since previous release (V8.11 -  June 3, 2016)
+----------------------------------------------------------
+
+NEW FEATURES:
+
+LOCALIZATION:
+- There are a few new config.local parameters for MT SUMS: 
+
+DEFECTS FIXED:
