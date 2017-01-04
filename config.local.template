@@ -317,20 +317,3 @@ TAR_INCS:AVX            /usr/include
 TAR_LIBS:X86_64         /usr/lib64
 TAR_LIBS:AVX            /usr/lib64
 ################## END TAR ##################
-
-
-# NetDRMS users can request subdirectories from the Stanford proj directories 
-# (e.g., JSOC/proj/util). These users will need to contact Stanford and obtain
-# the source subdirectories desired. They will then place these subdirectories
-# in the JSOC/proj directory of their NetDRMS release. To properly build 
-# targets in these subdirectories, using the JSOC make system, the user needs
-# to add entries to this configuration file - one entry for each subdirectory
-# that contains source code to be compiled. Each entry is a space-separated pair
-# of strings: the string "PROJDIR" followed by a subdirectory (of the proj 
-# directory).  For example:
-#
-# PROJDIR     util/apps
-# PROJDIR     util/libs
-# 
-# NOTE: It is not sufficient to list only a parent directory, like util. Source code
-# in child directories will not automatically be compiled.
