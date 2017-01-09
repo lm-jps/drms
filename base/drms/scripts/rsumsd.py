@@ -153,6 +153,7 @@ class TerminationHandler(object):
 
         # Acquire locks.
         self.rsLock = DrmsLock(self.lockFile, self.pidStr)
+        self.rsLock.acquireLock()
         
         # Make main DB connection to RS database. We also have to connect to the SUMS database, so connect to that too.
         # The connections are NOT in autocommit mode. If changes need to be saved, then conn.commit() must be called.
@@ -209,7 +210,8 @@ class TerminationHandler(object):
         self.finalStuff()
         
         # Clean up lock
-        try:        
+        try:     
+            self.rsLock.releaseLock()   
             self.rsLock.close()
             self.rsLock = None
         except IOError:
