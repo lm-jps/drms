@@ -717,6 +717,7 @@ int DoIt(void)
     }
     nrecs = 1;
     rec = rs->records[0];
+    if (verbose) fprintf(stderr, "recnum=%lld\n", rec->recnum); 
 
     pkeys = drms_series_createpkeyarray(drms_env, 
 					rec->seriesinfo->seriesname,
