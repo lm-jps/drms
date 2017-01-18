@@ -71,6 +71,19 @@ show_info
 
 @{
 */
+
+/*
+ * To emulate a POST request on the cmd-line, force qDecoder, the HTTP-request parsing library, to process a GET request.
+ * Since POST passes its argument via stdin to jsoc_fetch, it would be cumbersome
+ * to use the POST branch of qDecoder code (which expects args to arrive via stdin, 
+ * and expects additional env variables). Instead we can pass the arguments via
+ * the cmd-line, or via environment variables.
+ *   1. Set two shell environment variables, then run jsoc_fetch:
+ *      a. setenv REQUEST_METHOD GET
+ *      b. setenv QUERY_STRING 'op=exp_su&method=url_quick&format=json&protocol='as-is'&formatvar=dataobj&requestid=NOASYNCREQUEST&sunum=38400738,38400812' (this is an example - substitute your own arguments).
+ *      c. jsoc_info
+ */
+
 #include "jsoc_main.h"
 #include "drms.h"
 #include "drms_names.h"
@@ -80,6 +93,7 @@ show_info
 #include <unistd.h>
 #include "printk.h"
 #include "exputil.h"
+#include "qDecoder.h"
 
 static char x2c (char *what)
   {
@@ -857,6 +871,35 @@ int OnSIGINT(void *data)
    return 0;
 }
 
+static int SetWebArg(Q_ENTRY *req, const char *key, char **arglist, size_t *size)
+{
+    char *value = NULL;
+    char buf[1024];
+    
+    if (req)
+    {
+        value = (char *)qEntryGetStr(req, key);
+        if (value)
+        {
+            if (!cmdparams_set(&cmdparams, key, value))
+            {
+                /* ART - the original intent was to return from the DoIt()
+                 * function here - but it is not possible to do that from a function
+                 * called by DoIt(). But I've retained the original semantics of 
+                 * returning back to DoIt() from here. */
+                return(1);
+            }
+
+            /* ART - keep a copy of the web arguments provided via HTTP POST so that we can 
+            * debug issues more easily. */
+            snprintf(buf, sizeof(buf), "%s='%s' ", key, value);
+            *arglist = base_strcatalloc(*arglist, buf, size);
+        }
+    }
+
+    return(0);
+}
+
 /* Module main function. */
 int DoIt(void)
   {
@@ -868,7 +911,7 @@ int DoIt(void)
   char *web_query;
   const char *Remote_Address;
   const char *Server;
-  const char *userhandle;
+  const char *userhandle = NULL;
       int followLinks = 0;
   int from_web, keys_listed, segs_listed, links_listed;
   int max_recs = 0;
@@ -886,25 +929,84 @@ int DoIt(void)
 
   gettimeofday(&thistv, NULL);
   StartTime = thistv.tv_sec + thistv.tv_usec/1000000.0;
+
   web_query = strdup (cmdparams_get_str (&cmdparams, "QUERY_STRING", NULL));
   from_web = strcmp (web_query, "Not Specified") != 0;
 
-  if (from_web)
+    int postorget = 0;
+    char *webarglist = NULL;
+    size_t webarglistsz;
+
+    if (getenv("REQUEST_METHOD"))
     {
-    char *getstring, *p;
-    CGI_unescape_url(web_query);
-    getstring = strdup (web_query);
-    for (p=strtok(getstring,"&"); p; p=strtok(NULL, "&"))
-      {
-      char *key=p, *val=index(p,'=');
-      if (!val)
-	 JSONDIE("Bad QUERY_STRING");
-      *val++ = '\0';
-      cmdparams_set(&cmdparams, key, val);
-      }
-    // Force JSON for now
-    cmdparams_set (&cmdparams,"z", "1");
-    free(getstring);
+        postorget = (strcasecmp(getenv("REQUEST_METHOD"), "POST") == 0 || strcasecmp(getenv("REQUEST_METHOD"), "GET") == 0);
+    }
+
+    if (from_web)
+    {
+        Q_ENTRY *req = NULL;
+        /* If we are here then one of three things is true (implied by the existence of QUERY_STRING):
+         *   1. We are processing an HTTP GET. The webserver will put the arguments in the
+         *      QUERY_STRING environment variable.
+         *   2. We are processing an HTTP POST. The webserver will NOT put the arguments in the
+         *      QUERY_STRING environment variable. Instead the arguments will be passed to jsoc_info
+         *      via stdin. QUERY_STRING should not be set, but it looks like it might be. In any
+         *      case qDecoder will ignore it.
+         *   3. jsoc_info was invoked via the cmd-line, and the caller provided the QUERY_STRING
+         *      argument. The caller is trying to emulate an HTTP request - they want to invoke
+         *      the web-processing code, most likely to develop or debug a problem. 
+         *
+         *   If we are in case 3, then we need to make sure that the QUERY_STRING environment variable
+         *   is set since qDecoder will be called, and to process a GET, QUERY_STRING must be set.
+         */
+
+        if (!getenv("QUERY_STRING"))
+        {
+            /* Either case 2 or 3. Definitely not case 1. */
+            if (!postorget)
+            {
+                /* Case 3 - set QUERY_STRING from cmd-line arg. */
+                setenv("QUERY_STRING", web_query, 1);
+        
+                /* REQUEST_METHOD is not set - set it to GET. */
+                setenv("REQUEST_METHOD", "GET", 1);
+            }
+        }
+
+        /* Use qDecoder to parse HTTP POST requests. qDecoder actually handles 
+         * HTTP GET requests as well.
+         * See http://www.qdecoder.org
+         */
+
+        webarglistsz = 2048;
+        webarglist = (char *)malloc(webarglistsz);
+        *webarglist = '\0';
+    
+        req = qCgiRequestParseQueries(NULL, NULL);
+        if (req)
+        {
+            /* Accept only known key-value pairs - ignore the rest. */
+            if (SetWebArg(req, "op", &webarglist, &webarglistsz)) JSONDIE("Bad QUERY_STRING");
+            if (SetWebArg(req, "ds", &webarglist, &webarglistsz)) JSONDIE("Bad QUERY_STRING");
+            if (SetWebArg(req, "key", &webarglist, &webarglistsz)) JSONDIE("Bad QUERY_STRING");
+            if (SetWebArg(req, "seg", &webarglist, &webarglistsz)) JSONDIE("Bad QUERY_STRING");
+            if (SetWebArg(req, "link", &webarglist, &webarglistsz)) JSONDIE("Bad QUERY_STRING");
+            if (SetWebArg(req, "n", &webarglist, &webarglistsz)) JSONDIE("Bad QUERY_STRING");
+            if (SetWebArg(req, "userhandle", &webarglist, &webarglistsz)) JSONDIE("Bad QUERY_STRING");
+            if (SetWebArg(req, "l", &webarglist, &webarglistsz)) JSONDIE("Bad QUERY_STRING");
+            if (SetWebArg(req, "REMOTE_ADDR", &webarglist, &webarglistsz)) JSONDIE("Bad QUERY_STRING");
+            if (SetWebArg(req, "SERVER_NAME", &webarglist, &webarglistsz)) JSONDIE("Bad QUERY_STRING");
+            if (SetWebArg(req, "o", &webarglist, &webarglistsz)) JSONDIE("Bad QUERY_STRING");
+            if (SetWebArg(req, "R", &webarglist, &webarglistsz)) JSONDIE("Bad QUERY_STRING");
+            
+            /* force json output */
+            cmdparams_set (&cmdparams,"z", "1");
+
+            qEntryFree(req); 
+        }
+        
+        free(webarglist);
+        webarglist = NULL;
     }
 
   op = cmdparams_get_str (&cmdparams, "op", NULL);
@@ -913,6 +1015,7 @@ int DoIt(void)
   seglist = strdup (cmdparams_get_str (&cmdparams, "seg", NULL));
   linklist = strdup (cmdparams_get_str (&cmdparams, "link", NULL));
   max_recs = cmdparams_get_int (&cmdparams, "n", NULL);
+  
   keys_listed = strcmp (keylist, "Not Specified");
   segs_listed = strcmp (seglist, "Not Specified");
   links_listed = strcmp (linklist, "Not Specified");
@@ -921,8 +1024,8 @@ int DoIt(void)
   Remote_Address = cmdparams_get_str(&cmdparams, "REMOTE_ADDR", NULL);
   Server = cmdparams_get_str(&cmdparams, "SERVER_NAME", NULL);
 
-/* -o hack to allow owner added to series_struct 28 Dec 11 */
-wantowner = cmdparams_get_int (&cmdparams, "o", NULL);
+	/* -o hack to allow owner added to series_struct 28 Dec 11 */
+	wantowner = cmdparams_get_int (&cmdparams, "o", NULL);
 
   // allow possible user kill
   if (strcmp(userhandle, "Not Specified") != 0)
