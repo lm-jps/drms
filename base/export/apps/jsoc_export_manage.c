@@ -3407,7 +3407,7 @@ int DoIt(void)
                     size_t szConverted;
                     DRMS_Record_t *record = NULL;
                     char recnumStr[64];
-                    
+                    int iRecConverted; /* record index of subset in record-sets with multiple sub-sets. */
 
                     setname = snames[0];
 
@@ -3526,12 +3526,12 @@ int DoIt(void)
                     converted = base_strcatalloc(converted, setname, &szConverted);
                     converted = base_strcatalloc(converted, "[", &szConverted);
 
-                    for (irec = 0; irec < rs->n; irec++)
+                    for (iRecConverted = 0; iRecConverted < rs->n; iRecConverted++)
                     {
-                        record = rs->records[irec];
+                        record = rs->records[iRecConverted];
                         snprintf(recnumStr, sizeof(recnumStr), "%lld", record->recnum);
                         
-                        if (irec == 0)
+                        if (iRecConverted == 0)
                         {
                             converted = base_strcatalloc(converted, ":#" , &szConverted);
                         }
@@ -3565,14 +3565,6 @@ int DoIt(void)
             FreeRecSpecParts(&snames, &filts, nsets);
         }
         
-        if (seriesEnv != NULL && seriesEnv != drms_env)
-        {
-            /* This rolls-back the transaction needed in the case that the dbmainhost was not the host that jsoc_export_manage connected to at start. 
-             * We only made this second environment if we needed to call a DRMS API function that required an environment and that environment
-             * was different from the one that this module created on start-up. */
-            drms_server_end_transaction(seriesEnv, 1, 1);
-        }
-
         drms_record_directory(export_rec, reqdir, 1);
 
       // Insert qsub command to execute processing script into SU
@@ -4153,6 +4145,16 @@ int DoIt(void)
 
       /* mem leak - need to free all strings obtained with drms_getkey_string(). */
       } // end looping on new export requests (looping over records in jsoc.export_new)
+      
+      
+    if (seriesEnv != NULL && seriesEnv != drms_env)
+    {
+        /* This rolls-back the transaction needed in the case that the dbmainhost was not the host that jsoc_export_manage connected to at start. 
+         * We only made this second environment if we needed to call a DRMS API function that required an environment and that environment
+         * was different from the one that this module created on start-up. */
+        drms_server_end_transaction(seriesEnv, 1, 1);
+    }
+      
 
     // Free all jsoc.export_new records that never got inserted (the remainder had failures).
     drms_close_records(exports_new, DRMS_FREE_RECORD); // jsoc.export_new
