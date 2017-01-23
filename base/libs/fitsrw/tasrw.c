@@ -8,6 +8,7 @@
 #include "hcontainer.h"
 #include "list.h"
 #include "timer.h"
+#include "xassert.h"
 
 // #define DEBUG
 
@@ -113,8 +114,10 @@ static int fitsrw_setfpinfo(fitsfile *fptr, TASRW_FilePtrInfo_t *info)
  * 
  * The hash key to the gFFiles is <filename> ':' ('r' | 'w') where r implies readonly and w implies
  * readwrite.
+ *
+ * fileCreated is set to 1 if fits_create_file() was called successfully.
  */
-fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeable, int verchksum, int *status)
+fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeable, int verchksum, int *status, int *fileCreated)
 {
    fitsfile *fptr = NULL;
    fitsfile **pfptr = NULL;
@@ -127,6 +130,11 @@ fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeab
    int hduchk;
    int newfile = 0;
    char cfitsiostat[FLEN_STATUS];
+   
+   if (fileCreated)
+   {
+        *fileCreated = 0;
+   }
 
    if (!gFFiles)
    {
@@ -243,6 +251,10 @@ fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeab
                    fits_report_error(stderr, fiostat);
                    fprintf(stderr, "\n");
                    stat = CFITSIO_ERROR_FILE_IO;
+               }
+               else if (fileCreated)
+               {
+                    *fileCreated = 1;
                }
             }
             else
@@ -491,14 +503,14 @@ fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeab
    return fptr;
 }
 
-fitsfile *fitsrw_getfptr(int verbose, const char *filename, int writeable, int *status)
+fitsfile *fitsrw_getfptr(int verbose, const char *filename, int writeable, int *status, int *fileCreated)
 {
-   return fitsrw_getfptr_internal(verbose, filename, writeable, 1, status);
+   return fitsrw_getfptr_internal(verbose, filename, writeable, 1, status, fileCreated);
 }
 
-fitsfile *fitsrw_getfptr_nochksum(int verbose, const char *filename, int writeable, int *status)
+fitsfile *fitsrw_getfptr_nochksum(int verbose, const char *filename, int writeable, int *status, int *fileCreated)
 {
-   return fitsrw_getfptr_internal(verbose, filename, writeable, 0, status);
+   return fitsrw_getfptr_internal(verbose, filename, writeable, 0, status, fileCreated);
 }
 
 int fitsrw_readslice(int verbose,
@@ -526,6 +538,8 @@ int fitsrw_readslice(int verbose,
    TASRW_FilePtrInfo_t fpinfo;
 
    long i;
+   
+   int fileCreated = 0;
 
    if (!image_info)
    {
@@ -548,7 +562,8 @@ int fitsrw_readslice(int verbose,
    status = 0; // first thing!
     istat = 0;
     
-   fptr = fitsrw_getfptr_nochksum(verbose, filename, 0, &istat);
+   fptr = fitsrw_getfptr_nochksum(verbose, filename, 0, &istat, &fileCreated);
+   XASSERT(!fileCreated);
 
     /* The call fitsrw_getfptr_nochksum() is not clean - it looks like it might return
      * a  fptr, but also return istat != 0. fitsrw_getfptr_nochksum() needs to be cleaned 
@@ -762,6 +777,7 @@ int fitsrw_writeslice(int verbose, const char *filename, int *fpixel, int *lpixe
    long long intermed;
    TASRW_FilePtrInfo_t fpinfo;
    int dimlen = 0;
+   int fileCreated = 0;
 
    status = 0; // first thing!
     istat = 0;
@@ -776,7 +792,11 @@ int fitsrw_writeslice(int verbose, const char *filename, int *fpixel, int *lpixe
     /* The call fitsrw_getfptr() is not clean - it looks like it might return
      * a  fptr, but also return istat != 0. fitsrw_getfptr() needs to be cleaned 
      * up so that if istat != 0, the fptr == 0. */
-   fptr = fitsrw_getfptr(verbose, filename, 1, &istat);
+   fptr = fitsrw_getfptr(verbose, filename, 1, &istat, &fileCreated);
+   
+   /* Can't write a slice without having first created the output file. If this is true, then we 
+    * do not need to deal with the huge hdu issue. */
+   XASSERT(!fileCreated);   
 
    if (!fptr || istat)
    {

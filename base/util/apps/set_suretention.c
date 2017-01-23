@@ -854,6 +854,7 @@ static long long *getChunkFromSpec(DRMS_Env_t *env, void *data, int *chunkSize, 
                     int countUnique;
                     char dummy;
                     
+                    /* ART - drms_array_count() returns long long, but nRecs is an int. There needs to be a check here. */
                     nRecs = drms_array_count(array);
                     uniqueMap = hcon_create(sizeof(char), 64, NULL, NULL, NULL, NULL, 0);
                     unique = calloc(nRecs, sizeof(long long)); /* Probably too large, since there will be dupes, but no biggie. */

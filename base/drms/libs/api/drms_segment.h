@@ -10,6 +10,7 @@
 
 #include "drms_types.h"
 #include "drms.h"
+#include "drms_array.h"
 
 /********************************************************/
 /********                                        ********/
@@ -343,7 +344,7 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
     @return The created DRMS array struct.
 */
 DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type, 
-				     int *start, int *end, int *status);
+				     axislen_t *start, axislen_t *end, int *status);
 
 /**
    Close the segment file's file pointer. This function should be called on all file pointers
@@ -435,14 +436,14 @@ The index value, in all dimensions, that starts the slice.
  */
 int drms_segment_writeslice(DRMS_Segment_t *seg, 
                             DRMS_Array_t *arr, 
-                            int *start, 
-                            int *end, 
+                            axislen_t *start, 
+                            axislen_t *end, 
                             int autoscale);
 
 int drms_segment_writeslice_ext(DRMS_Segment_t *seg, 
                                 DRMS_Array_t *arr, 
-                                int *start, 
-                                int *end, 
+                                axislen_t *start, 
+                                axislen_t *end, 
                                 int *finaldims,
                                 int autoscale);
 

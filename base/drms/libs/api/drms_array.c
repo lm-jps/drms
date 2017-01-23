@@ -93,7 +93,7 @@ void drms_array_convert_inplace(DRMS_Type_t newtype, double bzero,
 DRMS_Array_t *drms_array_convert(DRMS_Type_t dsttype, double bzero, 
 				 double bscale, DRMS_Array_t *src)
 {
-  long long n;
+  arraylen_t n;
   DRMS_Array_t *arr;
 
   arr = drms_array_create(dsttype, src->naxis, src->axis, NULL, NULL);
@@ -158,7 +158,7 @@ DRMS_Array_t *drms_array_permute(DRMS_Array_t *src, int *perm, int *status)
 }
 
 /* Convert array from one DRMS type to another. */
-int drms_array_rawconvert(int n, DRMS_Type_t dsttype, double bzero, 
+int drms_array_rawconvert(arraylen_t n, DRMS_Type_t dsttype, double bzero, 
 			  double bscale, void *dst,  DRMS_Type_t srctype, 
 			  void *src)
 {
@@ -200,7 +200,8 @@ int drms_array_rawconvert(int n, DRMS_Type_t dsttype, double bzero,
 
 void drms_array2missing(DRMS_Array_t *arr)
 {
-  int i, n;
+  arraylen_t i;
+  arraylen_t n;
 
   n = drms_array_count(arr);
   switch(arr->type)
@@ -281,8 +282,10 @@ void drms_array_print(DRMS_Array_t *arr, const char *colsep, const char *rowsep)
 void drms_array_fprint(FILE *keyfile, DRMS_Array_t *arr, const char *colsep, 
 			const char *rowsep)
 {
-  int i, j, k, sz, count, index[DRMS_MAXRANK];
+  int j, k, sz, index[DRMS_MAXRANK];
   unsigned char *p;  
+  arraylen_t count;
+  arraylen_t i;
 
   sz = drms_sizeof(arr->type);
   p = arr->data;
@@ -306,7 +309,7 @@ void drms_array_fprint(FILE *keyfile, DRMS_Array_t *arr, const char *colsep,
   default:
     count = drms_array_count(arr);
 #ifdef DEBUG
-    printf("count = %d, sz = %d\n",count,sz);
+    printf("count = %lld, sz = %d\n",count,sz);
 #endif
     memset(index,0,arr->naxis*sizeof(int));
     //    chunk = sz*arr->axis[0]*arr->axis[1];
@@ -348,10 +351,11 @@ void drms_array_fprint(FILE *keyfile, DRMS_Array_t *arr, const char *colsep,
 
 
 /*************** Careful array conversion routines. ********************/
-int drms_array2char(int n, DRMS_Type_t src_type, double bzero, double bscale, 
+int drms_array2char(arraylen_t n, DRMS_Type_t src_type, double bzero, double bscale, 
 		    void *src,  char *dst)
 {
-  int stat, i;
+  int stat;
+  arraylen_t i;
   double value;
   double rangechk;
 
@@ -721,11 +725,12 @@ int drms_array2char(int n, DRMS_Type_t src_type, double bzero, double bscale,
 
 
 
-int drms_array2short(int n, DRMS_Type_t src_type, double bzero, double bscale, 
+int drms_array2short(arraylen_t n, DRMS_Type_t src_type, double bzero, double bscale, 
 		     void *src, short *dst)
 {
   double value;
-  int stat, i;
+  int stat;
+  arraylen_t i;
   double rangechk;
 
   if (fabs(bzero)==0.0 && bscale==1.0)
@@ -1085,11 +1090,12 @@ int drms_array2short(int n, DRMS_Type_t src_type, double bzero, double bscale,
 
 
 
-int drms_array2int(int n, DRMS_Type_t src_type, double bzero, double bscale,
+int drms_array2int(arraylen_t n, DRMS_Type_t src_type, double bzero, double bscale,
 		   void *src, int *dst)
 {
   double value;
-  int stat, i;
+  int stat;
+  arraylen_t i;
   double rangechk;
 
   if (fabs(bzero)==0.0 && bscale==1.0)
@@ -1440,11 +1446,12 @@ int drms_array2int(int n, DRMS_Type_t src_type, double bzero, double bscale,
   return stat;  
 }
 
-int drms_array2longlong(int n, DRMS_Type_t src_type, double bzero, 
+int drms_array2longlong(arraylen_t n, DRMS_Type_t src_type, double bzero, 
 			double bscale, void *src, long long *dst)
 {
   double value;
-  int stat, i;
+  int stat;
+  arraylen_t i;
   double rangechk;
 
   if (fabs(bzero)==0.0 && bscale==1.0)
@@ -1790,11 +1797,12 @@ int drms_array2longlong(int n, DRMS_Type_t src_type, double bzero,
 
 
 
-int drms_array2float(int n, DRMS_Type_t src_type, double bzero, double bscale, 
+int drms_array2float(arraylen_t n, DRMS_Type_t src_type, double bzero, double bscale, 
 		     void *src, float *dst)
 {
   double value;
-  int stat, i;
+  int stat;
+  arraylen_t i;
 
   if ( fabs(bzero)==0.0 && bscale==1.0 )
   {
@@ -2108,11 +2116,12 @@ int drms_array2float(int n, DRMS_Type_t src_type, double bzero, double bscale,
 }
 
 
-int drms_array2double(int n, DRMS_Type_t src_type, double bzero, double bscale,
+int drms_array2double(arraylen_t n, DRMS_Type_t src_type, double bzero, double bscale,
 		      void *src, double *dst)
 {
   long double value;
-  int stat, i;
+  int stat;
+  arraylen_t i;
 
   if (fabs(bzero)==0.0 && bscale==1.0)
   {
@@ -2415,11 +2424,12 @@ int drms_array2double(int n, DRMS_Type_t src_type, double bzero, double bscale,
 
 
 
-int drms_array2time(int n, DRMS_Type_t src_type, double bzero, double bscale, 
+int drms_array2time(arraylen_t n, DRMS_Type_t src_type, double bzero, double bscale, 
 		    void *src, double *dst)
 {
   long double value;
-  int stat, i;
+  int stat;
+  arraylen_t i;
 
   if (fabs(bzero)==0.0 && bscale==1.0)
   {
@@ -2709,10 +2719,11 @@ int drms_array2time(int n, DRMS_Type_t src_type, double bzero, double bscale,
 }
 
 
-int drms_array2string(int n, DRMS_Type_t src_type, double bzero, double bscale,
+int drms_array2string(arraylen_t n, DRMS_Type_t src_type, double bzero, double bscale,
 		      void *src,  char **dst)
 {
-  int stat,i;
+  int stat;
+  arraylen_t i;
   char *result;
   
   result = NULL;

@@ -263,12 +263,15 @@ static int IngestRawFile(DRMS_Record_t *orec, const char *segname, const char *i
                 int iaxis;
                 fitsfile *fptr = NULL;
                 CFITSIO_IMAGE_INFO imginfo;
+                int fileCreated = 0;
 
                 /* Use the name that lib DRMS derives. */
                 drms_segment_filename(seg, outfile);
 
                 /* Must fetch axis lengths from the actual FITS file. */
-                fptr = fitsrw_getfptr(0, infile, 0, &istat);
+                fptr = fitsrw_getfptr(0, infile, 0, &istat, &fileCreated);
+                
+                XASSERT(!fileCreated);
 
                 if (fptr && !istat)
                 {

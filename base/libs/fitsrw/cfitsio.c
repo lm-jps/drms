@@ -14,6 +14,7 @@
 #include "jsoc.h"
 #include "foundation.h"
 #include "tasrw.h"
+#include "xassert.h"
 
 /****************************************************************************/
 
@@ -731,9 +732,13 @@ int fitsrw_readintfile(int verbose,
    void* pixels = NULL;
 
    char cfitsiostat[FLEN_STATUS];
+   
+   int fileCreated = 0;
 
    // Move directly to first image
-   fptr = fitsrw_getfptr(verbose, fits_filename, 0, &status);
+   fptr = fitsrw_getfptr(verbose, fits_filename, 0, &status, &fileCreated);
+   
+   XASSERT(!fileCreated);
 
    if (!fptr)
    {
@@ -957,6 +962,9 @@ int fitsrw_writeintfile(int verbose,
    long long pixleft;
    long long pixtowrt;
    long long pixptr;
+   
+   int fileCreated = 0;
+   long long imgSize = 0;
 
    // image_info contain the image dimensions, can not be missing
    if(image_info == NULL) return CFITSIO_ERROR_ARGS;
@@ -976,6 +984,8 @@ int fitsrw_writeintfile(int verbose,
       case(FLOAT_IMG):        data_type = TFLOAT; img_type = FLOAT_IMG; break;
       case(DOUBLE_IMG):       data_type = TDOUBLE; img_type = DOUBLE_IMG; break;
    }
+   
+   imgSize = (abs(img_type) / 8) * npixels;
 
    // Remove the file, if exist
    remove(fits_filename);
@@ -992,13 +1002,25 @@ int fitsrw_writeintfile(int verbose,
    
    status = 0; // first thing!
 
-   fptr = fitsrw_getfptr(verbose, filename, 1, &status);
+   fptr = fitsrw_getfptr(verbose, filename, 1, &status, &fileCreated);
 
    if (!fptr)
    {
       error_code = CFITSIO_ERROR_FILE_IO;
       goto error_exit;
    }
+   
+#if CFITSIO_MAJOR >= 4 || (CFITSIO_MAJOR == 3 && CFITSIO_MINOR >= 35)
+    if (imgSize > HUGE_HDU_THRESHOLD && fileCreated)
+    {
+        // We will be writing, which means we will call fits_create_file(). Support 64-bit HDUs.
+        if (fits_set_huge_hdu(fptr, 1, &status))
+        {
+            error_code = CFITSIO_ERROR_FILE_IO;
+            goto error_exit;
+        }
+    }
+#endif
 
    if(fits_create_img(fptr, img_type, image_info->naxis, image_info->naxes, &status))
    {
@@ -1454,6 +1476,7 @@ int fitsrw_read(int verbose,
    char *fnamedup = strdup(filename);
    int datachk;
    int hduchk;
+   int fileCreated = 0;
 
    if (!image_info || *image_info)
    {
@@ -1479,7 +1502,8 @@ int fitsrw_read(int verbose,
        * is made */
       status = 0;
 
-      fptr = fitsrw_getfptr(verbose, fnamedup, 0, &status);
+      fptr = fitsrw_getfptr(verbose, fnamedup, 0, &status, &fileCreated);
+      XASSERT(!fileCreated);
 
       if (!fptr)
       {
@@ -1616,6 +1640,8 @@ int fitsrw_write2(int verbose,
    char filename[PATH_MAX];
    fitsfile *fptr = NULL;
    int cfiostat = 0; /* MUST start with no-error status, else CFITSIO will fail. */
+   int fileCreated = 0;
+   long long imgSize =0;
    
    if (filein && info && image)
    {
@@ -1669,6 +1695,8 @@ int fitsrw_write2(int verbose,
 
       if (!err)
       {
+         imgSize = (abs(imgtype) / 8) * npixels;
+      
          /* In the future, perhaps we override this method of specifying compression 
           * with the CFITSIO API call that specifies it. */
          if (cparms && *cparms)
@@ -1695,12 +1723,26 @@ int fitsrw_write2(int verbose,
          } 
          else 
          {
-            fptr = fitsrw_getfptr(verbose, filename, 1, &err);
+            fptr = fitsrw_getfptr(verbose, filename, 1, &err, &fileCreated);
             
             if (!fptr)
             {
                err = CFITSIO_ERROR_FILE_IO;
             }
+            else
+            {
+#if CFITSIO_MAJOR >= 4 || (CFITSIO_MAJOR == 3 && CFITSIO_MINOR >= 35)
+    if (imgSize > HUGE_HDU_THRESHOLD && fileCreated)
+    {
+        // We will be writing, which means we will call fits_create_file(). Support 64-bit HDUs.
+        if (fits_set_huge_hdu(fptr, 1, &cfiostat))
+        {
+            err = CFITSIO_ERROR_FILE_IO;
+        }
+    }
+#endif
+            }      
+            
          }
          //ISS fly-tar END
       }

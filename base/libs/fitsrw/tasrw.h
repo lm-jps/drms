@@ -3,6 +3,8 @@
 
 #include "fitsio.h"
 
+#define HUGE_HDU_THRESHOLD 3758096384 /* 3.5 GB */
+
 int fitsrw_readslice(int verbose,
                      const char *filename, 
                      int *fpixel, 
@@ -12,8 +14,8 @@ int fitsrw_readslice(int verbose,
 
 int fitsrw_writeslice(int verbose, const char *filename, int *fpixel, int *lpixel, void *image);
 
-fitsfile *fitsrw_getfptr(int verbose, const char *filename, int writeable, int *status);
-fitsfile *fitsrw_getfptr_nochksum(int verbose, const char *filename, int writeable, int *status);
+fitsfile *fitsrw_getfptr(int verbose, const char *filename, int writeable, int *status, int *fileCreated);
+fitsfile *fitsrw_getfptr_nochksum(int verbose, const char *filename, int writeable, int *status, int *fileCreated);
 
 int fitsrw_closefptr(int verbose, fitsfile *fptr);
 int fitsrw_closefptrByName(int verbose, const char *filename);

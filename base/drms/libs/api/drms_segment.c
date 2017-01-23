@@ -1394,7 +1394,7 @@ bailout1:
  *
  */
 DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type, 
-				     int *start, int *end, int *status)
+				     axislen_t *start, axislen_t *end, int *status)
 {
   int statint = 0, i;
   DRMS_Array_t *arr, *tmp;
@@ -2064,8 +2064,8 @@ int drms_segment_writewithkeys(DRMS_Segment_t *seg, DRMS_Array_t *arr, int autos
 
 int drms_segment_writeslice_ext(DRMS_Segment_t *seg, 
                                 DRMS_Array_t *arr, 
-                                int *start, 
-                                int *end, 
+                                axislen_t *start, 
+                                axislen_t *end, 
                                 int *finaldims,
                                 int autoscale)
 {
@@ -2282,8 +2282,8 @@ int drms_segment_writeslice_ext(DRMS_Segment_t *seg,
 
 int drms_segment_writeslice(DRMS_Segment_t *seg, 
                             DRMS_Array_t *arr, 
-                            int *start, 
-                            int *end, 
+                            axislen_t *start, 
+                            axislen_t *end, 
                             int autoscale)
 {
     return drms_segment_writeslice_ext(seg, arr, start, end, NULL, autoscale);
@@ -2393,7 +2393,9 @@ void drms_segment_autoscale(DRMS_Segment_t *seg,
 			    double *autobzero, 
 			    double *autobscale)
 {
-  int i, n, iscale;
+  int iscale;
+  arraylen_t i;
+  arraylen_t n;
   double outmin, outmax;
   double inmin, inmax;
   double val, bscale, bzero;

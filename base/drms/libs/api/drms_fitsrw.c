@@ -94,7 +94,7 @@ void drms_fitsrw_ShootBlanks(DRMS_Array_t *arr, long long blank)
        arr->type != DRMS_TYPE_DOUBLE &&
        arr->type != DRMS_TYPE_TIME)
    {
-      int nelem = drms_array_count(arr);
+      arraylen_t nelem = drms_array_count(arr);
       DRMS_Value_t val;
       long long dataval;
 
