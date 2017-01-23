@@ -429,13 +429,15 @@ if (DEBUG) fprintf(stderr,"   starting all keywords\n");
    * keyword information below. For now, just get the source keyword info. */
   while ((key = drms_record_nextkey(rec, &last, 0)))
     {
-    json_t *keyinfo;
-    json_t *keytype;
-    json_t *defval, *recscope;
-    char rawval[100], *jsonstr;
-    char *scopework;
-    char *unitswork;
-    char *defvalwork;
+    json_t *keyinfo= NULL;
+    json_t *keytype = NULL;
+    json_t *defval = NULL;
+    json_t *recscope = NULL;
+    char rawval[100];
+    char *jsonstr = NULL;
+    char *scopework = NULL;
+    char *unitswork = NULL;
+    char *defvalwork = NULL;
     int persegment = key->info->kwflags & kKeywordFlag_PerSegment;
     if (DEBUG) fprintf(stderr,"   starting keyword %s\n",key->info->name);
     /* If a keyword is a linked keyword, then it cannot be a per-segment keyword also. */
@@ -483,6 +485,13 @@ if (DEBUG) fprintf(stderr,"   starting all keywords\n");
        else
           {
           keytype = json_new_string("link");
+          
+          // but scopework and notework are now not initialized, but they are used below --> memory corruption;
+          // write something that will help the user debug
+          scopework = string_to_json("error following link");
+          defvalwork = string_to_json("error following link");
+          unitswork = string_to_json("error following link");
+          notework = string_to_json("error following link");
           }
        }
     else
@@ -501,14 +510,26 @@ if (DEBUG) fprintf(stderr,"   starting all keywords\n");
     json_insert_pair_into_object(keyinfo, "type", keytype);
     // scope                                                                                                                      
     // redundant - persegment = key->info->kwflags & kKeywordFlag_PerSegment;
+    XASSERT(scopework);
     json_insert_pair_into_object(keyinfo, "recscope", json_new_string(scopework));
     free(scopework);
+    scopework = NULL;
+    
+    XASSERT(defvalwork);
     json_insert_pair_into_object(keyinfo, "defval", json_new_string(defvalwork));
     free(defvalwork);
+    defvalwork = NULL;
+    
+    XASSERT(unitswork);
     json_insert_pair_into_object(keyinfo, "units", json_new_string(unitswork));
     free(unitswork);
+    unitswork = NULL;
+    
+    XASSERT(notework);
     json_insert_pair_into_object(keyinfo, "note", json_new_string(notework));
     free(notework);
+    notework = NULL;
+    
     json_insert_child(keyarray, keyinfo);
     }
   json_insert_pair_into_object(jroot, "keywords", keyarray);
