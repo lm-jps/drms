@@ -219,7 +219,7 @@ endif
 #
 # Link flags for all targets
 #
-LL_ALL		= $(SYSLIBS) -lcurl
+LL_ALL		= $(SYSLIBS) -lcurl -lcrypto
 GCC_LF_ALL	= $(STATIC) 
 ICC_LF_ALL	= -diag-disable 10237 $(STATIC) -openmp -static-intel -Wl,-export-dynamic
 
