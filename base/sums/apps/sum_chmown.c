@@ -12,7 +12,7 @@
 
 #include "serverdefs.h"
 
-#define PATTERN "^/SUM[0-9]*/D[0-9]+$"
+#define PATTERN "/SUM[0-9]*/D[0-9]+$"
 
 void die(const char *fmt, ...) {
     va_list ap;

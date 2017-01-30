@@ -530,7 +530,7 @@ class PutRequest(Request):
             [(hexStr, path)] = elem.items()
             suStr = str(Request.hexToInt(hexStr))
             if suStr not in processed:
-                sudirsNoDupes.append({ suStr : path}) # Make a list of strings - we'll need to concatenate the elements into a comma-separated list for the DB query.
+                sudirsNoDupes.append({ suStr : path.rstrip('/')}) # make a list of strings - we'll need to concatenate the elements into a comma-separated list for the DB query; remove trailing slash, if one exists
                 processed.add(suStr)
                 
         self.data.sudirsNoDupes = sudirsNoDupes
@@ -1022,8 +1022,7 @@ class PutResponse(Response):
             partitionsNoDupes = set()
             for elem in self.request.data.sudirsNoDupes:
                 [(suStr, path)] = elem.items()
-                parts = Path(path).parts
-                partition = os.path.join(parts[0], parts[1])
+                partition = os.path.dirname(path)
                 partitionsNoDupes.add(partition)
                 sunums[path] = suStr
 
@@ -1031,13 +1030,15 @@ class PutResponse(Response):
             # directory, so add a little more checking here. Make sure that all partitions containing the SUs being committed 
             # are valid SUMS partitions.
             self.dbRes = []
-            self.cmd = 'SELECT count(*) FROM ' + SUM_PARTN_AVAIL + ' WHERE partn_name IN (' + ','.join([ "'" + partition + "'" for partition in partitionsNoDupes] ) + ')'
+            self.cmd = 'SELECT count(*) FROM ' + SUM_PARTN_AVAIL + " WHERE rtrim(partn_name, '/') IN (" + ','.join([ "'" + partition + "'" for partition in partitionsNoDupes] ) + ')'
             self.exeDbCmd()
         
             if len(self.dbRes) != 1 or len(self.dbRes[0]) != 1:
                 raise DBCommandException('Unexpected DB response to cmd: ' + self.cmd)
         
             if self.dbRes[0][0] != len(partitionsNoDupes):
+                if hasattr(self.request.collector, 'debugLog') and self.request.collector.debugLog:
+                    self.request.collector.debugLog.write(['number of unique partitions in request: ' + str(len(partitionsNoDupes)), 'number of matching partitions in DB: ' + str(self.dbRes[0][0])])
                 raise 'One or more invalid paritition paths.'
 
             if self.request.collector.hasTapeSys:
@@ -1050,7 +1051,7 @@ class PutResponse(Response):
             sus = []
             for elem in self.request.data.sudirsNoDupes:
                 [(suStr, path)] = elem.items()
-                sudirs.append("'" + path + "'")
+                sudirs.append(path)
                 sus.append(suStr)
 
                 cmdList = [ os.path.join(self.request.collector.sumsBinDir, 'sum_chmown'), path ]
@@ -1063,38 +1064,47 @@ class PutResponse(Response):
             # If all file permission and ownership changes succeed, then commit the SUs to the SUMS database.
 
             # The tape group was determined during the SUM_alloc() call and is now stored in SUM_PARTN_ALLOC (keyed by wd NOT ds_index).
+            # The JMD calls alloc in one SUMS session, and put in another. When this happens, the row in SUM_PARTN_ALLOC
+            # gets deleted at the end of the first session, during the close call. So, the group information is lost. The JMD
+            # calls SUM_alloc2() directly, so the group never gets set in the SUMS struct. Since the SUMS struct is 
+            # zeroed-out when it is allocated during SUM_open(), the group ends up being 0.
             storageGroup = {} # Map SUNUM to storage group.
             allStorageGroups = set()
+            
+            # default to group 0 if there is no row in sum_partn_alloc for any sunum
+            for sudir in sudirs:
+                storageGroup[sunums[sudir]] = 0
+            allStorageGroups.add(str(0))
+            
             self.dbRes = []
             # Ugh. SUMS does not insert the SUNUM during the SUM_alloc() call. It sets ds_index to 0. Use wd as the key.
-            self.cmd = 'SELECT wd, group_id FROM ' + SUM_PARTN_ALLOC + ' WHERE wd IN (' +  ','.join(sudirs) + ')'
+            self.cmd = 'SELECT wd, group_id FROM ' + SUM_PARTN_ALLOC + ' WHERE wd IN (' +  ','.join([ "'" + sudir + "'" for sudir in sudirs ]) + ')'
             self.exeDbCmd()
-        
-            if len(self.dbRes) != len(sudirs):
-                raise DBCommandException('Unexpected DB response to cmd: ' + self.cmd + '. Rows returned: ' + str(len(self.dbRes)))
 
-            for row in self.dbRes:
-                # map sunum to group
-                storageGroup[sunums[row[0]]] = row[1]
-                if str(row[1]) not in allStorageGroups:
-                    allStorageGroups.add(str(row[1]))
-            
+            if len(self.dbRes) != 0:
+                # for the JMD, len(self.dbRes) == 0 (all the sum_partn_alloc rows were deleted); otherwise,
+                # len(self.dbRes) == len(sudirs); map the wd to group for all present rows
+                for row in self.dbRes:
+                    # map sunum to group
+                    storageGroup[sunums[row[0]]] = row[1]
+                    if str(row[1]) not in allStorageGroups:
+                        allStorageGroups.add(str(row[1]))
+
             storageSet = {} # Map storage group to storage set.
             for group in allStorageGroups:
                 # default to storage set 0 for all groups
                 storageSet[group] = 0
 
-            self.dbRes = []
-            self.cmd = 'SELECT group_id, sum_set FROM ' + SUM_ARCH_GROUP + ' WHERE group_id IN (' + ','.join(allStorageGroups) + ')'
-            self.exeDbCmd()
+            if self.request.collector.hasMultPartSets:
+                self.dbRes = []
+                self.cmd = 'SELECT group_id, sum_set FROM ' + SUM_ARCH_GROUP + ' WHERE group_id IN (' + ','.join(allStorageGroups) + ')'
+                self.exeDbCmd()
     
-            if len(self.dbRes) > 0:
-                if len(self.dbRes) != len(allStorageGroups):
-                    raise DBCommandException('Unexpected DB response to cmd: ' + self.cmd)
-
-                for row in self.dbRes:
-                    # map group to storage set
-                    storageSet[str(row[0])] = row[1]
+                # Override the mapping to 0
+                if len(self.dbRes) > 0:
+                    for row in self.dbRes:
+                        # map group to storage set
+                        storageSet[str(row[0])] = row[1]
         
             # Update SUMS sum_main database table - Calculate SU dir number of bytes, set online status to 'Y', set archstatus to 'N', 
             # set offsiteack to 'N', set dsname to seriesname, set storagegroup to tapegroup (determined in SUM_alloc()), set storageset 
@@ -1770,7 +1780,8 @@ if __name__ == "__main__":
         # Bind to any IP address that this server is running on - the empty string
         # represent INADDR_ANY. I DON'T KNOW HOW TO MAKE THIS WORK!!
         # serverSock.bind(('', int(sumsDrmsParams.get('SUMSD_LISTENPORT'))))
-        serverSock.bind((socket.gethostname(), int(sumsDrmsParams.get('SUMSD_LISTENPORT'))))
+        # serverSock.bind((socket.gethostname(), int(sumsDrmsParams.get('SUMSD_LISTENPORT'))))
+        serverSock.bind((sumsDrmsParams.get('SUMSERVER'), int(sumsDrmsParams.get('SUMSD_LISTENPORT'))))
         serverSock.listen(5)
         log.write(['Listening for client requests on ' + str(serverSock.getsockname()) + '.'])
 
