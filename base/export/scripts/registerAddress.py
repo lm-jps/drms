@@ -4,6 +4,7 @@ from __future__ import print_function
 import sys
 import os
 import fileinput
+import email
 import re
 import smtplib
 from datetime import datetime, timedelta
@@ -19,7 +20,18 @@ RV_ERROR_DBCMD = -3
 RV_ERROR_DBCONNECT = -4
 RV_ERROR_TIMEOUT = -5
 RV_ERROR_CONFIRMATION = -6
-RV_ERROR_MAIL = -7
+RV_ERROR_MESSAGE = -7
+RV_ERROR_ADDRESS = -8
+RV_ERROR_BODY = -9
+RV_ERROR_MAIL = -10
+
+# By default, procmail prints these lines to the procmail log: 
+# From nour4soccer@gmail.com  Fri Feb 10 08:19:23 2017
+#  Subject: Re: CONFIRM EXPORT ADDRESS
+#   Folder: /home/jsoc/cvs/Development/JSOC/base/export/scripts/register     5390
+#
+# To disable this default behavior, add the LOGABSTRACT=no variable to .procmailrc.
+# Anything printed by this script will appear AFTER these three lines. 
 
 # Print stdin
 # import fileinput
@@ -66,31 +78,58 @@ if __name__ == "__main__":
     rv = RV_ERROR_NONE
     
     try:
-        regExpA = re.compile(r'From\s(\S+)\s')
-        regExpS = re.compile(r'\[([0-9A-Fa-f]{8}\-[0-9A-Fa-f]{4}\-[0-9A-Fa-f]{4}\-[0-9A-Fa-f]{4}\-[0-9A-Fa-f]{12})\]')
-
+        actualMessage = None
         address = None
+        body = None
+        localName = None
+        domainName = None
         confirmation = None
+        
+        textIn = sys.stdin.read() # text string (sys.stdin is a str of chars; each char in the text string is a Unicode code point (an integer between 0 and 0x10FFFF))
+        
+        # Ok, this took 2 hours of my life I will never get back! If there are empty lines, or lines with only whitespace, in the incoming
+        # message, then message_from_string() considers every thing after the first empty line the body of the message.
+        strippedTextIn = '\n'.join([ line for line in textIn.split('\n') if line.strip() != '' ])
+        
+        message = email.message_from_string(strippedTextIn) # never fails, even for an invalid email message
+        
+        if message.is_multipart():
+            for amessage in message.get_payload(decode=True):
+                type = amessage.get_content_type()
+                disposition = amessage.get_content_disposition()
+                
+                if type == 'text/plain' and not disposition == 'attachment':
+                    actualMessage = amessage
+                    break
+        else:
+            actualMessage = message
 
-        for line in fileinput.input():
-            print(line, file=sys.stderr)
-            if len(line) == 0:
-                continue
+        if actualMessage == None:
+            raise Exception('raMessage', 'Invalid email message.', RV_ERROR_MESSAGE)
+
+        addressField = actualMessage.get('from')
+        
+        if not addressField:
+            raise Exception('raAddress', "Sender's email address not found in email reply header.", RV_ERROR_ADDRESS)
+        
+        parsedAddressField = email.utils.parseaddr(addressField)
+        if len(parsedAddressField[1]) > 0:
+            address = parsedAddressField[1]
+
+        body = actualMessage.get_payload(decode=True)
+        if not body:
+            raise Exception('raBody', 'Email message has no body.', RV_ERROR_BODY)
             
-            if address is None:
-                matchObj = regExpA.match(line)
-                if matchObj:
-                    address = matchObj.group(1)
-
-            if confirmation is None:
-                # Either the responding email client or procmail inserts junk into the body of the email, so we
-                # cannot assume that the confirmation code sent to the user stays at the beginning of the line.
-                matchObj = regExpS.search(line)
-                if matchObj:
-                    confirmation = matchObj.group(1)
-
-            if address and confirmation:
-                break
+        print('** message address: ' + address, file=sys.stderr)
+        print('** message body: ' + body, file=sys.stderr)
+        
+        regExpS = re.compile(r'\[([0-9A-Fa-f]{8}\-[0-9A-Fa-f]{4}\-[0-9A-Fa-f]{4}\-[0-9A-Fa-f]{4}\-[0-9A-Fa-f]{12})\]')
+        matchObj = regExpS.search(body)
+        if matchObj:
+            confirmation = matchObj.group(1)
+            
+        if confirmation:
+            print('** confirmation: ' + confirmation)
 
         localName, domainName = address.split('@')
 
@@ -175,18 +214,19 @@ if __name__ == "__main__":
         
         etype = exc.args[0]
 
-        if etype == 'drmsParams' or etype == 'dbCorruption' or etype == 'dbCmd' or etype == 'dbConnect' or etype == 'raConfirmation' or etype == 'emailBadrecipient' or etype == 'raTimeout':
-            if etype == 'raConfirmation':
-                SendMailFailure(localName, domainName, confirmation, 'The confirmation code you sent was not recognized. Please visit the export page and register your address again.')
-            else:
-                SendMailFailure(localName, domainName, confirmation, 'Please visit the export page and register your address again.')
-
+        if etype == 'drmsParams' or etype == 'dbCorruption' or etype == 'dbCmd' or etype == 'dbConnect' or etype == 'raConfirmation' or etype == 'emailBadrecipient' or etype == 'raTimeout' or etype == 'raMessage' or etype == 'raAddress' or etype == 'raBody':
             msg = exc.args[1]
             rv = exc.args[2]
+            
+            if etype == 'raConfirmation':
+                SendMailFailure(localName, domainName, confirmation, 'The confirmation code you sent was not recognized. Please visit the export page and register your address again.')
+            elif localName and domainName:
+                SendMailFailure(localName, domainName, confirmation, msg + '\nPlease visit the export page and register your address again.')
+
             # The procmail log captures stderr only.
             print(msg, file=sys.stderr)
         else:
-            if localName and domainName and confirmation:
+            if localName and domainName:
                 SendMailFailure(localName, domainName, confirmation, 'Please visit the export page and register your address again.')
             raise # Re-raise
 
