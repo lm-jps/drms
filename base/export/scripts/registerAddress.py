@@ -73,6 +73,7 @@ if __name__ == "__main__":
         confirmation = None
 
         for line in fileinput.input():
+            print(line, file=sys.stderr)
             if len(line) == 0:
                 continue
             
