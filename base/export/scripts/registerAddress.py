@@ -178,7 +178,7 @@ if __name__ == "__main__":
                                 # Handle database-command errors.
                                 raise Exception('dbCmd', exc.diag.message_primary + ": " + cmd, RV_ERROR_DBCMD)
 
-                            SendMailSuccess(localName, domainNameDB, confirmation)
+                            SendMailSuccess(localName, domainName, confirmation)
                         except Exception as exc:
                             if len(exc.args) == 3:
                                 etype = exc.args[0]
