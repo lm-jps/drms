@@ -141,7 +141,7 @@ DRMS_RecordSetType_t drms_record_getquerytype(const char *query);
 long long drms_record_memsize(DRMS_Record_t *rec);
 
 /** \brief Estimate how much memory is used for keywords in the keylist. */
-long long drms_keylist_memsize(DRMS_Record_t *rec, char *keylist);
+long long drms_keylist_memsize(DRMS_Record_t *rec, const char *keylist);
 
 /* Return the JSOC software version that created the given record. */
 char *drms_record_jsoc_version(DRMS_Env_t *env, DRMS_Record_t *rec);
@@ -205,7 +205,8 @@ char *drms_query_string(DRMS_Env_t *env,
                         HContainer_t *firstlast,
                         HContainer_t *pkwhereNFL,
                         int recnumq,
-                        int cursor);
+                        int cursor,
+                        long long *limit);
 
 /* Chunking record queries */
 int drms_recordset_setchunksize(unsigned int size);
