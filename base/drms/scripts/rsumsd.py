@@ -89,6 +89,14 @@ from subprocess import check_output, check_call, CalledProcessError, Popen, PIPE
 # start the scp and release the SU lock. The Downloader will acquire the SU lock before changing the status to S. In this manner, 
 # the Downloader's change to S cannot be overwritten by the ScpWorker's change of status from W to D.
 
+# SU status life cycle: 
+#   main thread sets to 'P' (in processSUs()) - pending
+#   Downloader sets to 'W' - waiting (to be assigned to an ScpWorker)
+#   ScpWorker sets to 'D' - downloading
+#   Scpworker sets to 'P' - done downloading, back to Downloader
+#   Downloader sets to 'C' - complete
+#   If an error or time-out happens anywhere in this life cycle, then the status is set to 'E'
+
 RET_SUCCESS = 0
 RET_INVALIDARGS = 1
 RET_LOCK = 2
@@ -1653,11 +1661,12 @@ class ScpWorker(threading.Thread):
                         lastDownloadTime = datetime.now(timezone.utc)
                         
                         proc.poll()
-                        if proc.returncode is not None:
+                        if proc.returncode is not None:                        
+                            # The scp has completed.
+                            out, err = proc.communicate()
                             self.log.writeInfo([ 'ScpWorker ' + str(self.id) + ' - scp process exited with return code ' + str(proc.returncode) + '.' ])
                             lastDownloadTime = datetime.now(timezone.utc)
                             if proc.returncode != 0:
-                                out, err = proc.communicate()
                                 msg = 'Command "' + cmd + '" returned non-zero status code ' + str(proc.returncode) + '.'
                                 if err is not None:
                                     self.log.writeError([ 'scp stderr msg: ' + err.decode('UTF8') ])
@@ -1903,8 +1912,14 @@ class Downloader(threading.Thread):
                     # Check for download error or completion. Call get() again, since the SU record could have been deleted (due to
                     # abnormal execution).
                     if su.status == 'W' or su.status == 'D':
-                        # ScpDownloader is still performing the download. Don't do anything
-                        pass
+                        # ScpWorking is still performing the download; or the ScpWorker died; check for a time-out for this
+                        # SU, and if a time-out has happened, then raise.
+                        timeNow = datetime.now(su.starttime.tzinfo)
+                        if timeNow > su.starttime + self.suTable.getTimeout():
+                            self.log.writeInfo([ 'Download of SU ' + str(su.sunum) + ' timed-out.' ])
+                            self.log.writeInfo([ 'Downloader setting SU ' + str(su.sunum) + ' status to E (for time-out).' ])
+                            su.setStatus('E', 'Download timed-out.')
+                            raise Exception('downloader', 'The download of SU ' + str(su.sunum) + ' timed-out.')
                     elif su.status == 'P':
                         # ScpDownloader is done performing the download.
                         break
@@ -2213,6 +2228,15 @@ class Downloader(threading.Thread):
         # Update SU table (write-out status, error or success, to the DB).
         # This is a no-op if no SUs were actually modified.
         self.suTable.updateDbAndCommit()
+
+        try:
+            su = self.suTable.getAndLockSU(self.sunum)
+            self.log.writeDebug([ 'Downloader for SU ' + str(self.sunum) + ' terminating; unsetting worker.' ])
+            su.worker = None
+        finally:
+            # Always release lock.
+            if su:
+                su.releaseLock()
 
         # This thread is about to terminate. 
         # We need to check the class tList variable to update it, so we need to acquire the lock.
@@ -2994,25 +3018,44 @@ if __name__ == "__main__":
 
                     for asunum in sunums:
                         asu = sus.get([ asunum ])[0]
-
+                        
                         if str(asunum) in processing:
                             # Skip duplicates.
                             rslog.writeInfo([ 'Skipping pending request for SU ' + str(asunum) + ' - this is a duplicate SU.' ])
                             continue
                         else:
-                            processing[str(asunum)] = True                                        
+                            processing[str(asunum)] = True  
+                                
+                        # We need to lock the SU so that the status does not change while the following code is running.
+                        try:
+                            gotSULock = asu.acquireLock()
+            
+                            if gotSULock is None:
+                                # Not sure what to do here. Can't change status since we could not acquire the lock.
+                                # Go to next SU. If the status can never be gotten, then this request will time-out eventually.
+                                rslog.writeWarning([ 'Unable to acquire SU ' + str(asu.sunum) + ' lock; skipping SU.' ])
+                                continue                      
                         
-                        if asu.status == 'P' or asu.status == 'W' or asu.status == 'D':
-                            rslog.writeInfo([ 'Download of SU ' + str(asu.sunum)  + ' is pending.' ])
-                            done = False
-                        elif asu.status == 'E':
-                            rslog.writeInfo([ 'Download of SU ' + str(asu.sunum)  + ' has errored-out.' ])
-                            errMsg = asu.errmsg
-                            reqError = True
-                        elif asu.status == 'C':
-                            rslog.writeInfo([ 'Download of SU ' + str(asu.sunum)  + ' has completed.' ])
-                        else:
-                            raise Exception('unknownStatus', 'SU ' + str(asu.sunum) + ' has an unkonw status of ' + asu.status + '.')
+                            if asu.status == 'P' or asu.status == 'W' or asu.status == 'D':
+                                rslog.writeInfo([ 'Download of SU ' + str(asu.sunum)  + ' is pending.' ])
+                            
+                                # Check for dead Downloader thread. If so, error-out the SU.
+                                if not asu.worker or not isinstance(asu.worker, (Downloader)) or not asu.worker.isAlive():
+                                    asu.setStatus('E', 'No worker for SU ' + str(asu.sunum) + '.')
+                                done = False
+                            elif asu.status == 'E':
+                                rslog.writeInfo([ 'Download of SU ' + str(asu.sunum)  + ' has errored-out.' ])
+                                errMsg = asu.errmsg
+                                reqError = True
+                            elif asu.status == 'C':
+                                rslog.writeInfo([ 'Download of SU ' + str(asu.sunum)  + ' has completed.' ])
+                            else:
+                                # Unknown status; set status to 'E'
+                                asu.setStatus('E', 'SU ' + str(asu.sunum) + ' has an unknown status of ' + asu.status + '.')
+                                done = False
+                        finally:
+                            if gotSULock:
+                                asu.releaseLock()
                     
                     if done:
                         # There are no pending downloads for this request. Set this request's status to 'C' or 'E', and decrement
