@@ -61,7 +61,16 @@ TARCINFO_$(d)	:= $(d)/tapearcinfo
 # ART - add tapearcX. This will be made from tapearcX.o, which will be compiled from tapearcX.c with the make system's $(COMP) compiler.
 TAPEARCX_$(d)   := $(addprefix $(d)/, tapearcX)
 endif
-BINTGT_$(d)     := $(addprefix $(d)/, sumget sum_rm sum_rm_0 sum_rm_1 sum_rm_2 impexp exportclosed md5filter sum_adv sum_export_svc sum_export jmtx sum_chmown)
+
+SUMSADV_$(d)    := $(d)/sum_adv
+ifneq ($(SUMS_USEMTSUMS), 0)
+ifneq ($(SUMS_USEMTSUMS_ALL), 0)
+SUMSADV_$(d)    :=
+endif
+endif
+
+BINTGT_$(d)     := $(addprefix $(d)/, sumget sum_rm sum_rm_0 sum_rm_1 sum_rm_2 impexp exportclosed md5filter sum_export_svc sum_export jmtx sum_chmown)
+BINTGT_$(d)     := $(BINTGT_$(d)) $(SUMSADV_$(d))
 
 # debug apps
 ifneq ($(SUMS_TAPE_AVAILABLE), 0)
