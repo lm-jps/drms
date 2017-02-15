@@ -1440,7 +1440,7 @@ int DoIt(void)
 
     if (from_web)
     {
-        /* Try to log the f#*(Q QUERY_STRING */
+        /* Log the QUERY_STRING */
         char *qs = getenv("QUERY_STRING");
         if (qs)
         {
