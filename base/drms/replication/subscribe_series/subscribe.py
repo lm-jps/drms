@@ -827,17 +827,31 @@ if __name__ == "__main__":
                             print('Waiting for server to create dump file.')
                             time.sleep(2)
 
+                            natt = 0
                             while (resuming and info['status'] == STATUS_REQUEST_RESUMING) or info['status'] == STATUS_REQUEST_QUEUED or info['status'] == STATUS_REQUEST_PROCESSING:
                                 log.writeInfo([ 'Calling cgi with URL: ' + serviceURL ])
                                 log.writeInfo([ 'cgi args: ' + json.dumps(cgiArgs) ])
-                                with urllib.request.urlopen(serviceURL + '?' + urlArgs) as response:
-                                    info = json.loads(response.read().decode('UTF-8'))
-                                    if 'status' not in info or 'msg' not in info:
-                                        raise Exception('subService', 'Request failure: ' + STATUS_ERR_INTERNAL + '.')
-                                    log.writeInfo([ 'cgi response: ' + info['msg'] + ' Response status: ' + info['status'] + '.'])
-                                    print('.', end='')
-                                    sys.stdout.flush()
-                                    time.sleep(2)
+                                try:
+                                    with urllib.request.urlopen(serviceURL + '?' + urlArgs) as response:
+                                        info = json.loads(response.read().decode('UTF-8'))
+                                        if 'status' not in info or 'msg' not in info:
+                                            raise Exception('subService', 'Request failure: ' + STATUS_ERR_INTERNAL + '.')
+                                        log.writeInfo([ 'cgi response: ' + info['msg'] + ' Response status: ' + info['status'] + '.'])
+                                        print('.', end='')
+                                        sys.stdout.flush()
+                                        natt = 0
+                                        time.sleep(2)
+                                except urllib.error.URLError as exc:
+                                    # we want to try again, until we time-out
+                                    natt += 1
+                                    if natt > 10:
+                                        raise
+                                    if type(exc.response) is str:
+                                        msg = exc.response
+                                    else:
+                                        msg = ''
+                                    log.writeWarning([ 'Unable to send subscription server pollcomplete status (' + msg + '). Trying again.' ])
+                                    time.sleep(1)
                                     
                             # Print a newline.
                             print('dump file is ready.')
@@ -882,6 +896,7 @@ if __name__ == "__main__":
                             xferURL = urllib.parse.urlunsplit((scheme, netloc, os.path.join(path, client + '.subscribe_series.sql.gz'), None, None))
                             dest = os.path.join(arguments.getArg('kLocalWorkingDir'), client + '.subscribe_series.sql.gz')
 
+                            # start of dump-file loop
                             fileNo = 0
                             while True:
                                 # SmartDL downloads the file via multiple streams into temporary files. It combines the multiple
@@ -927,13 +942,29 @@ if __name__ == "__main__":
                                 info = {}
                                 info['status'] = STATUS_REQUEST_FINALIZING
 
+                                natt = 0
                                 while info['status'] == STATUS_REQUEST_FINALIZING:
-                                    with urllib.request.urlopen(serviceURL + '?' + urlArgs) as response:
-                                        info = json.loads(response.read().decode('UTF-8'))
-                                        print('.', end='')
-                                        sys.stdout.flush()
+                                    # due to normal network activity, urlopen() could fail; I have
+                                    # seen 'connection timed-out' errors.
+                                    try:
+                                        with urllib.request.urlopen(serviceURL + '?' + urlArgs) as response:
+                                            info = json.loads(response.read().decode('UTF-8'))
+                                            print('.', end='')
+                                            sys.stdout.flush()
+                                            natt = 0
+                                            time.sleep(1)
+                                    except urllib.error.URLError as exc:
+                                        # we want to try again, until we time-out
+                                        natt += 1
+                                        if natt > 10:
+                                            raise
+                                        if type(exc.response) is str:
+                                            msg = exc.response
+                                        else:
+                                            msg = ''
+                                        log.writeWarning([ 'Unable to send subscription server pollcomplete status (' + msg + '). Trying again.' ])
                                         time.sleep(1)
-                                        
+
                                 # Print a newline.
                                 print('server has finalized request.')
 
@@ -946,6 +977,8 @@ if __name__ == "__main__":
                                         # Must undo (If newsite, remove _jsoc. If new schema, remove schema and remove schema's entry from admin.ns. If
                                         # subscribing, remove database table.)
                                         raise Exception('subService', info['status'], 'Unexpected response from subscription service: ' + info['status'])
+                                    # back to the beginning of the dump-file loop
+                                    fileNo += 1
                                 else:
                                     # Yay, we are done ingesting dump files. Break out of dump-file loop.
                                     break
@@ -973,10 +1006,24 @@ if __name__ == "__main__":
                         info = {}
                         info['status'] = STATUS_REQUEST_PROCESSING
 
+                        natt = 0
                         while info['status'] == STATUS_REQUEST_QUEUED or info['status'] == STATUS_REQUEST_PROCESSING:
-                            with urllib.request.urlopen(serviceURL + '?' + urlArgs) as response:
-                                info = json.loads(response.read().decode('UTF-8'))
-                                time.sleep(2)
+                            try:
+                                with urllib.request.urlopen(serviceURL + '?' + urlArgs) as response:
+                                    info = json.loads(response.read().decode('UTF-8'))
+                                    natt = 0
+                                    time.sleep(2)
+                            except urllib.error.URLError as exc:
+                                # we want to try again, until we time-out
+                                natt += 1
+                                if natt > 10:
+                                    raise
+                                if type(exc.response) is str:
+                                    msg = exc.response
+                                else:
+                                    msg = ''
+                                log.writeWarning([ 'Unable to send subscription server pollcomplete status (' + msg + '). Trying again.' ])
+                                time.sleep(1)
                                 
                         if info['status'] != STATUS_REQUEST_COMPLETE:
                             raise Exception('subService', info['status'], 'Unexpected response from subscription service: ' + info['status'])
