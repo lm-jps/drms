@@ -54,7 +54,7 @@ import re
 import gzip
 from subprocess import check_call, Popen, CalledProcessError
 import psycopg2
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import shutil
 import glob
 import fcntl
@@ -426,6 +426,50 @@ class Log(object):
             for line in text:
                 self.log.critical(line)
             self.fileHandler.flush()
+            
+        
+class IntervalLogger(object):
+    """create one object per loop"""
+    def __init__(self, log, logInterval):
+        self.log = log
+        self.logInterval = logInterval
+        self.lastWriteTime = None
+
+    def timeToLog(self):        
+        if self.lastWriteTime is None:
+            return True
+        else:
+            timeNow = datetime.now(timezone.utc)
+            if timeNow > self.lastWriteTime + self.logInterval:
+                return True
+            else:
+                return False
+            
+    def updateLastWriteTime(self):
+        if self.timeToLog():
+            # update last print time only if the interval between last print and now has elapsed
+            self.lastWriteTime = datetime.now(timezone.utc)
+
+    def writeDebug(self, text):
+        if self.timeToLog():
+            self.log.writeDebug(text)
+
+    def writeInfo(self, text):
+        if self.timeToLog():
+            self.log.writeInfo(text)
+
+    def writeWarning(self, text):
+        if self.timeToLog():
+            self.log.writeWarning(text)
+
+    def writeError(self, text):
+        if self.timeToLog():
+            self.log.writeError(text)
+
+    def writeCritical(self, text):
+        if self.timeToLog():
+            self.log.writeCritical(text)
+        
 
 class RedirectStdFileStreams(object):
     def __new__(cls, stdoutFileObj=None, stderrFileObj=None):
@@ -1666,6 +1710,9 @@ class Worker(threading.Thread):
                             # Poll on the request status waiting for it to be I. This indicates that the client has successfully ingested
                             # the dump file. The client could also set the status to E if there was some error, in which case the client
                             # provides an error message that the server logs. The loop is interruptable by a shut-down request.
+                            
+                            # log once every 60 seconds
+                            ilogger = IntervalLogger(self.log, timedelta(seconds=60))
                             maxLoop = 172800 # 48-hour timeout
                             while True:
                                 if maxLoop <= 0:
@@ -1682,9 +1729,9 @@ class Worker(threading.Thread):
                                 
                                     (code, msg) = self.request.getStatus()
                                     if code.upper() == 'D':
-                                        self.log.writeDebug([ 'Waiting for client ' + self.client + ' to download dump file (request ' + str(self.requestID) + '). Status ' + code.upper() + '.'])
+                                        ilogger.writeDebug([ 'Waiting for client ' + self.client + ' to download dump file (request ' + str(self.requestID) + '). Status ' + code.upper() + '.'])
                                     elif code.upper() == 'A':
-                                        self.log.writeDebug([ 'Waiting for client ' + self.client + ' to ingest dump file (request ' + str(self.requestID) + '). Status ' + code.upper() + '.'])
+                                        ilogger.writeDebug([ 'Waiting for client ' + self.client + ' to ingest dump file (request ' + str(self.requestID) + '). Status ' + code.upper() + '.'])
                                     elif code.upper() == 'I':
                                         # Onto next dump-file chunk.
                                         self.log.writeDebug([ 'Client ' + self.client + ' has signaled that they have successfully ingested dump file number ' + str(fileNo) + ' (request ' + str(self.requestID) + '). Status ' + code.upper() + '.'])
@@ -1697,6 +1744,9 @@ class Worker(threading.Thread):
                                     else:
                                         reqStatus = 'E'
                                         raise Exception('invalidReqStatus', 'Unexpected request status ' + code.upper() + '.')
+
+                                    # if we wrote during this iteration, update the last-print time
+                                    ilogger.updateLastWriteTime()
                                 finally:
                                     if gotLock:
                                         self.reqTable.releaseLock()
@@ -2090,7 +2140,6 @@ class ReqTable(object):
     
         for requestidStr in self.reqDict.keys():
             if (self.reqDict[requestidStr].status == 'P' or self.reqDict[requestidStr].status == 'D' or self.reqDict[requestidStr].status == 'I') and (client is None or self.reqDict[requestidStr].client == client):
-                self.log.writeDebug([ 'Adding request (ID ' + requestidStr + ') to pending list.' ])
                 pendLst.append(self.reqDict[requestidStr])
 
         if len(pendLst) > 0:    
@@ -2104,7 +2153,6 @@ class ReqTable(object):
 
         for requestidStr in self.reqDict.keys():
             if self.reqDict[requestidStr].status == 'N' and (client is None or self.reqDict[requestidStr].client == client):
-                self.log.writeDebug([ 'Adding request (ID ' + requestidStr + ') to new list.' ])
                 newLst.append(self.reqDict[requestidStr])            
         
         if len(newLst) > 0:
@@ -2119,7 +2167,6 @@ class ReqTable(object):
         # Return results for client only.
         for requestidStr in self.reqDict.keys():
             if (self.reqDict[requestidStr].status == 'P' or self.reqDict[requestidStr].status == 'D' or self.reqDict[requestidStr].status == 'I') and (client is None or self.reqDict[requestidStr].client == client):
-                self.log.writeDebug([ 'Adding request (ID ' + requestidStr + ') to processing list.' ])
                 procLst.append(self.reqDict[requestidStr])
 
         if len(procLst) > 0:    
@@ -2127,13 +2174,12 @@ class ReqTable(object):
             procLst.sort(key=lambda req : req.starttime.strftime('%Y-%m-%d %T'))
 
         return procLst
-        
+
     def getInError(self, client=None):
         errLst = []
     
         for requestidStr in self.reqDict.keys():
             if self.reqDict[requestidStr].status == 'E' and (client is None or self.reqDict[requestidStr].client == client):
-                self.log.writeDebug([ 'Adding request (ID ' + requestidStr + ') to in-error list.' ])
                 errLst.append(self.reqDict[requestidStr])
 
         if len(errLst) > 0:
@@ -2360,6 +2406,9 @@ if __name__ == "__main__":
 
                     # Main dispatch loop. When a SIGINT (ctrl-c), SIGTERM, or SIGHUP is received, the 
                     # terminator context manager will be exited.
+
+                    # log every 60 seconds                    
+                    ilogger = IntervalLogger(msLog, timedelta(seconds=60))
                     firstIter = True
                     while True:
                         # Deal with pending requests first. If a request has been pending too long, then delete the request now
@@ -2372,9 +2421,10 @@ if __name__ == "__main__":
                                 raise Exception('lock', 'Unable to acquire req-table lock.')
                             
                             reqsPending = reqTable.getPending()
-                            
+                                                        
                             for areq in reqsPending:
-                                msLog.writeInfo([ 'Found a pending request: ' + areq.dump(False) + '.'])
+                                ilogger.writeInfo([ 'Found a pending request: ' + areq.dump(False) + '.'])
+
                                 timeNow = datetime.now(areq.starttime.tzinfo)
                                 if timeNow > areq.starttime + reqTable.getTimeout():
                                     msLog.writeError(['The processing of request ' + str(areq.requestid) + ' timed-out.'])
@@ -2432,14 +2482,15 @@ if __name__ == "__main__":
                             gotLock = reqTable.acquireLock()
                             if not gotLock:
                                 raise Exception('lock', 'Unable to acquire req-table lock.')
-                            
+
                             reqsInError = reqTable.getInError()
                             expiredAndInError = []
 
                             for areq in reqsInError:
+                                ilogger.writeInfo([ 'Found an errored-out request: ' + areq.dump(False) + '.'])
                                 timeNow = datetime.now(areq.starttime.tzinfo)
                                 if timeNow > areq.starttime + reqTable.getTimeout():
-                                    msLog.writeInfo(['Deleting the record for errored-out request: (' + areq.dump(False) + ').'])
+                                    msLog.writeInfo(['Time-out: deleting the record for errored-out request: (' + areq.dump(False) + ').'])
                                     expiredAndInError.append(areq.requestid)
                                     
                             if len(expiredAndInError) > 0:
@@ -2528,7 +2579,11 @@ if __name__ == "__main__":
                                 reqTable.releaseLock()
                                 gotLock = None
                 
-                        firstIter = False            
+                        firstIter = False
+
+                        # if we wrote during this iteration, update the last-print time
+                        ilogger.updateLastWriteTime()
+
                         time.sleep(1)                
                 
                 connSlave.close()
