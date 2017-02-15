@@ -16,7 +16,7 @@ class DrmsLock(object):
         if self:
             # Try to open lock file.
             try:
-                fobj = open(fileName, 'a')
+                fobj = open(fileName, 'w')
 
                 # Save the lock file information.
                 self._lockFile = fileName
