@@ -7522,6 +7522,7 @@ static char *drms_query_string(DRMS_Env_t *env,
     int shadowexists = 0;
     int hasfirstlast = 0;
 
+    XASSERT(limit);
   CHECKNULL_STAT(env,&status);
 
   if ((template = drms_template_record(env,seriesname,&status)) == NULL)
@@ -8451,7 +8452,7 @@ static char *drms_query_string(DRMS_Env_t *env,
   }
   if (qtype != DRMS_QUERY_COUNT) 
   {
-        long long actualLimit = 0;
+        long long actualLimit = *limit;
     
      if (qtype == DRMS_QUERY_N)
      {
