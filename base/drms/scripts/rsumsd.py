@@ -249,15 +249,18 @@ class TerminationHandler(object):
                 if gotLock:
                     if len(ScpWorker.tList) > 0:
                         worker = ScpWorker.tList[0]
+                        
+                        if worker and isinstance(worker, (ScpWorker)) and worker.isAlive():
+                            self.log.writeInfo([ 'Waiting for worker (ID ' + str(worker.id) + ') to halt.' ])
+                            worker.join()
+                            self.log.writeInfo([ 'Worker (ID ' +  str(worker.id) + ') halted.' ])
+                        else:
+                            ScpWorker.tList.pop(0)
                     else:
                         break 
             finally:
                 if gotLock:
-                    ScpWorker.lock.release()
-                    
-            self.log.writeInfo([ 'Waiting for worker (ID ' + str(worker.id) + ') to halt.' ])
-            worker.join()
-            self.log.writeInfo([ 'Worker (ID ' +  str(worker.id) + ') halted.' ])   
+                    ScpWorker.lock.release()                    
         
         # Shut-down Downloader threads.
         gotLock = False
@@ -721,7 +724,7 @@ class SuTable:
                         except psycopg2.Error as exc:
                             import traceback
                             self.log.writeError([ traceback.format_exc(5) ])
-                            raise Exception('sutableWrite', traceback.format_exc(5))
+                            raise Exception('sutableWrite', 'Unable to update DB.')
                         finally:
                             if needsRollback:
                                 SuTable.rsConn.rollback()
@@ -1096,9 +1099,7 @@ class SuTable:
         rv = []        
 
         if len(sunums) > 0:
-            # Ok, 86 jsoc_fetch. Using it is ridiculous (lots and lots of overhead for what is a simple DB query), and 
-            # sometimes it crashes. We simply need to query the SUMS db and check to see which of the SUs in sunums 
-            # are present in the sum_main/sum_partn_alloc table.             
+            # query the SUMS db and check to see which of the SUs in sunums are present in the sum_main/sum_partn_alloc table
             cmd = "SELECT T1.ds_index, T1.online_loc, T1.online_status, T1.archive_status, T1.offsite_ack, T1.history_comment, T1.owning_series, T1.storage_group, T1.bytes, T1.create_sumid, T1.creat_date, T1.username, COALESCE(T1.arch_tape, 'N/A'), COALESCE(T1.arch_tape_fn, 0), COALESCE(T1.arch_tape_date, '1958-01-01 00:00:00'), COALESCE(T1.safe_tape, 'N/A'), COALESCE(T1.safe_tape_fn, 0), COALESCE(T1.safe_tape_date, '1958-01-01 00:00:00'), COALESCE(T2.effective_date, '195801010000'), coalesce(T2.status, 0), coalesce(T2.archive_substatus, 0) FROM " + SUM_MAIN + " AS T1 LEFT OUTER JOIN " + SUM_PARTN_ALLOC + " AS T2 ON (T1.ds_index = T2.ds_index) WHERE T1.ds_index IN (" + ','.join([ str(asunum) for asunum in sunums ]) + ')'
 
             try:
@@ -1595,7 +1596,7 @@ class ScpWorker(threading.Thread):
                     doDownload = False
                 
                 if doDownload:
-                    self.log.writeInfo([ 'ScpWorker ' + str(self.id) + ' - Time for a download! Collected ' + str(len(susToDownload)) + ' for download.' ])
+                    self.log.writeInfo([ 'ScpWorker ' + str(self.id) + ' - Time for a download! Collected ' + str(len(susToDownload)) + ' for download. Payload is ' + str(payload) + '.' ])
                     
                     # Now acquire SU lock for all SUs so no other thread modifies the SU while we are processing the download.
                     for su in susToDownload:
@@ -1647,11 +1648,11 @@ class ScpWorker(threading.Thread):
                     except OSError as exc:
                         import traceback
                         self.log.writeError([ traceback.format_exc(5) ])
-                        raise Exception('scpSU', "Cannot run command '" + cmd + "' ")
+                        raise Exception('scpSU', 'Cannot run scp command.')
                     except ValueError as exc:
                         import traceback
                         self.log.writeError([ traceback.format_exc(5) ])
-                        raise Exception('scpSU', "scp command '" + cmd + "' called with invalid arguments.")
+                        raise Exception('scpSU', 'scp command called with invalid arguments.')
 
                     # Poll for completion
                     while True:
@@ -1976,173 +1977,245 @@ class Downloader(threading.Thread):
             
             # We need to connect to the SUMS database before we can modify SUMS objects.
             # The DB transaction is NOT in autocommit mode.
-            # We might need to put all of this in a lock to keep other Downloader objects from modifying the same DB tables
-            # at the same time (cursors held by different Downloaders are not isolated).
-            try:
-                gotSumsDbLock = Downloader.sumsDbLock.acquire()
-                if gotSumsDbLock:
-                    with Downloader.sumsConn.cursor() as cursor:
-                        needsCommit = False
-                        try: 
-                            # Put all of this in one transaction. If everything is good, commit the transaction. If an 
-                            # exception occurs, roll back.
-                    
-                            ##### SUM_open() port #####
-                            # This increments the sequence that supplies the sumid and inserts that sumid into the sum_open table.
-                            cmd = "SELECT NEXTVAL('public.sum_seq')"
-                            cursor.execute(cmd)
-                            records = cursor.fetchall()
-                            if len(records) != 1:
-                                raise Exception('sumsAPI', 'Unexpected response when fetching sumid from sequence.')
-                        
-                            sumid = records[0][0]
-
-                            currentTimeStr = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                            cmd = 'INSERT INTO public.sum_open(sumid, open_date) VALUES (' + str(sumid) + ", '" + currentTimeStr + "')"
-                            cursor.execute(cmd)
-                            ##### SUM_open() port - end #####
-                    
-                            self.log.writeInfo([ 'Successfully called SUM_open() port for SU ' +  str(self.sunum) + '.'])
-                            self.log.writeInfo([ 'sumid is ' + str(sumid) + '.' ])
+            #
+            # Do not put a lock around these operations. It takes about 5 to 8 seconds to complete these SUMS DB 
+            # operations. If every thread has to acquire and hold this lock for 5 to 8 seconds, throughput will
+            # suffer. 
+            #
+            # And there is no reason to lock these operations. Each Downloader thread
+            # operates on a unique set of rows in the SUMS DB tables being modified. The original
+            # SUMS maintained a single connection to the SUMS DB. In response to each API function call,
+            # SUMS would manipulate the SUMS DB and then it would commit the change. Since each
+            # SUMS client makes multiple SUMS API function calls during its run, and SUMS responds to each
+            # request as it arrives in its 'inbox', without any regard to sorting by client,
+            # the DB manipulations made by clients are interleaved. Therefore, there is no need
+            # for one Downloader thread to perform all DB manipulations without interruption from
+            # other Downloader threads.
+            #
+            # The various cursors held by different Downloaders are not isolated (they operate within the same transaction
+            # across all Downloader threads), so the following DB manipulations can be interrupted. If an error 
+            # happens somewhere in this chain of events, we need to undo the manipulations performed before the
+            # error occurred.
+            #
+            # PG and psycopg2 do not allow multiple concurrent transactions in a single connection. So, I guess
+            # we have to serialize each manipulation (by putting a lock around each one).
+            with Downloader.sumsConn.cursor() as cursor:
+                allOK = False
+                openDone = False
+                alloc2Done = False
+                putDone = False
+                closeDone = False
+                
+                try: 
+                    # Put all of this in one transaction. If everything is good, commit the transaction. If an 
+                    # exception occurs, roll back.
             
-                            ##### SUM_alloc2() port #####
-                            #   First, find a partition that has enough available space for the size of the SU to be downloaded.
-                            cmd = 'SELECT PARTN_NAME FROM public.sum_partn_avail WHERE AVAIL_BYTES >= 1024 AND PDS_SET_NUM = 0'
-                            cursor.execute(cmd)
-                            records = cursor.fetchall()
-                            if len(records) < 1:
-                                raise Exception('sumsAPI', 'Cannot allocate a new Storage Unit in SUMS - out of space.')
+                    ##### SUM_open() port #####
+                    try:
+                        gotSumsDbLock = Downloader.sumsDbLock.acquire()
+                        if not gotSumsDbLock:
+                            raise Exception('lock', 'Unable to acquire SUMS DB lock.')
                         
-                            partitions = []
-                            for rec in records:
-                                partitions.append(rec[0])
-                        
-                            #   Second, randomly choose one of the partitions to put the new SU into. We want to spread the write load over available 
-                            #   partitions.
-                            randIndex = random.randint(0, len(partitions) - 1)
-                            partition = partitions[randIndex]
-                            sudir = os.path.join(partition, 'D' + str(self.sunum))
-                            os.mkdir(sudir)
-                            os.chmod(sudir, 0O2755)
-        
-                            #   Third, insert a record into the sum_partn_alloc table for this SU. status is DARW, which is 1. effective_date is "0".
-                            cmd = "INSERT INTO public.sum_partn_alloc(wd, sumid, status, bytes, effective_date, archive_substatus, group_id, safe_id, ds_index) VALUES ('" + sudir + "', '" + str(sumid) + "', 1, 1024, '0', 0, 0, 0, 0)"
-                            cursor.execute(cmd)
-                            ##### SUM_alloc2() port - end #####
+                        # This increments the sequence that supplies the sumid and inserts that sumid into the sum_open table.
+                        cmd = "SELECT NEXTVAL('public.sum_seq')"
+                        cursor.execute(cmd)
+                        records = cursor.fetchall()
+                        if len(records) != 1:
+                            raise Exception('sumsAPI', 'Unexpected response when fetching sumid from sequence.')
+                
+                        sumid = records[0][0]
 
-                            self.log.writeInfo([ 'Succeeded allocating a new SU: ' +  str(self.sunum) + '.' ])
-                    
-                            #    Fourth, move the downloaded SU files into the chosen SUMS partition. SUM_alloc2() code calls mkdir, so we cannot
-                            #    move the top-level D___ directory into the SUMS partition. Instead we have to move, recursively,  all files and directories in 
-                            #    the downloaded D___ directory into the SUMS D___ directory.
-                            files = os.listdir(suDlPath)
-                            self.log.writeInfo([ 'Moving downloaded SU content from ' + suDlPath + ' into allocated SU (' + sudir  + ').' ])
+                        currentTimeStr = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                        cmd = 'INSERT INTO public.sum_open(sumid, open_date) VALUES (' + str(sumid) + ", '" + currentTimeStr + "')"
+                        cursor.execute(cmd)
+                        Downloader.sumsConn.commit()
+                    finally:
+                        if gotSumsDbLock:
+                            Downloader.sumsDbLock.release()
+                    ##### SUM_open() port - end #####
+                    openDone = True
+                    self.log.writeInfo([ 'Successfully called SUM_open() port for SU ' +  str(self.sunum) + '.'])
+                    self.log.writeInfo([ 'sumid is ' + str(sumid) + '.' ])
+    
+                    ##### SUM_alloc2() port #####
+                    try:
+                        gotSumsDbLock = Downloader.sumsDbLock.acquire()
+                        if not gotSumsDbLock:
+                            raise Exception('lock', 'Unable to acquire SUMS DB lock.')
 
-                            try:
-                                for afile in files:
-                                    src = os.path.join(suDlPath, afile)
-                                    shutil.move(src, sudir)
-                            except shutil.Error as exc: 
-                                import traceback
-                                self.log.writeError([ traceback.format_exc(5) ])
-                                raise Exception('mvSU', 'Unable to move SU file ' + afile + ' into SUdir ' + sudir + '.')
+                        #   First, find a partition that has enough available space for the size of the SU to be downloaded.
+                        cmd = 'SELECT PARTN_NAME FROM public.sum_partn_avail WHERE AVAIL_BYTES >= 1024 AND PDS_SET_NUM = 0'
+                        cursor.execute(cmd)
+                        records = cursor.fetchall()
+                        if len(records) < 1:
+                            raise Exception('sumsAPI', 'Cannot allocate a new Storage Unit in SUMS - out of space.')
+            
+                        partitions = []
+                        for rec in records:
+                            partitions.append(rec[0])
+            
+                        #   Second, randomly choose one of the partitions to put the new SU into. We want to spread the write load over available 
+                        #   partitions.
+                        randIndex = random.randint(0, len(partitions) - 1)
+                        partition = partitions[randIndex]
+                        sudir = os.path.join(partition, 'D' + str(self.sunum))
+                        os.mkdir(sudir)
+                        os.chmod(sudir, 0O2755)
 
-                            self.log.writeInfo([ 'Move of SU ' + str(self.sunum) + ' content succeeded.' ])
-                    
-                            ##### SUM_put() port #####
-                            # The original SUM_put() call called "chmown" to change the ownership of the
-                            # files in the SU dir to the SUM_MANAGER. However, this is not necessary since rsumsd.py is run by the 
-                            # SUM_MANAGER.
-                    
-                            #   First, chmod all directories to 0755. All regular files get their user/group/other read enabled, and their
-                            #   user write enabled, and their group and other write disabled.
-                            for root, dirs, files in os.walk(sudir):
-                                for adir in dirs:
-                                    fullPath = os.path.join(root, adir)
-                                    os.chmod(fullPath, 0O0755)
-                                for afile in files:
-                                    fullPath = os.path.join(root, afile)
-                                    st = os.stat(fullPath)
-                                    newMod = st.st_mode | stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH | stat.S_IWUSR & ~stat.S_IWGRP & ~stat.S_IWOTH
-                                    os.chmod(fullPath, newMod)
-                            
-                            #   Second, update SUMS sum_main database table - Calculate SU dir number of bytes, set online status to 'Y', set archstatus to 'N', 
-                            #   set offsiteack to 'N', set dsname to seriesname, set storagegroup to tapegroup, set storageset to tapegroup / 10000,
-                            #   set username to getenv('USER') or nouser if no USER env, set mode to TEMP + TOUCH, set apstatus: if SUMS_TAPE_AVAILABLE ==>
-                            #   DAAP (4), else DADP (2), set archsub ==> DAAEDDP (32), set effective_date to tdays in the future (with format "%04d%02d%02d%02d%02d").
-                            #   Insert all of this into sum_main.
-                            numBytes = os.path.getsize(sudir) + sum([ os.path.getsize(fullPath) for fullPath in [ os.path.join(root, afile) for root, dirs, files in os.walk(sudir) for afile in files ] ]) + sum([ os.path.getsize(fullPath) for fullPath in [ os.path.join(root, adir) for root, dirs, files in os.walk(sudir) for adir in dirs ] ])
-                            if self.arguments.tapesysexists:
-                                apStatus = 4 # DAAP
-                            else:
-                                apStatus = 2 # DADP
-        
-                            createDate = datetime.now()
-                            createDateStr = createDate.strftime('%Y-%m-%d %H:%M:%S')
-                            expDate = createDate + timedelta(days=self.retention)
-                            effDate = expDate.strftime('%Y%m%d%H%M')
+                        #   Third, insert a record into the sum_partn_alloc table for this SU. status is DARW, which is 1. effective_date is "0".
+                        cmd = "INSERT INTO public.sum_partn_alloc(wd, sumid, status, bytes, effective_date, archive_substatus, group_id, safe_id, ds_index) VALUES ('" + sudir + "', '" + str(sumid) + "', 1, 1024, '0', 0, 0, 0, 0)"
+                        cursor.execute(cmd)
+                        Downloader.sumsConn.commit()
+                    finally:
+                        if gotSumsDbLock:
+                            Downloader.sumsDbLock.release()
+                    ##### SUM_alloc2() port - end #####
+                    alloc2Done = True
+                    self.log.writeInfo([ 'Succeeded allocating a new SU: ' +  str(self.sunum) + '.' ])
+            
+                    #    Fourth, move the downloaded SU files into the chosen SUMS partition. SUM_alloc2() code calls mkdir, so we cannot
+                    #    move the top-level D___ directory into the SUMS partition. Instead we have to move, recursively,  all files and directories in 
+                    #    the downloaded D___ directory into the SUMS D___ directory.
+                    files = os.listdir(suDlPath)
+                    self.log.writeInfo([ 'Moving downloaded SU content from ' + suDlPath + ' into allocated SU (' + sudir  + ').' ])
 
-                            # storage_group is the tape group. It should come from the series definition, but remote sites have been using 0 for years.            
-                            cmd = "INSERT INTO public.sum_main(online_loc, online_status, archive_status, offsite_ack, history_comment, owning_series, storage_group, storage_set, bytes, ds_index, create_sumid, creat_date, access_date, username) VALUES ('" + sudir + "', 'Y', 'N', 'N', '', '" + self.series + "', 0, 0, " + str(numBytes) + ', ' + str(self.sunum) + ', ' + str(sumid) + ", '" + createDateStr + "', '" + createDateStr + "', '" + os.getenv('USER', 'nouser') + "')"
+                    try:
+                        for afile in files:
+                            src = os.path.join(suDlPath, afile)
+                            shutil.move(src, sudir)
+                    except shutil.Error as exc: 
+                        import traceback
+                        self.log.writeError([ traceback.format_exc(5) ])
+                        raise Exception('mvSU', 'Unable to move SU file ' + afile + ' into SUdir ' + sudir + '.')
+
+                    self.log.writeInfo([ 'Move of SU ' + str(self.sunum) + ' content succeeded.' ])
+            
+                    ##### SUM_put() port #####
+                    try:
+                        gotSumsDbLock = Downloader.sumsDbLock.acquire()
+                        if not gotSumsDbLock:
+                            raise Exception('lock', 'Unable to acquire SUMS DB lock.')
+
+                        # The original SUM_put() call called "chmown" to change the ownership of the
+                        # files in the SU dir to the SUM_MANAGER. However, this is not necessary since rsumsd.py is run by the 
+                        # SUM_MANAGER.
+            
+                        #   First, chmod all directories to 0755. All regular files get their user/group/other read enabled, and their
+                        #   user write enabled, and their group and other write disabled.
+                        for root, dirs, files in os.walk(sudir):
+                            for adir in dirs:
+                                fullPath = os.path.join(root, adir)
+                                os.chmod(fullPath, 0O0755)
+                            for afile in files:
+                                fullPath = os.path.join(root, afile)
+                                st = os.stat(fullPath)
+                                newMod = st.st_mode | stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH | stat.S_IWUSR & ~stat.S_IWGRP & ~stat.S_IWOTH
+                                os.chmod(fullPath, newMod)
+                    
+                        #   Second, update SUMS sum_main database table - Calculate SU dir number of bytes, set online status to 'Y', set archstatus to 'N', 
+                        #   set offsiteack to 'N', set dsname to seriesname, set storagegroup to tapegroup, set storageset to tapegroup / 10000,
+                        #   set username to getenv('USER') or nouser if no USER env, set mode to TEMP + TOUCH, set apstatus: if SUMS_TAPE_AVAILABLE ==>
+                        #   DAAP (4), else DADP (2), set archsub ==> DAAEDDP (32), set effective_date to tdays in the future (with format "%04d%02d%02d%02d%02d").
+                        #   Insert all of this into sum_main.
+                        numBytes = os.path.getsize(sudir) + sum([ os.path.getsize(fullPath) for fullPath in [ os.path.join(root, afile) for root, dirs, files in os.walk(sudir) for afile in files ] ]) + sum([ os.path.getsize(fullPath) for fullPath in [ os.path.join(root, adir) for root, dirs, files in os.walk(sudir) for adir in dirs ] ])
+                        if self.arguments.tapesysexists:
+                            apStatus = 4 # DAAP
+                        else:
+                            apStatus = 2 # DADP
+
+                        createDate = datetime.now()
+                        createDateStr = createDate.strftime('%Y-%m-%d %H:%M:%S')
+                        expDate = createDate + timedelta(days=self.retention)
+                        effDate = expDate.strftime('%Y%m%d%H%M')
+
+                        # storage_group is the tape group. It should come from the series definition, but remote sites have been using 0 for years.            
+                        cmd = "INSERT INTO public.sum_main(online_loc, online_status, archive_status, offsite_ack, history_comment, owning_series, storage_group, storage_set, bytes, ds_index, create_sumid, creat_date, access_date, username) VALUES ('" + sudir + "', 'Y', 'N', 'N', '', '" + self.series + "', 0, 0, " + str(numBytes) + ', ' + str(self.sunum) + ', ' + str(sumid) + ", '" + createDateStr + "', '" + createDateStr + "', '" + os.getenv('USER', 'nouser') + "')"
+                        cursor.execute(cmd)
+            
+                        self.log.writeInfo([ 'Successfully inserted record into sum_main for SU ' + str(self.sunum) + '.' ])
+
+                        #    Third, update SUMS sum_partn_alloc table - Insert a new row into sum_partn_alloc for this SU. The SUM_alloc2() port will result in
+                        #    a row in sum_partn_alloc with a ds_index of 0, which does not make sense to me. But the SUM_close() port will delete
+                        #    that row. By the time this thread terminates, there will be only a single row for this SU in sum_partn_alloc. substatus is DAAEDDP (32).
+                        #    But first, delete any existing DADP (delete pending) rows for this sunum if the status of the SU for the new row is DADP.
+                        if apStatus == 2:
+                            # We do this simply to ensure that we do not have two sum_partn_alloc records with status DADP (delete pending).
+                            cmd = 'DELETE FROM public.sum_partn_alloc WHERE ds_index = ' + str(self.sunum) + ' AND STATUS = 2'
                             cursor.execute(cmd)
+                            self.log.writeInfo([ 'Successfully deleted old DADP record from sum_partn_alloc for SU ' + str(self.sunum) + '.' ])
+            
+                        cmd = "INSERT INTO public.sum_partn_alloc(wd, sumid, status, bytes, effective_date, archive_substatus, group_id, safe_id, ds_index) VALUES ('" + sudir + "', " + str(sumid) + ', ' + str(apStatus) + ', ' + str(numBytes) + ", '" + effDate + "', 32, 0, 0, " + str(self.sunum) + ')'
+                        cursor.execute(cmd)
+                        self.log.writeInfo([ 'Successfully inserted record into sum_partn_alloc for SU ' + str(self.sunum) + '.' ])
+                        Downloader.sumsConn.commit()
+                    finally:
+                        if gotSumsDbLock:
+                            Downloader.sumsDbLock.release()
+                    ##### SUM_put() port - end #####
+                    putDone = True
+                    self.log.writeInfo([ 'Commit of SU ' + str(self.sunum) + ' succeeded.' ])
+            
+                    ##### SUM_close() port #####
+                    try:
+                        gotSumsDbLock = Downloader.sumsDbLock.acquire()
+                        if not gotSumsDbLock:
+                            raise Exception('lock', 'Unable to acquire SUMS DB lock.')
+
+                        # Delete sum_partn_alloc records for read-only partitions (status == 8) and read-write partitions (status == 1).
+                        cmd = 'DELETE FROM public.sum_partn_alloc WHERE sumid = ' + str(sumid) + ' AND (status = 8 OR status = 1)'
+                        cursor.execute(cmd)
+                        self.log.writeInfo([ 'Successfully deleted read-only and read-write records from sum_partn_alloc for SU ' + str(self.sunum) + '.' ])
+            
+                        # Delete the temporary ds_index = 0 records created during the SUM_put() port. I still do not know why this record
+                        # was created in the first place.
+                        cmd = 'DELETE FROM public.sum_open WHERE sumid = ' + str(sumid)
+                        cursor.execute(cmd)
+                        Downloader.sumsConn.commit()
+                    finally:
+                        if gotSumsDbLock:
+                            Downloader.sumsDbLock.release()
+
+                    ##### SUM_close() port - end #####
+                    closeDone = True
+                    self.log.writeInfo([ 'Successfully deleted temporary (ds_index == 0) records from sum_open for SU ' + str(self.sunum) + '.' ])
                     
-                            self.log.writeInfo([ 'Successfully inserted record into sum_main for SU ' + str(self.sunum) + '.' ])
-        
-                            #    Third, update SUMS sum_partn_alloc table - Insert a new row into sum_partn_alloc for this SU. The SUM_alloc2() port will result in
-                            #    a row in sum_partn_alloc with a ds_index of 0, which does not make sense to me. But the SUM_close() port will delete
-                            #    that row. By the time this thread terminates, there will be only a single row for this SU in sum_partn_alloc. substatus is DAAEDDP (32).
-                            #    But first, delete any existing DADP (delete pending) rows for this sunum if the status of the SU for the new row is DADP.
-                            if apStatus == 2:
-                                # We do this simply to ensure that we do not have two sum_partn_alloc records with status DADP (delete pending).
-                                cmd = 'DELETE FROM public.sum_partn_alloc WHERE ds_index = ' + str(self.sunum) + ' AND STATUS = 2'
-                                cursor.execute(cmd)
-                                self.log.writeInfo([ 'Successfully deleted old DADP record from sum_partn_alloc for SU ' + str(self.sunum) + '.' ])
-                    
-                            cmd = "INSERT INTO public.sum_partn_alloc(wd, sumid, status, bytes, effective_date, archive_substatus, group_id, safe_id, ds_index) VALUES ('" + sudir + "', " + str(sumid) + ', ' + str(apStatus) + ', ' + str(numBytes) + ", '" + effDate + "', 32, 0, 0, " + str(self.sunum) + ')'
-                            cursor.execute(cmd)
-                            self.log.writeInfo([ 'Successfully inserted record into sum_partn_alloc for SU ' + str(self.sunum) + '.' ])
-                            ##### SUM_put() port - end #####
-                    
-                            self.log.writeInfo([ 'Commit of SU ' + str(self.sunum) + ' succeeded.' ])
-                    
-                            ##### SUM_close() port #####
-                            # Delete sum_partn_alloc records for read-only partitions (status == 8) and read-write partitions (status == 1).
-                            cmd = 'DELETE FROM public.sum_partn_alloc WHERE sumid = ' + str(sumid) + ' AND (status = 8 OR status = 1)'
-                            cursor.execute(cmd)
-                            self.log.writeInfo([ 'Successfully deleted read-only and read-write records from sum_partn_alloc for SU ' + str(self.sunum) + '.' ])
-                    
-                            # Delete the temporary ds_index = 0 records created during the SUM_put() port. I still do not know why this record
-                            # was created in the first place.
+                    allOK = True
+                except psycopg2.Error as exc:
+                    # Handle database-command errors. These are all due to problems communicating with the SUMS db.
+            
+                    # Clean-up
+                    if os.path.exists(sudir):
+                        shutil.rmtree(sudir)
+                    if os.path.exists(suDlPath):
+                        shutil.rmtree(suDlPath)
+                    raise Exception('sumsAPI', exc.diag.message_primary + ': ' + cmd + '.') 
+                except Exception as exc:
+                    # Clean-up
+                    if os.path.exists(sudir):
+                        shutil.rmtree(sudir)
+                    if os.path.exists(suDlPath):
+                        shutil.rmtree(suDlPath)
+                    raise
+                finally:
+                    # the cursor still exists
+                    if not allOK:
+                        # undo manipulations that were successfully performed; these could raise, in which
+                        # case we've done the best we can; let the enclosing exception handler set the
+                        # download status for this SU to error
+                        if openDone:
                             cmd = 'DELETE FROM public.sum_open WHERE sumid = ' + str(sumid)
                             cursor.execute(cmd)
-                            self.log.writeInfo([ 'Successfully deleted temporary (ds_index == 0) records from sum_open for SU ' + str(self.sunum) + '.' ])
-                            ##### SUM_close() port - end #####
-                            
-                            needsCommit = True
-                        except psycopg2.Error as exc:
-                            # Handle database-command errors. These are all due to problems communicating with the SUMS db.
-                    
-                            # Clean-up
-                            if os.path.exists(sudir):
-                                shutil.rmtree(sudir)
-                            if os.path.exists(suDlPath):
-                                shutil.rmtree(suDlPath)
-                            raise Exception('sumsAPI', exc.diag.message_primary + ': ' + cmd + '.') 
-                        except Exception as exc:
-                            # Clean-up
-                            if os.path.exists(sudir):
-                                shutil.rmtree(sudir)
-                            if os.path.exists(suDlPath):
-                                shutil.rmtree(suDlPath)
-                            raise
-                        finally:
-                            if needsCommit:
-                                Downloader.sumsConn.commit()
-                            else:
-                                Downloader.sumsConn.rollback()
-            finally:
-                if gotSumsDbLock:
-                    Downloader.sumsDbLock.release()
+                        if alloc2Done:
+                            cmd = "DELETE FROM public.sum_partn_alloc WHERE wd = '" + sudir + "'"
+                            cursor.execute(cmd)
+                        if putDone:
+                            # if putDone, then alloc2Done, so the record was already deleted from sum_partn_alloc; don't
+                            # do that here.
+                            cmd = 'DELETE FROM public.sum_main WHERE ds_index = ' + str(self.sunum)
+                            cursor.execute(cmd)
+                        if closeDone:
+                            # nothing to clean up if close succeeds
+                            pass
 
             # Remove temporary directory.
             self.log.writeInfo([ 'Removing empty temporary download directory ' + suDlPath + '.' ])
@@ -2195,7 +2268,7 @@ class Downloader(threading.Thread):
                         su = self.suTable.getAndLockSU(self.sunum)
                         self.log.writeError([ 'Setting SU ' + str(self.sunum) + ' status to error.' ])
                         self.log.writeError([ msg ])
-                        su.setStatus('E', msg)
+                        su.setStatus('E', type)
                     finally:
                         # Always release lock.
                         if su:
@@ -2210,7 +2283,7 @@ class Downloader(threading.Thread):
                     su = self.suTable.getAndLockSU(self.sunum)
                     self.log.writeError([ 'Setting SU ' + str(self.sunum) + ' status to error.' ])
                     self.log.writeError([ msg ])
-                    su.setStatus('E', msg)
+                    su.setStatus('E', 'Unknown exception.')
                 finally:
                     # Always release lock.
                     if su:
