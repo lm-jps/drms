@@ -133,20 +133,25 @@ try:
 	###################
 	## Run show_info ##
 	###################
-	# show_info does NOT print the HTML header needed when it is run from the command line.
-	print('Content-type: text/plain\n')
-	sys.stdout.flush()
-	
+	# show_info does NOT print the Content-type header needed when it is run from the command line;
+	# show_info prints the HTTP content to stdout; we need to capture this, and then 
+	# pre-pend with the Content-type header if everything goes smoothly
+	# 
 	cmdList = [os.path.join(binDir, arch, 'show_info'), 'JSOC_DBHOST=' + server]
 	# Provide all show_info arguments passed through showextinfo.py to show_info.
 	cmdList.extend(allArgs)
 
 	try:
-		check_call(cmdList)
+		resp = check_output(cmdList, stderr=STDOUT)
 	except ValueError as exc:
 		raise Exception('showinfo', exc.args[0], RET_SHOWINFO)
 	except CalledProcessError as exc:
-		raise Exception('showinfo', "Command '" + ' '.join(cmdList) + "' returned non-zero status code " + str(exc.returncode), RET_SHOWINFO)
+		raise Exception('showinfo', exc.output.decode('UTF-8').rstrip('\n'), RET_SHOWINFO)
+		
+	# show_info success; concatenate Content-type header with show_info stdout
+	print('Content-type: text/plain\n')
+	print(resp.decode('UTF-8').rstrip('\n'))
+	sys.stdout.flush()
 
 except Exception as exc:
 	if len(exc.args) != 3:
