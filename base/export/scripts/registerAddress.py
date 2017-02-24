@@ -94,7 +94,7 @@ if __name__ == "__main__":
         message = email.message_from_string(strippedTextIn) # never fails, even for an invalid email message
         
         if message.is_multipart():
-            for amessage in message.get_payload(decode=True):
+            for amessage in message.get_payload():
                 type = amessage.get_content_type()
                 disposition = amessage.get_content_disposition()
                 
