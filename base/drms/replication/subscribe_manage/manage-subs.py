@@ -89,7 +89,7 @@ LST_TABLE_SERIES = 'series'
 LST_TABLE_NODE = 'node'
 CFG_TABLE_NODE = 'node'
 
-NEW_SITE_SQL = """\
+SLONY_DB_OBJECTS = """\
 -- ----------------------------------------------------------------------
 -- SCHEMA _<cluster>
 -- ----------------------------------------------------------------------
@@ -184,11 +184,52 @@ begin
 	return p_new_seq;
 end;
 ' language plpgsql;
+"""
+
+CAPTURE_SUNUMS_SQL = """\
+-- ---------------------------------------------------------------------------------------
+-- TABLE drms.ingested_sunums
+--
+-- When a client ingests a Slony log, each SUNUM of each data series record is copied
+-- into this table. The client can use this table of SUNUMs to prefetch SUs from the 
+-- providing site. This SQL is ingested as the pg_user database user, the same
+-- user that will be ingesting Slony logs and prefetching SUs, so permissions on 
+-- this table will be correct without having to execute a GRANT statement.
+--
+-- The namespace drms is required, and is created by NetDRMS.sql during the 
+-- NetDRMS installation process.
+-- ---------------------------------------------------------------------------------------
+CREATE TABLE drms.ingested_sunums (sunum bigint NOT NULL);
+
+-- ---------------------------------------------------------------------------------------
+-- FUNCTION drms.capturesunum
+--
+-- For each table under replication, a trigger is created that calls this function, which
+-- then copies SUNUMs into the underlying table, drms.ingested_sunums.
+--
+-- drms.ingested_sunums may not exist (older NetDRMSs did not receive the SQL to create
+-- this table). If this table does not exist, then this function is a no-op.
+-- ---------------------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION drms.capturesunum() RETURNS TRIGGER AS
+$capturesunumtrig$
+BEGIN
+    IF EXISTS (SELECT n.nspname, c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'drms' AND c.relname = 'ingested_sunums') THEN
+      IF (TG_OP='INSERT' AND new.sunum > 0) THEN
+        INSERT INTO drms.ingested_sunums (sunum) VALUES (new.sunum);
+      END IF;
+    END IF;  
+  
+  RETURN NEW;
+END
+$capturesunumtrig$ LANGUAGE plpgsql;
 
 """
 
+
 def getNewSiteSQL(cluster):
-    return NEW_SITE_SQL.replace('<cluster>', cluster)
+    slony = SLONY_DB_OBJECTS.replace('<cluster>', cluster)
+    capture = CAPTURE_SUNUMS_SQL
+    return slony + capture
     
 class InstanceRunning(Exception):
     pass
@@ -678,12 +719,10 @@ class Worker(threading.Thread):
                         # for a lock since only one thread can modify the subscription list for a client.
                         subList = subListObj.getSubscriptionList()
         
-                        if self.action == 'subscribe':
-                            # Append to subList.
+                        if self.action == 'subscribe' or self.action == 'resubscribe':
+                            # append to subList; subscribe and resubscribe are identical, except that for resubscribe
+                            # we omit all db-object-manipulation SQL
                             subList.extend([ series.lower() for series in self.series ])
-                        elif self.action == 'resubscribe':
-                            # Don't do anything.
-                            pass
                         elif self.action == 'unsubscribe':
                             # Remove from subList.
                             for series in self.series:                            
@@ -693,7 +732,7 @@ class Worker(threading.Thread):
                             raise Exception('invalidArgument', 'Invalid request action: ' + self.action + '.')
             
                     # If the request was successfully processed, then the cached subscription list must be updated.
-                    if self.action == 'subscribe' or self.action == 'unsubscribe':
+                    if self.action == 'subscribe' or self.action == 'resubscribe' or self.action == 'unsubscribe':
                         # We must acquire the global subscribe lock before proceeding. Loop until we obtain the lock
                         # (or time-out after some number of failed attempts). The global subscribe lock needs to be available
                         # to shell scripts, as well as Perl and Python programs, and since shell does not support
@@ -726,7 +765,9 @@ class Worker(threading.Thread):
                         
                                 # Modify the client.lst file by creating a temporary file...
                                 with open(self.newLstPath, 'w') as fout:
-                                    # If we are unsubscribing from the only subscribed series, then len(subList) == 0, and this is OK.
+                                    # if we are unsubscribing from the only subscribed series, then len(subList) == 0, and this is OK;
+                                    # sublist contains the list of all series to which the client will be subscribed should the 
+                                    # subscription request succeed
                                     for aseries in subList:
                                         print(aseries.lower(), file=fout)
                 
@@ -736,8 +777,8 @@ class Worker(threading.Thread):
                                 check_call(cmdList)
                                 self.writeStream.logLines() # Log all gentables.pl output
 
-                                if self.action == 'subscribe':
-                                    # Do not create a temp site-dir log, unless we are subscribing to a new series. During un-subscription,
+                                if self.action == 'subscribe' or self.action == 'resubscribe':
+                                    # Do not create a temp site-log dir, unless we are subscribing to a new series. During un-subscription,
                                     # client.new.lst is not added slon_parser.cfg, so no logs are ever written to self.newClientLogDir.
                                     # ...and make the temporary client.new directory in the site-logs directory.
                                     self.log.writeInfo([ 'Making directory ' +  self.newClientLogDir + '.' ])
@@ -781,9 +822,10 @@ class Worker(threading.Thread):
                         # create Slony _jsoc schema               A client subscribing for the first time
                         # create Slony _jsoc.sl* tables           A client subscribing for the first time
                         # create Slony PG functions in _jsoc      A client subscribing for the first time
-                        # populate _jsoc.sl_sequence_offline      All client subscriptions
-                        # populate _jsoc.sl_archive_tracking      All client subscriptions
-                        # copy command containing series data     All client subscriptions
+                        # populate _jsoc.sl_sequence_offline      All client subscriptions/resubscriptions
+                        # populate _jsoc.sl_archive_tracking      All client subscriptions/resubscriptions
+                        # createns                                All client subscriptions
+                        # copy command containing series data     All client subscriptions/resubscriptions
         
                         # Now that the dump file exists and is complete, tell the client that it is ready for
                         # consumption. The client is polling by checking for a request status (via request-subs.py) 
@@ -975,7 +1017,7 @@ class Worker(threading.Thread):
             
             # No lock held here.
             if reqStatus == 'I' or (reqStatus == 'P' and self.action == 'unsubscribe'):
-                # In the subscribe-action case, the script sdo_slony1_dump.sh puts an entry for client.new / client.new.lst into
+                # In the subscribe/resubscribe-action case, the script sdo_slony1_dump.sh puts an entry for client.new / client.new.lst into
                 # the slon_parser.cfg and su_production.slonycfg files. But for the unsubscribe-action case, we do not do that.
                 # Instead, simply make client.new.lst and the client.new.lst row in su_production.slonycfg have the post-unsubscribe
                 # list of tables, and then in clean-up, we COPY this list over client.lst and the client.lst row in su_production.slonycfg.
@@ -1024,9 +1066,11 @@ class Worker(threading.Thread):
                         self.writeStream.logLines() # Log all gentables.pl output
                 
                         if self.newSite:
-                            # If we are unsubscribing, we cannot be a new site.
+                            # If we are unsubscribing or resubscribing, we cannot be a new site.
                             if self.action == 'unsubscribe':
-                                raise Exception('invalidArgument', self.client + ' is a new subscriber. Cannot unsubscribe from series.')
+                                raise Exception('invalidArgument', self.client + ' is a new subscriber. Cannot cancel a series subscription.')
+                            if self.action == 'resubscribe':
+                                raise Exception('invalidArgument', self.client + ' is a new subscriber. Cannot reset a series subscription.')
                         
                             # LEGACY - Add a line for client to slon_parser.cfg.
                             with open(self.parserConfig, 'a') as fout:
@@ -1036,7 +1080,7 @@ class Worker(threading.Thread):
                             # su_production.slonylst. The client's sitedir doesn't exit yet, but it will shortly.
                             # Use client.new.lst to populate su_production.slonylst.
                             # $kRepDir/subscribe_manage/gentables.pl op=add config=$config_file --node=$node --sitedir=$subscribers_dir --lst=$tables_dir/$node.new.lst
-                            cmdList = [ os.path.join(self.repDir, 'subscribe_manage', 'gentables.pl'), 'op=add', 'conf=' + self.slonyCfg, '--node=' + self.client, '--sitedir=' + self.siteLogDir, '--lst=' + self.newLstPath ]
+                            cmdList = [ os.path.join(self.repDir, 'subscribe_manage', 'gentables.pl'), 'op=add', 'conf=' + self.slonyCfg, '--node=' + self.client, '--sitedir=' + self.oldClientLogDir, '--lst=' + self.newLstPath ]
                             # Raises CalledProcessError on error (non-zero returned by gentables.pl).
                             check_call(cmdList)
                             self.writeStream.logLines() # Log all gentables.pl output
@@ -1059,13 +1103,13 @@ class Worker(threading.Thread):
                             # There is a period of time where we allow the log parser to run while the client is ingesting
                             # the dump file. During that time, two parallel universes exist - in one universe, the set of 
                             # logs produced is identical to the one that would have been produced had the client not 
-                            # taken any subscription action. In the other universe, the set of logs produced is what you'd expect
-                            # had the subscription action succeeded. So, if we have a successful subscription, then we need to
-                            # discard the logs generated in the first universe, in the oldClientLogDir, overwriting them 
-                            # with the analogous logs in the newClientLogDir.
+                            # taken any subscription/resubscription action. In the other universe, the set of logs produced is 
+                            # what you'd expect had the subscription/resubscription action succeeded. So, if we have a successful 
+                            # subscription/resubscription, then we need to discard the logs generated in the first universe, 
+                            # in the oldClientLogDir, overwriting them with the analogous logs in the newClientLogDir.
                             #
                             # self.newClientLogDir is not used for un-subscription, nor is it used for re-subscription.
-                            if self.action == 'subscribe':
+                            if self.action == 'subscribe' or self.action == 'resubscribe':
                                 for logFile in os.listdir(self.newClientLogDir):
                                     src = os.path.join(self.newClientLogDir, logFile)
                                     dst = os.path.join(self.oldClientLogDir, logFile)
@@ -1434,6 +1478,16 @@ class Worker(threading.Thread):
 
                 fout.flush()
                 
+                # add the sunum-capturing trigger to the DRMS dataseries database table; disable the client psql's ON_ERROR_STOP 
+                # feature - it may be that drms.capturesunum() does not exist on the client; in that case, do not error out; continue
+                # on to the next SQL statements (the table dump insert statements)
+                print(r'\unset ON_ERROR_STOP', file=fout)
+                print('DROP TRIGGER IF EXISTS capturesunumtrig ON ' + self.series[0].lower() + ';', file=fout)                
+                print('CREATE TRIGGER capturesunumtrig AFTER INSERT ON ' + self.series[0].lower() + ' FOR EACH ROW EXECUTE PROCEDURE drms.capturesunum();', file=fout)
+                # re-enable the ON_ERROR_STOP feature
+                print(r'\set ON_ERROR_STOP 1', file=fout)
+                fout.flush()
+                
             self.log.writeInfo([ 'Successfully created ' + outFile + ' and dumped tab structure commands.' ])
             self.log.writeDebug([ 'Memory usage (MB) ' + str(self.proc.memory_info().vms / 1048576) + '.' ])
 
@@ -1584,7 +1638,7 @@ class Worker(threading.Thread):
                         # 8. Turn on the slon daemons. When the Slony-log parser runs, it will generate new logs for all clients.
                         try:
                             cmdList = [ os.path.join(self.arguments.getArg('kJSOCRoot'), 'base', 'drms', 'replication', 'manageslony', 'sl_start_slon_daemons.sh'), self.slonyCfg ]
-                            check_call(cmdList)
+                            check_call(cmdList, start_new_session=True)
                         except CalledProcessError as exc:
                             raise Exception('stopSlony', 'Failure starting slon daemons.')
                         finally:
@@ -1804,7 +1858,7 @@ class Worker(threading.Thread):
             if restartDaemons:
                 try:
                     cmdList = [ os.path.join(self.arguments.getArg('kJSOCRoot'), 'base', 'drms', 'replication', 'manageslony', 'sl_start_slon_daemons.sh'), self.slonyCfg ]
-                    check_call(cmdList)
+                    check_call(cmdList, start_new_session=True)
                 except CalledProcessError as exc:
                     raise Exception('stopSlony', 'Failure starting slon daemons.')
                 finally:
