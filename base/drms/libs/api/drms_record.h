@@ -186,28 +186,6 @@ static inline DRMS_Record_t *drms_recordset_getrec(DRMS_RecordSet_t *rs, long lo
    return NULL;
 }
 
-/** \brief generate drms query string
-
-\param qtype:
-\return query string
-*/
-char *drms_query_string(DRMS_Env_t *env, 
-                        const char *seriesname,
-                        char *where,
-                        const char *pkwhere,
-                        const char *npkwhere,
-                        int filter, 
-                        int mixed,
-                        DRMS_QueryType_t qtype, 
-                        void *data, 
-                        const char *fl,
-                        int allvers,
-                        HContainer_t *firstlast,
-                        HContainer_t *pkwhereNFL,
-                        int recnumq,
-                        int cursor,
-                        long long *limit);
-
 /* Chunking record queries */
 int drms_recordset_setchunksize(unsigned int size);
 unsigned int drms_recordset_getchunksize();

@@ -153,6 +153,8 @@ static DRMS_RecordSet_t *OpenPlainFileRecords(DRMS_Env_t *env,
 					      int nRecs,
 					      char **pkeysout,
 					      int *status);
+					      
+static char *drms_query_string(DRMS_Env_t *env, const char *seriesname, char *where, const char *pkwhere, const char *npkwhere, int filter, int mixed, DRMS_QueryType_t qtype, void *data, const char *fl, int allvers, HContainer_t *firstlast, HContainer_t *pkwhereNFL, int recnumq, int cursor, long long *limit);
 
 static void RSFree(const void *val);
 /* end drms_open_records() helpers */
@@ -7484,7 +7486,7 @@ DRMS_RecordSet_t *drms_record_retrievelinks(DRMS_Env_t *env, DRMS_RecordSet_t *r
     return rvMerge;
 }
 
-static char *drms_query_string(DRMS_Env_t *env,
+char *drms_query_string(DRMS_Env_t *env,
                         const char *seriesname,
                         char *where,
                         const char *pkwhere,
