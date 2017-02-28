@@ -5589,6 +5589,7 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env,
   HIterator_t hit;
   const char *hkey = NULL;
     char *tmpquery = NULL;
+    long long recsize = 0;
   
   CHECKNULL_STAT(env,status);
   
@@ -5599,25 +5600,33 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env,
   series_lower = strdup(seriesname);
   strtolower(series_lower);
 
-  char *query = qoverride ? 
-    strdup(qoverride) : drms_query_string(env, 
-                                          seriesname, 
-                                          where, 
-                                          pkwhere,
-                                          npkwhere,
-                                          filter, 
-                                          mixed, 
-                                          keys && hcon_size(keys) > 0 ? DRMS_QUERY_PARTIAL : (nrecs == 0 ? DRMS_QUERY_ALL : DRMS_QUERY_N),
-                                          &nrecs, 
-                                          (char *)keys, // overload this argument
-                                          allvers,
-                                          firstlast,
-                                          pkwhereNFL,
-                                          recnumq,
-                                          cursor,
-                                          &limit);
+  char *query = NULL;
+  
+    if (qoverride)
+    { 
+        query = strdup(qoverride);
 
+        if (keys && hcon_size(keys) > 0)
+        {
+            recsize = partialRecordMemsize(template, NULL, keys, NULL);
+        }
+        else
+        {
+            recsize = drms_record_memsize(template);
+        }
+        
+        limit  = (long long)((0.4e6 * env->query_mem) / recsize);
+    }
+    else
+    {
+        query = drms_query_string(env, seriesname, where, pkwhere, npkwhere, filter, mixed, keys && hcon_size(keys) > 0 ? DRMS_QUERY_PARTIAL : (nrecs == 0 ? DRMS_QUERY_ALL : DRMS_QUERY_N), &nrecs, (char *)keys /* overload this argument */, allvers, firstlast, pkwhereNFL, recnumq, cursor, &limit);
+    }
     
+    if (env->verbose)
+    {
+        fprintf(stdout, "drms_retrieve_records_internal() limit %lld.\n", limit);
+    }
+
 #ifdef DEBUG
   printf("ENTER drms_retrieve_records, env=%p, status=%p\n",env,status);
 #endif
@@ -14173,6 +14182,11 @@ DRMS_Array_t *drms_record_getvector(DRMS_Env_t *env,
                 if (!query)
                 {
                    goto failure;
+                }
+                
+                if (env->verbose)
+                {
+                    fprintf(stdout, "drms_record_getvector() limit %lld.\n", limit);
                 }
                 
                 /* query may contain more than one SQL command, but drms_query_bin does not 
