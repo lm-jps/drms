@@ -199,6 +199,7 @@ CAPTURE_SUNUMS_SQL = """\
 -- The namespace drms is required, and is created by NetDRMS.sql during the 
 -- NetDRMS installation process.
 -- ---------------------------------------------------------------------------------------
+DROP TABLE IF EXISTS drms.ingested_sunums;
 CREATE TABLE drms.ingested_sunums (sunum bigint NOT NULL);
 
 -- ---------------------------------------------------------------------------------------

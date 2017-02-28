@@ -593,18 +593,18 @@ def insertRequest(conn, log, dbTable, **kwargs):
     action = kwargs['action'].lower()
     series = kwargs['series']
     
-    if 'archive' in kwargs:
+    if 'archive' in kwargs and kwargs['archive']:
         archive = str(kwargs['archive'])
     else:
-        archive = 'null'
-    if 'retention' in kwargs:
+        archive = '0'
+    if 'retention' in kwargs and kwargs['retention']:
         retention = str(kwargs['retention'])
     else:
-        retention = 'null'
-    if 'tapegroup' in kwargs:
+        retention = '7'
+    if 'tapegroup' in kwargs and kwargs['tapegroup']:
         tapegroup = str(kwargs['tapegroup'])
     else:
-        tapegroup = 'null'
+        tapegroup = '0'
         
     reqid = -1
     
@@ -785,8 +785,8 @@ if __name__ == "__main__":
                             if subscribed:
                                 raise Exception('invalidArgument', 'Cannot subscribe to ' + series + '; client ' + client + ' is already subscribed to this series.')
                         else:
-                            if not subscribed:
-                                raise Exception('invalidArgument', 'Cannot re-subscribe to ' + series + '; client ' + client + ' is not already subscribed to this series.')
+                            if subscribed:
+                                raise Exception('invalidArgument', 'Cannot re-subscribe to ' + series + '; client ' + client + ' has not cancelled subscription to series.')
 
                         if not seriesExists(connSlave, series):
                             raise Exception('invalidArgument', 'Cannot ' + action.lower() + ' to ' + series + '; it does not exist.')

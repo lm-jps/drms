@@ -756,6 +756,9 @@ if __name__ == "__main__":
 
                     series = None 
                     schema = None
+                    
+                    if reqType != 'subscribe' and reqType != 'unsubscribe' and reqType != 'resubscribe':
+                        raise Exception('invalidArgument', 'Unknown subscription request type: ' + reqType + '.')
 
                     if reqType == 'unsubscribe' or reqType == 'resubscribe':
                         if reqType == 'unsubscribe':
@@ -960,17 +963,18 @@ if __name__ == "__main__":
                                 if not dbSchemaExists(conn, 'drms'):
                                     raise Exception('drms', 'Your DRMS is missing a required namespace: drms.')                                    
                             else:
+                                # resubscribe
                                 if not seriesExists(conn, series):
                                     raise Exception('invalidArgument', series + ' does not exist locally. Please select a an existing series.')
                                 
-                                if not clientIsSubscribed(client, pubServiceURL, series):
-                                    raise Exception('invalidArgument', 'You are not subscribed to ' + series + '. Please select a series to which are are subscribed.')
+                                if clientIsSubscribed(client, pubServiceURL, series):
+                                    raise Exception('subService', 'Failure cancelling subscription to ' + series + '.')
 
                                 if not seriesIsPublished(pubServiceURL, series):
-                                    raise Exception('invalidArgument', 'Series ' + series + ' is not published and not available for re-subscription.')
+                                    raise Exception('invalidArgument', 'Series ' + series + ' is not published and not available for resetting.')
 
                                 if newSite:
-                                    raise Exception('invalidArgument', 'Cannot re-subscribe to series. Client ' + client + ' has never subscribed to any series')
+                                    raise Exception('invalidArgument', 'Cannot reset subscription to series. Client ' + client + ' has never subscribed to any series')
                                 
                             if dbSchemaExists(conn, schema):
                                 # We are going to insert into several database tables in this schema. Make sure they exist.
@@ -989,12 +993,12 @@ if __name__ == "__main__":
 
                             if reqType == 'subscribe':
                                 # To subscribe to a series, provide client, series, archive, retention, tapegroup, newSite.
-                                cgiArgs = { 'action' : 'subscribe', 'client' : client, 'newsite' : True, 'series' : series, 'archive' : archive, 'retention' : retention, 'tapegroup' : tapeGroup, 'newsite' : newSite }
+                                cgiArgs = { 'action' : 'subscribe', 'client' : client, 'newsite' : newSite, 'series' : series, 'archive' : archive, 'retention' : retention, 'tapegroup' : tapeGroup }
                                 print('Subscribing to series ' + series + '.')
                             else:
                                 # To re-subscribe to a series, provide client, series.
-                                cgiArgs = { 'action' : 'resubscribe', 'client' : client, 'newsite' : False, 'series' : series }
-                                print('Re-subscribing to series ' + series + '.')
+                                cgiArgs = { 'action' : 'resubscribe', 'client' : client, 'newsite' : False, 'series' : series, 'archive' : archive, 'retention' : retention, 'tapegroup' : tapeGroup }
+                                print('Resetting series ' + series + '.')
 
                             # make the request to the subscription service
                             log.writeInfo([ 'Calling cgi with URL: ' + serviceURL ])
@@ -1193,8 +1197,6 @@ if __name__ == "__main__":
                             
                         print(msg)
                         log.writeInfo([ msg ])
-                    else:
-                        raise Exception('invalidArgument', 'Unknown subscription request type: ' + reqType + '.')
             except (psycopg2.DatabaseError, psycopg2.OperationalError) as exc:
                 # Closes the cursor and connection
                 if hasattr(exc, 'diag') and hasattr(exc.diag, 'message_primary') and exc.diag.message_primary:
