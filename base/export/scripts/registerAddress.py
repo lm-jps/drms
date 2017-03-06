@@ -116,9 +116,11 @@ if __name__ == "__main__":
         if len(parsedAddressField[1]) > 0:
             address = parsedAddressField[1]
 
-        body = actualMessage.get_payload(decode=True)
-        if not body:
+        bodyEncoded = actualMessage.get_payload(decode=True)
+        if not bodyEncoded:
             raise Exception('raBody', 'Email message has no body.', RV_ERROR_BODY)
+            
+        body = bodyEncoded.decode('UTF8')
             
         print('** message address: ' + address, file=sys.stderr)
         print('** message body: ' + body, file=sys.stderr)
