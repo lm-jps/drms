@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-from __future__ import print_function
 import sys
 import os
 import fileinput
@@ -78,7 +77,8 @@ if __name__ == "__main__":
     rv = RV_ERROR_NONE
     
     try:
-        actualMessage = None
+        actualMessage = None # the message containing the email body
+        addressField = None
         address = None
         body = None
         localName = None
@@ -94,6 +94,14 @@ if __name__ == "__main__":
         message = email.message_from_string(strippedTextIn) # never fails, even for an invalid email message
         
         if message.is_multipart():
+            # for multi-part messages, the sender's address is in the top-level message, but the body is in one of the 
+            # 'parts'; we are assuming it is in the first text/plain part
+            addressField = message.get('from')
+            
+            if not addressField:
+                raise Exception('raAddress', "Sender's email address not found in email reply header.", RV_ERROR_ADDRESS)
+
+            
             for amessage in message.get_payload():
                 type = amessage.get_content_type()
                 disposition = amessage.get_content_disposition()
@@ -102,15 +110,14 @@ if __name__ == "__main__":
                     actualMessage = amessage
                     break
         else:
-            actualMessage = message
+            addressField = message.get('from')
+            if not addressField:
+                raise Exception('raAddress', "Sender's email address not found in email reply header.", RV_ERROR_ADDRESS)
+
+            actualMessage = message            
 
         if actualMessage == None:
             raise Exception('raMessage', 'Invalid email message.', RV_ERROR_MESSAGE)
-
-        addressField = actualMessage.get('from')
-        
-        if not addressField:
-            raise Exception('raAddress', "Sender's email address not found in email reply header.", RV_ERROR_ADDRESS)
         
         parsedAddressField = email.utils.parseaddr(addressField)
         if len(parsedAddressField[1]) > 0:
