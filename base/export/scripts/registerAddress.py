@@ -126,11 +126,14 @@ if __name__ == "__main__":
         # parse this now so we can send failure email messages back to the user in the event of failure
         localName, domainName = address.split('@')
 
-        bodyEncoded = actualMessage.get_payload(decode=True)
+        bodyEncoded = actualMessage.get_payload(decode=True) # decodes base64 and quoted-printable only; most likely the resulting body is non-ascii (binary) data (although it could be ascii)
         if not bodyEncoded:
             raise Exception('raBody', 'Email message has no body.', RV_ERROR_BODY)
-            
-        body = bodyEncoded.decode('UTF8')
+        
+        charset = actualMessage.get_content_charset()
+        if not charset:
+            charset = 'utf8'
+        body = bodyEncoded.decode(charset) # if bodyEncoded is ascii data, utf8 will work; if bodyEncoded is non-ascii (binary) data, then get_content_charset() should indicate the encoding; if this is binary data, and there is no charset provided, try utf8
         
         # stderr goes to procmail log
         print('** message address: ' + address, file=sys.stderr)
