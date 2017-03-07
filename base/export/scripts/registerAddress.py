@@ -203,7 +203,7 @@ if __name__ == "__main__":
             if localName and domainName:
                 SendMailFailure(localName, domainName, 'Please visit the export page and register your address again.')
             import traceback
-            print('Unhandled exception: ' + traceback.format_exc(8) + , file=sys.stderr)
+            print('Unhandled exception: ' + traceback.format_exc(8) + '.', file=sys.stderr)
             raise # Re-raise
         
         etype = exc.args[0]
@@ -233,7 +233,7 @@ if __name__ == "__main__":
             if localName and domainName:
                 SendMailFailure(localName, domainName, 'Please visit the export page and register your address again.')
             import traceback
-            print('Unhandled exception: ' + traceback.format_exc(8) + , file=sys.stderr)
+            print('Unhandled exception: ' + traceback.format_exc(8) + '.' , file=sys.stderr)
             raise # Re-raise
 
     # It appears that sys.exit() does NOT flush streams.
