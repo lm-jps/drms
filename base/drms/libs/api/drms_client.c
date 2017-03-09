@@ -2250,14 +2250,29 @@ int drms_query_tabexists(DRMS_Session_t *session, const char *ns, const char *ta
 {
     int result = 0;
     char query[DRMS_MAXQUERYLEN];
+    char schema[64];
+    char table[64];
+    
     DB_Text_Result_t *qres = NULL;
     
     if (status)
     {
         *status = DRMS_SUCCESS;
     }
-        
-    snprintf(query, sizeof(query), "SELECT n.nspname, c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = '%s' AND c.relname = '%s';", ns, tab);
+    
+    /* the db stores only lower-case names for schema and table */
+    if (!ns || !tab)
+    {
+        return 0;
+    }
+    
+    snprintf(schema, sizeof(schema), "%s", ns);
+    snprintf(table, sizeof(table), "%s", tab);
+    
+    strtolower(schema);
+    strtolower(table);
+     
+    snprintf(query, sizeof(query), "SELECT n.nspname, c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = '%s' AND c.relname = '%s';", schema, table);
     
     if ((qres = drms_query_txt(session, query)) == NULL)
     {
