@@ -107,15 +107,15 @@ endif
 
 # PostgreSQL 
 PGH = -I$(POSTGRES_INCS)
-PGL = -L$(POSTGRES_LIBS)
-PGLIBNAME = $(POSTGRES_LIB)
-PGLIBS = $(PGL) -l$(PGLIBNAME)
+
+# For use of dynamic library
+PGLIBS = $(POSTGRES_LIBS)/lib$(POSTGRES_LIB).so
 
 # CFITSIO
 CFITSIOH = -I$(CFITSIO_INCS)
 CFITSIOL = -L$(CFITSIO_LIBS)
 CFITSIOLIBNAME = $(CFITSIO_LIB)
-CFITSIOLIBS =  $(CFITSIOL) -l$(CFITSIOLIBNAME)
+CFITSIOLIBS = $(CFITSIOL) -l$(CFITSIOLIBNAME)
 
 # GSL
 GSLH = -I$(GSL_INCS)
@@ -347,9 +347,9 @@ include	$(SRCDIR)/Rules.mk
 
 # Libraries from src/util linked with all programs.
 ifneq ($(COMPILER), icc)
-  SYSLIBS = -lz -ldl -lpthread -lm -lutil 
+  SYSLIBS = -lz -ldl -lpthread -lm -lutil
 else
-  SYSLIBS = -lz -ldl -lpthread -lutil 
+  SYSLIBS = -lz -ldl -lpthread -lutil
 endif
 SRCLIBS = $(LIBTHREADUTIL) $(LIBRICECOMP) $(LIBCMDPARAMS) $(LIBTIMEIO) $(LIBFITSRW) $(LIBERRLOG) $(LIBEXPDRMS) $(LIBEXPUTL) $(LIBMISC) $(LIBDSTRUCT) $(LIBSTATS)
 FSRCLIBS = $(LIBTHREADUTIL) $(LIBRICECOMP) $(LIBCMDPARAMSF) $(LIBTIMEIO) $(LIBFITSRW) $(LIBERRLOG) $(LIBEXPDRMS) $(LIBEXPUTL) $(LIBMISC) $(LIBDSTRUCT) $(LIBSTATS)
@@ -414,18 +414,18 @@ $(MODEXE_SOCK): %_sock: %.o $(MODLIBS_SOCK)
 # FMODEXE_SOCK contains all Fortran modules - the DoIt() function is defined inside a .f file.
 # These are socket-connect modules only. Assume they use third-party Fortran libraries
 # (although this may not be the case).
-$(FMODEXE_SOCK):	LL_TGT := $(LL_TGT) $(PGLIBS) $(CFITSIOLIBS) 
-$(FMODEXE_SOCK):     %_sock:	%.o $(FMODLIBS_SOCK) 
+$(FMODEXE_SOCK):	LL_TGT := $(LL_TGT) $(PGLIBS) $(CFITSIOLIBS)
+$(FMODEXE_SOCK):     %_sock:	%.o $(FMODLIBS_SOCK)
 			$(FLINK)
 			$(SLBIN)
 
 # MODEXE_USEF contains all C direct-connect modules that use third-party Fortran libraries.
-$(MODEXE_USEF):	LL_TGT := $(LL_TGT) $(PGLIBS) $(CFITSIOLIBS) 
+$(MODEXE_USEF):	LL_TGT := $(LL_TGT) $(PGLIBS) $(CFITSIOLIBS)
 $(MODEXE_USEF):     %:	%.o $(MODLIBS)
 			$(FLINK)
 			$(SLBIN)
 # MODEXE_USEF contains all C socket-connect modules that use third-party Fortran libraries.
-$(MODEXE_USEF_SOCK):	LL_TGT := $(LL_TGT) $(PGLIBS) $(CFITSIOLIBS) 
+$(MODEXE_USEF_SOCK):	LL_TGT := $(LL_TGT) $(PGLIBS) $(CFITSIOLIBS)
 $(MODEXE_USEF_SOCK): %_sock: %.o $(MODLIBS_SOCK)
 			$(FLINK)
 			$(SLBIN)
