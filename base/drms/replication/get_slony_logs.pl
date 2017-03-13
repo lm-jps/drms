@@ -11,8 +11,12 @@
 ##  2010/01/11  :: arta    : Add the Net::SCP put subroutine and use it to save counter file on server
 ##
 
-use lib qw(/home/slony/Scripts);
 
+require lib;
+if (-d "/home/slony/Scripts")
+{
+    lib->import("/home/slony/Scripts");
+}
 
 use Net::FTP;
 use Data::Dumper;
@@ -42,6 +46,8 @@ my $pg_dbname="";
 my $ingestion_path="";
 #### END of CONFIGURATION variables
 ###################################################################################################################
+
+my($EOL_MARKER) = "-- EOL";
 
 #### Get CONFIGURATION variables from $config_file
 if (!open(SETTINGS, "$config_file") ) {
@@ -132,7 +138,6 @@ $ssh_rmt_port= (defined $ssh_rmt_port && $ssh_rmt_port=~/^\d+$/)
 
 my $rmt_dir="$rmt_slony_dir/$site_name";              ## directory in remote machine
 my $work_dir="$slony_logs/$site_name";                ## local working directory
-my $counter_file="$work_dir/slony_counter.txt";          ## path to file keeping the slony counter.
 
 unless (-d $work_dir)
 {
@@ -189,22 +194,31 @@ sub get_log_list {
   return @list;
 }
 
-sub save_current_counter {
-  my ($counter_file, $log_file) = @_;
-  my ($counter)= ($log_file=~/slony1_log_2_0+(\d+).sql/);
-  open my $fhW, ">$counter_file" or die "Can't Open $counter_file:$!";
-  print $fhW $counter;
-  close $fhW;
-}
-
 sub ingest_log {
   my ($log, $scp) = @_;
 
   my ($log_name) = ($log=~/(slony1_log_2_.*sql)$/);
+  my($eolFound) = 0;
+  
   print "file name = $log_name\n";
 
   $scp->get($log_name) or die "Cannot get file $log_name ", $scp->{errstr} if defined $scp;
-
+  
+    open LOGFILE, "<", "$work_dir/$log_name" or die ("Could not open log file $work_dir/$log_name.");
+    while(<LOGFILE>)
+    {
+        if ($_ =~ qr/$EOL_MARKER/)
+        {
+            $eolFound = 1;
+        }
+    }
+    close LOGFILE;
+    
+    if (!$eolFound)
+    {
+        print "Corrupt Slony log $work_dir/$log_name.\n";
+        exit 1;
+    }
 
   open SQLOUT, "$PSQL -f $work_dir/$log_name 2>&1 |" or die ("Could not run SQL [$work_dir/$log_name] [$!]");
 
@@ -239,6 +253,15 @@ sub die_error {
   die ($error_msg);
 }
 
+sub getTrackingNumber
+{
+    my $sql_cmd = "\"SELECT at_counter FROM _$cluster_name.sl_archive_tracking\"";
+    my $result = `$PSQL --pset tuples_only --command $sql_cmd`;
+    my $counter = $result =~ /(\d+)/ ? $1 : undef;
+
+    return $counter;
+}
+
 chdir $work_dir;
 
 my $vscp = VSO::Net::SCP->new($rmt_hostname) or die "Cannot connect to $rmt_hostname: $!";
@@ -248,25 +271,7 @@ $vscp->login($user);
 $vscp->cwd($rmt_dir);
 
 ## read current counter
-#my $counter_file="/home/slony/Scripts/slony_counter.test.txt";
-
-unless ( -f $counter_file ) {
-
-  my $sql_cmd = "\"select at_counter from _$cluster_name.sl_archive_tracking\"";
-
-  my $result = `$PSQL --pset tuples_only --command $sql_cmd`;
-
-  my $counter = $result =~ /(\d+)/?$1:1;
-
-  my $cmd="echo $counter > $counter_file";
-
-  my $status=system($cmd);
-
-  if ($status !=0) {
-   die "Could not run [$cmd] [$!]\n";
-  }
-}
-
+my($trackingNumber) = getTrackingNumber();
 
 #### MAIN ####
 
@@ -277,13 +282,10 @@ diecheck($site_name, $ingestion_path);
 my $slony_ingest=1;
 
 local $/;
-open my $fhR, "<$counter_file" or die "Can't Open $counter_file:$!";
-my $cur_counter=<$fhR>;
-close $fhR;
 
 ## move counter to point to the next log
-$cur_counter++;
-  
+my $cur_counter = $trackingNumber + 1;
+
 print "Start Counter is $cur_counter\n";
 
 my($perlRegExp);
@@ -311,7 +313,6 @@ while (defined $slony_ingest) {
     if ($counter == $cur_counter) {
       $slony_ingest=1;
       ingest_log($log, $vscp);
-      save_current_counter($counter_file, $log);
       $cur_counter++;
     } elsif ($counter > $cur_counter && !defined $warnflag) {
   #     send_error($cluster_name, $log, "counter [$counter] greater than current counter [$cur_counter]");
@@ -368,7 +369,6 @@ while (defined $slony_ingest) {
           $slony_ingest=1;
           ingest_log($log);
           $cur_counter = $counter + 1;
-          save_current_counter($counter_file, $log);
         }
         else
         {
@@ -390,15 +390,6 @@ while (defined $slony_ingest) {
      }
     }
   }
-
-  # Art: Now push the counter file back to the server so that manage_logs.pl can use it
-  # If I understand things right, the first arg is the local file, and the second
-  # is the remote file.  And the remote file will be put into the
-  # remote-site dir (which is where we want it to go).
-  #if (-f $counter_file)
-  #{
-  #   $vscp->put($counter_file, "slony_counter.txt") or die "error [$!] ", $vscp->{errstr};
-  #}
 }
 
 close (SLOCK);
@@ -518,17 +509,6 @@ sub get {
   my $source = $self->{'host'}. ":$remote";
   $source = $self->{'user'}. '@'. $source if $self->{'user'};
   $self->scp($source,$local);
-}
-
-# Art: added for copying counter file back to server
-sub put {
-  my($self, $local, $remote) = @_;
-  $remote ||= basename($local);
-  $remote = $self->{'cwd'}. "/$remote" if $self->{'cwd'} && $remote !~ /^\//;
-  my $dest = $self->{'host'}. ":$remote";
-  $dest = $self->{'user'}. '@'. $dest if $self->{'user'};
-  warn "scp $local $dest\n" if $DEBUG;
-  $self->scp($local, $dest);
 }
 
 sub binary { 1; }

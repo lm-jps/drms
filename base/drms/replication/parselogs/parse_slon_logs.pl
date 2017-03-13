@@ -132,6 +132,7 @@ my($subscribelockpath);
 my($anode);
 
 my ($repro,$begin,$end,$repronodes,@repronodelst,%repronodeH, $logToStdout);
+my($EOL_MARKER) = "-- EOL";
 my $opts = GetOptions ("help|h|H" => \&usage,
                        "repro"    => \$repro,
                        "begin|beg=i"    => \$begin,
@@ -1186,7 +1187,7 @@ sub closeSlonLogs {
 }
 
 # Writes a single line to each node's site-specific log file. If the line being 
-# written contains an insert/delete statement, then that line is written to a nodes'
+# written contains an insert/delete statement, then that line is written to a node's
 # site-specific logs only if the insert/delete is into a series to which that the node is 
 # subscribed.
 sub dumpSlonLog {
@@ -1485,6 +1486,10 @@ sub parseLog {
             }
         }
     }
+
+    # finished parsing input, full Slony log; add marker so that client can test for a complete file download
+    # (scp can partially download a file, but report no error)
+    dumpSlonLog($cfgH, $nodeH, undef, $EOL_MARKER . "\n");
 
     close SRC;
 
