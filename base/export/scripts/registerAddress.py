@@ -101,7 +101,6 @@ if __name__ == "__main__":
             if not addressField:
                 raise Exception('raAddress', "Sender's email address not found in email reply header.", RV_ERROR_ADDRESS)
 
-            
             for amessage in message.get_payload():
                 type = amessage.get_content_type()
                 disposition = amessage.get_content_disposition()
@@ -175,7 +174,7 @@ if __name__ == "__main__":
                     domainIDDB = rows[0][3] # cannot be null (db constraint)
                     domainNameDB = rows[0][4] # cannot be null (db constraint)
                     
-                    print('** registering address: ' + domainNameDB + '@' + localNameDB + ' (' + confirmation + ')', file=sys.stderr)
+                    print('** registering address: ' + localNameDB + '@' + domainNameDB + ' (' + confirmation + ')', file=sys.stderr)
 
                     # Reject if the confirmation code has expired.
                     if datetime.now(starttimeDB.tzinfo) > starttimeDB + timedelta(minutes=int(getDRMSParam(drmsParams, 'REGEMAIL_TIMEOUT'))):
@@ -192,7 +191,7 @@ if __name__ == "__main__":
                         raise Exception('dbCmd', exc.diag.message_primary + ": " + cmd, RV_ERROR_DBCMD)
 
                     SendMailSuccess(localName, domainName)
-                    print('** succesful registration: ' + domainNameDB + '@' + localNameDB + ' (' + confirmation + ')', file=sys.stderr)
+                    print('** succesful registration: ' + localNameDB + '@' + domainNameDB + ' (' + confirmation + ')', file=sys.stderr)
                     
         except psycopg2.DatabaseError as exc:
             # Closes the cursor and connection.
