@@ -93,6 +93,7 @@
 #define kUserHandle	"userhandle"    // user provided unique session handle
 #define kArgSizeRatio "sizeratio"
 #define kArgDontGenWebPage "W"
+#define kArgCgiInstance "instid"
 
 #define kOptProtocolAsIs   "as-is"	   // Protocol option value for no change to fits files
 #define kOptProtocolSuAsIs "su-as-is"  // Protocol option value for requesting as-is FITS paths for the exp_su operation
@@ -123,6 +124,7 @@ ModuleArgs_t module_args[] =
   {ARG_STRING, kArgMethod, "url", "return method"},
   {ARG_STRING, kArgFile, kNotSpecified, "uploaded file contents"},
   {ARG_STRING, kUserHandle, kNotSpecified, "User specified unique session ID"},
+  {ARG_INT, kArgCgiInstance, "-1", "CGI instance ID"},
   {ARG_FLOAT, kArgSizeRatio, "1.0", "For cut-out requests, this is the ratio between the number of cut-out pixels to the number of original-image pixels."},
   {ARG_FLAG, kArgTestmode, NULL, "if set, then creates new requests with status 12 (not 2)"},
   {ARG_FLAG, kArgPassthrough, NULL, "if set, then inserts an X into the request ID to denote that the request originated from an external user, but was executed on the internal database."},
@@ -838,6 +840,7 @@ static void report_summary(const char *host,
   }
 
 static void LogReqInfo(const char *fname, 
+                       long long instanceID, 
                        int fileupload, 
                        const char *op, 
                        const char *dsin, 
@@ -855,9 +858,11 @@ static void LogReqInfo(const char *fname,
       char localnowtxt[128];
 
   sprint_ut(nowtxt, fetch_time);
-      LocalTime(localnowtxt, sizeof(localnowtxt));
-  WriteLog(fname, "*****%s\n   PID=%d\n   %s\n   op=%s\n   in=%s\n   RequestID=%s\n   DBHOST=%s\n   REMOTE_ADDR=%s\n",
-           localnowtxt, getpid(), nowtxt, op, dsin, requestid, dbhost, getenv("REMOTE_ADDR"));
+  LocalTime(localnowtxt, sizeof(localnowtxt));
+
+  WriteLog(fname, "**********************\n");
+  WriteLog(fname, "CGI Instance=%lld\n", instanceID);
+  WriteLog(fname, "%s\n   PID=%d\n   %s\n   op=%s\n   in=%s\n   RequestID=%s\n   DBHOST=%s\n   REMOTE_ADDR=%s\n", localnowtxt, getpid(), nowtxt, op, dsin, requestid, dbhost, getenv("REMOTE_ADDR"));
   if (fileupload)  // recordset passed as uploaded file
     {
     char *file = (char *)cmdparams_get_str (&cmdparams, kArgFile, NULL);
@@ -1413,6 +1418,7 @@ int DoIt(void)
   size_t webarglistsz;
   struct timeval thistv;
   double StartTime;
+  long long instanceID = -1;
 
     /* Allocate the size of these arrays dynamically. Originally there were 1024, but 
      * we could need bigger arrays. */
@@ -1526,6 +1532,7 @@ int DoIt(void)
   sizeRatio = cmdparams_get_float(&cmdparams, kArgSizeRatio, NULL);
   Remote_Address = cmdparams_get_str(&cmdparams, "REMOTE_ADDR", NULL);
   Server = cmdparams_get_str(&cmdparams, "SERVER_NAME", NULL);
+  instanceID = cmdparams_get_int(&cmdparams, kArgCgiInstance, NULL);
 
   // the following lines are added.  They can be removed after a new function to replace
   // cmdparams_set as used in SetWebArgs
@@ -1622,7 +1629,7 @@ int DoIt(void)
     }
 
         /* requestid is not provided via the command-line for kOpExpSu. */
-    LogReqInfo(lfname, fileupload, op, dsin, requestid, dbhost, from_web, webarglist, fetch_time);
+    LogReqInfo(lfname, instanceID, fileupload, op, dsin, requestid, dbhost, from_web, webarglist, fetch_time);
 
         /* jsoc.export_new */
     export_series = kExportSeriesNew;
@@ -2709,7 +2716,7 @@ check for requestor to be valid remote DRMS site
     }
 
     /* requestid was not provided on the command-line. It is created near the end of this code block. */
-    LogReqInfo(lfname, fileupload, op, dsin, requestid, dbhost, from_web, webarglist, fetch_time);
+    LogReqInfo(lfname, instanceID, fileupload, op, dsin, requestid, dbhost, from_web, webarglist, fetch_time);
     
     /* Write all command-line argument values so we can debug. */
     argsCont = cmdparams_get_argscont(&cmdparams);
@@ -3882,7 +3889,7 @@ JSONDIE("Re-Export requests temporarily disabled.");
             lfname = kLogFileExpStatExt;            
         }
         
-        LogReqInfo(lfname, fileupload, op, dsin, requestid, dbhost, from_web, webarglist, fetch_time);
+        LogReqInfo(lfname, instanceID, fileupload, op, dsin, requestid, dbhost, from_web, webarglist, fetch_time);
         
         // Must check jsoc.export, NOT jsoc.export_new.
         sprintf(status_query, "%s[%s]", kExportSeries, requestid);
