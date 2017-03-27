@@ -48,6 +48,8 @@ try:
                 
             instanceID = rows[0][0]
 except:
+    import traceback
+    print(traceback.format_exc(1), file=sys.stderr)
     print(instanceID, file=sys.stdout)
     sys.exit(1)
         
