@@ -17,6 +17,7 @@ RET_ARCH = 3
 RET_PARSESPEC = 4
 RET_CHECKSERVER = 5
 RET_JSOCFETCH = 6
+RET_LOGCGI = 7
 
 err = None
 errMsg = None
@@ -51,9 +52,18 @@ try:
     # Default to JSON output.
     optD['json'] = True
 
-    # If jsocextfetch.py is processing an HTTP POST request, then cgi.FieldStorage() reads from STDIN to get the arguments. This
-    # means that the jsoc_fetch binary will not find the arguments when it tries to get them from STDIN!!! This is assuming that it is
-    # getting them from STDIN, but I cannot see how it is doing that. So, we have to read them in here, then pass them to jsoc_fetch
+    # This script may be invoked in 4 ways:
+    #   1. It can be called from the jsoc_fetch CGI via an HTTP POST request. In this case, jsoc_fetch reads the arguments
+    #      from stdin and puts them int the QUERY_STRING environment variable. cgi.FieldStorage() then reads them.
+    #   2. It can be called from the jsoc_fetch CGI via an HTTP GET request. In this case, the arguments are also in 
+    #      the QUERY_STRING environment variable.
+    #   3. It can be called from the jsocextfetch CGI via an HTTP POST request. In this case, the arguments are sent to 
+    #      this script via stdin. This script extracts them with the cgi.FieldStorage() call. 
+    #   4. It can be called from the jsocextfetch CGI via an HTTP GET request. In this case, the arguments are in 
+    #      the QUERY_STRING environment variable.
+    #
+    # If jsocextfetch.py is reading the arguments from STDIN then, the jsoc_fetch binary will not find the arguments 
+    # when it tries to get them from STDIN with qDecoder. So, we have to read them in here, then pass them to jsoc_fetch
     # in the check_call() function. dbhost is a parameter for jsocextfetch.py, but not for jsoc_fetch. It gets stripped off
     # from the list of arguments passed in, and the remaining parameters are passed onto jsoc_fetch. 'dbhost' is the external db host
     # that the external user is attempting to access. 
@@ -119,10 +129,56 @@ try:
         del os.environ['QUERY_STRING']
         
     if 'REQUEST_METHOD' in os.environ:
+        method = os.environ['REQUEST_METHOD']
         del os.environ['REQUEST_METHOD']
+    else:
+        method = 'unknown-method'
+        
+    if 'SCRIPT_FILENAME' in os.environ:
+        script = os.path.basename(os.environ['SCRIPT_FILENAME'])
+    else:
+        script = 'unknown-script'
+        
+    if 'REQUEST_URI' in os.environ:
+        url = os.environ['REQUEST_URI']
+    else:
+        url = 'unknown-URL'
+        
+    if 'SERVER_NAME' in os.environ:
+        webserver = os.environ['SERVER_NAME']
+    else:
+        webserver = 'unknown-webserver'
+        
+    if 'REMOTE_ADDR' in os.environ:
+        ip = os.environ['REMOTE_ADDR']
+    else:
+        ip = 'unknown-ip'
 
     # To run various DRMS modules, we'll need to know the path to the modules, and the architecture of the module to run.
     binDir = getDRMSParam(drmsParams, 'BIN_EXPORT')
+    scriptDir = getDRMSParam(drmsParams, 'SCRIPTS_EXPORT')
+    binPy3 = getDRMSParam(drmsParams, 'BIN_PY3')
+    
+    # create row for instance ID in instance table and fetch instance ID argument
+    cmdList = [ binPy3, os.path.join(scriptDir, 'log-cgi-instance.py'), script, webserver, url, method, ip ]
+
+    try:
+        resp = check_output(cmdList)
+        output = resp.decode('utf-8').rstrip()
+    except ValueError as exc:
+        output = ''
+        import traceback
+        raise Exception('logcgi', traceback.format_exc(1), RET_LOGCGI)
+    except CalledProcessError as exc:
+        # the partial output is saved in exc.output
+        # if log-cgi-instance.py is not found, then python3 returns error code 2; a message gets printed to stderr
+        output = exc.output.decode('utf-8').rstrip()
+        
+    # output is either the empty string (on error) or the new instance ID
+    if len(output) > 0:
+        instanceID = int(output)
+    else:
+        instanceID = -1
 
     ############################
     ## Determine Architecture ##
@@ -206,7 +262,7 @@ try:
         # jsoc_fetch DOES print the HTML header needed when it is run from the command line (unlike show_info).
 
         # W=1 ==> Do not print HTML headers. This script should do that.
-        cmdList = [os.path.join(binDir, arch, 'jsoc_fetch'), 'JSOC_DBHOST=' + server, 'DRMS_DBTIMEOUT=900000', 'W=1', 'p=1']
+        cmdList = [os.path.join(binDir, arch, 'jsoc_fetch'), 'JSOC_DBHOST=' + server, 'DRMS_DBTIMEOUT=900000', 'W=1', 'p=1', 'instid=' + str(instanceID)]
         # Provide all jsoc_fetch arguments passed through jsocextfetch.py to jsoc_fetch.
         cmdList.extend(allArgs)
 
@@ -250,7 +306,7 @@ try:
         # W=1 ==> Do not print HTML headers. This script should do that.
         # JSOC_DBHOST is the internal server. jsocextfetch.py is called from the external website only when the original request was supported by the 
         # internal database.
-        cmdList = [os.path.join(binDir, arch, 'jsoc_fetch'), 'JSOC_DBHOST=' + server, 'DRMS_DBTIMEOUT=900000', 'W=1']
+        cmdList = [os.path.join(binDir, arch, 'jsoc_fetch'), 'JSOC_DBHOST=' + server, 'DRMS_DBTIMEOUT=900000', 'W=1', 'instid=' + str(instanceID)]
         # Provide all jsoc_fetch arguments passed through jsocextfetch.py to jsoc_fetch.
         cmdList.extend(allArgs)
 
@@ -264,7 +320,7 @@ try:
             # It creates JSON to be used in a web page, but exits with 1 (which signifies that the JSON created should not
             # be used). Fortunately, the output is saved in exc.output.
             output = exc.output.decode('utf-8')
-        
+
         # ACK - jsoc_fetch can produce text output in the CGI context. Let the caller of this script handle this.
         if optD['json']:
             try:
@@ -290,7 +346,7 @@ except Exception as exc:
 
     etype, msg, rv = exc.args
 
-    if etype != 'invalidArgs' and etype != 'drmsParams' and etype != 'arch' and etype != 'parsespec' and etype != 'checkserver' and etype != 'jsocfetch':
+    if etype != 'invalidArgs' and etype != 'drmsParams' and etype != 'arch' and etype != 'parsespec' and etype != 'checkserver' and etype != 'jsocfetch' and etype != 'logcgi':
         raise
 
     err = 4 # Regardless of the error status of this script, this script has to return jsoc_fetch error codes. 4 means abject failure.
