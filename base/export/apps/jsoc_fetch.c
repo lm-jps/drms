@@ -861,7 +861,7 @@ static void LogReqInfo(const char *fname,
   LocalTime(localnowtxt, sizeof(localnowtxt));
 
   WriteLog(fname, "**********************\n");
-  WriteLog(fname, "%s\n   CGI Instance=%lld\nPID=%d\n   %s\n   op=%s\n   in=%s\n   RequestID=%s\n   DBHOST=%s\n   REMOTE_ADDR=%s\n", localnowtxt, instanceID, getpid(), nowtxt, op, dsin, requestid, dbhost, getenv("REMOTE_ADDR"));
+  WriteLog(fname, "%s\n   CGI Instance=%lld\n   PID=%d\n   %s\n   op=%s\n   in=%s\n   RequestID=%s\n   DBHOST=%s\n   REMOTE_ADDR=%s\n", localnowtxt, instanceID, getpid(), nowtxt, op, dsin, requestid, dbhost, getenv("REMOTE_ADDR"));
   if (fileupload)  // recordset passed as uploaded file
     {
     char *file = (char *)cmdparams_get_str (&cmdparams, kArgFile, NULL);
@@ -1511,6 +1511,7 @@ int DoIt(void)
             SetWebArg(req, kArgShipto, &webarglist, &webarglistsz);
             SetWebArg(req, kArgRequestorid, &webarglist, &webarglistsz);
             SetWebArg(req, kUserHandle, &webarglist, &webarglistsz);
+            SetWebArg(req, kArgCgiInstance, &webarglist, &webarglistsz);
             SetWebArg(req, kArgSizeRatio, &webarglist, &webarglistsz);
             if (strncmp(cmdparams_get_str (&cmdparams, kArgDs, NULL),"*file*", 6) == 0);
             SetWebFileArg(req, kArgFile, &webarglist, &webarglistsz);
