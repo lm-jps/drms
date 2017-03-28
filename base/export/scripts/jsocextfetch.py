@@ -127,10 +127,12 @@ try:
     # the command line, not from CGI environment variables.
     if 'QUERY_STRING' in os.environ:
         formData = os.environ['QUERY_STRING']
+        if len(formData) == 0:
+            formData = '&'.join(allArgs)
         del os.environ['QUERY_STRING']
     else:
         formData = '&'.join(allArgs)
-        
+
     if len(formData) == 0:
         formData = 'none'
         
