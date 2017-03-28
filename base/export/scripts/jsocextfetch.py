@@ -126,7 +126,13 @@ try:
     # is set to POST, then that could interfere with code called from here. We want all code called to get arguments from
     # the command line, not from CGI environment variables.
     if 'QUERY_STRING' in os.environ:
+        formData = os.environ['QUERY_STRING']
         del os.environ['QUERY_STRING']
+    else:
+        formData = '&'.join(allArgs)
+        
+    if len(formData) == 0:
+        formData = 'none'
         
     if 'REQUEST_METHOD' in os.environ:
         method = os.environ['REQUEST_METHOD']
@@ -160,7 +166,7 @@ try:
     binPy3 = getDRMSParam(drmsParams, 'BIN_PY3')
     
     # create row for instance ID in instance table and fetch instance ID argument
-    cmdList = [ binPy3, os.path.join(scriptDir, 'log-cgi-instance.py'), script, webserver, url, method, ip ]
+    cmdList = [ binPy3, os.path.join(scriptDir, 'log-cgi-instance.py'), script, webserver, url, formData, method, ip ]
 
     try:
         resp = check_output(cmdList)

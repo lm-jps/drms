@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 CGI_REQUESTS_TABLE = 'jsoc.cgi_requests'
 
 # collect args in this order
-if len(sys.argv) != 6:
+if len(sys.argv) != 7:
     print('log-cgi-instance: wrong number of arguments', file=sys.stderr)
     sys.exit(1)
 
@@ -25,18 +25,24 @@ domain = sys.argv[2]
 # url
 url = sys.argv[3]
 
+# formData
+formData = sys.argv[4]
+
 # http method
-method = sys.argv[4]
+method = sys.argv[5]
 
 # ip address
-ip = sys.argv[5]
+ip = sys.argv[6]
 
 instanceID = ''
 try:
     with psycopg2.connect(host='hmidb2', port='5432', database='jsoc', user='apache') as conn:
         with conn.cursor() as cursor:
             # insert row for this request
-            cmd = 'INSERT INTO ' + CGI_REQUESTS_TABLE + '(script, domain, url, http_method, ip_address, date) VALUES (' + "'" + script + "'," + "'" + domain + "'," + "'" + url + "'," + "'" + method + "'," + "'" + ip + "', current_timestamp" + ')'
+            if formData.lower() == 'none':
+                cmd = 'INSERT INTO ' + CGI_REQUESTS_TABLE + '(script, domain, url, http_method, ip_address, date) VALUES (' + "'" + script + "'," + "'" + domain + "'," + "'" + url + "'," + "'" + method + "'," + "'" + ip + "', current_timestamp" + ')'                
+            else:
+                cmd = 'INSERT INTO ' + CGI_REQUESTS_TABLE + '(script, domain, url, form_data, http_method, ip_address, date) VALUES (' + "'" + script + "'," + "'" + domain + "'," + "'" + url + "'," + "'" + formData + "'," + "'" + method + "'," + "'" + ip + "', current_timestamp" + ')'
             cursor.execute(cmd)
             
             # fetch instance ID
