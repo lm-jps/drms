@@ -126,15 +126,7 @@ try:
     # is set to POST, then that could interfere with code called from here. We want all code called to get arguments from
     # the command line, not from CGI environment variables.
     if 'QUERY_STRING' in os.environ:
-        formData = os.environ['QUERY_STRING']
-        if len(formData) == 0:
-            formData = '&'.join(allArgs)
         del os.environ['QUERY_STRING']
-    else:
-        formData = '&'.join(allArgs)
-
-    if len(formData) == 0:
-        formData = 'none'
         
     if 'REQUEST_METHOD' in os.environ:
         method = os.environ['REQUEST_METHOD']
@@ -166,27 +158,6 @@ try:
     binDir = getDRMSParam(drmsParams, 'BIN_EXPORT')
     scriptDir = getDRMSParam(drmsParams, 'SCRIPTS_EXPORT')
     binPy3 = getDRMSParam(drmsParams, 'BIN_PY3')
-    
-    # create row for instance ID in instance table and fetch instance ID argument
-    cmdList = [ binPy3, os.path.join(scriptDir, 'log-cgi-instance.py'), script, webserver, url, formData, method, ip ]
-
-    try:
-        resp = check_output(cmdList)
-        output = resp.decode('utf-8').rstrip()
-    except ValueError as exc:
-        output = ''
-        import traceback
-        raise Exception('logcgi', traceback.format_exc(1), RET_LOGCGI)
-    except CalledProcessError as exc:
-        # the partial output is saved in exc.output
-        # if log-cgi-instance.py is not found, then python3 returns error code 2; a message gets printed to stderr
-        output = exc.output.decode('utf-8').rstrip()
-        
-    # output is either the empty string (on error) or the new instance ID
-    if len(output) > 0:
-        instanceID = int(output)
-    else:
-        instanceID = -1
 
     ############################
     ## Determine Architecture ##
@@ -209,11 +180,14 @@ try:
     arch = outputList[0];
 
     if 'spec' in optD:
+        # NEW EXPORT
+
         series = []
         server = None
 
         # Run the jsoc_fetch command to initiate a new export request. To do that, we need to know which db server, 
-        # internal or external, to send the request to. To do that, we have to call the drms_parserecset module
+        # internal or external, to send the request to (this could be a pass-through request - made on the external site, but 
+        # handled by the internal dataabase). To determine the DB server, we have to call the drms_parserecset module
         # to extract the series from the record-set argument provided to jsocextfetch.py. Then checkExpDbServer.py can be called
         # which will provide the name of the db server that can handle the series. Finally, we pass the name of that server
         # to jsoc_fetch, via the JSOC_DBHOST module argument.
@@ -262,17 +236,47 @@ try:
             raise Exception('checkserver', jsonObj['errMsg'], RET_CHECKSERVER)
 
         server = jsonObj['server']
+        
+        #############################
+        ## Run log-cgi-instance.py ##
+        #############################    
+        # create row for instance ID in instance table and fetch instance ID argument
 
-        ###################
+        # JSOC_DBHOST is the internal server; jsocextfetch.py is called from the external website only when the original request was supported by the 
+        # internal database.
+        # W=1 ==> do not print HTML headers; this script should do that
+        # p=1 ==> a pass-through to internal server is occurring (generate a requestID with an "_X" to denote this)
+        extraArgs = [ 'JSOC_DBHOST=' + server, 'DRMS_DBTIMEOUT=900000', 'W=1', 'p=1' ]
+        formData = '&'.join(allArgs + extraArgs)
+        
+        cmdList = [ binPy3, os.path.join(scriptDir, 'log-cgi-instance.py'), script, webserver, url, formData, method, ip ]
+
+        try:
+            resp = check_output(cmdList)
+            output = resp.decode('utf-8').rstrip()
+        except ValueError as exc:
+            output = ''
+            import traceback
+            raise Exception('logcgi', traceback.format_exc(1), RET_LOGCGI)
+        except CalledProcessError as exc:
+            # the partial output is saved in exc.output
+            # if log-cgi-instance.py is not found, then python3 returns error code 2; a message gets printed to stderr
+            output = exc.output.decode('utf-8').rstrip()
+        
+        # output is either the empty string (on error) or the new instance ID
+        if len(output) > 0:
+            instanceID = int(output)
+        else:
+            instanceID = -1
+
+        ####################
         ## Run jsoc_fetch ##
-        ###################
+        ####################
         # Run the command to initiate a new export request.
         # jsoc_fetch DOES print the HTML header needed when it is run from the command line (unlike show_info).
-
-        # W=1 ==> Do not print HTML headers. This script should do that.
-        cmdList = [os.path.join(binDir, arch, 'jsoc_fetch'), 'JSOC_DBHOST=' + server, 'DRMS_DBTIMEOUT=900000', 'W=1', 'p=1', 'instid=' + str(instanceID)]
+        cmdList = [ os.path.join(binDir, arch, 'jsoc_fetch'), 'instid=' + str(instanceID) ]
         # Provide all jsoc_fetch arguments passed through jsocextfetch.py to jsoc_fetch.
-        cmdList.extend(allArgs)
+        cmdList.extend(allArgs + extraArgs)
 
         try:
             resp = check_output(cmdList)
@@ -303,20 +307,49 @@ try:
             
         printUTF8(output)
 
-    else:		
+    else:
+        # NOT A NEW EXPORT REQUEST (a status request or a re-export request)
+
+        #############################
+        ## Run log-cgi-instance.py ##
+        #############################    
+        # create row for instance ID in instance table and fetch instance ID argument
+        
+        # W=1 ==> do not print HTML headers; this script should do that
+        # JSOC_DBHOST is the internal server; jsocextfetch.py is called from the external website only when the original request was supported by the 
+        # internal database
+        extraArgs = [ 'JSOC_DBHOST=' + server, 'DRMS_DBTIMEOUT=900000', 'W=1' ]        
+        formData = '&'.join(allArgs + extraArgs)
+
+        cmdList = [ binPy3, os.path.join(scriptDir, 'log-cgi-instance.py'), script, webserver, url, formData, method, ip ]
+
+        try:
+            resp = check_output(cmdList)
+            output = resp.decode('utf-8').rstrip()
+        except ValueError as exc:
+            output = ''
+            import traceback
+            raise Exception('logcgi', traceback.format_exc(1), RET_LOGCGI)
+        except CalledProcessError as exc:
+            # the partial output is saved in exc.output
+            # if log-cgi-instance.py is not found, then python3 returns error code 2; a message gets printed to stderr
+            output = exc.output.decode('utf-8').rstrip()
+        
+        # output is either the empty string (on error) or the new instance ID
+        if len(output) > 0:
+            instanceID = int(output)
+        else:
+            instanceID = -1
+
         ####################
         ## Run jsoc_fetch ##
         ####################
         # Run the command to check on the status of a previous export request, or to re-request an old export.
         # The db server we have jsoc_fetch operate on is the server that was used to call the original jsoc_fetch
         # op=exp_request command. The name of request ID encodes that information.
-
-        # W=1 ==> Do not print HTML headers. This script should do that.
-        # JSOC_DBHOST is the internal server. jsocextfetch.py is called from the external website only when the original request was supported by the 
-        # internal database.
-        cmdList = [os.path.join(binDir, arch, 'jsoc_fetch'), 'JSOC_DBHOST=' + server, 'DRMS_DBTIMEOUT=900000', 'W=1', 'instid=' + str(instanceID)]
+        cmdList = [ os.path.join(binDir, arch, 'jsoc_fetch'), 'instid=' + str(instanceID) ]
         # Provide all jsoc_fetch arguments passed through jsocextfetch.py to jsoc_fetch.
-        cmdList.extend(allArgs)
+        cmdList.extend(allArgs + extraArgs)
 
         try:
             resp = check_output(cmdList)
