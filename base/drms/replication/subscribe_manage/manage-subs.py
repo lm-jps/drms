@@ -1482,11 +1482,13 @@ class Worker(threading.Thread):
                 # add the sunum-capturing trigger to the DRMS dataseries database table; disable the client psql's ON_ERROR_STOP 
                 # feature - it may be that drms.capturesunum() does not exist on the client; in that case, do not error out; continue
                 # on to the next SQL statements (the table dump insert statements)
+                print(r'\set ON_ERROR_ROLLBACK on', file=fout)
                 print(r'\unset ON_ERROR_STOP', file=fout)
                 print('DROP TRIGGER IF EXISTS capturesunumtrig ON ' + self.series[0].lower() + ';', file=fout)                
                 print('CREATE TRIGGER capturesunumtrig AFTER INSERT ON ' + self.series[0].lower() + ' FOR EACH ROW EXECUTE PROCEDURE drms.capturesunum();', file=fout)
                 # re-enable the ON_ERROR_STOP feature
                 print(r'\set ON_ERROR_STOP 1', file=fout)
+                print(r'\unset ON_ERROR_ROLLBACK', file=fout)
                 fout.flush()
                 
             self.log.writeInfo([ 'Successfully created ' + outFile + ' and dumped tab structure commands.' ])
