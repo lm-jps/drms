@@ -57,7 +57,7 @@ def GetArgs():
     istat = bool(0)
     optD = {}
 
-    parser = CmdlParser(usage='%(prog)s [ -h ] [ -d ] stable=<series> recnums=<recnum list> [ --dbname=<db name> ] [ --dbhost=<db host> ] [ --dbport=<db port> ]')
+    parser = CmdlParser(usage='%(prog)s [ -h ] [ -d ] stable=<series> recnums=<recnum list> [ --dbname=<db name> ] [ --dbhost=<db host> ] [ --dbport=<db port> ] [ --dbuser=<db user> ]')
 
     parser.add_argument('s', 'stable', '--stable', help='The series table from which records are to be deleted.', metavar='<series>', dest='stable', required=True)
     parser.add_argument('r', 'recnums', '--recnums', help='The list of recnums that specify the db records to delete from seriestable. The format maybe a single recnum, a list of comma-separated recnums, or a file containing a list of newline-separated recnums.', metavar='<recnum list or file>', dest='recnums', required=True)
@@ -65,6 +65,7 @@ def GetArgs():
     parser.add_argument('-N', '--dbname', help='The name of the database that contains the series table from which records are to be deleted.', metavar='<db name>', dest='dbname', default='jsoc')
     parser.add_argument('-H', '--dbhost', help='The host machine of the database that contains the series table from which records are to be deleted.', metavar='<db host machine>', dest='dbhost', default='hmidb')
     parser.add_argument('-P', '--dbport', help='The port on the host machine that is accepting connections for the database that contains the series table from which records are to be deleted.', metavar='<db host port>', dest='dbport', default='5432')
+    parser.add_argument('-U', '--dbuser', help='The user log-in name for database that contains the series table from which records are to be deleted.', metavar='<db user>', dest='dbuser', default=pwd.getpwuid(os.getuid())[0])
     
     try:
         args = parser.parse_args()
@@ -110,6 +111,7 @@ def GetArgs():
         optD['dbname'] = args.dbname
         optD['dbhost'] = args.dbhost
         optD['dbport'] = args.dbport
+        optD['dbuser'] = args.dbuser
         optD['doit'] = args.doit
         
     return optD
@@ -125,10 +127,10 @@ if __name__ == "__main__":
     else:
         series = optD['stable']
         recnums = optD['recnums']
-        dbuser = pwd.getpwuid(os.getuid())[0]
         dbname = optD['dbname']
         dbhost = optD['dbhost']
         dbport = optD['dbport']
+        dbuser = optD['dbuser']
         doit = optD['doit']
 
 if rv == RET_SUCCESS:
