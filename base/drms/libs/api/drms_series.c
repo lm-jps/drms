@@ -3082,7 +3082,7 @@ int drms_addkeys_toseries(DRMS_Env_t *env, const char *series, const char *spec,
                                 }
                             } /* end while loop */
                             
-                            if (drmsstat == DRMS_SUCCESS && nkeys > 0)
+                            if (drmsstat == DRMS_SUCCESS && nkeys > 0 && strlen(tblactionbuf) > 0)
                             {
                                 tblactionbuf = base_strcatalloc(tblactionbuf, "\n", &szalterbuf);
                                 
