@@ -404,9 +404,9 @@ class ErrorResponse(Response):
 
 def clientIsNew(arguments, conn, client, log):
     # Master database.
-    cmd = 'SELECT ' + CFG_TABLE_NODE + ' FROM ' + arguments.getArg('kCfgTable') + ' WHERE ' + CFG_TABLE_NODE + " = '" + client + "'"
+    cmd = 'SELECT ' + CFG_TABLE_NODE + ' FROM ' + arguments.getArg('kCfgTable') + ' WHERE lower(' + CFG_TABLE_NODE + ") = '" + client.lower() + "'"
     log.writeDebug([ 'Checking client-new status on master: ' + cmd + '.' ])
-    
+
     try:
         with conn.cursor() as cursor:
             cursor.execute(cmd)
@@ -434,7 +434,7 @@ def getPendingRequest(conn, reqTable, client):
     pendErrMsg = None
     
     # Slave database.
-    cmd = 'SELECT requestid, action, series, archive, retention, tapegroup, status, errmsg FROM ' + reqTable + " WHERE lower(client) = '" + client + "'"
+    cmd = 'SELECT requestid, action, series, archive, retention, tapegroup, status, errmsg FROM ' + reqTable + " WHERE lower(client) = '" + client.lower() + "'"
 
     numPending = 0        
     try:
@@ -468,7 +468,7 @@ def getPendingRequest(conn, reqTable, client):
 
 def clientIsSubscribed(arguments, conn, client, series):
     # Master database.
-    cmd = 'SELECT ' + LST_TABLE_SERIES + ' FROM ' + arguments.getArg('kLstTable') + ' WHERE ' + LST_TABLE_NODE + " = '" + client + "' AND " + LST_TABLE_SERIES + " = '" + series + "'"
+    cmd = 'SELECT ' + LST_TABLE_SERIES + ' FROM ' + arguments.getArg('kLstTable') + ' WHERE lower(' + LST_TABLE_NODE + ") = '" + client.lower() + "' AND lower(" + LST_TABLE_SERIES + ") = '" + series.lower() + "'"
     
     try:
         with conn.cursor() as cursor:
@@ -522,8 +522,8 @@ def seriesIsPublished(arguments, conn, series):
     regExp = re.compile(r'\s*(\S+)\.(\S+)\s*')
     matchObj = regExp.match(series)
     if matchObj is not None:
-        nsp = matchObj.group(1).lower()
-        table = matchObj.group(2).lower()
+        nsp = matchObj.group(1).lower() # make the following comparisons case-insensitive
+        table = matchObj.group(2).lower() # make the following comparisons case-insensitive
     else:
         raise Exception('args', 'Not a valid DRMS series name: ' + series + '.')
 
