@@ -2468,6 +2468,10 @@ if __name__ == "__main__":
                     ilogger = IntervalLogger(msLog, timedelta(seconds=60))
                     firstIter = True
                     while True:
+                        ######################
+                        ## Pending Requests ##
+                        ######################
+                        
                         # Deal with pending requests first. If a request has been pending too long, then delete the request now
                         # and send an error message back to the requestor. This will clean-up requests that died somewhere
                         # while being processed.
@@ -2531,6 +2535,10 @@ if __name__ == "__main__":
                                 reqTable.releaseLock()
                                 gotLock = None
                     
+                        
+                        ##########################
+                        ## Errored-out Requests ##
+                        ##########################
                             
                         # Remove old errored-out requests. The records of these errored-out requests should be
                         # available for a while so that request-subs.py can pass the error along to the requestor,
@@ -2557,6 +2565,10 @@ if __name__ == "__main__":
                             if gotLock:
                                 reqTable.releaseLock()
                                 gotLock = None
+                                
+                        ##################
+                        ## New Requests ##
+                        ##################
                         
                         # If the requestor is making a subscription request, but there is already a request
                         # pending for that requestor, then send an error message back to the requestor 
@@ -2582,7 +2594,7 @@ if __name__ == "__main__":
                                     areq.setStatus('E', 'Processing timed-out.')
                                 else:
                                     # Start a Worker thread to handle the subscription request.
-                                    if reqTable.getProcessing([ areq.client ]):                        
+                                    if len(reqTable.getProcessing(areq.client)) > 0:
                                         # Set the status of this pending request to an error code.
                                         msLog.writeError([ 'Server busy processing request for client ' + areq.client + ' already.' ])
                                         areq.setStatus('E', 'Server busy processing request for client ' + areq.client + ' already.')
