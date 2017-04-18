@@ -421,6 +421,18 @@ __PROJ__
        </filters>
    </proj>
    <proj>
+        <name>qmaps</name>
+        <subdirs>
+             <subdir>apps</subdir>
+        </subdirs>
+        <filters>
+             <filter>
+                  <name>COMPILER</name>
+                  <value>icc</value>
+             </filter>
+       </filters>
+   </proj>
+   <proj>
         <name>limbfit</name>
         <subdirs>
             <subdir>apps</subdir>
