@@ -954,7 +954,7 @@ class AllocResponse(Response):
         partSet = 0
         
         if self.request.collector.hasMultPartSets:
-            if sugroup in self.request.data:
+            if 'sugroup' in self.request.data:
                 self.dbRes = []
                 self.cmd = 'SELECT sum_set FROM ' + SUM_ARCH_GROUP + ' WHERE group_id = ' + self.request.data.sugroup
                 self.exeDbCmd()
