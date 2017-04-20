@@ -997,7 +997,7 @@ class AllocResponse(Response):
         partition = partitions[randIndex]
         sudir = os.path.join(partition, 'D' + str(sunum))
         os.mkdir(sudir)
-        os.chmod(sudir, 0O2755)
+        os.chmod(sudir, 0O2775)
         
         # Insert a record into the sum_partn_alloc table for this SU. status is DARW, which is 1. effective_date is "0". arch_sub is 0. group_id is 0. safe_id is 0. ds_index is 0.
         self.cmd = 'INSERT INTO ' + SUM_PARTN_ALLOC + "(wd, sumid, status, bytes, effective_date, archive_substatus, group_id, safe_id, ds_index) VALUES ('" + sudir + "', '" + str(self.request.data.sessionid) + "', " + str(DARW) + ", " + str(self.request.data.numbytes) + ", '0', 0, 0, 0, 0)"
