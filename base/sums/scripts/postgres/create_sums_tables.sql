@@ -74,6 +74,7 @@ Indexes:
 create index sum_partn_alloc_ds_index_idx on SUM_PARTN_ALLOC (ds_index);
 create index sum_partn_alloc_effdate_idx on SUM_PARTN_ALLOC (effective_date);
 create index sum_partn_alloc_sumid_idx on SUM_PARTN_ALLOC (sumid);
+CREATE INDEX sum_partn_alloc_wd_idx ON public.sum_partn_alloc(wd);
 /* ===============================================================*/
 create table SUM_PARTN_AVAIL (
        partn_name    VARCHAR(80) not null,
