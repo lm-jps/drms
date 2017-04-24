@@ -2128,32 +2128,27 @@ static int unjsonizeSumopenResponse(SUM_t *sums, const char *msg, int (*history)
     if (!err)
     {
         err = ((jsonValue = cJSON_GetObjectItem(response, "sessionid")) == NULL);
+        if (err)
+        {
+            (*history)("Unable to unjsonize sessionid.\n");
+        }
     }
 
-    if (err)
-    {
-        (*history)("Unable to unjsonize sessionid.\n");
-    }
-    else
+    if (!err)
     {
         err = (jsonValue->type != cJSON_Number);
+        if (err)
+        {
+            (*history)("Unexpected data type for sessionid.");
+        }
     }
-    
-    if (err)
-    {
-        (*history)("Unexpected data type for sessionid.");
-    }
-    else
+
+    if (!err)
     {
         /* Convert a double to an 32-bit integer. This is OK since the server converted a 32-bit integer to a double. */
         sums->uid = (int)jsonValue->valuedouble;
     }
-    
-    if (err)
-    {
-        (*history)("Unable to parse sessionid.");
-    }
-    
+  
     if (response)
     {
         cJSON_Delete(response);
@@ -2442,13 +2437,13 @@ static int unjsonizeSuminfoResponse(SUM_t *sums, const char *msg, int (*history)
     if (!err)
     {
         err = ((jsonArray = cJSON_GetObjectItem(response, "suinfo")) == NULL);
+        if (err)
+        {
+            (*history)("Invalid 'suinfo' attribute.\n");
+        }
     }
-    
-    if (err)
-    {
-        (*history)("Invalid 'suinfo' attribute.\n");
-    }
-    else
+
+    if (!err)
     {
         nElems = cJSON_GetArraySize(jsonArray);
         sums->sinfo = (SUM_info_t *)calloc(nElems, sizeof(SUM_info_t));
@@ -3020,13 +3015,13 @@ static int unjsonizeSumgetResponse(SUM_t *sums, const char *msg, int (*history)(
     if (!err)
     {
         err = ((jsonArray = cJSON_GetObjectItem(response, "supaths")) == NULL);
+        if (err)
+        {
+            (*history)("Invalid 'supaths' attribute.\n");
+        }
     }
-    
-    if (err)
-    {
-        (*history)("Invalid 'supaths' attribute.\n");
-    }
-    else
+
+    if (!err)
     {
         nElems = cJSON_GetArraySize(jsonArray);
         if (nElems != sums->reqcnt)
@@ -3211,7 +3206,7 @@ static int jsonizeSumallocSumalloc2Request(SUM_t *sums, SUMID_t sessionid, uint6
  *
  * We need to assign sunum to sums->dsix_ptr[0], and sudir to sums->wd[0].
  */
-static int unjsonizeSumallocSumalloc2Request(SUM_t *sums, const char *msg, int (*history)(const char *fmt, ...))
+static int unjsonizeSumallocSumalloc2Response(SUM_t *sums, const char *msg, int (*history)(const char *fmt, ...))
 {
     int err = 0;
     cJSON *response = NULL;
@@ -3227,54 +3222,57 @@ static int unjsonizeSumallocSumalloc2Request(SUM_t *sums, const char *msg, int (
     if (!err)
     {
         err = ((value = cJSON_GetObjectItem(response, "sunum")) == NULL);
-    }
-    
-    if (err)
-    {
-        (*history)("Missing 'sunum' attribute.\n");
-    }
-    else
-    {
-        err = (value->type != cJSON_String);
+        if (err)
+        {
+            (*history)("Missing 'sunum' attribute.\n");
+        }
     }
 
-    if (err)
+    if (!err)
     {
-        (*history)("Unexpected data type for sunum.");
+        err = (value->type != cJSON_String);
+        if (err)
+        {
+            (*history)("Unexpected data type for sunum.");
+        }
     }
-    else
+
+    if (!err)
     {
         /* Convert hexadecimal string to 64-bit number. */
         err = (sscanf(value->valuestring, "%llx", &(sums->dsix_ptr[0])) != 1);
+        if (err)
+        {
+            (*history)("Invalid sunum string.");
+        }
     }
     
     if (!err)
     {
         err = ((value = cJSON_GetObjectItem(response, "sudir")) == NULL);
-    }
-    
-    if (err)
-    {
-        (*history)("Missing 'sudir' attribute.\n");
-    }
-    else
-    {
-        err = (value->type != cJSON_String);    
-    }
-    
-    if (err)
-    {
-        (*history)("Unexpected data type for sudir.");
-    }
-    else
-    {
-        err = ((sums->wd[0] = strdup(value->valuestring)) == NULL);
+        if (err)
+        {
+            (*history)("Missing 'sudir' attribute.\n");
+        }
     }
 
-    if (err)
+    if (!err)
     {
-        (*history)("Out of memory.");
+        err = (value->type != cJSON_String);    
+        if (err)
+        {
+            (*history)("Unexpected data type for sudir.");
+        }
     }
+
+    if (!err)
+    {
+        err = ((sums->wd[0] = strdup(value->valuestring)) == NULL);
+        if (err)
+        {
+            (*history)("Out of memory.");
+        }
+    }    
     
     if (response)
     {
@@ -3291,7 +3289,7 @@ static int jsonizeSumallocRequest(SUM_t *sums, SUMID_t sessionid, int sugroup, d
 
 static int unjsonizeSumallocResponse(SUM_t *sums, const char *msg, int (*history)(const char *fmt, ...))
 {
-    return unjsonizeSumallocSumalloc2Request(sums, msg, history);
+    return unjsonizeSumallocSumalloc2Response(sums, msg, history);
 }
 
 /* Stub out functions that should not be used if MT-SUMS alloc2 is not defined. */
@@ -3301,7 +3299,7 @@ static int jsonizeSumalloc2Request(SUM_t *sums, SUMID_t sessionid, uint64_t sunu
 }
 static int unjsonizeSumalloc2Response(SUM_t *sums, const char *msg, int (*history)(const char *fmt, ...))
 {
-    return unjsonizeSumallocSumalloc2Request(sums, msg, history);
+    return unjsonizeSumallocSumalloc2Response(sums, msg, history);
 }
 #endif
 
@@ -3815,31 +3813,30 @@ static int unjsonizeSumpollResponse(SUM_t *sums, const char *msg, int (*history)
     if (!err)
     {
         err = ((value = cJSON_GetObjectItem(response, "reqtype")) == NULL);
-    }
-    
-    if (err)
-    {
-        (*history)("Missing 'reqtype' attribute.\n");
-    }
-    else
-    {
-        err = (value->type != cJSON_String);
+        if (err)
+        {
+            (*history)("Missing 'reqtype' attribute.\n");
+        }
     }
 
-    if (err)
+    if (!err)
     {
-        (*history)("Unexpected data type for reqtype.\n");
+        err = (value->type != cJSON_String);
+        if (err)
+        {
+            (*history)("Unexpected data type for reqtype.\n");
+        }
     }
-    else
+
+    if (!err)
     {
         /* Map to MTSums_CallType_t */
         err = ((origType = CallTypeFromString(value->valuestring)) == kMTSums_CallType_None);
-    }
-    
-    if (err)
-    {
-        (*history)("Unknown MT SUMS call type %s.\n", value->valuestring);
-    }
+        if (err)
+        {
+            (*history)("Unknown MT SUMS call type %s.\n", value->valuestring);
+        }
+    }    
     
     if (response)
     {
