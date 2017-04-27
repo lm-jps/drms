@@ -105,6 +105,7 @@ char *INVALID_LINK = "InvalidLink";
 #define USE_FITS_NAMES_FOR_COLUMNS (0)
 
 char invalidObj;
+const char *userhandle = NULL;
 
 #define JSONDIE(msg) \
 do  {	\
@@ -124,16 +125,30 @@ do  {	\
   } while(0)
 
 #ifndef NDEBUG
-#define JSOC_INFO_ASSERT(expression) XASSERT(expression)
+#define JSOC_INFO_ASSERT(expression, msg) XASSERT(expression)
 #else 
-#define JSOC_INFO_ASSERT(expression) \
+#define JSOC_INFO_ASSERT(expression, msg) \
 do { \
     if (!(expression)) \
     { \
-        JSONDIE(expression); \
+        JSONDIE(msg); \
     } \
 } while(0)
 #endif
+
+struct requisitionStructT
+{ 
+    unsigned int requireRecnum : 1; 
+    unsigned int requireSunum : 1; 
+    unsigned int requireSUMinfoSize : 1; 
+    unsigned int requireSUMinfoOnline : 1; 
+    unsigned int requireSUMinfoRetain : 1; 
+    unsigned int requireSUMinfoArchive : 1; 
+    unsigned int requireRecdir : 1; 
+    unsigned int requireDirmtime : 1; 
+    unsigned int requireLogdir : 1; 
+    unsigned int requireSUMinfo : 1;
+};
 
 static int isInvalidKey(DRMS_Keyword_t *key)
 {
@@ -163,6 +178,307 @@ static int isInvalidLink(DRMS_Link_t *link)
     }
     
     return 1;
+}
+
+static char *string_to_json(char *in)
+{ // for json vers 0.9 no longer uses wide chars
+    char *new;
+    new = json_escape(in);
+    return(new);
+}
+
+void manage_userhandle(int register_handle, const char *handle)
+{
+    char cmd[1024];
+    
+    if (register_handle) // add handle and PID to current processing table
+    {
+        long PID = getpid();
+        exputl_manage_cgibin_handles("a", handle, PID, NULL);
+    }
+    else if (handle && *handle) // remove handle from current processing table
+    {
+        exputl_manage_cgibin_handles("d", handle, -1, NULL);
+    }
+}
+
+static int populateKeyList(const char *listOfKeys, LinkedList_t *reqSegs, DRMS_Record_t *template, DRMS_Record_t **jsdTemplate, DRMS_RecordSet_t *recordSet, int *recsStaged, struct requisitionStructT *requisition, LinkedList_t *reqKeys)
+{
+    char *listOfKeysWorking = NULL;
+    char *currentKey = NULL;
+    char *saver = NULL;
+    HIterator_t *last = NULL;
+    DRMS_Keyword_t *keyTemplate = NULL;
+    int status = DRMS_SUCCESS;
+    int allKeysSpecified = 0;
+    int sumInfoSizeKey = 0;
+    int sumInfoOnlineKey = 0;
+    int sumInfoRetainKey = 0;
+    int sumInfoArchiveKey = 0;
+    int recnumKey = 0;
+    int sunumKey = 0;
+    int recdirKey = 0;
+    int dirmtimeKey = 0;
+    int logdirKey = 0;
+    int sumInfoFakeKey = 0;
+    int fakeKey = 0;
+    
+    JSOC_INFO_ASSERT(listOfKeys && *listOfKeys != '\0' && reqSegs && template && jsdTemplate && recordSet && recsStaged && requisition && reqKeys, "populateKeyList(): invalid arguments");
+    listOfKeysWorking = strdup(listOfKeys);
+    JSOC_INFO_ASSERT(listOfKeysWorking, "populateKeyList(): out of memory");
+
+    /* never use strtok() under any circumstances - you never know what code inside your loop is going to 
+     * call strtok() */
+    for (currentKey = strtok_r(listOfKeysWorking, ",", &saver); currentKey; currentKey=strtok_r(NULL, ",", &saver))
+    {
+        if ((strcmp(currentKey,"**NONE**") == 0))
+        {
+            JSOC_INFO_ASSERT(list_llgetnitems(reqKeys) == 0, "Invalid key list (cannot specify **NONE** with other keys).");
+        }
+        else if ((strcmp(currentKey, "**ALL**") == 0))
+        {
+            /* the fake keywords can be combined with **ALL** */
+            allKeysSpecified = 1;
+                             
+            /* look-up all keywords; use proximal keyword names; use unexpanded per-segment keyword names, 
+             * i.e., use the jsdTemplate, not the regular template */
+            if (!*jsdTemplate)
+            {
+                *jsdTemplate = drms_create_jsdtemplate_record(drms_env, template->seriesinfo->seriesname, &status);
+            }
+            
+            JSOC_INFO_ASSERT(*jsdTemplate, "Could not obtain the JSD template record.");
+            JSOC_INFO_ASSERT(last == NULL, "");
+
+            while ((keyTemplate = drms_record_nextkey(*jsdTemplate, &last, 0)) != NULL)
+            {
+                JSOC_INFO_ASSERT(!(keyTemplate->info) || *(keyTemplate->info->name) == '\0', "Invalid keyword information.");
+
+                if (!drms_keyword_getimplicit(keyTemplate))
+                {
+                    if (drms_keyword_getperseg(keyTemplate))
+                    {
+                        /* include the per-segment keyword only if the user has requested information for at least one
+                         * segment
+                         */
+                        if (list_llgetnitems(reqSegs) > 0)
+                        {                                    
+                            list_llinserttail(reqKeys, (void *)&keyTemplate);
+                        }
+                    }
+                    else
+                    {
+                        list_llinserttail(reqKeys, (void *)&keyTemplate);
+                    }
+                }
+            }
+
+            if (last)
+            {
+                hiter_destroy(&last);
+            }                     
+        }
+        else 
+        {
+            /* the fake keywords can be combined with **ALL** */
+            if ((recnumKey = (strcasecmp(currentKey, "*recnum*") == 0)) && !requisition->requireRecnum)
+            {
+                requisition->requireRecnum = 1;
+            }
+            
+            if ((sunumKey = (strcasecmp(currentKey, "*sunum*") == 0)) && !requisition->requireSunum)
+            {
+                requisition->requireSunum = 1;
+            }
+
+            if ((sumInfoSizeKey = (strcasecmp(currentKey, "*size*") == 0)) && !requisition->requireSUMinfoSize)
+            {
+                requisition->requireSUMinfoSize = 1;
+            }
+            
+            if ((sumInfoOnlineKey = (strcasecmp(currentKey, "*online*") == 0)) && !requisition->requireSUMinfoOnline)
+            {
+                requisition->requireSUMinfoOnline = 1;
+            }
+            
+            if ((sumInfoRetainKey = (strcasecmp(currentKey, "*retain*") == 0)) && !requisition->requireSUMinfoRetain)
+            {
+                requisition->requireSUMinfoRetain = 1;
+            }
+            
+            if ((sumInfoArchiveKey = (strcasecmp(currentKey, "*archive*") == 0)) && !requisition->requireSUMinfoArchive)
+            {
+                requisition->requireSUMinfoArchive = 1;
+            }
+            
+            if ((recdirKey = (strcasecmp(currentKey, "*recdir*") == 0)) && !requisition->requireRecdir)
+            {
+                requisition->requireRecdir = 1;
+                
+                if (!*recsStaged)
+                {
+                    drms_stage_records(recordSet, 0, 0);
+                    *recsStaged = 1;
+                }
+            }
+
+            if ((dirmtimeKey = (strcasecmp(currentKey, "*dirmtime*") == 0)) && !requisition->requireDirmtime)
+            {
+                requisition->requireDirmtime = 1;
+                
+                if (!*recsStaged)
+                {
+                    drms_stage_records(recordSet, 0, 0);
+                    *recsStaged = 1;
+                }
+            }
+
+            if ((logdirKey = (strcasecmp(currentKey, "*logdir*") == 0)) && !requisition->requireLogdir)
+            {
+                requisition->requireLogdir = 1;
+            }
+
+            sumInfoFakeKey = sumInfoSizeKey | sumInfoOnlineKey | sumInfoRetainKey | sumInfoArchiveKey;
+            fakeKey = sumInfoFakeKey | recnumKey | sunumKey | recdirKey | dirmtimeKey | logdirKey;
+
+            if (!requisition->requireSUMinfo)
+            {                    
+                requisition->requireSUMinfo = sumInfoFakeKey;
+            }
+
+            /* ugh - if **ALL** was in the key list, then we do not want to add these - they are
+             * duplicates */
+            if (!fakeKey && !allKeysSpecified)
+            {
+                if (!*jsdTemplate)
+                {
+                    *jsdTemplate = drms_create_jsdtemplate_record(drms_env, template->seriesinfo->seriesname, &status);
+                }
+                
+                JSOC_INFO_ASSERT(*jsdTemplate, "Could not obtain the JSD template record.");
+            
+                /* look-up keyword; if not found, we need to print some kind of invalid-key string */
+                keyTemplate = drms_keyword_lookup(*jsdTemplate, currentKey, 0);
+                
+                if (!keyTemplate || !(keyTemplate->info) || *(keyTemplate->info->name) == '\0')
+                {
+                    keyTemplate = calloc(1, sizeof(DRMS_Keyword_t));
+                    (void *)(keyTemplate->record) = (void *)(&invalidObj);
+                    (char *)(keyTemplate->info) = strdup(currentKey);
+                }
+                else if (drms_keyword_getimplicit(keyTemplate))
+                {
+                    keyTemplate = calloc(1, sizeof(DRMS_Keyword_t));
+                    (void *)(keyTemplate->record) = (void *)(&invalidObj);
+                    (char *)(keyTemplate->info) = strdup(currentKey);
+                }
+
+                list_llinserttail(reqKeys, (void *)&keyTemplate);
+            }
+        }
+    }
+    
+    free(listOfKeysWorking);
+    
+    return list_llgetnitems(reqKeys);
+}
+
+static int populateSegList(const char *listOfSegs, int followLinks, DRMS_Record_t *template, DRMS_RecordSet_t *recordSet, int *recsStaged, struct requisitionStructT *requisition, LinkedList_t *reqSegs)
+{
+    char *listOfSegsWorking = NULL;
+    char *currentSeg = NULL;
+    char *saver = NULL;
+    HIterator_t *last = NULL;
+    DRMS_Segment_t *segTemplate = NULL;
+
+    JSOC_INFO_ASSERT(listOfSegs && *listOfSegs != '\0' && template && recordSet && recsStaged && requisition && reqSegs, "populateSegList(): invalid arguments");
+    
+    listOfSegsWorking = strdup(listOfSegs);
+    JSOC_INFO_ASSERT(listOfSegsWorking, "populateKeyList(): out of memory");
+    
+    for (currentSeg = strtok_r(listOfSegsWorking, ",", &saver); currentSeg; currentSeg = strtok_r(NULL, ",", &saver))
+    {
+        if (strcmp(currentSeg, "**NONE**")==0)
+        {
+            JSOC_INFO_ASSERT(list_llgetnitems(reqSegs) == 0, "Invalid segment list (cannot specify **NONE** with other segments).");
+        }
+        else if ((strcmp(currentSeg, "**ALL**") == 0))
+        {
+            JSOC_INFO_ASSERT(list_llgetnitems(reqSegs) == 0, "Invalid segment list (cannot specify **ALL** with other segments).");            
+            JSOC_INFO_ASSERT(last == NULL, "about to leak");
+
+            while ((segTemplate = drms_record_nextseg(template, &last, 0)) != NULL)
+            {
+                JSOC_INFO_ASSERT(!segTemplate || !(segTemplate->info) || *(segTemplate->info->name) == '\0', "Invalid segment information.");
+            
+                if (followLinks && segTemplate->info->islink)
+                {
+                    /* Since rec is a template record, cannot follow links in the ordinary manner. Use this function - it finds the template
+                     * segment of the series linked to. */
+                    int lnkstat = DRMS_SUCCESS;
+
+                    drms_template_segment_followlink(segTemplate, &lnkstat);
+                    JSOC_INFO_ASSERT(lnkstat != DRMS_SUCCESS, "Unable to follow link.");
+                }
+                
+                list_llinserttail(reqSegs, (void *)&segTemplate);
+            }
+            
+            if (last)
+            {
+                hiter_destroy(&last);
+            }
+        }
+        else
+        {
+            /* don't follow links */
+            segTemplate = hcon_lookup_lower(&(template->segments), currentSeg);
+        
+            if (!segTemplate || !(segTemplate->info) || *(segTemplate->info->name) == '\0')
+            {
+                segTemplate = calloc(1, sizeof(DRMS_Segment_t));
+                (void *)(segTemplate->record) = (void *)(&invalidObj);
+                (char *)(segTemplate->info) = strdup(currentSeg);
+            }
+            else
+            {
+                if (followLinks && segTemplate->info->islink)
+                {
+                    /* Since rec is a template record, cannot follow links in the ordinary manner. Use this function - it finds the template
+                     * segment of the series linked to. 
+                     */
+                    int lnkstat = DRMS_SUCCESS;
+
+                    drms_template_segment_followlink(segTemplate, &lnkstat);
+                    if (lnkstat != DRMS_SUCCESS)
+                    {
+                        segTemplate = calloc(1, sizeof(DRMS_Segment_t));
+                        (void *)(segTemplate->record) = (void *)(&invalidObj);
+                        (char *)(segTemplate->info) = strdup(currentSeg);
+                    }
+                }
+            }
+
+            list_llinserttail(reqSegs, (void *)&segTemplate);
+        }
+    }
+    
+    if (list_llgetnitems(reqSegs) > 0)
+    {
+        if (!*recsStaged)
+        {
+            drms_stage_records(recordSet, 0, 0);
+            *recsStaged = 1;
+        }
+        
+        if (!requisition->requireSUMinfo)
+        {
+            /* we need this for the online property of each segment */
+            requisition->requireSUMinfo = 1;
+        }
+    }
+    
+    return list_llgetnitems(reqSegs);
 }
 
 static char x2c (char *what)
@@ -376,13 +692,6 @@ char *drms_getseriesowner(DRMS_Env_t *drms_env, char *series, int *status)
    return(owner);
    }
 
-char * string_to_json(char *in)
-  { // for json vers 0.9 no longer uses wide chars
-  char *new;
-  new = json_escape(in);
-  return(new);
-  }
-
 static json_t *createJsonStringVal(const char *text)
 {
     json_t *rv = NULL;
@@ -392,11 +701,11 @@ static json_t *createJsonStringVal(const char *text)
     if (text && *text != '\0')
     {
         jsonLibShouldReallyDeclareThisConst = strdup(text);
-        JSOC_INFO_ASSERT(jsonLibShouldReallyDeclareThisConst);
+        JSOC_INFO_ASSERT(jsonLibShouldReallyDeclareThisConst, "out of memory");
         escText = string_to_json(jsonLibShouldReallyDeclareThisConst);
-        JSOC_INFO_ASSERT(escText);
+        JSOC_INFO_ASSERT(escText, "out of memory");
         rv = json_new_string(escText);
-        JSOC_INFO_ASSERT(rv);
+        JSOC_INFO_ASSERT(rv, "out of memory");
         free(escText);
         escText = NULL;
         free(jsonLibShouldReallyDeclareThisConst);
@@ -471,7 +780,7 @@ static int list_series_info(DRMS_Env_t *drms_env, DRMS_Record_t *rec, json_t *jr
     // old lines marked with trailing XXXXX REMOVE SOMEDAY
     primearray = json_new_array(); // XXXXX REMOVE SOMEDAY
     primeinfoarray = json_new_array();
-    JSOC_INFO_ASSERT(primeinfoarray);
+    JSOC_INFO_ASSERT(primeinfoarray, "out of memory");
     npkeys = rec->seriesinfo->pidx_num;
 
     if (npkeys > 0)
@@ -548,7 +857,7 @@ static int list_series_info(DRMS_Env_t *drms_env, DRMS_Record_t *rec, json_t *jr
                     {
                         if (USE_FITS_NAMES_FOR_COLUMNS && useFitsKeyNames)
                         {
-                            JSOC_INFO_ASSERT(fitsValue == NULL);
+                            JSOC_INFO_ASSERT(fitsValue == NULL, "about to leak");
                             fitsexport_getmappedextkeyvalue(stepKey, &fitsValue);
 
                             if (fitsValue)
@@ -609,7 +918,7 @@ static int list_series_info(DRMS_Env_t *drms_env, DRMS_Record_t *rec, json_t *jr
             
             /* primeinfo - slotted */
             jsonVal = isSlotted ? json_new_number("1") : json_new_number("0");
-            JSOC_INFO_ASSERT(jsonVal);
+            JSOC_INFO_ASSERT(jsonVal, "out of memory");
             json_insert_pair_into_object(primeinfo, "slotted", jsonVal);
             jsonVal = NULL;
             
@@ -861,8 +1170,8 @@ if (DEBUG) fprintf(stderr,"   starting all keywords\n");
                         typeStr = strdup(drms_type2str(linkedkw->info->type));
                         scopeStr = strdup(drms_keyword_getrecscopestr(linkedkw, NULL));
                         
-                        JSOC_INFO_ASSERT(typeStr);
-                        JSOC_INFO_ASSERT(scopeStr);
+                        JSOC_INFO_ASSERT(typeStr, "out of memory");
+                        JSOC_INFO_ASSERT(scopeStr, "out of memory");
 
                         fitsexport_getmappedextkeyvalue(linkedkw, &fitsValue);
 
@@ -880,9 +1189,9 @@ if (DEBUG) fprintf(stderr,"   starting all keywords\n");
                         }
 
                         defStr = strdup(rawval);
-                        JSOC_INFO_ASSERT(defStr);
+                        JSOC_INFO_ASSERT(defStr, "out of memory");
                         unitsStr = strdup(linkedkw->info->unit);
-                        JSOC_INFO_ASSERT(unitsStr);
+                        JSOC_INFO_ASSERT(unitsStr, "out of memory");
                         /* if present keyword has description, use it.  else use target keyword description. */
                         if (*(key->info->description) == '\0' || *(key->info->description) == ' ')
                         {
@@ -893,32 +1202,32 @@ if (DEBUG) fprintf(stderr,"   starting all keywords\n");
                             noteStr = strdup(key->info->description);
                         }
                         
-                        JSOC_INFO_ASSERT(noteStr);
+                        JSOC_INFO_ASSERT(noteStr, "out of memory");
                     }
                     else
                     {
                         typeStr = strdup("link");
-                        JSOC_INFO_ASSERT(typeStr);
+                        JSOC_INFO_ASSERT(typeStr, "out of memory");
 
                         // but scopework and notework are now not initialized, but they are used below --> memory corruption;
                         // write something that will help the user debug
                         scopeStr = strdup("error following link");
-                        JSOC_INFO_ASSERT(scopeStr);
+                        JSOC_INFO_ASSERT(scopeStr, "out of memory");
                         defStr = string_to_json("error following link");
-                        JSOC_INFO_ASSERT(defStr);
+                        JSOC_INFO_ASSERT(defStr, "out of memory");
                         unitsStr = string_to_json("error following link");
-                        JSOC_INFO_ASSERT(unitsStr);
+                        JSOC_INFO_ASSERT(unitsStr, "out of memory");
                         noteStr = string_to_json("error following link");
-                        JSOC_INFO_ASSERT(noteStr);
+                        JSOC_INFO_ASSERT(noteStr, "out of memory");
                     }
                 }
                 else
                 {
                     /* accumulate strings for keytype, default val, units, and description from template record */
                     typeStr = strdup(drms_type2str(key->info->type));
-                    JSOC_INFO_ASSERT(typeStr);
+                    JSOC_INFO_ASSERT(typeStr, "out of memory");
                     scopeStr = strdup(drms_keyword_getrecscopestr(key, NULL));
-                    JSOC_INFO_ASSERT(scopeStr);
+                    JSOC_INFO_ASSERT(scopeStr, "out of memory");
                     
                     fitsexport_getmappedextkeyvalue(key, &fitsValue);
 
@@ -936,11 +1245,11 @@ if (DEBUG) fprintf(stderr,"   starting all keywords\n");
                     }
 
                     defStr = strdup(rawval);
-                    JSOC_INFO_ASSERT(defStr);
+                    JSOC_INFO_ASSERT(defStr, "out of memory");
                     unitsStr = strdup(key->info->unit);
-                    JSOC_INFO_ASSERT(unitsStr);
+                    JSOC_INFO_ASSERT(unitsStr, "out of memory");
                     noteStr = strdup(key->info->description);
-                    JSOC_INFO_ASSERT(noteStr);
+                    JSOC_INFO_ASSERT(noteStr, "out of memory");
                 }
         
                 jsonVal = createJsonStringVal(typeStr);
@@ -1332,22 +1641,6 @@ if (status != JSON_OK) fprintf(stderr, "json_insert_pair_into_object, status=%d,
   return 0;
   }
 
-manage_userhandle(int register_handle, const char *handle)
-  {
-  char cmd[1024];
-  if (register_handle) // add handle and PID to current processing table
-    {
-    long PID = getpid();
-        
-        exputl_manage_cgibin_handles("a", handle, PID, NULL);
-    }
-  else if (handle && *handle) // remove handle from current processing table
-    {
-        exputl_manage_cgibin_handles("d", handle, -1, NULL);
-    }
-  }
-
-
 json_insert_runtime(json_t *jroot, double StartTime)
   {
   char runtime[100];
@@ -1469,8 +1762,7 @@ int DoIt(void)
   char *web_query;
   const char *Remote_Address;
   const char *Server;
-  const char *userhandle = NULL;
-      int followLinks = 0;
+  int followLinks = 0;
   int from_web, keys_listed, segs_listed, links_listed;
   int max_recs = 0;
   struct timeval thistv;
@@ -1481,6 +1773,8 @@ int DoIt(void)
   LinkedList_t *reqKeys = NULL;
   LinkedList_t *reqLinks = NULL;
   json_t *recArray = NULL;
+    char *jsonOut = NULL;
+    char *final_json = NULL;
 
   if (nice_intro ()) return (0);
 
@@ -1609,8 +1903,6 @@ int DoIt(void)
     {
     char *p, *seriesname;
     json_t *jroot;
-    char *json;
-    char *final_json;
     DRMS_Record_t *rec;
     int status=0;
     /* Only want keyword info so get only the template record for drms series or first record for other data */
@@ -1653,9 +1945,9 @@ int DoIt(void)
 
     json_insert_runtime(jroot, StartTime);
     json_insert_pair_into_object(jroot, "status", json_new_number("0"));
-    json_tree_to_string(jroot,&json);
-    final_json = json_format_string(json);
-    free(json);
+    json_tree_to_string(jroot, &jsonOut);
+    final_json = json_format_string(jsonOut);
+    free(jsonOut);
     /* send the output json back to client */
     printf("Content-type: application/json\n\n");
     printf("%s\n",final_json);
@@ -1671,7 +1963,6 @@ int DoIt(void)
   if (strcmp(op,"rs_summary") == 0) 
     {
     json_t *jroot = json_new_object();
-    char *json, *final_json;
     int count=0, status=0;
     int countlimit = abs(max_recs);
     char val[100];
@@ -1734,9 +2025,9 @@ int DoIt(void)
     json_insert_pair_into_object(jroot, "count", json_new_number(val));
     json_insert_runtime(jroot, StartTime);
     json_insert_pair_into_object(jroot, "status", json_new_number("0"));
-    json_tree_to_string(jroot,&json);
-    final_json = json_format_string(json);
-    free(json);
+    json_tree_to_string(jroot, &jsonOut);
+    final_json = json_format_string(jsonOut);
+    free(jsonOut);
     /* send the output json back to client */
     printf("Content-type: application/json\n\n");
     printf("%s\n",final_json);
@@ -1766,12 +2057,11 @@ int DoIt(void)
     json_t **segcparms = NULL;
     json_t **segbzeros = NULL;
     json_t **segbscales = NULL;
-    char *json;
-    char *final_json;
     int status=0;
     int irec, nrecs;
     int record_set_staged = 0;
     char *lbracket;
+    /*
     int requireSUMinfo = 0;
     int requireSUMinfoSize = 0;
     int requireSUMinfoOnline = 0;
@@ -1782,6 +2072,7 @@ int DoIt(void)
     int requireRecdir = 0;
     int requireDirmtime = 0;
     int requireLogdir = 0;
+    */
     int sumInfoStr = 0;
     jroot = json_new_object();
     DRMS_Record_t *jsdTemplate = NULL;
@@ -1853,21 +2144,20 @@ int DoIt(void)
       json_insert_pair_into_object(jroot, "count", json_new_number("0"));
       json_insert_runtime(jroot, StartTime);
       json_insert_pair_into_object(jroot, "status", json_new_number("0"));
-      json_tree_to_string(jroot,&json);
+      json_tree_to_string(jroot, &jsonOut);
       printf("Content-type: application/json\n\n");
-      printf("%s\n",json);
-      free(json);
+      printf("%s\n",jsonOut);
+      free(jsonOut);
       fflush(stdout);
       manage_userhandle(0, userhandle);
       return(0);
       }
-      
-      
-    requireSUMinfo = 0;
+    
+    struct requisitionStructT requisition = { 0 };
     
     if (wantRecInfo)
     {
-        requireSUMinfo = 1;
+        requisition.requireSUMinfo = 1;
     }
           
     /* get list of segments to show for each record - do segments before keys so we know which segment-specific 
@@ -1887,102 +2177,8 @@ int DoIt(void)
         CGI_unescape_url(seglist);
         
         if (useFitsKeyNames)
-        {
-            for (thisseg=strtok(seglist, ","); thisseg; thisseg=strtok(NULL,","))
-            {
-                if (strcmp(thisseg, "**NONE**")==0)
-                {
-                    if (nsegs > 0)
-                    {
-                        JSONDIE("Invalid segment list.");
-                    }
-                }
-                else if ((strcmp(thisseg, "**ALL**") == 0))
-                {
-                    if (nsegs > 0)
-                    {
-                        JSONDIE("Invalid segment list.");
-                    }
-                    
-                    JSOC_INFO_ASSERT(last == NULL);
-                    while ((segTemplate = drms_record_nextseg(template, &last, 0)) != NULL)
-                    {
-                        if (!segTemplate || !(segTemplate->info) || *(segTemplate->info->name) == '\0')
-                        {
-                            JSONDIE("Invalid segment information.");
-                        }
-                    
-                        if (followLinks && segTemplate->info->islink)
-                        {
-                            /* Since rec is a template record, cannot follow links in the ordinary manner. Use this function - it finds the template
-                             * segment of the series linked to. */
-                            int lnkstat = DRMS_SUCCESS;
-
-                            drms_template_segment_followlink(segTemplate, &lnkstat);
-                            if (lnkstat != DRMS_SUCCESS)
-                            {
-                                JSONDIE("Unable to follow link.");
-                            }
-                        }
-                        
-                        list_llinserttail(reqSegs, (void *)&segTemplate);
-                        nsegs++;
-                    }
-                    
-                    if (last)
-                    {
-                        hiter_destroy(&last);
-                    }
-                }
-                else
-                {
-                    /* don't follow links */
-                    segTemplate = hcon_lookup_lower(&(template->segments), thisseg);
-                
-                    if (!segTemplate || !(segTemplate->info) || *(segTemplate->info->name) == '\0')
-                    {
-                        segTemplate = calloc(1, sizeof(DRMS_Segment_t));
-                        (void *)(segTemplate->record) = (void *)(&invalidObj);
-                        (char *)(segTemplate->info) = strdup(thisseg);
-                    }
-                    else
-                    {
-                        if (followLinks && segTemplate->info->islink)
-                        {
-                            /* Since rec is a template record, cannot follow links in the ordinary manner. Use this function - it finds the template
-                             * segment of the series linked to. 
-                             */
-                            int lnkstat = DRMS_SUCCESS;
-
-                            drms_template_segment_followlink(segTemplate, &lnkstat);
-                            if (lnkstat != DRMS_SUCCESS)
-                            {
-                                segTemplate = calloc(1, sizeof(DRMS_Segment_t));
-                                (void *)(segTemplate->record) = (void *)(&invalidObj);
-                                (char *)(segTemplate->info) = strdup(thisseg);
-                            }
-                        }
-                    }
-
-                    list_llinserttail(reqSegs, (void *)&segTemplate);
-                    nsegs++;
-                }
-            }
-            
-            if (nsegs > 0)
-            {
-                if (!record_set_staged)
-                {
-                    drms_stage_records(recordset, 0, 0);
-                    record_set_staged = 1;
-                }
-                
-                if (!requireSUMinfo)
-                {
-                    /* we need this for the online property of each segment */
-                    requireSUMinfo = 1;
-                }
-            }
+        {            
+            nsegs = populateSegList(seglist, followLinks, template, recordset, &record_set_staged, &requisition, reqSegs);
         }
         else
         {
@@ -2046,7 +2242,7 @@ int DoIt(void)
     if (!reqKeys)
     {
         JSONDIE("Out of memory.");
-    }      
+    }
 
     if (keys_listed) 
       {
@@ -2059,185 +2255,7 @@ int DoIt(void)
       
         if (useFitsKeyNames)
         {
-            char *saver = NULL;
-            int allKeysSpecified = 0;
-            int sumInfoSizeKey = 0;
-            int sumInfoOnlineKey = 0;
-            int sumInfoRetainKey = 0;
-            int sumInfoArchiveKey = 0;
-            int recnumKey = 0;
-            int sunumKey = 0;
-            int recdirKey = 0;
-            int dirmtimeKey = 0;
-            int logdirKey = 0;
-            int sumInfoFakeKey = 0;
-            int fakeKey = 0;
-
-            /* never use strtok() under any circumstances - you never know what code inside your loop is going to 
-             * call strtok() */
-            for (thiskey = strtok_r(keylist, ",", &saver); thiskey; thiskey=strtok_r(NULL, ",", &saver))
-            {
-                if ((strcmp(thiskey,"**NONE**") == 0))
-                {
-                    if (nkeys > 0)
-                    {
-                        JSONDIE("Invalid key list.");
-                    }
-                }
-                else if ((strcmp(thiskey, "**ALL**") == 0))
-                {
-                    /* the fake keywords can be combined with **ALL** */
-                    allKeysSpecified = 1;
-                                     
-                    /* look-up all keywords; use proximal keyword names; use unexpanded per-segment keyword names, 
-                     * i.e., use the jsdTemplate, not the regular template */
-                    if (!jsdTemplate)
-                    {
-                        jsdTemplate = drms_create_jsdtemplate_record(drms_env, template->seriesinfo->seriesname, &status);
-                    }
-                
-                    if (!jsdTemplate)
-                    {
-                        JSONDIE("Could not obtain the JSD template record.");
-                    }
-                 
-                    JSOC_INFO_ASSERT(last == NULL);
-                    while ((keyTemplate = drms_record_nextkey(jsdTemplate, &last, 0)) != NULL)
-                    {
-                        if (!(keyTemplate->info) || *(keyTemplate->info->name) == '\0')
-                        {
-                            JSONDIE("Invalid keyword information.");
-                        }
-
-                        if (!drms_keyword_getimplicit(keyTemplate))
-                        {
-                            if (drms_keyword_getperseg(keyTemplate))
-                            {
-                                /* include the per-segment keyword only if the user has requested information for at least one
-                                 * segment
-                                 */
-                                if (list_llgetnitems(reqSegs) > 0)
-                                {                                    
-                                    list_llinserttail(reqKeys, (void *)&keyTemplate);
-                                    nkeys++;
-                                }
-                            }
-                            else
-                            {
-                                list_llinserttail(reqKeys, (void *)&keyTemplate);
-                                nkeys++;
-                            }
-                        }
-                    }
-
-                    if (last)
-                    {
-                        hiter_destroy(&last);
-                    }                     
-                }
-                else 
-                {
-                    /* the fake keywords can be combined with **ALL** */
-                    if ((recnumKey = (strcasecmp(thiskey, "*recnum*") == 0)) && !requireRecnum)
-                    {
-                        requireRecnum = 1;
-                    }
-                    
-                    if ((sunumKey = (strcasecmp(thiskey, "*sunum*") == 0)) && !requireSunum)
-                    {
-                        requireSunum = 1;
-                    }
-
-                    if ((sumInfoSizeKey = (strcasecmp(thiskey, "*size*") == 0)) && !requireSUMinfoSize)
-                    {
-                        requireSUMinfoSize = 1;
-                    }
-                    
-                    if ((sumInfoOnlineKey = (strcasecmp(thiskey, "*online*") == 0)) && !requireSUMinfoOnline)
-                    {
-                        requireSUMinfoOnline = 1;
-                    }
-                    
-                    if ((sumInfoRetainKey = (strcasecmp(thiskey, "*retain*") == 0)) && !requireSUMinfoRetain)
-                    {
-                        requireSUMinfoRetain = 1;
-                    }
-                    
-                    if ((sumInfoArchiveKey = (strcasecmp(thiskey, "*archive*") == 0)) && !requireSUMinfoArchive)
-                    {
-                        requireSUMinfoArchive = 1;
-                    }
-                    
-                    if ((recdirKey = (strcasecmp(thiskey, "*recdir*") == 0)) && !requireRecdir)
-                    {
-                        requireRecdir = 1;
-                        
-                        if (!record_set_staged)
-                        {
-                            drms_stage_records(recordset, 0, 0);
-                            record_set_staged = 1;
-                        }
-                    }
-
-                    if ((dirmtimeKey = (strcasecmp(thiskey, "*dirmtime*") == 0)) && !requireDirmtime)
-                    {
-                        requireDirmtime = 1;
-                        
-                        if (!record_set_staged)
-                        {
-                            drms_stage_records(recordset, 0, 0);
-                            record_set_staged = 1;
-                        }
-                    }
-
-                    if ((logdirKey = (strcasecmp(thiskey, "*logdir*") == 0)) && !requireLogdir)
-                    {
-                        requireLogdir = 1;
-                    }
-
-                    sumInfoFakeKey = sumInfoSizeKey | sumInfoOnlineKey | sumInfoRetainKey | sumInfoArchiveKey;
-                    fakeKey = sumInfoFakeKey | recnumKey | sunumKey | recdirKey | dirmtimeKey | logdirKey;
-
-                    if (!requireSUMinfo)
-                    {                    
-                        requireSUMinfo = sumInfoFakeKey;
-                    }
-
-                    /* ugh - if **ALL** was in the key list, then we do not want to add these - they are
-                     * duplicates */
-                    if (!fakeKey && !allKeysSpecified)
-                    {
-                        if (!jsdTemplate)
-                        {
-                            jsdTemplate = drms_create_jsdtemplate_record(drms_env, template->seriesinfo->seriesname, &status);
-                        }
-                
-                        if (!jsdTemplate)
-                        {
-                            JSONDIE("Could not obtain the JSD template record.");
-                        }
-                    
-                        /* look-up keyword; if not found, we need to print some kind of invalid-key string */
-                        keyTemplate = drms_keyword_lookup(jsdTemplate, thiskey, 0);
-                        
-                        if (!keyTemplate || !(keyTemplate->info) || *(keyTemplate->info->name) == '\0')
-                        {
-                            keyTemplate = calloc(1, sizeof(DRMS_Keyword_t));
-                            (void *)(keyTemplate->record) = (void *)(&invalidObj);
-                            (char *)(keyTemplate->info) = strdup(thiskey);
-                        }
-                        else if (drms_keyword_getimplicit(keyTemplate))
-                        {
-                            keyTemplate = calloc(1, sizeof(DRMS_Keyword_t));
-                            (void *)(keyTemplate->record) = (void *)(&invalidObj);
-                            (char *)(keyTemplate->info) = strdup(thiskey);
-                        }
-
-                        list_llinserttail(reqKeys, (void *)&keyTemplate);
-                        nkeys++;
-                    }
-                }
-            }
+            nkeys = populateKeyList(keylist, reqSegs, template, &jsdTemplate, recordset, &record_set_staged, &requisition, reqKeys);
         }
         else
         {
@@ -2274,7 +2292,7 @@ int DoIt(void)
                     strcmp(thiskey, "*retain*") == 0 || 
                     strcmp(thiskey, "*archive*") == 0)
                 {
-                   requireSUMinfo = 1;
+                   requisition.requireSUMinfo = 1;
                 }
             }
         }
@@ -2315,7 +2333,7 @@ int DoIt(void)
                         JSONDIE("Invalid link list.");
                     }
                     
-                    JSOC_INFO_ASSERT(last == NULL);
+                    JSOC_INFO_ASSERT(last == NULL, "about to leak");
                     while ((linkTemplate = drms_record_nextlink(template, &last)) != NULL)
                     {
                         if (!(linkTemplate->info) || *(linkTemplate->info->name) == '\0')
@@ -2424,13 +2442,13 @@ int DoIt(void)
     }
 
     /* ART - need to find out if we will be needing SUM info. If so, call drms_record_getinfo(). */
-    if (requireSUMinfo)
+    if (requisition.requireSUMinfo)
     {
        drms_record_getinfo(recordset);
     }
 
     recArray = json_new_array(); 
-    JSOC_INFO_ASSERT(recArray);
+    JSOC_INFO_ASSERT(recArray, "out of memory");
 
     /* loop over set of selected records */
     for (irec = 0; irec < nrecs; irec++) 
@@ -2439,7 +2457,7 @@ int DoIt(void)
       char numStr[64];
       char *jsonquery;
       json_t *recobj = json_new_object();
-      JSOC_INFO_ASSERT(recobj);
+      JSOC_INFO_ASSERT(recobj, "out of memory");
 
       if (max_recs == 0)
         rec = drms_recordset_fetchnext(drms_env, recordset, &status, &cstat, NULL);
@@ -2462,25 +2480,25 @@ int DoIt(void)
             json_insert_pair_into_object(recobj, "specification", jsonVal);
             jsonVal = NULL;
             
-            if (requireRecnum)
+            if (requisition.requireRecnum)
             {
                 snprintf(numStr, sizeof(numStr), "%lld", rec->recnum);
                 jsonVal = json_new_number(numStr);
-                JSOC_INFO_ASSERT(jsonVal);
+                JSOC_INFO_ASSERT(jsonVal, "out of memory");
                 json_insert_pair_into_object(recobj, "recnum", jsonVal);
                 jsonVal = NULL;
             }
             
-            if (requireSunum)
+            if (requisition.requireSunum)
             {
                 snprintf(numStr, sizeof(numStr), "%lld", rec->sunum);
                 jsonVal = json_new_number(numStr);
-                JSOC_INFO_ASSERT(jsonVal);
+                JSOC_INFO_ASSERT(jsonVal, "out of memory");
                 json_insert_pair_into_object(recobj, "sunum", jsonVal);
                 jsonVal = NULL;
             }
             
-            if (requireSUMinfoSize)
+            if (requisition.requireSUMinfoSize)
             {
                 if (!rec->suinfo)
                 {
@@ -2490,14 +2508,14 @@ int DoIt(void)
                 {
                     snprintf(numStr, sizeof(numStr), "%.0f", rec->suinfo->bytes);
                     jsonVal = json_new_number(numStr);
-                    JSOC_INFO_ASSERT(jsonVal);
+                    JSOC_INFO_ASSERT(jsonVal, "out of memory");
                 }
 
                 json_insert_pair_into_object(recobj, "size", jsonVal);
                 jsonVal = NULL;
             }
             
-            if (requireSUMinfoOnline)
+            if (requisition.requireSUMinfoOnline)
             {
                 if (!rec->suinfo)
                 {
@@ -2512,7 +2530,7 @@ int DoIt(void)
                 jsonVal = NULL;
             }
             
-            if (requireSUMinfoRetain)
+            if (requisition.requireSUMinfoRetain)
             {
                 if (!rec->suinfo)
                 {
@@ -2541,7 +2559,7 @@ int DoIt(void)
                 jsonVal = NULL;
             }
             
-            if (requireSUMinfoArchive)
+            if (requisition.requireSUMinfoArchive)
             {
                 if (!rec->suinfo)
                 {
@@ -2563,7 +2581,7 @@ int DoIt(void)
                 jsonVal = NULL;
             }
             
-            if (requireRecdir)
+            if (requisition.requireRecdir)
             {
                 char recPath[DRMS_MAXPATHLEN];
                                 
@@ -2573,7 +2591,7 @@ int DoIt(void)
                 jsonVal = NULL;
             }
 
-            if (requireDirmtime)
+            if (requisition.requireDirmtime)
             {
                 /* get record dir last change date */
                 struct stat buf;
@@ -2588,7 +2606,7 @@ int DoIt(void)
                 jsonVal = NULL;
             }
             
-            if (requireLogdir)
+            if (requisition.requireLogdir)
             {
                 char *logdir = drms_record_getlogdir(rec);
                 
@@ -2608,7 +2626,7 @@ int DoIt(void)
             keywordArray = json_new_array(); /* each record has a keyword array - an array of { "name" : "key1", "value" : "rumble"}
                                               * objects
                                               */
-            JSOC_INFO_ASSERT(keywordArray);
+            JSOC_INFO_ASSERT(keywordArray, "out of memory");
             json_insert_pair_into_object(recobj, "keywords", keywordArray);
 
             list_llreset(reqKeys);
@@ -2669,7 +2687,7 @@ int DoIt(void)
                             }
                             else
                             {
-                                JSOC_INFO_ASSERT(fitsValue == NULL);
+                                JSOC_INFO_ASSERT(fitsValue == NULL, "about to leak");
                                 fitsexport_getmappedextkeyvalue(keyWithVal, &fitsValue);
 
                                 if (fitsValue)
@@ -2696,13 +2714,13 @@ int DoIt(void)
                     }
                 }
                 
-                JSOC_INFO_ASSERT((keyNameOut != NULL && valOut != NULL) || (keyNameOut == NULL && valOut == NULL));
+                JSOC_INFO_ASSERT((keyNameOut != NULL && valOut != NULL) || (keyNameOut == NULL && valOut == NULL), "invalid combination");
                 
                 if (keyNameOut)
                 {                    
                     /* make json */
                     keyObj = json_new_object();
-                    JSOC_INFO_ASSERT(keyObj);
+                    JSOC_INFO_ASSERT(keyObj, "out of memory");
                 
                     jsonVal = createJsonStringVal(keyNameOut);
                     json_insert_pair_into_object(keyObj, "name", jsonVal);
@@ -2893,7 +2911,7 @@ int DoIt(void)
             
             segmentArray = json_new_array(); /* each record has a segment array - an array of { "name" : "seg1", "value" : "rumble"}
                                               * objects */
-            JSOC_INFO_ASSERT(segmentArray);
+            JSOC_INFO_ASSERT(segmentArray, "out of memory");
             json_insert_pair_into_object(recobj, "segments", segmentArray);
 
             list_llreset(reqSegs);
@@ -2903,7 +2921,7 @@ int DoIt(void)
                 segTemplate = *((DRMS_Segment_t **)(lnSeg->data));
                 
                 segObj = json_new_object();
-                JSOC_INFO_ASSERT(segObj);
+                JSOC_INFO_ASSERT(segObj, "out of memory");
 
                 if (isInvalidSeg(segTemplate))
                 {
@@ -3103,7 +3121,7 @@ int DoIt(void)
                                         keywordArray = json_new_array(); /* each record has a keyword array - an array of { "name" : "key1", "value" : "rumble"}
                                                                           * objects
                                                                           */
-                                        JSOC_INFO_ASSERT(keywordArray);
+                                        JSOC_INFO_ASSERT(keywordArray, "out of memory");
                                         json_insert_pair_into_object(segObj, "keywords", keywordArray);
                                     }
 
@@ -3139,7 +3157,7 @@ int DoIt(void)
                                         }
                                         else
                                         {
-                                            JSOC_INFO_ASSERT(fitsValue == NULL);
+                                            JSOC_INFO_ASSERT(fitsValue == NULL, "about to leak");
                                             fitsexport_getmappedextkeyvalue(keyWithVal, &fitsValue);
 
                                             if (fitsValue)
@@ -3160,13 +3178,13 @@ int DoIt(void)
                                 }
                             }
 
-                            JSOC_INFO_ASSERT((keyNameOut != NULL && valOut != NULL) || (keyNameOut == NULL && valOut == NULL));
+                            JSOC_INFO_ASSERT((keyNameOut != NULL && valOut != NULL) || (keyNameOut == NULL && valOut == NULL), "invalid combination");
                 
                             if (keyNameOut)
                             {                    
                                 /* make json */
                                 keyObj = json_new_object();
-                                JSOC_INFO_ASSERT(keyObj);
+                                JSOC_INFO_ASSERT(keyObj, "out of memory");
                                 
                                 jsonVal = createJsonStringVal(keyNameOut);
                                 json_insert_pair_into_object(keyObj, "name", jsonVal);
@@ -3362,7 +3380,7 @@ int DoIt(void)
             linkArray = json_new_array(); /* each record has a segment array - an array of { "name" : "seg1", "value" : "rumble"}
                                            * objects
                                            */
-            JSOC_INFO_ASSERT(linkArray);
+            JSOC_INFO_ASSERT(linkArray, "out of memory");
             json_insert_pair_into_object(recobj, "links", linkArray);
             
             while ((lnLink = list_llnext(reqLinks)) != NULL)
@@ -3371,7 +3389,7 @@ int DoIt(void)
                 badLink = 0;
                 
                 linkObj = json_new_object();
-                JSOC_INFO_ASSERT(linkObj);
+                JSOC_INFO_ASSERT(linkObj, "out of memory");
                 
                 if (isInvalidLink(linkTemplate))
                 {
@@ -3462,7 +3480,7 @@ int DoIt(void)
 
         if (useFitsKeyNames)
         {
-            if (wantRecInfo && !requireSUMinfoOnline)
+            if (wantRecInfo && !requisition.requireSUMinfoOnline)
             {
                 if (!rec->suinfo)
                 {
@@ -3480,10 +3498,12 @@ int DoIt(void)
                     }
                 }
                 
-                JSOC_INFO_ASSERT(jsonVal);
+                JSOC_INFO_ASSERT(jsonVal, "out of memory");
                 json_insert_pair_into_object(recobj, "online", jsonVal);
                 jsonVal = NULL;
             }
+            
+            json_insert_child(recArray, recobj);
         }
         else
         {
@@ -3499,8 +3519,6 @@ int DoIt(void)
                 json_insert_child(recinfo, recobj);
             }
         }
-        
-        json_insert_child(recArray, recobj);
       } /* rec loop */
       
         /* clean up memory used by invalid keys, segs, links */
@@ -3597,7 +3615,7 @@ int DoIt(void)
             json_insert_pair_into_object(keyobj, "values", keyvals[ikey]);
             json_insert_child(json_keywords, keyobj);
             }
-          json_insert_pair_into_object(jroot, "keywords", json_keywords);
+        json_insert_pair_into_object(jroot, "keywords", json_keywords);
 
           for (iseg=0; iseg<nsegs; iseg++) 
             {
@@ -3631,9 +3649,7 @@ int DoIt(void)
       json_insert_pair_into_object(jroot, "status", json_new_number("0"));
     
     drms_close_records(recordset, DRMS_FREE_RECORD);
-    json_tree_to_string(jroot, &json);
-    // final_json = json_format_string(json);
-    final_json = json;
+    json_tree_to_string(jroot, &final_json);
     printf("Content-type: application/json\n\n");
     printf("%s\n",final_json);
     free(final_json);
@@ -3663,7 +3679,7 @@ int DoIt(void)
     return(0);
     } /* rs_list */
 
-  manage_userhandle(0, userhandle);
-  return(0);
+    manage_userhandle(0, userhandle);
+    return(0);
   }
 
