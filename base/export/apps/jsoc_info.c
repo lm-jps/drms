@@ -98,9 +98,9 @@ show_info
 
 char *MISSING_KEY_NAME = "???";
 char *MISSING_KEY_VALUE = "???";
-char *INVALID_KEYWORD = "InvalidKeyword";
-char *INVALID_SEGMENT = "InvalidSegment";
-char *INVALID_LINK = "InvalidLink";
+char *MISSING_SEG_NAME = "???";
+char *MISSING_LINK_NAME = "???";
+char *INVALID = "invalid";
 
 #define USE_FITS_NAMES_FOR_COLUMNS (0)
 
@@ -573,6 +573,10 @@ int drms_ismissing_keyval(DRMS_Keyword_t *key)
   }
 
 
+/*******
+IF YOU ADD A NEW ARGUMENT: 1. Add a corresponding line of code in the from_web block of code in DoIt(), 2.
+ ensure that the cmdparams_get_* call appears AFTER the from_web block of code in DoIt()
+ *******/
 ModuleArgs_t module_args[] =
 { 
   {ARG_STRING, "op", "Not Specified", "<Operation>, values are: series_struct, rs_summary, or rs_list "},
@@ -1775,6 +1779,13 @@ int DoIt(void)
   json_t *recArray = NULL;
     char *jsonOut = NULL;
     char *final_json = NULL;
+    
+    int missingKeyNumber = 0;
+    int missingSegNumber = 0;
+    int missingLinkNumber = 0;
+    char missingKeyNameBuf[DRMS_MAXKEYNAMELEN] = { 0 };
+    char missingSegNameBuf[DRMS_MAXSEGNAMELEN] = { 0 };
+    char missingLinkNameBuf[DRMS_MAXLINKNAMELEN] = { 0 };
 
   if (nice_intro ()) return (0);
 
@@ -1787,7 +1798,6 @@ int DoIt(void)
   gettimeofday(&thistv, NULL);
   StartTime = thistv.tv_sec + thistv.tv_usec/1000000.0;
 
-    useFitsKeyNames = cmdparams_isflagset(&cmdparams, "f");
   web_query = strdup (cmdparams_get_str (&cmdparams, "QUERY_STRING", NULL));
   from_web = strcmp (web_query, "Not Specified") != 0;
 
@@ -1891,6 +1901,8 @@ int DoIt(void)
 
 	/* -o hack to allow owner added to series_struct 28 Dec 11 */
 	wantowner = cmdparams_get_int (&cmdparams, "o", NULL);
+	
+    useFitsKeyNames = cmdparams_isflagset(&cmdparams, "f");
 
   // allow possible user kill
   if (strcmp(userhandle, "Not Specified") != 0)
@@ -2450,6 +2462,8 @@ int DoIt(void)
     recArray = json_new_array(); 
     JSOC_INFO_ASSERT(recArray, "out of memory");
 
+    int missingKeyName = 0;
+
     /* loop over set of selected records */
     for (irec = 0; irec < nrecs; irec++) 
       {
@@ -2636,11 +2650,11 @@ int DoIt(void)
                 keyNameOut = NULL;
                 valOut = NULL;
                 badKey = 0;
+                missingKeyName = 0;
                 
                 if (isInvalidKey(keyTemplate))
                 {
                     badKey = 1;
-                    valOut = INVALID_KEYWORD;
                     
                     if (keyTemplate && keyTemplate->info && *((char *)(keyTemplate->info)) != '\0')
                     {
@@ -2648,7 +2662,7 @@ int DoIt(void)
                     }
                     else
                     {
-                        keyNameOut = INVALID_KEYWORD;
+                        missingKeyName = 1;
                     }
                 }
                 else
@@ -2666,7 +2680,7 @@ int DoIt(void)
                         else
                         {
                             fprintf(stderr, "Unable to map DRMS keyword name %s to FITS keyword name.\n", keyTemplate->info->name);
-                            keyNameOut = MISSING_KEY_NAME;
+                            missingKeyName = 1;
                         }
 
                         /* key is the template keyword, but we need the actual keyword from the current record; 
@@ -2675,29 +2689,19 @@ int DoIt(void)
                 
                         if (keyWithVal)
                         {
-                            /* before we try to convert the DRMS key value to a FITS key value, 
-                             * intercept all missing values and print "MISSING" instead */
-                            DRMS_Value_t combo;
+                            /* for the f != 1, case missing values are replaced with the string "MISSING"; do
+                             * not do that here, in the f == 1 case; we want to show the exact string that would
+                             * appear in the FITS file were these data to be exported */
+                            JSOC_INFO_ASSERT(fitsValue == NULL, "about to leak");
+                            fitsexport_getmappedextkeyvalue(keyWithVal, &fitsValue);
 
-                            combo.type = keyWithVal->info->type;
-                            combo.value.double_val = (keyWithVal->value).double_val;
-                            if (drms_ismissing(&combo) && strcmp(keyWithVal->info->name, "QUALITY") != 0)
+                            if (fitsValue)
                             {
-                                valOut = "MISSING";
+                                valOut = fitsValue;
                             }
                             else
                             {
-                                JSOC_INFO_ASSERT(fitsValue == NULL, "about to leak");
-                                fitsexport_getmappedextkeyvalue(keyWithVal, &fitsValue);
-
-                                if (fitsValue)
-                                {
-                                    valOut = fitsValue;
-                                }
-                                else
-                                {
-                                    valOut = MISSING_KEY_VALUE;
-                                }
+                                valOut = MISSING_KEY_VALUE;
                             }
                         }
                         else
@@ -2714,21 +2718,40 @@ int DoIt(void)
                     }
                 }
                 
-                JSOC_INFO_ASSERT((keyNameOut != NULL && valOut != NULL) || (keyNameOut == NULL && valOut == NULL), "invalid combination");
+                if (keyNameOut || missingKeyName)
+                {
+                    /* skip per-segment keywords (which are !keyNameOut && !missingKeyName) */
                 
-                if (keyNameOut)
-                {                    
                     /* make json */
                     keyObj = json_new_object();
                     JSOC_INFO_ASSERT(keyObj, "out of memory");
-                
-                    jsonVal = createJsonStringVal(keyNameOut);
+
+                    if (missingKeyName)
+                    {
+                        snprintf(missingKeyNameBuf, sizeof(missingKeyNameBuf), "%s%02d", MISSING_KEY_NAME, missingKeyNumber++);
+                        jsonVal = createJsonStringVal(missingKeyNameBuf);
+                    }
+                    else
+                    {
+                        jsonVal = createJsonStringVal(keyNameOut);
+                    }
                     json_insert_pair_into_object(keyObj, "name", jsonVal);
                     jsonVal = NULL;
 
-                    jsonVal = createJsonStringVal(valOut);
-                    json_insert_pair_into_object(keyObj, "value", jsonVal);
-                    jsonVal = NULL;
+                    if (valOut)
+                    {
+                        jsonVal = createJsonStringVal(valOut);
+                        json_insert_pair_into_object(keyObj, "value", jsonVal);
+                        jsonVal = NULL;
+                    }
+                    
+                    if (badKey)
+                    {
+                        jsonVal = json_new_true();
+                        JSOC_INFO_ASSERT(jsonVal, "out of memory");
+                        json_insert_pair_into_object(keyObj, INVALID, jsonVal);
+                        jsonVal = NULL;
+                    }
 
                     json_insert_child(keywordArray, keyObj);
                 }
@@ -2908,6 +2931,7 @@ int DoIt(void)
             int iaxis = 0;
             char keyName[DRMS_MAXKEYNAMELEN];
             DRMS_Keyword_t *anckey = NULL;
+            int missingSegName = 0;
             
             segmentArray = json_new_array(); /* each record has a segment array - an array of { "name" : "seg1", "value" : "rumble"}
                                               * objects */
@@ -2934,40 +2958,16 @@ int DoIt(void)
                     }
                     else
                     {
-                        jsonVal = createJsonStringVal(INVALID_SEGMENT);
+                        snprintf(missingSegNameBuf, sizeof(missingSegNameBuf), "%s%02d", MISSING_SEG_NAME, missingSegNumber++);
+                        jsonVal = createJsonStringVal(missingSegNameBuf);
                     }
                     
                     json_insert_pair_into_object(segObj, "name", jsonVal);
                     jsonVal = NULL;
 
-                    /* path */
-                    jsonVal = createJsonStringVal(INVALID_SEGMENT);
-                    json_insert_pair_into_object(segObj, "path", jsonVal);
-                    jsonVal = NULL;
-
-                    /* online */
-                    jsonVal = createJsonStringVal("NA");
-                    json_insert_pair_into_object(segObj, "online", jsonVal);
-                    jsonVal = NULL;
-                
-                    /* dims */
-                    jsonVal = createJsonStringVal("NA");
-                    json_insert_pair_into_object(segObj, "dims", jsonVal);
-                    jsonVal = NULL;
-                
-                    /* cparms */
-                    jsonVal = createJsonStringVal("NA");
-                    json_insert_pair_into_object(segObj, "cparms", jsonVal);
-                    jsonVal = NULL;
-                
-                    /* bzero */
-                    jsonVal = createJsonStringVal("NA");
-                    json_insert_pair_into_object(segObj, "bzero", jsonVal);
-                    jsonVal = NULL;
-                
-                    /* bscale */
-                    jsonVal = createJsonStringVal("NA");
-                    json_insert_pair_into_object(segObj, "bscale", jsonVal);
+                    jsonVal = json_new_true();
+                    JSOC_INFO_ASSERT(jsonVal, "out of memory");
+                    json_insert_pair_into_object(segObj, INVALID, jsonVal);
                     jsonVal = NULL;
                 }
                 else
@@ -3104,6 +3104,7 @@ int DoIt(void)
                             badKey = 0;
                             keyNameOut = NULL;
                             valOut = NULL;
+                            missingKeyName = 0;
                             
                             if (isInvalidKey(keyTemplate))
                             {
@@ -3133,7 +3134,7 @@ int DoIt(void)
                                     else
                                     {
                                         fprintf(stderr, "Unable to map DRMS keyword name %s to FITS keyword name.\n", keyTemplate->info->name);
-                                        keyNameOut = MISSING_KEY_NAME;
+                                        missingKeyName = 1;
                                     }
                     
                                     /* key is from the jsd template, which does not include the _xxx suffix */
@@ -3145,29 +3146,16 @@ int DoIt(void)
             
                                     if (keyWithVal)
                                     {
-                                        /* before we try to convert the DRMS key value to a FITS key value, 
-                                         * intercept all missing values and print "MISSING" instead */
-                                        DRMS_Value_t combo;
+                                        JSOC_INFO_ASSERT(fitsValue == NULL, "about to leak");
+                                        fitsexport_getmappedextkeyvalue(keyWithVal, &fitsValue);
 
-                                        combo.type = keyWithVal->info->type;
-                                        combo.value.double_val = (keyWithVal->value).double_val;
-                                        if (drms_ismissing(&combo) && strcmp(keyWithVal->info->name, "QUALITY") != 0)
+                                        if (fitsValue)
                                         {
-                                            valOut = "MISSING";
+                                            valOut = fitsValue;
                                         }
                                         else
                                         {
-                                            JSOC_INFO_ASSERT(fitsValue == NULL, "about to leak");
-                                            fitsexport_getmappedextkeyvalue(keyWithVal, &fitsValue);
-
-                                            if (fitsValue)
-                                            {
-                                                valOut = fitsValue;
-                                            }
-                                            else
-                                            {
-                                                valOut = MISSING_KEY_VALUE;
-                                            }
+                                            valOut = MISSING_KEY_VALUE;
                                         }
                                     }
                                     else
@@ -3179,24 +3167,45 @@ int DoIt(void)
                             }
 
                             JSOC_INFO_ASSERT((keyNameOut != NULL && valOut != NULL) || (keyNameOut == NULL && valOut == NULL), "invalid combination");
+                            
+                            if (keyNameOut || missingKeyName)
+                            {
+                                /* skip invalid and per-segment keywords (which are !keyNameOut && !missingKeyName) */
                 
-                            if (keyNameOut)
-                            {                    
                                 /* make json */
                                 keyObj = json_new_object();
                                 JSOC_INFO_ASSERT(keyObj, "out of memory");
-                                
-                                jsonVal = createJsonStringVal(keyNameOut);
+
+                                if (missingKeyName)
+                                {
+                                    snprintf(missingKeyNameBuf, sizeof(missingKeyNameBuf), "%s%02d", MISSING_KEY_NAME, missingKeyNumber++);
+                                    jsonVal = createJsonStringVal(missingKeyNameBuf);
+                                }
+                                else
+                                {
+                                    jsonVal = createJsonStringVal(keyNameOut);
+                                }
                                 json_insert_pair_into_object(keyObj, "name", jsonVal);
                                 jsonVal = NULL;
 
-                                jsonVal = createJsonStringVal(valOut);
-                                json_insert_pair_into_object(keyObj, "value", jsonVal);
-                                jsonVal = NULL;
-            
+                                if (valOut)
+                                {
+                                    jsonVal = createJsonStringVal(valOut);
+                                    json_insert_pair_into_object(keyObj, "value", jsonVal);
+                                    jsonVal = NULL;
+                                }
+                    
+                                if (badKey)
+                                {
+                                    jsonVal = json_new_true();
+                                    JSOC_INFO_ASSERT(jsonVal, "out of memory");
+                                    json_insert_pair_into_object(keyObj, INVALID, jsonVal);
+                                    jsonVal = NULL;
+                                }
+
                                 json_insert_child(keywordArray, keyObj);
                             }
-                            
+
                             if (fitsValue)
                             {                
                                 free(fitsValue);
@@ -3206,10 +3215,15 @@ int DoIt(void)
                     }
                     else
                     {
+                        /* could not find segment struct (followLinks is true) */
                         DRMS_Segment_t *testSeg = NULL;
                     
-                        /* could be a invalid segment name, or could be missing target record */                
+                        /* could be a invalid segment name, or could be missing target record (we followed any link) */                
                         testSeg = hcon_lookup_lower(&rec->segments, segTemplate->info->name);
+                        
+                        jsonVal = createJsonStringVal(segTemplate->info->name);
+                        json_insert_pair_into_object(segObj, "name", jsonVal);
+                        jsonVal = NULL;
                 
                         if (testSeg && testSeg->info->islink)
                         {
@@ -3219,34 +3233,12 @@ int DoIt(void)
                         }
                         else
                         {
-                            jsonVal = createJsonStringVal("InvalidSegName");
-                            json_insert_pair_into_object(segObj, "path", jsonVal);
-                            jsonVal = NULL;
+                            /* either a bad seg name, or not a linked seg (and we could not obtain seg struct) */
                         }
-                    
-                        /* online */
-                        jsonVal = createJsonStringVal("NA");
-                        json_insert_pair_into_object(segObj, "online", jsonVal);
-                        jsonVal = NULL;
-                    
-                        /* dims */
-                        jsonVal = createJsonStringVal("NA");
-                        json_insert_pair_into_object(segObj, "dims", jsonVal);
-                        jsonVal = NULL;
-                    
-                        /* cparms */
-                        jsonVal = createJsonStringVal("NA");
-                        json_insert_pair_into_object(segObj, "cparms", jsonVal);
-                        jsonVal = NULL;
-                    
-                        /* bzero */
-                        jsonVal = createJsonStringVal("NA");
-                        json_insert_pair_into_object(segObj, "bzero", jsonVal);
-                        jsonVal = NULL;
-                    
-                        /* bscale */
-                        jsonVal = createJsonStringVal("NA");
-                        json_insert_pair_into_object(segObj, "bscale", jsonVal);
+                        
+                        jsonVal = json_new_true();
+                        JSOC_INFO_ASSERT(jsonVal, "out of memory");
+                        json_insert_pair_into_object(segObj, INVALID, jsonVal);
                         jsonVal = NULL;
                     }
                 }
@@ -3376,6 +3368,7 @@ int DoIt(void)
             json_t *linkObj = NULL;
             DRMS_Record_t *linkedRec = NULL;
             char linkSpec[DRMS_MAXQUERYLEN];
+            int missingLinkName = 0;
             
             linkArray = json_new_array(); /* each record has a segment array - an array of { "name" : "seg1", "value" : "rumble"}
                                            * objects
@@ -3387,6 +3380,8 @@ int DoIt(void)
             {
                 linkTemplate = *((DRMS_Link_t **)(lnLink->data));
                 badLink = 0;
+                valOut = NULL;
+                *linkSpec = '\0';
                 
                 linkObj = json_new_object();
                 JSOC_INFO_ASSERT(linkObj, "out of memory");
@@ -3401,22 +3396,25 @@ int DoIt(void)
                     }
                     else
                     {
-                        valOut = INVALID_LINK;
+                        missingLinkName = 1;
                     }                  
                 }
                 else if (!(linkTemplate->info) || *(linkTemplate->info->name) == '\0')
                 {
-                    valOut = INVALID_LINK;
+                    missingLinkName = 1;
+                    badLink = 1;
                 }
                 else
                 {
+                    valOut = linkTemplate->info->name;
+
                     /* unlike the case for keywords and segments, DRMS does not have a lookup function for 
                      * links */
                     link = hcon_lookup_lower(&rec->links, linkTemplate->info->name);
-                    
+
                     if (!link || !link->info)
                     {
-                        valOut = INVALID_LINK;
+                        badLink = 1;
                     }
                     else
                     {
@@ -3424,7 +3422,7 @@ int DoIt(void)
                      
                         if (!linkedRec || !linkedRec->seriesinfo || *(linkedRec->seriesinfo->seriesname) == '\0')
                         {
-                            valOut = INVALID_LINK;
+                            badLink = 1;
                         }
                         else
                         {
@@ -3438,15 +3436,37 @@ int DoIt(void)
                             }
                             
                             drms_close_record(linkedRec, DRMS_FREE_RECORD);
-                            
-                            valOut = linkSpec;
                         }
                     }                 
                 }
                 
-                jsonVal = createJsonStringVal(valOut);
+                if (missingLinkName)
+                {
+                    snprintf(missingLinkNameBuf, sizeof(missingLinkNameBuf), "%s%02d", MISSING_LINK_NAME, missingLinkNumber++);
+                    jsonVal = createJsonStringVal(missingLinkNameBuf);
+                }
+                else
+                {
+                    jsonVal = createJsonStringVal(valOut);                    
+                }
+                jsonVal = createJsonStringVal(linkSpec);
                 json_insert_pair_into_object(linkObj, "name", jsonVal);
                 jsonVal = NULL;
+                
+                if (*linkSpec != '\0')
+                {
+                    jsonVal = createJsonStringVal(linkSpec);
+                    json_insert_pair_into_object(linkObj, "linkedrec", jsonVal);
+                    jsonVal = NULL;
+                }
+                
+                if (badLink)
+                {
+                    jsonVal = json_new_true();
+                    JSOC_INFO_ASSERT(jsonVal, "out of memory");
+                    json_insert_pair_into_object(linkObj, INVALID, jsonVal);
+                    jsonVal = NULL;
+                }
 
                 json_insert_child(linkArray, linkObj);
             } /* link loop */
