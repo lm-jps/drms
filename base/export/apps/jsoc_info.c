@@ -252,7 +252,7 @@ static int populateKeyList(const char *listOfKeys, LinkedList_t *reqSegs, DRMS_R
 
             while ((keyTemplate = drms_record_nextkey(*jsdTemplate, &last, 0)) != NULL)
             {
-                JSOC_INFO_ASSERT(!(keyTemplate->info) || *(keyTemplate->info->name) == '\0', "Invalid keyword information.");
+                JSOC_INFO_ASSERT(keyTemplate->info && *(keyTemplate->info->name) != '\0', "Invalid keyword information.");
 
                 if (!drms_keyword_getimplicit(keyTemplate))
                 {
@@ -409,7 +409,7 @@ static int populateSegList(const char *listOfSegs, int followLinks, DRMS_Record_
 
             while ((segTemplate = drms_record_nextseg(template, &last, 0)) != NULL)
             {
-                JSOC_INFO_ASSERT(!segTemplate || !(segTemplate->info) || *(segTemplate->info->name) == '\0', "Invalid segment information.");
+                JSOC_INFO_ASSERT(segTemplate && segTemplate->info && *(segTemplate->info->name) != '\0', "Invalid segment information.");
             
                 if (followLinks && segTemplate->info->islink)
                 {
@@ -2348,11 +2348,7 @@ int DoIt(void)
                     JSOC_INFO_ASSERT(last == NULL, "about to leak");
                     while ((linkTemplate = drms_record_nextlink(template, &last)) != NULL)
                     {
-                        if (!(linkTemplate->info) || *(linkTemplate->info->name) == '\0')
-                        {
-                            JSONDIE("Invalid link information.");
-                        }
-                        
+                        JSOC_INFO_ASSERT(linkTemplate->info && *(linkTemplate->info->name) != '\0', "Invalid link information.");                        
                         list_llinserttail(reqLinks, (void *)&linkTemplate);
                         nlinks++;
                     }
