@@ -210,7 +210,6 @@ static int populateKeyList(const char *listOfKeys, LinkedList_t *reqSegs, DRMS_R
     HIterator_t *last = NULL;
     DRMS_Keyword_t *keyTemplate = NULL;
     int status = DRMS_SUCCESS;
-    int allKeysSpecified = 0;
     int sumInfoSizeKey = 0;
     int sumInfoOnlineKey = 0;
     int sumInfoRetainKey = 0;
@@ -238,7 +237,6 @@ static int populateKeyList(const char *listOfKeys, LinkedList_t *reqSegs, DRMS_R
         else if ((strcmp(currentKey, "**ALL**") == 0))
         {
             /* the fake keywords can be combined with **ALL** */
-            allKeysSpecified = 1;
                              
             /* look-up all keywords; use proximal keyword names; use unexpanded per-segment keyword names, 
              * i.e., use the jsdTemplate, not the regular template */
@@ -262,13 +260,21 @@ static int populateKeyList(const char *listOfKeys, LinkedList_t *reqSegs, DRMS_R
                          * segment
                          */
                         if (list_llgetnitems(reqSegs) > 0)
-                        {                                    
-                            list_llinserttail(reqKeys, (void *)&keyTemplate);
+                        {
+                            if (!list_llfind(reqKeys, (void *)&keyTemplate))
+                            {
+                                /* **ALL** could have been provided, in which case we want to avoid duplicates */
+                                list_llinserttail(reqKeys, (void *)&keyTemplate);
+                            }
                         }
                     }
                     else
                     {
-                        list_llinserttail(reqKeys, (void *)&keyTemplate);
+                        if (!list_llfind(reqKeys, (void *)&keyTemplate))
+                        {
+                            /* this keyword could have been provided (below), in which case we want to avoid duplicates */
+                            list_llinserttail(reqKeys, (void *)&keyTemplate);
+                        }
                     }
                 }
             }
@@ -348,7 +354,7 @@ static int populateKeyList(const char *listOfKeys, LinkedList_t *reqSegs, DRMS_R
 
             /* ugh - if **ALL** was in the key list, then we do not want to add these - they are
              * duplicates */
-            if (!fakeKey && !allKeysSpecified)
+            if (!fakeKey)
             {
                 if (!*jsdTemplate)
                 {
@@ -359,7 +365,7 @@ static int populateKeyList(const char *listOfKeys, LinkedList_t *reqSegs, DRMS_R
             
                 /* look-up keyword; if not found, we need to print some kind of invalid-key string */
                 keyTemplate = drms_keyword_lookup(*jsdTemplate, currentKey, 0);
-                
+
                 if (!keyTemplate || !(keyTemplate->info) || *(keyTemplate->info->name) == '\0')
                 {
                     keyTemplate = calloc(1, sizeof(DRMS_Keyword_t));
@@ -373,7 +379,11 @@ static int populateKeyList(const char *listOfKeys, LinkedList_t *reqSegs, DRMS_R
                     (char *)(keyTemplate->info) = strdup(currentKey);
                 }
 
-                list_llinserttail(reqKeys, (void *)&keyTemplate);
+                if (!list_llfind(reqKeys, (void *)&keyTemplate))
+                {
+                    /* **ALL** could have been provided, in which case we want to avoid duplicates */
+                    list_llinserttail(reqKeys, (void *)&keyTemplate);
+                }
             }
         }
     }
@@ -394,7 +404,7 @@ static int populateSegList(const char *listOfSegs, int followLinks, DRMS_Record_
     JSOC_INFO_ASSERT(listOfSegs && *listOfSegs != '\0' && template && recordSet && recsStaged && requisition && reqSegs, "populateSegList(): invalid arguments");
     
     listOfSegsWorking = strdup(listOfSegs);
-    JSOC_INFO_ASSERT(listOfSegsWorking, "populateKeyList(): out of memory");
+    JSOC_INFO_ASSERT(listOfSegsWorking, "populateSegList(): out of memory");
     
     for (currentSeg = strtok_r(listOfSegsWorking, ",", &saver); currentSeg; currentSeg = strtok_r(NULL, ",", &saver))
     {
@@ -404,7 +414,6 @@ static int populateSegList(const char *listOfSegs, int followLinks, DRMS_Record_
         }
         else if ((strcmp(currentSeg, "**ALL**") == 0))
         {
-            JSOC_INFO_ASSERT(list_llgetnitems(reqSegs) == 0, "Invalid segment list (cannot specify **ALL** with other segments).");            
             JSOC_INFO_ASSERT(last == NULL, "about to leak");
 
             while ((segTemplate = drms_record_nextseg(template, &last, 0)) != NULL)
@@ -421,7 +430,11 @@ static int populateSegList(const char *listOfSegs, int followLinks, DRMS_Record_
                     JSOC_INFO_ASSERT(lnkstat != DRMS_SUCCESS, "Unable to follow link.");
                 }
                 
-                list_llinserttail(reqSegs, (void *)&segTemplate);
+                if (!list_llfind(reqSegs, (void *)&segTemplate))
+                {
+                    /* this seg could have been provided (below); avoid duplicates */
+                    list_llinserttail(reqSegs, (void *)&segTemplate);
+                }
             }
             
             if (last)
@@ -458,11 +471,15 @@ static int populateSegList(const char *listOfSegs, int followLinks, DRMS_Record_
                     }
                 }
             }
-
-            list_llinserttail(reqSegs, (void *)&segTemplate);
+            
+            if (!list_llfind(reqSegs, (void *)&segTemplate))
+            {
+                /* **ALL** could have been provided; avoid duplicates */
+                list_llinserttail(reqSegs, (void *)&segTemplate);
+            }            
         }
     }
-    
+
     if (list_llgetnitems(reqSegs) > 0)
     {
         if (!*recsStaged)
@@ -2348,8 +2365,11 @@ int DoIt(void)
                     JSOC_INFO_ASSERT(last == NULL, "about to leak");
                     while ((linkTemplate = drms_record_nextlink(template, &last)) != NULL)
                     {
-                        JSOC_INFO_ASSERT(linkTemplate->info && *(linkTemplate->info->name) != '\0', "Invalid link information.");                        
-                        list_llinserttail(reqLinks, (void *)&linkTemplate);
+                        JSOC_INFO_ASSERT(linkTemplate->info && *(linkTemplate->info->name) != '\0', "Invalid link information.");
+                        if (!list_llfind(reqLinks, (void *)&linkTemplate))
+                        {
+                            list_llinserttail(reqLinks, (void *)&linkTemplate);
+                        }
                         nlinks++;
                     }
 
@@ -2369,7 +2389,10 @@ int DoIt(void)
                         (char *)(linkTemplate->info) = strdup(thislink);
                     }
                 
-                    list_llinserttail(reqLinks, (void *)&linkTemplate);
+                    if (!list_llfind(reqLinks, (void *)&linkTemplate))
+                    {
+                        list_llinserttail(reqLinks, (void *)&linkTemplate);
+                    }
                     nlinks++;
                 }
             }
