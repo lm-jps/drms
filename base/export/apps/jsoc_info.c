@@ -408,7 +408,7 @@ static int populateSegList(const char *listOfSegs, int followLinks, DRMS_Record_
     
     for (currentSeg = strtok_r(listOfSegsWorking, ",", &saver); currentSeg; currentSeg = strtok_r(NULL, ",", &saver))
     {
-        if (strcmp(currentSeg, "**NONE**")==0)
+        if (strcmp(currentSeg, "**NONE**") == 0)
         {
             JSOC_INFO_ASSERT(list_llgetnitems(reqSegs) == 0, "Invalid segment list (cannot specify **NONE** with other segments).");
         }
@@ -496,6 +496,65 @@ static int populateSegList(const char *listOfSegs, int followLinks, DRMS_Record_
     }
     
     return list_llgetnitems(reqSegs);
+}
+
+static int populateLinkList(const char *listOfLinks, DRMS_Record_t *template, LinkedList_t *reqLinks)
+{
+    char *listOfLinksWorking = NULL;
+    char *currentLink = NULL;
+    char *saver = NULL;
+    HIterator_t *last = NULL;
+    DRMS_Link_t *linkTemplate = NULL;
+
+    JSOC_INFO_ASSERT(listOfLinks && *listOfLinks != '\0' && template && reqLinks, "populateLinkList(): invalid arguments");
+    
+    listOfLinksWorking = strdup(listOfLinks);
+    JSOC_INFO_ASSERT(listOfLinksWorking, "populateLinkList(): out of memory");
+
+    for (currentLink = strtok_r(listOfLinksWorking, ",", &saver); currentLink != NULL; currentLink = strtok_r(NULL, ",", &saver))
+    {
+        if (strcmp(currentLink, "**NONE**") == 0)
+        {
+            JSOC_INFO_ASSERT(list_llgetnitems(reqLinks) == 0, "Invalid link list (cannot specify **NONE** with other links).");
+        }
+        else if (strcmp(currentLink, "**ALL**")==0)
+        {
+            DRMS_Link_t *link = NULL;
+            
+            JSOC_INFO_ASSERT(last == NULL, "about to leak");
+            while ((linkTemplate = drms_record_nextlink(template, &last)) != NULL)
+            {
+                JSOC_INFO_ASSERT(linkTemplate->info && *(linkTemplate->info->name) != '\0', "Invalid link information.");
+                if (!list_llfind(reqLinks, (void *)&linkTemplate))
+                {
+                    list_llinserttail(reqLinks, (void *)&linkTemplate);
+                }
+            }
+
+            if (last)
+            {
+                hiter_destroy(&last);
+            }
+        }
+        else
+        {
+            linkTemplate = hcon_lookup_lower(&template->links, currentLink);
+                    
+            if (!linkTemplate || !(linkTemplate->info) || *(linkTemplate->info->name) == '\0')
+            {
+                linkTemplate = calloc(1, sizeof(DRMS_Link_t));
+                (void *)(linkTemplate->record) = (void *)(&invalidObj);
+                (char *)(linkTemplate->info) = strdup(currentLink);
+            }
+        
+            if (!list_llfind(reqLinks, (void *)&linkTemplate))
+            {
+                list_llinserttail(reqLinks, (void *)&linkTemplate);
+            }
+        }
+    }
+    
+    return list_llgetnitems(reqLinks);
 }
 
 static char x2c (char *what)
@@ -2344,58 +2403,7 @@ int DoIt(void)
         
         if (useFitsKeyNames)
         {
-            for (thislink = strtok(linklist, ","); thislink != NULL; thislink = strtok(NULL,","))
-            {
-                if (strcmp(thislink, "**NONE**")==0)
-                {
-                    if (nlinks > 0)
-                    {
-                        JSONDIE("Invalid link list.");
-                    }
-                }
-                else if (strcmp(thislink, "**ALL**")==0)
-                {
-                    DRMS_Link_t *link = NULL;
-
-                    if (nlinks > 0)
-                    {
-                        JSONDIE("Invalid link list.");
-                    }
-                    
-                    JSOC_INFO_ASSERT(last == NULL, "about to leak");
-                    while ((linkTemplate = drms_record_nextlink(template, &last)) != NULL)
-                    {
-                        JSOC_INFO_ASSERT(linkTemplate->info && *(linkTemplate->info->name) != '\0', "Invalid link information.");
-                        if (!list_llfind(reqLinks, (void *)&linkTemplate))
-                        {
-                            list_llinserttail(reqLinks, (void *)&linkTemplate);
-                        }
-                        nlinks++;
-                    }
-
-                    if (last)
-                    {
-                        hiter_destroy(&last);
-                    }
-                }
-                else
-                {
-                    linkTemplate = hcon_lookup_lower(&template->links, thislink);
-                            
-                    if (!linkTemplate || !(linkTemplate->info) || *(linkTemplate->info->name) == '\0')
-                    {
-                        linkTemplate = calloc(1, sizeof(DRMS_Link_t));
-                        (void *)(linkTemplate->record) = (void *)(&invalidObj);
-                        (char *)(linkTemplate->info) = strdup(thislink);
-                    }
-                
-                    if (!list_llfind(reqLinks, (void *)&linkTemplate))
-                    {
-                        list_llinserttail(reqLinks, (void *)&linkTemplate);
-                    }
-                    nlinks++;
-                }
-            }
+            nlinks = populateLinkList(linklist, template, reqLinks);
         }
         else
         {
@@ -3395,6 +3403,7 @@ int DoIt(void)
             JSOC_INFO_ASSERT(linkArray, "out of memory");
             json_insert_pair_into_object(recobj, "links", linkArray);
             
+            list_llreset(reqLinks);
             while ((lnLink = list_llnext(reqLinks)) != NULL)
             {
                 linkTemplate = *((DRMS_Link_t **)(lnLink->data));
@@ -3468,7 +3477,6 @@ int DoIt(void)
                 {
                     jsonVal = createJsonStringVal(valOut);                    
                 }
-                jsonVal = createJsonStringVal(linkSpec);
                 json_insert_pair_into_object(linkObj, "name", jsonVal);
                 jsonVal = NULL;
                 
