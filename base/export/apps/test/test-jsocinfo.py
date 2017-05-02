@@ -9,6 +9,10 @@ from jsondiff import diff
 import difflib
 
 ALL_OPS = [ 'series_struct', 'rs_summary', 'rs_list' ]
+PSUEDO_KEYS = [ '*recnum*', '*sunum*', '*size*', '*online*', '*retain*', '*archive*', '*recdir*', '*dirmtime*', '*logdir*', '**ALL**' ]
+PSUEDO_SEGS = [ '**ALL**' ]
+PSUEDO_LINKS = [ '**ALL**' ]
+BAD_DRMSNAMES = [ 'doesnotexist', 'trumpsucks', 'trumpblows', 'ee_wet' ]
 
 class ObjectView(object):
     def __init__(self, dictIn):
@@ -52,22 +56,40 @@ if __name__ == "__main__":
         responseJsonStr = response.read().decode('UTF-8')
         responseJsonDict = json.loads(responseJsonStr)
         responseJson = ObjectView(responseJsonDict)
+        
+    psuedoKeysDict = { 'keywords' : [ { 'name' : key } for key in PSUEDO_KEYS ] }
+    psuedoKeys = ObjectView(psuedoKeysDict)
+    badKeysDict = { 'keywords' : [ { 'name' : key } for key in BAD_DRMSNAMES ] }
+    badKeys = ObjectView(badKeysDict)
+    allKeys = responseJson.keywords + psuedoKeys.keywords + badKeys.keywords
+
+    psuedoSegsDict = { 'segments' : [ { 'name' : seg } for seg in PSUEDO_SEGS ] }
+    psuedoSegs = ObjectView(psuedoSegsDict)
+    badSegsDict = { 'segments' : [ { 'name' : seg } for seg in BAD_DRMSNAMES ] }
+    badSegs = ObjectView(badSegsDict)
+    allSegs = responseJson.segments + psuedoSegs.segments + badSegs.segments
+
+    psuedoLinksDict = { 'links' : [ { 'name' : link } for link in PSUEDO_LINKS ] }
+    psuedoLinks = ObjectView(psuedoLinksDict)
+    badLinksDict = { 'links' : [ { 'name' : link } for link in BAD_DRMSNAMES ] }
+    badLinks = ObjectView(badLinksDict)
+    allLinks = responseJson.links + psuedoLinks.links + badLinks.links
     
     for iter in range(100):
         op = random.choice(ALL_OPS)
     
-        if len(responseJson.keywords) > 0:
-            keywords = random.sample(responseJson.keywords, random.randrange(len(responseJson.keywords) + 1))
+        if len(allKeys) > 0:
+            keywords = random.sample(allKeys, random.randrange(len(allKeys) + 1))
         else:
             keywords = None
             
-        if len(responseJson.segments) > 0:
-            segments = random.sample(responseJson.segments, random.randrange(len(responseJson.segments) + 1))
+        if len(allSegs) > 0:
+            segments = random.sample(allSegs, random.randrange(len(allSegs) + 1))
         else:
             segments = None
             
-        if len(responseJson.links) > 0:            
-            links = random.sample(responseJson.links, random.randrange(len(responseJson.links) + 1))
+        if len(allLinks) > 0:            
+            links = random.sample(allLinks, random.randrange(len(allLinks) + 1))
         else:
             links = None
         
@@ -76,9 +98,10 @@ if __name__ == "__main__":
         showSpec = random.choice([ '0', '1' ])
         printJson = random.choice([ '0', '1' ])
         verbose = random.choice([ '0', '1' ])
+        fitsNames = random.choice([ '0', '1' ])
     
         # generate test url        
-        dataList = [ ('op', op), ('ds', dataSet), ('l', followLinks), ('n', recordLimit), ('R', showSpec), ('z', printJson), ('o', verbose) ]
+        dataList = [ ('op', op), ('ds', dataSet), ('l', followLinks), ('n', recordLimit), ('R', showSpec), ('z', printJson), ('o', verbose), ('f', fitsNames) ]
         
         if keywords:
             dataList.append(('key', ','.join(key.name for key in keywords)))
@@ -91,7 +114,6 @@ if __name__ == "__main__":
         
         url = newUrl
         request = urllib.request.Request(url + '?' + data)
-        print(request.get_full_url())
         with urllib.request.urlopen(request) as response:
             responseJsonStrNew = response.read().decode('UTF-8')
         responseJsonFormattedStrNew = json.dumps(json.loads(responseJsonStrNew), indent=4)
@@ -101,7 +123,7 @@ if __name__ == "__main__":
         with urllib.request.urlopen(request) as response:
             responseJsonStrOld = response.read().decode('UTF-8')
         responseJsonFormattedStrOld = json.dumps(json.loads(responseJsonStrOld), indent=4)
-        
+                
         unifiedDiff = difflib.unified_diff(responseJsonFormattedStrOld.splitlines(keepends=True), responseJsonFormattedStrNew.splitlines(keepends=True), fromfile='ORIGINAL', tofile='NEW', n=0)
         diffOut = ''.join(unifiedDiff)
         if len(diffOut) > 0:        
