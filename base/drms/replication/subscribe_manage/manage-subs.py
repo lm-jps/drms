@@ -200,7 +200,8 @@ CAPTURE_SUNUMS_SQL = """\
 -- NetDRMS installation process.
 -- ---------------------------------------------------------------------------------------
 DROP TABLE IF EXISTS drms.ingested_sunums;
-CREATE TABLE drms.ingested_sunums (sunum bigint NOT NULL);
+CREATE TABLE drms.ingested_sunums (sunum bigint PRIMARY KEY, starttime timestamp with time zone NOT NULL);
+CREATE INDEX ingested_sunums_starttime ON drms.ingested_sunums(starttime);
 
 -- ---------------------------------------------------------------------------------------
 -- FUNCTION drms.capturesunum
@@ -216,7 +217,10 @@ $capturesunumtrig$
 BEGIN
     IF EXISTS (SELECT n.nspname, c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'drms' AND c.relname = 'ingested_sunums') THEN
       IF (TG_OP='INSERT' AND new.sunum > 0) THEN
-        INSERT INTO drms.ingested_sunums (sunum) VALUES (new.sunum);
+        IF EXISTS (SELECT 1 FROM drms.ingested_sunums WHERE sunum = new.sunum) THEN
+          RETURN NULL;
+        END IF;
+        INSERT INTO drms.ingested_sunums (sunum, starttime) VALUES (new.sunum, clock_timestamp());
       END IF;
     END IF;  
   
