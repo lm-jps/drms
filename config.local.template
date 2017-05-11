@@ -32,14 +32,30 @@ DRMS_DBPORT	5432
 #   use and need not be unique across sites.
 DRMS_SITE_CODE	0x4000
 
+# The directory that contains log files for DRMS programs.
+DRMS_LOG_DIR                  /usr/local/logs/drms
+
+# The directory that contains file locks for DRMS programs.
+DRMS_LOCK_DIR                 /usr/local/locks
+
 # The database user name of the postgres administrative account; this is normally "postgres"
 #   if you have followed the PostgreSQL installation suggestions.
 POSTGRES_ADMIN	postgres
 
 # The following entries are specific to the SUMS configuration
 
-# The user name of the SUMS administrator database account.
+# The linux user account used to run the SUMS server and sum_rm. It is also the default name of the DB user that
+# these SUMS applications use when logging-in to the SUMS database.
 SUMS_MANAGER	production
+
+# The DRMS database user account that has row-deletion permissions for ALL DRMS data-series DB record tables (the record
+# table for a data-series has the same name, albeit lower-case-folded, as the name of the data-series, i.e., 
+# the record table for the data-series hmi.M_45s is hmi.m_45s). sum_rm connects to the DRMS database as this user
+# when it deletes DRMS records (for the archive == -1 feature).
+DRMS_ADMIN_DB_USER       sumsadmin
+
+# The SUMS DB user who has read-only access to the SUMS database.
+SUMS_READONLY_DB_USER    readonlyuser
 
 # The linux group name for users permitted to add data to SUMS Storage Units; not
 #   currently used in code, but should match the group ownership of
