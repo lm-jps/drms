@@ -9115,21 +9115,22 @@ DRMS_Record_t *drms_create_jsdtemplate_record(DRMS_Env_t *env,
 
 void drms_destroy_jsdtemplate_record(DRMS_Record_t **rec)
 {
-   /* Don't free the record structure IF this record is from a dsds-ingested series. In that
+    /* Don't free the record structure IF this record is from a dsds-ingested series. In that
     * case, the record IS the template structure cached into the series cache, and 
     * will be freed upon session close. */
-   if (rec)
-   {
-      const char *dsdsNsPrefix = DSDS_GetNsPrefix();
-      const char *seriesname = (*rec)->seriesinfo->seriesname;
+    if (rec && *rec)
+    {
+        const char *dsdsNsPrefix = DSDS_GetNsPrefix();
+        const char *seriesname = (*rec)->seriesinfo->seriesname;
 
-      if (strstr(seriesname, dsdsNsPrefix) != seriesname)
-      {
-         drms_free_template_record_struct(*rec);
-      }
+        if (strstr(seriesname, dsdsNsPrefix) != seriesname)
+        {
+            drms_free_template_record_struct(*rec);
+        }
 
-      *rec = NULL;
-   }
+        free(*rec);
+        *rec = NULL;
+    }
 }
 
 /* Free the body of a template record data structure. */
