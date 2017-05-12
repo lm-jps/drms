@@ -134,6 +134,8 @@ int fitsrw_writeintfile(int verbose,
 void cfitsio_free_these(CFITSIO_IMAGE_INFO** image_info,
 			void** image, 
 			CFITSIO_KEYWORD** keylist);
+			
+int cfitsio_create_key(const char *name, const char type, const char *comment, const void *value, const char *format, CFITSIO_KEYWORD **keyOut);
 
 int cfitsio_append_key(CFITSIO_KEYWORD** keylist, 
 			char *name, 

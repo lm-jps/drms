@@ -85,6 +85,9 @@ int fitsexport_getmappedextkeyname(DRMS_Keyword_t *key,
                                    Exputl_KeyMap_t *map,
                                    char *nameOut,
                                    int size);
+                                   
+int fitsexport_getmappedextkeyvalue(DRMS_Keyword_t *key, char **fitsKwString);
+                                   
 int fitsexport_fitskeycheck(const char *fitsName);
 
 /* Maps to internal keywords in this order.  If an item does not result in a valid

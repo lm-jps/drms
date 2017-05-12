@@ -1900,3 +1900,102 @@ int fitsexport_getextname(const char *strin, char **extname, char **cast)
 
    return rv;
 }
+
+/* 
+ * key - DRMS Keyword whose value is to be mapped (input)
+ * fitsKwString - FITS keyword value in string format, with all whitespace removed (retuned by reference)
+ */
+int fitsexport_getmappedextkeyvalue(DRMS_Keyword_t *key, char **fitsKwString)
+{
+    DRMS_Keyword_t *keyWithVal = NULL;
+    char fitsioCard[FLEN_CARD];
+    CFITSIO_KEYWORD *cfitsioKey = NULL;
+    char fitsKwType = '\0';
+    char *fitsKwFormat = NULL; /* binary FITS keyword value */
+    void *fitsKwVal = NULL;
+    char dummy[] = "EXTVAL25";
+
+    int err = 0;
+    
+    /* if key is a linked-keyword, then resolve link */
+    keyWithVal = drms_keyword_lookup(key->record, key->info->name, 1);
+    
+    if ((DRMSKeyValToFITSKeyVal(keyWithVal, &fitsKwType, &fitsKwFormat, &fitsKwVal)) == 0)
+    {
+        if (cfitsio_create_key(dummy, fitsKwType, NULL, fitsKwVal, fitsKwFormat, &cfitsioKey) == 0)
+        {
+            if (cfitsio_key_to_card(cfitsioKey, fitsioCard) == 0)
+            {                
+                /* strip whitespace and '='; the value starts at byte 11 */
+                if (*fitsioCard != '\0')
+                {
+                    char stripped[128];
+                    char *end = NULL;
+
+                    snprintf(stripped, sizeof(stripped), "%s", &(fitsioCard[10]));
+                    end = stripped + strlen(stripped) - 1;
+                    while (end > stripped && isspace((unsigned char)*end)) 
+                    {
+                        end--;
+                    }
+
+                    end++;
+                    *end = '\0';
+                    
+                    *fitsKwString = strdup(stripped);
+                }
+                else
+                {
+                    /* error */
+                    err = 1;
+                    fprintf(stderr, "Invalid FITS keyword card.\n");
+                }
+            }
+            else
+            {
+                /* error */
+                err = 1;
+                fprintf(stderr, "Unable to print FITS keyword.\n");
+            }
+            
+            /* free cfitsioKey */
+            if (cfitsioKey)
+            {
+                if (cfitsioKey->key_type == kFITSRW_Type_String && cfitsioKey->key_value.vs)
+                {
+                    free(cfitsioKey->key_value.vs);
+                    cfitsioKey->key_value.vs = NULL;
+                }
+
+                free(cfitsioKey);
+                cfitsioKey = NULL;
+            }            
+        }
+        else
+        {
+            /* error */
+            err = 1;
+            fprintf(stderr, "Unable to create FITS keyword.\n");
+        }
+        
+        if (fitsKwFormat)
+        {
+            free(fitsKwFormat);
+            fitsKwFormat = NULL;
+        }
+        
+        if (fitsKwVal)
+        {
+            free(fitsKwVal);
+            fitsKwVal = NULL;
+        }
+    }
+    else
+    {
+        /* error */
+        err = 1;
+        fprintf(stderr, "Unable to convert DRMS keyword %s to FITS keyword.\n", key->info->name);
+    }
+    
+    return err;
+}

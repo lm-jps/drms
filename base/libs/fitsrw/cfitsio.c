@@ -257,6 +257,75 @@ int cfitsio_free_keys(CFITSIO_KEYWORD** keylist)
    return CFITSIO_SUCCESS;
 }
 
+int cfitsio_create_key(const char *name, const char type, const char *comment, const void *value, const char *format, CFITSIO_KEYWORD **keyOut)
+{
+    CFITSIO_KEYWORD *rv = NULL;
+    int err = CFITSIO_SUCCESS;
+    
+    if (name && value && keyOut)
+    {    
+        rv = (CFITSIO_KEYWORD *)calloc(1, sizeof(CFITSIO_KEYWORD));
+    
+        if (!rv)
+        {
+            fprintf(stderr, "cfitsio_create_key(): out of memory\n");
+            err = CFITSIO_ERROR_OUT_OF_MEMORY;
+        }
+        else
+        {
+            snprintf(rv->key_name, FLEN_KEYWORD, "%s", name);
+            rv->key_type = type;
+
+            switch (type)
+            {
+                case( 'X'):
+                case (kFITSRW_Type_String):
+                    /* 68 is the max chars in FITS string keyword, but the HISTORY and COMMENT keywords
+                     * can contain values with more than this number of characters, in which case
+                     * the fits API key-writing function will split the string across multiple 
+                     * instances of these special keywords. */
+                    rv->key_value.vs = strdup((char *)value);             
+                    break;
+                case (kFITSRW_Type_Logical):
+                    rv->key_value.vl = *((int *)value);
+                    break;
+                case (kFITSRW_Type_Integer):
+                    rv->key_value.vi = *((long long *)value);
+                    break;
+                case (kFITSRW_Type_Float):
+                    rv->key_value.vf = *((double *)value);
+                    break;
+                default:
+                    fprintf(stderr, "Invalid FITSRW keyword type '%c'.\n", (char)type);
+                    err = CFITSIO_ERROR_ARGS;
+                    break;
+            }
+        
+            if (comment)
+            {
+                snprintf(rv->key_comment, FLEN_COMMENT, "%s", comment);
+            }
+        
+            if (format)
+            {
+                snprintf(rv->key_format, CFITSIO_MAX_FORMAT, "%s", format);
+            }
+        }
+    }
+    else
+    {
+        err = CFITSIO_ERROR_ARGS; 
+    }
+    
+    if (keyOut)
+    {
+        *keyOut = rv; /* swipe! */
+        rv = NULL;
+    }
+    
+    return err;
+}
+
 /****************************************************************************/
 // TH: Append to the end of list to keep COMMENT in the right sequence.
 
