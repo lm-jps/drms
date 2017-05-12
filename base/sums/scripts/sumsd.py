@@ -953,6 +953,14 @@ class AllocResponse(Response):
         
         partSet = 0
         
+        # a SUMS "partition set" is a group of partitions; SUMS installations can have either a single partition
+        # set, or multiple sets; when allocating an SU dir on a partition in a multi-partition system, 
+        # one partition must be selected; a partition set is a way of restricting which partitions are available
+        # for SU allocation; the SU group is mapped to a partition set, and then an partition is chosen from
+        # that set for allocation; this mapping is defined by the SUMS DB table SUM_ARCH_GROUP - the group number
+        # is mapped to a partition set id (an integer)
+        #
+        # for a system with a single partition set, the partition set has an id of 0
         if self.request.collector.hasMultPartSets:
             if hasattr(self.request.data, 'sugroup'):
                 self.dbRes = []
@@ -978,7 +986,8 @@ class AllocResponse(Response):
         
             partitions.append(row[0])
             
-        # Create sunum, if needed.
+        # if the request contains a SUNUM, then that SUNUM becomes the id of the SU being allocated; otherwise,
+        # the next id in the sequence is chosen
         if hasattr(self.request.data, 'sunum'):
             sunum = self.request.data.sunum
         else:
