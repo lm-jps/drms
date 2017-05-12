@@ -19,6 +19,7 @@ void drms_keyword_fprintval(FILE *keyfile, DRMS_Keyword_t *key);
 void drms_keyword_snprintfval(DRMS_Keyword_t *key, char *buf, int size);
 DRMS_Keyword_t *drms_keyword_lookup(DRMS_Record_t *rec, const char *key, int followlink);
 DRMS_Keyword_t *drms_template_keyword_followlink(DRMS_Keyword_t *srckey, int *statret);
+DRMS_Keyword_t *drms_jsd_template_keyword_followlink(DRMS_Keyword_t *srckey, int *statret);
 DRMS_Type_t drms_keyword_type(DRMS_Keyword_t *key);
 HContainer_t *drms_keyword_createinfocon(DRMS_Env_t *drmsEnv, 
 					  const char *seriesName, 

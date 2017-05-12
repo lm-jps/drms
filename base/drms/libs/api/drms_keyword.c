@@ -2419,31 +2419,34 @@ int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey,
       }
 
       step = drms_keyword_getslotstep(slotkey, &unit, &stat);
+      
+      /* Check for invalid step size of 0. */
+      if (base_doubleIsEqual(step, 0.0))
+      {
+        fprintf(stderr, "Invalid step size of 0.0.");
+        return DRMS_ERROR_INVALIDDATA;
+      }
 
       /* unit will be valid if user provided a string step (eg, 60s).
        * if kRecScopeType_SLOT, unit will never be valid. */
       if (unit != kSlotKeyUnit_Invalid)
       {
-	 if (unitKey)
-	 {
-	    /* This will be ignored because step unit specified in step. */
-	    fprintf(stderr, 
-		    "Warning: '%s' specifies step unit, so '%s' will"
-		    "be ignored.\n", 
-		    stepKey->info->name,
-		    unitKey->info->name);
-	 }
+        if (unitKey)
+        {
+            /* This will be ignored because step unit specified in step. */
+            fprintf(stderr, "Warning: '%s' specifies step unit, so '%s' will be ignored.\n", stepKey->info->name, unitKey->info->name);
+        }
       }
       else
       {
-	 if (unitKey)
-	 {
-	    unit = drms_keyword_getunit(unitKey, NULL);
-	 }
-	 else
-	 {
-	    usedefunit = 1;
-	 }
+        if (unitKey)
+        {
+            unit = drms_keyword_getunit(unitKey, NULL);
+        }
+        else
+        {
+            usedefunit = 1;
+        }
       }
 
       DRMS_RecScopeType_t recscope = drms_keyword_getrecscope(slotkey);
@@ -2623,68 +2626,87 @@ TIME drms_keyword_getdate(DRMS_Record_t *rec)
   return thedate;
 }
 
-static DRMS_Keyword_t *TemplateKeyFollowLink(DRMS_Keyword_t *srckey, int depth, int *statret)
+static DRMS_Keyword_t *TemplateKeyFollowLink(DRMS_Keyword_t *srckey, int depth, int jsd, int *statret)
 {
-   int status = DRMS_SUCCESS;
-   DRMS_Link_t *link = NULL;
-   DRMS_Record_t *linktempl = NULL;
-   DRMS_Keyword_t *tgtkey = NULL;
+    int status = DRMS_SUCCESS;
+    DRMS_Link_t *link = NULL;
+    DRMS_Record_t *linktempl = NULL;
+    DRMS_Keyword_t *tgtkey = NULL;
 
-   /* Fetch link struct. */
-   link = (DRMS_Link_t *)hcon_lookup_lower(&srckey->record->links, srckey->info->linkname);
-   if (link)
-   {
-      linktempl = drms_template_record(srckey->record->env, link->info->target_series, &status);
+    /* Fetch link struct. */
+    link = (DRMS_Link_t *)hcon_lookup_lower(&srckey->record->links, srckey->info->linkname);
+    if (link)
+    {
+        if (jsd)
+        {
+            linktempl = drms_create_jsdtemplate_record(srckey->record->env, link->info->target_series, &status);
+        }
+        else
+        {
+            linktempl = drms_template_record(srckey->record->env, link->info->target_series, &status);
+        }
 
-      if (linktempl)
-      {
-         tgtkey = (DRMS_Keyword_t *)hcon_lookup_lower(&linktempl->keywords, srckey->info->target_key);
+        if (linktempl)
+        {
+            tgtkey = (DRMS_Keyword_t *)hcon_lookup_lower(&linktempl->keywords, srckey->info->target_key);
 
-         if (tgtkey)
-         {
-            if (tgtkey->info->islink)
+            if (tgtkey)
             {
-               if (depth < DRMS_MAXLINKDEPTH)
-               {
-                  tgtkey = TemplateKeyFollowLink(tgtkey, depth + 1, statret);
-               }
-               else
-               {
-                  fprintf(stderr, 
-                          "WARNING: Max link depth exceeded for keyword '%s' in series '%s'.\n", 
-                          srckey->info->name, 
-                          link->info->target_series);  
-               }
+                if (tgtkey->info->islink)
+                {
+                   if (depth < DRMS_MAXLINKDEPTH)
+                   {
+                      tgtkey = TemplateKeyFollowLink(tgtkey, depth + 1, jsd, statret);
+                   }
+                   else
+                   {
+                      fprintf(stderr, 
+                              "WARNING: Max link depth exceeded for keyword '%s' in series '%s'.\n", 
+                              srckey->info->name, 
+                              link->info->target_series);  
+                   }
+                }
             }
-         }
-         else
-         {
+            else
+            {
+                if (statret)
+                {
+                   *statret = DRMS_ERROR_UNKNOWNKEYWORD;
+                }
+            }
+            
+            if (jsd)
+            {
+                drms_destroy_jsdtemplate_record(&linktempl);
+            }
+        }
+        else
+        {
             if (statret)
             {
-               *statret = DRMS_ERROR_UNKNOWNKEYWORD;
+                *statret = DRMS_ERROR_UNKNOWNSERIES;
             }
-         }
-      }
-      else
-      {
-         if (statret)
-         {
-            *statret = DRMS_ERROR_UNKNOWNSERIES;
-         }
-      }
-   }
-   else
-   {
-      if (statret)
-      {
-         *statret = DRMS_ERROR_UNKNOWNLINK;
-      }
-   }
+        }
+    }
+    else
+    {
+        if (statret)
+        {
+             *statret = DRMS_ERROR_UNKNOWNLINK;
+        }
+    }
 
-   return tgtkey;
+    return tgtkey;
 }
 
 DRMS_Keyword_t *drms_template_keyword_followlink(DRMS_Keyword_t *srckey, int *statret)
 {
-   return TemplateKeyFollowLink(srckey, 0, statret);
+   return TemplateKeyFollowLink(srckey, 0, 0, statret);
 }
+
+DRMS_Keyword_t *drms_jsd_template_keyword_followlink(DRMS_Keyword_t *srckey, int *statret)
+{
+   return TemplateKeyFollowLink(srckey, 0, 1, statret);
+}
+
+
