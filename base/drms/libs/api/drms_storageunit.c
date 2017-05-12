@@ -56,7 +56,6 @@
 #endif // JMD Support
 //igor VSO HTTP request to JMD end
 
-#define kEXTREMOTESUMS "remotesums_master.pl"
 #define kSUNUMLISTSIZE 248576
 
 struct SUList_struct
