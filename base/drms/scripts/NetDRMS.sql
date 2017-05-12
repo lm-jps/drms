@@ -23,10 +23,14 @@ grant select on "admin".ns to public;
 CREATE SCHEMA drms;
 GRANT USAGE ON SCHEMA drms TO public;
 
--- This user is hard-coded in the DRMS C source, so it must exist. 
--- The PostgreSQL administrator account (e.g., "production") is actually an alias for this user, which 
--- has elevated privileges.
-CREATE USER SUMSADMIN;
+-- This user is hard-coded in the DRMS C source, so it must exist. It has DELETE permissions on
+-- all DRMS data-series DB table rows. This is the DRMS db user that SUMS runs as when it 
+-- deletes DRMS records (for series whose archive flag is -1).
+--
+-- UPDATE: The original RPC SUMS has a bug. It does not use the sumsadmin user to delete DRMS
+-- records. It uses the default DB user, which is the one with the name of the linux user that
+-- runs sum_rm.
+CREATE USER sumsadmin;
 
 -- In order to read from table _jsoc.sl_table (which may not exist), there must be a 'jsoc' role
 -- that has SELECT permissions on this table. If no _jsoc.sl_table exists, there is no need
