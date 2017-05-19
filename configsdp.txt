@@ -32,6 +32,8 @@ q:SUMS_GROUP                    SOI
 q:SUMLOG_BASEDIR                /usr/local/logs/SUM
 q:SUMBIN_BASEDIR                /usr/local/bin
 q:SUMSERVER                     k1.stanford.edu
+q:DRMS_LOG_DIR                  /home/jsoc/jsoclogs
+q:DRMS_LOCK_DIR                 /home/jsoc/locks
 # The number of SUMS process SETS to spawn. If this number is not 1, then the number of SUMS processes
 # is SUM_NUMSUM * 5 + 2.
 a:SUM_NUMSUM                    3
@@ -234,6 +236,7 @@ __PROJ__
              <subdir>dsputil</subdir>
              <subdir>gapfiller</subdir>
              <subdir>interpolate</subdir>
+             <subdir>limbcompute_aia</subdir>
              <subdir>stats</subdir>
              <subdir>egsehmicomp</subdir>
              <subdir>imrotate</subdir>
@@ -252,6 +255,12 @@ __PROJ__
              <subdir>libs</subdir>
              <subdir>apps</subdir>
         </subdirs>
+   </proj>
+   <proj>
+        <name>limbfit_aia</name>
+         <subdirs>
+             <subdir>apps</subdir>
+         </subdirs>
    </proj>
    <proj>
         <name>maps_avgs</name>
