@@ -1721,7 +1721,7 @@ if (status != JSON_OK) fprintf(stderr, "json_insert_pair_into_object, status=%d,
   return 0;
   }
 
-json_insert_runtime(json_t *jroot, double StartTime)
+void json_insert_runtime(json_t *jroot, double StartTime)
   {
   char runtime[100];
   double EndTime;
@@ -1736,7 +1736,7 @@ json_insert_runtime(json_t *jroot, double StartTime)
 #define kLockFile   "/home/jsoc/exports/tmp/lock.txt"
 
 // report_summary - record  this call of the program.
-report_summary(const char *host, double StartTime, const char *remote_IP, const char *op, const char *ds, int n, int status)
+void report_summary(const char *host, double StartTime, const char *remote_IP, const char *op, const char *ds, int n, int status)
   {
   FILE *log;
   int sleeps;
