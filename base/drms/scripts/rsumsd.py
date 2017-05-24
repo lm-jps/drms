@@ -29,7 +29,7 @@ from drmsparams import DRMSParams
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../base/libs/py'))
 from drmsCmdl import CmdlParser
 from drmsLock import DrmsLock
-from subprocess import check_output, check_call, CalledProcessError, Popen, PIPE
+from subprocess import check_output, check_call, CalledProcessError, Popen, PIPE, TimeoutExpired
 
 # This script runs as a daemon at the site that has requested an SU that does not belong to the site. It is responsible for contacting
 # the owning site and requesting the path to the desired SUs. The owning site must be running the rs.sh CGI to respond to the requesting
@@ -969,21 +969,20 @@ class SuTable:
     # releases the SU lock.
     def getAndLockSU(self, sunum):
         gotTableLock = False
+        gotSULock = False
+        su = None
 
         try:
-            gotTableLock = self.acquireLock()
-
-            if gotTableLock is None:
-                raise Exception('lock', 'Unable to acquire SU-table lock.')
+            gotTableLock = self.acquireLock()            
+            # lock acquired (can't get here otherwise)
                 
             su = self.get([ sunum ])[0]
             gotSULock = su.acquireLock()
-            
-            if gotSULock is None:
-                raise Exception('lock', 'Unable to acquire SU ' + str(sunum) + ' lock.')
+            # lock acquired (can't get here otherwise)            
         except:
+            if su and gotSULock:
+                su.releaseLock()
             su = None
-            raise
         finally:
             # Always release lock.
             if gotTableLock:
@@ -993,21 +992,26 @@ class SuTable:
 
     def getAndLockSUs(self, sunums):
         gotTableLock = False
+        sus = None
 
         try:
             gotTableLock = self.acquireLock()
-
-            if gotTableLock is None:
-                raise Exception('lock', 'Unable to acquire SU-table lock.')
+            # lock acquired (can't get here otherwise)
                 
             sus = self.get(sunums)
+            locked = set()
+
             for su in sus:
-                gotSULock = su.acquireLock()            
-                if not gotSULock:
-                    raise Exception('lock', 'Unable to acquire SU ' + str(su.sunum) + ' lock.')
+                gotSULock = False
+                gotSULock = su.acquireLock()
+                # lock acquired (can't get here otherwise)
+                locked.add(su)
         except:
+            if sus:
+                for su in list(locked):
+                    if su:
+                        su.releaseLock()
             sus = None
-            raise
         finally:
             # Always release lock.
             if gotTableLock:
@@ -1679,6 +1683,8 @@ class ScpWorker(threading.Thread):
                             atLeastOneGoodSU = False
                             # We actually do not need to lock the SUs here - but it doesn't hurt.
                             sus = self.suTable.getAndLockSUs(self.sunums)
+                            if not sus:
+                                raise Exception('lock', 'unable to lock and get sus')
                             for su in sus:
                                 if su.status == 'D':                                
                                     # Check for SU download time-out. We keep doing the download, unless all SUs have timed out.
@@ -1698,7 +1704,7 @@ class ScpWorker(threading.Thread):
                                     proc.communicate(timeout=2)
                                     self.log.writeInfo([ 'Successfully killed ScpWorker ' + str(self.id) + ' download.' ])
                                 except TimeoutExpired:
-                                    self.log.writeWarn([ 'Unable to kill scp for ScpWorker ' + str(self.id) + '.' ])
+                                    self.log.writeWarning([ 'Unable to kill scp for ScpWorker ' + str(self.id) + '.' ])
                                     
                                 raise Exception('shutDown', 'ScpWorker ' + str(self.id) + ' is observing the global shutdown and exiting now.')
                             
@@ -1718,6 +1724,8 @@ class ScpWorker(threading.Thread):
                         # Must lock SUs here. The Downloader could have set status to S, so if we don't hold a lock, we could
                         # overwrite the status to P.
                         sus = self.suTable.getAndLockSUs(self.sunums)
+                        if not sus:
+                            raise Exception('lock', 'unable to lock and get sus')
                         for su in sus:
                             if su.status == 'D':
                                 # The download for this SU has not been canceled.
@@ -1746,6 +1754,8 @@ class ScpWorker(threading.Thread):
                                 # Must lock SUs here. The Downloader could have set status to S, so if we don't hold a lock, we could
                                 # overwrite the status to E.
                                 sus = self.suTable.getAndLockSUs(self.sunums)
+                                if not sus:
+                                    raise Exception('lock', 'unable to lock and get sus')
                                 for su in sus:
                                     self.log.writeInfo([ 'ScpWorker setting SU ' + str(su.sunum) + ' status to E.' ])
                                     su.setStatus('E', msg)
@@ -1764,6 +1774,8 @@ class ScpWorker(threading.Thread):
                             try:
                                 # Must lock SUs here.
                                 sus = self.suTable.getAndLockSUs(self.sunums)
+                                if not sus:
+                                    raise Exception('lock', 'unable to lock and get sus')                                
                                 for su in sus:
                                     if su.status == 'D':
                                         # The ScpWorker was in the middle of downloading the SU when rsumds.py was shut-down.
@@ -1880,6 +1892,8 @@ class Downloader(threading.Thread):
             try:
                 self.log.writeDebug([ 'Downloader acquiring lock for SU ' + str(self.sunum) + '.' ])
                 su = self.suTable.getAndLockSU(self.sunum)
+                if not su:
+                    raise Exception('lock', 'unable to lock and get su')
 
                 if su.status != 'P' and su.status != 'W':
                     raise Exception('downloader', 'SU ' + str(su.sunum) + ' not pending.')
@@ -1909,6 +1923,8 @@ class Downloader(threading.Thread):
                 su = None
                 try:
                     su = self.suTable.getAndLockSU(self.sunum)
+                    if not su:
+                        raise Exception('lock', 'unable to lock and get su')
 
                     # Check for download error or completion. Call get() again, since the SU record could have been deleted (due to
                     # abnormal execution).
@@ -1952,6 +1968,9 @@ class Downloader(threading.Thread):
                 su = None
                 try:
                     su = self.suTable.getAndLockSU(self.sunum)
+                    if not su:
+                        raise Exception('lock', 'unable to lock and get su')
+                    
                     if su.status != 'P':            
                         raise Exception('shutDown', 'Downloader thread for SU ' + str(self.sunum) + ' is observing the global shutdown and exiting now.')
                 finally:
@@ -2232,6 +2251,8 @@ class Downloader(threading.Thread):
             try:
                 su = None
                 su = self.suTable.getAndLockSU(self.sunum)
+                if not su:
+                    raise Exception('lock', 'unable to lock and get su')
                     
                 if su.status == 'P':
                     self.log.writeInfo([ 'Setting SU ' + str(self.sunum) + ' status to complete.' ])
@@ -2266,6 +2287,8 @@ class Downloader(threading.Thread):
                     su = None
                     try:
                         su = self.suTable.getAndLockSU(self.sunum)
+                        if not su:
+                            raise Exception('lock', 'unable to lock and get su')
                         self.log.writeError([ 'Setting SU ' + str(self.sunum) + ' status to error.' ])
                         self.log.writeError([ msg ])
                         su.setStatus('E', type)
@@ -2281,6 +2304,8 @@ class Downloader(threading.Thread):
                 su = None
                 try:
                     su = self.suTable.getAndLockSU(self.sunum)
+                    if not su:
+                        raise Exception('lock', 'unable to lock and get su')
                     self.log.writeError([ 'Setting SU ' + str(self.sunum) + ' status to error.' ])
                     self.log.writeError([ msg ])
                     su.setStatus('E', 'Unknown exception.')
@@ -2304,6 +2329,8 @@ class Downloader(threading.Thread):
 
         try:
             su = self.suTable.getAndLockSU(self.sunum)
+            if not su:
+                raise Exception('lock', 'unable to lock and get su')
             self.log.writeDebug([ 'Downloader for SU ' + str(self.sunum) + ' terminating; unsetting worker.' ])
             su.worker = None
         finally:
@@ -2402,6 +2429,8 @@ class ProviderPoller(threading.Thread):
         for asunum in self.sunums:
             try:
                 su = self.suTable.getAndLockSU(asunum)
+                if not su:
+                    raise Exception('lock', 'unable to lock and get su')
                 su.setPolling(True)
             except Exception as exc:
                 if len(exc.args) != 2:
@@ -2453,7 +2482,10 @@ class ProviderPoller(threading.Thread):
         # We are done polling, remove the polling flag.
         for asunum in self.sunums:
             try:
+                su = None
                 su = self.suTable.getAndLockSU(asunum)
+                if not su:
+                    raise Exception('lock', 'unable to lock and get su ' + str(asunum))
                 su.setPolling(False)
             except Exception as exc:
                 if len(exc.args) != 2:
@@ -2482,6 +2514,8 @@ class ProviderPoller(threading.Thread):
             for (asunum, path, series, suSize) in paths:
                 try:
                     su = self.suTable.getAndLockSU(asunum)
+                    if not su:
+                        raise Exception('lock', 'unable to lock and get su')
 
                     if not path:
                             # A path of None means that the SUNUM was invalid. We want to set the SU status to 'E'.
@@ -2710,7 +2744,7 @@ def processSUs(url, sunums, sus, reqTable, request, dbUser, binPath, arguments, 
             ProviderPoller.lock.acquire()
             try:
                 if len(ProviderPoller.tList) < ProviderPoller.maxThreads:
-                    log.writeInfo([ 'Instantiating a PollerProvider for sunums ' + ','.join(workingSunums) + '.' ])
+                    log.writeInfo([ 'Instantiating a ProviderPoller for sunums ' + ','.join([ str(asunum) for asunum in workingSunums ]) + '.' ])
                     ProviderPoller.newThread(url, dlInfo['requestid'], workingSunums, sus, reqTable, request, dbUser, binPath, arguments, log)
                     break
             except Exception as exc:
