@@ -1735,6 +1735,21 @@ class Worker(threading.Thread):
                                     
                                     if offset >= limit:
                                         break
+                                        
+                                    # dumping an entire table could take a while; check for client-side error between iterations
+                                    # (each iteration is 4096 rows, currently)
+                                    try:
+                                        gotLock = self.reqTable.acquireLock()
+                                        if not gotLock:
+                                            raise Exception('lock', 'Unable to acquire req-table lock.')
+                                
+                                        (code, msg) = self.request.getStatus()
+                                        if code.upper() == 'E':
+                                            raise Exception('clientSignalledError', self.client + ' cancelling request.')
+                                    finally:
+                                        if gotLock:
+                                            self.reqTable.releaseLock()
+                                            gotLock = None
 
                                 # Send an EOF to the COPY command.
                                 print('\.', file=fout)
