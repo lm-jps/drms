@@ -369,14 +369,14 @@ static int populateKeyList(const char *listOfKeys, LinkedList_t *reqSegs, DRMS_R
                 if (!keyTemplate || !(keyTemplate->info) || *(keyTemplate->info->name) == '\0')
                 {
                     keyTemplate = calloc(1, sizeof(DRMS_Keyword_t));
-                    (void *)(keyTemplate->record) = (void *)(&invalidObj);
-                    (char *)(keyTemplate->info) = strdup(currentKey);
+                    keyTemplate->record = (DRMS_Record_t *)(&invalidObj);
+                    keyTemplate->info = (DRMS_KeywordInfo_t *)(strdup(currentKey));
                 }
                 else if (drms_keyword_getimplicit(keyTemplate))
                 {
                     keyTemplate = calloc(1, sizeof(DRMS_Keyword_t));
-                    (void *)(keyTemplate->record) = (void *)(&invalidObj);
-                    (char *)(keyTemplate->info) = strdup(currentKey);
+                    keyTemplate->record = (DRMS_Record_t *)(&invalidObj);
+                    keyTemplate->info = (DRMS_KeywordInfo_t *)(strdup(currentKey));
                 }
 
                 if (!list_llfind(reqKeys, (void *)&keyTemplate))
@@ -450,8 +450,8 @@ static int populateSegList(const char *listOfSegs, int followLinks, DRMS_Record_
             if (!segTemplate || !(segTemplate->info) || *(segTemplate->info->name) == '\0')
             {
                 segTemplate = calloc(1, sizeof(DRMS_Segment_t));
-                (void *)(segTemplate->record) = (void *)(&invalidObj);
-                (char *)(segTemplate->info) = strdup(currentSeg);
+                segTemplate->record = (DRMS_Record_t *)(&invalidObj);
+                segTemplate->info = (DRMS_SegmentInfo_t *)strdup(currentSeg);
             }
             else
             {
@@ -466,8 +466,8 @@ static int populateSegList(const char *listOfSegs, int followLinks, DRMS_Record_
                     if (lnkstat != DRMS_SUCCESS)
                     {
                         segTemplate = calloc(1, sizeof(DRMS_Segment_t));
-                        (void *)(segTemplate->record) = (void *)(&invalidObj);
-                        (char *)(segTemplate->info) = strdup(currentSeg);
+                        segTemplate->record = (DRMS_Record_t *)(&invalidObj);
+                        segTemplate->info = (DRMS_SegmentInfo_t *)(strdup(currentSeg));
                     }
                 }
             }
@@ -543,8 +543,8 @@ static int populateLinkList(const char *listOfLinks, DRMS_Record_t *template, Li
             if (!linkTemplate || !(linkTemplate->info) || *(linkTemplate->info->name) == '\0')
             {
                 linkTemplate = calloc(1, sizeof(DRMS_Link_t));
-                (void *)(linkTemplate->record) = (void *)(&invalidObj);
-                (char *)(linkTemplate->info) = strdup(currentLink);
+                linkTemplate->record = (DRMS_Record_t *)(&invalidObj);
+                linkTemplate->info = (DRMS_LinkInfo_t *)(strdup(currentLink));
             }
         
             if (!list_llfind(reqLinks, (void *)&linkTemplate))
