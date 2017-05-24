@@ -1052,8 +1052,8 @@ if __name__ == "__main__":
                                     natt += 1
                                     if natt > 10:
                                         raise
-                                    if type(exc.response) is str:
-                                        msg = exc.response
+                                    if type(exc.reason) is str:
+                                        msg = exc.reason
                                     else:
                                         msg = ''
                                     log.writeWarning([ 'Unable to send subscription server pollcomplete status (' + msg + '). Trying again.' ])
