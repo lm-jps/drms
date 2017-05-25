@@ -399,7 +399,7 @@ def getFailedSUs(suList, conn):
 
     try:
         with conn.cursor() as cursor:
-            cmd = 'SELECT ds_index FROM sum_partn_alloc WHERE ds_index IN ' + ','.join([ str(sunum) for sunum in suList ])
+            cmd = 'SELECT ds_index FROM sum_partn_alloc WHERE ds_index IN (' + ','.join([ str(sunum) for sunum in suList ] + ')')
             sus = set()
 
             try:
@@ -410,11 +410,13 @@ def getFailedSUs(suList, conn):
                     sus.add(row[0])
             except psycopg2.Error as exc:
                 # handle database-command errors.
-                raise DBCommandException(exc.diag.message_primary)
-        
+                import traceback
+                raise DBCommandException(traceback.format_exc(5))
+
         # end SUMS DB transaction
     except psycopg2.Error as exc:
-        raise DBCommandException(exc.diag.message_primary)
+        import traceback
+        raise DBCommandException(traceback.format_exc(5))
         
     for su in suList:
         if su not in sus:
@@ -516,7 +518,8 @@ if __name__ == "__main__":
                                     sunumsStr = ','.join([ str(sunum) for sunum in sunums ])
                                 except psycopg2.Error as exc:
                                     # handle database-command errors.
-                                    raise DBCommandException(exc.diag.message_primary)
+                                    import traceback
+                                    raise DBCommandException(traceback.format_exc(5))
 
                                 if len(sunums) <= 0:
                                     # no more SUs for which to request downloads; break
@@ -535,7 +538,8 @@ if __name__ == "__main__":
                                         requestID = rows[0][0]
                                     except psycopg2.Error as exc:
                                         # handle database-command errors.
-                                        raise DBCommandException(exc.diag.message_primary)
+                                        import traceback
+                                        raise DBCommandException(traceback.format_exc(5))
                                 
                                     # make the Remote SUMS request (by inserting a row into the RS requests table)
                                     cmd = 'INSERT INTO ' + tableOut + '(requestid, dbhost, dbport, dbname, starttime, sunums, status) VALUES(' + str(requestID) + ", '" + arguments.dbhost + "', " + str(arguments.dbport) + ", '" + arguments.dbdatabase + "', " + 'clock_timestamp()' + ", '" + sunumsStr + "', " + "'N'" + ')'
@@ -543,7 +547,8 @@ if __name__ == "__main__":
                                         cursor.execute(cmd)
                                     except psycopg2.Error as exc:
                                         # handle database-command errors.
-                                        raise DBCommandException(exc.diag.message_primary)
+                                        import traceback
+                                        raise DBCommandException(traceback.format_exc(5))
                                     
                                     log.writeInfo([ 'requested download of ' + sunumsStr + ' (id ' + str(requestID) + ')' ])
                                     
@@ -643,7 +648,8 @@ if __name__ == "__main__":
                                             toDelFromPendingSUs.extend(pendingRequests[str(requestID)])
                                 except psycopg2.Error as exc:
                                     # handle database-command errors.
-                                    raise DBCommandException(exc.diag.message_primary)
+                                    import traceback
+                                    raise DBCommandException(traceback.format_exc(5))
                                     
                                 # remove from drms.rs_requests
                                 if len(toDelFromTableOut) > 0:
@@ -654,7 +660,8 @@ if __name__ == "__main__":
                                         cursor.execute(cmd)
                                     except psycopg2.Error as exc:
                                         # handle database-command errors.
-                                        raise DBCommandException(exc.diag.message_primary)
+                                        import traceback
+                                        raise DBCommandException(traceback.format_exc(5))
                                     
                                     log.writeInfo([ 'removed requests ' + requestIDStr + ' from RS requests table' ])
                                 
@@ -674,7 +681,8 @@ if __name__ == "__main__":
                                         cursor.execute(cmd)
                                     except psycopg2.Error as exc:
                                         # handle database-command errors.
-                                        raise DBCommandException(exc.diag.message_primary)
+                                        import traceback
+                                        raise DBCommandException(traceback.format_exc(5))
                                 
                                     log.writeInfo([ 'removed SUs ' + sunumStr + ' from sunum capture table' ])
                                 
@@ -685,7 +693,8 @@ if __name__ == "__main__":
                                     
                                     log.writeDebug([ 'removed ' + ','.join([ str(sunum) for sunum in toDelFromPendingSUs ]) + ' from pending SUs list' ])
                     except psycopg2.Error as exc:
-                        raise DBCommandException(exc.diag.message_primary)
+                        import traceback
+                        raise DBCommandException(traceback.format_exc(5))
                         
                 # end of DRMS DB transaction
                 loopIteration += 1
