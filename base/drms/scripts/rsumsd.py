@@ -237,6 +237,7 @@ class TerminationHandler(object):
             gotLock = ScpWorker.lock.acquire()
             if gotLock:
                 for worker in ScpWorker.tList:
+                    self.log.writeInfo([ 'Waiting for worker (ID ' + str(worker.id) + ') to halt.' ])
                     worker.stop()
         finally:
             if gotLock:
@@ -259,11 +260,8 @@ class TerminationHandler(object):
                     ScpWorker.lock.release()
 
             if worker and isinstance(worker, (ScpWorker)) and worker.isAlive():
-                self.log.writeInfo([ 'Waiting for worker (ID ' + str(worker.id) + ') to halt.' ])
                 # can't hold worker lock here - when the worker terminates, it acquires the same lock
                 worker.join() # will block, possibly for ever
-
-            self.log.writeInfo([ 'Worker (ID ' +  str(worker.id) + ') halted.' ])            
         
         # Shut-down Downloader threads.
         gotLock = False
@@ -1829,6 +1827,7 @@ class ScpWorker(threading.Thread):
         try:
             ScpWorker.lock.acquire()
             ScpWorker.tList.remove(self) # This thread is no longer one of the running threads.
+            self.log.writeInfo([ 'Worker (ID ' +  str(self.id) + ') halted.' ])            
         finally:
             ScpWorker.lock.release()        
         
