@@ -269,6 +269,7 @@ class TerminationHandler(object):
             gotLock = Downloader.lock.acquire()
             if gotLock:
                 for downloader in Downloader.tList:
+                    self.log.writeInfo([ 'Waiting for downloader (SUNUM ' + str(downloader.sunum) + ') to halt.' ])
                     downloader.stop()
         finally:
             if gotLock:
@@ -278,19 +279,18 @@ class TerminationHandler(object):
             gotLock = False
             try:
                 gotLock = Downloader.lock.acquire()
-                if gotLock:
-                    if len(Downloader.tList) > 0:
-                        downloader = Downloader.tList[0]
-                    else:
-                        break 
+                # got lock - can't get here otherwise
+
+                if len(Downloader.tList) > 0:
+                    downloader = Downloader.tList[0]
+                else:
+                    break 
             finally:
                 if gotLock:
                     Downloader.lock.release()
                     
-            self.log.writeInfo([ 'Waiting for downloader (SUNUM ' + str(downloader.sunum) + ') to halt.' ])
-            downloader.join()
-            self.log.writeInfo([ 'Downloader (SUNUM ' + str(downloader.sunum) + ') halted.' ])     
-                                    
+            if downloader and isinstance(downloader, (Downloader)) and downloader.isAlive():
+                downloader.join()                                    
             
         # Shut-down ProviderPoller threads.
         gotLock = False
@@ -298,6 +298,7 @@ class TerminationHandler(object):
             gotLock = ProviderPoller.lock.acquire()
             if gotLock:
                 for poller in ProviderPoller.tList:
+                    self.log.writeInfo([ 'Waiting for poller (request ID ' + str(poller.requestID) + ') to halt.' ])
                     poller.stop()
         finally:
             if gotLock:
@@ -307,18 +308,18 @@ class TerminationHandler(object):
             gotLock = False
             try:
                 gotLock = ProviderPoller.lock.acquire()
-                if gotLock:
-                    if len(ProviderPoller.tList) > 0:
-                        poller = ProviderPoller.tList[0]
-                    else:
-                        break 
+                # got lock - can't get here otherwise
+                
+                if len(ProviderPoller.tList) > 0:
+                    poller = ProviderPoller.tList[0]
+                else:
+                    break 
             finally:
                 if gotLock:
                     ProviderPoller.lock.release()
 
-            self.log.writeInfo([ 'Waiting for poller (request ID ' + str(poller.requestID) + ') to halt.' ])
-            poller.join()
-            self.log.writeInfo([ 'Poller (request ID ' + str(poller.requestID) + ') halted.' ])   
+            if poller and isinstance(poller, (ProviderPoller)) and poller.isAlive():
+                poller.join()
         
         if self.sumsconn:
             self.sumsconn.close()
@@ -2345,6 +2346,7 @@ class Downloader(threading.Thread):
         try:
             Downloader.lock.acquire()
             Downloader.tList.remove(self) # This thread is no longer one of the running threads.
+            self.log.writeInfo([ 'Downloader (SUNUM ' + str(self.sunum) + ') halted.' ])     
             # Use <= because we don't know if we were able to reach Downloader.maxThreads thread running due 
             # to system-resource limitations.
             if len(Downloader.tList) <= Downloader.maxThreads - 1:
@@ -2353,8 +2355,7 @@ class Downloader(threading.Thread):
                 Downloader.eventMaxThreads.set()
                 # Clear event so that main will block the next time it calls wait.
                 Downloader.eventMaxThreads.clear()
-                
-            self.log.writeInfo([ 'Downloader for SU ' + str(self.sunum) + ' exiting.' ])
+
         finally:
             Downloader.lock.release()
 
@@ -2577,6 +2578,8 @@ class ProviderPoller(threading.Thread):
         try:
             ProviderPoller.lock.acquire()
             ProviderPoller.tList.remove(self) # This thread is no longer one of the running threads.
+            self.log.writeInfo([ 'Poller (request ID ' + str(self.requestID) + ') halted.' ])   
+            
             # Use <= because we don't know if we were able to reach Downloader.maxThreads thread running due 
             # to system-resource limitations.
             if len(ProviderPoller.tList) <= ProviderPoller.maxThreads - 1:
