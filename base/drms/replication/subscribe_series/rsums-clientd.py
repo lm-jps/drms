@@ -78,8 +78,6 @@ class TerminationHandler(object):
         
         super(TerminationHandler, self).__init__()
         
-        self.__isValid = True
-        
     def __enter__(self):
         signal.signal(signal.SIGINT, terminator)
         signal.signal(signal.SIGTERM, terminator)
@@ -97,10 +95,11 @@ class TerminationHandler(object):
             self.openRsConn()            
             self.openRsConnSums()
         except DBConnectionException() as exc:
-            if self.__exit__(*sys.exc_info()):
-                self.__isValid = False
-            else:
-                raise
+            self.log.writeError([ exc.args[0] ])
+            self.__exit__(*sys.exc_info()) # try cleaning up (will return False since this is not a self.Break)            
+            raise InitializationException('failure initializing client instance')
+        except:
+            raise InitializationException('failure initializing client instance')
 
         return self
 
@@ -134,9 +133,6 @@ class TerminationHandler(object):
             self.log.writeInfo([ 'completed generating set-up script' ])
             self.container[3] = RV_SUCCESS
             return True
-        
-    def isValid(self):
-        return self.__isValid
         
     def finalStuff(self):
         self.log.writeInfo([ 'closing DB connections' ])
@@ -399,7 +395,7 @@ def getFailedSUs(suList, conn):
 
     try:
         with conn.cursor() as cursor:
-            cmd = 'SELECT ds_index FROM sum_partn_alloc WHERE ds_index IN (' + ','.join([ str(sunum) for sunum in suList ] + ')')
+            cmd = 'SELECT ds_index FROM sum_partn_alloc WHERE ds_index IN (' + ','.join([ str(sunum) for sunum in suList ]) + ')'
             sus = set()
 
             try:
@@ -467,10 +463,7 @@ if __name__ == "__main__":
         
         thContainer = [ arguments, str(pid), log, rv ]
 
-        with TerminationHandler(thContainer) as th:
-            if not th.isValid():
-                raise InitializationException('failure initializing client instance')
-                
+        with TerminationHandler(thContainer) as th:                
             if arguments.setup:
                 print('-- run this script as the a DB superuser')
                 print('GRANT ALL ON drms.ingested_sunums TO ' + arguments.dbuser)
