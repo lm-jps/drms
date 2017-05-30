@@ -30,6 +30,8 @@ S_$(d)		:= $(notdir $(EXE_$(d)) $(MODEXE_SOCK_$(d)))
 $(OBJ_$(d)):	CF_TGT := $(CF_$(d))
 $(OBJ_$(d)):	$(SRCDIR)/$(d)/Rules.mk
 
+$(MODEXE_$(d)): $(LIBQDECODER)
+
 # Shortcuts
 .PHONY:	$(S_$(d))
 $(S_$(d)):	%:	$(d)/%
