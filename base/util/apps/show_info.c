@@ -206,12 +206,24 @@ SHOW_INFO WILL NOT WORK PROPERLY IF THE RECORD-SET STRING SPECIFIES MORE THAN ON
 http://jsoc.stanford.edu/ajax/lookdata.html drms_query describe_series jsoc_info create_series
 
 */
+
+
+/*
+ * To emulate a POST request on the cmd-line, force qDecoder, the HTTP-request parsing library, to process a GET request.
+ * We can pass the arguments via the cmd-line, or via environment variables.
+ *   1. Set two shell environment variables, then run show_info:
+ *      a. setenv REQUEST_METHOD GET
+ *      b. setenv QUERY_STRING 'ds=hmi.m_45s[2015.5.5]&c=1' (this is an example - substitute your own arguments).
+ *      c. show_info
+ */
+
 #include "jsoc_main.h"
 #include "drms.h"
 #include "drms_names.h"
 #include "cmdparams.h"
 #include "drmssite_info.h"
 #include "printk.h"
+#include "qDecoder.h"
 
 
 #define kArgParseRS "e"
@@ -565,29 +577,6 @@ int get_session_info(DRMS_Record_t *rec, char **runhost, char **runtime, char **
   if (qres) db_free_text_result(qres);
   return status; 
   }
-
-// these next 2 are needed for the QUERY_STRING reading
-static char x2c (char *what) {
-  register char digit;
-
-  digit = (what[0] >= 'A' ? ((what[0] & 0xdf) - 'A')+10 : (what[0] - '0'));
-  digit *= 16;
-  digit += (what[1] >= 'A' ? ((what[1] & 0xdf) - 'A')+10 : (what[1] - '0'));
-  return (digit);
-}
-
-static void CGI_unescape_url (char *url) {
-  register int x, y;
-
-  for (x = 0, y = 0; url[y]; ++x, ++y) {
-    if ((url[x] = url[y]) == '%') {
-      url[x] = x2c (&url[y+1]);
-      y += 2;
-    }
-  }
-  url[x] = '\0';
-}
-// end of web enabling functions
 
 static void ShowInfoFreeInfo(const void *value)
 {
@@ -2096,6 +2085,30 @@ static void FreeParts(void *data)
    }
 }
 
+static int SetWebArg(Q_ENTRY *req, const char *key, char **arglist, size_t *size)
+{
+    char *value = NULL;
+    char buf[1024];
+
+    if (req)
+    {
+        value = (char *)qEntryGetStr(req, key);
+        if (value)
+        {
+            if (!cmdparams_set(&cmdparams, key, value))
+            {
+                return(1);
+            }
+
+            /* keep a copy of the web arguments provided via HTTP POST so that we can debug issues more easily. */
+            snprintf(buf, sizeof(buf), "%s='%s' ", key, value);
+            *arglist = base_strcatalloc(*arglist, buf, size);
+        }
+    }
+
+    return(0);
+}  	
+
 /* Module main function. */
 int DoIt(void)
   {
@@ -2168,29 +2181,106 @@ int DoIt(void)
   char *web_query;
   web_query = strdup (cmdparams_get_str (&cmdparams, "QUERY_STRING", NULL));
   from_web = strcmp (web_query, "Not Specified") != 0;
+  
+    int postorget = 0;
+    char *webarglist = NULL;
+    size_t webarglistsz;
 
-  if (from_web)
+    if (getenv("REQUEST_METHOD"))
     {
-    char *getstring, *p;
-    CGI_unescape_url(web_query);
-    getstring = strdup (web_query);
-    for (p=strtok(getstring,"&"); p; p=strtok(NULL, "&"))
-      {
-      char *key=p, *val=index(p,'=');
-      if (!val)
-         {
-	 fprintf(stderr,"Bad QUERY_STRING: %s\n",web_query);
-         return(1);
-	 }
-      *val++ = '\0';
-      cmdparams_set(&cmdparams, key, val);
-      }
-    // Force JSON for now
-    free(getstring);
-    printf("Content-type: text/plain\n\n");
+        postorget = (strcasecmp(getenv("REQUEST_METHOD"), "POST") == 0 || strcasecmp(getenv("REQUEST_METHOD"), "GET") == 0);
+    }  
+
+    if (from_web)
+    {
+        Q_ENTRY *req = NULL;
+
+        /* If we are here then one of three things is true (implied by the existence of QUERY_STRING):
+         *   1. We are processing an HTTP GET. The webserver will put the arguments in the
+         *      QUERY_STRING environment variable.
+         *   2. We are processing an HTTP POST. The webserver will NOT put the arguments in the
+         *      QUERY_STRING environment variable. Instead the arguments will be passed to show_info
+         *      via stdin. QUERY_STRING should not be set, but it looks like it might be. In any
+         *      case qDecoder will ignore it.
+         *   3. show_info was invoked via the cmd-line, and the caller provided the QUERY_STRING
+         *      argument. The caller is trying to emulate an HTTP request - they want to invoke
+         *      the web-processing code, most likely to develop or debug a problem. 
+         *
+         *   If we are in case 3, then we need to make sure that the QUERY_STRING environment variable
+         *   is set since qDecoder will be called, and to process a GET, QUERY_STRING must be set.
+         */
+        if (!getenv("QUERY_STRING"))
+        {
+            /* Either case 2 or 3. Definitely not case 1. */
+            if (!postorget)
+            {
+                /* Case 3 - set QUERY_STRING from cmd-line arg. */
+                setenv("QUERY_STRING", web_query, 1);
+        
+                /* REQUEST_METHOD is not set - set it to GET. */
+                setenv("REQUEST_METHOD", "GET", 1);
+            }
+        }
+    
+        /* Use qDecoder to parse HTTP POST requests. qDecoder actually handles
+         * HTTP GET requests as well.
+         * See http://www.qdecoder.org
+         */
+  	 
+        webarglistsz = 2048;
+        webarglist = (char *)calloc(1, webarglistsz);
+
+        req = qCgiRequestParseQueries(NULL, NULL);
+        if (req)
+        {
+            /* Accept only known key-value pairs - ignore the rest. */
+            if (SetWebArg(req, "ds", &webarglist, &webarglistsz)) show_info_return(1);
+            if (SetWebArg(req, "key", &webarglist, &webarglistsz)) show_info_return(1);
+            if (SetWebArg(req, "seg", &webarglist, &webarglistsz)) show_info_return(1);
+            if (SetWebArg(req, "a", &webarglist, &webarglistsz)) show_info_return(1);
+            if (SetWebArg(req, "A", &webarglist, &webarglistsz)) show_info_return(1);
+            if (SetWebArg(req, "b", &webarglist, &webarglistsz)) show_info_return(1);
+            if (SetWebArg(req, "c", &webarglist, &webarglistsz)) show_info_return(1);
+            if (SetWebArg(req, "d", &webarglist, &webarglistsz)) show_info_return(1);
+            if (SetWebArg(req, "e", &webarglist, &webarglistsz)) show_info_return(1);
+            if (SetWebArg(req, "h", &webarglist, &webarglistsz)) show_info_return(1);
+            if (SetWebArg(req, "i", &webarglist, &webarglistsz)) show_info_return(1);
+            if (SetWebArg(req, "I", &webarglist, &webarglistsz)) show_info_return(1);
+            if (SetWebArg(req, "j", &webarglist, &webarglistsz)) show_info_return(1);
+            if (SetWebArg(req, "k", &webarglist, &webarglistsz)) show_info_return(1);
+            if (SetWebArg(req, "K", &webarglist, &webarglistsz)) show_info_return(1);
+            if (SetWebArg(req, "l", &webarglist, &webarglistsz)) show_info_return(1);
+            if (SetWebArg(req, "n", &webarglist, &webarglistsz)) show_info_return(1);
+            if (SetWebArg(req, "o", &webarglist, &webarglistsz)) show_info_return(1);
+            if (SetWebArg(req, "O", &webarglist, &webarglistsz)) show_info_return(1);
+            if (SetWebArg(req, "p", &webarglist, &webarglistsz)) show_info_return(1);
+            if (SetWebArg(req, "P", &webarglist, &webarglistsz)) show_info_return(1);
+            if (SetWebArg(req, "q", &webarglist, &webarglistsz)) show_info_return(1);
+            if (SetWebArg(req, "r", &webarglist, &webarglistsz)) show_info_return(1);
+            if (SetWebArg(req, "R", &webarglist, &webarglistsz)) show_info_return(1);
+            if (SetWebArg(req, "s", &webarglist, &webarglistsz)) show_info_return(1);
+            if (SetWebArg(req, "S", &webarglist, &webarglistsz)) show_info_return(1);
+            if (SetWebArg(req, "t", &webarglist, &webarglistsz)) show_info_return(1);
+            if (SetWebArg(req, "T", &webarglist, &webarglistsz)) show_info_return(1);
+            if (SetWebArg(req, "v", &webarglist, &webarglistsz)) show_info_return(1);
+            if (SetWebArg(req, "x", &webarglist, &webarglistsz)) show_info_return(1);
+            if (SetWebArg(req, "z", &webarglist, &webarglistsz)) show_info_return(1);
+            if (SetWebArg(req, "sunum", &webarglist, &webarglistsz)) show_info_return(1);
+
+            qEntryFree(req); 
+        }
+        
+        free(webarglist);
+        webarglist = NULL;
+        
+        printf("Content-type: text/plain\n\n");
     }
-  if (web_query)
-    free(web_query);
+    
+    if (web_query)
+    {
+        free(web_query);
+        web_query = NULL;
+    }
   // end of web support stuff
 
   if (nice_intro ()) return (0);
