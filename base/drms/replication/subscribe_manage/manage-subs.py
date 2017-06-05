@@ -26,21 +26,21 @@
 #
 # [ client submits request ] --> N --> [ server starts worker ] --> P -->
 #    [ server creates the dump ] --> D --> [ client downloads dump ] --> A -->
-#    [ client ingests dump ] --> I --> [ server cleans up ] --> C -->
+#    [ client ingests dump ] --> I --> [ server cleans up OR back to D ] --> C -->
 #    [ client receives notice ] --> S
 #    
 
 # Responses to client polling:
-# State       Response to pollDump        Response to pollComplete
-# -----       --------------------        ------------------------
-#   N           requestQueued               invalidArgument
-#   P           requestProcessing           invalidArgument
-#   D           dumpReady                   invalidArgument
-#   A           invalidArgument             requestFinalizing
-#   I           invalidArgument             requestFinalizing
-#   C           invalidArgument             requestComplete
-#   S           internalError               internalError
-#   E           requestFailed               requestFailed
+# State       Set By    Response to pollDump        Response to pollComplete
+# -----       -------   --------------------        ------------------------
+#   N         client    requestQueued               invalidArgument
+#   P         server    requestProcessing           invalidArgument
+#   D         server    dumpReady                   invalidArgument
+#   A         client    invalidArgument             requestFinalizing
+#   I         client    invalidArgument             requestFinalizing
+#   C         server    invalidArgument             requestComplete
+#   S         client    internalError               internalError
+#   E         either    requestFailed               requestFailed
 
 import os
 import sys
@@ -1412,7 +1412,7 @@ class Worker(threading.Thread):
         if self.action == 'subscribe':
             # Run createtabstruct for the table of the series being subscribed to.
             cmdList = [ os.path.join(self.arguments.getArg('kModDir'), 'createtabstructure'), '-u', 'JSOC_DBHOST=' + self.arguments.getArg('SLAVEHOSTNAME'), 'in=' + self.series[0].lower(), 'out=' + self.series[0].lower(), 'archive=' + str(self.archive), 'retention=' + str(self.retention), 'tapegroup=' + str(self.tapegroup), 'owner=' + self.arguments.getArg('REPUSER') ]
-            outFile = os.path.join(self.triggerDir, self.client + '.subscribe_series.sql.gz')
+            outFile = os.path.join(self.triggerDir, self.client + '.subscribe_series.ddl.sql.gz')
 
             wroteIntMsg = False
             with gzip.open(outFile, mode='wt', compresslevel=5, encoding='UTF8') as fout:
@@ -1657,8 +1657,9 @@ class Worker(threading.Thread):
                         #    so we now skip the step of dumping them.
                 
                         # 10. Pump out chunks of the series database table.
-                        outFile = os.path.join(self.triggerDir, self.client + '.subscribe_series.sql.gz')
-                        fileNo = 0
+                        fileNo = 0 # 0-based number of file generated at server
+                        fileNoIngested = None # the last file ingested at the client (None means no file has been ingested)
+                        nextFileWasDownloaded = True
                         limit = 10000000 # 10 million rows at a time (for aia.lev1, this should be a little over 20GB).
                         done = False
                         
@@ -1689,96 +1690,168 @@ class Worker(threading.Thread):
                         cursor.execute(copyCmd)
                     
                         while not done:
-                            self.log.writeInfo([ 'Generating dump file ' + str(fileNo) + '.' ])
-                            self.log.writeDebug([ 'Memory usage (MB) ' + str(self.proc.memory_info().vms / 1048576) + '.' ])
-                            offset = 0
+                            if fileNo > 0:
+                                self.log.writeInfo([ 'Generating DML dump file ' + str(fileNo) + '.' ])
+                                self.log.writeDebug([ 'Memory usage (MB) ' + str(self.proc.memory_info().vms / 1048576) + '.' ])
+                                offset = 0
 
-                            # Append if the file exists, otherwise, create the file ('a' does this).
-                            with gzip.open(outFile, mode='at', compresslevel=5, encoding='UTF8') as fout:
-                                if fileNo == 0:
-                                    # The first dump file contains the SQL that sets the correct sequence number
-                                    # at the client. The remaining files contain only the COPY FROM data.
-                                    if not doAppend:
-                                        print('BEGIN;', file=fout)
-                                        print("SET CLIENT_ENCODING TO 'UTF8';", file=fout)
-                                    if trackingInsert:
-                                        print(trackingInsert, file=fout)
+                                outFile = os.path.join(self.triggerDir, self.client + '.subscribe_series.dml' + str(fileNo).zfill(3) + '.sql.gz')
+                                
+                                ilogger = IntervalLogger(self.log, timedelta(seconds=60))
+                            
+                                with gzip.open(outFile, mode='wt', compresslevel=5, encoding='UTF8') as fout:
+                                    print('BEGIN;', file=fout)
+                                    print("SET CLIENT_ENCODING TO 'UTF8';", file=fout)                                    
                                     fout.flush()
 
-                                print('COPY ' + self.series[0].lower() + ' (' + ','.join(columnList) + ') FROM STDIN;', file=fout);
-                                fout.flush()
+                                    print('COPY ' + self.series[0].lower() + ' (' + ','.join(columnList) + ') FROM STDIN;', file=fout);
+                                    fout.flush()
                         
-                                # Because the client character encoding was set to UTF8, copy_expert() will convert
-                                # the db's server encoding from Latin-1 to UTF8.
+                                    # Because the client character encoding was set to UTF8, copy_expert() will convert
+                                    # the db's server encoding from Latin-1 to UTF8.
                             
-                                # ACK - you cannot use psycopg2 AT ALL to do a COPY TO!! The only thing psycopg2
-                                # will allow you to do is to dump an entire table. With copy_to() and with copy_expert(), 
-                                # you cannot use a query to specify rows to dump. You cannot use cursor.execute() either, 
-                                # which normally would allow you to select records with a query. psycopg2 prohibits
-                                # you from running an SQL query that contains COPY TO in it.
-                                #
-                                # Give up and use a SELECT statement and then dump into fout. This is not great because
-                                # we have to send data over the network from server to client, then the client dumps to
-                                # fout, which is on the server.
-                                for record in cursor:
-                                    # Missing values are Nones. Make them empty strings.
+                                    # ACK - you cannot use psycopg2 AT ALL to do a COPY TO!! The only thing psycopg2
+                                    # will allow you to do is to dump an entire table. With copy_to() and with copy_expert(), 
+                                    # you cannot use a query to specify rows to dump. You cannot use cursor.execute() either, 
+                                    # which normally would allow you to select records with a query. psycopg2 prohibits
+                                    # you from running an SQL query that contains COPY TO in it.
+                                    #
+                                    # Give up and use a SELECT statement and then dump into fout. This is not great because
+                                    # we have to send data over the network from server to client, then the client dumps to
+                                    # fout, which is on the server.
+                                    for record in cursor:
+                                        # Missing values are Nones. Make them empty strings.
                                 
-                                    # EGADS! If the text string contains a control character (e.g., '\r', '\n'), then 
-                                    # we cannot simply print that character to the dump file. If we were to do that, then 
-                                    # the control character would appear in the dump file. However, we want the corresponding
-                                    # escape sequence to appear in the dump file instead. The dump file should contain
-                                    # the two-character representation (e.g. '\\r', '\\n') instead. The repr() function
-                                    # can be used to achieve this.
-                                    recordString = [ '\\N' if col is None else repr(col).strip('"\'') for col in record ]
-                                    print('\t'.join(recordString), file=fout)
-                                    offset += 1
+                                        # EGADS! If the text string contains a control character (e.g., '\r', '\n'), then 
+                                        # we cannot simply print that character to the dump file. If we were to do that, then 
+                                        # the control character would appear in the dump file. However, we want the corresponding
+                                        # escape sequence to appear in the dump file instead. The dump file should contain
+                                        # the two-character representation (e.g. '\\r', '\\n') instead. The repr() function
+                                        # can be used to achieve this.
+                                        recordString = [ '\\N' if col is None else repr(col).strip('"\'') for col in record ]
+                                        print('\t'.join(recordString), file=fout)
+                                        offset += 1
                                     
-                                    if offset >= limit:
-                                        break
+                                        if offset >= limit:
+                                            break
                                         
-                                    # dumping an entire table could take a while; check for client-side error between iterations
-                                    # (each iteration is 4096 rows, currently)
-                                    try:
-                                        gotLock = self.reqTable.acquireLock()
-                                        if not gotLock:
-                                            raise Exception('lock', 'Unable to acquire req-table lock.')
+                                        # dumping an entire table could take a while; check for client-side error between db fetches
+                                        # (each fetch is for 4096 rows, currently); also, check for client ready for next file
+                                        if offset % 4096 == 0:
+                                            try:
+                                                gotLock = self.reqTable.acquireLock()
+                                                if not gotLock:
+                                                    raise Exception('lock', 'Unable to acquire req-table lock.')
                                 
-                                        (code, msg) = self.request.getStatus()
-                                        if code.upper() == 'E':
-                                            raise Exception('clientSignalledError', self.client + ' cancelling request.')
-                                    finally:
-                                        if gotLock:
-                                            self.reqTable.releaseLock()
-                                            gotLock = None
+                                                (code, msg) = self.request.getStatus()
+                                                if code.upper() == 'E':
+                                                    raise Exception('clientSignalledError', self.client + ' cancelling request.')  
+                                                elif code.upper() == 'D':
+                                                    if fileNoIngested is None:
+                                                        ilogger.writeDebug([ 'Waiting for client ' + self.client + ' to download DDL dump file (request ' + str(self.requestID) + '). Status ' + code.upper() + '.'])                                                    
+                                                    else:
+                                                        ilogger.writeDebug([ 'Waiting for client ' + self.client + ' to download DML dump file ' + str(fileNoIngested + 1) + ' (request ' + str(self.requestID) + '). Status ' + code.upper() + '.'])
+                                                        ilogger.updateLastWriteTime()
+                                                elif code.upper() == 'A':
+                                                    if fileNoIngested is None:
+                                                        ilogger.writeDebug([ 'Waiting for client ' + self.client + ' to ingest DDL dump file (request ' + str(self.requestID) + '). Status ' + code.upper() + '.'])                                                        
+                                                    else:                                                        
+                                                        ilogger.writeDebug([ 'Waiting for client ' + self.client + ' to ingest DML dump file ' + str(fileNoIngested + 1) + ' (request ' + str(self.requestID) + '). Status ' + code.upper() + '.'])
+                                                        ilogger.updateLastWriteTime()
+                                                elif code.upper() == 'I':
+                                                    if nextFileWasDownloaded:
+                                                        if fileNoIngested is None:
+                                                            self.log.writeDebug([ 'Client ' + self.client + ' has signaled that they have successfully ingested DDL dump file (request ' + str(self.requestID) + '). Status ' + code.upper() + '.'])
+                                                            fileNoIngested = 0
+                                                        else:
+                                                            self.log.writeDebug([ 'Client ' + self.client + ' has signaled that they have successfully ingested DML dump file number ' + str(fileNoIngested + 1) + ' (request ' + str(self.requestID) + '). Status ' + code.upper() + '.'])
+                                                            fileNoIngested += 1
+                                                            
+                                                        outFile = os.path.join(self.triggerDir, self.client + '.subscribe_series.sql.gz')
+                                                        if os.path.exists(outFile):
+                                                            # clean up dump file
+                                                            os.remove(outFile)
+                                                            
+                                                        nextFileWasDownloaded = False
+                                                        
+                                                    if fileNo - 1 > fileNoIngested:
+                                                        # fileNo is the file being currently generated; fileNo - 1 is the last one generated;
+                                                        # tell client another file is ready for download
+                                                        
+                                                        # rename file to name client looks for
+                                                        outFile = os.path.join(self.triggerDir, self.client + '.subscribe_series.dml' + str(fileNoIngested + 1).zfill(3) + '.sql.gz')
+                                                        destFile = os.path.join(self.triggerDir, self.client + '.subscribe_series.sql.gz')
+                                                        shutil.move(outFile, destFile)
+                                                        
+                                                        # Set request status to 'D' to indicate, to client, that a dump is ready for
+                                                        # download and ingestion. The client could have sent either a polldump request (for the first
+                                                        # dump file) or a pollcomplete request (for all subsequent dump files). Both of those requests
+                                                        # should handle a 'D' status. If the client makes a pollcomplete request, and the client
+                                                        # sees a 'D' status, then it should go back to the code where it sets the status to 'A' and
+                                                        # ingests the dump file, then sets status to 'I'.
+                                                        self.request.setStatus('D')
+                                                        nextFileWasDownloaded = True
+                                                        self.log.writeInfo([ 'notified client ' + self.client + ' that dump file ' + outFile + ' is ready for download' ])
+                                                else:
+                                                    reqStatus = 'E'
+                                                    raise Exception('invalidReqStatus', 'Unexpected request status ' + code.upper() + '.')
+                                            except shutil.Error as exc:
+                                                import traceback
+                                                self.log.writeError([ traceback.format_exc(5) ])
+                                                raise Exception('fileIO', 'unable to rename ' + outFile + ' to ' + destFile)
+                                            finally:
+                                                if gotLock:
+                                                    self.reqTable.releaseLock()
+                                                    gotLock = None
 
-                                # Send an EOF to the COPY command.
-                                print('\.', file=fout)
-                                print('COMMIT;', file=fout)
-                                fout.flush()
+                                    # Send an EOF to the COPY command.
+                                    print('\.', file=fout)
+                                    print('COMMIT;', file=fout)
+                                    fout.flush()
                         
-                                if cursor.rownumber == 0:
-                                    self.log.writeDebug([ 'No more rows to dump.' ])
-                                    done = True
+                                    if cursor.rownumber == 0:
+                                        self.log.writeDebug([ 'No more rows to dump.' ])
+                                        done = True
 
-                            self.log.writeInfo([ 'Successfully created dump file ' + str(fileNo) + ' (' + outFile + ').' ])
-                            self.log.writeDebug([ 'Memory usage (MB) ' + str(self.proc.memory_info().vms / 1048576) + '.' ])
+                                # outside of with block
+                                self.log.writeInfo([ 'Successfully created dump file ' + str(fileNo) + ' (' + outFile + ').' ])
+                                self.log.writeDebug([ 'Memory usage (MB) ' + str(self.proc.memory_info().vms / 1048576) + '.' ])
+                            else:
+                                # fileNo == 0
+                                self.log.writeInfo([ 'generating DDL dump file' ])
+                                self.log.writeDebug([ 'memory usage (MB) ' + str(self.proc.memory_info().vms / 1048576) ])
+                                
+                                outFile = os.path.join(self.triggerDir, self.client + '.subscribe_series.ddl.sql.gz')
+                                with gzip.open(outFile, mode='at', compresslevel=5, encoding='UTF8') as fout:                                
+                                    if trackingInsert:
+                                        # the first dump file contains the SQL that sets the correct sequence number
+                                        # at the client (new sites only)
+                                        print(trackingInsert, file=fout)
+                                    print('COMMIT;', file=fout)
+                                    fout.flush()
+                                    
+                                destFile = os.path.join(self.triggerDir, self.client + '.subscribe_series.sql.gz')
+                                    
+                                try:
+                                    gotLock = self.reqTable.acquireLock()
+                                    if not gotLock:
+                                        raise Exception('lock', 'Unable to acquire req-table lock.')
 
-                            # Set request status to 'D' to indicate, to client, that the dump is ready for
-                            # download and ingestion. The client could have sent either a polldump request (for the first
-                            # dump file) or a pollcomplete request (for all subsequent dump files). Both of those requests
-                            # should handle a 'D' status. If the client makes a pollcomplete request, and the client
-                            # sees a 'D' status, then it should go back to the code where it sets the status to 'A' and
-                            # ingests the dump file, then sets status to 'I'.
-                            try:
-                                gotLock = self.reqTable.acquireLock()
-                                if not gotLock:
-                                    raise Exception('lock', 'Unable to acquire req-table lock.')
-
-                                self.request.setStatus('D')
-                            finally:
-                                if gotLock:
-                                    self.reqTable.releaseLock()
-                                    gotLock = None
+                                    # rename file to name client looks for
+                                    shutil.move(outFile, destFile)
+                                    
+                                    self.request.setStatus('D')
+                                except shutil.Error as exc: 
+                                    import traceback
+                                    self.log.writeError([ traceback.format_exc(5) ])
+                                    raise Exception('fileIO', 'unable to rename ' + outFile + ' to ' + destFile)
+                                finally:
+                                    if gotLock:
+                                        self.reqTable.releaseLock()
+                                        gotLock = None
+                            
+                            # do not set status to D, since it might not be P or I; if it is P or I, then the status will be set to D
+                            # either in the dump-creation code above, or the 'done' code below
 
                             # Wait for client response. They will send a pollcomplete request when they are ready for
                             # the next chunk.
@@ -1788,48 +1861,90 @@ class Worker(threading.Thread):
                             # provides an error message that the server logs. The loop is interruptable by a shut-down request.
                             
                             # log once every 60 seconds
-                            ilogger = IntervalLogger(self.log, timedelta(seconds=60))
-                            maxLoop = 172800 # 48-hour timeout
-                            while True:
-                                if maxLoop <= 0:
-                                    raise Exception('sqlAck', 'Time-out waiting for client to ingest dump file.')
+                            if done:
+                                self.log.writeDebug([ 'entering loop that checks for completion of all downloads by client' ])
+                                # all dump files have been created; as client ingests each one, remove it and move on to
+                                # the next one
+                                ilogger = IntervalLogger(self.log, timedelta(seconds=60))
+                                maxLoop = 172800 # 48-hour timeout
+                                while True:
+                                    if maxLoop <= 0:
+                                        raise Exception('sqlAck', 'Time-out waiting for client to ingest dump file.')
             
-                                if self.sdEvent.isSet():
-                                    # Stop polling if main thread is shutting down.
-                                    raise Exception('shutDown', 'Received shut-down message from main thread.')
+                                    if self.sdEvent.isSet():
+                                        # Stop polling if main thread is shutting down.
+                                        raise Exception('shutDown', 'Received shut-down message from main thread.')
             
-                                try:
-                                    gotLock = self.reqTable.acquireLock()
-                                    if not gotLock:
-                                        raise Exception('lock', 'Unable to acquire req-table lock.')
+                                    try:
+                                        gotLock = self.reqTable.acquireLock()
+                                        if not gotLock:
+                                            raise Exception('lock', 'Unable to acquire req-table lock.')
                                 
-                                    (code, msg) = self.request.getStatus()
-                                    if code.upper() == 'D':
-                                        ilogger.writeDebug([ 'Waiting for client ' + self.client + ' to download dump file (request ' + str(self.requestID) + '). Status ' + code.upper() + '.'])
-                                    elif code.upper() == 'A':
-                                        ilogger.writeDebug([ 'Waiting for client ' + self.client + ' to ingest dump file (request ' + str(self.requestID) + '). Status ' + code.upper() + '.'])
-                                    elif code.upper() == 'I':
-                                        # Onto next dump-file chunk.
-                                        self.log.writeDebug([ 'Client ' + self.client + ' has signaled that they have successfully ingested dump file number ' + str(fileNo) + ' (request ' + str(self.requestID) + '). Status ' + code.upper() + '.'])
-                                        if os.path.exists(outFile):
-                                            # Clean up dump file so it can be re-used.
-                                            os.remove(outFile)
-                                        break
-                                    elif code.upper() == 'E':
-                                        raise Exception('dumpApplication', self.client + ' failed to properly ingest dump file.')
-                                    else:
-                                        reqStatus = 'E'
-                                        raise Exception('invalidReqStatus', 'Unexpected request status ' + code.upper() + '.')
-
-                                    # if we wrote during this iteration, update the last-print time
-                                    ilogger.updateLastWriteTime()
-                                finally:
-                                    if gotLock:
-                                        self.reqTable.releaseLock()
-                                        gotLock = None
+                                        (code, msg) = self.request.getStatus()
+                                        if code.upper() == 'E':
+                                            raise Exception('clientSignalledError', self.client + ' cancelling request.')  
+                                        elif code.upper() == 'D':
+                                            if fileNoIngested is None:
+                                                ilogger.writeDebug([ 'Waiting for client ' + self.client + ' to download DDL dump file (request ' + str(self.requestID) + '). Status ' + code.upper() + '.'])                                                    
+                                            else:
+                                                ilogger.writeDebug([ 'Waiting for client ' + self.client + ' to download DML dump file ' + str(fileNoIngested + 1) + ' (request ' + str(self.requestID) + '). Status ' + code.upper() + '.'])
+                                            # if we wrote during this iteration, update the last-print time
+                                            ilogger.updateLastWriteTime()
+                                        elif code.upper() == 'A':
+                                            if fileNoIngested is None:
+                                                ilogger.writeDebug([ 'Waiting for client ' + self.client + ' to ingest DDL dump file (request ' + str(self.requestID) + '). Status ' + code.upper() + '.'])                                                        
+                                            else:                                                        
+                                                ilogger.writeDebug([ 'Waiting for client ' + self.client + ' to ingest DML dump file ' + str(fileNoIngested + 1) + ' (request ' + str(self.requestID) + '). Status ' + code.upper() + '.'])
+                                                
+                                            # if we wrote during this iteration, update the last-print time
+                                            ilogger.updateLastWriteTime()
+                                        elif code.upper() == 'I':
+                                            if fileNoIngested is None:
+                                                self.log.writeDebug([ 'Client ' + self.client + ' has signaled that they have successfully ingested DDL dump file (request ' + str(self.requestID) + '). Status ' + code.upper() + '.'])
+                                                fileNoIngested = 0
+                                            else:
+                                                self.log.writeDebug([ 'Client ' + self.client + ' has signaled that they have successfully ingested DML dump file number ' + str(fileNoIngested + 1) + ' (request ' + str(self.requestID) + '). Status ' + code.upper() + '.'])
+                                                fileNoIngested += 1
+                                            
+                                            # Onto next dump-file chunk.
+                                            outFile = os.path.join(self.triggerDir, self.client + '.subscribe_series.sql.gz')
+                                            if os.path.exists(outFile):
+                                                # clean up dump file
+                                                os.remove(outFile)
+                                                
+                                            if fileNoIngested == fileNo:
+                                                # no more files to download; the calling function will set status to 'C'
+                                                break  
+                                            elif fileNo > fileNoIngested:
+                                                # fileNo is the last file generated; tell client the next file is ready for download
+                                                
+                                                # rename file to name client looks for
+                                                outFile = os.path.join(self.triggerDir, self.client + '.subscribe_series.dml' + str(fileNoIngested + 1).zfill(3) + '.sql.gz')
+                                                destFile = os.path.join(self.triggerDir, self.client + '.subscribe_series.sql.gz')
+                                                shutil.move(outFile, destFile)
+                                                
+                                                # Set request status to 'D' to indicate, to client, that a dump is ready for
+                                                # download and ingestion. The client could have sent either a polldump request (for the first
+                                                # dump file) or a pollcomplete request (for all subsequent dump files). Both of those requests
+                                                # should handle a 'D' status. If the client makes a pollcomplete request, and the client
+                                                # sees a 'D' status, then it should go back to the code where it sets the status to 'A' and
+                                                # ingests the dump file, then sets status to 'I'.
+                                                self.request.setStatus('D')
+                                                self.log.writeInfo([ 'notified client ' + self.client + ' that dump file ' + outFile + ' is ready for download' ])
+                                            else:
+                                                # error (can't have ingested more file than were created)
+                                                reqStatus = 'E'
+                                                raise Exception('sqlDump', 'cannot ingest more files than were created')
+                                        else:
+                                            reqStatus = 'E'
+                                            raise Exception('invalidReqStatus', 'Unexpected request status ' + code.upper() + '.')
+                                    finally:
+                                        if gotLock:
+                                            self.reqTable.releaseLock()
+                                            gotLock = None
             
-                                maxLoop -= 1
-                                time.sleep(1)
+                                    maxLoop -= 1
+                                    time.sleep(1)
                 
                             # Ready for next chunk
                             fileNo += 1
