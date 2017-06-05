@@ -541,13 +541,13 @@ def ingestSQLFile(sqlIn, psqlBin, dbhost, dbport, dbname, dbuser, log):
     
     try:
         cmdList = [ psqlBin, '-h', dbhost, '-p', dbport, '-d', dbname, '-vON_ERROR_STOP=1', '-U', dbuser, '-f', '-']
+        # specify stdout so that 
         proc = Popen(cmdList, stdin=PIPE, stderr=pipeWriteEndErr, stdout=PIPE)
     except OSError as exc:
         raise Exception('sqlDump', "Cannot run command '" + ' '.join(cmdList) + "' ")
     except ValueError as exc:
         raise Exception('sqlDump', "psql command '" + ' '.join(cmdList) + "' called with invalid arguments.")            
-    
-    
+
     # It turns out the psql will NOT close any of the pipes or files opened in this script. So, before we write
     # to any pipe in a loop, we need to check if psql has died, and if so, bail out of the loop.
     doneWriting = False
@@ -568,13 +568,15 @@ def ingestSQLFile(sqlIn, psqlBin, dbhost, dbport, dbname, dbuser, log):
                     log.writeDebug([ 'Wrote ' + str(bytesWritten) + ' bytes to psql pipe.' ])                    
                 except BrokenPipeError as exc:
                     # psql terminated. Time to error out. Let the proc.poll() block of code handle this.
-                    log.writeError([ 'The psql child process terminated - cannot send data to psql.' ])
                     doneWriting = True
+                    log.writeError([ 'The psql child process terminated - cannot send data to psql.' ])
             else:
-                log.writeDebug([ 'Done sending data to psql.' ])
                 doneWriting = True
+                log.writeDebug([ 'Done sending data to psql.' ])
         else:
-            proc.stdin.close()
+            if not proc.stdin.closed:
+                log.writeInfo([ 'closing psql stdin' ])
+                proc.stdin.close()
                 
         # Log any stderr messages from psql. Don't worry about stdout - psql will print an insert line
         # for every line ingested, and those don't provide any useful information
