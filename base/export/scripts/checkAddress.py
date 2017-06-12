@@ -121,7 +121,8 @@ if __name__ == "__main__":
         try:
             with psycopg2.connect(database=drmsParams.get('DBNAME'), user=optD['dbuser'], host=drmsParams.get('SERVER'), port=drmsParams.get('DRMSPGPORT')) as conn:
                 with conn.cursor() as cursor:
-                    cmd = 'SELECT A.confirmation FROM ' + optD['addresstab'] + ' AS A, ' + optD['domaintab'] + " AS D WHERE A.domainid = D.domainid AND A.localname = '" + localName + "' AND D.domainname = '" + domainName + "'"
+                    # registered domain names are always lower case - the comparison should be case-insensitive
+                    cmd = 'SELECT A.confirmation FROM ' + optD['addresstab'] + ' AS A, ' + optD['domaintab'] + " AS D WHERE A.domainid = D.domainid AND A.localname = '" + localName + "' AND D.domainname = '" + domainName.lower() + "'"
                     
                     try:
                         cursor.execute(cmd)
