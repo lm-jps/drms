@@ -1,8 +1,10 @@
-#!/usr/bin/env python
-
-from __future__ import print_function
+#!/usr/bin/env python3
 
 import sys
+
+if sys.version_info < (3, 5):
+    raise Exception('You must run the 3.5 release, or a more recent release, of Python.')
+
 import os
 import pwd
 from string import Template
