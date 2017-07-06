@@ -1813,7 +1813,7 @@ class Worker(threading.Thread):
                                         self.log.writeDebug([ 'No more rows to dump.' ])
                                         done = True
 
-                                # outside of with block
+                                # outside of with block (output file closed)
                                 self.log.writeInfo([ 'Successfully created dump file ' + str(fileNo) + ' (' + outFile + ').' ])
                                 self.log.writeDebug([ 'Memory usage (MB) ' + str(self.proc.memory_info().vms / 1048576) + '.' ])
                             else:
@@ -1899,18 +1899,21 @@ class Worker(threading.Thread):
                                             # if we wrote during this iteration, update the last-print time
                                             ilogger.updateLastWriteTime()
                                         elif code.upper() == 'I':
-                                            if fileNoIngested is None:
-                                                self.log.writeDebug([ 'Client ' + self.client + ' has signaled that they have successfully ingested DDL dump file (request ' + str(self.requestID) + '). Status ' + code.upper() + '.'])
-                                                fileNoIngested = 0
-                                            else:
-                                                self.log.writeDebug([ 'Client ' + self.client + ' has signaled that they have successfully ingested DML dump file number ' + str(fileNoIngested + 1) + ' (request ' + str(self.requestID) + '). Status ' + code.upper() + '.'])
-                                                fileNoIngested += 1
+                                            if nextFileWasDownloaded:
+                                                if fileNoIngested is None:
+                                                    self.log.writeDebug([ 'Client ' + self.client + ' has signaled that they have successfully ingested DDL dump file (request ' + str(self.requestID) + '). Status ' + code.upper() + '.'])
+                                                    fileNoIngested = 0
+                                                else:
+                                                    self.log.writeDebug([ 'Client ' + self.client + ' has signaled that they have successfully ingested DML dump file number ' + str(fileNoIngested + 1) + ' (request ' + str(self.requestID) + '). Status ' + code.upper() + '.'])
+                                                    fileNoIngested += 1
                                             
-                                            # Onto next dump-file chunk.
-                                            outFile = os.path.join(self.triggerDir, self.client + '.subscribe_series.sql.gz')
-                                            if os.path.exists(outFile):
-                                                # clean up dump file
-                                                os.remove(outFile)
+                                                # Onto next dump-file chunk.
+                                                outFile = os.path.join(self.triggerDir, self.client + '.subscribe_series.sql.gz')
+                                                if os.path.exists(outFile):
+                                                    # clean up dump file
+                                                    os.remove(outFile)
+                                                    
+                                                nextFileWasDownloaded = False
                                                 
                                             if fileNoIngested == fileNo:
                                                 # no more files to download; the calling function will set status to 'C'
@@ -1930,6 +1933,7 @@ class Worker(threading.Thread):
                                                 # sees a 'D' status, then it should go back to the code where it sets the status to 'A' and
                                                 # ingests the dump file, then sets status to 'I'.
                                                 self.request.setStatus('D')
+                                                nextFileWasDownloaded = True
                                                 self.log.writeInfo([ 'notified client ' + self.client + ' that dump file ' + outFile + ' is ready for download' ])
                                             else:
                                                 # error (can't have ingested more file than were created)
