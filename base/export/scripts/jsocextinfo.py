@@ -12,7 +12,7 @@ import sys
 import os
 import cgi
 import json
-from subprocess import check_output, check_call, CalledProcessError, STDOUT
+from subprocess import check_output, Popen, SubprocessError, STDOUT, PIPE, DEVNULL
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../include'))
 from drmsparams import DRMSParams
 
@@ -26,6 +26,7 @@ RET_JSOCINFO = 6
 
 err = None
 errMsg = None
+jstdout = None
 
 def getDRMSParam(drmsParams, param):
     rv = drmsParams.get(param)
@@ -151,11 +152,21 @@ try:
     cmdList.extend(allArgs)
 
     try:
-        check_call(cmdList)
+        proc = Popen(cmdList, stdin=None, stderr=PIPE, stdout=PIPE)
+        jstdout, jstderr = proc.communicate()
+
+        if jstderr is not None:
+            errMsg = jstderr.decode('UTF8')
+
+        if proc.returncode != 0:
+            if errMsg is None:
+                errMsg = "Command '" + ' '.join(cmdList) + "' returned non-zero status code " + str(proc.returncode)
+        
+            raise Exception('jsocinfo', errMsg , RET_JSOCINFO)
     except ValueError as exc:
         raise Exception('jsocinfo', exc.args[0], RET_JSOCINFO)
-    except CalledProcessError as exc:
-        raise Exception('jsocinfo', "Command '" + ' '.join(cmdList) + "' returned non-zero status code " + str(exc.returncode), RET_JSOCINFO)
+    except SubprocessError as exc:
+        raise Exception('jsocinfo', 'failure running jsoc_info', RET_JSOCINFO)
 
 except Exception as exc:
     if len(exc.args) != 3:
@@ -177,11 +188,17 @@ except Exception as exc:
 
 # jsoc_info creates webpage content, if there is no failure. But if it or this script fails, then we have to create content that contains
 # an error code and error message.
+rootObj = {}
+
 if err:
-    print('Content-type: application/json\n')
-    rootObj = {}
     rootObj['status'] = err
     rootObj['error'] = errMsg
+    print('Content-type: application/json\n')
     print(json.dumps(rootObj))
+else:
+    # use jsoc_info's output
+    if jstdout is not None:
+        print(jstdout.decode('UTF8'), end='')
+    
 
 sys.exit(0)
