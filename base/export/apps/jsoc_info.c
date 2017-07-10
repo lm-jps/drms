@@ -2243,8 +2243,10 @@ int DoIt(void)
     
     struct requisitionStructT requisition = { 0 };
     
-    if (wantRecInfo)
+    if (useFitsKeyNames && wantRecInfo)
     {
+        /* if we are printing FITS key names, and not DRMS key names, then we will determine whether or not the SU is online if the user 
+         * requesting the printing of record information */
         requisition.requireSUMinfo = 1;
     }
           
