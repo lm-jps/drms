@@ -384,6 +384,20 @@ int drms_server_begin_transaction(DRMS_Env_t *env) {
               fprintf(stderr, "Failed to modify db-statement time-out to %d.\n", env->dbtimeout);
           }
       }
+      
+    /* if the user specified the UTF* encoding, set that here */
+    if (env->dbutf8clientencoding != 0)
+    {
+        if (db_setutf8clientencoding(env->session->db_handle))
+        {
+            fprintf(stderr, "failed to set UTF8 client encoding\n");
+        }
+        
+        if (env->verbose)
+        {
+            printf("set UTF8 database client encoding\n");
+        }
+    }
   }
 
   /* It is possible that the user has previously called drms_server_end_transaction(),
