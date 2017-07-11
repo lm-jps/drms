@@ -147,11 +147,12 @@ try:
     ###################
     ## Run jsoc_info ##
     ###################
-    cmdList = [os.path.join(binDir, arch, 'jsoc_info'), 'JSOC_DBHOST=' + server, 'DRMS_DBTIMEOUT=600000', 'DRMS_QUERY_MEM=2048']
+    cmdList = [ os.path.join(binDir, arch, 'jsoc_info'), 'JSOC_DBHOST=' + server, 'DRMS_DBTIMEOUT=600000', 'DRMS_QUERY_MEM=2048', 'DRMS_DBUTF8CLIENTENCODING=1' ]
     # Provide all jsoc_info arguments passed through jsocextinfo.py to jsoc_info.
     cmdList.extend(allArgs)
 
     try:
+        print('running ' + ' '.join(cmdList), file=sys.stderr)
         proc = Popen(cmdList, stdin=None, stderr=PIPE, stdout=PIPE)
         jstdout, jstderr = proc.communicate()
 
@@ -199,6 +200,5 @@ else:
     # use jsoc_info's output
     if jstdout is not None:
         print(jstdout.decode('UTF8'), end='')
-    
 
 sys.exit(0)
