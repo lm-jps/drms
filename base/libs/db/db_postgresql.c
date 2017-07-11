@@ -124,6 +124,8 @@ DB_Handle_t *db_connect(const char *host, const char *user,
       p += sprintf(p,"user = %s ",user); 
   if (passwd)
       p += sprintf(p,"password = %s ",passwd); 
+      
+    /* cannot set client encoding here with PG 8.4 :( */
 
   db = PQconnectdb(conninfo);
   if (PQstatus(db) != CONNECTION_OK)
@@ -1701,6 +1703,15 @@ int db_settimeout(DB_Handle_t *db, unsigned int timeoutval)
 {
     char stmnt[128];
 
-    snprintf(stmnt, sizeof(stmnt), "SET statement_timeout TO %u", timeoutval);    
+    snprintf(stmnt, sizeof(stmnt), "SET statement_timeout TO %u", timeoutval);
+    return db_dms(db, NULL, stmnt);
+}
+
+/* returns 1 on failure, 0 on success. */
+int db_setutf8clientencoding(DB_Handle_t *db)
+{
+    char stmnt[128];
+
+    snprintf(stmnt, sizeof(stmnt), "SET client_encoding TO 'UTF8'");
     return db_dms(db, NULL, stmnt);
 }

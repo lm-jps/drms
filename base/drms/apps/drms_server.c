@@ -186,6 +186,7 @@ create_series describe_series delete_series modify_series show_info
 #define kFGFLAG "f"
 #define kLoopConnFlag "loopconn"
 #define kDBTimeOut "DRMS_DBTIMEOUT"
+#define kDBUtf8ClientEncoding "DRMS_DBUTF8CLIENTENCODING"
 
 /* Global structure holding command line parameters. */
 CmdParams_t cmdparams;
@@ -541,6 +542,7 @@ int main (int argc, char *argv[]) {
   env->quiet = 1;
   env->selfstart = selfstart;
   env->loopconn = cmdparams_isflagset(&cmdparams, kLoopConnFlag);
+  env->dbutf8clientencoding = cmdparams_isflagset(&cmdparams, kDBUtf8ClientEncoding);
 
   /* Start listening on the socket for clients trying to connect. */
   sockfd = db_tcp_listen(hostname, sizeof(hostname), &port);

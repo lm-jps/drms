@@ -262,6 +262,7 @@ int db_start_transaction(DB_Handle_t  *db);
 int db_rollback(DB_Handle_t  *db);
 int db_cancel(DB_Handle_t *db, char *effbuf, int size);
 int db_settimeout(DB_Handle_t *db, unsigned int timeoutval);
+int db_setutf8clientencoding(DB_Handle_t *db);
 
 /* Set transaction isolation level.   
    0 = read commited

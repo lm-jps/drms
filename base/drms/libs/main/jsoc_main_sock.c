@@ -94,7 +94,8 @@ int JSOCMAIN_Init(int argc,
             kSERVERWAITARG,
             kLoopConn,
             kDBTimeOut,
-            kCreateShadows);
+            kCreateShadows,
+            kDBUtf8ClientEncoding);
    cmdparams_reserve(&cmdparams, reservebuf, "jsocmain");
 
    status = cmdparams_parse (&cmdparams, argc, argv);
@@ -398,6 +399,7 @@ pid_t drms_start_server (int verbose, int dolog)  {
     int dbtimeout;
   int loopconn;
     int createshadows = 0;
+    int dbutf8clientencoding = 0;
   char drms_session[DRMS_MAXPATHLEN];
   char drms_host[DRMS_MAXPATHLEN];
   char drms_port[DRMS_MAXPATHLEN];
@@ -548,6 +550,12 @@ pid_t drms_start_server (int verbose, int dolog)  {
         dbtimeout = drms_cmdparams_get_int(&cmdparams, kDBTimeOut, NULL);
     }
     
+    dbutf8clientencoding = 0;
+    if (drms_cmdparams_exists(&cmdparams, kDBUtf8ClientEncoding))
+    {
+        dbutf8clientencoding = drms_cmdparams_get_int(&cmdparams, kDBUtf8ClientEncoding, NULL);
+    }
+    
   loopconn = cmdparams_isflagset(&cmdparams, kLoopConn);
      createshadows = cmdparams_isflagset(&cmdparams, kCreateShadows);
   
@@ -636,7 +644,7 @@ pid_t drms_start_server (int verbose, int dolog)  {
       close(fd[1]);
     }
 
-    const int num_args = 15;
+    const int num_args = 20;
     char **argv = malloc(num_args*sizeof(char *));
     int i = 0;
     argv[i++] = strdup ("drms_server");
@@ -704,6 +712,12 @@ pid_t drms_start_server (int verbose, int dolog)  {
           
           snprintf(buf, sizeof(buf), "--%s", kCreateShadows);
           argv[i++] = strdup(buf);
+      }
+      
+      if (dbutf8clientencoding)
+      {
+          argv[i] = malloc(DRMS_MAXNAMELEN * 2);
+          snprintf(argv[i++], DRMS_MAXNAMELEN * 2, "%s=1", kDBUtf8ClientEncoding);
       }
 
     for (; i < num_args; i++) {

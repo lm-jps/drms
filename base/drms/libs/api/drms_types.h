@@ -410,6 +410,7 @@ struct DRMS_Env_struct
   int16_t newsuretention; /* The retention time from the JSD, possibly overridden with the DRMS_NEWSURETENTION command-line argument. */
   int sumssafe; /* If 0, then don't call sums because DRMS timed-out waiting for SUMS. */
   int createshadows;  /* 1 if it is okay for module code to attempt to create shadow tables. */
+  int dbutf8clientencoding; 
 };
 
 /** \brief DRMS environment struct reference */

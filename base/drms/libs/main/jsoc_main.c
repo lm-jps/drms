@@ -364,7 +364,7 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
     char *dbport = NULL;
     char dbHostAndPort[64];
   int printrel = 0;
-  char reservebuf[128];
+  char reservebuf[256];
   int16_t retention;
   int16_t newsuretention;
 
@@ -385,7 +385,8 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
            kQUERYMEMARG,
            kLoopConn,
            kDBTimeOut,
-           kCreateShadows);
+           kCreateShadows,
+           kDBUtf8ClientEncoding);
   cmdparams_reserve(&cmdparams, reservebuf, "jsocmain");
 
   status = cmdparams_parse (&cmdparams, argc, argv);
@@ -577,6 +578,12 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
     {
         dbtimeout = drms_cmdparams_get_int(&cmdparams, kDBTimeOut, NULL);
     }
+    
+    int dbutf8clientencoding = 0;
+    if (drms_cmdparams_exists(&cmdparams, kDBUtf8ClientEncoding))
+    {
+        dbutf8clientencoding = drms_cmdparams_get_int(&cmdparams, kDBUtf8ClientEncoding, NULL);
+    }
 
   int loopconn = cmdparams_isflagset(&cmdparams, kLoopConn);
     
@@ -657,6 +664,7 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
   drms_env->newsuretention = newsuretention; /* New SU retention. */
   drms_env->query_mem = query_mem;
     drms_env->dbtimeout = dbtimeout;
+    drms_env->dbutf8clientencoding = dbutf8clientencoding;
   drms_env->verbose = verbose;
   drms_env->server_wait = 0;
 

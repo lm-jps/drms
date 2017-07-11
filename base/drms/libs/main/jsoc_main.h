@@ -40,6 +40,7 @@ parsing, and default-parameter initialization.
 #define kDBTimeOut "DRMS_DBTIMEOUT"
 #define kNewSuRetention "DRMS_NEWSURETENTION"
 #define kCreateShadows "DRMS_SHADOW"
+#define kDBUtf8ClientEncoding "DRMS_DBUTF8CLIENTENCODING"
 
 extern CmdParams_t cmdparams;
 /* Global DRMS Environment handle. */
