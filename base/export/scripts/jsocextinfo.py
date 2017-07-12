@@ -7,8 +7,8 @@
 #     returns one of its return values (success is still 0). An error message is returned via
 #     the "error" property.
 
-from __future__ import print_function
 import sys
+import io
 import os
 import cgi
 import json
@@ -34,6 +34,9 @@ def getDRMSParam(drmsParams, param):
         raise Exception('drmsParams', 'DRMS parameter ' + param + ' is not defined.', RET_DRMSPARAMS)
 
     return rv
+
+def setOutputEncoding(encoding='UTF8', errors='strict'):
+    sys.stdout = io.TextIOWrapper(sys.stdout.detach(), encoding=encoding, errors=errors, line_buffering=sys.stdout.line_buffering)
 
 try:
     optD = {}
@@ -191,6 +194,8 @@ except Exception as exc:
 # an error code and error message.
 rootObj = {}
 
+setOutputEncoding('UTF8')
+
 if err:
     rootObj['status'] = err
     rootObj['error'] = errMsg
@@ -199,6 +204,6 @@ if err:
 else:
     # use jsoc_info's output
     if jstdout is not None:
-        print(jstdout.decode('ascii', errors='replace').replace('\uFFFD', '\u003F'))
+        print(jstdout.decode('UTF8'))
 
 sys.exit(0)
