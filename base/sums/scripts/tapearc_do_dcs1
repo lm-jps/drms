@@ -1,6 +1,0 @@
-#!/bin/csh -f
-setenv DBHOSTNAME dcs1.jsoc.stanford.edu
-/bin/mv /tmp/tapearc_cron.log /tmp/tapearc_cron.log.old
-date >& /tmp/tapearc_cron.log
-/home/production/cvs/JSOC/bin/linux_x86_64/tapearc -v jsocdc >>& /tmp/tapearc_cron.log
-date >> /tmp/tapearc_cron.log
