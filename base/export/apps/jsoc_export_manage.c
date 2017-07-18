@@ -1771,6 +1771,8 @@ static int GenOutRSSpec(DRMS_Env_t *env,
         int len;
         char *repl = NULL;
         int ierr = 0;
+        size_t szCanon = 128;
+        char *canonicalIn = NULL;
         
         while (1)
         {
@@ -1803,6 +1805,28 @@ static int GenOutRSSpec(DRMS_Env_t *env,
                 break;
             }
             
+            canonicalIn = calloc(szCanon, sizeof(char));
+            if (!canonicalIn)
+            {
+                err = 1;
+                fprintf(stderr, "out of memory\n");
+                break;
+            }
+            
+            for (iset = 0; iset < nsetsIn; iset++)
+            {
+                if (iset > 0)
+                {
+                    canonicalIn = base_strcatalloc(canonicalIn, ", ", &szCanon);
+                }
+                
+                canonicalIn = base_strcatalloc(canonicalIn, snamesIn[iset], &szCanon);
+                if (*(filtsIn[iset]) != '\0')
+                {
+                    canonicalIn = base_strcatalloc(canonicalIn, filtsIn[iset], &szCanon);
+                }
+            }
+            
             /* The suffix column's value is a true suffix only if the string begins with '_'. If
              * not, then the value is actually the output series name. So if *psuffix != '_', 
              * then there was really no suffix for the previous processing step, and if *suffix != '_',
@@ -1813,7 +1837,7 @@ static int GenOutRSSpec(DRMS_Env_t *env,
                  * input series' suffixes with the output series' suffixes. */
                 for (iset = 0; iset < nsetsIn; iset++)
                 {
-                    outseries = base_strreplace(data->input, psuffix, suffix);
+                    outseries = base_strreplace(canonicalIn, psuffix, suffix);
                 }
                 
                 if (strcmp(psuffix, suffix) != 0)
@@ -1835,7 +1859,7 @@ static int GenOutRSSpec(DRMS_Env_t *env,
                 
                 /* Theoretically, outseries could be a comma-separated list of record-set specifications. We are 
                  * going to add the suffix to each seriesname in that list. */
-                outseries = strdup(data->input);
+                outseries = strdup(canonicalIn);
                 data->crout = 0;
                 for (iset = 0; iset < nsetsIn; iset++)
                 {
@@ -1874,7 +1898,7 @@ static int GenOutRSSpec(DRMS_Env_t *env,
                  * in suffix. */
                 for (iset = 0; iset < nsetsIn; iset++)
                 {
-                    outseries = base_strreplace(data->input, snamesIn[iset], suffix);
+                    outseries = base_strreplace(canonicalIn, snamesIn[iset], suffix);
                 }
                 
                 /* ART - This is the case for aia_scale processing (so far). This code will 
@@ -1886,7 +1910,7 @@ static int GenOutRSSpec(DRMS_Env_t *env,
             else
             {
                 /* No suffix on input series names, and no suffix on output series names. */
-                outseries = strdup(data->input);
+                outseries = strdup(canonicalIn);
             }
             
             /* Remove input series' filters. */
@@ -2004,6 +2028,12 @@ static int GenOutRSSpec(DRMS_Env_t *env,
          * with the output suffix appended. The output filter is a string consisting 
          * of [] for every prime-key constituent, except for the requestid keyword, 
          * in which case the subfilter is [reqid]. */
+         
+         if (canonicalIn)
+         {
+            free(canonicalIn);
+            canonicalIn = NULL;
+         }
     }
     
     return err;
