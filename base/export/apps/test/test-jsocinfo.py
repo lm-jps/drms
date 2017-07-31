@@ -101,7 +101,7 @@ if __name__ == "__main__":
         fitsNames = random.choice([ '0', '1' ])
     
         # generate test url        
-        dataList = [ ('op', op), ('ds', dataSet), ('l', followLinks), ('n', recordLimit), ('R', showSpec), ('z', printJson), ('o', verbose), ('f', fitsNames) ]
+        dataList = [ ('op', op), ('ds', dataSet), ('l', followLinks), ('n', recordLimit), ('R', showSpec), ('z', printJson), ('o', verbose), ('f', fitsNames), ('r', '1') ]
         
         if keywords:
             dataList.append(('key', ','.join(key.name for key in keywords)))
