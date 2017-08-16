@@ -109,6 +109,7 @@ endif
 PGH = -I$(POSTGRES_INCS)
 
 # For use of dynamic library
+PGL = -L$(POSTGRES_LIBS)
 PGLIBS = $(POSTGRES_LIBS)/lib$(POSTGRES_LIB).so
 
 # CFITSIO
@@ -220,8 +221,8 @@ endif
 # Link flags for all targets
 #
 LL_ALL		= $(SYSLIBS) -lcurl
-GCC_LF_ALL	= $(STATIC) 
-ICC_LF_ALL	= -diag-disable 10237 $(STATIC) -openmp -static-intel -Wl,-export-dynamic
+GCC_LF_ALL	= $(STATIC) -Wl,--copy-dt-needed-entries
+ICC_LF_ALL	= -diag-disable 10237 $(STATIC) -openmp -static-intel -Wl,-export-dynamic -Wl,--copy-dt-needed-entries
 
 # Fortran global LINK flags
 ifeq ($(FCOMPILER), ifort)
