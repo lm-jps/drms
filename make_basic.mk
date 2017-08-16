@@ -221,8 +221,15 @@ endif
 # Link flags for all targets
 #
 LL_ALL		= $(SYSLIBS) -lcurl
+
+
+ifeq ($(JSOC_MACHINE), linux_avx)
 GCC_LF_ALL	= $(STATIC) -Wl,--copy-dt-needed-entries
 ICC_LF_ALL	= -diag-disable 10237 $(STATIC) -openmp -static-intel -Wl,-export-dynamic -Wl,--copy-dt-needed-entries
+else
+GCC_LF_ALL      = $(STATIC)
+ICC_LF_ALL      = -diag-disable 10237 $(STATIC) -openmp -static-intel -Wl,-export-dynamic
+endif
 
 # Fortran global LINK flags
 ifeq ($(FCOMPILER), ifort)
