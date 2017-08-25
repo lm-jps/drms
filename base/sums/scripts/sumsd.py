@@ -346,7 +346,8 @@ class Request(object):
             self.data.sessionid = self.unjsonized['sessionid']
 
     def __str__(self):
-        return str(self.unjsonized)
+        self.stringify()
+        return str(self.reqDict)
         
     def generateResponse(self, dest=None):
         # Commit changes to the DB. The DB connection is closed when the Collector thread terminates, but the transaction
@@ -372,6 +373,10 @@ class OpenRequest(Request):
         super(OpenRequest, self).__init__('open', unjsonized, collector)
         # No data for this request.
         
+    def stringify(self):
+        if not hasattr(self, 'reqDict'):
+            self.reqDict = { 'reqtype' : 'open' }
+
     def generateResponse(self, dest=None):
         resp = OpenResponse(self, dest)
         super(OpenRequest, self).generateResponse(dest)
@@ -388,6 +393,10 @@ class CloseRequest(Request):
     """
     def __init__(self, unjsonized, collector):
         super(CloseRequest, self).__init__('close', unjsonized, collector)
+        
+    def stringify(self):
+        if not hasattr(self, 'reqDict'):
+            self.reqDict = { 'reqtype' : 'close', 'sessionid' : self.data.sessionid }
         
     def generateResponse(self, dest=None):
         resp = CloseResponse(self, dest)
@@ -420,6 +429,10 @@ class InfoRequest(Request):
             if str(su) not in processed:        
                 self.data.sulist.append(str(su)) # Make a list of strings - we'll need to concatenate the elements into a comma-separated list for the DB query.
                 processed.add(str(su))
+                
+    def stringify(self):
+        if not hasattr(self, 'reqDict'):
+            self.reqDict = { 'reqtype' : 'info', 'sessionid' : self.data.sessionid, 'sus' : self.data.sus }
 
     def generateResponse(self, dest=None):
         resp = InfoResponse(self, dest)
@@ -457,6 +470,10 @@ class GetRequest(Request):
             if str(su) not in processed:        
                 self.data.susNoDupes.append(str(su)) # Make a list of strings - we'll need to concatenate the elements into a comma-separated list for the DB query.
                 processed.add(str(su))
+
+    def stringify(self):
+        if not hasattr(self, 'reqDict'):
+            self.reqDict = { 'reqtype' : 'get', 'sessionid' : self.data.sessionid, 'touch' : self.data.touch, 'retrieve' : self.data.retrieve, 'retention' : self.data.retention, 'sus' : self.data.sus }
                 
     def generateResponse(self, dest=None):
         resp = GetResponse(self, dest)
@@ -481,7 +498,7 @@ class AllocRequest(Request):
     {
         'reqtype' : 'alloc',
         'sessionid' : 7035235,
-        'sunum' : null,
+        'sunum' : None,
         'sugroup' : 22,
         'numbytes' : 1024
     }
@@ -496,6 +513,15 @@ class AllocRequest(Request):
             pass
         self.data.sugroup = self.unjsonized['sugroup']
         self.data.numbytes = self.unjsonized['numbytes']
+        
+    def stringify(self):
+        if not hasattr(self, 'reqDict'):
+            if sunum in self.data:
+                sunumStr = str(self.data.sunum)
+            else:
+                sunumStr = None
+
+            self.reqDict = { 'reqtype' : 'alloc', 'sessionid' : self.data.sessionid, 'sunum' : sunumStr, 'sugroup' : self.data.sugroup, 'numbytes' : self.data.numbytes }
         
     def generateResponse(self, dest=None):
         resp = AllocResponse(self, dest)
@@ -542,6 +568,10 @@ class PutRequest(Request):
             self.data.retention = 2
         self.data.archivetype = self.unjsonized['archivetype']
         
+    def stringify(self):
+        if not hasattr(self, 'reqDict'):
+            self.reqDict = { 'reqtype' : 'put', 'sessionid' : self.data.sessionid, 'sudirs' : self.unjsonized['sudirs'], 'series' : self.data.series, 'retention' : self.data.retention, 'archivetype' : self.data.archivetype }
+        
     def generateResponse(self, dest=None):
         resp = PutResponse(self, dest)
         super(PutRequest, self).generateResponse(dest)
@@ -567,6 +597,10 @@ class DeleteseriesRequest(Request):
         
         self.data.series = self.unjsonized['series']
         
+    def stringify(self):
+        if not hasattr(self, 'reqDict'):
+            self.reqDict = { 'reqtype' : 'deleteseries', 'sessionid' : self.data.sessionid, 'series' : self.data.series }
+        
     def generateResponse(self, dest=None):
         resp = DeleteseriesResponse(self, dest)
         super(DeleteseriesRequest, self).generateResponse(dest)
@@ -574,8 +608,19 @@ class DeleteseriesRequest(Request):
 
 
 class PingRequest(Request):
+    """
+    unjsonized is:
+    {
+    'reqtype' : 'ping',
+    'sessionid' : 7035235
+    }
+    """
     def __init__(self, unjsonized, collector):
         super(PingRequest, self).__init__('ping', unjsonized, collector)
+        
+    def stringify(self):
+        if not hasattr(self, 'reqDict'):
+            self.reqDict = { 'reqtype' : 'ping', 'sessionid' : self.data.sessionid }
         
     def generateResponse(self, dest=None):
         resp = PingResponse(self, dest)
@@ -584,10 +629,21 @@ class PingRequest(Request):
 
 
 class PollRequest(Request):
+    """
+    {
+        "reqtype" : "poll",
+        "sessionid" : 7035235,
+        "requestid" : "123e4567-e89b-12d3-a456-426655440000"
+    }
+    """
     def __init__(self, unjsonized, collector):
         super(PollRequest, self).__init__('poll', unjsonized, collector)
 
         self.data.requestid = self.unjsonized['requestid']
+        
+    def stringify(self):
+        if not hasattr(self, 'reqDict'):
+            self.reqDict = { 'reqtype' : 'poll', 'sessionid' : self.data.sessionid, 'requestid' : self.data.requestid }
         
     def generateResponse(self, dest=None):
         resp = PollResponse(self, dest)
@@ -1373,7 +1429,7 @@ class Collector(threading.Thread):
                 self.extractRequest(msgStr) # Will raise if reqtype is not supported.
 
                 if self.log:
-                    self.log.write(['New ' + self.request.reqType + ' request from process ' + str(self.clientInfo.data.pid) + ' by user ' + self.clientInfo.data.user + ' at ' + str(self.sock.getpeername()) + ':\n' + str(self.request) ])
+                    self.log.write(['New ' + self.request.reqType + ' request from process ' + str(self.clientInfo.data.pid) + ' by user ' + self.clientInfo.data.user + ' at ' + str(self.sock.getpeername()) + ':' + str(self.request) ])
 
                 msgStr = self.generateResponse() # A str object.
             except ReceiveJsonException as exc:
