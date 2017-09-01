@@ -4,6 +4,7 @@ from __future__ import print_function
 import sys
 import re
 import os
+import shutil
 import threading
 import socket
 import signal
@@ -42,25 +43,130 @@ DAADP = 128
 RV_SUCCESS = 0
 RV_DRMSPARAMS = 1
 RV_ARGS = 2
-RV_BADLOGFILE = 3
-RV_BADLOGWRITE = 4
-RV_DBCOMMAND = 5
+RV_LOG = 3
+RV_POLL = 4
+RV_SOCKET = 5
 RV_DBCONNECTION = 6
-RV_DBCURSOR = 7
-RV_SOCKETCONN = 8
-RV_REQUESTTYPE = 9
-RV_POLL = 10
+RV_DBCOMMAND = 7
+RV_TERMINATED = 8
+RV_RECEIVEMSG = 9
+RV_SENDMSG = 10
+RV_JSONIZE = 11
+RV_UNJSONIZE = 12
+RV_CLIENTINFO = 13
+RV_EXTRACTREQUEST = 14
+RV_REQUESTTYPE = 15
+RV_SESSIONOPENED = 16
+RV_SESSIONCLOSED = 17
+RV_GENERATERESPONSE = 18
+RV_IMPLEMENTATION = 19
+RV_TAPEREQUEST = 20
+RV_UNKNOWNERROR = 21
+
+
+# Request types
+REQUEST_TYPE_OPEN = 'open'
+REQUEST_TYPE_CLOSE = 'close'
+REQUEST_TYPE_ROLLBACK = 'rollback'
+REQUEST_TYPE_INFO = 'info'
+REQUEST_TYPE_GET = 'get'
+REQUEST_TYPE_ALLOC= 'alloc'
+REQUEST_TYPE_PUT = 'put'
+REQUEST_TYPE_DELETESERIES = 'deleteseries'
+REQUEST_TYPE_PING = 'ping'
+REQUEST_TYPE_POLL = 'poll'
+REQUEST_TYPE_INFOARRAY = 'infoarray'
 
 # Exception status codes
 RESPSTATUS_OK = 'ok'
+RESPSTATUS_BROKENCONNECTION = 'broken-connection'
 RESPSTATUS_JSON = 'bad-json'
+RESPSTATUS_MSGRECEIVE = 'cant-receive-request'
+RESPSTATUS_MSGSEND = 'cant-send-response'
 RESPSTATUS_CLIENTINFO = 'bad-clientinfo'
 RESPSTATUS_REQ = 'bad-request'
 RESPSTATUS_REQTYPE = 'bad-request-type'
+RESPSTATUS_SESSIONCLOSED = 'session-closed'
+RESPSTATUS_SESSIONOPENED = 'session-opened'
 RESPSTATUS_GENRESPONSE = 'cant-generate-response'
 
 # Maximum number of DB rows returned
 MAX_MTSUMS_NSUS = 32768
+
+def terminator(*args):
+    # Raise the SystemExit exception (which will be caught by the __exit__() method below).
+    sys.exit(0)
+
+class TerminationHandler(object):
+
+    class Break(Exception):
+        """break out of the TerminationHandler context block"""
+
+    def __new__(cls, thContainer):
+        return super(TerminationHandler, cls).__new__(cls)
+        
+    def __init__(self, thContainer):
+        self.container = thContainer
+        arguments = thContainer[0]
+        self.pidStr = thContainer[1]
+        self.log = thContainer[2]
+        self.debugLog = thContainer[3]
+
+        super(TerminationHandler, self).__init__()
+        
+    def __enter__(self):
+        signal.signal(signal.SIGINT, terminator)
+        signal.signal(signal.SIGTERM, terminator)
+        signal.signal(signal.SIGHUP, terminator)   
+
+        # open DB connections        
+        for nConn in range(0, DBConnection.maxConn):
+            DBConnection.connList.append(DBConnection(arguments.getArg('dbhost'), arguments.getArg('dbport'), arguments.getArg('database'), arguments.getArg('dbuser'), log, debugLog))
+
+    # Normally, __exit__ is called if an exception occurs inside the with block. And since SIGINT is converted
+    # into a KeyboardInterrupt exception, it will be handled by __exit__(). However, SIGTERM will not - 
+    # __exit__() will be bypassed if a SIGTERM signal is received. Use the signal handler installed in the
+    # __enter__() call to handle SIGTERM.
+    def __exit__(self, etype, value, traceback):
+        if self.log:
+            self.log.write([ 'TerminationHandler.__exit__() called' ])
+            
+        # clean up DB connections
+        DBConnection.closeAll()
+        if self.log:
+            self.log.write([ 'closed all DB connections' ])
+
+        # wait for Worker threads to exit
+        while True:
+            Worker.lockTList()
+            worker = None
+
+            try:
+                if len(Worker.tList) > 0:
+                    worker = Worker.tList[0]
+                else:
+                    break
+            except:
+                break
+            finally:
+                Worker.unlockTList()
+
+            if worker and isinstance(worker, (Worker)) and worker.isAlive():
+                # can't hold worker lock here - when the worker terminates, it acquires the same lock;
+                # due to a race condition in tList (we had to release the tList lock), we have to check 
+                # to see if the worker is alive before joining it.
+                if self.log:
+                    self.log.write([ 'waiting for worker ' +  worker.getID() + ' to terminate' ])
+                worker.join() # will block, possibly for ever
+                
+        if etype == self.Break:
+            # suppress exception propagation outside of the context (normally the exception that causes execution to exit 
+            # this context-manager block gets re-raised outside of this block upon exit).
+            return True
+
+        if etype == SystemExit:
+            raise TerminationException('Termination signal handler called.')
+
 
 class SumsDrmsParams(DRMSParams):
 
@@ -135,10 +241,10 @@ class Log(object):
             fobj = open(self.fileName, 'a')
         except OSError as exc:
             type, value, traceback = sys.exc_info()
-            raise Exception('badLogfile', 'Unable to access ' + "'" + value.filename + "'.")
+            raise LogException('Unable to access ' + "'" + value.filename + "'.")
         except IOError as exc:
             type, value, traceback = sys.exc_info()
-            raise Exception('badLogfile', 'Unable to open ' + "'" + value.filename + "'.")
+            raise LogException('Unable to open ' + "'" + value.filename + "'.")
         
         self.fobj = fobj
 
@@ -153,7 +259,7 @@ class Log(object):
             self.fobj.flush()
         except IOError as exc:
             type, value, traceback = sys.exc_info()
-            raise Exception('badLogwrite', 'Unable to write to ' + value.filename + '.')
+            raise LogException('Unable to write to ' + value.filename + '.')
 
 class SDException(Exception):
 
@@ -162,92 +268,168 @@ class SDException(Exception):
 
 class ParamsException(SDException):
 
+    retcode = RV_DRMSPARAMS    
     def __init__(self, msg):
         super(ParamsException, self).__init__(msg)
 
 
 class ArgsException(SDException):
 
+    retcode = RV_ARGS
     def __init__(self, msg):
         super(ArgsException, self).__init__(msg)
 
 
+class LogException(SDException):
+
+    retcode = RV_LOG
+    def __init__(self, msg):
+        super(LogException, self).__init__(msg)
+
+
 class PollException(SDException):
 
+    retcode = RV_POLL
     def __init__(self, msg):
         super(PollException, self).__init__(msg)
 
 
 class SocketConnectionException(SDException):
 
+    retcode = RV_SOCKET
     def __init__(self, msg):
         super(SocketConnectionException, self).__init__(msg)
 
 
 class DBConnectionException(SDException):
 
+    retcode = RV_DBCONNECTION
     def __init__(self, msg):
         super(DBConnectionException, self).__init__(msg)
 
 
 class DBCommandException(SDException):
 
+    retcode = RV_DBCOMMAND
     def __init__(self, msg):
         super(DBCommandException, self).__init__(msg)
 
+        
+class TerminationException(SDException):
 
-class ReceiveJsonException(SDException):
-
+    retcode = RV_TERMINATED
     def __init__(self, msg):
-        super(ReceiveJsonException, self).__init__(msg)
+        super(TerminationException, self).__init__(msg)
+
+
+class ReceiveMsgException(SDException):
+
+    retcode = RV_RECEIVEMSG
+    def __init__(self, msg):
+        super(ReceiveMsgException, self).__init__(msg)
+
+
+class SendMsgException(SDException):
+
+    retcode = RV_SENDMSG
+    def __init__(self, msg):
+        super(SendMsgException, self).__init__(msg)
+
+  
+class JsonizerException(SDException):
+
+    retcode = RV_JSONIZE
+    def __init__(self, msg):
+        super(JsonizerException, self).__init__(msg)
+
+  
+class UnjsonizerException(SDException):
+
+    retcode = RV_UNJSONIZE
+    def __init__(self, msg):
+        super(UnjsonizerException, self).__init__(msg)
         
         
 class ClientInfoException(SDException):
 
+    retcode = RV_CLIENTINFO
     def __init__(self, msg):
         super(ClientInfoException, self).__init__(msg)
 
 
 class ExtractRequestException(SDException):
 
+    retcode = RV_EXTRACTREQUEST
     def __init__(self, msg):
         super(ExtractRequestException, self).__init__(msg)
 
 
 class RequestTypeException(SDException):
 
+    retcode = RV_REQUESTTYPE
     def __init__(self, msg):
         super(RequestTypeException, self).__init__(msg)
 
 
+class SessionOpenedException(SDException):
+
+    retcode = RV_SESSIONOPENED
+    def __init__(self, msg):
+        super(SessionOpenedException, self).__init__(msg)
+
+
+class SessionClosedException(SDException):
+
+    retcode = RV_SESSIONCLOSED
+    def __init__(self, msg):
+        super(SessionClosedException, self).__init__(msg)
+
+
 class GenerateResponseException(SDException):
 
+    retcode = RV_GENERATERESPONSE
     def __init__(self, msg):
         super(GenerateResponseException, self).__init__(msg)
 
 class ImplementationException(SDException):
 
+    retcode = RV_IMPLEMENTATION
     def __init__(self, msg):
         super(ImplementationException, self).__init__(msg)
 
 
 class TaperequestException(SDException):
 
+    retcode = RV_TAPEREQUEST
     def __init__(self, msg):
         super(TaperequestException, self).__init__(msg)
 
 
-class Dbconnection(object):
+class DBConnection(object):
+    connList = [] # list of existing DB connections
+    connListFree = [] # list of currently unused DB connections
+    connListLock = threading.RLock() # guard list access - the thread that has the lock can call acquire(), and it will not block
+    maxConn = 4 
+    eventConnFree = threading.Event() # event fired when a connection gets freed up
+    nextIDseq = 0 # the id of the next connection
 
-    def __init__(self, host, port, database, user):
+    def __init__(self, host, port, database, user, log, debugLog):
         self.conn = None
         
+        self.id = str(DBConnection.nextIDseq) # do not call the constructor from more than one thread!
+        DBConnection.nextIDseq += 1
+
         # Connect to the db. If things succeed, then save the db-connection information.
         self.host = host
         self.port = port
         self.database = database
         self.user = user
+        self.log = log
+        self.debugLog = debugLog
         self.openConnection()
+        
+    def getID(self):
+        return self.id
         
     def commit(self):
         # Does not close DB connection. It can be used after the commit() call.
@@ -275,6 +457,8 @@ class Dbconnection(object):
             
         try:
             self.conn = psycopg2.connect(host=self.host, port=self.port, database=self.database, user=self.user)
+            if self.debugLog:
+                self.debugLog.write([ 'user ' + self.user + ' successfully connected to ' + self.database + ' database: ' + self.host + ':' + str(self.port) ])
         except psycopg2.DatabaseError as exc:
             # Closes the cursor and connection
             if hasattr(exc, 'diag') and hasattr(exc.diag, 'message_primary'):
@@ -282,13 +466,55 @@ class Dbconnection(object):
             else:
                 msg = 'Unable to connect to the database (no, I do not know why).'
             raise DBConnectionException(msg)
-    
+            
+        # must add to the list of connections and free connections
+        if self.conn:
+            DBConnection.connListLock.acquire()
+            try:
+                DBConnection.connList.append(self)
+                DBConnection.connListFree.append(self)
+            finally:
+                DBConnection.connListLock.release()
+
+            if self.debugLog:
+                self.debugLog.write([ 'added connection ' + self.id + ' to connection list and free connection list' ])
+
     def closeConnection(self):    
         if not self.conn:
             raise DBConnectionException('There is no database connection.')
         
         if self.conn:
-            self.conn.close()
+            DBConnection.connListLock.acquire()
+            try:
+                self.conn.close()
+                if self.debugLog:
+                    self.debugLog.write([ 'closed DB connection ' + self.id ])
+
+                if self in DBConnection.connListFree:
+                    DBConnection.connListFree.remove(self)
+                    if self.debugLog:
+                        self.debugLog.write([ 'removed DB connection ' + self.id + ' from free connection list'])
+                DBConnection.connList.remove(self)
+                if self.debugLog:
+                    self.debugLog.write([ 'removed DB connection ' + self.id + ' from connection list'])
+
+            finally:
+                DBConnection.connListLock.release()
+            
+    def release(self):
+        DBConnection.connListLock.acquire()
+        try:
+            # add this connection to the free list
+            DBConnection.connListFree.append(self)
+            
+            # signal a thread waiting for an open connection (if there were previously no slots open)
+            if len(DBConnection.connListFree) == 1:
+                # fire event so that worker can obtain a DB slot
+                DBConnection.eventConnFree.set()
+                # clear event so that a worker will block the next time it calls wait()
+                DBConnection.eventConnFree.clear()            
+        finally:
+            DBConnection.connListLock.release()
 
     def exeCmd(self, cmd, results, result=True):
         if not self.conn:
@@ -318,41 +544,89 @@ class Dbconnection(object):
                         raise DBCommandException(exc.diag.message_primary)
             except psycopg2.Error as exc:
                 raise DBCommandException(exc.diag.message_primary)
+                
+    @classmethod
+    def nextOpenConnection(cls):
+        conn = None
+        while True:
+            cls.connListLock.acquire()
+            try:
+                if len(cls.connListFree) > 0:
+                    conn = cls.connListFree.pop(0)                
+                    break # the finally clause will ensure the connList lock is released
+            finally:
+                cls.connListLock.release()
+    
+            # There were no free threads. Wait until there is a free thread.
+            cls.eventConnFree.wait()
+            # We woke up, because a free DB connection became available. However, that DB connection could 
+            # now be in use. Loop and check again.
+            
+        return conn
+                
+    @classmethod
+    def closeAll(cls):
+        cls.connListLock.acquire()
+        try:
+            for conn in cls.connList:
+                conn.closeConnection()
+        finally:
+            cls.connListLock.release()
 
 class DataObj(object):
     pass
-    
+
+ 
 class Jsonizer(object):
     def __init__(self, dataObj):
         self.data = dataObj
-        self.json = json.dumps(dataObj)
+        try:
+            self.json = json.dumps(dataObj)
+        except ValueError as exc:
+            raise JsonizerException(exc.args[0])
+        except TypeError as exc:
+            raise JsonizerException(exc.args[0])
         
     def getJSON(self):
         return self.json
-        
+
+
 class Unjsonizer(object):
     def __init__(self, jsonStr):
         self.json = jsonStr
-        self.unjsonized = json.loads(jsonStr) # JSON objects are converted to Python dictionaries!
-        
+        try:
+            self.unjsonized = json.loads(jsonStr) # JSON objects are converted to Python dictionaries!
+        except ValueError as exc:
+            raise UnjsonizerException(exc.args[0])
+        except TypeError as exc:
+            raise UnjsonizerException(exc.args[0])
+
+
 class Request(object):
-    def __init__(self, reqType, unjsonized, collector):
+    def __init__(self, reqType, unjsonized, worker):
         self.reqType = reqType
         self.unjsonized = unjsonized.unjsonized # a request-specific dictionary
-        self.collector = collector
+        self.worker = worker
         self.data = DataObj()
         if 'sessionid' in self.unjsonized:
             # Only the OpenRequest will not have a sessionid.
-            self.data.sessionid = self.unjsonized['sessionid']
+            self.data.sessionid = Request.hexToInt(self.unjsonized['sessionid'])
 
     def __str__(self):
-        self.stringify()
+        self._stringify()
         return str(self.reqDict)
         
+    def _stringifyType(self):
+        if not hasattr(self, 'reqDict'):
+            self.reqDict = { 'reqtype' : self.reqType }
+            
+    def getType(self):
+        return self.reqType
+        
     def generateResponse(self, dest=None):
-        # Commit changes to the DB. The DB connection is closed when the Collector thread terminates, but the transaction
+        # Commit changes to the DB. The DB connection is closed when the Worker thread terminates, but the transaction
         # is rolled back at that time.
-        self.collector.dbconn.commit()
+        self.worker.dbconn.commit()
 
     def generateErrorResponse(self, status, errMsg):
         return ErrorResponse(self, status, errMsg)
@@ -369,18 +643,18 @@ class OpenRequest(Request):
         'reqtype' : 'open'
     }
     """
-    def __init__(self, unjsonized, collector):
-        super(OpenRequest, self).__init__('open', unjsonized, collector)
+    def __init__(self, unjsonized, worker):
+        super(OpenRequest, self).__init__(REQUEST_TYPE_OPEN, unjsonized, worker)
         # No data for this request.
         
-    def stringify(self):
+    def _stringify(self):
         if not hasattr(self, 'reqDict'):
-            self.reqDict = { 'reqtype' : 'open' }
+            self._stringifyType()
 
     def generateResponse(self, dest=None):
         resp = OpenResponse(self, dest)
         super(OpenRequest, self).generateResponse(dest)
-        return resp
+        return resp        
 
 
 class CloseRequest(Request):
@@ -388,19 +662,42 @@ class CloseRequest(Request):
     unjsonized is:
     {
         'reqtype' : 'close',
-        'sessionid' : 2895025
+        'sessionid' : '1AE2FC'
     }
     """
-    def __init__(self, unjsonized, collector):
-        super(CloseRequest, self).__init__('close', unjsonized, collector)
+    def __init__(self, unjsonized, worker):
+        super(CloseRequest, self).__init__('close', unjsonized, worker)
         
-    def stringify(self):
+    def _stringify(self):
         if not hasattr(self, 'reqDict'):
-            self.reqDict = { 'reqtype' : 'close', 'sessionid' : self.data.sessionid }
+            self._stringifyType()
+            self.reqDict['sessionid'] = self.data.sessionid
         
     def generateResponse(self, dest=None):
         resp = CloseResponse(self, dest)
         super(CloseRequest, self).generateResponse(dest)
+        return resp
+
+
+class RollbackRequest(Request):
+    """
+    unjsonized is:
+    {
+        'reqtype' : 'rollback',
+        'sessionid' : '1AE2FC'
+    }
+    """
+    def __init__(self, unjsonized, worker):
+        super(RollbackRequest, self).__init__('rollback', unjsonized, worker)
+        
+    def _stringify(self):
+        if not hasattr(self, 'reqDict'):
+            self._stringifyType()
+            self.reqDict['sessionid'] = self.data.sessionid
+            
+    def generateResponse(self, dest=None):
+        resp = RollbackResponse(self, dest)
+        super(RollbackRequest, self).generateResponse(dest)
         return resp
 
 
@@ -409,12 +706,12 @@ class InfoRequest(Request):
     unjsonized is:
     {
        'reqtype' : 'info',
-       'sessionid' : 2895025,
+       'sessionid' : '1AE2FC',
        'sus' : [ '3039', '5BA0' ]
     }
     """
-    def __init__(self, unjsonized, collector):
-        super(InfoRequest, self).__init__('info', unjsonized, collector)
+    def __init__(self, unjsonized, worker):
+        super(InfoRequest, self).__init__('info', unjsonized, worker)
         
         if len(self.unjsonized['sus']) > MAX_MTSUMS_NSUS:
             raise ExtractRequestException('Too many SUs in request (maximum of ' + str(MAX_MTSUMS_NSUS) + ' allowed).')
@@ -430,9 +727,11 @@ class InfoRequest(Request):
                 self.data.sulist.append(str(su)) # Make a list of strings - we'll need to concatenate the elements into a comma-separated list for the DB query.
                 processed.add(str(su))
                 
-    def stringify(self):
+    def _stringify(self):
         if not hasattr(self, 'reqDict'):
-            self.reqDict = { 'reqtype' : 'info', 'sessionid' : self.data.sessionid, 'sus' : self.data.sus }
+            self._stringifyType()
+            self.reqDict['sessionid'] = self.data.sessionid
+            self.reqDict['sus'] = self.data.sus
 
     def generateResponse(self, dest=None):
         resp = InfoResponse(self, dest)
@@ -444,15 +743,15 @@ class GetRequest(Request):
     unjsonized is:
     {
        'reqtype' : 'get',
-       'sessionid' : 2895025,
+       'sessionid' : '1AE2FC',
        'touch' : True,
        'retrieve' : False,
        'retention' : 60,
        'sus' : ['1DE2D412', '1AA72414']
     }
     """
-    def __init__(self, unjsonized, collector):
-        super(GetRequest, self).__init__('get', unjsonized, collector)
+    def __init__(self, unjsonized, worker):
+        super(GetRequest, self).__init__('get', unjsonized, worker)
 
         if len(self.unjsonized['sus']) > MAX_MTSUMS_NSUS:
             raise ExtractRequestException('Too many SUs in request (maximum of ' + str(MAX_MTSUMS_NSUS) + ' allowed).')
@@ -471,9 +770,14 @@ class GetRequest(Request):
                 self.data.susNoDupes.append(str(su)) # Make a list of strings - we'll need to concatenate the elements into a comma-separated list for the DB query.
                 processed.add(str(su))
 
-    def stringify(self):
+    def _stringify(self):
         if not hasattr(self, 'reqDict'):
-            self.reqDict = { 'reqtype' : 'get', 'sessionid' : self.data.sessionid, 'touch' : self.data.touch, 'retrieve' : self.data.retrieve, 'retention' : self.data.retention, 'sus' : self.data.sus }
+            self._stringifyType()
+            self.reqDict['sessionid'] = self.data.sessionid
+            self.reqDict['touch'] = self.data.touch
+            self.reqDict['retrieve'] = self.data.retrieve
+            self.reqDict['retention'] = self.data.retention
+            self.reqDict['sus'] = self.data.sus
                 
     def generateResponse(self, dest=None):
         resp = GetResponse(self, dest)
@@ -486,7 +790,7 @@ class AllocRequest(Request):
     unjsonized is:
     {
         'reqtype' : 'alloc',
-        'sessionid' : 7035235,
+        'sessionid' : '1AE2FC',
         'sunum' : '82C5E02A',
         'sugroup' : 22,
         'numbytes' : 1024
@@ -497,14 +801,14 @@ class AllocRequest(Request):
     unjsonized is:
     {
         'reqtype' : 'alloc',
-        'sessionid' : 7035235,
+        'sessionid' : '1AE2FC',
         'sunum' : None,
         'sugroup' : 22,
         'numbytes' : 1024
     }
     """
-    def __init__(self, unjsonized, collector):
-        super(AllocRequest, self).__init__('alloc', unjsonized, collector)
+    def __init__(self, unjsonized, worker):
+        super(AllocRequest, self).__init__('alloc', unjsonized, worker)
 
         if self.unjsonized['sunum']:
             self.data.sunum = Request.hexToInt(self.unjsonized['sunum'])
@@ -514,14 +818,18 @@ class AllocRequest(Request):
         self.data.sugroup = self.unjsonized['sugroup']
         self.data.numbytes = self.unjsonized['numbytes']
         
-    def stringify(self):
+    def _stringify(self):
         if not hasattr(self, 'reqDict'):
             if sunum in self.data:
                 sunumStr = str(self.data.sunum)
             else:
                 sunumStr = None
 
-            self.reqDict = { 'reqtype' : 'alloc', 'sessionid' : self.data.sessionid, 'sunum' : sunumStr, 'sugroup' : self.data.sugroup, 'numbytes' : self.data.numbytes }
+            self._stringifyType()
+            self.reqDict['sessionid'] = self.data.sessionid
+            self.reqDict['sunum'] = sunumStr
+            self.reqDict['sugroup'] = self.data.sugroup
+            self.reqDict['numbytes'] = self.data.numbytes
         
     def generateResponse(self, dest=None):
         resp = AllocResponse(self, dest)
@@ -534,15 +842,15 @@ class PutRequest(Request):
     unjsonized is:
     {
         'reqtype' : 'put',
-        'sessionid' : 7035235,
+        'sessionid' : '1AE2FC',
         'sudirs' : [ {'2B13493A' : '/SUM19/D722684218'}, {'2B15A227' : '/SUM12/D722838055'} ],
         'series' : 'hmi.M_720s',
         'retention' : 14,
         'archivetype' : 'temporary+archive'
     }
     """
-    def __init__(self, unjsonized, collector):
-        super(PutRequest, self).__init__('put', unjsonized, collector)
+    def __init__(self, unjsonized, worker):
+        super(PutRequest, self).__init__('put', unjsonized, worker)
         
         if len(self.unjsonized['sudirs']) > MAX_MTSUMS_NSUS:
             raise ExtractRequestException('Too many SUs in request (maximum of ' + str(MAX_MTSUMS_NSUS) + ' allowed).')
@@ -568,9 +876,14 @@ class PutRequest(Request):
             self.data.retention = 2
         self.data.archivetype = self.unjsonized['archivetype']
         
-    def stringify(self):
+    def _stringify(self):
         if not hasattr(self, 'reqDict'):
-            self.reqDict = { 'reqtype' : 'put', 'sessionid' : self.data.sessionid, 'sudirs' : self.unjsonized['sudirs'], 'series' : self.data.series, 'retention' : self.data.retention, 'archivetype' : self.data.archivetype }
+            self._stringifyType()
+            self.reqDict['sessionid'] = self.data.sessionid
+            self.reqDict['sudirs'] = self.unjsonized['sudirs']
+            self.reqDict['series'] = self.data.series
+            self.reqDict['retention'] = self.data.retention
+            self.reqDict['archivetype'] = self.data.archivetype
         
     def generateResponse(self, dest=None):
         resp = PutResponse(self, dest)
@@ -588,18 +901,20 @@ class DeleteseriesRequest(Request):
     unjsonized is:
     {
     'reqtype' : 'deleteseries',
-    'sessionid' : 7035235,
+    'sessionid' : '1AE2FC',
     'series' : 'hmi.M_720s'
     }
     """
-    def __init__(self, unjsonized, collector):
-        super(DeleteseriesRequest, self).__init__('deleteseries', unjsonized, collector)
+    def __init__(self, unjsonized, worker):
+        super(DeleteseriesRequest, self).__init__('deleteseries', unjsonized, worker)
         
         self.data.series = self.unjsonized['series']
         
-    def stringify(self):
+    def _stringify(self):
         if not hasattr(self, 'reqDict'):
-            self.reqDict = { 'reqtype' : 'deleteseries', 'sessionid' : self.data.sessionid, 'series' : self.data.series }
+            self._stringifyType()
+            self.reqDict['sessionid'] = self.data.sessionid
+            self.reqDict['series'] = self.data.series
         
     def generateResponse(self, dest=None):
         resp = DeleteseriesResponse(self, dest)
@@ -611,16 +926,17 @@ class PingRequest(Request):
     """
     unjsonized is:
     {
-    'reqtype' : 'ping',
-    'sessionid' : 7035235
+        'reqtype' : 'ping',
+        'sessionid' : '1AE2FC'
     }
     """
-    def __init__(self, unjsonized, collector):
-        super(PingRequest, self).__init__('ping', unjsonized, collector)
+    def __init__(self, unjsonized, worker):
+        super(PingRequest, self).__init__('ping', unjsonized, worker)
         
-    def stringify(self):
+    def _stringify(self):
         if not hasattr(self, 'reqDict'):
-            self.reqDict = { 'reqtype' : 'ping', 'sessionid' : self.data.sessionid }
+            self._stringifyType()
+            self.reqDict['sessionid'] = self.data.sessionid
         
     def generateResponse(self, dest=None):
         resp = PingResponse(self, dest)
@@ -636,14 +952,16 @@ class PollRequest(Request):
         "requestid" : "123e4567-e89b-12d3-a456-426655440000"
     }
     """
-    def __init__(self, unjsonized, collector):
-        super(PollRequest, self).__init__('poll', unjsonized, collector)
+    def __init__(self, unjsonized, worker):
+        super(PollRequest, self).__init__('poll', unjsonized, worker)
 
         self.data.requestid = self.unjsonized['requestid']
         
-    def stringify(self):
+    def _stringify(self):
         if not hasattr(self, 'reqDict'):
-            self.reqDict = { 'reqtype' : 'poll', 'sessionid' : self.data.sessionid, 'requestid' : self.data.requestid }
+            self._stringifyType()
+            self.reqDict['sessionid'] = self.data.sessionid
+            self.reqDict['requestid'] = self.data.requestid
         
     def generateResponse(self, dest=None):
         resp = PollResponse(self, dest)
@@ -658,8 +976,8 @@ class InfoRequestOLD(Request):
        'sulist' : [ '3039', '5BA0' ]
     }
     """
-    def __init__(self, unjsonized, collector):
-        super(InfoRequestOLD, self).__init__('infoarray', unjsonized, collector)
+    def __init__(self, unjsonized, worker):
+        super(InfoRequestOLD, self).__init__('infoarray', unjsonized, worker)
         
         if len(self.unjsonized['sulist']) > MAX_MTSUMS_NSUS:
             raise ExtractRequestException('Too many SUs in request (maximum of ' + str(MAX_MTSUMS_NSUS) + ' allowed).')
@@ -681,34 +999,39 @@ class InfoRequestOLD(Request):
         return resp
 
 class RequestFactory(object):
-    def __init__(self, collector):
-        self.collector = collector
+    def __init__(self, worker):
+        self.worker = worker
 
     def getRequest(self, jsonStr):
         unjsonized = Unjsonizer(jsonStr)
         
+        if 'reqtype' not in unjsonized.unjsonized:
+            raise ExtractRequestException('reqtype is missing from request')
+        
         reqType = unjsonized.unjsonized['reqtype'].lower()
-        if reqType == 'open':
-            return OpenRequest(unjsonized, self.collector)
-        elif reqType == 'close':
-            return CloseRequest(unjsonized, self.collector)
-        elif reqType == 'info':
-            return InfoRequest(unjsonized, self.collector)
-        elif reqType == 'get':
-            return GetRequest(unjsonized, self.collector)
-        elif reqType == 'alloc':
-            return AllocRequest(unjsonized, self.collector)
-        elif reqType == 'put':
-            return PutRequest(unjsonized, self.collector)
-        elif reqType == 'deleteseries':
-            return DeleteseriesRequest(unjsonized, self.collector)
-        elif reqType == 'ping':
-            return PingRequest(unjsonized, self.collector)
-        elif reqType == 'poll':
-            return PollRequest(unjsonized, self.collector)
-        elif reqType == 'infoarray':
+        if reqType == REQUEST_TYPE_OPEN:
+            return OpenRequest(unjsonized, self.worker)
+        elif reqType == REQUEST_TYPE_CLOSE:
+            return CloseRequest(unjsonized, self.worker)
+        elif reqType == REQUEST_TYPE_ROLLBACK:
+            return RollbackRequest(unjsonized, self.worker)
+        elif reqType == REQUEST_TYPE_INFO:
+            return InfoRequest(unjsonized, self.worker)
+        elif reqType == REQUEST_TYPE_GET:
+            return GetRequest(unjsonized, self.worker)
+        elif reqType == REQUEST_TYPE_ALLOC:
+            return AllocRequest(unjsonized, self.worker)
+        elif reqType == REQUEST_TYPE_PUT:
+            return PutRequest(unjsonized, self.worker)
+        elif reqType == REQUEST_TYPE_DELETESERIES:
+            return DeleteseriesRequest(unjsonized, self.worker)
+        elif reqType == REQUEST_TYPE_PING:
+            return PingRequest(unjsonized, self.worker)
+        elif reqType == REQUEST_TYPE_POLL:
+            return PollRequest(unjsonized, self.worker)
+        elif reqType == REQUEST_TYPE_INFOARRAY:
             # Backward compatibility with first version of sumsd.py client.
-            return InfoRequestOLD(unjsonized, self.collector)
+            return InfoRequestOLD(unjsonized, self.worker)
         else:
             raise RequestTypeException('The request type ' + reqType + ' is not supported.')
             
@@ -722,16 +1045,16 @@ class Response(object):
         self.jsonizer = None
         
     def exeDbCmd(self):
-        if hasattr(self.request.collector, 'debugLog') and self.request.collector.debugLog:
-            self.request.collector.debugLog.write(['db command is: ' + self.cmd])
+        if hasattr(self.request.worker, 'debugLog') and self.request.worker.debugLog:
+            self.request.worker.debugLog.write(['db command is: ' + self.cmd])
 
-        self.request.collector.dbconn.exeCmd(self.cmd, self.dbRes, True)
+        self.request.worker.dbconn.exeCmd(self.cmd, self.dbRes, True)
         
     def exeDbCmdNoResult(self):
-        if hasattr(self.request.collector, 'debugLog') and self.request.collector.debugLog:
-            self.request.collector.debugLog.write(['db command is: ' + self.cmd])
+        if hasattr(self.request.worker, 'debugLog') and self.request.worker.debugLog:
+            self.request.worker.debugLog.write(['db command is: ' + self.cmd])
 
-        self.request.collector.dbconn.exeCmd(self.cmd, None, False)
+        self.request.worker.dbconn.exeCmd(self.cmd, None, False)
 
         
     def getJSON(self, error=False, errMsg=None):
@@ -759,8 +1082,8 @@ class ErrorResponse(Response):
         super(ErrorResponse, self).__init__(request)
         msg = 'Unable to create ' + request.reqType + ' response: ' + errMsg
         
-        if request.collector.debugLog:
-            request.collector.debugLog.write([ 'Error: status (' + str(status) + '), msg (' + msg + ')' ])
+        if request.worker.debugLog:
+            request.worker.debugLog.write([ 'Error: status (' + str(status) + '), msg (' + msg + ')' ])
         
         self.data['status'] = status
         self.data['errmsg'] = msg
@@ -782,7 +1105,11 @@ class OpenResponse(Response):
         self.cmd = 'INSERT INTO public.sum_open(sumid, open_date) VALUES (' + str(sessionid) + ', localtimestamp)'
         self.exeDbCmdNoResult()
         
-        self.data['sessionid'] = sessionid
+        self.data['sessionid'] = Response.intToHex(sessionid)
+        
+    def undo(self):
+        # all DB changes will be rolled back on error, so nothing to do here
+        pass
 
 
 class CloseResponse(Response):
@@ -794,6 +1121,21 @@ class CloseResponse(Response):
     
         self.cmd = 'DELETE FROM public.sum_open WHERE sumid = ' + str(self.request.data.sessionid)
         self.exeDbCmdNoResult()
+        
+    def undo(self):
+        # all DB changes will be rolled back on error, so nothing to do here
+        pass
+
+
+class RollbackResponse(Response):
+    def __init__(self, request, dest=None):
+        super(RollbackResponse, self).__init__(request)
+        
+        # nothing else to do
+        
+    def undo(self):
+        # this should never be called
+        pass
     
 
 class InfoResponse(Response):
@@ -887,6 +1229,12 @@ class InfoResponse(Response):
                 infoList.append(infoDict)
                 
         self.data['suinfo'] = infoList
+        
+    def undo(self):
+        # all DB changes will be rolled back on error, so nothing to do here;
+        # plus this call does not modify the DB
+        pass
+
 
 class GetResponse(Response):
     def __init__(self, request, dest=None):
@@ -980,7 +1328,7 @@ class GetResponse(Response):
                 else:
                     # If the DRMS does not have a tape system, then archive_status should never be anything other than 'N'. But
                     # just to be sure, check the tape-system attribute of SUMS.
-                    if self.request.collector.hasTapeSys and self.info[str(sunum)]['archived']:
+                    if self.request.worker.hasTapeSys and self.info[str(sunum)]['archived']:
                         self.info[str(sunum)]['readfromtape'] = True
                     else:
                         self.info[str(sunum)]['readfromtape'] = False
@@ -1003,6 +1351,11 @@ class GetResponse(Response):
         # To send to client.
         self.data['supaths'] = supaths
         
+    def undo(self):
+        # all DB changes will be rolled back on error, so nothing to do here;
+        # plus this call does not modify the DB
+        pass
+        
 class AllocResponse(Response):
     def __init__(self, request, dest=None):
         super(AllocResponse, self).__init__(request)
@@ -1017,7 +1370,7 @@ class AllocResponse(Response):
         # is mapped to a partition set id (an integer)
         #
         # for a system with a single partition set, the partition set has an id of 0
-        if self.request.collector.hasMultPartSets:
+        if self.request.worker.hasMultPartSets:
             if hasattr(self.request.data, 'sugroup'):
                 self.dbRes = []
                 self.cmd = 'SELECT sum_set FROM ' + SUM_ARCH_GROUP + ' WHERE group_id = ' + str(self.request.data.sugroup)
@@ -1061,16 +1414,31 @@ class AllocResponse(Response):
         randIndex = random.randint(0, len(partitions) - 1)
         partition = partitions[randIndex]
         sudir = os.path.join(partition, 'D' + str(sunum))
-        os.mkdir(sudir)
-        os.chmod(sudir, 0O2775)
         
-        # Insert a record into the sum_partn_alloc table for this SU. status is DARW, which is 1. effective_date is "0". arch_sub is 0. group_id is 0. safe_id is 0. ds_index is 0.
-        self.cmd = 'INSERT INTO ' + SUM_PARTN_ALLOC + "(wd, sumid, status, bytes, effective_date, archive_substatus, group_id, safe_id, ds_index) VALUES ('" + sudir + "', '" + str(self.request.data.sessionid) + "', " + str(DARW) + ", " + str(self.request.data.numbytes) + ", '0', 0, 0, 0, 0)"
-        self.exeDbCmdNoResult()
+        try:
+            os.mkdir(sudir)
+            os.chmod(sudir, 0O2775)
         
-        # To send to client.
-        self.data['sunum'] = Response.intToHex(sunum)
-        self.data['sudir'] = sudir
+            # Insert a record into the sum_partn_alloc table for this SU. status is DARW, which is 1. effective_date is "0". arch_sub is 0. group_id is 0. safe_id is 0. ds_index is 0.
+            self.cmd = 'INSERT INTO ' + SUM_PARTN_ALLOC + "(wd, sumid, status, bytes, effective_date, archive_substatus, group_id, safe_id, ds_index) VALUES ('" + sudir + "', '" + str(self.request.data.sessionid) + "', " + str(DARW) + ", " + str(self.request.data.numbytes) + ", '0', 0, 0, 0, 0)"
+            self.exeDbCmdNoResult()
+        
+            # To send to client.
+            self.data['sunum'] = Response.intToHex(sunum)
+            self.data['sudir'] = sudir
+        except:
+            # ok, undo the mkdir
+            if not hasattr(self.data, 'sudir'):
+                self.data['sudir'] = sudir
+            self.undo()
+            raise
+        
+    def undo(self):
+        # all DB changes will be rolled back on error, so no DB changes to do here;
+        # but there were filesys changes that have to be undone
+        if os.path.exists(self.data['sudir']):
+            shutil.rmtree(self.data['sudir'])
+        
     
 class PutResponse(Response):
     def __init__(self, request, dest=None):
@@ -1102,11 +1470,11 @@ class PutResponse(Response):
                 raise DBCommandException('Unexpected DB response to cmd: ' + self.cmd)
         
             if self.dbRes[0][0] != len(partitionsNoDupes):
-                if hasattr(self.request.collector, 'debugLog') and self.request.collector.debugLog:
-                    self.request.collector.debugLog.write(['number of unique partitions in request: ' + str(len(partitionsNoDupes)), 'number of matching partitions in DB: ' + str(self.dbRes[0][0])])
+                if hasattr(self.request.worker, 'debugLog') and self.request.worker.debugLog:
+                    self.request.worker.debugLog.write(['number of unique partitions in request: ' + str(len(partitionsNoDupes)), 'number of matching partitions in DB: ' + str(self.dbRes[0][0])])
                 raise 'One or more invalid paritition paths.'
 
-            if self.request.collector.hasTapeSys:
+            if self.request.worker.hasTapeSys:
                 apStatus = DAAP
             else:
                 apStatus = DADP
@@ -1119,7 +1487,7 @@ class PutResponse(Response):
                 sudirs.append(path)
                 sus.append(suStr)
 
-                cmdList = [ os.path.join(self.request.collector.sumsBinDir, 'sum_chmown'), path ]
+                cmdList = [ os.path.join(self.request.worker.sumsBinDir, 'sum_chmown'), path ]
 
                 try:
                     check_call(cmdList)
@@ -1160,7 +1528,7 @@ class PutResponse(Response):
                 # default to storage set 0 for all groups
                 storageSet[group] = 0
 
-            if self.request.collector.hasMultPartSets:
+            if self.request.worker.hasMultPartSets:
                 self.dbRes = []
                 self.cmd = 'SELECT group_id, sum_set FROM ' + SUM_ARCH_GROUP + ' WHERE group_id IN (' + ','.join(allStorageGroups) + ')'
                 self.exeDbCmd()
@@ -1193,11 +1561,11 @@ class PutResponse(Response):
             # Set apstatus: if SUMS_TAPE_AVAILABLE ==> DAAP (4), else DADP (2), set archsub to one of DAAPERM, DAAEDDP, or DAADP, 
             # depending on flags, set effective_date to tdays in the future (with format "%04d%02d%02d%02d%02d"). safe_id is 0
             # (it looks obsolete). Insert all of this into sum_partn_alloc.
-            if self.request.data.archivetype == 'permanent+archive' and self.request.collector.hasTapeSys:
+            if self.request.data.archivetype == 'permanent+archive' and self.request.worker.hasTapeSys:
                 archsub = DAAPERM
             elif self.request.data.archivetype == 'temporary+noarchive':
                 archsub = DAAEDDP
-            elif self.request.data.archivetype == 'temporary+archive' and self.request.collector.hasTapeSys:
+            elif self.request.data.archivetype == 'temporary+archive' and self.request.worker.hasTapeSys:
                 archsub = DAADP
             else:
                 archsub = DAAEDDP
@@ -1222,6 +1590,10 @@ class PutResponse(Response):
             
             raise
 
+    def undo(self):
+        # all DB changes will be rolled back on error, so no DB changes to do here;
+        # but sum_chmown was called - ugh, punt!
+        pass
 
 class DeleteseriesResponse(Response):
     def __init__(self, request, dest=None):
@@ -1235,6 +1607,9 @@ class DeleteseriesResponse(Response):
         
         # To send to client.
         # Just 'ok'.
+    def undo(self):
+        # all DB changes will be rolled back on error, so no DB changes to do here
+        pass
 
 class InfoResponseOLD(Response):
     def __init__(self, request, dest=None):
@@ -1389,21 +1764,20 @@ class TapeRequestClient(threading.Thread):
             TapeRequestClient.tMapLock.release()
 
 
-class Collector(threading.Thread):
+class Worker(threading.Thread):
 
     tList = [] # A list of running thread IDs.
     tListLock = threading.Lock() # Guard tList access.
-    maxThreads = 32 # Default. Can be overriden with the Collector.setMaxThreads() method.
+    maxThreads = 32 # Default. Can be overriden with the Worker.setMaxThreads() method.
     eventMaxThreads = threading.Event() # Event fired when the number of threads decreases below threshold.
     
     MSGLEN_NUMBYTES = 8 # This is the hex-text version of the number of bytes in the response message.
                         # So, we can send back 4 GB of response!
     MAX_MSG_BUFSIZE = 4096 # Don't receive more than this in one call!
     
-    def __init__(self, sock, host, port, database, user, hasTapeSys, hasMultPartSets, sumsBinDir, log, debugLog):
+    def __init__(self, sock, hasTapeSys, hasMultPartSets, sumsBinDir, log, debugLog):
         threading.Thread.__init__(self)
         # Could raise. Handle in the code that creates the thread.
-        self.dbconn = Dbconnection(host, port, database, user)            
         self.sock = sock
         self.hasTapeSys = hasTapeSys
         self.hasMultPartSets = hasMultPartSets
@@ -1411,56 +1785,136 @@ class Collector(threading.Thread):
         self.log = log
         self.debugLog = debugLog
         self.reqFactory = None
+        if self.debugLog:
+            self.debugLog.write([ 'successfully instantiated worker' ])
                 
     def run(self):
         try:
-            # The client must pass in some identifying information (other than their IP address).
-            # Receive that information now.
-            try:
-                msgStr = self.receiveJson() # msgStr is a string object.
-                self.extractClientInfo(msgStr)
-
-                # First, obtain request.
-                msgStr = self.receiveJson() # msgStr is a string object.
-                
-                if self.debugLog:
-                    self.debugLog.write([ 'Request:\n' + msgStr ])
-                
-                self.extractRequest(msgStr) # Will raise if reqtype is not supported.
-
-                if self.log:
-                    self.log.write(['New ' + self.request.reqType + ' request from process ' + str(self.clientInfo.data.pid) + ' by user ' + self.clientInfo.data.user + ' at ' + str(self.sock.getpeername()) + ':' + str(self.request) ])
-
-                msgStr = self.generateResponse() # A str object.
-            except ReceiveJsonException as exc:
-                msgStr = self.generateErrorResponse(RESPSTATUS_JSON, exc.args[0])
-            except ClientInfoException as exc:
-                msgStr = self.generateErrorResponse(RESPSTATUS_CLIENTINFO, exc.args[0])
-            except ExtractRequestException as exc:
-                msgStr = self.generateErrorResponse(RESPSTATUS_REQ, exc.args[0])
-            except RequestTypeException as exc:
-                msgStr = self.generateErrorResponse(RESPSTATUS_REQTYPE, exc.args[0])
-            except GenerateResponseException as exc:
-                log.write([ 'Failure creating response.' ])
-                log.write([ exc.args[0] ])
-                import traceback
-                log.write([ traceback.format_exc(3) ])
-                msgStr = self.generateErrorResponse(RESPSTATUS_GENRESPONSE, exc.args[0])
-
-
+            rollback = False
+            sessionOpened = False
+            sessionClosed = False
+            clientInfoReceived = False
+            history = []
+            
+            # obtain a DB session - blocks until that happens
             if self.debugLog:
-                self.debugLog.write([ 'Response:\n' + msgStr ])
-            # Send results back on the socket, which is connected to a single DRMS module. By sending the results
-            # back, the client request is completed. We want to construct a list of "SUM_info" objects. Each object
-            # { sunum:12592029, onlineloc:'/SUM52/D12592029', ...}
-            self.sendJson(msgStr) # Expects a str object.
+                self.debugLog.write([ 'client ' + str(self.sock.getpeername()) + ' is waiting for a DB connection' ])
+
+            self.dbconn = DBConnection.nextOpenConnection()
+            
+            if self.debugLog:
+                self.debugLog.write([ 'client ' + str(self.sock.getpeername()) + ' obtained DB connection ' + self.dbconn.getID() ])
+            
+            while True:
+                # The client must pass in some identifying information (other than their IP address).
+                # Receive that information now.
+                try:
+                    if not clientInfoReceived:
+                        msgStr = self.receiveJson() # msgStr is a string object.
+                        self.extractClientInfo(msgStr)
+                        clientInfoReceived = True
+
+                    # First, obtain request.
+                    msgStr = self.receiveJson() # msgStr is a string object.
+                
+                    if self.debugLog:
+                        self.debugLog.write([ 'Request:\n' + msgStr ])
+                
+                    self.extractRequest(msgStr) # Will raise if reqtype is not supported.
+                    
+                    # raise an error if there is an attempt to open a session when there is a session already opened
+                    if isinstance(self.request, OpenRequest) and sessionOpened:
+                        raise SessionOpenedException('cannot process a ' + self.request.getType() + ' request - a SUMS session is already open for client ' + str(self.sock.getpeername()))
+                    
+                    # check the request type - if not an open request and sessionOpened == False, then raise an error
+                    if not isinstance(self.request, OpenRequest) and not sessionOpened:
+                        raise SessionClosedException('cannot process a ' + self.request.getType() + ' request - no SUMS session is open for client ' + str(self.sock.getpeername()))
+                        
+                    # reject any request that follows a close request (this should never happen)
+                    if sessionClosed:
+                        raise SessionClosedException('cannot process a ' + self.request.getType() + ' request - the SUMS session is closed for client ' + str(self.sock.getpeername()))
+
+                    if isinstance(self.request, OpenRequest):
+                        sessionOpened = True
+                    elif isinstance(self.request, CloseRequest):
+                        sessionClosed = True
+                    elif isinstance(self.request, RollbackRequest):
+                        rollback = True
+
+                    if self.log:
+                        self.log.write(['New ' + self.request.reqType + ' request from process ' + str(self.clientInfo.data.pid) + ' by user ' + self.clientInfo.data.user + ' at ' + str(self.sock.getpeername()) + ':' + str(self.request) ])
+
+                    msgStr = self.generateResponse() # a str object; generating a response can modify the DB and commit changes
+                    
+                    # save for potential clean-up
+                    if not isinstance(self.request, RollbackRequest):
+                        history.append(self.response)
+                except SocketConnectionException as exc:
+                    rollback = True
+                    msgStr = self.generateErrorResponse(RESPSTATUS_BROKENCONNECTION, exc.args[0])
+                except UnjsonizerException as exc:
+                    rollback = True
+                    msgStr = self.generateErrorResponse(RESPSTATUS_JSON, exc.args[0])
+                except JsonizerException as exc:
+                    rollback = True
+                    msgStr = self.generateErrorResponse(RESPSTATUS_JSON, exc.args[0])
+                except ClientInfoException as exc:
+                    rollback = True
+                    msgStr = self.generateErrorResponse(RESPSTATUS_CLIENTINFO, exc.args[0])
+                except ReceiveMsgException as exc:
+                    rollback = True
+                    msgStr = self.generateErrorResponse(RESPSTATUS_MSGRECEIVE, exc.args[0])
+                except SendMsgException as exc:
+                    rollback = True
+                    msgStr = self.generateErrorResponse(RESPSTATUS_MSGSEND, exc.args[0])
+                except ExtractRequestException as exc:
+                    rollback = True
+                    msgStr = self.generateErrorResponse(RESPSTATUS_REQ, exc.args[0])
+                except RequestTypeException as exc:
+                    rollback = True
+                    msgStr = self.generateErrorResponse(RESPSTATUS_REQTYPE, exc.args[0])
+                except SessionClosedException as exc:
+                    rollback = True
+                    msgStr = self.generateErrorResponse(RESPSTATUS_SESSIONCLOSED, exc.args[0])    
+                except SessionsOpenedException as exc:
+                    rollback = True
+                    msgStr = self.generateErrorResponse(RESPSTATUS_SESSIONOPENED, exc.args[0])
+                except GenerateResponseException as exc:
+                    rollback = True
+                    self.log.write([ 'Failure creating response.' ])
+                    self.log.write([ exc.args[0] ])
+                    import traceback
+                    self.log.write([ traceback.format_exc(3) ])
+                    msgStr = self.generateErrorResponse(RESPSTATUS_GENRESPONSE, exc.args[0])
+                except:
+                    import traceback
+                    if self.log:
+                        self.log.write([ traceback.format_exc(3) ])
+
+                if self.debugLog:
+                    self.debugLog.write([ 'Response:\n' + msgStr ])
+                # Send results back on the socket, which is connected to a single DRMS module. By sending the results
+                # back, the client request is completed. We want to construct a list of "SUM_info" objects. Each object
+                # { sunum:12592029, onlineloc:'/SUM52/D12592029', ...}
+                self.sendJson(msgStr) # Expects a str object.
+                
+                if sessionClosed or rollback:
+                    break
+                # end session loop
+                
+            if rollback:
+                # now we need to figure out the state of the system; a series of API calls were processed and any one of them
+                # could have failed; clean-up for the call that failed already happened, but we need to clean-up anything
+                # in the pipeline before this call that made changes to SUMS
+                for request in reversed(history):
+                    request.undo()
             
             # This thread is about to terminate. We don't want to end this thread before
             # the client closes the socket though. Otherwise, our socket will get stuck in 
             # the TIME_WAIT state. So, perform another read, and end the thread after the client
             # has broken the connection. recv() will block till the client kills the connection
             # (or it inappropriately sends more data over the connection).
-            textReceived = self.sock.recv(Collector.MAX_MSG_BUFSIZE)
+            textReceived = self.sock.recv(Worker.MAX_MSG_BUFSIZE)
             if textReceived == b'':
                 # The client closed their end of the socket.
                 if self.debugLog:
@@ -1470,34 +1924,36 @@ class Collector(threading.Thread):
 
         except SocketConnectionException as exc:
             # Don't send message back - we can't communicate with the client properly, so only log a message on the server side.
-            log.write(['There was a problem communicating with client ' + str(self.sock.getpeername()) + '.'])
-            log.write([ exc.args[0] ])
+            self.log.write(['There was a problem communicating with client ' + str(self.sock.getpeername()) + '.'])
+            self.log.write([ exc.args[0] ])
         except Exception as exc:
             import traceback
-            log.write([ traceback.format_exc(5) ])
+            self.log.write([ traceback.format_exc(5) ])
 
         # We need to check the class tList variable to update it, so we need to acquire the lock.
         try:
-            Collector.tListLock.acquire()
+            Worker.lockTList()
             if self.debugLog:
-                self.debugLog.write(['Class Collector acquired Collector lock for client ' + str(self.sock.getpeername()) + '.'])
-            Collector.tList.remove(self) # This thread is no longer one of the running threads.
-            if len(Collector.tList) == Collector.maxThreads - 1:
+                self.debugLog.write(['Class Worker acquired Worker lock for client ' + str(self.sock.getpeername()) + '.'])
+            Worker.tList.remove(self) # This thread is no longer one of the running threads.
+            if len(Worker.tList) == Worker.maxThreads - 1:
                 # Fire event so that main thread can add new SUs to the download queue.
-                Collector.eventMaxThreads.set()
+                Worker.eventMaxThreads.set()
                 # Clear event so that main will block the next time it calls wait.
-                Collector.eventMaxThreads.clear()
+                Worker.eventMaxThreads.clear()
         except Exception as exc:
             import traceback
-            log.write(['There was a problem closing the Collector thread for client ' + str(self.sock.getpeername()) + '.'])
-            log.write([ traceback.format_exc(0) ])
+            self.log.write(['There was a problem closing the Worker thread for client ' + str(self.sock.getpeername()) + '.'])
+            self.log.write([ traceback.format_exc(0) ])
         finally:
-            Collector.tListLock.release()
+            Worker.unlockTList()
             if self.debugLog:
-                self.debugLog.write(['Class Collector released Collector lock for client ' + str(self.sock.getpeername()) + '.'])
+                self.debugLog.write(['Class Worker released Worker lock for client ' + str(self.sock.getpeername()) + '.'])
                 
-            # Close DB connection.
-            self.dbconn.close()
+            # do not close DB connection, but release it for the next worker
+            self.dbconn.release()
+            if self.debugLog:
+                self.debugLog.write([ 'worker released DB connection ' + self.dbconn.getID() + ' for client ' + str(self.sock.getpeername()) ])
 
             # Always shut-down server-side of client socket pair.
             if self.debugLog:
@@ -1505,6 +1961,9 @@ class Collector(threading.Thread):
             self.sock.shutdown(socket.SHUT_RDWR)
             self.sock.close()
             
+    def getID(self):
+        return str(self.sock.getpeername())
+    
     def extractClientInfo(self, msg):
         # msg is JSON:
         # {
@@ -1515,13 +1974,17 @@ class Collector(threading.Thread):
         # The pid is a JSON number, which could be a double string. But the client
         # will make sure that the number is a 32-bit integer.
         if self.debugLog:
-            self.debugLog.write([str(self.sock.getpeername()) + ' extracting client info.'])
+            self.debugLog.write([ str(self.sock.getpeername()) + ' extracting client info.' ])
         
         clientInfo = Unjsonizer(msg)
         
         self.clientInfo = DataObj()
         self.clientInfo.data = DataObj()
+        if 'pid' not in clientInfo.unjsonized:
+            raise ClientInfoException('pid missing from client info')
         self.clientInfo.data.pid = clientInfo.unjsonized['pid']
+        if 'user' not in clientInfo.unjsonized:
+            raise ClientInfoException('user missing from client info')
         self.clientInfo.data.user = clientInfo.unjsonized['user']
 
     def extractRequest(self, msg):
@@ -1552,10 +2015,10 @@ class Collector(threading.Thread):
         bytesSentTotal = 0
         numBytesMessage = '{:08x}'.format(len(msg))
         
-        while bytesSentTotal < Collector.MSGLEN_NUMBYTES:
+        while bytesSentTotal < Worker.MSGLEN_NUMBYTES:
             bytesSent = self.sock.send(bytearray(numBytesMessage[bytesSentTotal:], 'UTF-8'))
             if not bytesSent:
-                raise SocketConnectionException('Socket broken - cannot send message-length data to client.')
+                raise SendMsgException('Socket broken - cannot send message-length data to client.')
             bytesSentTotal += bytesSent
         
         # Then send the message.
@@ -1563,7 +2026,7 @@ class Collector(threading.Thread):
         while bytesSentTotal < len(msg):
             bytesSent = self.sock.send(msg[bytesSentTotal:])
             if not bytesSent:
-                raise SocketConnectionException('Socket broken - cannot send message data to client.')
+                raise SendMsgException('Socket broken - cannot send message data to client.')
             bytesSentTotal += bytesSent
             
         if self.debugLog:
@@ -1575,10 +2038,10 @@ class Collector(threading.Thread):
         allTextReceived = b''
         bytesReceivedTotal = 0
         
-        while bytesReceivedTotal < Collector.MSGLEN_NUMBYTES:
-            textReceived = self.sock.recv(min(Collector.MSGLEN_NUMBYTES - bytesReceivedTotal, Collector.MAX_MSG_BUFSIZE))
+        while bytesReceivedTotal < Worker.MSGLEN_NUMBYTES:
+            textReceived = self.sock.recv(min(Worker.MSGLEN_NUMBYTES - bytesReceivedTotal, Worker.MAX_MSG_BUFSIZE))
             if textReceived == b'':
-                raise SocketConnectionException('Socket broken - cannot receive message-length data from client.')
+                raise ReceiveMsgException('Socket broken - cannot receive message-length data from client.')
             allTextReceived += textReceived
             bytesReceivedTotal += len(textReceived)
             
@@ -1590,9 +2053,9 @@ class Collector(threading.Thread):
         bytesReceivedTotal = 0
         
         while bytesReceivedTotal < numBytesMessage:
-            textReceived = self.sock.recv(min(numBytesMessage - bytesReceivedTotal, Collector.MAX_MSG_BUFSIZE))
+            textReceived = self.sock.recv(min(numBytesMessage - bytesReceivedTotal, Worker.MAX_MSG_BUFSIZE))
             if textReceived == b'':
-                raise SocketConnectionException('Socket broken - cannot receive message data from client.')
+                raise ReceiveMsgException('Socket broken - cannot receive message data from client.')
             allTextReceived += textReceived
             bytesReceivedTotal += len(textReceived)
         # Return a bytes object (not a string). The unjsonize function will need a str object for input.
@@ -1606,13 +2069,13 @@ class Collector(threading.Thread):
     def receiveJson(self):
         msgBytes = self.receiveMsg() # A bytes object, not a str object. json.loads requires a str object.
         return msgBytes.decode('UTF-8') # Convert bytes to str.
-            
-    # Must acquire Collector lock BEFORE calling newThread() since newThread() will append to tList (the Collector threads will be deleted from tList as they complete).
+
+    # Must acquire Worker lock BEFORE calling newThread() since newThread() will append to tList (the Worker threads will be deleted from tList as they complete).
     @staticmethod
-    def newThread(sock, host, port, database, user, hasTapeSys, hasMultPartSets, sumsBinDir, log, debugLog):
-        coll = Collector(sock, host, port, database, user, hasTapeSys, hasMultPartSets, sumsBinDir, log, debugLog)
-        coll.tList.append(coll)
-        coll.start()
+    def newThread(sock, hasTapeSys, hasMultPartSets, sumsBinDir, log, debugLog):
+        worker = Worker(sock, hasTapeSys, hasMultPartSets, sumsBinDir, log, debugLog)
+        Worker.tList.append(worker)
+        worker.start()
         
     @staticmethod
     def dumpBytes(msg):
@@ -1763,45 +2226,6 @@ class TestClient(threading.Thread):
             self.debugLog.write(['pasubstatus=' + str(infoDict['paSubstatus'])])
             self.debugLog.write(['effdate=' + infoDict['effectiveDate']])
 
-class SignalThread(threading.Thread):
-
-    sdLock = threading.Lock() # Guard self.shutDown
-    
-    def __init__(self, sigset, log):
-        threading.Thread.__init__(self)
-    
-        # Block the signals in the main thread.
-        signal.pthread_sigmask(signal.SIG_SETMASK, sigset)
-        self.mask = sigset
-        self.shutDown = False
-        
-    def run(self):
-        while True:
-            print('point A - mask is ' + str(self.mask))
-            signo = signal.sigwait(self.mask)
-            print('point B')
-            log.write(['Signal thread received signal ' + str(signo) + '.'])
-            
-            if signo == signal.SIGINT:
-                try:
-                    SignalThread.sdLock.acquire()
-                    self.shutDown = True
-                finally:
-                    SignalThread.sdLock.release()
-            else:
-                # This handler does not handle this signal.
-                log.write(['SUMS server received unrecognized signal ' + str(signo) + '.'])
-
-            # Kill signal thread            
-            break
-                    
-    def isShuttingDown(self):
-        try:
-            SignalThread.sdLock.acquire()
-            rv = self.shutDown
-        finally:
-            SignalThread.sdLock.release()
-        return rv
 
 if __name__ == "__main__":
     rv = RV_SUCCESS
@@ -1823,7 +2247,7 @@ if __name__ == "__main__":
         
         arguments = Arguments(parser)
         
-        Collector.setMaxThreads(int(arguments.getArg('maxconn')))
+        Worker.setMaxThreads(int(arguments.getArg('maxconn')))
         pid = os.getpid()
         
         # The main log file - it is sparse.
@@ -1840,104 +2264,93 @@ if __name__ == "__main__":
                 debugLogFile = arguments.getArg('logfile') + '.dbg.txt'
             
             debugLog = Log(debugLogFile)
-                            
-        serverSock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        # Bind to any IP address that this server is running on - the empty string
-        # represent INADDR_ANY. I DON'T KNOW HOW TO MAKE THIS WORK!!
-        # serverSock.bind(('', int(sumsDrmsParams.get('SUMSD_LISTENPORT'))))
-        # serverSock.bind((socket.gethostname(), int(sumsDrmsParams.get('SUMSD_LISTENPORT'))))
-        serverSock.bind((sumsDrmsParams.get('SUMSERVER'), int(sumsDrmsParams.get('SUMSD_LISTENPORT'))))
-        serverSock.listen(5)
-        log.write(['Listening for client requests on ' + str(serverSock.getsockname()) + '.'])
 
-        # Something cool. If the test flag is set, then create another thread that sends a SUM_info request to the main thread.
-        # At this point, the server is listening, so it is OK to try to connect to it.
-        if arguments.getArg('test'):
-            clientSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            client = TestClient(clientSocket, int(sumsDrmsParams.get('SUMSD_LISTENPORT')), log, debugLog)
-            client.start()
-            
-        # Make a signal-handler thread so we can shut-down cleanly.
-        # sigThread = SignalThread({signal.SIGINT}, log)
-        # sigThread.start()
+        thContainer = [ arguments, str(pid), log, debugLog ]
+        with TerminationHandler(thContainer) as th:
+            try:
+                serverSock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                # Bind to any IP address that this server is running on - the empty string
+                # represent INADDR_ANY. I DON'T KNOW HOW TO MAKE THIS WORK!!
+                # serverSock.bind(('', int(sumsDrmsParams.get('SUMSD_LISTENPORT'))))
+                # serverSock.bind((socket.gethostname(), int(sumsDrmsParams.get('SUMSD_LISTENPORT'))))
+                serverSock.bind((sumsDrmsParams.get('SUMSERVER'), int(sumsDrmsParams.get('SUMSD_LISTENPORT'))))
+                serverSock.listen(5)
+                log.write(['Listening for client requests on ' + str(serverSock.getsockname()) + '.'])
+            except Exception as exc:
+                raise SocketConnectionException(exc.args[0])
 
-        pollObj = select.poll()
-        pollObj.register(serverSock, select.POLLIN | select.POLLPRI)
+            # Something cool. If the test flag is set, then create another thread that sends a SUM_info request to the main thread.
+            # At this point, the server is listening, so it is OK to try to connect to it.
+            if arguments.getArg('test'):
+                clientSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                client = TestClient(clientSocket, int(sumsDrmsParams.get('SUMSD_LISTENPORT')), log, debugLog)
+                client.start()
 
-        # while not sigThread.isShuttingDown():
-        try:
-            while True:
-                try:
-                    fdList = pollObj.poll(500)
-                except IOError as exc:
-                    raise PollException('A failure occurred while checking for new client connections.')
+            pollObj = select.poll()
+            pollObj.register(serverSock, select.POLLIN | select.POLLPRI)
+
+            # while not sigThread.isShuttingDown():
+            try:
+                while True:
+                    try:
+                        fdList = pollObj.poll(500)
+                    except IOError as exc:
+                        raise PollException('A failure occurred while checking for new client connections.')
             
-                if len(fdList) == 0:
-                    # Nobody knocking on the door.
-                    continue
-                else:    
-                    (clientSock, address) = serverSock.accept()
-                    if debugLog:
-                        debugLog.write(['Accepting a client request from ' + address[0] + ' on port ' + str(address[1]) + '.'])
+                    if len(fdList) == 0:
+                        # Nobody knocking on the door.
+                        continue
+                    else:    
+                        (clientSock, address) = serverSock.accept()
+                        if debugLog:
+                            debugLog.write(['Accepting a client request from ' + address[0] + ' on port ' + str(address[1]) + '.'])
             
-                    while True:
-                        Collector.lockTList()
-                        try:
-                            if Collector.freeThreadExists():
-                                if debugLog:
-                                    debugLog.write(['Instantiating a Collector for client ' + str(address) + '.'])
-                                Collector.newThread(clientSock, arguments.getArg('dbhost'), arguments.getArg('dbport'), arguments.getArg('database'), arguments.getArg('dbuser'), int(sumsDrmsParams.get('SUMS_TAPE_AVAILABLE')) == 1, int(sumsDrmsParams.get('SUMS_MULTIPLE_PARTNSETS')) == 1, sumsDrmsParams.get('SUMBIN_BASEDIR'), log, debugLog)
-                                break # The finally clause will ensure the Collector lock is released.
-                        finally:
-                            Collector.unlockTList()
+                        while True:
+                            Worker.lockTList()
+                            try:
+                                if Worker.freeThreadExists():
+                                    if debugLog:
+                                        debugLog.write(['Instantiating a Worker for client ' + str(address) + '.'])
+                                    Worker.newThread(clientSock, int(sumsDrmsParams.get('SUMS_TAPE_AVAILABLE')) == 1, int(sumsDrmsParams.get('SUMS_MULTIPLE_PARTNSETS')) == 1, sumsDrmsParams.get('SUMBIN_BASEDIR'), log, debugLog)
+                                    break # The finally clause will ensure the Worker lock is released.
+                            finally:
+                                # ensures the tList lock is released, even if a KeyboardInterrupt occurs while the 
+                                # lock is being held
+                                Worker.unlockTList()
                     
-                        # There were no free threads. Wait until there is a free thread.
-                        Collector.waitForFreeThread()
+                            # There were no free threads. Wait until there is a free thread.
+                            Worker.waitForFreeThread()
                 
-                        # We woke up, because a free thread became available. However, that thread could 
-                        # now be in use. Loop and check again.
-        except KeyboardInterrupt:
-            # Shut down things if the user hits ctrl-c.
-            pass
+                            # We woke up, because a free thread became available. However, that thread could 
+                            # now be in use. Loop and check again.
+            except KeyboardInterrupt:
+                # Shut down things if the user hits ctrl-c.
+                pass
         
-        pollObj.unregister(serverSock)
+            pollObj.unregister(serverSock)
         
-        # Kill server socket.
-        log.write(['Closing server socket.'])
-        serverSock.shutdown(socket.SHUT_RDWR)
-        serverSock.close()
-        
-    except Exception as exc:
-        if len(exc.args) == 2:
-            type = exc.args[0]
+            # Kill server socket.
+            log.write(['Closing server socket.'])
+            serverSock.shutdown(socket.SHUT_RDWR)
+            serverSock.close()
             
-            if type == 'drmsParams':
-                rv = RV_DRMSPARAMS
-            elif type == 'args':
-                rv = RV_ARGS
-            elif type == 'badLogfile':
-                rv = RV_BADLOGFILE
-            elif type == 'badLogwrite':
-                rv = RV_BADLOGWRITE
-            elif type == 'dbCommand':
-                rv = RV_DBCOMMAND
-            elif type == 'dbConnection':
-                rv = RV_DBCONNECTION
-            elif type == 'dbCursor':
-                rv = RV_DBCURSOR
-            elif type == 'socketConnection':
-                rv = RV_SOCKETCONN
-            elif type == 'unknownRequestType':
-                rv = RV_REQUESTTYPE
-            elif type == 'poll':
-                rv = RV_POLL
-            else:
-                raise
-                
-            msg = exc.args[1]
-                
-            print(msg, file=sys.stderr)
-        else:
-            raise
+            # exit termination handler (raise TerminationHandler.Break to exit without exception propagation)
+    except TerminationException as exc:
+        if log:
+            log.write([ exc.args[0] ]) 
+            
+        # rv is RV_SUCCESS
+    except SDException as exc:
+        if log:
+            log.write([ exc.args[0] ])
 
+        rv = exc.retcode
+    except:
+        import traceback
+        if log:
+            log.write([ traceback.format_exc(5) ])
+        rv = RV_UNKNOWNERROR
+
+if log:
+    log.write([ 'exiting with return code ' + str(rv) ])
 sys.exit(rv)
