@@ -1,6 +1,4 @@
-#!/usr/bin/env python
-
-from __future__ import print_function
+#!/usr/bin/env python3
 import sys
 import re
 import os
@@ -9,11 +7,14 @@ import threading
 import socket
 import signal
 import select
+import copy
 from datetime import datetime, timedelta, timezone
 import re
 import random
 import json
 import uuid
+import logging
+import argparse
 from subprocess import check_call, CalledProcessError
 from pathlib import Path
 import psycopg2
@@ -23,7 +24,7 @@ sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../..
 from drmsCmdl import CmdlParser
 
 if sys.version_info < (3, 2):
-    raise Exception('You must run the 3.2 release, or a more recent release, of Python.')
+    raise Exception('you must run the 3.2 release, or a more recent release, of Python')
 
 
 SUMSD = 'sumsd'
@@ -61,7 +62,8 @@ RV_SESSIONCLOSED = 17
 RV_GENERATERESPONSE = 18
 RV_IMPLEMENTATION = 19
 RV_TAPEREQUEST = 20
-RV_UNKNOWNERROR = 21
+RV_SUMSCHMOWN = 21
+RV_UNKNOWNERROR = 22
 
 
 # Request types
@@ -89,6 +91,7 @@ RESPSTATUS_REQTYPE = 'bad-request-type'
 RESPSTATUS_SESSIONCLOSED = 'session-closed'
 RESPSTATUS_SESSIONOPENED = 'session-opened'
 RESPSTATUS_GENRESPONSE = 'cant-generate-response'
+RESPSTATUS_TAPEREAD = 'taperead'
 
 # Maximum number of DB rows returned
 MAX_MTSUMS_NSUS = 32768
@@ -107,10 +110,12 @@ class TerminationHandler(object):
         
     def __init__(self, thContainer):
         self.container = thContainer
+        
+        if thContainer[2] is None:
+            raise ArgsException('TermationHandler constructor: log cannot be None')
         arguments = thContainer[0]
         self.pidStr = thContainer[1]
         self.log = thContainer[2]
-        self.debugLog = thContainer[3]
 
         super(TerminationHandler, self).__init__()
         
@@ -121,20 +126,18 @@ class TerminationHandler(object):
 
         # open DB connections        
         for nConn in range(0, DBConnection.maxConn):
-            DBConnection.connList.append(DBConnection(arguments.getArg('dbhost'), arguments.getArg('dbport'), arguments.getArg('database'), arguments.getArg('dbuser'), log, debugLog))
+            DBConnection.connList.append(DBConnection(arguments.getArg('dbhost'), arguments.getArg('dbport'), arguments.getArg('database'), arguments.getArg('dbuser'), log))
 
     # Normally, __exit__ is called if an exception occurs inside the with block. And since SIGINT is converted
     # into a KeyboardInterrupt exception, it will be handled by __exit__(). However, SIGTERM will not - 
     # __exit__() will be bypassed if a SIGTERM signal is received. Use the signal handler installed in the
     # __enter__() call to handle SIGTERM.
     def __exit__(self, etype, value, traceback):
-        if self.log:
-            self.log.write([ 'TerminationHandler.__exit__() called' ])
+        self.log.writeInfo([ 'TerminationHandler.__exit__() called' ])
             
         # clean up DB connections
         DBConnection.closeAll()
-        if self.log:
-            self.log.write([ 'closed all DB connections' ])
+        self.log.writeInfo([ 'closed all DB connections' ])
 
         # wait for Worker threads to exit
         while True:
@@ -155,8 +158,7 @@ class TerminationHandler(object):
                 # can't hold worker lock here - when the worker terminates, it acquires the same lock;
                 # due to a race condition in tList (we had to release the tList lock), we have to check 
                 # to see if the worker is alive before joining it.
-                if self.log:
-                    self.log.write([ 'waiting for worker ' +  worker.getID() + ' to terminate' ])
+                self.log.writeInfo([ 'waiting for worker ' +  worker.getID() + ' to terminate' ])
                 worker.join() # will block, possibly for ever
                 
         if etype == self.Break:
@@ -165,7 +167,7 @@ class TerminationHandler(object):
             return True
 
         if etype == SystemExit:
-            raise TerminationException('Termination signal handler called.')
+            raise TerminationException('termination signal handler called')
 
 
 class SumsDrmsParams(DRMSParams):
@@ -177,7 +179,7 @@ class SumsDrmsParams(DRMSParams):
         val = super(SumsDrmsParams, self).get(name)
 
         if val is None:
-            raise ParamsException('Unknown DRMS parameter: ' + name + '.')
+            raise ParamsException('unknown DRMS parameter: ' + name)
         return val
         
 
@@ -198,7 +200,7 @@ class Arguments(object):
             self.parsedArgs = self.parser.parse_args()      
         except Exception as exc:
             if len(exc.args) == 2:
-                type, msg = exc
+                type, msg = exc.args
                   
                 if type != 'CmdlParser-ArgUnrecognized' and type != 'CmdlParser-ArgBadformat':
                     raise # Re-raise
@@ -213,7 +215,7 @@ class Arguments(object):
             # set attributes directly in the Arguments instance.
             setattr(self, name, value)
         else:
-            raise Exception('args', 'Attempt to set an argument that already exists: ' + name + '.')
+            raise ArgsException('attempt to set an argument that already exists: ' + name)
 
     def setAllArgs(self):
         for key,val in list(vars(self.parsedArgs).items()):
@@ -223,43 +225,68 @@ class Arguments(object):
         try:
             return getattr(self, name)
         except AttributeError as exc:
-            raise Exception('args', 'Unknown argument: ' + name + '.')
+            raise ArgsException('unknown argument: ' + name)
 
  
 class Log(object):
     """Manage a logfile."""
-
-    def __init__(self, file):
+    def __init__(self, file, level, formatter):
         self.fileName = file
-        self.fobj = None
+        self.log = logging.getLogger()
+        self.log.setLevel(level)
+        self.fileHandler = logging.FileHandler(file)
+        self.fileHandler.setLevel(level)
+        self.fileHandler.setFormatter(formatter)
+        self.log.addHandler(self.fileHandler)
         
-        try:
-            head, tail = os.path.split(file)
+    def close(self):
+        if self.log:
+            if self.fileHandler:
+                self.log.removeHandler(self.fileHandler)
+                self.fileHandler.flush()
+                self.fileHandler.close()
+                self.fileHandler = None
+            self.log = None
+            
+    def flush(self):
+        if self.log and self.fileHandler:
+            self.fileHandler.flush()
+            
+    def getLevel(self):
+        # Hacky way to get the level - make a dummy LogRecord
+        logRecord = self.log.makeRecord(self.log.name, self.log.getEffectiveLevel(), None, '', '', None, None)
+        return logRecord.levelname
 
-            if not os.path.isdir(head):
-                os.mkdir(head)
-            fobj = open(self.fileName, 'a')
-        except OSError as exc:
-            type, value, traceback = sys.exc_info()
-            raise LogException('Unable to access ' + "'" + value.filename + "'.")
-        except IOError as exc:
-            type, value, traceback = sys.exc_info()
-            raise LogException('Unable to open ' + "'" + value.filename + "'.")
-        
-        self.fobj = fobj
+    def writeDebug(self, text):
+        if self.log:
+            for line in text:
+                self.log.debug(line)
+            self.fileHandler.flush()
+            
+    def writeInfo(self, text):
+        if self.log:
+            for line in text:
+                self.log.info(line)
+        self.fileHandler.flush()
+    
+    def writeWarning(self, text):
+        if self.log:
+            for line in text:
+                self.log.warning(line)
+            self.fileHandler.flush()
+    
+    def writeError(self, text):
+        if self.log:
+            for line in text:
+                self.log.error(line)
+            self.fileHandler.flush()
+            
+    def writeCritical(self, text):
+        if self.log:
+            for line in text:
+                self.log.critical(line)
+            self.fileHandler.flush()
 
-    def __del__(self):
-        if self.fobj:
-            self.fobj.close()
-
-    def write(self, text):
-        try:
-            lines = ['[' + datetime.now().strftime('%Y-%m-%d %T') + '] ' + line + '\n' for line in text]
-            self.fobj.writelines(lines)
-            self.fobj.flush()
-        except IOError as exc:
-            type, value, traceback = sys.exc_info()
-            raise LogException('Unable to write to ' + value.filename + '.')
 
 class SDException(Exception):
 
@@ -403,6 +430,13 @@ class TaperequestException(SDException):
     retcode = RV_TAPEREQUEST
     def __init__(self, msg):
         super(TaperequestException, self).__init__(msg)
+        
+        
+class SumsChmownException(SDException):
+
+    retcode = RV_SUMSCHMOWN
+    def __init__(self, msg):
+        super(SumsChmownException, self).__init__(msg)
 
 
 class DBConnection(object):
@@ -413,8 +447,11 @@ class DBConnection(object):
     eventConnFree = threading.Event() # event fired when a connection gets freed up
     nextIDseq = 0 # the id of the next connection
 
-    def __init__(self, host, port, database, user, log, debugLog):
+    def __init__(self, host, port, database, user, log):
         self.conn = None
+        
+        if host is None or port is None or database is None or user is None or log is None:
+            raise ArgsException('DBConnection constructor: neither host nor port nor database nor user nor log can be None')
         
         self.id = str(DBConnection.nextIDseq) # do not call the constructor from more than one thread!
         DBConnection.nextIDseq += 1
@@ -425,7 +462,6 @@ class DBConnection(object):
         self.database = database
         self.user = user
         self.log = log
-        self.debugLog = debugLog
         self.openConnection()
         
     def getID(self):
@@ -434,7 +470,7 @@ class DBConnection(object):
     def commit(self):
         # Does not close DB connection. It can be used after the commit() call.
         if not self.conn:
-            raise DBCommandException('Cannot commit - no database connection exists.')
+            raise DBCommandException('cannot commit - no database connection exists')
             
         if self.conn:
             self.conn.commit()
@@ -442,7 +478,7 @@ class DBConnection(object):
     def rollback(self):
         # Does not close DB connection. It can be used after the rollback() call.
         if not self.conn:
-            raise DBCommandException('Cannot rollback - no database connection exists.')
+            raise DBCommandException('cannot rollback - no database connection exists')
 
         if self.conn:
             self.conn.rollback()
@@ -453,12 +489,11 @@ class DBConnection(object):
             
     def openConnection(self):
         if self.conn:
-            raise DBConnectionException('Already connected to the database.')
+            raise DBConnectionException('already connected to the database')
             
         try:
             self.conn = psycopg2.connect(host=self.host, port=self.port, database=self.database, user=self.user)
-            if self.debugLog:
-                self.debugLog.write([ 'user ' + self.user + ' successfully connected to ' + self.database + ' database: ' + self.host + ':' + str(self.port) ])
+            self.log.writeInfo([ 'user ' + self.user + ' successfully connected to ' + self.database + ' database: ' + self.host + ':' + str(self.port) + ' - id ' + self.id ])
         except psycopg2.DatabaseError as exc:
             # Closes the cursor and connection
             if hasattr(exc, 'diag') and hasattr(exc.diag, 'message_primary'):
@@ -468,35 +503,30 @@ class DBConnection(object):
             raise DBConnectionException(msg)
             
         # must add to the list of connections and free connections
-        if self.conn:
-            DBConnection.connListLock.acquire()
-            try:
-                DBConnection.connList.append(self)
-                DBConnection.connListFree.append(self)
-            finally:
-                DBConnection.connListLock.release()
+        DBConnection.connListLock.acquire()
+        try:
+            DBConnection.connList.append(self)
+            DBConnection.connListFree.append(self)
+        finally:
+            DBConnection.connListLock.release()
 
-            if self.debugLog:
-                self.debugLog.write([ 'added connection ' + self.id + ' to connection list and free connection list' ])
+        self.log.writeDebug([ 'added connection ' + self.id + ' to connection list and free connection list' ])
 
     def closeConnection(self):    
         if not self.conn:
-            raise DBConnectionException('There is no database connection.')
+            raise DBConnectionException('there is no database connection')
         
         if self.conn:
             DBConnection.connListLock.acquire()
             try:
                 self.conn.close()
-                if self.debugLog:
-                    self.debugLog.write([ 'closed DB connection ' + self.id ])
+                self.log.writeInfo([ 'closed DB connection ' + self.id ])
 
                 if self in DBConnection.connListFree:
                     DBConnection.connListFree.remove(self)
-                    if self.debugLog:
-                        self.debugLog.write([ 'removed DB connection ' + self.id + ' from free connection list'])
+                    self.log.writeDebug([ 'removed DB connection ' + self.id + ' from free connection list'])
                 DBConnection.connList.remove(self)
-                if self.debugLog:
-                    self.debugLog.write([ 'removed DB connection ' + self.id + ' from connection list'])
+                self.log.writeDebug([ 'removed DB connection ' + self.id + ' from connection list'])
 
             finally:
                 DBConnection.connListLock.release()
@@ -518,7 +548,7 @@ class DBConnection(object):
 
     def exeCmd(self, cmd, results, result=True):
         if not self.conn:
-            raise DBCommandException('Cannot execute database command ' + cmd + ' - no database connection exists.')
+            raise DBCommandException('cannot execute database command ' + cmd + ' - no database connection exists')
         
         if result:
             try:
@@ -652,7 +682,7 @@ class OpenRequest(Request):
             self._stringifyType()
 
     def generateResponse(self, dest=None):
-        resp = OpenResponse(self, dest)
+        resp = OpenResponse(self, RESPSTATUS_OK, dest)
         super(OpenRequest, self).generateResponse(dest)
         return resp        
 
@@ -674,7 +704,7 @@ class CloseRequest(Request):
             self.reqDict['sessionid'] = self.data.sessionid
         
     def generateResponse(self, dest=None):
-        resp = CloseResponse(self, dest)
+        resp = CloseResponse(self, RESPSTATUS_OK, dest)
         super(CloseRequest, self).generateResponse(dest)
         return resp
 
@@ -696,7 +726,7 @@ class RollbackRequest(Request):
             self.reqDict['sessionid'] = self.data.sessionid
             
     def generateResponse(self, dest=None):
-        resp = RollbackResponse(self, dest)
+        resp = RollbackResponse(self, RESPSTATUS_OK, dest)
         super(RollbackRequest, self).generateResponse(dest)
         return resp
 
@@ -714,7 +744,7 @@ class InfoRequest(Request):
         super(InfoRequest, self).__init__('info', unjsonized, worker)
         
         if len(self.unjsonized['sus']) > MAX_MTSUMS_NSUS:
-            raise ExtractRequestException('Too many SUs in request (maximum of ' + str(MAX_MTSUMS_NSUS) + ' allowed).')
+            raise ExtractRequestException('too many SUs in request (maximum of ' + str(MAX_MTSUMS_NSUS) + ' allowed)')
         
         self.data.sus = [ Request.hexToInt(hexStr) for hexStr in self.unjsonized['sus'] ]
 
@@ -734,7 +764,7 @@ class InfoRequest(Request):
             self.reqDict['sus'] = self.data.sus
 
     def generateResponse(self, dest=None):
-        resp = InfoResponse(self, dest)
+        resp = InfoResponse(self, RESPSTATUS_OK, dest)
         super(InfoRequest, self).generateResponse(dest)
         return resp
 
@@ -754,7 +784,7 @@ class GetRequest(Request):
         super(GetRequest, self).__init__('get', unjsonized, worker)
 
         if len(self.unjsonized['sus']) > MAX_MTSUMS_NSUS:
-            raise ExtractRequestException('Too many SUs in request (maximum of ' + str(MAX_MTSUMS_NSUS) + ' allowed).')
+            raise ExtractRequestException('too many SUs in request (maximum of ' + str(MAX_MTSUMS_NSUS) + ' allowed)')
         
         self.data.touch = self.unjsonized['touch']
         self.data.retrieve = self.unjsonized['retrieve']
@@ -780,7 +810,7 @@ class GetRequest(Request):
             self.reqDict['sus'] = self.data.sus
                 
     def generateResponse(self, dest=None):
-        resp = GetResponse(self, dest)
+        resp = GetResponse(self, RESPSTATUS_OK, dest)
         super(GetRequest, self).generateResponse(dest)
         return resp
 
@@ -832,7 +862,7 @@ class AllocRequest(Request):
             self.reqDict['numbytes'] = self.data.numbytes
         
     def generateResponse(self, dest=None):
-        resp = AllocResponse(self, dest)
+        resp = AllocResponse(self, RESPSTATUS_OK, dest)
         super(AllocRequest, self).generateResponse(dest)
         return resp
         
@@ -853,7 +883,7 @@ class PutRequest(Request):
         super(PutRequest, self).__init__('put', unjsonized, worker)
         
         if len(self.unjsonized['sudirs']) > MAX_MTSUMS_NSUS:
-            raise ExtractRequestException('Too many SUs in request (maximum of ' + str(MAX_MTSUMS_NSUS) + ' allowed).')
+            raise ExtractRequestException('too many SUs in request (maximum of ' + str(MAX_MTSUMS_NSUS) + ' allowed)')
         
         sudirsNoDupes = []
         processed = set()
@@ -886,7 +916,7 @@ class PutRequest(Request):
             self.reqDict['archivetype'] = self.data.archivetype
         
     def generateResponse(self, dest=None):
-        resp = PutResponse(self, dest)
+        resp = PutResponse(self, RESPSTATUS_OK, dest)
         super(PutRequest, self).generateResponse(dest)
         return resp
         
@@ -917,7 +947,7 @@ class DeleteseriesRequest(Request):
             self.reqDict['series'] = self.data.series
         
     def generateResponse(self, dest=None):
-        resp = DeleteseriesResponse(self, dest)
+        resp = DeleteseriesResponse(self, RESPSTATUS_OK, dest)
         super(DeleteseriesRequest, self).generateResponse(dest)
         return resp
 
@@ -939,7 +969,7 @@ class PingRequest(Request):
             self.reqDict['sessionid'] = self.data.sessionid
         
     def generateResponse(self, dest=None):
-        resp = PingResponse(self, dest)
+        resp = PingResponse(self, RESPSTATUS_OK, dest)
         super(PingRequest, self).generateResponse(dest)
         return resp
 
@@ -964,7 +994,7 @@ class PollRequest(Request):
             self.reqDict['requestid'] = self.data.requestid
         
     def generateResponse(self, dest=None):
-        resp = PollResponse(self, dest)
+        resp = PollResponse(self, RESPSTATUS_OK, dest)
         super(PollRequest, self).generateResponse(dest)
 
 
@@ -980,7 +1010,7 @@ class InfoRequestOLD(Request):
         super(InfoRequestOLD, self).__init__('infoarray', unjsonized, worker)
         
         if len(self.unjsonized['sulist']) > MAX_MTSUMS_NSUS:
-            raise ExtractRequestException('Too many SUs in request (maximum of ' + str(MAX_MTSUMS_NSUS) + ' allowed).')
+            raise ExtractRequestException('too many SUs in request (maximum of ' + str(MAX_MTSUMS_NSUS) + ' allowed)')
         
         self.data.sus = [ Request.hexToInt(hexStr) for hexStr in self.unjsonized['sulist'] ]
 
@@ -994,7 +1024,7 @@ class InfoRequestOLD(Request):
                 processed.add(str(su))
 
     def generateResponse(self, dest=None):
-        resp = InfoResponseOLD(self, dest)
+        resp = InfoResponseOLD(self, RESPSTATUS_OK, dest)
         super(InfoRequestOLD, self).generateResponse(dest)
         return resp
 
@@ -1033,36 +1063,40 @@ class RequestFactory(object):
             # Backward compatibility with first version of sumsd.py client.
             return InfoRequestOLD(unjsonized, self.worker)
         else:
-            raise RequestTypeException('The request type ' + reqType + ' is not supported.')
+            raise RequestTypeException('the request type ' + reqType + ' is not supported')
             
 
 class Response(object):
-    def __init__(self, request):
+    def __init__(self, request, status):
         self.request = request
         self.cmd = None
         self.dbRes = None
         self.data = {} # A Py dictionary containing the response to the request. Will be JSONized before being sent to client.
+        self.data['status'] = status        
         self.jsonizer = None
         
+    def __str__(self):
+        if not hasattr(self, 'rspDict'):
+            self._createRspDict()
+            self._stringify()
+        return str(self.rspDict)
+        
+    def _createRspDict(self):
+        if not hasattr(self, 'rspDict'):
+            self.rspDict = { 'status' : self.data['status'] }
+        
     def exeDbCmd(self):
-        if hasattr(self.request.worker, 'debugLog') and self.request.worker.debugLog:
-            self.request.worker.debugLog.write(['db command is: ' + self.cmd])
-
+        self.request.worker.log.writeDebug([ 'db command is: ' + self.cmd ])
         self.request.worker.dbconn.exeCmd(self.cmd, self.dbRes, True)
         
     def exeDbCmdNoResult(self):
-        if hasattr(self.request.worker, 'debugLog') and self.request.worker.debugLog:
-            self.request.worker.debugLog.write(['db command is: ' + self.cmd])
-
+        self.request.worker.log.writeDebug([ 'db command is: ' + self.cmd ])
         self.request.worker.dbconn.exeCmd(self.cmd, None, False)
 
         
     def getJSON(self, error=False, errMsg=None):
         self.jsonizer = Jsonizer(self.data)
         return self.jsonizer.getJSON()
-        
-    def setStatus(self, status):
-        self.data['status'] = status
         
     @staticmethod    
     def stripHexPrefix(hexadecimal):
@@ -1079,26 +1113,31 @@ class Response(object):
             
 class ErrorResponse(Response):
     def __init__(self, request, status, errMsg):
-        super(ErrorResponse, self).__init__(request)
+        super(ErrorResponse, self).__init__(request, status)
         msg = 'Unable to create ' + request.reqType + ' response: ' + errMsg
         
-        if request.worker.debugLog:
-            request.worker.debugLog.write([ 'Error: status (' + str(status) + '), msg (' + msg + ')' ])
-        
-        self.data['status'] = status
+        request.worker.log.writeDebug([ 'error: status (' + str(status) + '), msg (' + msg + ')' ])
+
         self.data['errmsg'] = msg
+        
+    def _stringify(self):
+        if not hasattr(self, 'rspDict'):
+            super(ErrorResponse, self)._createRspDict()
+            
+        if not 'errmsg' in self.rspDict:
+            self.rspDict['errmsg'] = self.data['errmsg']
 
 
 class OpenResponse(Response):
-    def __init__(self, request, dest=None):
-        super(OpenResponse, self).__init__(request)
+    def __init__(self, request, status, dest=None):
+        super(OpenResponse, self).__init__(request, status)
 
         self.dbRes = []
         self.cmd = "SELECT nextval('public.sum_seq')"
         self.exeDbCmd()
         
         if len(self.dbRes) != 1 or len(self.dbRes[0]) != 1:
-            raise DBCommandException('Unexpected DB response to cmd: ' + self.cmd)
+            raise DBCommandException('unexpected DB response to cmd: ' + self.cmd)
             
         sessionid = self.dbRes[0][0] # self.dbRes is a list of lists (or a 'table')
         
@@ -1106,6 +1145,13 @@ class OpenResponse(Response):
         self.exeDbCmdNoResult()
         
         self.data['sessionid'] = Response.intToHex(sessionid)
+
+    def _stringify(self):
+        if not hasattr(self, 'rspDict'):
+            super(OpenResponse, self)._createRspDict()
+
+        if not 'sessionid' in self.rspDict:
+            self.rspDict['sessionid'] = Request.hexToInt(self.data['sessionid'])
         
     def undo(self):
         # all DB changes will be rolled back on error, so nothing to do here
@@ -1113,8 +1159,8 @@ class OpenResponse(Response):
 
 
 class CloseResponse(Response):
-    def __init__(self, request, dest=None):
-        super(CloseResponse, self).__init__(request)
+    def __init__(self, request, status, dest=None):
+        super(CloseResponse, self).__init__(request, status)
 
         self.cmd = 'DELETE FROM public.sum_partn_alloc WHERE sumid = ' + str(self.request.data.sessionid) + ' AND (status = 8 OR status = 1)'
         self.exeDbCmdNoResult()
@@ -1122,16 +1168,24 @@ class CloseResponse(Response):
         self.cmd = 'DELETE FROM public.sum_open WHERE sumid = ' + str(self.request.data.sessionid)
         self.exeDbCmdNoResult()
         
+    def _stringify(self):
+        if not hasattr(self, 'rspDict'):
+            super(CloseResponse, self)._createRspDict()
+        
     def undo(self):
         # all DB changes will be rolled back on error, so nothing to do here
         pass
 
 
 class RollbackResponse(Response):
-    def __init__(self, request, dest=None):
-        super(RollbackResponse, self).__init__(request)
+    def __init__(self, request, status, dest=None):
+        super(RollbackResponse, self).__init__(request, status)
         
         # nothing else to do
+        
+    def _stringify(self):
+        if not hasattr(self, 'rspDict'):
+            super(RollbackResponse, self)._createRspDict()
         
     def undo(self):
         # this should never be called
@@ -1139,8 +1193,8 @@ class RollbackResponse(Response):
     
 
 class InfoResponse(Response):
-    def __init__(self, request, dest=None):
-        super(InfoResponse, self).__init__(request)
+    def __init__(self, request, status, dest=None):
+        super(InfoResponse, self).__init__(request, status)
         
         # Extract response data from the DB.
         dbInfo = [] # In theory there could be multiple DB requests.
@@ -1150,6 +1204,18 @@ class InfoResponse(Response):
         self.exeDbCmd()
         dbInfo.append(self.dbRes)
         self.parse(dbInfo)
+        
+    def _stringify(self):
+        if not hasattr(self, 'rspDict'):
+            super(InfoResponse, self)._createRspDict()
+
+        if not 'suinfo' in self.rspDict:
+            self.rspDict['suinfo'] = copy.deepcopy(self.data['suinfo'])
+            
+            # convert all 64-bit numbers from hex string to integers
+            for infoDict in self.rspDict['suinfo']:
+                infoDict['sunum'] = Request.hexToInt(infoDict['sunum'])
+                infoDict['bytes'] = Request.hexToInt(infoDict['bytes'])
         
     def parse(self, dbInfo):
         infoList = []
@@ -1237,8 +1303,8 @@ class InfoResponse(Response):
 
 
 class GetResponse(Response):
-    def __init__(self, request, dest=None):
-        super(GetResponse, self).__init__(request)
+    def __init__(self, request, status, dest=None):
+        super(GetResponse, self).__init__(request, status)
         
         # Extract response data from the DB.
         dbInfo = []
@@ -1286,7 +1352,7 @@ class GetResponse(Response):
                 dest.data['taperead-requestid'] = self.data['taperead-requestid']
             
             # Make tape-service request. NOT IMPLEMENTED!
-            raise ImplementationException('SUMS is configured to provide tape service, but the tape service is not implemented.')
+            raise ImplementationException('SUMS is configured to provide tape service, but the tape service is not implemented')
             
             # Spawn a thread to process the tape-read request. Store the thread ID and a status, initially 'pending', in a hash array 
             # in a class variable of the TapeRequestClient class. The key for this hash-array entry is the taperead-requestid value. 
@@ -1296,6 +1362,17 @@ class GetResponse(Response):
             # code returns the taperead-requestid back to the client. If the status is 'complete', then the PollRequest
             # code returns a valid GetResponse formed from the information returned from the tape service.
             # tapeRequestClient = TapeRequestClient(self.data['taperead-requestid'], self.request)
+
+    def _stringify(self):
+        if not hasattr(self, 'rspDict'):
+            super(GetResponse, self)._createRspDict()
+
+        if not 'supaths' in self.rspDict:
+            self.rspDict['supaths'] = copy.deepcopy(self.data['supaths'])
+            
+            # convert all 64-bit numbers from hex string to integers
+            for suPathDict in self.rspDict['supaths']:
+                suPathDict['sunum'] = Request.hexToInt(suPathDict['sunum'])
 
     def parse(self, dbInfo):
         supaths = []
@@ -1357,8 +1434,8 @@ class GetResponse(Response):
         pass
         
 class AllocResponse(Response):
-    def __init__(self, request, dest=None):
-        super(AllocResponse, self).__init__(request)
+    def __init__(self, request, status, dest=None):
+        super(AllocResponse, self).__init__(request, status)
         
         partSet = 0
         
@@ -1377,7 +1454,7 @@ class AllocResponse(Response):
                 self.exeDbCmd()
 
                 if len(self.dbRes) != 1 or len(self.dbRes[0]) != 1:
-                    raise DBCommandException('Unexpected DB response to cmd: ' + self.cmd)
+                    raise DBCommandException('unexpected DB response to cmd: ' + self.cmd)
             
                 partSet = self.dbRes[0][0]
                 
@@ -1386,12 +1463,12 @@ class AllocResponse(Response):
         self.exeDbCmd()
         
         if len(self.dbRes) < 1:
-            raise DBCommandException('Unexpected DB response to cmd: ' + self.cmd)
+            raise DBCommandException('unexpected DB response to cmd: ' + self.cmd)
     
         partitions = []
         for row in self.dbRes:
             if len(row) != 1:
-                raise DBCommandException('Unexpected DB response to cmd: ' + self.cmd)
+                raise DBCommandException('unexpected DB response to cmd: ' + self.cmd)
         
             partitions.append(row[0])
             
@@ -1405,7 +1482,7 @@ class AllocResponse(Response):
             self.exeDbCmd()
             
             if len(self.dbRes) != 1 or len(self.dbRes[0]) != 1:
-                raise DBCommandException('Unexpected DB response to cmd: ' + self.cmd)
+                raise DBCommandException('unexpected DB response to cmd: ' + self.cmd)
 
             sunum = self.dbRes[0][0]
 
@@ -1432,6 +1509,16 @@ class AllocResponse(Response):
                 self.data['sudir'] = sudir
             self.undo()
             raise
+            
+    def _stringify(self):
+        if not hasattr(self, 'rspDict'):
+            super(AllocResponse, self)._createRspDict()
+            
+        if not 'sunum' in self.repDict:
+            self.rspDict['sunum'] = Request.hexToInt(self.data['sunum'])
+            
+        if not 'sudir' in self.repDict:
+            self.rspDict['sudir'] = self.data['sudir']
         
     def undo(self):
         # all DB changes will be rolled back on error, so no DB changes to do here;
@@ -1441,8 +1528,8 @@ class AllocResponse(Response):
         
     
 class PutResponse(Response):
-    def __init__(self, request, dest=None):
-        super(PutResponse, self).__init__(request)
+    def __init__(self, request, status, dest=None):
+        super(PutResponse, self).__init__(request, status)
 
         try:    
             # We have to change ownership of the SU files to the production user - ACK! This is really bad design. It seems like
@@ -1467,12 +1554,11 @@ class PutResponse(Response):
             self.exeDbCmd()
         
             if len(self.dbRes) != 1 or len(self.dbRes[0]) != 1:
-                raise DBCommandException('Unexpected DB response to cmd: ' + self.cmd)
+                raise DBCommandException('unexpected DB response to cmd: ' + self.cmd)
         
             if self.dbRes[0][0] != len(partitionsNoDupes):
-                if hasattr(self.request.worker, 'debugLog') and self.request.worker.debugLog:
-                    self.request.worker.debugLog.write(['number of unique partitions in request: ' + str(len(partitionsNoDupes)), 'number of matching partitions in DB: ' + str(self.dbRes[0][0])])
-                raise 'One or more invalid paritition paths.'
+                self.request.worker.log.writeDebug([ 'number of unique partitions in request: ' + str(len(partitionsNoDupes)), 'number of matching partitions in DB: ' + str(self.dbRes[0][0])] )
+                raise ArgsException('one or more invalid paritition paths')
 
             if self.request.worker.hasTapeSys:
                 apStatus = DAAP
@@ -1482,17 +1568,18 @@ class PutResponse(Response):
             # This horrible program operates on a single SU at a time, so we have to call it in a loop.
             sudirs = []
             sus = []
+            sumChmownPath = os.path.join(self.request.worker.sumsBinDir, 'sum_chmown')
             for elem in self.request.data.sudirsNoDupes:
                 [(suStr, path)] = elem.items()
                 sudirs.append(path)
                 sus.append(suStr)
 
-                cmdList = [ os.path.join(self.request.worker.sumsBinDir, 'sum_chmown'), path ]
+                cmdList = [ sumChmownPath, path ]
 
                 try:
                     check_call(cmdList)
                 except CalledProcessError as exc:
-                    raise Exception()
+                    raise SumsChmownException('failure calling ' +  sumChmownPath)
 
             # If all file permission and ownership changes succeed, then commit the SUs to the SUMS database.
 
@@ -1589,6 +1676,10 @@ class PutResponse(Response):
             self.exeDbCmdNoResult()
             
             raise
+            
+    def _stringify(self):
+        if not hasattr(self, 'rspDict'):
+            super(PutResponse, self)._createRspDict()
 
     def undo(self):
         # all DB changes will be rolled back on error, so no DB changes to do here;
@@ -1596,8 +1687,8 @@ class PutResponse(Response):
         pass
 
 class DeleteseriesResponse(Response):
-    def __init__(self, request, dest=None):
-        super(DeleteseriesResponse, self).__init__(request)
+    def __init__(self, request, status, dest=None):
+        super(DeleteseriesResponse, self).__init__(request, status)
         
         series = self.request.data.series.lower()
 
@@ -1607,13 +1698,18 @@ class DeleteseriesResponse(Response):
         
         # To send to client.
         # Just 'ok'.
+        
+    def _stringify(self):
+        if not hasattr(self, 'rspDict'):
+            super(DeleteseriesResponse, self)._createRspDict()
+
     def undo(self):
         # all DB changes will be rolled back on error, so no DB changes to do here
         pass
 
 class InfoResponseOLD(Response):
-    def __init__(self, request, dest=None):
-        super(InfoResponseOLD, self).__init__(request)
+    def __init__(self, request, status, dest=None):
+        super(InfoResponseOLD, self).__init__(request, status)
         
         # Extract response data from the DB.
         dbInfo = [] # In theory there could be multiple DB requests.
@@ -1623,6 +1719,18 @@ class InfoResponseOLD(Response):
         self.exeDbCmd()
         dbInfo.append(self.dbRes)
         self.parse(dbInfo)
+        
+    def _stringify(self):
+        if not hasattr(self, 'rspDict'):
+            super(InfoResponse, self)._createRspDict()
+
+        if not 'suinfo' in self.rspDict:
+            self.rspDict['suinfo'] = copy.deepcopy(self.data['suinfolist'])
+            
+            # convert all 64-bit numbers from hex string to integers
+            for infoDict in self.rspDict['suinfo']:
+                infoDict['sunum'] = Request.hexToInt(infoDict['sunum'])
+                infoDict['bytes'] = Request.hexToInt(infoDict['bytes'])
         
     def parse(self, dbInfo):
         infoList = []
@@ -1708,16 +1816,23 @@ class PingResponse(Response):
     """
     As long as we can respond with an 'ok', then SUMS is up and running.
     """
-    def __init__(self, request, dest=None):
-        super(PingResponse, self).__init__(request)
+    def __init__(self, request, status, dest=None):
+        super(PingResponse, self).__init__(request, status)
 
         # To send to client.
         # Just 'ok'.
+        
+    def _stringify(self):
+        if not hasattr(self, 'rspDict'):
+            super(PingResponse, self)._createRspDict()
+
+    def undo(self):
+        pass
 
 
 class PollResponse(Response):
-    def __init__(self, request, dest=None):
-        super(PollResponse, self).__init__(request)
+    def __init__(self, request, status, dest=None):
+        super(PollResponse, self).__init__(request, status)
         
         tapeRequestID = self.request.data.requestID
         
@@ -1725,12 +1840,37 @@ class PollResponse(Response):
         reqStatus = TapeRequestClient.getTapeRequestStatus(tapeRequestID)
         if reqStatus == 'pending':
             self.data['taperead-requestid'] = tapeRequestID
+            self.data['status'] = RESPSTATUS_TAPEREAD
         elif reqStatus == 'complete':
             origRequest = TapeRequestClient.getOrigRequest(tapeRequestID)
             origRequest.generateResponse(self) # This will make a GetResponse (so far, you can poll for GetResponse only).
         else:
-            raise TaperequestException('Unexpected status returned by tape system: ' + reqStatus + '.')
-        
+            raise TaperequestException('unexpected status returned by tape system: ' + reqStatus)
+
+    def _stringify(self):
+        if not hasattr(self, 'rspDict'):
+            super(PollResponse, self)._createRspDict() # either RESPSTATUS_TAPEREAD (pending) or RESPSTATUS_OK (complete)
+            
+        if not 'reqtype' in self.rspDict:
+            origRequest = TapeRequestClient.getOrigRequest(self.request.data.requestID)
+            self.rspDict['reqtype'] = origRequest.reqType
+            
+        if self.data['status'] == RESPSTATUS_TAPEREAD:
+            # the request is still pending
+            if not 'taperead-requestid' in self.rspDict:
+                self.rspDict['taperead-requestid'] = self.data['taperead-requestid']
+        else:
+            # need to add supaths (a list of objects)
+            if not 'supaths' in self.rspDict:
+                self.rspDict['supaths'] = copy.deepcopy(self.data['supaths'])
+            
+                # convert all 64-bit numbers from hex string to integers
+                for suPathDict in self.rspDict['supaths']:
+                    suPathDict['sunum'] = Request.hexToInt(suPathDict['sunum'])
+
+    def undo(self):
+        pass
+
 
 class TapeRequestClient(threading.Thread):
     tMap = {} # Map taperead-requestid to (status, TapeRequestClient object)
@@ -1775,18 +1915,20 @@ class Worker(threading.Thread):
                         # So, we can send back 4 GB of response!
     MAX_MSG_BUFSIZE = 4096 # Don't receive more than this in one call!
     
-    def __init__(self, sock, hasTapeSys, hasMultPartSets, sumsBinDir, log, debugLog):
+    def __init__(self, sock, hasTapeSys, hasMultPartSets, sumsBinDir, log):
         threading.Thread.__init__(self)
         # Could raise. Handle in the code that creates the thread.
+        if sock is None or sumsBinDir is None or log is None:
+            raise ArgsException('Worker thread constructor: neither sock nor sumsBinDir nor log can be None')
+        
         self.sock = sock
         self.hasTapeSys = hasTapeSys
         self.hasMultPartSets = hasMultPartSets
         self.sumsBinDir = sumsBinDir
         self.log = log
-        self.debugLog = debugLog
         self.reqFactory = None
-        if self.debugLog:
-            self.debugLog.write([ 'successfully instantiated worker' ])
+        
+        self.log.writeInfo([ 'successfully instantiated worker' ])
                 
     def run(self):
         try:
@@ -1797,13 +1939,11 @@ class Worker(threading.Thread):
             history = []
             
             # obtain a DB session - blocks until that happens
-            if self.debugLog:
-                self.debugLog.write([ 'client ' + str(self.sock.getpeername()) + ' is waiting for a DB connection' ])
+            self.log.writeDebug([ 'client ' + str(self.sock.getpeername()) + ' is waiting for a DB connection' ])
 
             self.dbconn = DBConnection.nextOpenConnection()
             
-            if self.debugLog:
-                self.debugLog.write([ 'client ' + str(self.sock.getpeername()) + ' obtained DB connection ' + self.dbconn.getID() ])
+            self.log.writeDebug([ 'client ' + str(self.sock.getpeername()) + ' obtained DB connection ' + self.dbconn.getID() ])
             
             while True:
                 # The client must pass in some identifying information (other than their IP address).
@@ -1816,9 +1956,6 @@ class Worker(threading.Thread):
 
                     # First, obtain request.
                     msgStr = self.receiveJson() # msgStr is a string object.
-                
-                    if self.debugLog:
-                        self.debugLog.write([ 'Request:\n' + msgStr ])
                 
                     self.extractRequest(msgStr) # Will raise if reqtype is not supported.
                     
@@ -1841,8 +1978,7 @@ class Worker(threading.Thread):
                     elif isinstance(self.request, RollbackRequest):
                         rollback = True
 
-                    if self.log:
-                        self.log.write(['New ' + self.request.reqType + ' request from process ' + str(self.clientInfo.data.pid) + ' by user ' + self.clientInfo.data.user + ' at ' + str(self.sock.getpeername()) + ':' + str(self.request) ])
+                    self.log.writeInfo([ 'new ' + self.request.reqType + ' request from process ' + str(self.clientInfo.data.pid) + ' by user ' + self.clientInfo.data.user + ' at ' + str(self.sock.getpeername()) + ':' + str(self.request) ])
 
                     msgStr = self.generateResponse() # a str object; generating a response can modify the DB and commit changes
                     
@@ -1881,18 +2017,17 @@ class Worker(threading.Thread):
                     msgStr = self.generateErrorResponse(RESPSTATUS_SESSIONOPENED, exc.args[0])
                 except GenerateResponseException as exc:
                     rollback = True
-                    self.log.write([ 'Failure creating response.' ])
-                    self.log.write([ exc.args[0] ])
+                    self.log.writeError([ 'failure creating response' ])
+                    self.log.writeError([ exc.args[0] ])
                     import traceback
-                    self.log.write([ traceback.format_exc(3) ])
+                    self.log.writeError([ traceback.format_exc(3) ])
                     msgStr = self.generateErrorResponse(RESPSTATUS_GENRESPONSE, exc.args[0])
                 except:
                     import traceback
-                    if self.log:
-                        self.log.write([ traceback.format_exc(3) ])
+                    self.log.writeError([ traceback.format_exc(3) ])
 
-                if self.debugLog:
-                    self.debugLog.write([ 'Response:\n' + msgStr ])
+                if self.response:
+                    self.log.writeDebug([ 'response:' + str(self.response) ])
                 # Send results back on the socket, which is connected to a single DRMS module. By sending the results
                 # back, the client request is completed. We want to construct a list of "SUM_info" objects. Each object
                 # { sunum:12592029, onlineloc:'/SUM52/D12592029', ...}
@@ -1917,24 +2052,22 @@ class Worker(threading.Thread):
             textReceived = self.sock.recv(Worker.MAX_MSG_BUFSIZE)
             if textReceived == b'':
                 # The client closed their end of the socket.
-                if self.debugLog:
-                    self.debugLog.write(['Client at ' + str(self.sock.getpeername()) + ' properly terminated connection.'])
+                self.log.writeDebug([ 'client ' + str(self.sock.getpeername()) + ' properly terminated connection' ])
             else:
-                raise SocketConnectionException('Client sent extraneous data over socket connection.')
+                raise SocketConnectionException('client ' + str(self.sock.getpeername()) + ' sent extraneous data over socket connection')
 
         except SocketConnectionException as exc:
             # Don't send message back - we can't communicate with the client properly, so only log a message on the server side.
-            self.log.write(['There was a problem communicating with client ' + str(self.sock.getpeername()) + '.'])
-            self.log.write([ exc.args[0] ])
+            self.log.writeError([ 'there was a problem communicating with client ' + str(self.sock.getpeername()) ])
+            self.log.writeError([ exc.args[0] ])
         except Exception as exc:
             import traceback
-            self.log.write([ traceback.format_exc(5) ])
+            self.log.writeError([ traceback.format_exc(5) ])
 
         # We need to check the class tList variable to update it, so we need to acquire the lock.
         try:
             Worker.lockTList()
-            if self.debugLog:
-                self.debugLog.write(['Class Worker acquired Worker lock for client ' + str(self.sock.getpeername()) + '.'])
+            self.log.writeDebug([ 'class Worker acquired Worker lock for client ' + str(self.sock.getpeername()) ])
             Worker.tList.remove(self) # This thread is no longer one of the running threads.
             if len(Worker.tList) == Worker.maxThreads - 1:
                 # Fire event so that main thread can add new SUs to the download queue.
@@ -1943,21 +2076,18 @@ class Worker(threading.Thread):
                 Worker.eventMaxThreads.clear()
         except Exception as exc:
             import traceback
-            self.log.write(['There was a problem closing the Worker thread for client ' + str(self.sock.getpeername()) + '.'])
-            self.log.write([ traceback.format_exc(0) ])
+            self.log.writeError([ 'there was a problem closing the Worker thread for client ' + str(self.sock.getpeername()) ])
+            self.log.writeError([ traceback.format_exc(0) ])
         finally:
             Worker.unlockTList()
-            if self.debugLog:
-                self.debugLog.write(['Class Worker released Worker lock for client ' + str(self.sock.getpeername()) + '.'])
+            self.log.writeDebug([ 'class Worker released Worker lock for client ' + str(self.sock.getpeername()) ])
                 
             # do not close DB connection, but release it for the next worker
             self.dbconn.release()
-            if self.debugLog:
-                self.debugLog.write([ 'worker released DB connection ' + self.dbconn.getID() + ' for client ' + str(self.sock.getpeername()) ])
+            self.log.writeDebug([ 'worker released DB connection ' + self.dbconn.getID() + ' for client ' + str(self.sock.getpeername()) ])
 
             # Always shut-down server-side of client socket pair.
-            if self.debugLog:
-                self.debugLog.write(['Shutting down server side of client socket ' + str(self.sock.getpeername()) + '.'])
+            self.log.writeDebug([ 'shutting down server side of client socket ' + str(self.sock.getpeername()) ])
             self.sock.shutdown(socket.SHUT_RDWR)
             self.sock.close()
             
@@ -1973,8 +2103,7 @@ class Worker(threading.Thread):
         # 
         # The pid is a JSON number, which could be a double string. But the client
         # will make sure that the number is a 32-bit integer.
-        if self.debugLog:
-            self.debugLog.write([ str(self.sock.getpeername()) + ' extracting client info.' ])
+        self.log.writeDebug([ str(self.sock.getpeername()) + ' extracting client info' ])
         
         clientInfo = Unjsonizer(msg)
         
@@ -1996,7 +2125,6 @@ class Worker(threading.Thread):
     def generateResponse(self):
         try:
             self.response = self.request.generateResponse()
-            self.response.setStatus(RESPSTATUS_OK)
         except SDException as exc:
             # Create a response with a non-OK status and an error message.
             raise GenerateResponseException(exc.args[0])
@@ -2018,7 +2146,7 @@ class Worker(threading.Thread):
         while bytesSentTotal < Worker.MSGLEN_NUMBYTES:
             bytesSent = self.sock.send(bytearray(numBytesMessage[bytesSentTotal:], 'UTF-8'))
             if not bytesSent:
-                raise SendMsgException('Socket broken - cannot send message-length data to client.')
+                raise SendMsgException('socket broken - cannot send message-length data to client')
             bytesSentTotal += bytesSent
         
         # Then send the message.
@@ -2026,11 +2154,10 @@ class Worker(threading.Thread):
         while bytesSentTotal < len(msg):
             bytesSent = self.sock.send(msg[bytesSentTotal:])
             if not bytesSent:
-                raise SendMsgException('Socket broken - cannot send message data to client.')
+                raise SendMsgException('socket broken - cannot send message data to client')
             bytesSentTotal += bytesSent
-            
-        if self.debugLog:
-            self.debugLog.write([str(self.sock.getpeername()) + ' - sent ' + str(bytesSentTotal) + ' bytes response.'])
+
+        self.log.writeDebug([ str(self.sock.getpeername()) + ' - sent ' + str(bytesSentTotal) + ' bytes response' ])
     
     # Returns a bytes object.
     def receiveMsg(self):
@@ -2041,7 +2168,7 @@ class Worker(threading.Thread):
         while bytesReceivedTotal < Worker.MSGLEN_NUMBYTES:
             textReceived = self.sock.recv(min(Worker.MSGLEN_NUMBYTES - bytesReceivedTotal, Worker.MAX_MSG_BUFSIZE))
             if textReceived == b'':
-                raise ReceiveMsgException('Socket broken - cannot receive message-length data from client.')
+                raise ReceiveMsgException('socket broken - cannot receive message-length data from client')
             allTextReceived += textReceived
             bytesReceivedTotal += len(textReceived)
             
@@ -2055,7 +2182,7 @@ class Worker(threading.Thread):
         while bytesReceivedTotal < numBytesMessage:
             textReceived = self.sock.recv(min(numBytesMessage - bytesReceivedTotal, Worker.MAX_MSG_BUFSIZE))
             if textReceived == b'':
-                raise ReceiveMsgException('Socket broken - cannot receive message data from client.')
+                raise ReceiveMsgException('socket broken - cannot receive message data from client')
             allTextReceived += textReceived
             bytesReceivedTotal += len(textReceived)
         # Return a bytes object (not a string). The unjsonize function will need a str object for input.
@@ -2072,8 +2199,8 @@ class Worker(threading.Thread):
 
     # Must acquire Worker lock BEFORE calling newThread() since newThread() will append to tList (the Worker threads will be deleted from tList as they complete).
     @staticmethod
-    def newThread(sock, hasTapeSys, hasMultPartSets, sumsBinDir, log, debugLog):
-        worker = Worker(sock, hasTapeSys, hasMultPartSets, sumsBinDir, log, debugLog)
+    def newThread(sock, hasTapeSys, hasMultPartSets, sumsBinDir, log):
+        worker = Worker(sock, hasTapeSys, hasMultPartSets, sumsBinDir, log)
         Worker.tList.append(worker)
         worker.start()
         
@@ -2110,17 +2237,35 @@ class Worker(threading.Thread):
         cls.maxThreads = maxThreads
 
 
+class LogLevelAction(argparse.Action):
+    def __call__(self, parser, namespace, value, option_string=None):
+        valueLower = value.lower()
+        if valueLower == 'critical':
+            level = logging.CRITICAL
+        elif valueLower == 'error':
+            level = logging.ERROR
+        elif valueLower == 'warning':
+            level = logging.WARNING
+        elif valueLower == 'info':
+            level = logging.INFO
+        elif valueLower == 'debug':
+            level = logging.DEBUG
+        else:
+            level = logging.ERROR
+
+        setattr(namespace, self.dest, level)
+
+
 class TestClient(threading.Thread):
 
     MSGLEN_NUMBYTES = 8
     MAX_MSG_BUFSIZE = 4096
 
-    def __init__(self, sock, serverPort, log, debugLog):
+    def __init__(self, sock, serverPort, log):
         threading.Thread.__init__(self)
         self.sock = sock
         self.serverPort = serverPort
         self.log = log
-        self.debugLog = debugLog
     
     def run(self):
         # First, connect to the server.
@@ -2139,10 +2284,10 @@ class TestClient(threading.Thread):
             self.dumpsInfoList(response)
         except Exception as exc:
             import traceback
-            log.write(['Client ' + str(self.sock.getsockname()) + ' had a problem communicating with the server.'])
-            log.write([traceback.format_exc(0)])
+            log.writeError([ 'client ' + str(self.sock.getsockname()) + ' had a problem communicating with the server' ])
+            log.writeError([ traceback.format_exc(0) ])
         finally:
-            self.debugLog.write(['Closing test client socket.'])
+            self.log.writeDebug([ 'closing test client socket' ])
             self.sock.shutdown(socket.SHUT_RDWR)
             self.sock.close()
         
@@ -2164,7 +2309,7 @@ class TestClient(threading.Thread):
         while bytesSentTotal < TestClient.MSGLEN_NUMBYTES:
             bytesSent = self.sock.send(bytearray(numBytesMessage[bytesSentTotal:], 'UTF-8'))
             if not bytesSent:
-                raise SocketConnectionException('Socket broken.')
+                raise SocketConnectionException('socket broken')
             bytesSentTotal += bytesSent
         
         # Then send the message.
@@ -2172,7 +2317,7 @@ class TestClient(threading.Thread):
         while bytesSentTotal < len(msg):
             bytesSent = self.sock.send(msg[bytesSentTotal:])
             if not bytesSent:
-                raise SocketConnectionException('Socket broken.')
+                raise SocketConnectionException('socket broken')
             bytesSentTotal += bytesSent
     
     # Returns a bytes object.
@@ -2184,7 +2329,7 @@ class TestClient(threading.Thread):
         while bytesReceivedTotal < TestClient.MSGLEN_NUMBYTES:
             textReceived = self.sock.recv(min(TestClient.MSGLEN_NUMBYTES - bytesReceivedTotal, TestClient.MAX_MSG_BUFSIZE))
             if textReceived == b'':
-                raise SocketConnectionException('Socket broken.')
+                raise SocketConnectionException('socket broken')
             allTextReceived += textReceived
             bytesReceivedTotal += len(textReceived)
             
@@ -2198,42 +2343,43 @@ class TestClient(threading.Thread):
         while bytesReceivedTotal < numBytesMessage:
             textReceived = self.sock.recv(min(numBytesMessage - bytesReceivedTotal, TestClient.MAX_MSG_BUFSIZE))
             if textReceived == b'':
-                raise SocketConnectionException('Socket broken.')
+                raise SocketConnectionException('socket broken')
             allTextReceived += textReceived
             bytesReceivedTotal += len(textReceived)
         return allTextReceived
         
     def dumpsInfoList(self, infoList):
         for infoDict in infoList:
-            self.debugLog.write(['sunum=' + str(infoDict['sunum'])])
-            self.debugLog.write(['path=' + infoDict['onlineLoc']])
-            self.debugLog.write(['status=' + infoDict['onlineStatus']])
-            self.debugLog.write(['archstatus=' + infoDict['archiveStatus']])
-            self.debugLog.write(['ack=' + infoDict['offsiteAck']])
-            self.debugLog.write(['comment=' + infoDict['historyComment']])
-            self.debugLog.write(['series=' + infoDict['owningSeries']])
-            self.debugLog.write(['group=' + str(infoDict['storageGroup'])])
-            self.debugLog.write(['size=' + str(infoDict['bytes'])])
-            self.debugLog.write(['create=' + infoDict['creatDate']])
-            self.debugLog.write(['user=' + infoDict['username']])
-            self.debugLog.write(['tape=' + infoDict['archTape']])
-            self.debugLog.write(['tapefn=' + str(infoDict['archTapeFn'])])
-            self.debugLog.write(['tapedate=' + infoDict['archTapeDate']])
-            self.debugLog.write(['safetape=' + infoDict['safeTape']])
-            self.debugLog.write(['safetapefn=' + str(infoDict['safeTapeFn'])])
-            self.debugLog.write(['safetapedate=' + infoDict['safeTapeDate']])
-            self.debugLog.write(['pastatus=' + str(infoDict['paStatus'])])
-            self.debugLog.write(['pasubstatus=' + str(infoDict['paSubstatus'])])
-            self.debugLog.write(['effdate=' + infoDict['effectiveDate']])
+            self.log.writeDebug(['sunum=' + str(infoDict['sunum'])])
+            self.log.writeDebug(['path=' + infoDict['onlineLoc']])
+            self.log.writeDebug(['status=' + infoDict['onlineStatus']])
+            self.log.writeDebug(['archstatus=' + infoDict['archiveStatus']])
+            self.log.writeDebug(['ack=' + infoDict['offsiteAck']])
+            self.log.writeDebug(['comment=' + infoDict['historyComment']])
+            self.log.writeDebug(['series=' + infoDict['owningSeries']])
+            self.log.writeDebug(['group=' + str(infoDict['storageGroup'])])
+            self.log.writeDebug(['size=' + str(infoDict['bytes'])])
+            self.log.writeDebug(['create=' + infoDict['creatDate']])
+            self.log.writeDebug(['user=' + infoDict['username']])
+            self.log.writeDebug(['tape=' + infoDict['archTape']])
+            self.log.writeDebug(['tapefn=' + str(infoDict['archTapeFn'])])
+            self.log.writeDebug(['tapedate=' + infoDict['archTapeDate']])
+            self.log.writeDebug(['safetape=' + infoDict['safeTape']])
+            self.log.writeDebug(['safetapefn=' + str(infoDict['safeTapeFn'])])
+            self.log.writeDebug(['safetapedate=' + infoDict['safeTapeDate']])
+            self.log.writeDebug(['pastatus=' + str(infoDict['paStatus'])])
+            self.log.writeDebug(['pasubstatus=' + str(infoDict['paSubstatus'])])
+            self.log.writeDebug(['effdate=' + infoDict['effectiveDate']])
 
 
 if __name__ == "__main__":
     rv = RV_SUCCESS
+    log = None
     
     try:
         sumsDrmsParams = SumsDrmsParams()
         if sumsDrmsParams is None:
-            raise ParamsException('Unable to locate DRMS parameters file (drmsparams.py).')
+            raise ParamsException('unable to locate DRMS parameters file (drmsparams.py)')
             
         parser = CmdlParser(usage='%(prog)s [ -dht ] [ --dbhost=<db host> ] [ --dbport=<db port> ] [ --dbname=<db name> ] [ --dbuser=<db user>] [ --logfile=<log-file name> ]')
         parser.add_argument('-H', '--dbhost', help='The host machine of the database that contains the series table from which records are to be deleted.', metavar='<db host machine>', dest='dbhost', default=sumsDrmsParams.get('SUMS_DB_HOST'))
@@ -2241,8 +2387,8 @@ if __name__ == "__main__":
         parser.add_argument('-N', '--dbname', help='The name of the database that contains the series table from which records are to be deleted.', metavar='<db name>', dest='database', default=sumsDrmsParams.get('DBNAME') + '_sums')
         parser.add_argument('-U', '--dbuser', help='The name of the database user account.', metavar='<db user>', dest='dbuser', default=sumsDrmsParams.get('SUMS_MANAGER'))
         parser.add_argument('-l', '--logfile', help='The file to which logging is written.', metavar='<file name>', dest='logfile', default=os.path.join(sumsDrmsParams.get('SUMLOG_BASEDIR'), SUMSD + '_' + datetime.now().strftime('%Y%m%d') + '.txt'))
+        parser.add_argument('-L', '--loglevel', help='Specifies the amount of logging to perform. In order of increasing verbosity: critical, error, warning, info, debug', dest='loglevel', action=LogLevelAction, default=logging.ERROR)
         parser.add_argument('-m', '--maxconn' , help='The maximum number of simultaneous SUMS connections.', metavar='<max connections>', dest='maxconn', default=sumsDrmsParams.get('SUMSD_MAX_THREADS'))
-        parser.add_argument('-d', '--debug', help='Print debug statements into a debug log.', dest='debug', action='store_true', default=False)
         parser.add_argument('-t', '--test', help='Create a client thread to test the server.', dest='test', action='store_true', default=False)
         
         arguments = Arguments(parser)
@@ -2250,22 +2396,17 @@ if __name__ == "__main__":
         Worker.setMaxThreads(int(arguments.getArg('maxconn')))
         pid = os.getpid()
         
-        # The main log file - it is sparse.
-        log = Log(arguments.getArg('logfile'))
+        # Create/Initialize the log file.
+        try:
+            logFile = arguments.getArg('logfile')
+            formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')        
+            log = Log(logFile, arguments.getArg('loglevel'), formatter)
+        except exc:
+            raise LogException('unable to initialize logging')
         
-        log.write(['Starting sumsd.py server.'])
-        
-        # The debug log file - it is a little more verbose than the main log file.
-        debugLog = None
-        if arguments.getArg('debug'):
-            if arguments.getArg('logfile').find('.txt') != -1:
-                debugLogFile = arguments.getArg('logfile').replace('.txt', '.dbg.txt')
-            else:
-                debugLogFile = arguments.getArg('logfile') + '.dbg.txt'
-            
-            debugLog = Log(debugLogFile)
+        log.writeCritical([ 'starting sumsd.py server' ])
 
-        thContainer = [ arguments, str(pid), log, debugLog ]
+        thContainer = [ arguments, str(pid), log ]
         with TerminationHandler(thContainer) as th:
             try:
                 serverSock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -2275,7 +2416,7 @@ if __name__ == "__main__":
                 # serverSock.bind((socket.gethostname(), int(sumsDrmsParams.get('SUMSD_LISTENPORT'))))
                 serverSock.bind((sumsDrmsParams.get('SUMSERVER'), int(sumsDrmsParams.get('SUMSD_LISTENPORT'))))
                 serverSock.listen(5)
-                log.write(['Listening for client requests on ' + str(serverSock.getsockname()) + '.'])
+                log.writeCritical([ 'listening for client requests on ' + str(serverSock.getsockname()) ])
             except Exception as exc:
                 raise SocketConnectionException(exc.args[0])
 
@@ -2283,7 +2424,7 @@ if __name__ == "__main__":
             # At this point, the server is listening, so it is OK to try to connect to it.
             if arguments.getArg('test'):
                 clientSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                client = TestClient(clientSocket, int(sumsDrmsParams.get('SUMSD_LISTENPORT')), log, debugLog)
+                client = TestClient(clientSocket, int(sumsDrmsParams.get('SUMSD_LISTENPORT')), log)
                 client.start()
 
             pollObj = select.poll()
@@ -2295,23 +2436,21 @@ if __name__ == "__main__":
                     try:
                         fdList = pollObj.poll(500)
                     except IOError as exc:
-                        raise PollException('A failure occurred while checking for new client connections.')
+                        raise PollException('a failure occurred while checking for new client connections')
             
                     if len(fdList) == 0:
                         # Nobody knocking on the door.
                         continue
                     else:    
                         (clientSock, address) = serverSock.accept()
-                        if debugLog:
-                            debugLog.write(['Accepting a client request from ' + address[0] + ' on port ' + str(address[1]) + '.'])
-            
+                        log.writeCritical([ 'accepting a client request from ' + address[0] + ' on port ' + str(address[1]) ])
+
                         while True:
                             Worker.lockTList()
                             try:
                                 if Worker.freeThreadExists():
-                                    if debugLog:
-                                        debugLog.write(['Instantiating a Worker for client ' + str(address) + '.'])
-                                    Worker.newThread(clientSock, int(sumsDrmsParams.get('SUMS_TAPE_AVAILABLE')) == 1, int(sumsDrmsParams.get('SUMS_MULTIPLE_PARTNSETS')) == 1, sumsDrmsParams.get('SUMBIN_BASEDIR'), log, debugLog)
+                                    log.writeDebug([ 'instantiating a Worker for client ' + str(address) ])
+                                    Worker.newThread(clientSock, int(sumsDrmsParams.get('SUMS_TAPE_AVAILABLE')) == 1, int(sumsDrmsParams.get('SUMS_MULTIPLE_PARTNSETS')) == 1, sumsDrmsParams.get('SUMBIN_BASEDIR'), log)
                                     break # The finally clause will ensure the Worker lock is released.
                             finally:
                                 # ensures the tList lock is released, even if a KeyboardInterrupt occurs while the 
@@ -2324,33 +2463,48 @@ if __name__ == "__main__":
                             # We woke up, because a free thread became available. However, that thread could 
                             # now be in use. Loop and check again.
             except KeyboardInterrupt:
-                # Shut down things if the user hits ctrl-c.
+                # shut down things if the user hits ctrl-c
                 pass
         
             pollObj.unregister(serverSock)
         
-            # Kill server socket.
-            log.write(['Closing server socket.'])
+            # kill server socket
+            log.writeCritical([ 'closing server socket' ])
             serverSock.shutdown(socket.SHUT_RDWR)
             serverSock.close()
             
             # exit termination handler (raise TerminationHandler.Break to exit without exception propagation)
     except TerminationException as exc:
+        msg = exc.args[0]
         if log:
-            log.write([ exc.args[0] ]) 
+            log.writeCritical([ msg ])
+        else:
+            print(msg, file=sys.stderr)
             
         # rv is RV_SUCCESS
     except SDException as exc:
+        msg = exc.args[0]
         if log:
-            log.write([ exc.args[0] ])
+            log.writeError([ msg ])
+        else:
+            print(msg, file=sys.stderr)
 
         rv = exc.retcode
     except:
         import traceback
+        msg = traceback.format_exc(5)
         if log:
-            log.write([ traceback.format_exc(5) ])
+            log.writeError([ msg ])
+        else:
+            print(msg, file=sys.stderr)
         rv = RV_UNKNOWNERROR
 
+msg = 'exiting with return code ' + str(rv)
 if log:
-    log.write([ 'exiting with return code ' + str(rv) ])
+    log.writeCritical([ msg ])
+else:
+    print(msg, file=sys.stderr)
+    
+logging.shutdown()
+
 sys.exit(rv)
