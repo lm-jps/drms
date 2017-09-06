@@ -617,6 +617,13 @@ class DBConnectionException(RemoteSumsException):
     def __init__(self, msg):
         super(DBConnectionException, self).__init__(msg)
         self.retcode = RET_UNABLE_TO_CONNECT_TO_DB
+        
+class TimeoutException(RemoteSumsException):
+
+    def __init__(self, msg):
+        super(TimeoutException, self).__init__(msg)
+        
+        # do not set retcode - this error is never fatal
 
 class TerminationException(RemoteSumsException):
 
@@ -664,10 +671,13 @@ class StorageUnit(object):
             raise InvalidArgumentException('setNew(): argument must be a bool.')
             
         self.new = value
+
+    def getPolling(self):
+        return self.polling
         
     def setPolling(self, value):
         if not isinstance(value, (bool)):
-            raise InvalidArgumentException('setNew(): argument must be a bool.')
+            raise InvalidArgumentException('setPolling(): argument must be a bool.')
             
         self.polling = value
         
@@ -2548,135 +2558,197 @@ class ProviderPoller(threading.Thread):
         errMsg = None
         timeToLog = True
         loopN = 0
-
-        # Set the in-memory ProviderPoller flag for all sunums in this request.
-        for asunum in self.sunums:
-            try:
-                su = self.suTable.getAndLockSU(asunum)
-                if not su:
-                    raise LockAndHoldException('unable to lock and get su ' + str(asunum))
-                su.setPolling(True)
-            except UnknownSunumException:
-                pass
-            finally:
-                if su:
-                    su.releaseLock()
-
-        dlInfo = {}
-        dlInfo['status'] = 'pending'
-        while not self.sdEvent.isSet():
-            if datetime.now(self.startTime.tzinfo) > self.startTime + self.timeOut:
-                # The providing site has not completed the export, and the time-out has elapsed. Give up.
-                errMsg = 'Timed-out waiting for providing site to return paths to requested SUs (' + ','.join([ str(asunum) for asunum in self.sunums ]) + ') - provider request ' + self.requestID + '.'
-                break
-
-            if timeToLog:
-                self.log.writeInfo([ 'Checking on request to provider (provider request ' + self.requestID + ').' ])
-                self.log.writeInfo([ 'URL is ' + self.url + '/rs.sh' + '?' + data ])
-
-            with urllib.request.urlopen(self.url + '/rs.sh' + '?' + data) as response:
-                dlInfoStr = response.read().decode('UTF-8')
-
-            dlInfo = json.loads(dlInfoStr)
-
-            if timeToLog:
-                self.log.writeInfo([ 'Provider returns status ' + dlInfo['status'] + '.' ])
-
-            if dlInfo['status'] != 'pending':
-                break;
-
-            time.sleep(1)
-            loopN += 1
-            
-            # Log every 5 seconds.
-            timeToLog = (loopN % 5 == 0)
-
-        # We might not have printed to log.
-        if not errMsg and not timeToLog:
-            self.log.writeInfo([ 'Checking on request to provider (provider request ' + self.requestID + ').' ])
-            self.log.writeInfo([ 'URL is ' + self.url + '/rs.sh' + '?' + data ])
-            self.log.writeInfo([ 'Provider returns status ' + dlInfo['status'] + '.' ])
-
-        # We are done polling, remove the polling flag.
-        for asunum in self.sunums:
-            try:
-                su = None
-                su = self.suTable.getAndLockSU(asunum)
-                if not su:
-                    raise LockAndHoldException('unable to lock and get su ' + str(asunum))
-                su.setPolling(False)
-            except UnknownSunumException:
-                pass
-            finally:
-                if su:
-                    su.releaseLock()
-
-        if dlInfo['status'] != 'complete':
-            # Set all SU records to 'E' (rsumds.py timed-out waiting for the SUs to be ready at the providing site).
-            if not errMsg:
-                errMsg = 'The providing site failed to return paths to requests SUs.'
-            # SuTable::setStatus() will acquire and release all SU locks.
-            self.suTable.setStatus(self.sunums, 'E', errMsg)
-        else:
-            # Start a download for each SU. If we cannot start the download for any reason, then set the SU status to 'E'.
-            self.log.writeInfo([ 'The SU paths are ready.' ])
-            paths = dlInfo['paths']
-
-            retentions = {}
-            for (asunum, path, series, suSize) in paths:
+        
+        try:
+            # Set the in-memory ProviderPoller flag for all sunums in this request.
+            for asunum in self.sunums:
                 try:
                     su = self.suTable.getAndLockSU(asunum)
                     if not su:
-                        raise LockAndHoldException('unable to lock and get su ' + str(asunum))
-
-                    if not path:
-                            # A path of None means that the SUNUM was invalid. We want to set the SU status to 'E'.
-                        su.setStatus('E', 'SU ' + str(asunum) + ' is not valid at the providing site.')
-                        continue
-                    elif path == '':
-                        # An empty-string path means that the SUNUM was valid, but that the SU referred to was offline, and could not
-                        # be placed back online - it is not archived.
-                        # ART - I need to figure out how to place the SUNUM in SUMS so that its archive flag is N (not archived).
-                        su.setStatus('C', 'SU ' + str(asunum) + ' refers to an offline SU valid at the providing site that was not archived. It cannot be downloaded.')
-                        continue
-                    
-                    if suSize is None:
-                        suSize = 0
-                
-                    if series in retentions:
-                        retention = retentions[series]
-                    else:
-                        # request provides the host, port, and dbname to use with jsoc_info to fetch the retention value.
-                        retention = ReqTable.getRetention(series, self.request, self.dbUser, self.log)
-                        retentions[series] = retention
-                    
-                        # Save series and retention.
-                        su.setSeries(series)
-                        su.setRetention(retention)
+                        # the sunum might no longer be in the SU table, just skip it for the rest of this function
+                        self.log.writeInfo([ 'ProviderPoller unable to lock and get su ' + str(asunum) + ' to set polling flag; skipping' ])
+                        continue;
+                    su.setPolling(True)
                 finally:
                     if su:
                         su.releaseLock()
 
-                while not self.sdEvent.isSet():
-                    Downloader.lock.acquire()
-                    try:
-                        if len(Downloader.tList) < Downloader.maxThreads:
-                            self.log.writeInfo([ 'Instantiating a Downloader for SU ' + str(asunum) + '.' ])
-                            Downloader.newThread(asunum, path, series, suSize, retention, self.suTable, dlInfo['scpUser'], dlInfo['scpHost'], dlInfo['scpPort'], self.binPath, self.arguments, self.log)
-                            break # The finally clause will ensure the Downloader lock is released.
-                    except StartThreadException:
-                        # Ran out of system resources - could not start new thread. Just wait for a thread slot to become free.
-                        pass
-                    finally:
-                        Downloader.lock.release()
+            dlInfo = {}
+            dlInfo['status'] = 'pending'
+            while not self.sdEvent.isSet():
+                if datetime.now(self.startTime.tzinfo) > self.startTime + self.timeOut:
+                    # the providing site has not completed the export, and the time-out has elapsed; give up
+                    # the main thread will handle the time-out, but we need to exit this thread
+                    raise TimeoutException('ProviderPoller: timed-out waiting for providing site to return paths to requested SUs (' + ','.join([ str(asunum) for asunum in self.sunums ]) + ') - provider request ' + self.requestID)
 
-                    Downloader.eventMaxThreads.wait()
-                    # We woke up, but we do not know if there are any open threads in the thread pool. Loop and check
-                    # tList again.
+                if timeToLog:
+                    self.log.writeInfo([ 'Checking on request to provider (provider request ' + self.requestID + ').' ])
+                    self.log.writeInfo([ 'URL is ' + self.url + '/rs.sh' + '?' + data ])
+
+                with urllib.request.urlopen(self.url + '/rs.sh' + '?' + data) as response:
+                    dlInfoStr = response.read().decode('UTF-8')
+
+                dlInfo = json.loads(dlInfoStr)
+
+                if timeToLog:
+                    self.log.writeInfo([ 'Provider returns status ' + dlInfo['status'] + '.' ])
+
+                if dlInfo['status'] != 'pending':
+                    break;
+
+                time.sleep(1)
+                loopN += 1
             
+                # Log every 5 seconds.
+                timeToLog = (loopN % 5 == 0)
+
+            # We might not have printed to log.
+            if not timeToLog:
+                self.log.writeInfo([ 'Checking on request to provider (provider request ' + self.requestID + ').' ])
+                self.log.writeInfo([ 'URL is ' + self.url + '/rs.sh' + '?' + data ])
+                self.log.writeInfo([ 'Provider returns status ' + dlInfo['status'] + '.' ])
+
+            # We are done polling, remove the polling flag.
+            for asunum in self.sunums:
+                try:
+                    su = None
+                    su = self.suTable.getAndLockSU(asunum)
+                    if su:
+                        # do not worry about sus that are no longer in the SU table - the problem is SUs that are in the
+                        # table and keep their polling flag True
+                        su.setPolling(False)
+                finally:
+                    if su:
+                        su.releaseLock()
+
+            if dlInfo['status'] != 'complete':
+                # Set all SU records to 'E' (rsumds.py timed-out waiting for the SUs to be ready at the providing site).
+                errMsg = 'The providing site failed to return paths to requests SUs.'
+
+                # SuTable::setStatus() will acquire and release all SU locks.
+                self.suTable.setStatus(self.sunums, 'E', errMsg)
+                errMsg = None
+            else:
+                # now we have to get the SU info by calling the same CGI, but with different arguments
+                sunumLst = ','.join(str(asunum) for asunum in self.sunums)
+                values = { 'requestid' : 'none', 'sunums' : sunumLst }
+                data = urllib.parse.urlencode(values)
+                self.log.writeInfo([ 'Requesting paths for SUNUMs ' + sunumLst + '. URL is ' + url + '/rs.sh' + '?' + data + '.' ])
+
+                with urllib.request.urlopen(url + '/rs.sh' + '?' + data) as response:    
+                    dlInfoStr = response.read().decode('UTF-8')
+
+                dlInfo = json.loads(dlInfoStr)
+                
+                if dlInfo['status'] != 'complete':
+                    errMsg = 'unable to obtain paths from providing site: ' + dlInfo['statusMsg']
+                    self.suTable.setStatus(self.sunums, 'E', errMsg)
+                    errMsg = None
+                else:
+                    # Start a download for each SU. If we cannot start the download for any reason, then set the SU status to 'E'.
+                    self.log.writeInfo([ 'The SU paths are ready.' ])
+                    paths = dlInfo['paths']
+
+                    retentions = {}
+                    for (asunum, path, series, suSize) in paths:
+                        if path is None:
+                            printPath = '<none>'
+                        else:
+                            printPath = path
+                        if series is None:
+                            printSeries = '<none>'
+                        else:
+                            printSeries = series
+                        if suSize is None:
+                            printSize = '<none>'
+                        else:
+                            printSize = str(suSize)
+
+                        self.log.writeDebug([ 'ProviderPoller new Downloader loop: su ' + str(asunum) + ', path ' + printPath + ', series' + printSeries + ', size ' + printSize ])
+                        try:
+                            su = self.suTable.getAndLockSU(asunum)
+                            if not su:
+                                self.log.writeInfo([ 'ProviderPoller unable to lock and get su ' + str(asunum) + ' to initiate a download; skipping' ])
+                                continue
+
+                            if not path:
+                                    # A path of None means that the SUNUM was invalid. We want to set the SU status to 'E'.
+                                errMsg = 'SU ' + str(asunum) + ' is not valid at the providing site'
+                                su.setStatus('E', errMsg)
+                                self.log.writeError(errMsg)
+                                errMsg = None
+                                continue
+                            elif path == '':
+                                # An empty-string path means that the SUNUM was valid, but that the SU referred to was offline, and could not
+                                # be placed back online - it is not archived.
+                                # ART - I need to figure out how to place the SUNUM in SUMS so that its archive flag is N (not archived).
+                                su.setStatus('C', 'SU ' + str(asunum) + ' refers to an offline SU valid at the providing site that was not archived. It cannot be downloaded.')
+                                continue
+                
+                            if suSize is None:
+                                suSize = 0
+            
+                            if series in retentions:
+                                retention = retentions[series]
+                            else:
+                                # request provides the host, port, and dbname to use with jsoc_info to fetch the retention value.
+                                retention = ReqTable.getRetention(series, self.request, self.dbUser, self.log)
+                                retentions[series] = retention
+                
+                                # Save series and retention.
+                                su.setSeries(series)
+                                su.setRetention(retention)
+                        finally:
+                            if su:
+                                su.releaseLock()
+
+                        while not self.sdEvent.isSet():
+                            Downloader.lock.acquire()
+                            try:
+                                if len(Downloader.tList) < Downloader.maxThreads:
+                                    self.log.writeInfo([ 'Instantiating a Downloader for SU ' + str(asunum) + '.' ])
+                                    Downloader.newThread(asunum, path, series, suSize, retention, self.suTable, dlInfo['scpUser'], dlInfo['scpHost'], dlInfo['scpPort'], self.binPath, self.arguments, self.log)
+                                    break # The finally clause will ensure the Downloader lock is released.
+                            except StartThreadException:
+                                # Ran out of system resources - could not start new thread. Just wait for a thread slot to become free.
+                                pass
+                            finally:
+                                Downloader.lock.release()
+
+                            Downloader.eventMaxThreads.wait()
+                            # We woke up, but we do not know if there are any open threads in the thread pool. Loop and check
+                            # tList again.
+        except TimeoutException as exc:
+            errMsg = exc.args[0]
+        except RemoteSumsException as exc:
+            import traceback
+            
+            errMsg = 'exc.args[0], traceback.format_exc(5)'
+            self.suTable.setStatus(self.sunums, 'E', exc.args[0])
+        except Exception as exc:
+            # catch all remaining exceptions
+            import traceback
+
+            errMsg = 'unknown exception, traceback.format_exc(5)'
+            self.suTable.setStatus(self.sunums, 'E', 'unknown exception')
+            
+        if errMsg:
+            self.log.writeError([ errMsg ])
+            
+        for asunum in self.sunums:
+            try:
+                su = None
+                su = self.suTable.getAndLockSU(asunum)
+                if su and su.getPolling():
+                    # do not worry about SUs that are no longer in the SU table
+                    su.setPolling(False)
+            finally:
+                if su:
+                    su.releaseLock()
+                    
         # Flush the change to disk.
         self.suTable.updateDbAndCommit()
-        
+
         try:
             ProviderPoller.lock.acquire()
             ProviderPoller.tList.remove(self) # This thread is no longer one of the running threads.
@@ -2706,6 +2778,25 @@ class ProviderPoller(threading.Thread):
             poller.tList.remove(poller)
             del poller
             raise StartThreadException('Cannot start a new ProviderPoller thread due to system resource limitations.')
+            
+    @classmethod
+    def isPollingForSU(cls, sunum):
+        rv = False
+        try:
+            cls.lock.acquire()
+            
+            for poller in cls.tList:
+                pollerSUs = poller.sunums
+                
+                # check for list membership
+                if sunum in pollerSUs:
+                    rv = True
+                    break
+        finally:
+            cls.lock.release()
+            
+        return rv
+
 
 def readTables(sus, requests, sites):
     if sus:
@@ -2979,7 +3070,7 @@ if __name__ == "__main__":
         pid = os.getpid()
 
         # Create/Initialize the log file.
-        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
         rslog = Log(os.path.join(sumsDrmsParams.get('RS_LOGDIR'), LOG_FILE_BASE_NAME + '_' + datetime.now().strftime('%Y%m%d') + '.txt'), arguments.loglevel, formatter)
         rslog.writeCritical([ 'Starting up remote-SUMS daemon.' ])
         rslog.writeCritical([ 'Logging threshold level is ' + rslog.getLevel() + '.' ]) # Critical - always write the log level to the log.
@@ -3196,10 +3287,12 @@ if __name__ == "__main__":
                         
                             if asu.status == 'P' or asu.status == 'W' or asu.status == 'D':
                                 rslog.writeInfo([ 'Download of SU ' + str(asu.sunum)  + ' is pending.' ])
-                            
+
                                 # Check for dead Downloader thread. If so, error-out the SU.
-                                if not asu.worker or not isinstance(asu.worker, (Downloader)) or not asu.worker.isAlive():
-                                    asu.setStatus('E', 'No worker for SU ' + str(asu.sunum) + '.')
+                                if not ProviderPoller.isPollingForSU(asunum):
+                                    # a downloader thread has not yet been assigned to this SU
+                                    if not asu.worker or not isinstance(asu.worker, (Downloader)) or not asu.worker.isAlive():
+                                        asu.setStatus('E', 'No worker for SU ' + str(asu.sunum) + '.')
                                 done = False
                             elif asu.status == 'E':
                                 rslog.writeInfo([ 'Download of SU ' + str(asu.sunum)  + ' has errored-out.' ])
