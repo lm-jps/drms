@@ -654,9 +654,7 @@ class Request(object):
         return self.reqType
         
     def generateResponse(self, dest=None):
-        # Commit changes to the DB. The DB connection is closed when the Worker thread terminates, but the transaction
-        # is rolled back at that time.
-        self.worker.dbconn.commit()
+        pass
 
     def generateErrorResponse(self, status, errMsg):
         return ErrorResponse(self, status, errMsg)
@@ -850,7 +848,7 @@ class AllocRequest(Request):
         
     def _stringify(self):
         if not hasattr(self, 'reqDict'):
-            if sunum in self.data:
+            if hasattr(self.data, 'sunum'):
                 sunumStr = str(self.data.sunum)
             else:
                 sunumStr = None
@@ -1505,7 +1503,7 @@ class AllocResponse(Response):
             self.data['sudir'] = sudir
         except:
             # ok, undo the mkdir
-            if not hasattr(self.data, 'sudir'):
+            if not 'sudir' in self.data:
                 self.data['sudir'] = sudir
             self.undo()
             raise
@@ -1514,10 +1512,10 @@ class AllocResponse(Response):
         if not hasattr(self, 'rspDict'):
             super(AllocResponse, self)._createRspDict()
             
-        if not 'sunum' in self.repDict:
+        if not 'sunum' in self.rspDict:
             self.rspDict['sunum'] = Request.hexToInt(self.data['sunum'])
             
-        if not 'sudir' in self.repDict:
+        if not 'sudir' in self.rspDict:
             self.rspDict['sudir'] = self.data['sudir']
         
     def undo(self):
@@ -1525,7 +1523,8 @@ class AllocResponse(Response):
         # but there were filesys changes that have to be undone
         if os.path.exists(self.data['sudir']):
             shutil.rmtree(self.data['sudir'])
-        
+        self.request.worker.log.writeDebug([ 'undid alloc mkdir for client ' + str(self.request.worker.sock.getpeername()) ])
+
     
 class PutResponse(Response):
     def __init__(self, request, status, dest=None):
@@ -2012,7 +2011,7 @@ class Worker(threading.Thread):
                 except SessionClosedException as exc:
                     rollback = True
                     msgStr = self.generateErrorResponse(RESPSTATUS_SESSIONCLOSED, exc.args[0])    
-                except SessionsOpenedException as exc:
+                except SessionOpenedException as exc:
                     rollback = True
                     msgStr = self.generateErrorResponse(RESPSTATUS_SESSIONOPENED, exc.args[0])
                 except GenerateResponseException as exc:
@@ -2036,13 +2035,18 @@ class Worker(threading.Thread):
                 if sessionClosed or rollback:
                     break
                 # end session loop
-                
+
             if rollback:
                 # now we need to figure out the state of the system; a series of API calls were processed and any one of them
                 # could have failed; clean-up for the call that failed already happened, but we need to clean-up anything
                 # in the pipeline before this call that made changes to SUMS
                 for request in reversed(history):
                     request.undo()
+                self.dbconn.rollback()
+                rollback = False
+            else:
+                # commit the db changes
+                self.dbconn.commit()
             
             # This thread is about to terminate. We don't want to end this thread before
             # the client closes the socket though. Otherwise, our socket will get stuck in 
@@ -2054,15 +2058,28 @@ class Worker(threading.Thread):
                 # The client closed their end of the socket.
                 self.log.writeDebug([ 'client ' + str(self.sock.getpeername()) + ' properly terminated connection' ])
             else:
-                raise SocketConnectionException('client ' + str(self.sock.getpeername()) + ' sent extraneous data over socket connection')
-
+                self.log.writeDebug([ 'client ' + str(self.sock.getpeername()) + ' sent extraneous data over socket connection (ignoring)' ])
         except SocketConnectionException as exc:
             # Don't send message back - we can't communicate with the client properly, so only log a message on the server side.
             self.log.writeError([ 'there was a problem communicating with client ' + str(self.sock.getpeername()) ])
             self.log.writeError([ exc.args[0] ])
+            rollback = True
         except Exception as exc:
             import traceback
             self.log.writeError([ traceback.format_exc(5) ])
+            rollback = True
+            
+        if rollback:
+            # now we need to figure out the state of the system; a series of API calls were processed and any one of them
+            # could have failed; clean-up for the call that failed already happened, but we need to clean-up anything
+            # in the pipeline before this call that made changes to SUMS
+            for request in reversed(history):
+                request.undo()
+            self.dbconn.rollback()
+            rollback = False
+        else:
+            # commit the db changes
+            self.dbconn.commit()
 
         # We need to check the class tList variable to update it, so we need to acquire the lock.
         try:
