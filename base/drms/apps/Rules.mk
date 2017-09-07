@@ -6,7 +6,7 @@ d		:= $(dir)
 # Local variables
 CF_$(d)		:= -D$(DBMS)
 
-SERVEREXE_$(d)	:= $(addprefix $(d)/, drms_server masterlists vso_sum_alloc vso_sum_put vso_sum_getdo)
+SERVEREXE_$(d)	:= $(addprefix $(d)/, drms_server masterlists vso_sum_alloc vso_sum_put vso_sum_getdo vso_sum_alloc_put)
 SERVEREXE	:= $(SERVEREXE) $(SERVEREXE_$(d))
 
 CEXE_$(d)	:= $(addprefix $(d)/, drms_run)
