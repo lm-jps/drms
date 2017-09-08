@@ -28,6 +28,7 @@ if sys.version_info < (3, 2):
 
 
 SUMSD = 'sumsd'
+LISTEN_PORT = '<listen port>'
 SUM_MAIN = 'public.sum_main'
 SUM_PARTN_ALLOC = 'public.sum_partn_alloc'
 SUM_ARCH_GROUP = 'public.sum_arch_group'
@@ -216,6 +217,12 @@ class Arguments(object):
             setattr(self, name, value)
         else:
             raise ArgsException('attempt to set an argument that already exists: ' + name)
+            
+    def replArg(self, name, newValue):
+        if hasattr(self, name):
+            setattr(self, name, newValue)
+        else:
+            raise ArgsException('attempt to replace an argument value for an argument that does not already exist: ' + name)
 
     def setAllArgs(self):
         for key,val in list(vars(self.parsedArgs).items()):
@@ -2403,7 +2410,8 @@ if __name__ == "__main__":
         parser.add_argument('-P', '--dbport', help='The port on the host machine that is accepting connections for the database that contains the series table from which records are to be deleted.', metavar='<db host port>', dest='dbport', default=sumsDrmsParams.get('SUMPGPORT'))
         parser.add_argument('-N', '--dbname', help='The name of the database that contains the series table from which records are to be deleted.', metavar='<db name>', dest='database', default=sumsDrmsParams.get('DBNAME') + '_sums')
         parser.add_argument('-U', '--dbuser', help='The name of the database user account.', metavar='<db user>', dest='dbuser', default=sumsDrmsParams.get('SUMS_MANAGER'))
-        parser.add_argument('-l', '--logfile', help='The file to which logging is written.', metavar='<file name>', dest='logfile', default=os.path.join(sumsDrmsParams.get('SUMLOG_BASEDIR'), SUMSD + '_' + datetime.now().strftime('%Y%m%d') + '.txt'))
+        parser.add_argument('-s', '--sockport', help='The server port listening for incoming connection requests.', metavar='<listening socket port>', dest='listenport', type=int, default=int(sumsDrmsParams.get('SUMSD_LISTENPORT')))
+        parser.add_argument('-l', '--logfile', help='The file to which logging is written.', metavar='<file name>', dest='logfile', default=os.path.join(sumsDrmsParams.get('SUMLOG_BASEDIR'), SUMSD + '-' + LISTEN_PORT + '-' + datetime.now().strftime('%Y%m%d.%H%M%S') + '.txt'))
         parser.add_argument('-L', '--loglevel', help='Specifies the amount of logging to perform. In order of increasing verbosity: critical, error, warning, info, debug', dest='loglevel', action=LogLevelAction, default=logging.ERROR)
         parser.add_argument('-m', '--maxconn' , help='The maximum number of simultaneous SUMS connections.', metavar='<max connections>', dest='maxconn', default=sumsDrmsParams.get('SUMSD_MAX_THREADS'))
         parser.add_argument('-t', '--test', help='Create a client thread to test the server.', dest='test', action='store_true', default=False)
@@ -2412,6 +2420,9 @@ if __name__ == "__main__":
         
         Worker.setMaxThreads(int(arguments.getArg('maxconn')))
         pid = os.getpid()
+        
+        # in the log file name, replace LISTEN_PORT with the actual server socket port over which connections are accepted
+        arguments.replArg('logfile', arguments.getArg('logfile').replace(LISTEN_PORT, str(arguments.getArg('listenport'))))
         
         # Create/Initialize the log file.
         try:
@@ -2431,7 +2442,7 @@ if __name__ == "__main__":
                 # represent INADDR_ANY. I DON'T KNOW HOW TO MAKE THIS WORK!!
                 # serverSock.bind(('', int(sumsDrmsParams.get('SUMSD_LISTENPORT'))))
                 # serverSock.bind((socket.gethostname(), int(sumsDrmsParams.get('SUMSD_LISTENPORT'))))
-                serverSock.bind((sumsDrmsParams.get('SUMSERVER'), int(sumsDrmsParams.get('SUMSD_LISTENPORT'))))
+                serverSock.bind((sumsDrmsParams.get('SUMSERVER'), arguments.getArg('listenport')))
                 serverSock.listen(5)
                 log.writeCritical([ 'listening for client requests on ' + str(serverSock.getsockname()) ])
             except Exception as exc:
@@ -2460,7 +2471,7 @@ if __name__ == "__main__":
                         continue
                     else:    
                         (clientSock, address) = serverSock.accept()
-                        log.writeCritical([ 'accepting a client request from ' + address[0] + ' on port ' + str(address[1]) ])
+                        log.writeCritical([ 'accepting a client request from ' + str(clientSock.getpeername()) + ', connected to server ' + str(clientSock.getsockname()) ])
 
                         while True:
                             Worker.lockTList()
