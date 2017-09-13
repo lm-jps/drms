@@ -726,6 +726,7 @@ int SUM_wait(SUM_t *sum);
 int SUM_delete_series(SUM_t *sum, char *filename, char *seriesname, int (*history)(const char *fmt, ...));
 int SUM_export(SUMEXP_t *sumexp, int (*history)(const char *fmt, ...));
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
+int SUM_rollback(SUM_t *sums, int (*history)(const char *fmt, ...));
 int SUM_infoArray(SUM_t *sums, uint64_t *sunums, int reqcnt, int (*history)(const char *fmt, ...));
 void SUM_infoArray_free(SUM_t *sums);
 #else

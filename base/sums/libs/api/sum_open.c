@@ -55,15 +55,16 @@ enum MTSums_CallType_enum
 {   kMTSums_CallType_None = 0,
     kMTSums_CallType_Open = 1,
     kMTSums_CallType_Close = 2,
-    kMTSums_CallType_Info = 3,
-    kMTSums_CallType_Get = 4,
-    kMTSums_CallType_Alloc = 5,
-    kMTSums_CallType_Alloc2 = 6,
-    kMTSums_CallType_Put = 7,
-    kMTSums_CallType_Deleteseries = 8,
-    kMTSums_CallType_Ping = 9,
-    kMTSums_CallType_Poll = 10,
-    kMTSums_CallType_END = 11,
+    kMTSums_CallType_Rollback = 3,
+    kMTSums_CallType_Info = 4,
+    kMTSums_CallType_Get = 5,
+    kMTSums_CallType_Alloc = 6,
+    kMTSums_CallType_Alloc2 = 7,
+    kMTSums_CallType_Put = 8,
+    kMTSums_CallType_Deleteseries = 9,
+    kMTSums_CallType_Ping = 10,
+    kMTSums_CallType_Poll = 11,
+    kMTSums_CallType_END = 12,
 };
 typedef enum MTSums_CallType_enum MTSums_CallType_t;
 
@@ -72,6 +73,7 @@ char *MTSums_CallType_strings[] =
     "none",
     "open",
     "close",
+    "rollback",
     "info",
     "get",
     "alloc",
@@ -1620,11 +1622,11 @@ for(j=0; j < numSUM; j++) {
   return(sumptr);
 }
 
-/* RPC and MT SUMS SUM_close() */
+/* RPC and MT SUMS SUM_close()/SUMS SUM_rollback() */
 /* Close this session with the SUMS. Return non 0 on error.
  * NOTE: error 4 is Connection reset by peer, sum_svc probably gone.
 */
-int sumsopenClose(SUM_t *sums, int (*history)(const char *fmt, ...))
+int sumsopenClose(SUM_t *sums, MTSums_CallType_t callType, int (*history)(const char *fmt, ...))
 {
   KEY *klist = NULL;
   char *call_err;
@@ -1671,12 +1673,14 @@ int sumsopenClose(SUM_t *sums, int (*history)(const char *fmt, ...))
 
   (void)pmap_unset(RESPPROG, sums->uid); /* unreg response server */
   remsumopened(&sumopened_hdr, sums->uid); /* rem from linked list */
-#else /* RPC SUM_close() */
-    /* MT SUM_close() */
+  
+    /* RPC SUM_close() */
+#else 
+    /* MT SUM_close() or SUM_rollback() */
     int err;
     
     /* jsonize request */
-    err = callMTSums(sums, kMTSums_CallType_Close, (JSONIZER_DATA_t *)NULL, history);
+    err = callMTSums(sums, callType, (JSONIZER_DATA_t *)NULL, history);
     
     errflg = (err == 1);
     
@@ -2103,10 +2107,30 @@ static int jsonizeSumopenRequest(char **json, int (*history)(const char *fmt, ..
     return err;
 }
 
-/* The MT SUMS daemon returns JSON in this format (since JSON does not support 64-bit numbers, receive the sumsid as a hexadecimal string):
+/* The MT SUMS daemon returns JSON in this format.
+ *
+ * In the SUMS DB, sumsid is a 64-bit signed integer. Since the SUMS daemon is a Python 3
+ * script, the sumsid remains a 64-bit signed integer. However, JSON parsers do not
+ * necessarily support 64-bit integers. In particular, the one used by DRMS, cJSON, does not -
+ * all number strings, whether they represent integer or floating point numbers, are
+ * stored in a C double variable, which has 53 bits of precision, not the needed 64 bits.
+ * To cope with this, we must pass 64-bit integers as strings from SUMS to DRMS via JSON.
+ * The current SUMS-DRMS implementation uses hexadecimal strings to represent all 64-bit 
+ * integers.
+ *
+ * Now, the data type chosen for the sumsid was an unsigned 32-bit integer (unfortunately).
+ * It seems like we will never have more than 2^32 - 1 SUMS session, but that isn't guaranteed.
+ * So, the definition of SUMID_t is incorrect, and it should be a signed 64-bit number, although
+ * an unsigned 64-bit number would work too, as long as the sign is checked in the server and/or
+ * client.
+ *
+ * ART - the data type of SUMID_t should be changed.
+ 
+
+sumsid is a 32-bit number, so it is passed as a JSON number):
  * {
  *    "status" : "ok",
- *    "sessionid" : 7035235
+ *    "sessionid" : "1AE2FC"
  * }
  *
  * We need to assign sessionid to sums->uid.
@@ -2136,7 +2160,7 @@ static int unjsonizeSumopenResponse(SUM_t *sums, const char *msg, int (*history)
 
     if (!err)
     {
-        err = (jsonValue->type != cJSON_Number);
+        err = (jsonValue->type != cJSON_String);
         if (err)
         {
             (*history)("Unexpected data type for sessionid.");
@@ -2145,8 +2169,17 @@ static int unjsonizeSumopenResponse(SUM_t *sums, const char *msg, int (*history)
 
     if (!err)
     {
-        /* Convert a double to an 32-bit integer. This is OK since the server converted a 32-bit integer to a double. */
-        sums->uid = (int)jsonValue->valuedouble;
+        /* Convert a hex string to an unsigned 32-bit integer. Again, this is not 100% correct, but
+         * it is unlikely that the server will ever return anything but a string that 
+         * represents an unsigned 32-bit number. */
+
+        /* %llx converts a unsigned hex string to an unsigned 64-bit integer */
+        uint64_t uid;
+
+        err = (sscanf(jsonValue->valuestring, "%llx", &uid) != 1);
+        
+        /* uid may not be a 32-bit number */
+        sums->uid = (uint32_t)uid;
     }
   
     if (response)
@@ -2160,7 +2193,7 @@ static int unjsonizeSumopenResponse(SUM_t *sums, const char *msg, int (*history)
 /* The request JSON looks like this:
  * {
  *    "reqtype" : "close",
- *    "sessionid" : 7035235
+ *    "sessionid" : "1AE2FC"
  * }
  */
 static int jsonizeSumcloseRequest(SUM_t *sums, SUMID_t sessionid, char **json, int (*history)(const char *fmt, ...))
@@ -2203,8 +2236,15 @@ static int jsonizeSumcloseRequest(SUM_t *sums, SUMID_t sessionid, char **json, i
     }
     
     if (!err)
-    {            
-        err = ((jsonValue = cJSON_CreateNumber((double)sessionid)) == NULL);
+    {
+        /* since SUMS is a Python 3 script, its JSON parser supports 64-bit numbers; ultimately, 
+         * sessionid will be a 64-bit number (if the SUMID_t definition is fixed and made a 
+         * 64-bit number); however, the cJSON_CreateNumber() does not support 64-bit integers, since
+         * a 64-bit argument is cast to a double; so, we have to send the session ID as a string
+         * (and we choose a hex string) */
+         
+        snprintf(numBuf, sizeof(numBuf), "%llx", (uint64_t)sessionid);
+        err = ((jsonValue = cJSON_CreateString(numBuf)) == NULL);
         
         if (err)
         {
@@ -2256,6 +2296,114 @@ static int unjsonizeSumcloseResponse(SUM_t *sums, const char *msg, int (*history
         cJSON_Delete(response);
     }
     
+    return err;
+}
+
+/* The request JSON looks like this:
+ * {
+ *    "reqtype" : "rollback",
+ *    "sessionid" : "1AE2FC"
+ * }
+ */
+static int jsonizeSumrollbackRequest(SUM_t *sums, SUMID_t sessionid, char **json, int (*history)(const char *fmt, ...))
+{
+    cJSON *root = NULL;
+    cJSON *jsonValue = NULL;
+    int err;
+    char numBuf[64];
+
+    root = NULL;    
+    err = (json == NULL);
+
+    if (err)
+    {
+        (*history)("Invalid argument(s) to 'jsonizeSumrollbackRequest'.\n");
+    }
+    else
+    {
+        err = ((root = cJSON_CreateObject()) == NULL);
+        if (err)
+        {
+            (*history)("Out of memory calling cJSON_CreateObject().\n");
+        }
+    }
+    
+    if (!err)
+    {   
+        /* The cJSON library doesn't provide a way to check if this worked. We'll know when we print out the json string. */
+        err = ((jsonValue = cJSON_CreateString("rollback")) == NULL);
+        
+        if (err)
+        {
+            (*history)("Out of memory calling cJSON_CreateString().\n");
+        }
+    }
+        
+    if (!err)
+    {
+        cJSON_AddItemToObjectCS(root, "reqtype", jsonValue);
+    }
+    
+    if (!err)
+    {
+        /* since SUMS is a Python 3 script, its JSON parser supports 64-bit numbers; ultimately, 
+         * sessionid will be a 64-bit number (if the SUMID_t definition is fixed and made a 
+         * 64-bit number); however, the cJSON_CreateNumber() does not support 64-bit integers, since
+         * a 64-bit argument is cast to a double; so, we have to send the session ID as a string
+         * (and we choose a hex string) */
+         
+        snprintf(numBuf, sizeof(numBuf), "%llx", (uint64_t)sessionid);
+        err = ((jsonValue = cJSON_CreateString(numBuf)) == NULL);
+        
+        if (err)
+        {
+            (*history)("Out of memory calling cJSON_CreateNumber().\n");
+        }
+    }
+        
+    if (!err)
+    {
+        cJSON_AddItemToObjectCS(root, "sessionid", jsonValue);
+    }
+    
+    if (!err)
+    {   
+        *json = cJSON_Print(root);
+    }
+    
+    if (root)
+    {
+        cJSON_Delete(root);
+    }
+    
+    return err;
+}
+
+/* The MT SUMS daemon returns JSON in this format:
+ * {
+ *    "status" : "ok"
+ * }
+ */
+static int unjsonizeSumrollbackResponse(SUM_t *sums, const char *msg, int (*history)(const char *fmt, ...))
+{
+    /* There really isn't anything to return, but it would be good to know if the server succeeded, so we should return a 
+     * status value. 
+     */
+    int err;
+    cJSON *response = NULL;
+    
+    err = ((response = unjsonizeResponseParse(msg, history)) == NULL);
+
+    if (!err)
+    {
+        err = unjsonizeResponseCheckStatus(response, history);
+    }
+    
+    if (response)
+    {
+        cJSON_Delete(response);
+    }
+    
     return err;     
 }
 #endif
@@ -2264,7 +2412,7 @@ static int unjsonizeSumcloseResponse(SUM_t *sums, const char *msg, int (*history
 /* The request JSON looks like this (since JSON does not support 64-bit numbers, send SUNUMs as hexadecimal strings):
  *   {
  *      "reqtype" : "info",
- *      "sessionid" : 7035235,
+ *      "sessionid" : "1AE2FC",
  *      "sus" : ["1DE2D412", "1AA72414"]
  *   }
  */
@@ -2303,10 +2451,12 @@ static int jsonizeSuminfoRequest(SUM_t *sums, SUMID_t sessionid, uint64_t *sunum
         (*history)("Out of memory calling cJSON_CreateString().\n");
     }
     else
-    {   
+    {
         /* The cJSON library doesn't provide a way to check if this worked. We'll know when we print out the json string. */
         cJSON_AddItemToObjectCS(root, "reqtype", jsonValue);
-        err = ((jsonValue = cJSON_CreateNumber((double)sessionid)) == NULL);        
+        
+        snprintf(numBuf, sizeof(numBuf), "%llx", (uint64_t)sessionid);
+        err = ((jsonValue = cJSON_CreateString(numBuf)) == NULL);        
     }
     
     if (err)
@@ -2769,7 +2919,7 @@ static int unjsonizeSuminfoResponse(SUM_t *sums, const char *msg, int (*history)
 /* The request JSON looks like this (since JSON does not support 64-bit numbers, send SUNUMs as hexadecimal strings):
  *   {
  *      "reqtype" : "get",
- *      "sessionid" : 7035235,
+ *      "sessionid" : "1AE2FC",
  *      "touch" : true,
  *      "retrieve" : false,
  *      "retention" : 60,
@@ -2831,7 +2981,8 @@ static int jsonizeSumgetRequest(SUM_t *sums, SUMID_t sessionid, int touch, int r
         /* The cJSON library doesn't provide a way to check if this worked. We'll know when we print out the json string. */
         cJSON_AddItemToObjectCS(root, "reqtype", jsonValue);
         
-        err = ((jsonValue = cJSON_CreateNumber((double)sessionid)) == NULL);
+        snprintf(numBuf, sizeof(numBuf), "%llx", (uint64_t)sessionid);
+        err = ((jsonValue = cJSON_CreateString(numBuf)) == NULL);
     }
     
     if (err)
@@ -3081,7 +3232,7 @@ static int unjsonizeSumgetResponse(SUM_t *sums, const char *msg, int (*history)(
  /* The request JSON looks like this (since JSON does not support 64-bit numbers, send sunum as hexadecimal strings):
  *   {
  *      "reqtype" : "alloc",
- *      "sessionid" : 7035235,
+ *      "sessionid" : "1AE2FC",
  *      "sunum" : "82C5E02A",
  *      "sugroup" : 22,
  *      "numbytes" : 1024
@@ -3119,7 +3270,8 @@ static int jsonizeSumallocSumalloc2Request(SUM_t *sums, SUMID_t sessionid, uint6
         /* uid */
         if (!err)
         {
-            err = ((jsonValue = cJSON_CreateNumber((double)sessionid)) == NULL);
+            snprintf(numBuf, sizeof(numBuf), "%llx", (uint64_t)sessionid);
+            err = ((jsonValue = cJSON_CreateString(numBuf)) == NULL);
         }
         
         if (err)
@@ -3307,7 +3459,7 @@ static int unjsonizeSumalloc2Response(SUM_t *sums, const char *msg, int (*histor
 /* The request JSON looks like this (since JSON does not support 64-bit numbers, send sunum as hexadecimal strings):
  *   {
  *      "reqtype" : "put",
- *      "sessionid" : 7035235,
+ *      "sessionid" : "1AE2FC",
  *      "sudirs" : [ {"2B13493A" : "/SUM19/D722684218"}, {"2B15A227" : "/SUM12/D722838055"} ],
  *      "series" : "hmi.M_720s",
  *      "retention" : 14,
@@ -3352,7 +3504,8 @@ static int jsonizeSumputRequest(SUM_t *sums, SUMID_t sessionid, uint64_t *sunums
     {
         cJSON_AddItemToObjectCS(root, "reqtype", jsonValue);
 
-        err = ((jsonValue = cJSON_CreateNumber((double)sessionid)) == NULL);
+        snprintf(numBuf, sizeof(numBuf), "%llx", (uint64_t)sessionid);
+        err = ((jsonValue = cJSON_CreateString(numBuf)) == NULL);
     }
         
     if (err)
@@ -3494,7 +3647,7 @@ static int unjsonizeSumputResponse(SUM_t *sums, const char *msg, int (*history)(
 /* The request JSON looks like this:
  *   {
  *      "reqtype" : "deleteseries",
- *      "sessionid" : 7035235,
+ *      "sessionid" : "1AE2FC",
  *      "series" : "hmi.M_720s"
  *   }
  */
@@ -3502,6 +3655,7 @@ static int jsonizeSumdeleteseriesRequest(SUM_t *sums, SUMID_t sessionid, const c
 {
     cJSON *root = NULL;
     cJSON *jsonValue = NULL;
+    char numBuf[64];
     int err;
     
     err = (!sums || !series || series[0] == '\0');
@@ -3519,7 +3673,7 @@ static int jsonizeSumdeleteseriesRequest(SUM_t *sums, SUMID_t sessionid, const c
             (*history)("Out of memory calling cJSON_CreateObject().\n");
         }
     }
-    
+
     if (!err)
     {
         err = ((jsonValue = cJSON_CreateString("deleteseries")) == NULL);
@@ -3534,7 +3688,8 @@ static int jsonizeSumdeleteseriesRequest(SUM_t *sums, SUMID_t sessionid, const c
     {
         cJSON_AddItemToObjectCS(root, "reqtype", jsonValue);
         
-        err = ((jsonValue = cJSON_CreateNumber((double)sessionid)) == NULL);
+        snprintf(numBuf, sizeof(numBuf), "%llx", (uint64_t)sessionid);
+        err = ((jsonValue = cJSON_CreateString(numBuf)) == NULL);
         
         if (err)
         {
@@ -3603,13 +3758,14 @@ static int unjsonizeSumdeleteseriesResponse(SUM_t *sums, const char *msg, int (*
 /* The request JSON looks like this:
  *   {
  *      "reqtype" : "ping",
- *      "sessionid" : 7035235
+ *      "sessionid" : "1AE2FC"
  *   }
  */
 static int jsonizeSumnopRequest(SUM_t *sums, SUMID_t sessionid, char **json, int (*history)(const char *fmt, ...))
 {
     cJSON *root = NULL;
     cJSON *jsonValue = NULL;
+    char numBuf[64];
     int err;
     
     err = (!sums || !json);
@@ -3640,7 +3796,8 @@ static int jsonizeSumnopRequest(SUM_t *sums, SUMID_t sessionid, char **json, int
     {
         cJSON_AddItemToObjectCS(root, "reqtype", jsonValue);
         
-        err = ((jsonValue = cJSON_CreateNumber((double)sessionid)) == NULL);
+        snprintf(numBuf, sizeof(numBuf), "%llx", (uint64_t)sessionid);
+        err = ((jsonValue = cJSON_CreateString(numBuf)) == NULL);
     }
     
     if (err)
@@ -3697,7 +3854,7 @@ static int unjsonizeSumnopResponse(SUM_t *sums, const char *msg, int (*history)(
 /* The request JSON looks like this:
  *   {
  *      "reqtype" : "poll",
- *      "sessionid" : 7035235,
+ *      "sessionid" : "1AE2FC",
  *      "requestid" : "123e4567-e89b-12d3-a456-426655440000"
  *   }
  */
@@ -3705,6 +3862,7 @@ static int jsonizeSumpollRequest(SUM_t *sums, SUMID_t sessionid, const char *req
 {
     cJSON *root = NULL;
     cJSON *jsonValue = NULL;
+    char numBuf[64];
     int err;
     
     err = (!sums || !requestID || requestID[0] == '\0');
@@ -3735,7 +3893,8 @@ static int jsonizeSumpollRequest(SUM_t *sums, SUMID_t sessionid, const char *req
     {
         cJSON_AddItemToObjectCS(root, "reqtype", jsonValue);
         
-    err = ((jsonValue = cJSON_CreateNumber((double)sessionid)) == NULL);
+        snprintf(numBuf, sizeof(numBuf), "%llx", (uint64_t)sessionid);
+        err = ((jsonValue = cJSON_CreateString(numBuf)) == NULL);
     }
 
     if (err)
@@ -3775,7 +3934,7 @@ static int jsonizeSumpollRequest(SUM_t *sums, SUMID_t sessionid, const char *req
  * {
  *    "reqtype" : "get",
  *    "status" : "ok",
- *    "supathlist" : 
+ *    "supaths" : 
  *     [
  *        {
  *          "sunum" : "2B13493A",
@@ -3872,6 +4031,13 @@ int jsonizeRequest(SUM_t *sums, MTSums_CallType_t type, JSONIZER_DATA_t *data, c
 
         sessionid = sums->uid;
         err = jsonizeSumcloseRequest(sums, sessionid, json, history);
+    }
+    else if (type == kMTSums_CallType_Rollback)
+    {
+        SUMID_t sessionid = 0;
+
+        sessionid = sums->uid;
+        err = jsonizeSumrollbackRequest(sums, sessionid, json, history);
     }
 #endif
 #if defined(SUMS_USEMTSUMS_INFO) && SUMS_USEMTSUMS_INFO
@@ -4022,6 +4188,10 @@ int unjsonizeResponse(SUM_t *sums, MTSums_CallType_t type, const char *msg, int 
     {
         err = unjsonizeSumcloseResponse(sums, msg, history);
     }
+    else if (type == kMTSums_CallType_Rollback)
+    {
+        err = unjsonizeSumrollbackResponse(sums, msg, history);
+    }
 #endif
 #if defined(SUMS_USEMTSUMS_INFO) && SUMS_USEMTSUMS_INFO
     else if (type == kMTSums_CallType_Info)
@@ -4088,15 +4258,22 @@ int callMTSums(SUM_t *sums, MTSums_CallType_t callType, JSONIZER_DATA_t *data, i
     
     if (!err)
     {
-        if (ConnectToMtSums(sums, history) == -1)
+        if (callType == kMTSums_CallType_Open)
         {
-            err = 4; /* "SUMS dead" */
+            if (!sums || sums->mSumsClient != -1 || ConnectToMtSums(sums, history) == -1)
+            {
+                /* there should be no existing connection to SUMS if we are calling SUM_open() */
+                err = 4; /* "SUMS dead" */
+            }
         }
     }
     
     if (!err)
     {
         /* send request */
+        /* if this is a SUM_rollback() or SUM_close(), then this will
+         * tell the MT SUMS server to end the SUMS DB transaction.
+         */
         if (sendMsg(sums, request, strlen(request), history))
         {
             err = 4;
@@ -4116,7 +4293,10 @@ int callMTSums(SUM_t *sums, MTSums_CallType_t callType, JSONIZER_DATA_t *data, i
         err = unjsonizeResponse(sums, callType, response, history);
     }
 
-    DisconnectFromMtSums(sums);
+    if (callType == kMTSums_CallType_Close || callType == kMTSums_CallType_Rollback)
+    {
+        DisconnectFromMtSums(sums);
+    }
 
     if (response)
     {
@@ -4164,8 +4344,14 @@ SUM_t *SUM_open(char *server, char *db, int (*history)(const char *fmt, ...))
  */
 int SUM_close(SUM_t *sums, int (*history)(const char *fmt, ...))
 {
-    return sumsopenClose(sums, history);
+    return sumsopenClose(sums, kMTSums_CallType_Close, history);
 }
+
+int SUM_rollback(SUM_t *sums, int (*history)(const char *fmt, ...))
+{
+    return sumsopenClose(sums, kMTSums_CallType_Rollback, history);
+}
+
 #else /* MT SUMS CONNECTION family */
 /* RPC SUMS is used for the CONNECTION family (but MT SUMS provides at least one service) */
 
@@ -4450,7 +4636,7 @@ SUM_t *SUM_open(char *server, char *db, int (*history)(const char *fmt, ...))
 
 int SUM_close(SUM_t *sum, int (*history)(const char *fmt, ...))
 {
-    return sumsopenClose(sum, history);
+    return sumsopenClose(sum, kMTSums_CallType_Close, history);
 }
 #endif /* RPC SUMS CONNECTION family */
 
