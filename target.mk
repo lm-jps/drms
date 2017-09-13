@@ -39,10 +39,12 @@ $(OBJDIR):
 	+@[ -d $@/base/drms/apps/test ] || mkdir -p $@/base/drms/apps/test
 	+@[ -d $@/base/drms/libs/api/client ] || mkdir -p $@/base/drms/libs/api/client
 	+@[ -d $@/base/drms/libs/api/server ] || mkdir -p $@/base/drms/libs/api/server
+	+@[ -d $@/base/drms/libs/api/server-fpic ] || mkdir -p $@/base/drms/libs/api/server-fpic
 	+@[ -d $@/base/drms/libs/main/c ] || mkdir -p $@/base/drms/libs/main/c
 	+@[ -d $@/base/drms/libs/main/f ] || mkdir -p $@/base/drms/libs/main/f
 	+@[ -d $@/base/drms/libs/main/idl ] || mkdir -p $@/base/drms/libs/main/idl
 	+@[ -d $@/base/drms/libs/meta ] || mkdir -p $@/base/drms/libs/meta
+	+@[ -d $@/base/drms/libs/py ] || mkdir -p $@/base/drms/libs/py
 	+@[ -d $@/base/export/apps ] || mkdir -p $@/base/export/apps
 	+@[ -d $@/base/export/libs/util ] || mkdir -p $@/base/export/libs/util
 	+@[ -d $@/base/export/libs/exportDRMS ] || mkdir -p $@/base/export/libs/exportDRMS
@@ -50,6 +52,7 @@ $(OBJDIR):
 	+@[ -d $@/base/libs/cmdparams/test ] || mkdir -p $@/base/libs/cmdparams/test
 	+@[ -d $@/base/libs/db/client ] || mkdir -p $@/base/libs/db/client
 	+@[ -d $@/base/libs/db/server ] || mkdir -p $@/base/libs/db/server
+	+@[ -d $@/base/libs/db/server-fpic ] || mkdir -p $@/base/libs/db/server-fpic
 	+@[ -d $@/base/libs/defs/fpic ] || mkdir -p $@/base/libs/defs/fpic
 	+@[ -d $@/base/libs/dstruct/fpic ] || mkdir -p $@/base/libs/dstruct/fpic
 	+@[ -d $@/base/libs/json ] || mkdir -p $@/base/libs/json
