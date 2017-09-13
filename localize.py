@@ -447,7 +447,11 @@ def processXML(xml, projRules, projTarget):
 
     return rv
 
-def determineSection(line, regexpDefs, regexpMake, regexpProjMkRules, regexpProj, regexpProjCfg):
+def determineSection(line, regexpStyle, regexpDefs, regexpMake, regexpProjMkRules, regexpProj, regexpProjCfg):
+    matchobj = regexpStyle.match(line)
+    if matchobj:
+        return 'style'
+
     matchobj = regexpDefs.match(line)
     if not matchobj is None:
         return 'defs'
@@ -481,6 +485,7 @@ def parseConfig(fin, keymap, addenda, defs, cDefs, mDefsGen, mDefsMake, projCfg,
     # Open required config file (config.local)
     try:
         # Examine each line, looking for key=value pairs.
+        regexpStyle = re.compile(r"^__STYLE__")
         regexpDefs = re.compile(r"^__DEFS__")
         regexpMake = re.compile(r"^__MAKE__")
         regexpProjMkRules = re.compile(r"__PROJ_MK_RULES__")
@@ -493,7 +498,8 @@ def parseConfig(fin, keymap, addenda, defs, cDefs, mDefsGen, mDefsMake, projCfg,
         regexpCustMkEnd = re.compile(r"^_ENDCUST_")
         regexpDiv = re.compile(r"^__")
         regexp = re.compile(r"^\s*(\S+)\s+(\S.*)")
-        
+
+        ignoreKeymap = False
         platDict = {}
         machDict = {}
         
@@ -512,11 +518,28 @@ def parseConfig(fin, keymap, addenda, defs, cDefs, mDefsGen, mDefsMake, projCfg,
                     # Skip whitespace line
                     continue
             
-                newSection = determineSection(line, regexpDefs, regexpMake, regexpProjMkRules, regexpProj, regexpProjCfg)
+                newSection = determineSection(line, regexpStyle, regexpDefs, regexpMake, regexpProjMkRules, regexpProj, regexpProjCfg)
                 if not newSection is None:
                     section = newSection
+                    
+                if not section:
+                    raise Exception('invalidConfigFile', 'line ' + line.strip() + ' is not in any section')
     
-                if section == 'make':
+                if section == 'style':
+                    # if the config.local file has new in the __STYLE__ section, then ignore the keymap and treat config.local like configsdp.txt;
+                    # do not map from NetDRMS config.local parameter names to configsdp.txt names
+                    for line in fin:
+                        matchobj = regexpDiv.match(line)
+                        if matchobj:
+                            break;
+                        if line.strip(' \n').lower() == 'new' and keymap:
+                            ignoreKeymap = True
+
+                    newSection = determineSection(line, regexpStyle, regexpDefs, regexpMake, regexpProjMkRules, regexpProj, regexpProjCfg)
+                    if not newSection is None:
+                        section = newSection
+                    continue
+                elif section == 'make':
 
                     # There are some blocks of lines in the __MAKE__ section that must be copied ver batim to the output make file. 
                     # The blocks are defined by _CUST_/_ENDCUST_ tags.
@@ -529,14 +552,18 @@ def parseConfig(fin, keymap, addenda, defs, cDefs, mDefsGen, mDefsMake, projCfg,
                             if not matchobj is None:
                                 break;
                             mDefsMake.extend(list(line))
-                        newSection = determineSection(line, regexpDefs, regexpMake, regexpProjMkRules, regexpProj, regexpProjCfg)
+                        newSection = determineSection(line, regexpStyle, regexpDefs, regexpMake, regexpProjMkRules, regexpProj, regexpProjCfg)
                         if not newSection is None:
                             section = newSection
                         continue
                     # Intentional fall through to next if statement
                 if section == 'defs' or section == 'make':
                     iscfg = bool(1)
-                    ppRet = processParam(iscfg, line, regexpQuote, regexp, keymap, defs, cDefs, mDefsGen, mDefsMake, perlConstSection, perlInitSection, pyConstSection, pyInitSection, shConstSection, platDict, machDict, section)
+                    if ignoreKeymap:
+                        keymapActual = None
+                    else:
+                        keymapActual = keymap
+                    ppRet = processParam(iscfg, line, regexpQuote, regexp, keymapActual, defs, cDefs, mDefsGen, mDefsMake, perlConstSection, perlInitSection, pyConstSection, pyInitSection, shConstSection, platDict, machDict, section)
                     
                     if ppRet:
                         break
@@ -547,7 +574,7 @@ def parseConfig(fin, keymap, addenda, defs, cDefs, mDefsGen, mDefsMake, projCfg,
                         if not matchobj is None:
                             break;
                         projCfg.extend(list(line))
-                    newSection = determineSection(line, regexpDefs, regexpMake, regexpProjMkRules, regexpProj, regexpProjCfg)
+                    newSection = determineSection(line, regexpStyle, regexpDefs, regexpMake, regexpProjMkRules, regexpProj, regexpProjCfg)
                     if not newSection is None:
                         section = newSection
                     continue
@@ -558,7 +585,7 @@ def parseConfig(fin, keymap, addenda, defs, cDefs, mDefsGen, mDefsMake, projCfg,
                         if not matchobj is None:
                             break;
                         projMkRules.extend(list(line))
-                    newSection = determineSection(line, regexpDefs, regexpMake, regexpProjMkRules, regexpProj, regexpProjCfg)
+                    newSection = determineSection(line, regexpStyle, regexpDefs, regexpMake, regexpProjMkRules, regexpProj, regexpProjCfg)
                     if not newSection is None:
                         section = newSection
                     continue
@@ -580,7 +607,12 @@ def parseConfig(fin, keymap, addenda, defs, cDefs, mDefsGen, mDefsMake, projCfg,
         else:
             # re-raise the exception
             raise
-        if msg == 'badKeyMapKey':
+            
+        if msg == 'invalidConfigFile':
+            violator = exc.args[1]
+            print(violator, file=sys.stderr)
+            rv = bool(1)
+        elif msg == 'badKeyMapKey':
             # If we are here, then there was a non-empty keymap, and the parameter came from
             # the configuration file.
             violator = exc.args[1]
@@ -619,7 +651,11 @@ def parseConfig(fin, keymap, addenda, defs, cDefs, mDefsGen, mDefsMake, projCfg,
         iscfg = bool(0)
         for key in addenda:
             item = key + ' ' + addenda[key]
-            ppRet = processParam(iscfg, item, regexpQuote, regexp, keymap, defs, cDefs, mDefsGen, mDefsMake, perlConstSection, perlInitSection, pyConstSection, pyInitSection, shConstSection, platDict, machDict, 'defs')
+            if ignoreKeymap:
+                keymapActual = None
+            else:
+                keymapActual = keymap
+            ppRet = processParam(iscfg, item, regexpQuote, regexp, keymapActual, defs, cDefs, mDefsGen, mDefsMake, perlConstSection, perlInitSection, pyConstSection, pyInitSection, shConstSection, platDict, machDict, 'defs')
             if ppRet:
                 break;
 
