@@ -1316,6 +1316,10 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
               sustatus = DRMS_REMOTESUMS_TRYLATER;
               tryagain = 0;
            }
+           else
+           {
+                tryagain = 1;
+           }
            //ISS VSO HTTP JMD END }
 #else
             /* Begin remote sums. */
@@ -1799,6 +1803,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
           totaltries=40 with hard coded values after it seemed like the values
           were not remaining constant (memory orverwrite?).
 	 */
+	    ntries = 0;
         while ((inprogress = session_status(ps.session_id)) > 0 && ntries < 40) 
         {
            sleep(10);
@@ -1813,6 +1818,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
         {
            /* JMD worked - need to call SUM_get() one more time
             * with SUNUMS that failed originally */
+           tryagain = 1;
            nretrySUNUMS = list_llgetnitems(retrysus);
 
            start = 0;
