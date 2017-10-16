@@ -8,8 +8,10 @@
 # This CGI script returns URLs to the requested SUs. The caller provides a list of SUNUMs, and rs.py determines the
 # path to the identified SUs, returning one URL for each SU requested. If all SUs are online at the time that the
 # request is made, then the list of URLs is provided in the 'paths' JSON property. The 'paths' property is an array of
-# arrays, each with two elements. The first element is the SUNUM, and the second is the complete scp path to the source
-# file. The caller can use the second element directly as the source file of an scp command. There is one element
+# arrays, each with four elements. The first element is the SUNUM, and the second is the complete scp-able path to the source
+# file. The caller can use the second element directly as the source file of an scp command. The third element is the
+# name of the series to which the SU belongs. And the fourth and final element is the size, in bytes, of the 
+# SU. There is one element
 # in the 'paths' array for each SU requested. In this case, rs.py returns a 'status' property of 'complete'. If at least
 # one SU requested is offline, then rs.py will request SUMS to asynchronously retrieve the requested SUs from tape and put
 # them online. In addition to rs.py returning a 'status' property of 'pending', it also returns a 'requestid' property to the caller
@@ -100,7 +102,10 @@ def GetArgs(args):
                     optD['dbhost'] = val
                 elif key in ('u', 'dbuser'):
                     optD['dbuser'] = val
-    
+                elif key in ('N', 'noasync'):
+                    if int(val) == 1:
+                        optD['noasync'] = True
+
     except ValueError:
         raise Exception('badArgs', 'Usage: ' + getUsage())
     
@@ -209,9 +214,13 @@ def runJsocfetch(**kwargs):
             # This is a data line:
             #   Col 1 is the SUNUM.
             #   Col 3 is the SUMS path.
-            #   Col 4 is the online status of the SU. If status == 'Y', set the second element to the URL of the SU.
-            #     If status == 'X', set the second element to the empty string. If status == 'I', set the second
-            #     element to null.
+            #   Col 4 is the online status of the SU. If status == 'Y' (SU online), set the second element to the URL of the SU.
+            #     If status == 'X' (SU offline and not archived), set the second element to the empty string. If 
+            #     status == 'I' (SU invalid), set the second element to null.
+            #     ART: it is now possible, due to the addition of the N=1 argument to this CGI script, for
+            #     status == 'N' (offline, but archived). If this occurs, set the second element to the empty string.
+            #     The NetDRMS's Remote SUMS will consider skip this SU because and it will not perform an 
+            #     export request.
             matchObj = regExpDataLine.match(line)
             if matchObj is not None:
                 sunum = int(matchObj.group(1))
@@ -221,7 +230,7 @@ def runJsocfetch(**kwargs):
                 if suStatus.lower() == 'y':
                     path = matchObj.group(3)
                     suSize = int(matchObj.group(5))
-                elif suStatus.lower() == 'x':
+                elif suStatus.lower() == 'x' or suStatus.lower() == 'n':
                     path = ''
                     suSize = None
                 elif suStatus.lower() == 'i':
@@ -291,7 +300,12 @@ if __name__ == "__main__":
                 # Call jsoc_fetch to obtain paths for the requested SUNUMs. If any SU is offline, then jsoc_fetch will
                 # initiate an su-as-is export request. In this case, jsoc_fetch will return a requestid that is given back to rsumsd.py, which
                 # will poll for completion of the export request.
-                resp = runJsocfetch(op='exp_su', method='url_quick', format='txt', protocol='su-as-is', sunum=','.join(optD['sunums']), JSOC_DBNAME=optD['dbname'], JSOC_DBHOST=optD['dbhost'], JSOC_DBUSER=optD['dbuser'])
+                if 'noasync' in optD and optD['noasync']:
+                    # do not start an export request
+                    resp = runJsocfetch(op='exp_su', requestid='NOASYNCREQUEST', formatvar='dataobj', method='url_quick', format='txt', protocol='su-as-is', sunum=','.join(optD['sunums']), JSOC_DBNAME=optD['dbname'], JSOC_DBHOST=optD['dbhost'], JSOC_DBUSER=optD['dbuser'])
+                else:
+                    # if SUs are offline, but archived, start an export request
+                    resp = runJsocfetch(op='exp_su', method='url_quick', format='txt', protocol='su-as-is', sunum=','.join(optD['sunums']), JSOC_DBNAME=optD['dbname'], JSOC_DBHOST=optD['dbhost'], JSOC_DBUSER=optD['dbuser'])
             elif 'requestid' in optD:
                 # A previous run of rs.py started an su-as-is export request. Call jsoc_fetch to check if the export request
                 # has completed.
