@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 import sys
 
@@ -30,6 +30,50 @@ RV_DBCONNECTION = 5
 RV_DBCOMMAND = 6
 RV_DBCOMMAND_RESULT = 7
 RV_TERMINATED = 8
+
+CAPTURE_SUNUMS_SQL = """\
+-- ---------------------------------------------------------------------------------------
+-- TABLE drms.ingested_sunums
+--
+-- When a client ingests a Slony log, each SUNUM of each data series record is copied
+-- into this table. The client can use this table of SUNUMs to prefetch SUs from the 
+-- providing site. This SQL is ingested as the pg_user database user, the same
+-- user that will be ingesting Slony logs and prefetching SUs, so permissions on 
+-- this table will be correct without having to execute a GRANT statement.
+--
+-- The namespace drms is required, and is created by NetDRMS.sql during the 
+-- NetDRMS installation process.
+-- ---------------------------------------------------------------------------------------
+DROP TABLE IF EXISTS drms.ingested_sunums;
+CREATE TABLE drms.ingested_sunums (sunum bigint PRIMARY KEY, starttime timestamp with time zone NOT NULL);
+CREATE INDEX ingested_sunums_starttime ON drms.ingested_sunums(starttime);
+
+-- ---------------------------------------------------------------------------------------
+-- FUNCTION drms.capturesunum
+--
+-- For each table under replication, a trigger is created that calls this function, which
+-- then copies SUNUMs into the underlying table, drms.ingested_sunums.
+--
+-- drms.ingested_sunums may not exist (older NetDRMSs did not receive the SQL to create
+-- this table). If this table does not exist, then this function is a no-op.
+-- ---------------------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION drms.capturesunum() RETURNS TRIGGER AS
+$capturesunumtrig$
+BEGIN
+    IF EXISTS (SELECT n.nspname, c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'drms' AND c.relname = 'ingested_sunums') THEN
+      IF (TG_OP='INSERT' AND new.sunum > 0) THEN
+        IF EXISTS (SELECT 1 FROM drms.ingested_sunums WHERE sunum = new.sunum) THEN
+          RETURN NULL;
+        END IF;
+        INSERT INTO drms.ingested_sunums (sunum, starttime) VALUES (new.sunum, clock_timestamp());
+      END IF;
+    END IF;  
+  
+  RETURN NEW;
+END
+$capturesunumtrig$ LANGUAGE plpgsql;
+"""
+
 
 class RsumsDrmsParams(DRMSParams):
 
@@ -407,7 +451,7 @@ def getFailedSUs(suList, conn):
             except psycopg2.Error as exc:
                 # handle database-command errors.
                 import traceback
-                raise DBCommandException(traceback.format_exc(5))
+                raise DBCommandException("error executing DB command '" + cmd + "'" + '\n' + traceback.format_exc(5))
 
         # end SUMS DB transaction
     except psycopg2.Error as exc:
@@ -427,16 +471,18 @@ if __name__ == "__main__":
     try:
         rsumsDrmsParams = RsumsDrmsParams()
             
-        parser = CmdlParser(usage='%(prog)s [ -dht ] [ --dbhost=<db host> ] [ --dbport=<db port> ] [ --dbname=<db name> ] [ --dbuser=<db user>] [ --logfile=<log-file name> ]')
-        parser.add_argument('-H', '--dbhost', help='The host machine of the database that contains the series table from which records are to be deleted.', metavar='<db host machine>', dest='dbhost', default=rsumsDrmsParams.get('RS_DBHOST'))
-        parser.add_argument('-P', '--dbport', help='The port on the host machine that is accepting connections for the database that contains the series table from which records are to be deleted.', metavar='<db host port>', dest='dbport', type=int, default=rsumsDrmsParams.get('RS_DBPORT'))
-        parser.add_argument('-N', '--dbname', help='The name of the database that contains the series table from which records are to be deleted.', metavar='<db name>', dest='dbdatabase', default=rsumsDrmsParams.get('RS_DBNAME'))
+        parser = CmdlParser(usage='%(prog)s [ -dht ] [ --dbhost=<db host> ] [ --dbport=<db port> ] [ --dbname=<db name> ] [ --dbuser=<db user>] [--loglevel=<verbosity level>] [ --logfile=<log-file name> ]  [ --capturetable=<capture db table> ] [ --requesttable=<RS requests db table> ] [ --setup [ --capturesetup ] ]')
+        parser.add_argument('-H', '--dbhost', help='The host machine of the database that contains both the SUNUM-capture table and the Remote SUMS requests table.', metavar='<db host machine>', dest='dbhost', default=rsumsDrmsParams.get('RS_DBHOST'))
+        parser.add_argument('-P', '--dbport', help='The port on the host machine that is accepting connections for the database that contains the capture and requests tables.', metavar='<db host port>', dest='dbport', type=int, default=rsumsDrmsParams.get('RS_DBPORT'))
+        parser.add_argument('-N', '--dbname', help='The name of the database that contains the capture and requests tables.', metavar='<db name>', dest='dbdatabase', default=rsumsDrmsParams.get('RS_DBNAME'))
         parser.add_argument('-U', '--dbuser', help='The name of the database user account.', metavar='<db user>', dest='dbuser', default=pwd.getpwuid(os.getuid())[0])
         parser.add_argument('-l', '--loglevel', help='Specifies the amount of logging to perform. In order of increasing verbosity: critical, error, warning, info, debug', dest='loglevel', action=LogLevelAction, default=logging.ERROR)
         parser.add_argument('-L', '--logfile', help='The file to which logging is written.', metavar='<log file>', dest='logfile', default=os.path.join(rsumsDrmsParams.get('RS_LOGDIR'), 'rsums-client-' + datetime.now().strftime('%Y%m%d') + '.log'))
         parser.add_argument('-c', '--capturetable', help='The database table in which are stored captured SUNUMs.', metavar='<capture table>', dest='ctable', default='drms.ingested_sunums')
         parser.add_argument('-r', '--requesttable', help='The database table in which remote SUMS requests are stored.', metavar='<requests table>', dest='rtable', default=rsumsDrmsParams.get('RS_REQUEST_TABLE'))
         parser.add_argument('-s', '--setup', help='Create an initialization SQL script to be run by the remote-sums-client database user.', dest='setup', action='store_true', default=False)
+        parser.add_argument('-C', '--capturesetup', help='Create the capture table and the associated capture trigger function.', dest='capsetup', action='store_true', default=False)
+        parser.add_argument('-S', '--seriessetup', help='Add a capture trigger to one or more series.', dest='seriessetup', action='append', default=[])
         
         arguments = Arguments(parser)
         
@@ -465,7 +511,15 @@ if __name__ == "__main__":
 
         with TerminationHandler(thContainer) as th:                
             if arguments.setup:
-                print('-- run this script as the a DB superuser')
+                print('-- run this script as a DB superuser')
+                if arguments.capsetup:
+                    print(CAPTURE_SUNUMS_SQL)
+                    
+                if len(arguments.seriessetup) > 0:
+                    for series in arguments.seriessetup:
+                        print('DROP TRIGGER IF EXISTS capturesunumtrig ON ' + series.lower() + ';')
+                        print('CREATE TRIGGER capturesunumtrig AFTER INSERT ON ' + series.lower() + ' FOR EACH ROW EXECUTE PROCEDURE drms.capturesunum();\n')
+
                 print('GRANT ALL ON drms.ingested_sunums TO ' + arguments.dbuser)
                 raise TerminationHandler.Break
 
