@@ -2844,7 +2844,7 @@ def processSUs(url, sunums, sus, reqTable, request, dbUser, binPath, arguments, 
             sus.insert([ asunum ])
 
     sunumLst = ','.join(str(asunum) for asunum in workingSunums)
-    values = {'requestid' : 'none', 'sunums' : sunumLst}
+    values = {'requestid' : 'none', 'sunums' : sunumLst, 'N' : 1}
     data = urllib.parse.urlencode(values)
     log.writeInfo([ 'Requesting paths for SUNUMs ' + sunumLst + '. URL is ' + url + '/rs.sh' + '?' + data + '.' ])
     
@@ -2865,10 +2865,10 @@ def processSUs(url, sunums, sus, reqTable, request, dbUser, binPath, arguments, 
                 sus.setStatus([ asunum ], 'E', 'SU ' + str(asunum) + ' is not valid at the providing site.')
                 continue
             elif path == '':
-                # An empty-string path means that the SUNUM was valid, but that the SU referred to was offline, and could not
-                # be placed back online - it is not archived. 
+                # An empty-string path means that the SUNUM was valid, but that the SU referred to was offline (it may or
+                # may be archived). Regardless, RS will not attempt to perform an export request to obtain the path.
                 # ART - I need to figure out how to place the SUNUM in SUMS so that its archive flag is N (not archived).
-                sus.setStatus([ asunum ], 'C', 'SU ' + str(asunum) + ' refers to an offline SU valid at the providing site that was not archived. It cannot be downloaded.')
+                sus.setStatus([ asunum ], 'C', 'SU ' + str(asunum) + ' refers to an SU that is valid at the providing site, but it is offline and cannot be downloaded.')
                 continue
                 
             if suSize is None:
@@ -2919,21 +2919,30 @@ def processSUs(url, sunums, sus, reqTable, request, dbUser, binPath, arguments, 
         # thread here, waiting for the SUs to be available. We could spawn a thread to poll, freeing up the main
         # thread to continue with other requests. But in the interest of time, just poll for now. Must acquire
         # su-table lock when it is finally time to start downloads.
-        log.writeInfo([ 'Request includes one or more SUs that are offline at the providing site. Waiting for providing site to put them online.' ])
+        # log.writeInfo([ 'Request includes one or more SUs that are offline at the providing site. Waiting for providing site to put them online.' ])
+        # 
+        #         while True:
+        #             ProviderPoller.lock.acquire()
+        #             try:
+        #                 if len(ProviderPoller.tList) < ProviderPoller.maxThreads:
+        #                     log.writeInfo([ 'Instantiating a ProviderPoller for sunums ' + ','.join([ str(asunum) for asunum in workingSunums ]) + '.' ])
+        #                     ProviderPoller.newThread(url, dlInfo['requestid'], workingSunums, sus, reqTable, request, dbUser, binPath, arguments, log)
+        #                     break
+        #             except StartThreadException as exc:
+        #                 log.writeError([ 'Cannot start ProviderPoller thread. Out of system resources. Will try again when existing ProviderPollers complete.' ])
+        #             finally:
+        #                 ProviderPoller.lock.release()
+        # 
+        #             ProviderPoller.eventMaxThreads.wait()
+        
+        # We started an export request to fetch offline SUs at the providing site. This can no longer happen (rs.sh is called
+        # with the N=1 argument now)!! Do not perform an export request! There are a limited number ofexport-request 
+        # slots (at the JSOC). Since a request for an offline SU entails an asynchronous tape read, performing these requests, 
+        # making a request for a large number of SUs could saturate the export system for days.
+        # Log an error if we get here.
 
-        while True:
-            ProviderPoller.lock.acquire()
-            try:
-                if len(ProviderPoller.tList) < ProviderPoller.maxThreads:
-                    log.writeInfo([ 'Instantiating a ProviderPoller for sunums ' + ','.join([ str(asunum) for asunum in workingSunums ]) + '.' ])
-                    ProviderPoller.newThread(url, dlInfo['requestid'], workingSunums, sus, reqTable, request, dbUser, binPath, arguments, log)
-                    break
-            except StartThreadException as exc:
-                log.writeError([ 'Cannot start ProviderPoller thread. Out of system resources. Will try again when existing ProviderPollers complete.' ])
-            finally:
-                ProviderPoller.lock.release()
-
-            ProviderPoller.eventMaxThreads.wait()
+        log.writeInfo([ 'Request includes one or more SUs that are offline at the providing site. An export request was started to put them online.' ])
+        sus.setStatus(workingSunums, 'E', 'An export request was started - this is no longer allowed.')
     else:
         # Error of some kind.
         # Update the SU-table status of the SUs to 'E'.
