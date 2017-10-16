@@ -101,21 +101,22 @@ class TerminationHandler(object):
 
     def __init__(self, thContainer):
         self.container = thContainer
-        arguments = thContainer[0]
+        self.arguments = thContainer[0]
         self.pidStr = thContainer[1]
         self.log = thContainer[2]
+        self.pendingRequests = thContainer[4]
         
-        self.lockFile = os.path.join(arguments.DRMS_LOCK_DIR, 'rsums-client.lck')
+        self.lockFile = os.path.join(self.arguments.DRMS_LOCK_DIR, 'rsums-client.lck')
 
-        self.dbname = arguments.dbdatabase
-        self.dbuser = arguments.dbuser
-        self.dbhost = arguments.dbhost
-        self.dbport = arguments.dbport
+        self.dbname = self.arguments.dbdatabase
+        self.dbuser = self.arguments.dbuser
+        self.dbhost = self.arguments.dbhost
+        self.dbport = self.arguments.dbport
         
         self.dbnameSums = self.dbname + '_sums'
-        self.dbuserSums = arguments.SUMS_READONLY_DB_USER # connect to SUMS as SUMS_READONLY_DB_USER user
-        self.dbhostSums = arguments.SUMS_DB_HOST
-        self.dbportSums = arguments.SUMPGPORT
+        self.dbuserSums = self.arguments.SUMS_READONLY_DB_USER # connect to SUMS as SUMS_READONLY_DB_USER user
+        self.dbhostSums = self.arguments.SUMS_DB_HOST
+        self.dbportSums = self.arguments.SUMPGPORT
         
         self.conn = None
         self.connSums = None
@@ -179,6 +180,73 @@ class TerminationHandler(object):
             return True
         
     def finalStuff(self):
+        # clean up status-E and status-C requests from drms.rs_requests that did not get cleaned up prior to interruption
+        pendingReqIDs = self.pendingRequests.keys() # an array of strings
+
+        requestsTable = self.arguments.RS_REQUEST_TABLE
+        captureTable = 'drms.ingested_sunums'
+
+        starttime = datetime.now()
+        self.log.writeInfo([ 'waiting for Remote SUMS to finish processing pending SUs' ])
+        while True:
+            # wait until rsumsd.py has completely processed all requests to either completion or error
+            with self.conn.cursor() as cursor:
+                pendingRequestsStr = ','.join(pendingReqIDs)
+                cmd = 'SELECT count(*) FROM ' + requestsTable + ' WHERE requestid IN (' + pendingRequestsStr + ')' + " AND status != 'E' AND status != 'C'"
+                                
+                try:
+                    cursor.execute(cmd)
+                except psycopg2.Error as exc:
+                    # handle database-command errors.
+                    import traceback
+                    raise DBCommandException(traceback.format_exc(5))
+                    
+                rows = cursor.fetchall()
+                if len(rows) > 1:
+                    raise DBCommandResultException('unexpected number of rows returned')
+                    
+                count = rows[0][0]
+                self.log.writeInfo([ 'still ' + str(count) + ' pending requests in the requests table' ])
+                if (count == 0):
+                    break
+                
+                # don't wait forever
+                if datetime.now(starttime.tzinfo)  > starttime + timedelta(minutes=5):
+                    break
+                
+                time.sleep(1)
+        
+        if len(pendingReqIDs) > 0:
+            self.log.writeInfo([ str(len(pendingReqIDs)) + ' completed Remote SUMS requests are being removed' ])
+            with self.conn.cursor() as cursor:
+                requestIDStr = ','.join(pendingReqIDs)
+                cmd = 'DELETE FROM ' + requestsTable + ' WHERE requestid in (' + requestIDStr + ')'
+    
+                try:
+                    cursor.execute(cmd)
+                except psycopg2.Error as exc:
+                    # handle database-command errors.
+                    import traceback
+                    raise DBCommandException(traceback.format_exc(5))
+        
+                self.log.writeInfo([ 'removed requests ' + requestIDStr + ' from RS requests table' ])
+
+            for requestID in pendingReqIDs:
+                pendingSUs = self.pendingRequests[requestID]
+                            
+                with self.conn.cursor() as cursor:            
+                    sunumsStr = ','.join([ str(sunum) for sunum in pendingSUs ])
+                    cmd = 'DELETE FROM ' + captureTable + ' WHERE sunum IN ' + '(' + sunumsStr + ')'
+                
+                    try:
+                        cursor.execute(cmd)
+                    except psycopg2.Error as exc:
+                        # handle database-command errors.
+                        import traceback
+                        raise DBCommandException(traceback.format_exc(5))
+                
+                    self.log.writeInfo([ 'removed SUs ' + sunumsStr + ' from sunum capture table' ])
+    
         self.log.writeInfo([ 'closing DB connections' ])
         self.closeRsConnSums()
         self.closeRsConn()
@@ -507,7 +575,9 @@ if __name__ == "__main__":
         log.writeCritical([ 'starting rsums-clientd.py server.' ])
         arguments.dump(log)
         
-        thContainer = [ arguments, str(pid), log, rv ]
+        pendingRequests = {}
+        
+        thContainer = [ arguments, str(pid), log, rv, pendingRequests ]
 
         with TerminationHandler(thContainer) as th:                
             if arguments.setup:
@@ -527,7 +597,6 @@ if __name__ == "__main__":
             connSums = th.rsConnSums()
             
             pendingSUs = set()
-            pendingRequests = {}
 
             # main loop
             loopIteration = 1
@@ -559,7 +628,7 @@ if __name__ == "__main__":
                                     cursor.execute(cmd)
                                     rows = cursor.fetchall()
                                     if len(rows) > 4:
-                                        raise DBCommandResultException(exc.diag.message_primary)
+                                        raise DBCommandResultException('unexpected number of rows returned')
 
                                     sunums = [ row[0] for row in rows ]
                                     sunumsStr = ','.join([ str(sunum) for sunum in sunums ])
@@ -721,8 +790,8 @@ if __name__ == "__main__":
 
                                 # remove from drms.ingested_sunums
                                 if len(toDelFromTableIn) > 0:
-                                    sunumStr = ','.join([ str(sunum) for sunum in toDelFromTableIn ])
-                                    cmd = 'DELETE FROM ' + tableIn + ' WHERE sunum IN ' + '(' + sunumStr + ')'
+                                    sunumsStr = ','.join([ str(sunum) for sunum in toDelFromTableIn ])
+                                    cmd = 'DELETE FROM ' + tableIn + ' WHERE sunum IN ' + '(' + sunumsStr + ')'
                                 
                                     try:
                                         cursor.execute(cmd)
@@ -731,7 +800,7 @@ if __name__ == "__main__":
                                         import traceback
                                         raise DBCommandException(traceback.format_exc(5))
                                 
-                                    log.writeInfo([ 'removed SUs ' + sunumStr + ' from sunum capture table' ])
+                                    log.writeInfo([ 'removed SUs ' + sunumsStr + ' from sunum capture table' ])
                                 
                                 # remove from pendingSUs
                                 if len(toDelFromPendingSUs) > 0:
