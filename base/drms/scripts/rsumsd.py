@@ -1,6 +1,5 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
-from __future__ import print_function
 import sys
 
 if sys.version_info < (3, 2):
@@ -3509,14 +3508,23 @@ if __name__ == "__main__":
         # DB connection was terminated.            
         # Lock was released     
     except TerminationException as exc:
+        msg = exc.args[0]
         if rslog:
-            rslog.writeInfo([ exc.args[0] ]) 
+            rslog.writeInfo([ msg ]) 
     except RemoteSumsException as exc:
+        msg = exc.args[0]
         if rslog:
-            rslog.writeError([ exc.args[0] ])
+            rslog.writeError([ msg ])
             
         rv = exc.retcode
     except:
+        import traceback
+        
+        msg = traceback.format_exc(5)
+        if rslog:
+            rslog.writeError([ msg ])
+        else:
+            print(msg, file=sys.stderr)
         rv = RET_UNKNOWN_ERROR
 
 if rslog:
