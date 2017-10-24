@@ -686,59 +686,12 @@ class StorageUnit(object):
             raise InvalidArgumentException('setDirty(): argument must be a bool')
         
         self.dirty = value
-    
-    # Set properties that are NOT saved to the DB.
-    def setNew(self, value):
-        if not isinstance(value, (bool)):
-            raise InvalidArgumentException('setNew(): argument must be a bool')
-            
-        self.new = value
-
-    def getPolling(self):
-        return self.polling
         
-    def setPolling(self, value):
-        if not isinstance(value, (bool)):
-            raise InvalidArgumentException('setPolling(): argument must be a bool')
-            
-        self.polling = value
+    def getSunum(self):
+        return self.sunum
         
-    def getPath(self):
-        path = None
-        if hasattr(self, 'path'):
-            path = self.path
-        return path
-        
-    def setPath(self, value):
-        if not isinstance(value, (str)) and value is not None:
-            raise InvalidArgumentException('setPath(): argument must be a str or None')
-            
-        self.path = value
-            
-    def setSize(self, value):
-        if not isinstance(value, (int)):
-            raise InvalidArgumentException('setSize(): argument must be an int')
-            
-        self.suSize = value
-
-    def getStatus(self):
-        return self.status
-    
-    # Set properties that are saved to the DB.
-    def setStatus(self, codeValue, msgValue):
-        if not isinstance(codeValue, (str)):
-            raise InvalidArgumentException('setStatus(): fist argument must be a str.')
-            
-        if not isinstance(msgValue, (str)) and msgValue is not None:
-            raise InvalidArgumentException('setStatus(): second argument must be a str or None.')
-            
-        self.status = codeValue
-        if msgValue is not None:
-            self.errmsg = msgValue
-        else:
-            self.errmsg = ''
-
-        self.setDirty(True)
+    def getSeries(self):
+        return self.series
             
     def setSeries(self, value):
         if not isinstance(value, (str)):
@@ -747,12 +700,18 @@ class StorageUnit(object):
         self.series = value
         self.setDirty(True)
         
+    def getRetention(self):
+        return self.retention
+        
     def setRetention(self, value):
         if not isinstance(value, (int)):
             raise InvalidArgumentException('setRetention(): argument must be an integer')
             
         self.retention = value
         self.setDirty(True)
+        
+    def getStarttime(self):
+        return self.starttime
     
     def setStarttime(self, value):
         if not isinstance(value, (datetime)):
@@ -786,6 +745,65 @@ class StorageUnit(object):
         self.setDirty(True)
         
         return self.refcount
+    
+    def getStatus(self):
+        return self.status
+    
+    # Set properties that are saved to the DB.
+    def setStatus(self, codeValue, msgValue):
+        if not isinstance(codeValue, (str)):
+            raise InvalidArgumentException('setStatus(): fist argument must be a str.')
+            
+        if not isinstance(msgValue, (str)) and msgValue is not None:
+            raise InvalidArgumentException('setStatus(): second argument must be a str or None.')
+            
+        self.status = codeValue
+        if msgValue is not None:
+            self.errmsg = msgValue
+        else:
+            self.errmsg = ''
+
+        self.setDirty(True)
+        
+    # properties that are NOT saved to the DB
+    def getNew(self):
+        return self.new
+    
+    def setNew(self, value):
+        if not isinstance(value, (bool)):
+            raise InvalidArgumentException('setNew(): argument must be a bool')
+            
+        self.new = value
+        
+    def getPolling(self):
+        return self.polling
+        
+    def setPolling(self, value):
+        if not isinstance(value, (bool)):
+            raise InvalidArgumentException('setPolling(): argument must be a bool')
+            
+        self.polling = value
+        
+    def getPath(self):
+        path = None
+        if hasattr(self, 'path'):
+            path = self.path
+        return path
+        
+    def setPath(self, value):
+        if not isinstance(value, (str)) and value is not None:
+            raise InvalidArgumentException('setPath(): argument must be a str or None')
+            
+        self.path = value
+        
+    def getSize(self):
+        return self.suSize
+            
+    def setSize(self, value):
+        if not isinstance(value, (int)):
+            raise InvalidArgumentException('setSize(): argument must be an int')
+            
+        self.suSize = value
     
     def getWorker(self):
         return self.worker
@@ -2047,7 +2065,7 @@ class ScpWorker(threading.Thread):
                                     self.log.writeDebug([ 'ScpWorker ' + str(self.id) + ' received sdEvent. Killing scp.'])
                                     proc.kill()
                                     try:
-                                        proc.communicate(timeout=2)
+                                        proc.communicate(timeout=4)
                                         self.log.writeInfo([ 'Successfully killed ScpWorker ' + str(self.id) + ' download.' ])
                                     except TimeoutExpired:
                                         self.log.writeWarning([ 'Unable to kill scp for ScpWorker ' + str(self.id) + '.' ])
@@ -2192,6 +2210,7 @@ class Downloader(threading.Thread):
     def __init__(self, su, path, sus, scpUser, scpHost, scpPort, binPath, arguments, log):
         threading.Thread.__init__(self)
         self.su = su
+        self.sunum = su.sunum
         self.path = path
         self.suTable = sus
         self.scpUser = scpUser # the linux user that has access to the SU
@@ -2214,41 +2233,45 @@ class Downloader(threading.Thread):
         cleanUpSUDir = False
         gotSULock = False
         
+        retentionCached = None
+        seriesCached = None
+        
         try:
             # the finally clause will remove this thread from tList; that must happen, else we could 
             # hang on shut-down
             try:
-                self.log.writeInfo([ 'Downloader running for SU ' + str(self.su.sunum) + '.' ])
-
                 try:
-                    self.log.writeDebug([ 'Downloader acquiring lock for SU ' + str(self.su.sunum) + '.' ])
                     gotSULock = self.su.acquireLock()
                     
                     suStatus = self.su.getStatus()
+                    retentionCached = self.su.getRetention()
+                    seriesCached = self.su.getSeries()
+                    
+                    self.log.writeInfo([ 'Downloader is running for SU ' + str(self.sunum) ])
 
                     if suStatus != 'P' and suStatus != 'W':
-                        raise DownloaderException('SU ' + str(self.su.sunum) + ' not pending.')
+                        raise DownloaderException('SU ' + str(self.sunum) + 'is not pending')
                 
                     if suStatus != 'W':
                         # Let an ScpWorker thread handle the download. We do that by setting the status to 'W'.
                         # Upon recovery from a daemon shutdown, we may start certain SUs in the W state, in which
                         # case we do not need to set the status to W.
-                        self.log.writeInfo([ 'Setting SU ' + str(self.su.sunum) + " status to W." ])
+                        self.log.writeInfo([ 'Setting SU ' + str(self.sunum) + " status to W." ])
                 
                         # The ScpWorker learns of the source path, the SU size, the scp user, etc., from su.worker.
                         self.su.setStatus('W', None)
                 
-                    suDlPath = os.path.join(self.tmpdir, 'D' + str(self.su.sunum))
+                    suDlPath = os.path.join(self.tmpdir, 'D' + str(self.sunum))
                 finally:
                     if gotSULock:
                         self.su.releaseLock()
 
-                # Wake up an ScpWorker.
+                # wake up an ScpWorker
                 ScpWorker.scpNeeded.set()
-                # Clear event so that main will block the next time it calls wait.
+                # clear event so that main will block the next time it calls wait
                 ScpWorker.scpNeeded.clear()
 
-                # Wait for the ScpWorker thread to finish downloading the SU (look for a 'P' status).
+                # wait for the ScpWorker thread to finish downloading the SU (look for a 'P' status)
                 while not self.sdEvent.isSet():
                     try:
                         gotSULock = self.su.acquireLock()
@@ -2262,15 +2285,15 @@ class Downloader(threading.Thread):
                             # SU, and if a time-out has happened, then raise.
                             timeNow = datetime.now(self.su.starttime.tzinfo)
                             if timeNow > self.su.starttime + self.suTable.getTimeout():
-                                self.log.writeInfo([ 'Download of SU ' + str(self.su.sunum) + ' timed-out.' ])
-                                self.log.writeInfo([ 'Downloader setting SU ' + str(self.su.sunum) + ' status to E (for time-out).' ])
+                                self.log.writeInfo([ 'Download of SU ' + str(self.sunum) + ' timed-out.' ])
+                                self.log.writeInfo([ 'Downloader setting SU ' + str(self.sunum) + ' status to E (for time-out).' ])
                                 self.su.setStatus('E', 'Download timed-out.')
-                                raise DownloaderException('The download of SU ' + str(self.su.sunum) + ' timed-out.')
+                                raise DownloaderException('The download of SU ' + str(self.sunum) + ' timed-out.')
                         elif suStatus == 'P':
                             # ScpDownloader is done performing the download.
                             break
                         else:
-                            raise DownloaderException('The download of SU ' + str(self.su.sunum) + ' errored-out.')
+                            raise DownloaderException('The download of SU ' + str(self.sunum) + ' errored-out.')
                     finally:
                         if gotSULock:
                             self.su.releaseLock()
@@ -2283,16 +2306,13 @@ class Downloader(threading.Thread):
 
                     # use a time-out; during shut-down, we shut-down the ScpWorkers first, so no ScpWorker will call set()
                     toDidNotOccur = ScpWorker.scpCompleted.wait(10)
-                    if not toDidNotOccur:
-                        # timeout happened
-                        self.log.writeInfo([ 'downloader (for SU ' + str(self.su.sunum) + ') timed-out waiting for scp worker' ])
             
                 # The download has completed (it is in self.tmpdir), or a shut-down is being observed.
             
                 # If a shut-down is being observed, then the SU status must be W (waiting for scp thread) or P (scp download complete) or 
                 # E (error). If there is no shut-down happening, then the status must be P or E.
                 if self.sdEvent.isSet():
-                    self.log.writeInfo([ 'shutdown happening while downloading SU ' + str(self.su.sunum) ])
+                    self.log.writeInfo([ 'shutdown happening while downloading SU ' + str(self.sunum) ])
                     # If status == 'P', then go ahead and save the SU in SUMS. Below, set status to C. This SU was successfully downloaded.
                     # If status == 'E', the download failed, and if status == 'W', then we pretend the download never started (although
                     # it could have started, but got canceled by the shutdown).
@@ -2301,7 +2321,7 @@ class Downloader(threading.Thread):
                     
                         if self.su.getStatus() != 'P':
                             # the download did not happen, so skip the SUMS ingestion
-                            raise ShutDownException('downloader thread for SU ' + str(self.su.sunum) + ' is observing the global shutdown and exiting now')
+                            raise ShutDownException('downloader thread for SU ' + str(self.sunum) + ' is observing the global shutdown and exiting now')
                     finally:
                         if gotSULock:
                             self.su.releaseLock()
@@ -2379,7 +2399,7 @@ class Downloader(threading.Thread):
                                 Downloader.sumsDbLock.release()
                         ##### SUM_open() port - end #####
                         openDone = True
-                        self.log.writeInfo([ 'Successfully called SUM_open() port for SU ' +  str(self.su.sunum) ])
+                        self.log.writeInfo([ 'Successfully called SUM_open() port for SU ' +  str(self.sunum) ])
                         self.log.writeInfo([ 'sumid is ' + str(sumid) + '.' ])
     
                         ##### SUM_alloc2() port #####
@@ -2401,7 +2421,7 @@ class Downloader(threading.Thread):
                             #   partitions.
                             randIndex = random.randint(0, len(partitions) - 1)
                             partition = partitions[randIndex]
-                            sudir = os.path.join(partition, 'D' + str(self.su.sunum))
+                            sudir = os.path.join(partition, 'D' + str(self.sunum))
                             os.mkdir(sudir)
                             os.chmod(sudir, 0O2755)
 
@@ -2414,7 +2434,7 @@ class Downloader(threading.Thread):
                                 Downloader.sumsDbLock.release()
                         ##### SUM_alloc2() port - end #####
                         alloc2Done = True
-                        self.log.writeInfo([ 'Successfully called SUM_alloc2() for SU ' +  str(self.su.sunum) ])
+                        self.log.writeInfo([ 'Successfully called SUM_alloc2() for SU ' +  str(self.sunum) ])
             
                         #    Fourth, move the downloaded SU files into the chosen SUMS partition. SUM_alloc2() code calls mkdir, so we cannot
                         #    move the top-level D___ directory into the SUMS partition. Instead we have to move, recursively,  all files and directories in 
@@ -2432,7 +2452,7 @@ class Downloader(threading.Thread):
                             self.log.writeError([ traceback.format_exc(5) ])
                             raise RSIOException('Unable to move SU file ' + afile + ' into SUdir ' + sudir + '.')
 
-                        self.log.writeInfo([ 'Move of SU ' + str(self.su.sunum) + ' content succeeded.' ])
+                        self.log.writeInfo([ 'Move of SU ' + str(self.sunum) + ' content succeeded.' ])
             
                         ##### SUM_put() port #####
                         try:
@@ -2467,14 +2487,14 @@ class Downloader(threading.Thread):
 
                             createDate = datetime.now()
                             createDateStr = createDate.strftime('%Y-%m-%d %H:%M:%S')
-                            expDate = createDate + timedelta(days=self.retention)
+                            expDate = createDate + timedelta(days=retentionCached)
                             effDate = expDate.strftime('%Y%m%d%H%M')
 
                             # storage_group is the tape group. It should come from the series definition, but remote sites have been using 0 for years.            
-                            cmd = "INSERT INTO public.sum_main(online_loc, online_status, archive_status, offsite_ack, history_comment, owning_series, storage_group, storage_set, bytes, ds_index, create_sumid, creat_date, access_date, username) VALUES ('" + sudir + "', 'Y', 'N', 'N', '', '" + self.series + "', 0, 0, " + str(numBytes) + ', ' + str(self.su.sunum) + ', ' + str(sumid) + ", '" + createDateStr + "', '" + createDateStr + "', '" + os.getenv('USER', 'nouser') + "')"
+                            cmd = "INSERT INTO public.sum_main(online_loc, online_status, archive_status, offsite_ack, history_comment, owning_series, storage_group, storage_set, bytes, ds_index, create_sumid, creat_date, access_date, username) VALUES ('" + sudir + "', 'Y', 'N', 'N', '', '" + seriesCached + "', 0, 0, " + str(numBytes) + ', ' + str(self.sunum) + ', ' + str(sumid) + ", '" + createDateStr + "', '" + createDateStr + "', '" + os.getenv('USER', 'nouser') + "')"
                             cursor.execute(cmd)
             
-                            self.log.writeInfo([ 'Successfully inserted record into sum_main for SU ' + str(self.su.sunum) + '.' ])
+                            self.log.writeInfo([ 'Successfully inserted record into sum_main for SU ' + str(self.sunum) + '.' ])
 
                             #    Third, update SUMS sum_partn_alloc table - Insert a new row into sum_partn_alloc for this SU. The SUM_alloc2() port will result in
                             #    a row in sum_partn_alloc with a ds_index of 0, which does not make sense to me. But the SUM_close() port will delete
@@ -2482,20 +2502,20 @@ class Downloader(threading.Thread):
                             #    But first, delete any existing DADP (delete pending) rows for this sunum if the status of the SU for the new row is DADP.
                             if apStatus == 2:
                                 # We do this simply to ensure that we do not have two sum_partn_alloc records with status DADP (delete pending).
-                                cmd = 'DELETE FROM public.sum_partn_alloc WHERE ds_index = ' + str(self.su.sunum) + ' AND STATUS = 2'
+                                cmd = 'DELETE FROM public.sum_partn_alloc WHERE ds_index = ' + str(self.sunum) + ' AND STATUS = 2'
                                 cursor.execute(cmd)
-                                self.log.writeInfo([ 'Successfully deleted old DADP record from sum_partn_alloc for SU ' + str(self.su.sunum) + '.' ])
+                                self.log.writeInfo([ 'Successfully deleted old DADP record from sum_partn_alloc for SU ' + str(self.sunum) + '.' ])
             
-                            cmd = "INSERT INTO public.sum_partn_alloc(wd, sumid, status, bytes, effective_date, archive_substatus, group_id, safe_id, ds_index) VALUES ('" + sudir + "', " + str(sumid) + ', ' + str(apStatus) + ', ' + str(numBytes) + ", '" + effDate + "', 32, 0, 0, " + str(self.su.sunum) + ')'
+                            cmd = "INSERT INTO public.sum_partn_alloc(wd, sumid, status, bytes, effective_date, archive_substatus, group_id, safe_id, ds_index) VALUES ('" + sudir + "', " + str(sumid) + ', ' + str(apStatus) + ', ' + str(numBytes) + ", '" + effDate + "', 32, 0, 0, " + str(self.sunum) + ')'
                             cursor.execute(cmd)
-                            self.log.writeInfo([ 'Successfully inserted record into sum_partn_alloc for SU ' + str(self.su.sunum) + '.' ])
+                            self.log.writeInfo([ 'Successfully inserted record into sum_partn_alloc for SU ' + str(self.sunum) + '.' ])
                             Downloader.sumsConn.commit()
                         finally:
                             if gotSumsDbLock:
                                 Downloader.sumsDbLock.release()
                         ##### SUM_put() port - end #####
                         putDone = True
-                        self.log.writeInfo([ 'Successfully called SUM_put() for SU ' + str(self.su.sunum) ])
+                        self.log.writeInfo([ 'Successfully called SUM_put() for SU ' + str(self.sunum) ])
             
                         ##### SUM_close() port #####
                         try:
@@ -2504,7 +2524,7 @@ class Downloader(threading.Thread):
                             # Delete sum_partn_alloc records for read-only partitions (status == 8) and read-write partitions (status == 1).
                             cmd = 'DELETE FROM public.sum_partn_alloc WHERE sumid = ' + str(sumid) + ' AND (status = 8 OR status = 1)'
                             cursor.execute(cmd)
-                            self.log.writeInfo([ 'Successfully deleted read-only and read-write records from sum_partn_alloc for SU ' + str(self.su.sunum) + '.' ])
+                            self.log.writeInfo([ 'Successfully deleted read-only and read-write records from sum_partn_alloc for SU ' + str(self.sunum) + '.' ])
             
                             # Delete the temporary ds_index = 0 records created during the SUM_put() port. I still do not know why this record
                             # was created in the first place.
@@ -2517,8 +2537,8 @@ class Downloader(threading.Thread):
 
                         ##### SUM_close() port - end #####
                         closeDone = True
-                        self.log.writeInfo([ 'Successfully called SUM_close() for SU ' + str(self.su.sunum) ])
-                        self.log.writeInfo([ 'Successfully deleted temporary (ds_index == 0) records from sum_open for SU ' + str(self.su.sunum) + '.' ])
+                        self.log.writeInfo([ 'Successfully called SUM_close() for SU ' + str(self.sunum) ])
+                        self.log.writeInfo([ 'Successfully deleted temporary (ds_index == 0) records from sum_open for SU ' + str(self.sunum) + '.' ])
                     
                         allOK = True
                     except psycopg2.Error as exc:
@@ -2552,7 +2572,7 @@ class Downloader(threading.Thread):
                             if putDone:
                                 # if putDone, then alloc2Done, so the record was already deleted from sum_partn_alloc; don't
                                 # do that here.
-                                cmd = 'DELETE FROM public.sum_main WHERE ds_index = ' + str(self.su.sunum)
+                                cmd = 'DELETE FROM public.sum_main WHERE ds_index = ' + str(self.sunum)
                                 cursor.execute(cmd)
                             if closeDone:
                                 # nothing to clean up if close succeeds
@@ -2574,7 +2594,7 @@ class Downloader(threading.Thread):
                     gotSULock = self.su.acquireLock()
                     
                     if self.su.getStatus() == 'P':
-                        self.log.writeInfo([ 'Setting SU ' + str(self.su.sunum) + ' status to complete.' ])
+                        self.log.writeInfo([ 'Setting SU ' + str(self.sunum) + ' status to complete.' ])
                         self.su.setStatus('C', None)
                 finally:
                     # Always release lock.
@@ -2608,7 +2628,7 @@ class Downloader(threading.Thread):
                 try:
                     gotSULock = self.su.acquireLock()
 
-                    self.log.writeError([ 'Setting SU ' + str(self.su.sunum) + ' status to error.' ])
+                    self.log.writeError([ 'Setting SU ' + str(self.sunum) + ' status to error.' ])
                     self.log.writeError(msg)
                     self.su.setStatus('E', msg[0]) # do not put traceback strings into DB (weird chars in tracebacks mess things up)
                 finally:
@@ -2632,7 +2652,7 @@ class Downloader(threading.Thread):
             try:
                 Downloader.lock.acquire()
                 Downloader.tList.remove(self) # This thread is no longer one of the running threads.
-                self.log.writeInfo([ 'Downloader (SUNUM ' + str(self.su.sunum) + ') halted.' ])     
+                self.log.writeInfo([ 'Downloader (SUNUM ' + str(self.sunum) + ') halted.' ])     
                 # Use <= because we don't know if we were able to reach Downloader.maxThreads thread running due 
                 # to system-resource limitations.
                 if len(Downloader.tList) <= Downloader.maxThreads - 1:
@@ -2646,7 +2666,7 @@ class Downloader(threading.Thread):
                 
             try:
                 gotSULock = self.su.acquireLock()
-                self.log.writeDebug([ 'downloader for SU ' + str(self.su.sunum) + ' terminating; unsetting worker' ])
+                self.log.writeDebug([ 'downloader for SU ' + str(self.sunum) + ' terminating; unsetting worker' ])
                 self.su.removeWorker()
             finally:
                 # Always release lock.
@@ -2655,7 +2675,7 @@ class Downloader(threading.Thread):
 
     # called from main thread only
     def stop(self):
-        self.log.writeInfo([ 'Stopping Downloader (SUNUM ' + str(self.su.sunum) + '). It may take 10 seconds for Downloader to stop.' ])
+        self.log.writeInfo([ 'Stopping Downloader (SUNUM ' + str(self.sunum) + '). It may take 10 seconds for Downloader to stop.' ])
         
         # Fire event to stop thread.
         self.sdEvent.set()
@@ -3328,76 +3348,15 @@ if __name__ == "__main__":
             # Set max number of threads we can process at once.
             Downloader.setMaxThreads(arguments.maxthreads)
             
-            #################
-            # RESTART W SUS #
-            #################
-            # Recover working downloads that got disrupted from a daemon crash/shutdown. The number of working thread must
-            # be fewer than the max number of threads allowed (# P plus # W status threads <= max number threads).
-            susWorking = suTableObj.getWorking()
-            if len(susWorking) > Downloader.maxThreads:
-                raise MaxThreadsException('There are too many SU records with status W. Please delete all records from ' + suTable + ' and ' + reqTable + ' and start daemon again.')
-
-            siteSunums = {}
-            for asu in susWorking:
-                timeNow = datetime.now(asu.starttime.tzinfo)
-                if timeNow > asu.starttime + suTableObj.getTimeout():
-                    # Set SU status to 'E'.
-                    rslog.writeInfo([ 'Download of SUNUM ' + str(asu.sunum) + ' timed-out.' ])
-                    asu.setStatus('E', 'Download timed-out.')
-                    continue
-
-                rslog.writeInfo([ 'Recovering interrupted download for SUNUM ' + str(asu.sunum) + '.' ])
-
-                try:
-                    siteCGI = sites.getSuPathCGI(asu.sunum)
-                except UnknownSitecode as exc:                        
-                    # Skip this SU. No need to acquire lock since no other threads are operating on SUs at this point.
-                    asu.setStatus('E', 'Uknown site code for SU ' + str(asu.sunum) + '.')
-                    continue
-                
-                if siteCGI not in siteSunums:
-                    siteSunums[siteCGI] = []
-
-                siteSunums[siteCGI].append(asu.sunum)
-
-            rslog.writeDebug([ 'updating RS DB and committing' ])
-            suTableObj.updateDbAndCommit()
+            ###########################
+            # START SCPWORKER THREADS #
+            ###########################
             
-            # There is no need to acquire the SU-table lock. processSUs() will start new threads that can modify the
-            # SU-record statuses, but by the time that happens, the main thread will be done reading those statuses.
-            for cgi, sunumList in siteSunums.items():
-                if len(sunumList) > 0:
-                    # Chunk is a list of SUNUMs (up to 64 of them).
-                    sunumList.sort()
-                    chunker = Chunker(sunumList, 64)
-                    for chunk in chunker:
-                        # processSUs(..., reprocess=False) would attempt to insert a new record in the sus table for each SUNUM. By
-                        # setting the last reprocess argument to True, we do not insert a new record, but instead continue to use
-                        # the existing record. 
-                        try:
-                            processSUs(cgi, chunk, suTableObj, reqTableObj, None, arguments.dbuser, arguments.binpath, arguments, rslog, True)
-                        except RemoteSumsException as exc:
-                            # Do not die - just reject reprocess attempt of the request. Eventually, the downloads will time-out, and the 
-                            # status of the request will be marked 'E'.
-                            if type(exc.response) is str:
-                                rslog.writeWarning([ exc.response ])
-                            rslog.writeWarning([ 'failed to reprocess SUs ' + ','.join([ str(asunum) for asunum in chunk ]), 'skipping this chunk' ])
-                        except Exception:
-                            import traceback
-
-                            msg = traceback.format_exc(5)
-                            rslog.writeWarning([ msg ])                            
-                            rslog.writeWarning([ 'failed to reprocess SUs ' + ','.join([ str(asunum) for asunum in chunk ]), 'skipping this chunk' ])
-                            
-            rslog.writeDebug([ 'updating RS DB and committing' ])
-            suTableObj.updateDbAndCommit()
-                
-            # Make N threads that handle scp commands. Each of the worker threads will use one of these threads to perform
-            # the actual scp command.
-            # MUST do this here, after all 'W' SU Downloader threads have been started, but before 'P' Downloader threads have been
-            # started. The ScpWorker threads need the parent Downloader threads to exist before it can process 'W' SUs. But if there
+            # make N threads that handle scp commands; each of the worker threads will use one of these threads to perform
+            # the actual scp command; MUST do this here, before 'P' Downloader threads have been
+            # started. The ScpWorker threads need the parent Downloader threads to exist before it can process 'W' SUs, but if there
             # are more than maxThreads 'P' SUs, then the processSUs code will block until threads free up, and that cannot happen
-            # if the ScpWorker threads are not running.
+            # if the ScpWorker threads are not running
             for nthread in range(1, arguments.nWorkers + 1):
                 ScpWorker.lock.acquire()
                 try:
@@ -3408,69 +3367,148 @@ if __name__ == "__main__":
                         break # The finally clause will ensure the ScpWorker lock is released.
                 finally:
                     ScpWorker.lock.release()
-
-            #################
-            # RESTART P SUS #
-            #################
-            # Recover pending downloads that got disrupted from a daemon crash. All SU downloads that are in the pending
-            # state at the time the tables are read were disrupted. There are no other threads running at this point, so 
-            # there is no need to acquire a lock.
-            susPending = suTableObj.getPending()
             
-            siteSunums = {}
-            for asu in susPending:
-                timeNow = datetime.now(asu.starttime.tzinfo)
-                if timeNow > asu.starttime + suTableObj.getTimeout():
-                    # Set SU status to 'E'.
-                    rslog.writeInfo([ 'Download of SUNUM ' + str(asu.sunum) + ' timed-out.' ])
-                    asu.setStatus('E', 'Download timed-out.')
-                    continue
+            ################################
+            # RESTART INTERRUPTED REQUESTS #
+            ################################
+            
+            # we must have already started ScpWorker threads, otherwise processSUs will block if we try to process too
+            # many SUs in the following block of code - we'll use up all Downloader threads, and since there are no 
+            # ScpWorker threads perform downloads, the Downloader pool will not get restored, and the whole
+            # system will block on the Downloader.eventMaxThreads.wait() call
+            reqsPending = reqTableObj.getPending()
+            restarted = set()
 
-                rslog.writeInfo([ 'Recovering interrupted download for SUNUM ' + str(asu.sunum) + '.' ])
+            # request is a dictionary
+            for request in reqsPending:
+                # use a set() to remove duplicates IN THE SAME REQUEST
+                sunums = list(set(request['sunums']))
+                rslog.writeInfo([ 'found an interrupted download request, id ' + str(request['requestid']) + ', for SUNUMs ' + ','.join([str(sunum) for sunum in sunums]) ])
+                
+                # Get all SU records for which a download is already in progress.
+                unknown = [] # An SU that is not being processed
+                known = [] # An SU that is being processed.
+
+                toComplete = []
 
                 try:
-                    siteCGI = sites.getSuPathCGI(asu.sunum)
-                except UnknownSitecodeException as exc:
-                    # Skip this SU. No need to acquire lock since no other threads are operating on SUs at this point.
-                    asu.setStatus('E', 'Uknown site code for SU ' + str(asu.sunum) + '.')
-                    continue
+                    # split the request into duplicate 'known' SUs (another request is handling the SU download) and
+                    # new 'unknown' SU
+                    sus, missingSunums, success = suTableObj.getAndLockSUs(sunums, SuTable.removeGhosts)
+                    
+                    for su in sus:
+                        if su.getStatus() == 'E':
+                            # errored out during last run of Remote SUMS, try again
+                            su.setStatus('P', None)
+                        elif su.getStatus() != 'P':
+                            # start afresh; we MUST change all W to P, otherwise, the ScpWorkers will start processing
+                            # the SUs before the corresponding Downloader threads exist, and that will cause problems;
+                            su.setStatus('P', None)
+
+                        if su.sunum in restarted:
+                            rslog.writeInfo([ 'a download for SU ' + str(su.sunum)+ ' is already in progress' ])
+                            known.append(su.sunum)
+                        else:
+                            unknown.append(su.sunum)
+                    
+                    if len(missingSunums) > 0:
+                        unknown.extend(missingSunums)
+                        rslog.writeDebug([ 'request ' + str(request['requestid']) + ' contains unknown SUs: ' + ','.join([ str(sunum) for sunum in unknown ]) ])
+                        
+                    offlineSunums = SuTable.offline(unknown, arguments.binpath, rslog)
                 
-                if siteCGI not in siteSunums:
-                    siteSunums[siteCGI] = []
+                    dlsToStart = []
 
-                siteSunums[siteCGI].append(asu.sunum)
-
-            suTableObj.updateDbAndCommit()
-
-            # There is no need to acquire the SU-table lock. processSUs() will start new threads that can modify the
-            # SU-record statuses, but by the time that happens, the main thread will be done reading those statuses.
-            for cgi, sunumList in siteSunums.items():
-                if len(sunumList) > 0:
-                    # Chunk is a list of SUNUMs (up to 64 of them).
-                    sunumList.sort()
-                    chunker = Chunker(sunumList, 64)
-                    for chunk in chunker:
-                        # processSUs(..., reprocess=False) would attempt to insert a new record in the sus table for each SUNUM. By
-                        # setting the last reprocess argument to True, we do not insert a new record, but instead continue to use
-                        # the existing record. 
+                    for sunum in unknown:
+                        if sunum in offlineSunums:
+                            rslog.writeInfo([ 'SU ' + str(sunum) + ' is offline - will start a download' ])
+                            dlsToStart.append(sunum)
+                        else:
+                            rslog.writeInfo([ 'SU ' + str(sunum) + ' is online already - will NOT start a download.' ])
+                            toComplete.append(sunum)
+                    
+                    # Start downloads for all unknown, offline SUs
+                    siteSunums = {}
+                    for asunum in dlsToStart:
                         try:
-                            processSUs(cgi, chunk, suTableObj, reqTableObj, None, arguments.dbuser, arguments.binpath, arguments, rslog, True)
-                        except RemoteSumsException as exc:
-                            # Do not die - just reject reprocess attempt of the request. Eventually, the downloads will time-out, and the 
-                            # status of the request will be marked 'E'.
-                            if type(exc.response) is str:
-                                rslog.writeWarning([ exc.response ])
-                            rslog.writeWarning([ 'failed to reprocess SUs ' + ','.join([ str(asunum) for asunum in chunk ]), 'skipping this chunk' ])
-                        except Exception:
-                            import traceback
-
-                            msg = traceback.format_exc(5)
+                            siteCGI = sites.getSuPathCGI(asunum)
+                        except UnknownSitecodeException as exc:                        
+                            # Skip this request - invalid SU.
+                            msg = 'uknown site code for SU ' + str(asunum) + '; skipping SU ' + str(sunum) + ' for ' + str(request['requestid'])
                             rslog.writeWarning([ msg ])
-                            rslog.writeWarning([ 'failed to reprocess SUs ' + ','.join([ str(asunum) for asunum in chunk ]), 'skipping this chunk' ])
-                            
-            suTableObj.updateDbAndCommit()
+                            continue
+                    
+                        if siteCGI not in siteSunums:
+                            siteSunums[siteCGI] = []
+                    
+                        siteSunums[siteCGI].append(asunum)
+                except:
+                    # skip the current request, but don't allow rsumsd.py to terminate (if the exception is not handled here, then
+                    # rsumsd.py will terminate)
+                    import traceback
+                    
+                    rslog.writeWarning([ traceback.format_exc(5) ])
+                    continue
+                finally:
+                    if sus:
+                        for su in sus:
+                            su.releaseLock()
 
-            # Start of main loop.
+                for cgi, sunumList in siteSunums.items():
+                    if len(sunumList) > 0:
+                        # Chunk is a list of SUNUMs (up to 64 of them).
+                        sunumList.sort()
+                        chunker = Chunker(sunumList, 64)
+                        for chunk in chunker:
+                            # We want to always insert a record for each SU into the SU table. Do not provide the insertRec
+                            # argument to do so. This call creates new SU-table records, so it modifies the sus object.
+                            try:
+                                # processSUs() does not modify the reqTableObj; but it can modify SU objects
+                                processSUs(cgi, chunk, suTableObj, reqTableObj, request, arguments.dbuser, arguments.binpath, arguments, rslog, True, False)
+                            except RemoteSumsException as exc:
+                                # do not die - just reject the request's current chunk; we do not know exactly which SUs made it into the
+                                # SU Table, but at least one either did not or it did, but with status E; the request will eventually 
+                                # error-out when the other SUs complete (successfully or not)
+                                if type(exc.response) is str:
+                                    rslog.writeWarning([ exc.response ])
+                                rslog.writeWarning([ 'failed to process SUs ' + ','.join([ str(sunum) for sunum in chunk ]), 'skipping this chunk' ])
+                                
+                            except Exception:
+                                import traceback
+
+                                msg = traceback.format_exc(5)
+                                rslog.writeWarning([ msg ])
+                                rslog.writeWarning([ 'failed to process SUs ' + ','.join([ str(sunum) for sunum in chunk ]), 'skipping this chunk' ])
+                                
+                restarted.union(set(sunums))
+
+                # REGARDLESS IF ANY SUS WERE INSERTED INTO THE SU TABLE (if none got inserted, then no downloads will happen), 
+                # a request was initiated; if any Downloader thread fails, or if at least one was never started, then
+                # the request will fail. So, execution always gets this far, and we should add ot the SU table any SUs
+                # that were not 
+                                
+                # increment the refcount on all SU records that were already being processed before the new request processed
+                # the same SU records; this modifies the SU objects; it also acquires each SU's lock
+                if len(known) > 0:
+                    rslog.writeDebug([ 'incrementing refcount for ' + ','.join([ str(sunum) for sunum in known ]) ])
+                    suTableObj.incrementRefcount(known)
+                
+                # insert a new SU record for all unknown SUs that are already online; these calls modify the sus object;
+                # if this is not done, then the pending request will error-out since there would otherwise be missing SUs
+                # (SUs in the request, but not in the SU table); does not spawn a Downloader thread, so the next call does not
+                # participate in a race
+                suTableObj.insert(toComplete)
+                
+                # this also acquire each SU's lock
+                suTableObj.setStatus(toComplete, 'C')
+
+                # At this point, both the requests table and SU table have been modified, but have not been flushed to disk.
+                # Flush them, but do this inside a transaction so that the first does not happen without the second.
+                updateDbAndCommit(rslog, rsConn, rsDbLock, reqTableObj, suTableObj, [ request['requestid'] ], sunums)
+
+            #############
+            # MAIN LOOP #
+            #############
             loopN = 0
             while True:
                 # For each 'P' request in the request table, check to see if the requested downloads have completed yet.
@@ -3556,7 +3594,9 @@ if __name__ == "__main__":
                 # Due to race conditions, a request could have caused a download to occur needed by another request whose state is 'N'.
                 reqTableObj.refresh() # Clients may have added requests to the queue.
 
-                # PROCESS NEW REQUESTS
+                ########################
+                # PROCESS NEW REQUESTS #
+                ########################
                 reqsNew = reqTableObj.getNew()
 
                 # arequest is a dictionary
@@ -3571,7 +3611,7 @@ if __name__ == "__main__":
                         except:
                             import traceback
                             
-                            rslog.writeWarning([ traceback.formate_exc(5) ])
+                            rslog.writeWarning([ traceback.format_exc(5) ])
                             # swallow the exception and continue with the next request
                             pass
                         continue
@@ -3595,8 +3635,9 @@ if __name__ == "__main__":
                             rslog.writeInfo([ 'a download for SU ' + str(su.sunum)+ ' is already in progress' ])
                             known.append(su.sunum)
                         
-                        unknown.extend(missingSunums)
-                        rslog.writeDebug([ 'request ' + str(arequest['requestid']) + ' contains unknown SUs: ' + ','.join([ str(sunum) for sunum in unknown ]) ])
+                        if len(missingSunums) > 0:
+                            unknown.extend(missingSunums)
+                            rslog.writeDebug([ 'request ' + str(arequest['requestid']) + ' contains unknown SUs: ' + ','.join([ str(sunum) for sunum in unknown ]) ])
                             
                         offlineSunums = SuTable.offline(unknown, arguments.binpath, rslog)
                     
