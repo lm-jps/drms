@@ -1197,16 +1197,18 @@ class SuTable:
             gotTableLock = self.acquireLock()            
             # lock acquired (can't get here otherwise)
                 
-            sus, sunums = self.__get([ sunum ])
-            if filter:
-                filteredSus, removedSus = filter(sus)
-            else:
-                filteredSus = sus
+            sus, missingSunums = self.__get([ sunum ])
             
-            if len(filteredSus) == 1:
-                su = filteredSus[0]
+            if len(sus) == 1:
+                su = sus[0]
                 gotSULock = su.acquireLock()
-                # lock acquired (can't get here otherwise)            
+
+                if filter:
+                    filteredSus, removedSus = filter(sus)
+                    if len(removedSus) > 0:
+                        raise UnknownSunumException('SU ' + str(sunum) + ' has been deleted')
+            elif len(sus) > 1:
+                raise UnknownSunumException('SU ' + str(sunum) + ' has been deleted')
         except:
             if gotSULock:
                 su.releaseLock()
@@ -1224,7 +1226,6 @@ class SuTable:
         gotTableLock = False
         lockedSUs = []
         unlockedSunums = []
-        removedSus = []
         success = False
 
         try:
@@ -1232,15 +1233,17 @@ class SuTable:
             # lock acquired (can't get here otherwise)
 
             sus, missingSunums = self.__get(sunums)
-            if filter:
-                filteredSus, removedSus = filter(sus)
-            else:
-                filteredSus = sus
+            
+            unlockedSunums.extend(missingSunums)
 
-            for su in filteredSus:
+            for su in sus:
                 gotSULock = False
                 try:
                     gotSULock = su.acquireLock()
+                    if filter:
+                        filteredSus, removedSus = filter([ su ])
+                        if len(removedSus) > 0:
+                            raise UnknownSunumException('SU ' + str(su.sunum) + ' has been deleted')
                 except:
                     import traceback
                     
@@ -1253,9 +1256,6 @@ class SuTable:
                 finally:
                     if gotSULock:
                         lockedSUs.append(su)
-            
-            unlockedSunums.extend(missingSunums)            
-            unlockedSunums.extend([ su.sunum for su in removedSus ])
 
             success = True
         except:
@@ -1276,7 +1276,6 @@ class SuTable:
         gotTableLock = False
         lockedSUs = []
         unlockedSunums = []
-        removedSus = []
         success = False
 
         try:
@@ -1284,15 +1283,17 @@ class SuTable:
             # lock acquired (can't get here otherwise)
             
             sus, missingSunums = self.__get(sunums)
-            if filter:
-                filteredSus, removedSus = filter(sus)
-            else:
-                filteredSus = sus
             
-            for su in filteredSus:
+            unlockedSunums.extend(missingSunums)
+
+            for su in sus:
                 gotSULock = False
                 try:
                     gotSULock = su.acquireLock()
+                    if filter:
+                        filteredSus, removedSus = filter([ su ])
+                        if len(removedSus) > 0:
+                            raise UnknownSunumException('SU ' + str(su.sunum) + ' has been deleted')
                 except:
                     import traceback
 
@@ -1305,9 +1306,6 @@ class SuTable:
                 finally:
                     if gotSULock:
                         lockedSUs.append(su)
-            
-            unlockedSunums.extend(missingSunums)
-            unlockedSunums.extend([ su.sunum for su in removedSus ])
 
             success = True
         except:
@@ -3103,7 +3101,7 @@ def processSUs(cgi, sunums, suTable, reqTable, request, dbUser, binPath, argumen
                     log.writeWarning([ 'SUNUM ' + str(sunum) + ' returned by SU-path CGI is not recognized; skipping ' ])
                     continue
                     
-                if not path:
+                if path is None:
                     # A path of None means that the SUNUM was invalid. We want to set the SU status to 'E'.    
                     su.setStatus('E', 'SU ' + str(sunum) + ' is not valid at the providing site.')
                     continue
