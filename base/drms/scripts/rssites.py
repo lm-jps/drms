@@ -120,7 +120,7 @@ if __name__ == "__main__":
                 with conn.cursor() as cursor:
                     # Read from sites table.
                     # sites(name, code, baseurl)
-                    cmd = 'SELECT name, code, baseurl FROM ' + optD['sitetable']
+                    cmd = 'SELECT name, code, baseurl, cgi_supath FROM ' + optD['sitetable']
                     
                     if optD['name']:
                         cmd += ' WHERE name in (' + ', '.join("'" + elem + "'" for elem in optD['name']) + ')'
@@ -140,6 +140,7 @@ if __name__ == "__main__":
                         rootObj[siteName] = {}
                         rootObj[siteName]['code'] = record[1]
                         rootObj[siteName]['baseurl'] = record[2]
+                        rootObj[siteName]['cgi-supath'] = record[3]
 
         except psycopg2.DatabaseError as exc:
             # Closes the cursor and connection
