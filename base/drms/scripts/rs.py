@@ -45,6 +45,7 @@ import sys
 import cgi
 import re
 import json
+import os
 from subprocess import check_output, CalledProcessError
 
 # Return values
@@ -142,6 +143,14 @@ def runJsocfetch(**kwargs):
     for key in kwargs:
         arg = key + '=' + kwargs[key]
         cmd.append(arg)
+        
+    # GAAAAH! Remove HTTP environment vars that jsoc_fetch recognizes (QUERY_STRING and REQUEST_METHOD); cannot trust the
+    # environment so use the command line constructed here
+    if 'REQUEST_METHOD' in os.environ:
+        del os.environ['REQUEST_METHOD']
+
+    if 'QUERY_STRING' in os.environ:
+        del os.environ['QUERY_STRING']
 
     try:
         # Here's the skinny. jsoc_fetch can return 1, even when the output is valid (e.g, jsoc_fetch request status == 6). But check_output(),
