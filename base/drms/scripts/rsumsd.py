@@ -134,7 +134,7 @@ LOG_FILE_BASE_NAME = 'rslog'
 SUM_MAIN = 'public.sum_main'
 SUM_PARTN_ALLOC = 'public.sum_partn_alloc'
 
-def terminator(*args):
+def terminator(signo, frame):
     # Raise the SystemExit exception (which will be caught by the __exit__() method below).
     sys.exit(0)
 
@@ -160,13 +160,13 @@ class TerminationHandler(object):
         self.sumsdbhost = arguments.sumsdbhost
         self.sumsdbport = arguments.sumsdbport
         self.sumsconn = None
+        
+        self.savedSignals = None
 
         super(TerminationHandler, self).__init__()
         
     def __enter__(self):
-        signal.signal(signal.SIGINT, terminator)
-        signal.signal(signal.SIGTERM, terminator)
-        signal.signal(signal.SIGHUP, terminator)
+        self.enableInterrupts()
 
         # Acquire locks.
         self.rsLock = DrmsLock(self.lockFile, self.pidStr)
@@ -218,7 +218,30 @@ class TerminationHandler(object):
         if etype == SystemExit:
             print('and done')
             raise TerminationException('Termination signal handler called.')
+            
+    def saveSignal(self, signo, frame):
+        if self.savedSignals == None:
+            self.savedSignals = []
+
+        self.savedSignals.append((signo, frame))
+        self.log.writeDebug([ 'saved signal ' +  signo ])
+
+    def disableInterrupts(self):
+        signal.signal(signal.SIGINT, self.saveSignal)
+        signal.signal(signal.SIGTERM, self.saveSignal)
+        signal.signal(signal.SIGHUP, self.saveSignal)
         
+    def enableInterrupts(self):
+        signal.signal(signal.SIGINT, terminator)
+        signal.signal(signal.SIGTERM, terminator)
+        signal.signal(signal.SIGHUP, terminator)
+        
+        if type(self.savedSignals) is list:
+            for signalReceived in self.savedSignals:
+                terminator(*signalReceived)
+        
+        self.savedSignals = None
+
     def finalStuff(self):
         self.log.writeInfo([ 'Halting threads.' ])
 
@@ -1000,6 +1023,7 @@ class SuTable:
     
     # Main thread only.
     def insert(self, sunums):
+        gotTableLock = False
         try:
             # Get lock because we are modifying self.suDict.
             gotTableLock = self.acquireLock()
@@ -1025,99 +1049,55 @@ class SuTable:
 
     def setStatus(self, sunums, code, msg=None):
         try:
-            # get lock because we are reading self.suDict
-            gotTableLock = self.acquireLock()
-            for asunum in sunums:
-                sunumStr = str(asunum)
+            sus, missingSunums, success = self.getAndLockSUs(sunums, SuTable.removeGhosts)
             
-                # Will raise if the sunum is not in the dictionary.
-                su = self.__get([ asunum ])[0]
-            
-                try:
-                    gotSULock = su.acquireLock()
-            
-                    if not gotSULock:
-                        raise LockException('Unable to acquire SU ' + sunumStr + ' lock.')
-                    su.setStatus(code, msg)
-                finally:
-                    if gotSULock:
-                        su.releaseLock()
+            if not success:
+                raise LockAndHoldException('(setStatus) unable to acquire SU locks')
+
+            for su in sus:
+                su.setStatus(code, msg)
         finally:
-            # Always release lock.
-            if gotTableLock:
-                self.releaseLock()
+            for su in sus:
+                su.releaseLock()
 
     def setSeries(self, sunums, series):
         try:
-            # get lock because we are reading self.suDict
-            gotTableLock = self.acquireLock()
-            for asunum in sunums:
-                sunumStr = str(asunum)
+            sus, missingSunums, success = self.getAndLockSUs(sunums, SuTable.removeGhosts)
             
-                # Will raise if the sunum is not in the dictionary.
-                su = self.__get([ asunum ])[0]
-            
-                try:
-                    gotSULock = su.acquireLock()
-            
-                    if not gotSULock:
-                        raise LockException('Unable to acquire SU ' + sunumStr + ' lock.')
-                    su.setSeries(series)
-                finally:
-                    if gotSULock:
-                        su.releaseLock()
-        finally:
-            # Always release lock.
-            if gotTableLock:
-                self.releaseLock()
+            if not success:
+                raise LockAndHoldException('(setSeries) unable to acquire SU locks')
 
-    def setRetention(self, sunums, retention):
-        try:
-            # get lock because we are reading self.suDict
-            gotTableLock = self.acquireLock()
-            for asunum in sunums:
-                sunumStr = str(asunum)
-            
-                # Will raise if the sunum is not in the dictionary.
-                su = self.__get([ asunum ])[0]
-            
-                try:
-                    gotSULock = su.acquireLock()
-            
-                    if not gotSULock:
-                        raise LockException('Unable to acquire SU ' + sunumStr + ' lock.')
-                    su.setRetention(retention)
-                finally:
-                    if gotSULock:
-                        su.releaseLock()
+            for su in sus:
+                su.setSeries(series)
         finally:
-            # Always release lock.
-            if gotTableLock:
-                self.releaseLock()
+            for su in sus:
+                su.releaseLock()
+
+    def setRetention(self, sunums, retention):    
+        try:
+            sus, missingSunums, success = self.getAndLockSUs(sunums, SuTable.removeGhosts)
+            
+            if not success:
+                raise LockAndHoldException('(setRetention) unable to acquire SU locks')
+
+            for su in sus:
+                su.setRetention(retention)
+        finally:
+            for su in sus:
+                su.releaseLock()
 
     def setStarttime(self, sunums, starttime):
         try:
-            # get lock because we are reading self.suDict
-            gotTableLock = self.acquireLock()
-            for asunum in sunums:
-                sunumStr = str(asunum)
+            sus, missingSunums, success = self.getAndLockSUs(sunums, SuTable.removeGhosts)
             
-                # Will raise if the sunum is not in the dictionary.
-                su = self.__get([ asunum ])[0]
-            
-                try:
-                    gotSULock = su.acquireLock()
-            
-                    if not gotSULock:
-                        raise LockException('Unable to acquire SU ' + sunumStr + ' lock.')
-                    su.setStarttime(starttime)
-                finally:
-                    if gotSULock:
-                        su.releaseLock()
+            if not success:
+                raise LockAndHoldException('(setStarttime) unable to acquire SU locks')
+
+            for su in sus:
+                su.setStarttime(starttime)
         finally:
-            # Always release lock.
-            if gotTableLock:
-                self.releaseLock()
+            for su in sus:
+                su.releaseLock()
 
     def incrementRefcount(self, sunums):
         try:
@@ -3374,6 +3354,8 @@ if __name__ == "__main__":
             # many SUs in the following block of code - we'll use up all Downloader threads, and since there are no 
             # ScpWorker threads perform downloads, the Downloader pool will not get restored, and the whole
             # system will block on the Downloader.eventMaxThreads.wait() call
+            th.disableInterrupts()
+            
             reqsPending = reqTableObj.getPending()
             restarted = set()
 
@@ -3503,6 +3485,9 @@ if __name__ == "__main__":
                 # At this point, both the requests table and SU table have been modified, but have not been flushed to disk.
                 # Flush them, but do this inside a transaction so that the first does not happen without the second.
                 updateDbAndCommit(rslog, rsConn, rsDbLock, reqTableObj, suTableObj, [ request['requestid'] ], sunums)
+                
+            th.enableInterrupts()
+            # END RESTART REQUESTS #
 
             #############
             # MAIN LOOP #
@@ -3517,6 +3502,8 @@ if __name__ == "__main__":
                 ############################
                 # PROCESS PENDING REQUESTS #
                 ############################
+                th.disableInterrupts()
+                            
                 reqsPending = reqTableObj.getPending()
                 for arequest in reqsPending:
                     done = True
@@ -3590,11 +3577,16 @@ if __name__ == "__main__":
                 # i.e., no SU record) or increment the refcounts on the downloads (if there are downloads currently running - i.e.,
                 # an SU record exists). But Before starting a new download, make sure that requested SU is not already online.
                 # Due to race conditions, a request could have caused a download to occur needed by another request whose state is 'N'.
-                reqTableObj.refresh() # Clients may have added requests to the queue.
+                
+                th.enableInterrupts()
+                # END PENDING REQUESTS #
 
                 ########################
                 # PROCESS NEW REQUESTS #
                 ########################
+                th.disableInterrupts()
+                            
+                reqTableObj.refresh() # Clients may have added requests to the queue.
                 reqsNew = reqTableObj.getNew()
 
                 # arequest is a dictionary
@@ -3729,6 +3721,9 @@ if __name__ == "__main__":
                     # At this point, both the requests table and SU table have been modified, but have not been flushed to disk.
                     # Flush them, but do this inside a transaction so that the first does not happen without the second.
                     updateDbAndCommit(rslog, rsConn, rsDbLock, reqTableObj, suTableObj, [ arequest['requestid'] ], sunums)
+                    
+                th.enableInterrupts()
+                # END PROCESS NEW REQUESTS #
 
                 # Delete all request-table records whose state is 'D'. It doesn't matter if this operation gets interrupted. If
                 # that happens, then these delete-pending records will be deleted the next time this code runs uninterrupted.
