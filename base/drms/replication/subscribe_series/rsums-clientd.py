@@ -121,12 +121,12 @@ class TerminationHandler(object):
         self.conn = None
         self.connSums = None
         
+        self.savedSignals = None
+        
         super(TerminationHandler, self).__init__()
         
     def __enter__(self):
-        signal.signal(signal.SIGINT, terminator)
-        signal.signal(signal.SIGTERM, terminator)
-        signal.signal(signal.SIGHUP, terminator)
+        self.enableInterrupts()
 
         # Acquire locks.
         self.rsLock = DrmsLock(self.lockFile, self.pidStr)
@@ -162,6 +162,7 @@ class TerminationHandler(object):
             self.log.writeInfo([ 'termination signal handler called' ])
             self.container[3] = RV_TERMINATED
 
+        print('Remote SUMS shutting down (this could take up to 10 minutes)...')
         self.finalStuff()
         
         # Clean up lock
@@ -178,10 +179,36 @@ class TerminationHandler(object):
             self.log.writeInfo([ 'completed generating set-up script' ])
             self.container[3] = RV_SUCCESS
             return True
+
+    def saveSignal(self, signo, frame):
+        if self.savedSignals == None:
+            self.savedSignals = []
+
+        self.savedSignals.append((signo, frame))
+        self.log.writeDebug([ 'saved signal ' +  signo ])
+
+    def disableInterrupts(self):
+        signal.signal(signal.SIGINT, self.saveSignal)
+        signal.signal(signal.SIGTERM, self.saveSignal)
+        signal.signal(signal.SIGHUP, self.saveSignal)
+        
+    def enableInterrupts(self):
+        signal.signal(signal.SIGINT, terminator)
+        signal.signal(signal.SIGTERM, terminator)
+        signal.signal(signal.SIGHUP, terminator)
+        
+        if type(self.savedSignals) is list:
+            for signalReceived in self.savedSignals:
+                terminator(*signalReceived)
+        
+        self.savedSignals = None
         
     def finalStuff(self):
-        # clean up status-E and status-C requests from drms.rs_requests that did not get cleaned up prior to interruption
-        pendingReqIDs = self.pendingRequests.keys() # an array of strings
+        # clean up status-E and status-C requests from drms.rs_requests that did not get cleaned up prior to interruption;
+        # these are the pending requests at the time that the interrupt happened; this script is single-threaded, so 
+        # no other thread can modify self.pendingRequests while this method is executing
+        pendingReqIDs = self.pendingRequests.keys() # an array of strings (self.pendingRequests is a reference to a global)
+        pendingRequestsStr = ','.join(pendingReqIDs)
 
         requestsTable = self.arguments.RS_REQUEST_TABLE
         captureTable = 'drms.ingested_sunums'
@@ -191,7 +218,6 @@ class TerminationHandler(object):
         while True:
             # wait until rsumsd.py has completely processed all requests to either completion or error
             with self.conn.cursor() as cursor:
-                pendingRequestsStr = ','.join(pendingReqIDs)
                 cmd = 'SELECT count(*) FROM ' + requestsTable + ' WHERE requestid IN (' + pendingRequestsStr + ')' + " AND status != 'E' AND status != 'C'"
                                 
                 try:
@@ -211,42 +237,62 @@ class TerminationHandler(object):
                     break
                 
                 # don't wait forever
-                if datetime.now(starttime.tzinfo)  > starttime + timedelta(minutes=5):
+                if datetime.now(starttime.tzinfo)  > starttime + timedelta(minutes=10):
                     break
                 
-                time.sleep(1)
+                time.sleep(2)
+            
+        # delete the requests that DID complete (but only the requests that rsums-clientd.py issued - those in pendingReqIDs)
+        count = 0
+        with self.conn.cursor() as cursor:            
+            cmd = 'SELECT requestid FROM ' + requestsTable + ' WHERE requestid IN (' + pendingRequestsStr + ')' + " AND (status = 'E' OR status = 'C')"
+
+            try:
+                self.log.writeInfo([ 'executing SQL: ' + cmd ])
+                cursor.execute(cmd)
+            except psycopg2.Error as exc:
+                # handle database-command errors.
+                import traceback
+                raise DBCommandException(traceback.format_exc(5))
+            
+            count = cursor.rowcount
+            rows = cursor.fetchall()
+            idsToDel = [ row[0] for row in rows ]
+            idsToDelStr = ','.join([ str(id) for id in idsToDel ])
         
-        if len(pendingReqIDs) > 0:
-            self.log.writeInfo([ str(len(pendingReqIDs)) + ' completed Remote SUMS requests are being removed' ])
-            with self.conn.cursor() as cursor:
-                requestIDStr = ','.join(pendingReqIDs)
-                cmd = 'DELETE FROM ' + requestsTable + ' WHERE requestid in (' + requestIDStr + ')'
-    
+            if count > 0:
+                self.log.writeInfo([ str(count) + ' completed Remote SUMS requests ' + idsToDelStr + ' are being removed from the requests table' ])
+                cmd = 'DELETE FROM ' + requestsTable + ' WHERE requestid IN (' + idsToDelStr + ')'
+                            
                 try:
+                    self.log.writeInfo([ 'executing SQL: ' + cmd ])
                     cursor.execute(cmd)
+                    count = cursor.rowcount
                 except psycopg2.Error as exc:
                     # handle database-command errors.
                     import traceback
                     raise DBCommandException(traceback.format_exc(5))
-        
-                self.log.writeInfo([ 'removed requests ' + requestIDStr + ' from RS requests table' ])
-
-            for requestID in pendingReqIDs:
-                pendingSUs = self.pendingRequests[requestID]
-                            
-                with self.conn.cursor() as cursor:            
-                    sunumsStr = ','.join([ str(sunum) for sunum in pendingSUs ])
-                    cmd = 'DELETE FROM ' + captureTable + ' WHERE sunum IN ' + '(' + sunumsStr + ')'
                 
-                    try:
-                        cursor.execute(cmd)
-                    except psycopg2.Error as exc:
-                        # handle database-command errors.
-                        import traceback
-                        raise DBCommandException(traceback.format_exc(5))
+                self.log.writeInfo([ 'removed ' + str(count) + ' completed Remote SUMS requests' ])
+                
+                # remove from drms.ingested_sunums the SUNUMs of the completed requests identified and removed above
+                for requestID in idsToDel:
+                    pendingSUs = self.pendingRequests[str(requestID)]
+                            
+                    with self.conn.cursor() as cursor:            
+                        sunumsStr = ','.join([ str(sunum) for sunum in pendingSUs ])
+                        cmd = 'DELETE FROM ' + captureTable + ' WHERE sunum IN ' + '(' + sunumsStr + ')'
+                
+                        try:
+                            self.log.writeInfo([ 'executing SQL: ' + cmd ])
+                            cursor.execute(cmd)
+                        except psycopg2.Error as exc:
+                            # handle database-command errors.
+                            import traceback
+                            raise DBCommandException(traceback.format_exc(5))
                 
                     self.log.writeInfo([ 'removed SUs ' + sunumsStr + ' from sunum capture table' ])
-    
+
         self.log.writeInfo([ 'closing DB connections' ])
         self.closeRsConnSums()
         self.closeRsConn()
@@ -641,6 +687,8 @@ if __name__ == "__main__":
                                     # no more SUs for which to request downloads; break
                                     break
                                 else:
+                                    th.disableInterrupts()
+
                                     log.writeInfo([ 'RS server has open slots and there are SUs to download - making new SU-download requests' ])
                                     # making a new request - generate next request ID
                                     cmd = "SELECT nextval('" + tableOut + "_seq')"
@@ -675,6 +723,8 @@ if __name__ == "__main__":
 
                                     pendingRequests[str(requestID)] = sunums # map to a list
                                     log.writeDebug([ 'adding request ' + str(requestID) + ' to pendingRequests list' ])
+                                    
+                                    th.enableInterrupts()
                             
                             # give Remote SUMS a chance to process existing requests
                             time.sleep(1)
@@ -720,6 +770,10 @@ if __name__ == "__main__":
                                             
                                             toDelFromTableOut.append(requestID)
                                             toDelFromPendingRequests.append(requestID)
+                                            # remove all SUNUMs from drms.ingested_sunums, even for SUs whose download failed;
+                                            # if an SU download failed, this means that Remote SUMS tried to download it for many minutes
+                                            # but ended-up timing-out; we don't want to keep trying beyond that; if the SU should really
+                                            # exist, then code that fetches the path will need to perform a USER download
                                             toDelFromTableIn.extend(pendingRequests[str(requestID)])
                                             # each request contains a unique set of SUNUMs (no SUNUM appears in more than one request)
                                             # so it is OK to remove the SUs in pendingRequests[str(requestID)] - we won't be removing 
@@ -734,7 +788,7 @@ if __name__ == "__main__":
                                             # so it is OK to remove the SUs in pendingRequests[str(requestID)] - we won't be removing 
                                             # them from other unrelated requests
                                             toDelFromPendingSUs.extend(pendingRequests[str(requestID)])
-                                        elif datetime.now(starttime.tzinfo)  > starttime + timedelta(minutes=5):
+                                        elif datetime.now(starttime.tzinfo)  > starttime + timedelta(minutes=30):
                                             # time-out; let the server continue to attempt to download the SU, but 
                                             # the client gives up waiting and pretends that there was basically an error
                                             log.writeError([ 'time-out processing requestID ' +  str(requestID) ])
@@ -766,7 +820,9 @@ if __name__ == "__main__":
                                     # handle database-command errors.
                                     import traceback
                                     raise DBCommandException(traceback.format_exc(5))
-                                    
+                                
+                                th.disableInterrupts()
+
                                 # remove from drms.rs_requests
                                 if len(toDelFromTableOut) > 0:
                                     requestIDStr = ','.join([ str(requestID) for requestID in toDelFromTableOut ])
@@ -808,6 +864,8 @@ if __name__ == "__main__":
                                         pendingSUs.remove(sunum)
                                     
                                     log.writeDebug([ 'removed ' + ','.join([ str(sunum) for sunum in toDelFromPendingSUs ]) + ' from pending SUs list' ])
+
+                                th.enableInterrupts()
                     except psycopg2.Error as exc:
                         import traceback
                         raise DBCommandException(traceback.format_exc(5))
