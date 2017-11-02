@@ -42,6 +42,8 @@ SUMS_BIN	:= $(SUMS_BIN) $(MODEXE_SUMS_$(d)) $(CEXE_SUMS_$(d))
 S_$(d)		:= $(notdir $(EXE_$(d)) $(MODEXE_SOCK_$(d)) $(MODEXE_SUMS_$(d)))
 
 # Local rules
+$(SERVEREXE_$(d)):      LL_TGT := $(LL_TGT) -lrt
+
 $(OBJ_$(d)):	CF_TGT := $(CF_$(d)) -I$(SRCDIR)/$(d)/../../libs/json -I$(SRCDIR)/$(d)/../../libs/qdecoder
 $(OBJ_$(d)):	$(SRCDIR)/$(d)/Rules.mk
 
