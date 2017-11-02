@@ -3389,6 +3389,15 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
         sum->mode = ((DRMS_MtSumsRequest_t *)request)->mode;
         sum->tdays = ((DRMS_MtSumsRequest_t *)request)->tdays;
         
+        /* this may have been used in a previous SUMS call */
+        if (sum->dsix_ptr)
+        {
+            free(sum->dsix_ptr);
+            sum->dsix_ptr = NULL;
+        }
+    
+        sum->dsix_ptr = (uint64_t *)calloc(((DRMS_MtSumsRequest_t *)request)->reqcnt, sizeof(uint64_t));
+        
         for (i = 0; i < ((DRMS_MtSumsRequest_t *)request)->reqcnt; i++)
         {
             sum->dsix_ptr[i] = ((DRMS_MtSumsRequest_t *)request)->sunum[i];
@@ -3397,6 +3406,15 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
         sum->reqcnt = request->reqcnt;
         sum->mode = request->mode;
         sum->tdays = request->tdays;
+        
+        /* this may have been used in a previous SUMS call */
+        if (sum->dsix_ptr)
+        {
+            free(sum->dsix_ptr);
+            sum->dsix_ptr = NULL;
+        }
+    
+        sum->dsix_ptr = (uint64_t *)calloc(SUMARRAYSZ, sizeof(uint64_t));
         
         for (i=0; i<request->reqcnt; i++)
         {
@@ -3782,6 +3800,23 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
         sum->tdays = ((DRMS_MtSumsRequest_t *)request)->tdays;
         sum->reqcnt = ((DRMS_MtSumsRequest_t *)request)->reqcnt;
         sum->history_comment = ((DRMS_MtSumsRequest_t *)request)->comment;
+        
+        /* this may have been used in a previous SUMS call */
+        if (sum->dsix_ptr)
+        {
+            free(sum->dsix_ptr);
+            sum->dsix_ptr = NULL;
+        }
+    
+        sum->dsix_ptr = (uint64_t *)calloc(((DRMS_MtSumsRequest_t *)request)->reqcnt, sizeof(uint64_t));
+        
+        if (sum->wd)
+        {
+            free(sum->wd);
+            sum->wd = NULL;
+        }
+    
+        sum->wd = (char **)calloc(((DRMS_MtSumsRequest_t *)request)->reqcnt, sizeof(char *));
 
         for (i = 0; i < ((DRMS_MtSumsRequest_t *)request)->reqcnt; i++)
         {
@@ -3805,7 +3840,24 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
        sum->tdays = request->tdays;
        sum->reqcnt = request->reqcnt;
        sum->history_comment = request->comment;
+       
+        /* this may have been used in a previous SUMS call (the RPC SUMS requires SUMARRAYSZ elements)*/
+        if (sum->dsix_ptr)
+        {
+            free(sum->dsix_ptr);
+            sum->dsix_ptr = NULL;
+        }
 
+        sum->dsix_ptr = (uint64_t *)calloc(SUMARRAYSZ, sizeof(uint64_t));
+
+        if (sum->wd)
+        {
+            free(sum->wd);
+            sum->wd = NULL;
+        }
+
+        sum->wd = (char **)calloc(SUMARRAYSZ, sizeof(char *));
+       
        for (i=0; i<request->reqcnt; i++)
        {
           sum->dsix_ptr[i] = request->sunum[i];

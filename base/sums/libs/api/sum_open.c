@@ -1600,7 +1600,7 @@ for(j=0; j < numSUM; j++) {
 #endif
 
 #if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || (!defined(SUMS_USEMTSUMS_CONNECTION) || !SUMS_USEMTSUMS_CONNECTION)
-  sumptr->uid = sumid;
+    sumptr->uid = sumid;
 #endif
   sumptr->username = username;
   sumptr->tdays = 0;
@@ -1609,8 +1609,11 @@ for(j=0; j < numSUM; j++) {
   sumptr->numSUM = numSUM;	/* # of sum servers available */
   sumptr->dsname = "<none>";
   sumptr->history_comment = NULL;
-  sumptr->dsix_ptr = (uint64_t *)malloc(sizeof(uint64_t) * SUMARRAYSZ);
-  sumptr->wd = (char **)calloc(SUMARRAYSZ, sizeof(char *));
+    /* always alloc these two, just in case we are performing some RPC SUMS call that needs them; for MT SUMS calls that use
+     * these, the memory will first be deallocated, then*/
+    sumptr->dsix_ptr = (uint64_t *)malloc(sizeof(uint64_t) * SUMARRAYSZ);
+    sumptr->wd = (char **)calloc(SUMARRAYSZ, sizeof(char *));
+
 #if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || (!defined(SUMS_USEMTSUMS_CONNECTION) || !SUMS_USEMTSUMS_CONNECTION)
   setsumopened(&sumopened_hdr, sumid, sumptr, username); //put in open list
 #endif
@@ -1764,8 +1767,18 @@ int sumsopenClose(SUM_t *sums, MTSums_CallType_t callType, int (*history)(const 
   }
 #endif
 
-  free(sums->dsix_ptr);
-  free(sums->wd);
+    if (sums->dsix_ptr)
+    {
+        free(sums->dsix_ptr);
+        sums->dsix_ptr = NULL;
+    }
+    
+    if (sums->wd)
+    {
+        free(sums->wd);
+        sums->wd = NULL;
+    }
+  
   if(sums->sinfo) free(sums->sinfo);
   free(sums);
   if (klist)
@@ -3181,6 +3194,22 @@ static int unjsonizeSumgetResponse(SUM_t *sums, const char *msg, int (*history)(
             err = 1;
         }
         
+        if (sums->wd)
+        {
+            /* this may have been allocated from a previous call */
+            free(sums->wd);
+            sums->wd = NULL;
+        }
+        
+        sums->wd = (char **)calloc(nElems, sizeof(char *));
+        
+        err = (sums->wd == NULL);
+
+        if (err)
+        {
+            (*history)("Out of memory calling calloc().\n");
+        }
+        
         if (!err)
         {
             for (iElem = 0; iElem < nElems; iElem++)
@@ -3391,11 +3420,26 @@ static int unjsonizeSumallocSumalloc2Response(SUM_t *sums, const char *msg, int 
 
     if (!err)
     {
-        /* Convert hexadecimal string to 64-bit number. */
-        err = (sscanf(value->valuestring, "%llx", &(sums->dsix_ptr[0])) != 1);
+        if (sums->dsix_ptr)
+        {
+            free(sums->dsix_ptr);
+            sums->dsix_ptr = NULL;
+        }
+    
+        err = ((sums->dsix_ptr = calloc(1, sizeof(uint64_t))) == NULL);
+        
         if (err)
         {
-            (*history)("Invalid sunum string.");
+            (*history)("out of memory");
+        }
+        else
+        {
+            /* Convert hexadecimal string to 64-bit number. */
+            err = (sscanf(value->valuestring, "%llx", &(sums->dsix_ptr[0])) != 1);
+            if (err)
+            {
+                (*history)("Invalid sunum string.");
+            }
         }
     }
     
@@ -3419,10 +3463,26 @@ static int unjsonizeSumallocSumalloc2Response(SUM_t *sums, const char *msg, int 
 
     if (!err)
     {
-        err = ((sums->wd[0] = strdup(value->valuestring)) == NULL);
+        if (sums->wd)
+        {
+            /* this may have been allocated from a previous call */
+            free(sums->wd);
+            sums->wd = NULL;
+        }
+        
+        err = ((sums->wd = (char **)calloc(1, sizeof(char *))) == NULL);
+        
         if (err)
         {
             (*history)("Out of memory.");
+        }
+        else
+        {    
+            err = ((sums->wd[0] = strdup(value->valuestring)) == NULL);
+            if (err)
+            {
+                (*history)("Out of memory.");
+            }
         }
     }    
     
@@ -5954,6 +6014,25 @@ KEY *respdo_1(KEY *params)
   reqcnt = getkey_int(params, "reqcnt");
   reqcode = getkey_int(params, "REQCODE");
   sum->status = getkey_int(params, "STATUS");
+  
+    if (sum->wd)
+    {
+        /* this may have been allocated from a previous call */
+        free(sum->wd);
+        sum->wd = NULL;
+    }
+
+    sum->wd = (char **)calloc(reqcnt, sizeof(char *));
+
+    if (sum->dsix_ptr)
+    {
+        /* this may have been allocated from a previous call */
+        free(sum->dsix_ptr);
+        sum->dsix_ptr = NULL;
+    }
+
+    sum->dsix_ptr = (char **)calloc(reqcnt, sizeof(uint64_t));
+
   cptr = sum->wd;
   dsixpt = sum->dsix_ptr;
   switch(reqcode) {
