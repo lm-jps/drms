@@ -15,7 +15,11 @@ import json
 import uuid
 import logging
 import argparse
+import inspect
 from subprocess import check_call, CalledProcessError
+from multiprocessing import Process, Lock
+from multiprocessing.sharedctypes import Value
+from ctypes import c_longlong
 from pathlib import Path
 import psycopg2
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../include'))
@@ -264,36 +268,39 @@ class Log(object):
         logRecord = self.log.makeRecord(self.log.name, self.log.getEffectiveLevel(), None, '', '', None, None)
         return logRecord.levelname
 
+    def __prependFrameInfo(self, msg):
+        frame, fileName, lineNo, fxn, context, index = inspect.stack()[2]
+        return os.path.basename(fileName) + ':' + str(lineNo) + ': ' + msg
+
     def writeDebug(self, text):
         if self.log:
-            for line in text:
-                self.log.debug(line)
+            for line in text:                
+                self.log.debug(self.__prependFrameInfo(line))
             self.fileHandler.flush()
             
     def writeInfo(self, text):
         if self.log:
             for line in text:
-                self.log.info(line)
+                self.log.info(self.__prependFrameInfo(line))
         self.fileHandler.flush()
     
     def writeWarning(self, text):
         if self.log:
             for line in text:
-                self.log.warning(line)
+                self.log.warning(self.__prependFrameInfo(line))
             self.fileHandler.flush()
     
     def writeError(self, text):
         if self.log:
             for line in text:
-                self.log.error(line)
+                self.log.error(self.__prependFrameInfo(line))
             self.fileHandler.flush()
             
     def writeCritical(self, text):
         if self.log:
             for line in text:
-                self.log.critical(line)
+                self.log.critical(self.__prependFrameInfo(line))
             self.fileHandler.flush()
-
 
 class SDException(Exception):
 
@@ -1462,9 +1469,21 @@ class AllocResponse(Response):
                     raise DBCommandException('unexpected DB response to cmd: ' + self.cmd)
             
                 partSet = self.dbRes[0][0]
-                
+        
+        # we used to choose for allocation a partition that had sufficient room by reading the avail_bytes column from 
+        # the SUM_PARTN_AVAIL table of the SUMS DB; however, this column gets updated only when sum_rm is run, and it 
+        # isn't always the case that sum_rm gets run, so this value could be stale or inaccurate; instead, sumsd.py and 
+        # su-stewie.py (the sum_rm replacement) do not use either the avail_bytes or total_bytes (in fact, no part 
+        # of SUMS ever reads the value for total_bytes)
+        #
+        # instead, call the statfs() system call to ensure that a partition exists with at least self.request.data.numbytes 
+        # available (not that anybody who calls SUM_alloc() ever provides an accurate estimate of the number of bytes needed); 
+        # we need to call either df or os.statvfs(), both call the statfs system call; however, since statfs can hang with NFS-
+        # mounted drives, we need to call statfs() in a different process - calling it from a thread is not good enough
+        # since this could lead to a hung thread, and attempting to kill a thread is not advisable and could lead to 
+        # unpredictable behavior
         self.dbRes = []
-        self.cmd = 'SELECT partn_name FROM ' + SUM_PARTN_AVAIL + ' WHERE avail_bytes >= ' + str(self.request.data.numbytes) + ' AND pds_set_num = ' + str(partSet)
+        self.cmd = 'SELECT partn_name FROM ' + SUM_PARTN_AVAIL + ' WHERE pds_set_num = ' + str(partSet)
         self.exeDbCmd()
         
         if len(self.dbRes) < 1:
@@ -1474,8 +1493,21 @@ class AllocResponse(Response):
         for row in self.dbRes:
             if len(row) != 1:
                 raise DBCommandException('unexpected DB response to cmd: ' + self.cmd)
-        
-            partitions.append(row[0])
+                
+            # for each partition, find out how much free space exists; if we cannot find out how much free space exists 
+            # cause the os.statvfs command hung, then remove this partition from consideration
+            lock = Lock()
+            availBytes = Value(c_longlong, 0, lock=lock)
+            proc = Process(target=AllocResponse.__callStatvfs, args=(row[0], availBytes))
+            proc.start()
+            proc.join(2) # timeout after 2 seconds
+            
+            if proc.exitcode is None:
+                self.request.worker.log.writeWarning('os.statvfs(' + row[0] + ') did not terminate; skipping partition')
+                continue
+            
+            if availBytes.value >= self.request.data.numbytes: 
+                partitions.append(row[0])
             
         # if the request contains a SUNUM, then that SUNUM becomes the id of the SU being allocated; otherwise,
         # the next id in the sequence is chosen
@@ -1530,7 +1562,13 @@ class AllocResponse(Response):
         # but there were filesys changes that have to be undone
         if os.path.exists(self.data['sudir']):
             shutil.rmtree(self.data['sudir'])
-        self.request.worker.log.writeDebug([ 'undid alloc mkdir for client ' + str(self.request.worker.sock.getpeername()) ])
+        self.request.worker.log.writeDebug([ 'undid alloc mkdir for client ' + str(self.request.worker.self.getID()) ])
+
+    @staticmethod
+    def __callStatvfs(cls, suPartitionPath, rv):
+        fsStats = os.statvfs(suPartitionPath)
+        if fsStats is not None and hasattr(fsStats, 'f_bsize') and hasattr(fsStats, 'f_bavail'):
+            rv.value = fsStats.f_bsize * fsStats.f_bavail
 
     
 class PutResponse(Response):
@@ -1938,111 +1976,151 @@ class Worker(threading.Thread):
                 
     def run(self):
         try:
-            rollback = False
-            sessionOpened = False
-            sessionClosed = False
-            clientInfoReceived = False
-            history = []
+            # this try/finally block ensures that this thread will always be removed from the thread list AND
+            # it ensures that the server always closes the socket to the client
+            try:
+                rollback = False
+                sessionOpened = False
+                sessionClosed = False
+                clientInfoReceived = False
+                history = []
+                peerName = str(self.sock.getpeername()) # will raise if the socket is dead
+                self.peerName = peerName
             
-            # obtain a DB session - blocks until that happens
-            self.log.writeDebug([ 'client ' + str(self.sock.getpeername()) + ' is waiting for a DB connection' ])
+                # obtain a DB session - blocks until that happens
+                self.log.writeDebug([ 'client ' + peerName + ' is waiting for a DB connection' ])
 
-            self.dbconn = DBConnection.nextOpenConnection()
+                self.dbconn = DBConnection.nextOpenConnection()
             
-            self.log.writeDebug([ 'client ' + str(self.sock.getpeername()) + ' obtained DB connection ' + self.dbconn.getID() ])
+                self.log.writeDebug([ 'client ' + peerName + ' obtained DB connection ' + self.dbconn.getID() ])
             
-            while True:
-                # The client must pass in some identifying information (other than their IP address).
-                # Receive that information now.
-                try:
-                    if not clientInfoReceived:
+                while True:
+                    # The client must pass in some identifying information (other than their IP address).
+                    # Receive that information now.
+                    try:
+                        if not clientInfoReceived:
+                            msgStr = self.receiveJson() # msgStr is a string object.
+                            self.extractClientInfo(msgStr)
+                            clientInfoReceived = True
+
+                        # First, obtain request.
                         msgStr = self.receiveJson() # msgStr is a string object.
-                        self.extractClientInfo(msgStr)
-                        clientInfoReceived = True
-
-                    # First, obtain request.
-                    msgStr = self.receiveJson() # msgStr is a string object.
                 
-                    self.extractRequest(msgStr) # Will raise if reqtype is not supported.
+                        self.extractRequest(msgStr) # Will raise if reqtype is not supported.
                     
-                    # raise an error if there is an attempt to open a session when there is a session already opened
-                    if isinstance(self.request, OpenRequest) and sessionOpened:
-                        raise SessionOpenedException('cannot process a ' + self.request.getType() + ' request - a SUMS session is already open for client ' + str(self.sock.getpeername()))
+                        # raise an error if there is an attempt to open a session when there is a session already opened
+                        if isinstance(self.request, OpenRequest) and sessionOpened:
+                            raise SessionOpenedException('cannot process a ' + self.request.getType() + ' request - a SUMS session is already open for client ' + peerName)
                     
-                    # check the request type - if not an open request and sessionOpened == False, then raise an error
-                    if not isinstance(self.request, OpenRequest) and not sessionOpened:
-                        raise SessionClosedException('cannot process a ' + self.request.getType() + ' request - no SUMS session is open for client ' + str(self.sock.getpeername()))
+                        # check the request type - if not an open request and sessionOpened == False, then raise an error
+                        if not isinstance(self.request, OpenRequest) and not sessionOpened:
+                            raise SessionClosedException('cannot process a ' + self.request.getType() + ' request - no SUMS session is open for client ' + peerName)
                         
-                    # reject any request that follows a close request (this should never happen)
-                    if sessionClosed:
-                        raise SessionClosedException('cannot process a ' + self.request.getType() + ' request - the SUMS session is closed for client ' + str(self.sock.getpeername()))
+                        # reject any request that follows a close request (this should never happen)
+                        if sessionClosed:
+                            raise SessionClosedException('cannot process a ' + self.request.getType() + ' request - the SUMS session is closed for client ' + peerName)
 
-                    if isinstance(self.request, OpenRequest):
-                        sessionOpened = True
-                    elif isinstance(self.request, CloseRequest):
-                        sessionClosed = True
-                    elif isinstance(self.request, RollbackRequest):
-                        rollback = True
+                        if isinstance(self.request, OpenRequest):
+                            sessionOpened = True
+                        elif isinstance(self.request, CloseRequest):
+                            sessionClosed = True
+                        elif isinstance(self.request, RollbackRequest):
+                            rollback = True
 
-                    self.log.writeInfo([ 'new ' + self.request.reqType + ' request from process ' + str(self.clientInfo.data.pid) + ' by user ' + self.clientInfo.data.user + ' at ' + str(self.sock.getpeername()) + ':' + str(self.request) ])
+                        self.log.writeInfo([ 'new ' + self.request.reqType + ' request from process ' + str(self.clientInfo.data.pid) + ' by user ' + self.clientInfo.data.user + ' at ' + peerName + ':' + str(self.request) ])
 
-                    msgStr = self.generateResponse() # a str object; generating a response can modify the DB and commit changes
+                        msgStr = self.generateResponse() # a str object; generating a response can modify the DB and commit changes
                     
-                    # save for potential clean-up
-                    if not isinstance(self.request, RollbackRequest):
-                        history.append(self.response)
-                except SocketConnectionException as exc:
-                    rollback = True
-                    msgStr = self.generateErrorResponse(RESPSTATUS_BROKENCONNECTION, exc.args[0])
-                except UnjsonizerException as exc:
-                    rollback = True
-                    msgStr = self.generateErrorResponse(RESPSTATUS_JSON, exc.args[0])
-                except JsonizerException as exc:
-                    rollback = True
-                    msgStr = self.generateErrorResponse(RESPSTATUS_JSON, exc.args[0])
-                except ClientInfoException as exc:
-                    rollback = True
-                    msgStr = self.generateErrorResponse(RESPSTATUS_CLIENTINFO, exc.args[0])
-                except ReceiveMsgException as exc:
-                    rollback = True
-                    msgStr = self.generateErrorResponse(RESPSTATUS_MSGRECEIVE, exc.args[0])
-                except SendMsgException as exc:
-                    rollback = True
-                    msgStr = self.generateErrorResponse(RESPSTATUS_MSGSEND, exc.args[0])
-                except ExtractRequestException as exc:
-                    rollback = True
-                    msgStr = self.generateErrorResponse(RESPSTATUS_REQ, exc.args[0])
-                except RequestTypeException as exc:
-                    rollback = True
-                    msgStr = self.generateErrorResponse(RESPSTATUS_REQTYPE, exc.args[0])
-                except SessionClosedException as exc:
-                    rollback = True
-                    msgStr = self.generateErrorResponse(RESPSTATUS_SESSIONCLOSED, exc.args[0])    
-                except SessionOpenedException as exc:
-                    rollback = True
-                    msgStr = self.generateErrorResponse(RESPSTATUS_SESSIONOPENED, exc.args[0])
-                except GenerateResponseException as exc:
-                    rollback = True
-                    self.log.writeError([ 'failure creating response' ])
-                    self.log.writeError([ exc.args[0] ])
-                    import traceback
-                    self.log.writeError([ traceback.format_exc(3) ])
-                    msgStr = self.generateErrorResponse(RESPSTATUS_GENRESPONSE, exc.args[0])
-                except:
-                    import traceback
-                    self.log.writeError([ traceback.format_exc(3) ])
+                        # save for potential clean-up
+                        if not isinstance(self.request, RollbackRequest):
+                            history.append(self.response)
+                    except SocketConnectionException as exc:
+                        rollback = True
+                        msgStr = self.generateErrorResponse(RESPSTATUS_BROKENCONNECTION, exc.args[0])
+                    except UnjsonizerException as exc:
+                        rollback = True
+                        msgStr = self.generateErrorResponse(RESPSTATUS_JSON, exc.args[0])
+                    except JsonizerException as exc:
+                        rollback = True
+                        msgStr = self.generateErrorResponse(RESPSTATUS_JSON, exc.args[0])
+                    except ClientInfoException as exc:
+                        rollback = True
+                        msgStr = self.generateErrorResponse(RESPSTATUS_CLIENTINFO, exc.args[0])
+                    except ReceiveMsgException as exc:
+                        rollback = True
+                        msgStr = self.generateErrorResponse(RESPSTATUS_MSGRECEIVE, exc.args[0])
+                    except SendMsgException as exc:
+                        rollback = True
+                        msgStr = self.generateErrorResponse(RESPSTATUS_MSGSEND, exc.args[0])
+                    except ExtractRequestException as exc:
+                        rollback = True
+                        msgStr = self.generateErrorResponse(RESPSTATUS_REQ, exc.args[0])
+                    except RequestTypeException as exc:
+                        rollback = True
+                        msgStr = self.generateErrorResponse(RESPSTATUS_REQTYPE, exc.args[0])
+                    except SessionClosedException as exc:
+                        rollback = True
+                        msgStr = self.generateErrorResponse(RESPSTATUS_SESSIONCLOSED, exc.args[0])    
+                    except SessionOpenedException as exc:
+                        rollback = True
+                        msgStr = self.generateErrorResponse(RESPSTATUS_SESSIONOPENED, exc.args[0])
+                    except GenerateResponseException as exc:
+                        rollback = True
+                        self.log.writeError([ 'failure creating response' ])
+                        self.log.writeError([ exc.args[0] ])
+                        import traceback
+                        self.log.writeError([ traceback.format_exc(3) ])
+                        msgStr = self.generateErrorResponse(RESPSTATUS_GENRESPONSE, exc.args[0])
+                    except:
+                        import traceback
+                        self.log.writeError([ traceback.format_exc(3) ])
 
-                if self.response:
-                    self.log.writeDebug([ 'response:' + str(self.response) ])
-                # Send results back on the socket, which is connected to a single DRMS module. By sending the results
-                # back, the client request is completed. We want to construct a list of "SUM_info" objects. Each object
-                # { sunum:12592029, onlineloc:'/SUM52/D12592029', ...}
-                self.sendJson(msgStr) # Expects a str object.
+                    if self.response:
+                        self.log.writeDebug([ 'response:' + str(self.response) ])
+                    # Send results back on the socket, which is connected to a single DRMS module. By sending the results
+                    # back, the client request is completed. We want to construct a list of "SUM_info" objects. Each object
+                    # { sunum:12592029, onlineloc:'/SUM52/D12592029', ...}
+                    self.sendJson(msgStr) # Expects a str object.
                 
-                if sessionClosed or rollback:
-                    break
-                # end session loop
+                    if sessionClosed or rollback:
+                        break
+                    # end session loop
 
+                if rollback:
+                    # now we need to figure out the state of the system; a series of API calls were processed and any one of them
+                    # could have failed; clean-up for the call that failed already happened, but we need to clean-up anything
+                    # in the pipeline before this call that made changes to SUMS
+                    for request in reversed(history):
+                        request.undo()
+                    self.dbconn.rollback()
+                    rollback = False
+                else:
+                    # commit the db changes
+                    self.dbconn.commit()
+            
+                # This thread is about to terminate. We don't want to end this thread before
+                # the client closes the socket though. Otherwise, our socket will get stuck in 
+                # the TIME_WAIT state. So, perform another read, and end the thread after the client
+                # has broken the connection. recv() will block till the client kills the connection
+                # (or it inappropriately sends more data over the connection).
+                textReceived = self.sock.recv(Worker.MAX_MSG_BUFSIZE)
+                # self.sock can be dead if the client broke the socket - getpeername() will raise; avoid using
+                # it here
+                if textReceived == b'':
+                    # The client closed their end of the socket.
+                    self.log.writeDebug([ 'client ' + peerName + ' properly terminated connection' ])
+                else:
+                    self.log.writeDebug([ 'client ' + peerName + ' sent extraneous data over socket connection (ignoring)' ])
+            except SocketConnectionException as exc:
+                # Don't send message back - we can't communicate with the client properly, so only log a message on the server side.
+                self.log.writeError([ 'there was a problem communicating with client ' + peerName ])
+                self.log.writeError([ exc.args[0] ])
+                rollback = True
+            except Exception as exc:
+                import traceback
+                self.log.writeError([ traceback.format_exc(5) ])
+                rollback = True
+            
             if rollback:
                 # now we need to figure out the state of the system; a series of API calls were processed and any one of them
                 # could have failed; clean-up for the call that failed already happened, but we need to clean-up anything
@@ -2054,69 +2132,40 @@ class Worker(threading.Thread):
             else:
                 # commit the db changes
                 self.dbconn.commit()
-            
-            # This thread is about to terminate. We don't want to end this thread before
-            # the client closes the socket though. Otherwise, our socket will get stuck in 
-            # the TIME_WAIT state. So, perform another read, and end the thread after the client
-            # has broken the connection. recv() will block till the client kills the connection
-            # (or it inappropriately sends more data over the connection).
-            textReceived = self.sock.recv(Worker.MAX_MSG_BUFSIZE)
-            if textReceived == b'':
-                # The client closed their end of the socket.
-                self.log.writeDebug([ 'client ' + str(self.sock.getpeername()) + ' properly terminated connection' ])
-            else:
-                self.log.writeDebug([ 'client ' + str(self.sock.getpeername()) + ' sent extraneous data over socket connection (ignoring)' ])
-        except SocketConnectionException as exc:
-            # Don't send message back - we can't communicate with the client properly, so only log a message on the server side.
-            self.log.writeError([ 'there was a problem communicating with client ' + str(self.sock.getpeername()) ])
-            self.log.writeError([ exc.args[0] ])
-            rollback = True
-        except Exception as exc:
-            import traceback
-            self.log.writeError([ traceback.format_exc(5) ])
-            rollback = True
-            
-        if rollback:
-            # now we need to figure out the state of the system; a series of API calls were processed and any one of them
-            # could have failed; clean-up for the call that failed already happened, but we need to clean-up anything
-            # in the pipeline before this call that made changes to SUMS
-            for request in reversed(history):
-                request.undo()
-            self.dbconn.rollback()
-            rollback = False
-        else:
-            # commit the db changes
-            self.dbconn.commit()
-
-        # We need to check the class tList variable to update it, so we need to acquire the lock.
-        try:
-            Worker.lockTList()
-            self.log.writeDebug([ 'class Worker acquired Worker lock for client ' + str(self.sock.getpeername()) ])
-            Worker.tList.remove(self) # This thread is no longer one of the running threads.
-            if len(Worker.tList) == Worker.maxThreads - 1:
-                # Fire event so that main thread can add new SUs to the download queue.
-                Worker.eventMaxThreads.set()
-                # Clear event so that main will block the next time it calls wait.
-                Worker.eventMaxThreads.clear()
-        except Exception as exc:
-            import traceback
-            self.log.writeError([ 'there was a problem closing the Worker thread for client ' + str(self.sock.getpeername()) ])
-            self.log.writeError([ traceback.format_exc(0) ])
         finally:
-            Worker.unlockTList()
-            self.log.writeDebug([ 'class Worker released Worker lock for client ' + str(self.sock.getpeername()) ])
+            # We need to check the class tList variable to update it, so we need to acquire the lock.
+            try:
+                Worker.lockTList()
+                self.log.writeDebug([ 'class Worker acquired Worker lock for client ' + peerName ])
+                Worker.tList.remove(self) # This thread is no longer one of the running threads.
+                if len(Worker.tList) == Worker.maxThreads - 1:
+                    # Fire event so that main thread can add new SUs to the download queue.
+                    Worker.eventMaxThreads.set()
+                    # Clear event so that main will block the next time it calls wait.
+                    Worker.eventMaxThreads.clear()
+            except Exception as exc:
+                import traceback
+                self.log.writeError([ 'there was a problem closing the Worker thread for client ' + speerName ])
+                self.log.writeError([ traceback.format_exc(0) ])
+            finally:
+                Worker.unlockTList()
+                self.log.writeDebug([ 'class Worker released Worker lock for client ' + peerName ])
                 
-            # do not close DB connection, but release it for the next worker
-            self.dbconn.release()
-            self.log.writeDebug([ 'worker released DB connection ' + self.dbconn.getID() + ' for client ' + str(self.sock.getpeername()) ])
+                # do not close DB connection, but release it for the next worker
+                self.dbconn.release()
+                self.log.writeDebug([ 'worker released DB connection ' + self.dbconn.getID() + ' for client ' + peerName ])
 
-            # Always shut-down server-side of client socket pair.
-            self.log.writeDebug([ 'shutting down server side of client socket ' + str(self.sock.getpeername()) ])
-            self.sock.shutdown(socket.SHUT_RDWR)
-            self.sock.close()
+                # Always shut-down server-side of client socket pair.
+                self.log.writeDebug([ 'shutting down server side of client socket ' + peerName ])
+                self.sock.shutdown(socket.SHUT_RDWR)
+                self.sock.close()
             
     def getID(self):
-        return str(self.sock.getpeername())
+        if hasattr(self, 'peerName') and self.peerName and len(self.peerName) > 0:
+            return self.peerName
+        else:
+            # will raise if the socket has been closed by client
+            return str(self.sock.getpeername())
     
     def extractClientInfo(self, msg):
         # msg is JSON:
@@ -2127,7 +2176,7 @@ class Worker(threading.Thread):
         # 
         # The pid is a JSON number, which could be a double string. But the client
         # will make sure that the number is a 32-bit integer.
-        self.log.writeDebug([ str(self.sock.getpeername()) + ' extracting client info' ])
+        self.log.writeDebug([ self.getID() + ' extracting client info' ])
         
         clientInfo = Unjsonizer(msg)
         
@@ -2181,7 +2230,7 @@ class Worker(threading.Thread):
                 raise SendMsgException('socket broken - cannot send message data to client')
             bytesSentTotal += bytesSent
 
-        self.log.writeDebug([ str(self.sock.getpeername()) + ' - sent ' + str(bytesSentTotal) + ' bytes response' ])
+        self.log.writeDebug([ self.getID() + ' - sent ' + str(bytesSentTotal) + ' bytes response' ])
     
     # Returns a bytes object.
     def receiveMsg(self):
@@ -2437,13 +2486,49 @@ if __name__ == "__main__":
         thContainer = [ arguments, str(pid), log ]
         with TerminationHandler(thContainer) as th:
             try:
-                serverSock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                # Bind to any IP address that this server is running on - the empty string
-                # represent INADDR_ANY. I DON'T KNOW HOW TO MAKE THIS WORK!!
-                # serverSock.bind(('', int(sumsDrmsParams.get('SUMSD_LISTENPORT'))))
-                # serverSock.bind((socket.gethostname(), int(sumsDrmsParams.get('SUMSD_LISTENPORT'))))
-                serverSock.bind((sumsDrmsParams.get('SUMSERVER'), arguments.getArg('listenport')))
-                serverSock.listen(5)
+                # use getaddrinfo() to try as many families/protocols as are supported; it returns a list
+                remoteAddresses = socket.getaddrinfo(sumsDrmsParams.get('SUMSERVER'), int(sumsDrmsParams.get('SUMSD_LISTENPORT')))
+            
+                for address in remoteAddresses:
+                    family = address[0]
+                    sockType = address[1]
+                    proto = address[2]
+                    
+                    try:
+                        log.writeInfo([ 'attempting to create socket with family ' + str(family) + ' and socket type ' + str(sockType) ])
+                        serverSock = socket.socket(family, sockType, proto)
+                        log.writeInfo([ 'successfully created socket with family ' + str(family) + ' and socket type ' + str(sockType) ])
+                    except OSError:
+                        import traceback
+                        
+                        log.writeWarning([ traceback.format_exc(5) ])
+                        log.writeWarning([ 'trying next address' ])
+                        if serverSock:
+                            serverSock.close()
+                        continue
+                    
+                    # now try binding
+                    try:
+                        log.writeInfo([ 'attempting to bind socket to address ' + sumsDrmsParams.get('SUMSERVER') + ':' + sumsDrmsParams.get('SUMSD_LISTENPORT') ])
+                        serverSock.bind((sumsDrmsParams.get('SUMSERVER'), int(sumsDrmsParams.get('SUMSD_LISTENPORT'))))
+                        log.writeInfo([ 'successfully bound socket to address ' + sumsDrmsParams.get('SUMSERVER') + ':' + sumsDrmsParams.get('SUMSD_LISTENPORT') ])
+                        break # we're good!
+                    except OSError:
+                        import traceback
+                        
+                        log.writeWarning([ traceback.format_exc(5) ])
+                        log.writeWarning([ 'trying next address' ])
+                        if serverSock:
+                            serverSock.close()
+                        continue
+
+                # it is possible that we never succeeded in creating and binding the socket
+                try:
+                    serverSock.listen(5)
+                except OSError:
+                    log.writeError([ 'could not create socket to listen for client requests' ])
+                    raise
+                    
                 log.writeCritical([ 'listening for client requests on ' + str(serverSock.getsockname()) ])
             except Exception as exc:
                 raise SocketConnectionException(exc.args[0])

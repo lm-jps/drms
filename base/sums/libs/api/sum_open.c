@@ -565,7 +565,7 @@ static MSUMSCLIENT_t ConnectToMtSums(SUM_t *sums, int (*history)(const char *fmt
     {
         memset(&hints, 0, sizeof(struct addrinfo));
         hints.ai_flags = 0; /* A field to make this as complicated as possible. */
-        hints.ai_family = AF_INET;
+        hints.ai_family = AF_UNSPEC;
         hints.ai_socktype = SOCK_STREAM;
         hints.ai_protocol = 0; /* Another field to make this as complicated as possible. */
 
@@ -578,25 +578,34 @@ static MSUMSCLIENT_t ConnectToMtSums(SUM_t *sums, int (*history)(const char *fmt
         }
         else
         {
-            if ((sockfd = socket(result->ai_family, result->ai_socktype, result->ai_protocol)) == -1)
+            struct addrinfo *address = NULL;
+            
+            for (address = result; address != NULL; address = address->ai_next)
             {
-                (*history)("Unable to create socket to sumsd.py.\n");
-            }
-            else
-            {
-                /* connect the socket to the server's address */
-                if (connect(sockfd, result->ai_addr, result->ai_addrlen) == -1)
+                if ((sockfd = socket(address->ai_family, address->ai_socktype, address->ai_protocol)) == -1)
                 {
-                    (*history)("Unable to connect to SUMS server (errno = %d).\n", errno);
+                    (*history)("Unable to create socket to sumsd.py with address.\n");
+                    continue;
                 }
                 else
                 {
-                    msums = (MSUMSCLIENT_t)sockfd;
+                    /* connect the socket to the server's address */
+                    if (connect(sockfd, result->ai_addr, result->ai_addrlen) == -1)
+                    {
+                        (*history)("Unable to connect to SUMS server with address (errno = %d).\n", errno);
+                        close(sockfd);
+                        sockfd = -1;
+                    }
+                    else
+                    {
+                        msums = (MSUMSCLIENT_t)sockfd;
+                        break;
+                    }
                 }
-    
-                freeaddrinfo(result);
-            }
+            }            
         }
+        
+        freeaddrinfo(result);
         
         /* Every time we connect to MT SUMS, we send the server client information. */
         if (msums != -1)
@@ -1629,7 +1638,11 @@ for(j=0; j < numSUM; j++) {
 /* Close this session with the SUMS. Return non 0 on error.
  * NOTE: error 4 is Connection reset by peer, sum_svc probably gone.
 */
+#if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || (!defined(SUMS_USEMTSUMS_CONNECTION) || !SUMS_USEMTSUMS_CONNECTION)
+int sumsopenClose(SUM_t *sums, int (*history)(const char *fmt, ...))
+#else
 int sumsopenClose(SUM_t *sums, MTSums_CallType_t callType, int (*history)(const char *fmt, ...))
+#endif
 {
   KEY *klist = NULL;
   char *call_err;
@@ -4696,7 +4709,7 @@ SUM_t *SUM_open(char *server, char *db, int (*history)(const char *fmt, ...))
 
 int SUM_close(SUM_t *sum, int (*history)(const char *fmt, ...))
 {
-    return sumsopenClose(sum, kMTSums_CallType_Close, history);
+    return sumsopenClose(sum, history);
 }
 #endif /* RPC SUMS CONNECTION family */
 
