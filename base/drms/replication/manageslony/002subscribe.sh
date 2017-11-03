@@ -1,5 +1,17 @@
 #!/bin/sh
 
+# DO NOT USE!! publish.pl performs this task. It creates a NEW Slony replication set, adds a single table
+# to this set, and then calls slonik subscribe set. When the slony server code was set-up, a single replication
+# set (set ID == 1) was created. No tables were added to that set. 
+#
+# publish.pl creates a new, independent replication set, and adds a single table to this set. Asynchronously, 
+# merge_rep_sets runs slonik merge set to move the tables from the new replication set to the original set
+# created with installNetDRMS.py. merge set then deletes the new replication set (which is now empty).
+#
+# merge_rep_set is called from a cron task:
+# # merge_rep_sets cron task for the script that merges any excess replication sets to the first
+# * * * * * /home/jsoc/cvs/Development/JSOC/base/drms/replication/publishseries/merge_rep_sets /home/jsoc/cvs/Development/JSOC/proj/replication/etc/repserver.cfg >> /usr/local/pgsql/replication/live/log/cron.merge_rep_sets.log 2>&1
+
 if [ $# -eq 1 ]
 then
     # Must always be a config file

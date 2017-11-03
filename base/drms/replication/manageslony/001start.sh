@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# MIGRATED this code to installNetDRMS.py
+
 if [ $# -eq 1 ]
 then
     # Must always be a config file
