@@ -1,4 +1,4 @@
-#!/home/jsoc/bin/linux_x86_64/perl -w
+#!/usr/bin/env perl
 
 # Creates a new DRMS user:
 #  1. creates a new db user with name specified by $dbuser
@@ -7,7 +7,7 @@
 
 # template cmd-line:
 #  newdrmsuser.pl jsoc hmidb 5432 arta changeme su_arta user 0
-
+use warnings;
 use DBI;
 use DBD::Pg;
 
