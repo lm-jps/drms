@@ -164,6 +164,11 @@ JMD_URL                       http://localhost:8080/JMD/JMD
 ###############################
 # Parameters for remote sums - these parameters allow configuration of the remote-sums components
 
+# The CGI of the site that maps requested SUs to sites that provide those SUs. The CGI
+# maps the SU site code to a NetDRMS site's SU-path CGI (the cgi that provides
+# paths for SUNUMs).
+RS_SITE_INFO_URL                      http://jsoc.stanford.edu/cgi-bin/rssites.sh
+
 # The database table that lists the remote sites, their site codes, and their base urls that provide access to the rs.py CGI.
 # Each site that provides SUs to other sites must have a rs.py CGI that provides the scp path to the site requesting the SUs.
 RS_SITE_TABLE                         drms.rs_sites

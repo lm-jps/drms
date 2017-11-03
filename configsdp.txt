@@ -60,6 +60,7 @@ q:SUMRM_NORUN_STOP              0
 p:JMD_IS_INSTALLED              0
 q:JMD_URL                       http://localhost:8080/JMD/JMD
 # Remote SUMS
+q:RS_SITE_INFO_URL                      http://jsoc.stanford.edu/cgi-bin/rssites.sh
 q:RS_SITE_TABLE                         drms.rs_sites
 q:RS_REQUEST_TABLE                      drms.rs_requests
 q:RS_SU_TABLE                           drms.rs_sus
