@@ -1503,10 +1503,11 @@ class AllocResponse(Response):
             proc.join(2) # timeout after 2 seconds
             
             if proc.exitcode is None:
-                self.request.worker.log.writeWarning('os.statvfs(' + row[0] + ') did not terminate; skipping partition')
+                self.request.worker.log.writeWarning([ 'os.statvfs(' + row[0] + ') did not terminate; skipping partition' ])
                 continue
             
-            if availBytes.value >= self.request.data.numbytes: 
+            if availBytes.value >= self.request.data.numbytes:
+                self.request.worker.log.writeInfo([ 'partition ' + row[0] + ' has sufficient disk space; added to available list' ])
                 partitions.append(row[0])
             
         # if the request contains a SUNUM, then that SUNUM becomes the id of the SU being allocated; otherwise,
@@ -1527,6 +1528,7 @@ class AllocResponse(Response):
         # partitions.
         randIndex = random.randint(0, len(partitions) - 1)
         partition = partitions[randIndex]
+        self.request.worker.log.writeInfo([ 'partition ' + partition + ' was randomly chosen to satisfy allocation request' ])
         sudir = os.path.join(partition, 'D' + str(sunum))
         
         try:
@@ -1564,7 +1566,7 @@ class AllocResponse(Response):
             shutil.rmtree(self.data['sudir'])
         self.request.worker.log.writeDebug([ 'undid alloc mkdir for client ' + str(self.request.worker.self.getID()) ])
 
-    @staticmethod
+    @classmethod
     def __callStatvfs(cls, suPartitionPath, rv):
         fsStats = os.statvfs(suPartitionPath)
         if fsStats is not None and hasattr(fsStats, 'f_bsize') and hasattr(fsStats, 'f_bavail'):
