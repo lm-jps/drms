@@ -1300,9 +1300,14 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
 	   
            inprogress=-1;
            ntries = 0;
-           while ((inprogress = session_status(ps.session_id)) > 0 && ntries < 24)
+           
+            int timeOutSecs = 1 * 60 * 60; /* 1 hour */
+            int sleepSecs = 10;
+            int maxTries = timeOutSecs / sleepSecs;
+           
+           while ((inprogress = session_status(ps.session_id)) > 0 && ntries < maxTries)
            {
-              sleep(10);
+              sleep(sleepSecs);
               ntries++;
            }
 
@@ -1713,7 +1718,10 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
            }
            else
            {
-              retrysus = list_llcreate(sizeof(DRMS_StorageUnit_t *), NULL);
+                if (!retrysus)
+                {
+                    retrysus = list_llcreate(sizeof(DRMS_StorageUnit_t *), NULL);
+                }
 
               for (isu = start, iSUMSsunum = 0; isu < end; isu++, iSUMSsunum++)
               {
@@ -1804,15 +1812,29 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
           were not remaining constant (memory orverwrite?).
 	 */
 	    ntries = 0;
-        while ((inprogress = session_status(ps.session_id)) > 0 && ntries < 40) 
+	    int timeOutSecs = 12 * 60 * 60; /* 12 hours */
+	    int sleepSecs = 10;
+	    int maxTries = timeOutSecs / sleepSecs;
+	    
+        while ((inprogress = session_status(ps.session_id)) > 0 && ntries < maxTries) 
         {
-           sleep(10);
-           ntries++;
+            /* if this time-out happens, then no code below gets executed, and the sudirs of the SUs that the JMD fetches 
+             * are not properly initialized (the sudirs remain "rs") */
+            sleep(sleepSecs);
+            ntries++;
         }
 
         //free any post structures
         free_post_request(postmap);
         free(postrequeststr);
+        
+        if (ntries >= maxTries)
+        {
+            /* time-out occurred, set error status */
+            sustatus = DRMS_REMOTESUMS_TRYLATER;
+            tryagain = 0;
+            break;
+        }
 
         if (0 == inprogress)
         {
@@ -1841,7 +1863,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
 
            if (retrysus)
            {
-              list_llfree(&retrysus);
+              list_llfree(&retrysus); /* sets retrysus to NULL */
            }
 
            workingsus = rsumssus;
@@ -1940,7 +1962,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
                      
                      if (retrysus)
                      {
-                         list_llfree(&retrysus);
+                         list_llfree(&retrysus); /* sets retrysus to NULL */
                      }
                      
                      workingsus = rsumssus;
