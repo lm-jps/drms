@@ -2504,7 +2504,7 @@ if __name__ == "__main__":
         with TerminationHandler(thContainer) as th:
             try:
                 # use getaddrinfo() to try as many families/protocols as are supported; it returns a list
-                remoteAddresses = socket.getaddrinfo(sumsDrmsParams.get('SUMSERVER'), int(sumsDrmsParams.get('SUMSD_LISTENPORT')))
+                remoteAddresses = socket.getaddrinfo(sumsDrmsParams.get('SUMSERVER'), arguments.getArg('listenport'))
             
                 for address in remoteAddresses:
                     family = address[0]
@@ -2526,9 +2526,9 @@ if __name__ == "__main__":
                     
                     # now try binding
                     try:
-                        log.writeInfo([ 'attempting to bind socket to address ' + sumsDrmsParams.get('SUMSERVER') + ':' + sumsDrmsParams.get('SUMSD_LISTENPORT') ])
-                        serverSock.bind((sumsDrmsParams.get('SUMSERVER'), int(sumsDrmsParams.get('SUMSD_LISTENPORT'))))
-                        log.writeInfo([ 'successfully bound socket to address ' + sumsDrmsParams.get('SUMSERVER') + ':' + sumsDrmsParams.get('SUMSD_LISTENPORT') ])
+                        log.writeInfo([ 'attempting to bind socket to address ' + sumsDrmsParams.get('SUMSERVER') + ':' + str(arguments.getArg('listenport')) ])
+                        serverSock.bind((sumsDrmsParams.get('SUMSERVER'), arguments.getArg('listenport')))
+                        log.writeInfo([ 'successfully bound socket to address ' + sumsDrmsParams.get('SUMSERVER') + ':' + str(arguments.getArg('listenport')) ])
                         break # we're good!
                     except OSError:
                         import traceback
@@ -2557,7 +2557,7 @@ if __name__ == "__main__":
             # At this point, the server is listening, so it is OK to try to connect to it.
             if arguments.getArg('test'):
                 clientSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                client = TestClient(clientSocket, int(sumsDrmsParams.get('SUMSD_LISTENPORT')), log)
+                client = TestClient(clientSocket, arguments.getArg('listenport'), log)
                 client.start()
 
             pollObj = select.poll()
