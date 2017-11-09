@@ -1985,6 +1985,7 @@ class Worker(threading.Thread):
                 sessionOpened = False
                 sessionClosed = False
                 clientInfoReceived = False
+                pureMT = True
                 history = []
                 peerName = str(self.sock.getpeername()) # will raise if the socket is dead
                 self.peerName = peerName
@@ -2010,24 +2011,38 @@ class Worker(threading.Thread):
                 
                         self.extractRequest(msgStr) # Will raise if reqtype is not supported.
                     
-                        # raise an error if there is an attempt to open a session when there is a session already opened
-                        if isinstance(self.request, OpenRequest) and sessionOpened:
-                            raise SessionOpenedException('cannot process a ' + self.request.getType() + ' request - a SUMS session is already open for client ' + peerName)
+                        if not sessionOpened and not isinstance(self.request, OpenRequest):
+                            # the first request from this client not an open request, so this client is using both
+                            # RPC and MT SUMS
+                            pureMT = False
                     
-                        # check the request type - if not an open request and sessionOpened == False, then raise an error
-                        if not isinstance(self.request, OpenRequest) and not sessionOpened:
-                            raise SessionClosedException('cannot process a ' + self.request.getType() + ' request - no SUMS session is open for client ' + peerName)
-                        
-                        # reject any request that follows a close request (this should never happen)
-                        if sessionClosed:
-                            raise SessionClosedException('cannot process a ' + self.request.getType() + ' request - the SUMS session is closed for client ' + peerName)
-
-                        if isinstance(self.request, OpenRequest):
-                            sessionOpened = True
-                        elif isinstance(self.request, CloseRequest):
+                        if not pureMT:
+                            # if we have a mix of MT SUMS and RPC SUMS, then there are no true SUMS sessions; in this case, we 
+                            # want to close the session after responding now; a client is pure MT if the first call to sumsd.py
+                            # is an open request; it is not allowed to configure the client such that the RPC SUMS can be used 
+                            # for any if the MT open request is called
                             sessionClosed = True
-                        elif isinstance(self.request, RollbackRequest):
-                            rollback = True
+                        else:
+                            # we have true SUMS sessions; loop through them until a close request (or rollback request) is received
+
+                            # raise an error if there is an attempt to open a session when there is a session already opened
+                            if isinstance(self.request, OpenRequest) and sessionOpened:
+                                raise SessionOpenedException('cannot process a ' + self.request.getType() + ' request - a SUMS session is already open for client ' + peerName)
+                    
+                            # check the request type - if not an open request and sessionOpened == False, then raise an error
+                            if not isinstance(self.request, OpenRequest) and not sessionOpened:
+                                raise SessionClosedException('cannot process a ' + self.request.getType() + ' request - no SUMS session is open for client ' + peerName)
+                        
+                            # reject any request that follows a close request (this should never happen)
+                            if sessionClosed:
+                                raise SessionClosedException('cannot process a ' + self.request.getType() + ' request - the SUMS session is closed for client ' + peerName)
+
+                            if isinstance(self.request, OpenRequest):
+                                sessionOpened = True
+                            elif isinstance(self.request, CloseRequest):
+                                sessionClosed = True
+                            elif isinstance(self.request, RollbackRequest):
+                                rollback = True
 
                         self.log.writeInfo([ 'new ' + self.request.reqType + ' request from process ' + str(self.clientInfo.data.pid) + ' by user ' + self.clientInfo.data.user + ' at ' + peerName + ':' + str(self.request) ])
 

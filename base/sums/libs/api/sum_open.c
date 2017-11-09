@@ -4331,7 +4331,12 @@ int callMTSums(SUM_t *sums, MTSums_CallType_t callType, JSONIZER_DATA_t *data, i
     
     if (!err)
     {
+#if (defined(SUMS_USEMTSUMS_ALL) && SUMS_USEMTSUMS_ALL)
+        /* pure MT SUMS */
         if (callType == kMTSums_CallType_Open)
+#else
+        /* mixed MT and RPC SUMS */
+#endif
         {
             if (!sums || sums->mSumsClient != -1 || ConnectToMtSums(sums, history) == -1)
             {
@@ -4366,7 +4371,12 @@ int callMTSums(SUM_t *sums, MTSums_CallType_t callType, JSONIZER_DATA_t *data, i
         err = unjsonizeResponse(sums, callType, response, history);
     }
 
+#if (defined(SUMS_USEMTSUMS_ALL) && SUMS_USEMTSUMS_ALL)
+    /* pure MT SUMS */
     if (callType == kMTSums_CallType_Close || callType == kMTSums_CallType_Rollback)
+#else
+    /* mixed MT and RPC SUMS */
+#endif
     {
         DisconnectFromMtSums(sums);
     }
