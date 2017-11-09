@@ -6028,23 +6028,31 @@ KEY *respdo_1(KEY *params)
   reqcode = getkey_int(params, "REQCODE");
   sum->status = getkey_int(params, "STATUS");
   
-    if (sum->wd)
+    if (reqcode == ALLOCDO || reqcode == GETDO)
     {
-        /* this may have been allocated from a previous call */
-        free(sum->wd);
-        sum->wd = NULL;
+        /* these two calls will set the SUdirs, and we do not know exactly how many bytes were allocated to sum->wd */
+        if (sum->wd)
+        {
+            /* this may have been allocated from a previous call */
+            free(sum->wd);
+            sum->wd = NULL;
+        }
+
+        sum->wd = (char **)calloc(reqcnt, sizeof(char *));
     }
-
-    sum->wd = (char **)calloc(reqcnt, sizeof(char *));
-
-    if (sum->dsix_ptr)
+    
+    if (reqcode == ALLOCDO)
     {
-        /* this may have been allocated from a previous call */
-        free(sum->dsix_ptr);
-        sum->dsix_ptr = NULL;
-    }
+        /* this call is also going to set the SUNUM */    
+        if (sum->dsix_ptr)
+        {
+            /* this may have been allocated from a previous call */
+            free(sum->dsix_ptr);
+            sum->dsix_ptr = NULL;
+        }
 
-    sum->dsix_ptr = (char **)calloc(reqcnt, sizeof(uint64_t));
+        sum->dsix_ptr = (uint64_t *)calloc(reqcnt, sizeof(uint64_t));
+    }
 
   cptr = sum->wd;
   dsixpt = sum->dsix_ptr;
@@ -6170,8 +6178,8 @@ static void respd(rqstp, transp)
     Rkey respdo_1_arg;
   } argument;
   char *result;
-  bool_t (*xdr_argument)(), (*xdr_result)();
-  char *(*local)();
+  bool_t (*xdr_argument)(void), (*xdr_result)(void);
+  char *(*local)(void *, void *);
 
   switch (rqstp->rq_proc) {
   case NULLPROC:
@@ -6180,13 +6188,13 @@ static void respd(rqstp, transp)
   case RESPDO:
     xdr_argument = xdr_Rkey;
     xdr_result = xdr_void;
-    local = (char *(*)()) respdo_1;
+    local = (char *(*)(void *, void *)) respdo_1;
     RESPDO_called = 1;
     break;
   case RESPDOARRAY:
     xdr_argument = xdr_Rkey;
     xdr_result = xdr_void;
-    local = (char *(*)()) respdoarray_1;
+    local = (char *(*)(void *, void *)) respdoarray_1;
     RESPDO_called = 1;
     break;
   default:
