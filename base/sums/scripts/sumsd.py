@@ -2533,7 +2533,10 @@ if __name__ == "__main__":
                     
                 log.writeCritical([ 'listening for client requests on ' + str(serverSock.getsockname()) ])
             except Exception as exc:
-                raise SocketConnectionException(exc.args[0])
+                if len(exc.args) > 0:
+                    raise SocketConnectionException(str(exc.args[0]))
+                else:
+                    raise SocketConnectionException('failure creating a socket to listen for incoming connections')
 
             # Something cool. If the test flag is set, then create another thread that sends a SUM_info request to the main thread.
             # At this point, the server is listening, so it is OK to try to connect to it.
