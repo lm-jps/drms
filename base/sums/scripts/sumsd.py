@@ -142,7 +142,7 @@ class TerminationHandler(object):
             
         # clean up DB connections
         DBConnection.closeAll()
-        self.log.writeInfo([ 'closed all DB connections' ])
+        self.log.writeInfo([ 'termination handler closed all DB connections' ])
 
         # wait for Worker threads to exit
         while True:
@@ -163,7 +163,7 @@ class TerminationHandler(object):
                 # can't hold worker lock here - when the worker terminates, it acquires the same lock;
                 # due to a race condition in tList (we had to release the tList lock), we have to check 
                 # to see if the worker is alive before joining it.
-                self.log.writeInfo([ 'waiting for worker ' +  worker.getID() + ' to terminate' ])
+                self.log.writeInfo([ 'termination handler waiting for worker ' +  worker.getID() + ' to terminate' ])
                 worker.join() # will block, possibly for ever
                 
         if etype == self.Break:
@@ -647,6 +647,8 @@ class Unjsonizer(object):
 
 
 class Request(object):
+    _numInfoSUS = 3 # the number of SUs to print when showing request information (not representation)
+    
     def __init__(self, reqType, unjsonized, worker):
         self.reqType = reqType
         self.unjsonized = unjsonized.unjsonized # a request-specific dictionary
@@ -655,14 +657,26 @@ class Request(object):
         if 'sessionid' in self.unjsonized:
             # Only the OpenRequest will not have a sessionid.
             self.data.sessionid = Request.hexToInt(self.unjsonized['sessionid'])
+            
+    def _reprify(self):
+        # by default, use object formal representation
+        self._stringrepr('reprDict')
+    
+    def _stringify(self):
+        # by default, use object formal representation
+        self._stringrepr('strDict')
+
+    def __repr__(self):
+        self._reprify()
+        return str(self.reprDict)
 
     def __str__(self):
         self._stringify()
-        return str(self.reqDict)
+        return str(self.strDict)        
         
-    def _stringifyType(self):
-        if not hasattr(self, 'reqDict'):
-            self.reqDict = { 'reqtype' : self.reqType }
+    def _stringifyType(self, whichDict):
+        if not hasattr(self, whichDict):
+            setattr(self, whichDict, { 'reqtype' : self.reqType })
             
     def getType(self):
         return self.reqType
@@ -689,9 +703,12 @@ class OpenRequest(Request):
         super(OpenRequest, self).__init__(REQUEST_TYPE_OPEN, unjsonized, worker)
         # No data for this request.
         
-    def _stringify(self):
-        if not hasattr(self, 'reqDict'):
-            self._stringifyType()
+    def _stringrepr(self, whichDict):
+        self.__stringrepr(whichDict)
+
+    def __stringrepr(self, whichDict):
+        if not hasattr(self, whichDict):
+            self._stringifyType(whichDict)
 
     def generateResponse(self, dest=None):
         resp = OpenResponse(self, RESPSTATUS_OK, dest)
@@ -709,11 +726,15 @@ class CloseRequest(Request):
     """
     def __init__(self, unjsonized, worker):
         super(CloseRequest, self).__init__('close', unjsonized, worker)
-        
-    def _stringify(self):
-        if not hasattr(self, 'reqDict'):
-            self._stringifyType()
-            self.reqDict['sessionid'] = self.data.sessionid
+
+    def _stringrepr(self, whichDict):
+        self.__stringrepr(whichDict)
+
+    def __stringrepr(self, whichDict):
+        if not hasattr(self, whichDict):
+            self._stringifyType(whichDict)
+            strDict = getattr(self, whichDict)
+            strDict['sessionid'] = self.data.sessionid
         
     def generateResponse(self, dest=None):
         resp = CloseResponse(self, RESPSTATUS_OK, dest)
@@ -731,11 +752,15 @@ class RollbackRequest(Request):
     """
     def __init__(self, unjsonized, worker):
         super(RollbackRequest, self).__init__('rollback', unjsonized, worker)
-        
-    def _stringify(self):
-        if not hasattr(self, 'reqDict'):
-            self._stringifyType()
-            self.reqDict['sessionid'] = self.data.sessionid
+    
+    def _stringrepr(self, whichDict):
+          self.__stringrepr(whichDict)
+      
+    def __stringrepr(self, whichDict):
+        if not hasattr(self, whichDict):
+            self._stringifyType(whichDict)
+            strDict = getattr(self, whichDict)
+            strDict['sessionid'] = self.data.sessionid
             
     def generateResponse(self, dest=None):
         resp = RollbackResponse(self, RESPSTATUS_OK, dest)
@@ -768,12 +793,27 @@ class InfoRequest(Request):
             if str(su) not in processed:        
                 self.data.sulist.append(str(su)) # Make a list of strings - we'll need to concatenate the elements into a comma-separated list for the DB query.
                 processed.add(str(su))
-                
+
     def _stringify(self):
-        if not hasattr(self, 'reqDict'):
-            self._stringifyType()
-            self.reqDict['sessionid'] = self.data.sessionid
-            self.reqDict['sus'] = self.data.sus
+        self.__stringinfo('strDict')
+        
+    def _stringrepr(self, whichDict):
+        self.__stringrepr(whichDict)
+
+    def __stringrepr(self, whichDict):
+        if not hasattr(self, whichDict):
+            self._stringifyType(whichDict)
+            strDict = getattr(self, whichDict)
+            strDict['sessionid'] = self.data.sessionid
+            strDict['sus'] = self.data.sus
+
+    def __stringinfo(self, whichDict):
+        if not hasattr(self, whichDict):
+            self._stringifyType(whichDict)
+            strDict = getattr(self, whichDict)
+            strDict['sessionid'] = self.data.sessionid
+            strDict['sus'] = self.data.sus[0:Request._numInfoSUS]
+            strDict['sus'].append('...')
 
     def generateResponse(self, dest=None):
         resp = InfoResponse(self, RESPSTATUS_OK, dest)
@@ -811,16 +851,34 @@ class GetRequest(Request):
             if str(su) not in processed:        
                 self.data.susNoDupes.append(str(su)) # Make a list of strings - we'll need to concatenate the elements into a comma-separated list for the DB query.
                 processed.add(str(su))
-
-    def _stringify(self):
-        if not hasattr(self, 'reqDict'):
-            self._stringifyType()
-            self.reqDict['sessionid'] = self.data.sessionid
-            self.reqDict['touch'] = self.data.touch
-            self.reqDict['retrieve'] = self.data.retrieve
-            self.reqDict['retention'] = self.data.retention
-            self.reqDict['sus'] = self.data.sus
                 
+    def _stringify(self):
+        self.__stringinfo('strDict')
+        
+    def _stringrepr(self, whichDict):
+        self.__stringrepr(whichDict)
+
+    def __stringrepr(self, whichDict):
+        if not hasattr(self, whichDict):
+            self._stringifyType(whichDict)
+            strDict = getattr(self, whichDict)
+            strDict['sessionid'] = self.data.sessionid
+            strDict['touch'] = self.data.touch
+            strDict['retrieve'] = self.data.retrieve
+            strDict['retention'] = self.data.retention
+            strDict['sus'] = self.data.sus
+            
+    def __stringinfo(self, whichDict):
+        if not hasattr(self, whichDict):
+            self._stringifyType(whichDict)
+            strDict = getattr(self, whichDict)
+            strDict['sessionid'] = self.data.sessionid
+            strDict['touch'] = self.data.touch
+            strDict['retrieve'] = self.data.retrieve
+            strDict['retention'] = self.data.retention
+            strDict['sus'] = self.data.sus[0:Request._numInfoSUS]
+            strDict['sus'].append('...')
+
     def generateResponse(self, dest=None):
         resp = GetResponse(self, RESPSTATUS_OK, dest)
         super(GetRequest, self).generateResponse(dest)
@@ -860,18 +918,23 @@ class AllocRequest(Request):
         self.data.sugroup = self.unjsonized['sugroup']
         self.data.numbytes = self.unjsonized['numbytes']
         
-    def _stringify(self):
-        if not hasattr(self, 'reqDict'):
+    def _stringrepr(self, whichDict):
+        self.__stringrepr(whichDict)
+
+    def __stringrepr(self, whichDict):
+        # there is only a single SU - not a list, so there is no need for __stringinfo() to be defined
+        if not hasattr(self, whichDict):
             if hasattr(self.data, 'sunum'):
                 sunumStr = str(self.data.sunum)
             else:
                 sunumStr = None
 
             self._stringifyType()
-            self.reqDict['sessionid'] = self.data.sessionid
-            self.reqDict['sunum'] = sunumStr
-            self.reqDict['sugroup'] = self.data.sugroup
-            self.reqDict['numbytes'] = self.data.numbytes
+            strDict = getattr(self, whichDict)
+            strDict['sessionid'] = self.data.sessionid
+            strDict['sunum'] = sunumStr
+            strDict['sugroup'] = self.data.sugroup
+            strDict['numbytes'] = self.data.numbytes
         
     def generateResponse(self, dest=None):
         resp = AllocResponse(self, RESPSTATUS_OK, dest)
@@ -919,13 +982,31 @@ class PutRequest(Request):
         self.data.archivetype = self.unjsonized['archivetype']
         
     def _stringify(self):
-        if not hasattr(self, 'reqDict'):
+        self.__stringinfo('strDict')
+
+    def _stringrepr(self, whichDict):
+        self.__stringrepr(whichDict)
+        
+    def __stringrepr(self, whichDict):
+        if not hasattr(self, whichDict):
             self._stringifyType()
-            self.reqDict['sessionid'] = self.data.sessionid
-            self.reqDict['sudirs'] = self.unjsonized['sudirs']
-            self.reqDict['series'] = self.data.series
-            self.reqDict['retention'] = self.data.retention
-            self.reqDict['archivetype'] = self.data.archivetype
+            strDict = getattr(self, whichDict)
+            strDict['sessionid'] = self.data.sessionid
+            strDict['sudirs'] = self.unjsonized['sudirs']
+            strDict['series'] = self.data.series
+            strDict['retention'] = self.data.retention
+            strDict['archivetype'] = self.data.archivetype
+            
+    def __stringinfo(self, whichDict):
+        if not hasattr(self, whichDict):
+            self._stringifyType()
+            strDict = getattr(self, whichDict)
+            strDict['sessionid'] = self.data.sessionid
+            strDict['sudirs'] = self.unjsonized['sudirs'][0:Request._numInfoSUS]
+            strDict['sudirs'].append('...')
+            strDict['series'] = self.data.series
+            strDict['retention'] = self.data.retention
+            strDict['archivetype'] = self.data.archivetype
         
     def generateResponse(self, dest=None):
         resp = PutResponse(self, RESPSTATUS_OK, dest)
@@ -952,11 +1033,15 @@ class DeleteseriesRequest(Request):
         
         self.data.series = self.unjsonized['series']
         
-    def _stringify(self):
-        if not hasattr(self, 'reqDict'):
+    def _stringrepr(self, whichDict):
+        self.__stringrepr(whichDict)
+        
+    def __stringrepr(self, whichDict):
+        if not hasattr(self, whichDict):
             self._stringifyType()
-            self.reqDict['sessionid'] = self.data.sessionid
-            self.reqDict['series'] = self.data.series
+            strDict = getattr(self, whichDict)
+            strDict['sessionid'] = self.data.sessionid
+            strDict['series'] = self.data.series
         
     def generateResponse(self, dest=None):
         resp = DeleteseriesResponse(self, RESPSTATUS_OK, dest)
@@ -974,11 +1059,15 @@ class PingRequest(Request):
     """
     def __init__(self, unjsonized, worker):
         super(PingRequest, self).__init__('ping', unjsonized, worker)
-        
-    def _stringify(self):
-        if not hasattr(self, 'reqDict'):
+
+    def _stringrepr(self, whichDict):
+        self.__stringrepr(whichDict)
+
+    def __stringrepr(self, whichDict):
+        if not hasattr(self, whichDict):
             self._stringifyType()
-            self.reqDict['sessionid'] = self.data.sessionid
+            strDict = getattr(self, whichDict)
+            strDict['sessionid'] = self.data.sessionid
         
     def generateResponse(self, dest=None):
         resp = PingResponse(self, RESPSTATUS_OK, dest)
@@ -998,12 +1087,16 @@ class PollRequest(Request):
         super(PollRequest, self).__init__('poll', unjsonized, worker)
 
         self.data.requestid = self.unjsonized['requestid']
-        
-    def _stringify(self):
-        if not hasattr(self, 'reqDict'):
+
+    def _stringrepr(self, whichDict):
+        self.__stringrepr(whichDict)
+
+    def __stringrepr(self, whichDict):
+        if not hasattr(self, whichDict):
             self._stringifyType()
-            self.reqDict['sessionid'] = self.data.sessionid
-            self.reqDict['requestid'] = self.data.requestid
+            strDict = getattr(self, whichDict)
+            strDict['sessionid'] = self.data.sessionid
+            strDict['requestid'] = self.data.requestid
         
     def generateResponse(self, dest=None):
         resp = PollResponse(self, RESPSTATUS_OK, dest)
@@ -1507,7 +1600,7 @@ class AllocResponse(Response):
                 continue
             
             if availBytes.value >= self.request.data.numbytes:
-                self.request.worker.log.writeInfo([ 'partition ' + row[0] + ' has sufficient disk space; added to available list' ])
+                self.request.worker.log.writeDebug([ 'partition ' + row[0] + ' has sufficient disk space; added to available list' ])
                 partitions.append(row[0])
             
         # if the request contains a SUNUM, then that SUNUM becomes the id of the SU being allocated; otherwise,
@@ -1528,7 +1621,7 @@ class AllocResponse(Response):
         # partitions.
         randIndex = random.randint(0, len(partitions) - 1)
         partition = partitions[randIndex]
-        self.request.worker.log.writeInfo([ 'partition ' + partition + ' was randomly chosen to satisfy allocation request' ])
+        self.request.worker.log.writeDebug([ 'partition ' + partition + ' was randomly chosen to satisfy allocation request' ])
         sudir = os.path.join(partition, 'D' + str(sunum))
         
         try:
@@ -1974,7 +2067,7 @@ class Worker(threading.Thread):
         self.log = log
         self.reqFactory = None
         
-        self.log.writeInfo([ 'successfully instantiated worker' ])
+        self.log.writeDebug([ 'successfully instantiated worker for connection ' + str(self.sock.getpeername()) ])
                 
     def run(self):
         try:
@@ -2044,7 +2137,10 @@ class Worker(threading.Thread):
                             elif isinstance(self.request, RollbackRequest):
                                 rollback = True
 
-                        self.log.writeInfo([ 'new ' + self.request.reqType + ' request from process ' + str(self.clientInfo.data.pid) + ' by user ' + self.clientInfo.data.user + ' at ' + peerName + ':' + str(self.request) ])
+                        if self.log.log.getEffectiveLevel() == logging.INFO:
+                            self.log.writeInfo([ 'new ' + self.request.reqType + ' request from process ' + str(self.clientInfo.data.pid) + ' by user ' + self.clientInfo.data.user + ' at ' + peerName + ':' + str(self.request) ])
+                        else:
+                            self.log.writeInfo([ 'new ' + self.request.reqType + ' request from process ' + str(self.clientInfo.data.pid) + ' by user ' + self.clientInfo.data.user + ' at ' + peerName + ':' + repr(self.request) ])
 
                         msgStr = self.generateResponse() # a str object; generating a response can modify the DB and commit changes
                     
@@ -2053,7 +2149,8 @@ class Worker(threading.Thread):
                             history.append(self.response)
                     except SocketConnectionException as exc:
                         rollback = True
-                        msgStr = self.generateErrorResponse(RESPSTATUS_BROKENCONNECTION, exc.args[0])
+
+                        raise # can't send a message back to client
                     except UnjsonizerException as exc:
                         rollback = True
                         msgStr = self.generateErrorResponse(RESPSTATUS_JSON, exc.args[0])
@@ -2092,7 +2189,7 @@ class Worker(threading.Thread):
                         import traceback
                         self.log.writeError([ traceback.format_exc(3) ])
 
-                    if self.response:
+                    if hasattr(self, 'response') and self.response:
                         self.log.writeDebug([ 'response:' + str(self.response) ])
                     # Send results back on the socket, which is connected to a single DRMS module. By sending the results
                     # back, the client request is completed. We want to construct a list of "SUM_info" objects. Each object
@@ -2129,6 +2226,11 @@ class Worker(threading.Thread):
                 else:
                     self.log.writeDebug([ 'client ' + peerName + ' sent extraneous data over socket connection (ignoring)' ])
             except SocketConnectionException as exc:
+                # Don't send message back - we can't communicate with the client properly, so only log a message on the server side.
+                self.log.writeError([ 'there was a problem communicating with client ' + peerName ])
+                self.log.writeError([ exc.args[0] ])
+                rollback = True                
+            except SendMsgException as exc:
                 # Don't send message back - we can't communicate with the client properly, so only log a message on the server side.
                 self.log.writeError([ 'there was a problem communicating with client ' + peerName ])
                 self.log.writeError([ exc.args[0] ])
@@ -2493,7 +2595,7 @@ if __name__ == "__main__":
         # Create/Initialize the log file.
         try:
             logFile = arguments.getArg('logfile')
-            formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')        
+            formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')        
             log = Log(logFile, arguments.getArg('loglevel'), formatter)
         except exc:
             raise LogException('unable to initialize logging')
