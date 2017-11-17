@@ -89,6 +89,15 @@ def GetArgs(args):
             for key in arguments.keys():
                 val = arguments.getvalue(key)
                 
+                # if caller duplicates an argument, then FieldStorage() puts the values in a list
+                # if rs.sh?N=1&N=2&... ==> key = 'N', val = [ '1', '2' ]
+                if type(val) == list:
+                    # use the last element
+                    if len(val) > 0:
+                        val = val[-1]
+                    else:
+                        val = 'none'
+                
                 if val.lower() == 'none':
                     continue
                 
