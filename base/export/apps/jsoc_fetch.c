@@ -1613,6 +1613,7 @@ int DoIt(void)
   if (strcmp(op, kOpExpSu) == 0)
     {
     long long sunum;
+        int isunum;
         const char *seriesKey = NULL;
     int count;
     int status=0;
@@ -1627,9 +1628,6 @@ int DoIt(void)
     {
         lfname = kLogFileExpSuExt;            
     }
-
-        /* requestid is not provided via the command-line for kOpExpSu. */
-    LogReqInfo(lfname, instanceID, fileupload, op, dsin, requestid, dbhost, from_web, webarglist, fetch_time);
 
         /* jsoc.export_new */
     export_series = kExportSeriesNew;
@@ -1662,6 +1660,40 @@ int DoIt(void)
     {
        JSONDIE("There are no SUs in sunum or ds params");
     }
+    
+    /* print to the log the sunum array */
+    size_t bufSz = 256;
+    char *sunumListStr = calloc(bufSz, sizeof(char));
+    char sunumStrBuf[32];
+    
+    if (sunumListStr)
+    {
+        for (isunum = 0; isunum < nsunums; isunum++)
+        {
+            sunum = sunumarr[isunum];
+        
+            if (isunum < nsunums - 1)
+            {
+                snprintf(sunumStrBuf, sizeof(sunumStrBuf), "%lld,", sunum);   
+            }
+            else
+            {
+                snprintf(sunumStrBuf, sizeof(sunumStrBuf), "%lld", sunum);        
+            }
+        
+            sunumListStr = base_strcatalloc(sunumListStr, sunumStrBuf, &bufSz);
+        }
+    
+        LogReqInfo(lfname, instanceID, fileupload, op, sunumListStr, requestid, dbhost, from_web, webarglist, fetch_time);
+
+        free(sunumListStr);
+        sunumListStr = NULL;        
+    }
+    else
+    {    
+        /* requestid is not provided via the command-line for kOpExpSu. */
+        LogReqInfo(lfname, instanceID, fileupload, op, dsin, requestid, dbhost, from_web, webarglist, fetch_time);
+    }
 
     /* Fetch SUNUM_info_ts for all sunums now. THIS CODE DOES NOT FOLLOW LINKS TO TARGET SEGMENTS. */
     infostructs = (SUM_info_t **)malloc(sizeof(SUM_info_t *) * nsunums);
@@ -1691,7 +1723,6 @@ int DoIt(void)
          * data. 
          */
         const int NUM_ARGS = 16;
-        int isunum;
         char stmnt[256];
         char *argin[NUM_ARGS];
         DB_Type_t intype[NUM_ARGS];
