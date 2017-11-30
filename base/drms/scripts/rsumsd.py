@@ -950,22 +950,17 @@ class SuTable:
 
             nAtts += 1
             time.sleep(1)
-    
-    # This will NOT commit database changes. You are generally going to want to do this as part of a larger db change. Commit the changes
-    # after all changes that form the atomic set of changes. Do not call rsConn.commit().
-    #
-    # ACQUIRES THE SU TABLE LOCK.
-    def updateDB(self, sunums=None):
-        changedDB = False
+            
+    def getUpdateDBSql(self, sunums=None):
+        sql = []
 
-        sus, missingSunums = self.getAndLockSUs(releaseTableLock=False, sunums=sunums, filter=None) # want to get giveUpTheGhost sus
-        try:            
+        sus, missingSunums = self.getAndLockSUs(sunums=sunums, filter=None) # want to get giveUpTheGhost sus
+        try:
             if len(missingSunums) > 0:
                 # the caller provided the sunums argument and it was not empty, and some of the provided sunums were invalid
                 sunumStr = ','.join([ str(sunum) for sunum in missingSunums] )
-                self.log.writeWarning([ 'SuTable.updateDB() called with invalid SUNUMs: ' + sunumStr + '; skipping' ])
+                self.log.writeWarning([ 'SuTable.getUpdateDBSql() called with invalid SUNUMs: ' + sunumStr + '; skipping' ])
 
-            sql = []
             for su in sus:
                 if su.giveUpTheGhost:
                     sql.append('DELETE FROM ' + self.tableName + ' WHERE sunum = ' + str(su.sunum))
@@ -978,44 +973,46 @@ class SuTable:
 
                     su.setDirty(False)
                     su.setNew(False)
-
-            if len(sql) > 0:
-                # execute the SQL
-                needsRollback = True
-                try:
-                    gotRsDbLock = SuTable.rsDbLock.acquire()
-                    cmd = ';\n'.join(sql)
-
-                    self.log.writeDebug([ 'executing DB command: ' + cmd ])
-                    with SuTable.rsConn.cursor() as cursor:
-                        cursor.execute(cmd)
-                    # The cursor has been closed, but the transaction has not been committed, as designed.
-                    self.log.writeDebug([ 'DB command succeeded: ' + cmd ])
-                    needsRollback = False
-                    changedDB = True
-                except psycopg2.Error as exc:
-                    import traceback
-                
-                    self.log.writeError([ traceback.format_exc(5) ])
-                    raise SutableWriteException(exc.diag.message_primary)
-                finally:
-                    if needsRollback:
-                        SuTable.rsConn.rollback()
-                    if gotRsDbLock:
-                        SuTable.rsDbLock.release()
         finally:
-            # release all locks
             for su in sus:
                 su.releaseLock()
-
-            self.releaseLock()
                 
-        return changedDB
+        return sql
+    
+    # This will NOT commit database changes. You are generally going to want to do this as part of a larger db change. Commit the changes
+    # after all changes that form the atomic set of changes. Do not call rsConn.commit().
+    #
+    # ACQUIRES THE SU TABLE LOCK.
+    # returns True if the DB was changed (in a uncommitted transaction)
+    def updateDB(self, sql):
+        if len(sql) > 0:
+            # execute the SQL
+            try:
+                cmd = ';\n'.join(sql)
+
+                self.log.writeDebug([ 'executing DB command: ' + cmd ])
+                with SuTable.rsConn.cursor() as cursor:
+                    cursor.execute(cmd)
+                # The cursor has been closed, but the transaction has not been committed, as designed.
+                self.log.writeDebug([ 'DB command succeeded: ' + cmd ])
+            except psycopg2.Error as exc:
+                import traceback
+            
+                SuTable.rsConn.rollback()
+                self.log.writeError([ traceback.format_exc(5) ])
+                raise SutableWriteException(exc.diag.message_primary)
+            
+            return True
+        else:
+            return False
         
     # This WILL commit changes to the db.
     def updateDbAndCommit(self, sunums=None):
+        sql = self.getUpdateDBSql(sunums)
+
+        SuTable.rsDbLock.acquire()
         try:
-            if self.updateDB(sunums):
+            if self.updateDB(sql):
                 SuTable.rsConn.commit()
                 self.log.writeDebug([ 'committed RS DB changes' ])
             else:
@@ -1023,6 +1020,8 @@ class SuTable:
         except:
             SuTable.rsConn.rollback()
             self.log.writeDebug([ 'rolled-back RS DB changes' ])
+        finally:
+            SuTable.rsDbLock.release()
 
     def acquireLock(self):
         return self.lock.acquire()
@@ -1255,11 +1254,15 @@ class SuTable:
             # if an error happens, we need to release locks
             for su in lockedSUs:
                 su.releaseLock()
+                
+            if gotTableLock:
+                self.releaseLock()
+            
             lockedSUs = []
             unlockedSunums = []
         finally:
             # Always release lock.
-            if lockTable and gotTableLock and releaseTableLock:
+            if gotTableLock and releaseTableLock:
                 self.releaseLock()
                 
         return (lockedSUs, unlockedSunums)
@@ -1489,12 +1492,9 @@ class ReqTable:
         # Read the table from the database anew.
         self.tryRead()
 
-    # This will NOT commit database changes. You are generally going to want to do this as part of a larger db change. Commit the changes
-    # after all changes that form the atomic set of changes.
-    # no lock needed for the requests table (only the main thread access it)
-    def updateDB(self, requestids=None):
-        changedDB = False
-        
+    def getUpdateDBSql(self, requestids=None):
+        sql = []
+
         if requestids:
             # Update the specified records.
             for arequestid in requestids:
@@ -1506,68 +1506,51 @@ class ReqTable:
                 if self.reqDict[requestidStr]['dirty']:
                     self.log.writeDebug([ 'updating req table DB for request ' + requestidStr ])
                     # The only columns that this daemon will modify are status and errmsg.
-                    cmd = 'UPDATE ' + self.tableName + " SET status='" + self.reqDict[requestidStr]['status'] + "', errmsg='" + self.reqDict[requestidStr]['errmsg'] + "' WHERE requestid=" + requestidStr
+                    sql.append('UPDATE ' + self.tableName + " SET status='" + self.reqDict[requestidStr]['status'] + "', errmsg='" + self.reqDict[requestidStr]['errmsg'] + "' WHERE requestid=" + requestidStr)
                     
-                    needsRollback = True
-                    try:
-                        gotRsDbLock = ReqTable.rsDbLock.acquire()
-                        if gotRsDbLock:
-                            self.log.writeDebug([ 'executing DB command: ' + cmd])
-                            with ReqTable.rsConn.cursor() as cursor:
-                                cursor.execute(cmd)
-                            needsRollback = False
-                            changedDB = True
-                            # The cursor has been closed, but the transaction has not been committed, as designed.
-                    except psycopg2.Error as exc:
-                        import traceback
-                        
-                        self.log.writeError([ traceback.format_exc(5) ])
-                        raise ReqtableWriteException(exc.diag.message_primary)
-                    finally:
-                        if needsRollback:
-                            ReqTable.rsConn.rollback()
-                            self.log.writeDebug([ 'rolling-back req table DB update' ])
-                        if gotRsDbLock:
-                            ReqTable.rsDbLock.release()
-
                     self.reqDict[requestidStr]['dirty'] = False
         else:
-            # Update all dirty records.
             for requestidStr in self.reqDict:
                 if self.reqDict[requestidStr]['dirty']:
+                    self.log.writeDebug([ 'updating req table DB for request ' + requestidStr ])
                     # The only columns that this daemon will modify are status and errmsg.
-                    cmd = 'UPDATE ' + self.tableName + " SET status='" + self.reqDict[requestidStr]['status'] + "', errmsg='" + self.reqDict[requestidStr]['errmsg'] + "' WHERE requestid='" + requestidStr + "'"
-                    
-                    needsRollback = True
-                    try:
-                        gotRsDbLock = ReqTable.rsDbLock.acquire()
-                        if gotRsDbLock:
-                            self.log.writeDebug([ 'running DB command: ' + cmd ])
-                            with ReqTable.rsConn.cursor() as cursor:
-                                cursor.execute(cmd)
-                            needsRollback = False
-                            self.log.writeDebug([ 'DB command succeeded: ' + cmd ])
-                            changedDB = True
-                            # The cursor has been closed, but the transaction has not been committed, as designed.
-                    except psycopg2.Error as exc:
-                        import traceback
-                        
-                        self.log.writeError([ traceback.format_exc(5) ])
-                        raise ReqtableWriteException(exc.diag.message_primary)
-                    finally:
-                        if needsRollback:
-                            ReqTable.rsConn.rollback()
-                        if gotRsDbLock:
-                            ReqTable.rsDbLock.release()
+                    sql.append('UPDATE ' + self.tableName + " SET status='" + self.reqDict[requestidStr]['status'] + "', errmsg='" + self.reqDict[requestidStr]['errmsg'] + "' WHERE requestid='" + requestidStr + "'")
                     
                     self.reqDict[requestidStr]['dirty'] = False
                     
-        return changedDB
+        return sql
+
+    # This will NOT commit database changes. You are generally going to want to do this as part of a larger db change. Commit the changes
+    # after all changes that form the atomic set of changes.
+    # no lock needed for the requests table (only the main thread access it)
+    # returns True if the DB was changed (inside the current, uncommitted transaction), False otherwise
+    def updateDB(self, sql):        
+        if len(sql) > 0:
+            try:
+                cmd = ';\n'.join(sql)
+                self.log.writeDebug([ 'executing DB command: ' + cmd])
+                with ReqTable.rsConn.cursor() as cursor:
+                    cursor.execute(cmd)
+                # The cursor has been closed, but the transaction has not been committed, as designed.
+            except psycopg2.Error as exc:
+                import traceback
+                
+                self.log.writeError([ traceback.format_exc(5) ])
+                ReqTable.rsConn.rollback()
+                self.log.writeDebug([ 'rolling-back req table DB update' ])
+                raise ReqtableWriteException(exc.diag.message_primary)
+                
+            return True
+        else:
+            return False
                     
     # This WILL commit changes to the db.
     def updateDbAndCommit(self, requestids=None):
+        sql = self.getUpdateDBSql(requestids)
+        
+        ReqTable.rsDbLock.acquire()
         try:
-            if self.updateDB(requestids):
+            if self.updateDB(sql):
                 ReqTable.rsConn.commit()
                 self.log.writeDebug([ 'committed RS DB changes' ])
             else:
@@ -1575,6 +1558,8 @@ class ReqTable:
         except:
             self.log.writeDebug([ 'rolled-back RS DB changes' ])
             ReqTable.rsConn.rollback()
+        finally:
+            ReqTable.rsDbLock.release()
 
     # This will NOT commit database changes. You are generally going to want to do this as part of a larger db change. Commit the changes
     # after all changes that form the atomic set of changes. Do not call rsConn.commit().
@@ -2038,8 +2023,8 @@ class ScpWorker(threading.Thread):
                                 su.releaseLock()
 
                         # Flush the change to disk.
-                        self.log.writeDebug([ 'Updating SU table.' ])
-                        self.suTable.updateDbAndCommit()
+                        self.log.writeDebug([ 'ScpWorker ' + str(self.id) + ' updating SU table' ])
+                        self.suTable.updateDbAndCommit(self.sunums)
 
                         self.log.writeInfo([ 'ScpWorker ' + str(self.id) + ' - scp command succeeded for SUs ' + ','.join([ str(asunum) for asunum in self.sunums ]) ])
                     except ScpSUException as exc:                        
@@ -2571,7 +2556,7 @@ class Downloader(threading.Thread):
             
             # Update SU table (write-out status, error or success, to the DB).
             # This is a no-op if no SUs were actually modified.
-            self.suTable.updateDbAndCommit()
+            self.suTable.updateDbAndCommit([ self.sunum ])
         finally:
             # This thread is about to terminate. 
             # We need to check the class tList variable to update it, so we need to acquire the lock.
@@ -2872,7 +2857,7 @@ class ProviderPoller(threading.Thread):
                     su.releaseLock()
                     
         # Flush the change to disk.
-        self.suTable.updateDbAndCommit()
+        self.suTable.updateDbAndCommit(self.sunums)
 
         try:
             ProviderPoller.lock.acquire()
@@ -3141,14 +3126,19 @@ class LogLevelAction(argparse.Action):
 def updateDbAndCommit(log, rsConn, rsDbLock, reqTable, suTable, reqIDs, sunums):
     # lock the SU table, the SUs, and access to the DB until the SU table SQL has been run so that nothing changes out from under us;
     # no need to lock anything having to do with the requests table - it is accessed by a single thread only
+    # we acquire the DB Lock so that our transaction cannot get polluted - we do not want another thread committing the
+    # transaction (all cursors share the same transaction)
+    
+    suSql = suTable.getUpdateDBSql(sunums)
+    rqSql = reqTable.getUpdateDBSql(reqIDs)
+    
+    rsDbLock.acquire() # do not allow other threads to commit the DB changes in the middle of this
     try:
-        gotRsDbLock = rsDbLock.acquire()
-        
         # neither of these calls commits changes to the DB
         log.writeDebug([ 'updating the DB with SU table changes (SUs ' + ','.join([ str(sunum) for sunum in sunums ]) + ')' ])
-        suTable.updateDB(sunums)
+        suTable.updateDB(suSql)
         log.writeDebug([ 'updating the DB with request table changes (request ' + ','.join(str(reqID) for reqID in reqIDs) + ')' ])
-        reqTable.updateDB(reqIDs)
+        reqTable.updateDB(rqSql)
         
         log.writeDebug([ 'committing Req-table and SU-table changes to DB' ])
         rsConn.commit()
@@ -3161,8 +3151,7 @@ def updateDbAndCommit(log, rsConn, rsDbLock, reqTable, suTable, reqIDs, sunums):
         rsConn.rollback() # it could be that the first call succeeds and the second fails - we need to rollback the first too
         # continue on with the next request (do not terminate)
     finally:
-        if gotRsDbLock:
-            rsDbLock.release()
+        rsDbLock.release()
 
 
 if __name__ == "__main__":
@@ -3681,16 +3670,7 @@ if __name__ == "__main__":
             
             # Save the db state when exiting.
             rslog.writeInfo([ 'Remote-sums daemon is exiting. Saving database tables.' ])
-            needsCommit = False
-            try:
-                suTableObj.updateDB()
-                reqTableObj.updateDB()
-                needsCommit = True
-            finally:
-                if needsCommit:
-                    rsConn.commit()
-                else:
-                    rsConn.rollback()
+            updateDbAndCommit(rslog, rsConn, rsDbLock, reqTableObj, suTableObj, None, None)
 
         # DB connection was terminated.            
         # Lock was released     
