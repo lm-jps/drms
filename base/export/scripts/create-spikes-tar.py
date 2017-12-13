@@ -21,8 +21,8 @@ import tarfile
 from datetime import datetime, timedelta
 from subprocess import check_output, CalledProcessError
 
-START_DATE = '2011.1.1'
-NUM_DAYS = 1
+START_DATE = '2011.1.2'
+NUM_DAYS = 3
 LOG_FILE = 'spikes-tar.log.txt'
 LOG_LEVEL = getattr(logging, 'INFO')
 TAR_DIR = '/surge28/spikes-tars'
@@ -105,8 +105,8 @@ if __name__ == "__main__":
     tarf = None
     
     # day loop
+    drmsDate = datetime.strptime(START_DATE, '%Y.%m.%d')
     for day in range(0, NUM_DAYS):
-        drmsDate = datetime.strptime(START_DATE, '%Y.%m.%d')
         cmdList = [ '/home/jsoc/cvs/Development/JSOC/bin/linux_avx/show_info', 'aia.lev1[' + drmsDate.strftime('%Y.%m.%d_UTC') + '/1d][? QUALITY>=0 ?]', 'segment=spikes', 'key=T_OBS,WAVELNTH' , '-Pq' ]
 
         try:
@@ -136,16 +136,18 @@ if __name__ == "__main__":
                     # add the current data file to the current tar file, otherwise, create a new tar file and
                     # add the current data file to it
                     tarFileArchiveFile = obsTime + '_' + wavelength.zfill(4) + '.spikes.fits'
-                    if tarFile is None or TAR_FILE_PREFIX + obsDay != tarFile.split('.')[0]:
+                    if tarf is None or TAR_FILE_PREFIX + obsDay != tarFile.split('.')[0]:
                         if tarf:
                             tarf.close()
                             log.writeInfo([ 'closed tar file ' + tarFilePath ])
+                            tarFile = None
+                            tarFilePath = None
                             tarf = None
 
                         tarFile = TAR_FILE_PREFIX + obsDay + '.tar'
                         tarFilePath = os.path.join(TAR_DIR, tarFile)
                         try:
-                            tarf = tarfile.open(tarFilePath, 'w') # could raise
+                            tarf = tarfile.open(tarFilePath, 'a') # could raise
                             log.writeInfo([ 'created new tar file ' + tarFilePath ])
                         except OSError:
                             log.writeError([ 'could not create new tar file ' + tarFilePath ])
@@ -169,6 +171,8 @@ if __name__ == "__main__":
         if tarf:
             tarf.close()
             log.writeInfo([ 'closed tar file ' + tarFilePath ])
+            tarFile = None
+            tarFilePath = None
             tarf = None
 
         # next day
