@@ -18,15 +18,21 @@ import os
 import logging
 import inspect
 import tarfile
+import shutil
 from datetime import datetime, timedelta
 from subprocess import check_output, CalledProcessError
 
-START_DATE = '2011.1.2'
-NUM_DAYS = 3
+START_DATE = '2011.2.17'
+NUM_DAYS = 32
 LOG_FILE = 'spikes-tar.log.txt'
 LOG_LEVEL = getattr(logging, 'INFO')
 TAR_DIR = '/surge28/spikes-tars'
 TAR_FILE_PREFIX = 'aia-lev1-spikes_'
+
+class TarExistsException(Exception):
+
+    def __init__(self):
+        super(TarExists, self).__init__()
 
 class Log(object):
     """Manage a logfile."""
@@ -102,6 +108,8 @@ if __name__ == "__main__":
     regExpObs = re.compile(r'(\S+)T')
     tarFile = None
     tarFilePath = None
+    tarFilePathTmp = None
+    tarFileObsDay = None
     tarf = None
     
     # day loop
@@ -136,29 +144,52 @@ if __name__ == "__main__":
                     # add the current data file to the current tar file, otherwise, create a new tar file and
                     # add the current data file to it
                     tarFileArchiveFile = obsTime + '_' + wavelength.zfill(4) + '.spikes.fits'
-                    if tarf is None or TAR_FILE_PREFIX + obsDay != tarFile.split('.')[0]:
+                    if tarf is None or obsDay != tarFileObsDay:
+                        # create new tar file
                         if tarf:
-                            tarf.close()
-                            log.writeInfo([ 'closed tar file ' + tarFilePath ])
+                            tarf.close()                            
+                            log.writeInfo([ 'closed tar file ' + tarFilePathTmp ])
+                            
+                            # remove the '.' prefix
+                            shutil.move(tarFilePathTmp, tarFilePath)
+                            log.writeInfo([ 'renamed tmp tar file ' + tarFilePathTmp + ' to ' + tarFilePath ])
+                            
                             tarFile = None
                             tarFilePath = None
+                            tarFilePathTmp = None
+                            tarFileObsDay = None
                             tarf = None
 
                         tarFile = TAR_FILE_PREFIX + obsDay + '.tar'
                         tarFilePath = os.path.join(TAR_DIR, tarFile)
+                        tarFilePathTmp = os.path.join(TAR_DIR, '.' + tarFile)
+                        tarFileObsDay = obsDay
                         try:
-                            tarf = tarfile.open(tarFilePath, 'a') # could raise
-                            log.writeInfo([ 'created new tar file ' + tarFilePath ])
+                            if os.path.exists(tarFilePath):
+                                raise TarExistsException()
+                            tarf = tarfile.open(tarFilePathTmp, 'w') # could raise
+                            log.writeInfo([ 'created new tar file ' + tarFilePathTmp ])
                         except OSError:
-                            log.writeError([ 'could not create new tar file ' + tarFilePath ])
+                            log.writeError([ 'could not create new tar file ' + tarFilePathTmp ])
+                            tarFile = None
+                            tarFilePath = None
+                            tarFilePathTmp = None
+                            tarFileObsDay = None
+                            continue
+                        except TarExistsException:
+                            log.writeError([ 'could not create new tar file ' + tarFilePathTmp + '; ' + tarFilePath + ' already exists' ])
+                            tarFile = None
+                            tarFilePath = None
+                            tarFilePathTmp = None
+                            tarFileObsDay = None
                             continue
                 
                     if os.path.exists(spikesFile):
                         try:
                             tarf.add(spikesFile, arcname=tarFileArchiveFile) # could raise
-                            log.writeInfo([ 'added ' + spikesFile + ' to archive ' + tarFilePath + ' as ' + tarFileArchiveFile ])
+                            log.writeInfo([ 'added ' + spikesFile + ' to archive ' + tarFilePathTmp + ' as ' + tarFileArchiveFile ])
                         except OSError:
-                            log.writeError([ 'unable to add spikes file ' + spikesFile + ' to archive ' + tarFilePath ])
+                            log.writeError([ 'unable to add spikes file ' + spikesFile + ' to archive ' + tarFilePathTmp ])
                             continue
                 else:
                     log.writeError([ 'invalid observation time value format: ' + obsTime ])
@@ -170,10 +201,18 @@ if __name__ == "__main__":
         # close tar for last day
         if tarf:
             tarf.close()
-            log.writeInfo([ 'closed tar file ' + tarFilePath ])
+            log.writeInfo([ 'closed tar file ' + tarFilePathTmp ])
+            
+            # remove the '.' prefix
+            shutil.move(tarFilePathTmp, tarFilePath)
+            log.writeInfo([ 'renamed tmp tar file ' + tarFilePathTmp + ' to ' + tarFilePath ])
+            
             tarFile = None
             tarFilePath = None
+            tarFilePathTmp = None
+            tarFileObsDay = None
             tarf = None
+            
 
         # next day
         drmsDate = drmsDate + timedelta(days=1)
