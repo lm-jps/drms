@@ -61,6 +61,11 @@ RS_TMPDIR                  q:RS_TMPDIR
 RS_SCP_MAXSUS              a:RS_SCP_MAXSUS
 RS_SCP_MAXPAYLOAD          a:RS_SCP_MAXPAYLOAD
 RS_SCP_TIMEOUT             a:RS_SCP_TIMEOUT
+SS_LOCKFILE                q:SS_LOCKFILE
+SS_LOW_WATER               a:SS_LOW_WATER
+SS_HIGH_WATER              a:SS_HIGH_WATER
+SS_SU_CHUNK                a:SS_SU_CHUNK
+SS_REHYDRATE_INTERVAL      a:SS_REHYDRATE_INTERVAL
 WL_HASWL                   a:WL_HASWL
 WL_FILE                    q:WL_FILE
 BIN_EXPORT                 q:BIN_EXPORT
