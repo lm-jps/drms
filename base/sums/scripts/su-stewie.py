@@ -280,6 +280,12 @@ class Arguments(object):
         except AttributeError as exc:
             raise ArgsException('unknown argument: ' + name)
             
+    def dump(self, log):
+        attrList = []
+        for attr in sorted(vars(self)):
+            attrList.append('  ' + attr + ':' + str(getattr(self, attr)))
+        log.writeDebug([ '\n'.join(attrList) ])
+            
     @classmethod
     def checkArg(cls, argName, exc, **kwargs):
         val = None
@@ -761,6 +767,18 @@ class SUChunk(threading):
                 
     def getID(self):
         return self.__id
+        
+    def getSUDIRs(self):
+        sudirs = () # immutable
+
+        cls.acquireLock()
+        try:
+            for sudir in self.__sudirs:
+                sudirs = sudirs + (sudir,)
+        finally:
+            cls.releaseLock()
+        
+        return sudirs
 
     # called from main        
     def delete(self):
@@ -875,7 +893,7 @@ class SUFinder(threading):
         self.__partition = Arguments.checkArg('partition', KWArgumentException(), **kwargs)
         self.__log = Arguments.checkArg('log', KWArgumentException(), **kwargs)
         # the maximum number of SUs in the pool available for deletion
-        self.__maxInPool = Arguments.checkArg('maxSUs', KWArgumentException(), **kwargs)
+        self.__maxInPool = Arguments.checkArg('maxSUDIRs', KWArgumentException(), **kwargs)
 
         self.__dbConn = DBConnection.nextOpenConnection()
 
@@ -1151,13 +1169,13 @@ class SUFinder(threading):
         
         try:
             partition = Arguments.checkArg('partition', KWArgumentException(), **kwargs)
-            maxSUs = Arguments.checkArg('maxSUs', KWArgumentException(), **kwargs)
+            maxSUDIRs = Arguments.checkArg('maxSUDIRs', KWArgumentException(), **kwargs)
             log = Arguments.checkArg('log', KWArgumentException(), **kwargs)
             
             if len(cls.__tList) == cls.__maxThreads:
                 raise KWArgumentException('all SUFinder slots are occupied')
 
-            suFinder = cls(partition=partition, maxSUs=maxSUs, log=log)
+            suFinder = cls(partition=partition, maxSUDIRs=maxSUDIRs, log=log)
 
             # spawn thread
             cls.__newThread(suFinder)
@@ -1172,14 +1190,14 @@ class SUFinder(threading):
         
         try:
             partitions = Arguments.checkArg('partitions', KWArgumentException(), **kwargs)
-            maxSUs = Arguments.checkArg('maxSUs', KWArgumentException(), **kwargs)
+            maxSUDIRs = Arguments.checkArg('maxSUDIRs', KWArgumentException(), **kwargs)
             log = Arguments.checkArg('log', KWArgumentException(), **kwargs)
 
             if len(partitions) + len(cls.__tList) > cls.__maxThreads:
                 raise KWArgumentException('the number of partitions ' + str(len(partitions)) + ' must be smaller than the number of SUFinder threads ' + str(SUFinder.__maxThreads))
 
             for partition in partitions:
-                suFinders.append(cls(partition=partition, maxSUs=maxSUs, log=log))
+                suFinders.append(cls(partition=partition, maxSUDIRs=maxSUDIRs, log=log))
                 
             # spawn threads
             for suFinder in suFinders:
@@ -1282,16 +1300,15 @@ if __name__ == "__main__":
         parser.add_argument('-N', '--dbname', help='the name of the SUMS database', metavar='<db name>', dest='database', default=ssDrmsParams.get('DBNAME') + '_sums')
         parser.add_argument('-U', '--dbuser', help='the name of the SUMS database user account that has write privileges', metavar='<db user>', dest='dbUser', default=ssDrmsParams.get('SUMS_MANAGER'))
         parser.add_argument('-l', '--loglevel', help='specifies the amount of logging to perform; in order of increasing verbosity: critical, error, warning, info, debug', dest='logLevel', action=LogLevelAction, default=logging.ERROR)
-        parser.add_argument('-c', '--chunksize', help='the number of SUs to delete each main-thread iteration', metavar='<SU chunk size>', dest='suChunkSize', type=int, default=ssDrmsParams.get('SS_SU_CHUNK'))
         parser.add_argument('-s', '--setlist', help='a list of sets (pds_set_num) of partitions on which to operate', metavar='<list of partition sets>', dest='partitionSets', action=ListAction) # defaults to None, which means all partitions
+        parser.add_argument('-c', '--chunksize', help='the number of SUs to delete each main-thread iteration', metavar='<SU chunk size>', dest='suChunkSize', type=int, default=int(ssDrmsParams.get('SS_SU_CHUNK')))
         parser.add_argument('-L', '--lowater', help='the low water mark (percentage)', metavar='<low water mark>', dest='lowWater', type=int, default=int(ssDrmsParams.get('SS_LOW_WATER')))
-        parser.add_argument('-H', '--hiwater', help='the high water mark (percentage)', metavar='<high water mark>', dest='hiWater', type=int, default=int(ssDrmsParams.get('SS_HIGH_WATER')))        
+        parser.add_argument('-H', '--hiwater', help='the high water mark (percentage)', metavar='<high water mark>', dest='hiWater', type=int, default=int(ssDrmsParams.get('SS_HIGH_WATER')))
+        parser.add_argument('-r', '--recacheinterval', help='the high water mark (percentage)', metavar='<high water mark>', dest='rehydrateInterval', type=int, default=int(ssDrmsParams.get('SS_REHYDRATE_INTERVAL')))
         parser.add_argument('-p', '--printsus', help='print a list of SUs to delete - do not delete SUs and do not remove SUs from the SUMS DB', dest='printSus', action='store_true', default=False)
                         
         arguments = Arguments(parser)
         arguments.setArg('lockFile', os.path.join(ssDrmsParams.get('DRMS_LOCK_DIR'), ssDrmsParams.get('SS_LOCKFILE')))
-        arguments.setArg('rehydrateInterval', ssDrmsParams.get('SS_REHYDRATE_INTERVAL'))
-
         pid = os.getpid()
 
         # Create/Initialize the log file.
@@ -1304,23 +1321,27 @@ if __name__ == "__main__":
         # TerminationHandler opens a DB connection to the RS database (which is the same as the DRMS database, most likely).
         with TerminationHandler(lockFile=arguments.getArg('lockFile'), log=ssLog, pid=pid, dbHost=arguments.getArg('dbHost'), dbName=arguments.getArg('dbName'), dbPort=arguments.getArg('dbPort'), dbUser=arguments.getArg('dbUser')) as th:
             # start the finder thread - it will run for the entire duration of the steward
-            maxSUs = arguments.getArg('suChunkSize') * 10 # keep maxSUs in each partition's for-deletion pool
+            maxSUDIRs = arguments.getArg('suChunkSize') * 10 # keep maxSUDIRs in each partition's for-deletion pool
+            ssLog.writeInfo([ 'caching ' + str(maxSUDIRs) + ' for deletion (per partition)' ])
             
             # find SUs to delete in all specified partitions
             # on error, this raises (terminating stewie)
             partitions = getPartitions(arguments.getArg('partitionSets'))
             
             if len(partitions) == 0:
-                raise ArgsException('no valid partitions were specified in the setlist argument') 
+                raise ArgsException('no valid partitions were specified in the setlist argument')
+                
+            partitionsStr = ','.join(partitions)
+            ssLog.writeInfo([ 'scrubbing partitions ' + partitionsStr ])
 
             SUFinder.acquireLock()
             try:
                 # does not block
-                suFinders = SUFinder.newFinders(partitions=partitions, maxSUs=maxSUs, log=ssLog)
+                suFinders = SUFinder.newFinders(partitions=partitions, maxSUDIRs=maxSUDIRs, log=ssLog)
+                ssLog.writeInfo([ 'successfully created SUFinders for partitions ' + ','.join([ finder.partition() for finder in suFinders ]) ])
             except:
                 suFinders = None
                 raise
-            
             finally:
                 SUFinder.releaseLock()
 
@@ -1330,7 +1351,7 @@ if __name__ == "__main__":
             while True:
                 # main loop
                 startTime = datetime.now()
-
+                ssLog.writeDebug([ 'starting main loop iteration' ])
                 activeFindersQ = queue.Queue()
 
                 # find out which partitions are eligible for cleaning (usage is about the hi-water mark)
@@ -1339,11 +1360,12 @@ if __name__ == "__main__":
                     if datetime.now() > timeHydrated + arguments.getArg('rehydrateInterval'):
                         suFinder.rehydrate()
                         timeHydrated = datetime.now()                
-                
+                        ssLog.writeDebug([ 'rehydrated all steward table caches' ])
                     try:
                         # check for insufficient storage available
                         if getPartitionUsage(suFinder.getPartition()) > arguments.getArg('hiwater'):
                             activeFindersQ.put(suFinder)
+                            ssLog.writeDebug([ 'insufficient storage for partition ' + suFinder.getPartitions() + '; scheduling for scrubbing' ])
                     except FileStatException as exc:
                         ssLog.writeWarning([ exc.args[0] + '; skipping finder ' + suFinder.getID() ])
                         pass
@@ -1361,16 +1383,17 @@ if __name__ == "__main__":
                     # below the low-water mark
                     try:
                         th.disableInterrupts()
-
                         try:
                             # one suFinder per partition
                             suFinder = activeFindersQ.get(False)
                             partition = suFinder.getPartition()
+                            ssLog.writeDebug([ 'scrubbing ' +  partition])
 
                             # manageableChunk is an SUChunk for a single partition
                             manageableChunks = suFinder.getSUChunks(arguments.getArg('suChunkSize')) # blocks until a sub-chunk is available
                             for manageableChunk in manageableChunks:
                                 manageableChunk.delete()
+                                ssLog.writeDebug([ 'deleting chunk of SUDIRs: ' + manageableChunk.getSUDIRs()[0] + '...'])
                             
                             # wait for chunks to complete
                             while True:
@@ -1380,10 +1403,11 @@ if __name__ == "__main__":
                     
                                     if suChunk and isinstance(suChunk, (SUChunk)) and suChunk.is_alive():
                                         # can't hold lock here - when the thread terminates, it acquires the same lock
-                                        self.log.writeInfo([ 'waiting for the processing of SUChunk (ID ' + suChunk.getID() + ') to complete' ])
+                                        ssLog.writeInfo([ 'waiting for the processing of SUChunk (ID ' + suChunk.getID() + ') to complete' ])
                                         suChunk.join(60) # wait up to one minute
                                 else:
                                     break
+                            ssLog.writeDebug([ 'deletion of all ' + partition + ' chunks has completed' ])
                                 
                             # only delete chunks for this partition until the partition usage is less than the low-water mark
                             try:
@@ -1392,6 +1416,7 @@ if __name__ == "__main__":
                                     # we were not able to remove a sufficient amount of storage - disable partition writing
                                     try:
                                         disablePartition(partition)
+                                        ssLog.writeDebug([ 'disabled writing to partition ' + partition + '; unable to lower usage below hi-water mark' ])
                                     except DBCommandException as exc:
                                         ssLog.writeWarning([ exc.args[0] ])
                                         ssLog.writeWarning([ 'unable to disable writing to partition ' + partition ])
@@ -1405,6 +1430,7 @@ if __name__ == "__main__":
                                 elif usagePercent > arguments.getArg('lowWater'):
                                     # put back in the Q for next iteration
                                     activeFindersQ.put(suFinder)
+                                    ssLog.writeDebug([ 'usage for partition ' + partition + ' is still above low-water mark; deleting another chunk' ])
                             except FileStatException as exc:
                                 ssLog.writeWarning([ exc.args[0] + '; removing finder ' + suFinder.getID() + ' from active set of finders that get scrubbed' ])
                                 pass
