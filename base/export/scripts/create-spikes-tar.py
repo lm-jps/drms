@@ -22,8 +22,8 @@ import shutil
 from datetime import datetime, timedelta
 from subprocess import check_output, CalledProcessError
 
-START_DATE = '2011.2.17'
-NUM_DAYS = 32
+START_DATE = '2011.10.12'
+NUM_DAYS = 144
 LOG_FILE = 'spikes-tar.log.txt'
 LOG_LEVEL = getattr(logging, 'INFO')
 TAR_DIR = '/surge28/spikes-tars'
@@ -32,7 +32,7 @@ TAR_FILE_PREFIX = 'aia-lev1-spikes_'
 class TarExistsException(Exception):
 
     def __init__(self):
-        super(TarExists, self).__init__()
+        super(TarExistsException, self).__init__()
 
 class Log(object):
     """Manage a logfile."""
