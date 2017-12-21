@@ -65,6 +65,7 @@ SS_LOCKFILE                q:SS_LOCKFILE
 SS_LOW_WATER               a:SS_LOW_WATER
 SS_HIGH_WATER              a:SS_HIGH_WATER
 SS_SU_CHUNK                a:SS_SU_CHUNK
+SS_SLEEP_INTERVAL          a:SS_SLEEP_INTERVAL
 SS_REHYDRATE_INTERVAL      a:SS_REHYDRATE_INTERVAL
 WL_HASWL                   a:WL_HASWL
 WL_FILE                    q:WL_FILE
