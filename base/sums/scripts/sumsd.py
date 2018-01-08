@@ -929,7 +929,7 @@ class AllocRequest(Request):
             else:
                 sunumStr = None
 
-            self._stringifyType()
+            self._stringifyType(whichDict)
             strDict = getattr(self, whichDict)
             strDict['sessionid'] = self.data.sessionid
             strDict['sunum'] = sunumStr
@@ -989,7 +989,7 @@ class PutRequest(Request):
         
     def __stringrepr(self, whichDict):
         if not hasattr(self, whichDict):
-            self._stringifyType()
+            self._stringifyType(whichDict)
             strDict = getattr(self, whichDict)
             strDict['sessionid'] = self.data.sessionid
             strDict['sudirs'] = self.unjsonized['sudirs']
@@ -999,7 +999,7 @@ class PutRequest(Request):
             
     def __stringinfo(self, whichDict):
         if not hasattr(self, whichDict):
-            self._stringifyType()
+            self._stringifyType(whichDict)
             strDict = getattr(self, whichDict)
             strDict['sessionid'] = self.data.sessionid
             strDict['sudirs'] = self.unjsonized['sudirs'][0:Request._numInfoSUS]
@@ -1038,7 +1038,7 @@ class DeleteseriesRequest(Request):
         
     def __stringrepr(self, whichDict):
         if not hasattr(self, whichDict):
-            self._stringifyType()
+            self._stringifyType(whichDict)
             strDict = getattr(self, whichDict)
             strDict['sessionid'] = self.data.sessionid
             strDict['series'] = self.data.series
@@ -1065,7 +1065,7 @@ class PingRequest(Request):
 
     def __stringrepr(self, whichDict):
         if not hasattr(self, whichDict):
-            self._stringifyType()
+            self._stringifyType(whichDict)
             strDict = getattr(self, whichDict)
             strDict['sessionid'] = self.data.sessionid
         
@@ -1093,7 +1093,7 @@ class PollRequest(Request):
 
     def __stringrepr(self, whichDict):
         if not hasattr(self, whichDict):
-            self._stringifyType()
+            self._stringifyType(whichDict)
             strDict = getattr(self, whichDict)
             strDict['sessionid'] = self.data.sessionid
             strDict['requestid'] = self.data.requestid
