@@ -79,6 +79,12 @@ q:RS_TMPDIR                             /tmp
 a:RS_SCP_MAXSUS                         48
 a:RS_SCP_MAXPAYLOAD                     512
 a:RS_SCP_TIMEOUT                        2
+q:SS_LOCKFILE                           /home/jsoc/locks/sustewie.lck
+a:SS_LOW_WATER                          90
+a:SS_HIGH_WATER                         95
+a:SS_SU_CHUNK                           4096
+a:SS_SLEEP_INTERVAL                     300
+a:SS_REHYDRATE_INTERVAL                 3600
 # White-list (access to internal stuff)
 a:WL_HASWL                              1
 q:WL_FILE                               /web/jsoc/htdocs/whitelist.txt
@@ -90,7 +96,7 @@ q:BIN_PY3                               /home/jsoc/anaconda3/bin/python3
 a:SUMS_USEMTSUMS                        1
 a:SUMS_USEMTSUMS_INFO                   1
 # Email registration
-a:REGEMAIL_TIMEOUT                      5
+a:REGEMAIL_TIMEOUT                      15
 # Slony
 q:SLONY_CONFIG                          /home/jsoc/cvs/Development/JSOC/proj/replication/etc/repserver.cfg
 
