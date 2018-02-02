@@ -40,13 +40,39 @@ int drms_fitstas_create(DRMS_Env_t *env,
       {
          if (fitsrw_writeintfile(env->verbose, filename, &info, NULL, comp, NULL) != CFITSIO_SUCCESS)
          {
-            fprintf(stderr, "Couldn't create FITS TAS file '%s'.\n", filename); 
+            fprintf(stderr, "couldn't create FITS TAS file '%s'\n", filename); 
             status = DRMS_ERROR_CANTCREATETASFILE;
+         }
+         else
+         {
+            /* axis[naxis] == unitsize, which mean that fitsrw_writeintfile() created
+             * a cube with the value of the last dimension (the slice dimension) set
+             * to the unitsize. A cube was created with all slices present, all pixel
+             * values were set to the empty value, and the slice NAXIS FITS keyword
+             * was set to the unitsize.
+             *
+             * However, we want to pretend that we have not written any slices just yet.
+             * As slices are written, we keep track of the index of the slice, saving
+             * the highest index. In this way, we know how big the final slice-dimension
+             * will be. Then when we close the TAS file, we truncate the 'blank' slices
+             * at the end of the cube - the ones that were never written.
+             *
+             * fitsrw_writeintfile() called fitsrw_setfpinfo_ext() to set the slice NAXIS
+             * value to the unitsize. In order to pretend that no slices have been yet written,
+             * we need to set this value to 0.
+             */
+            int fitsrwErr = CFITSIO_SUCCESS;
+            
+            if (fitsrw_initializeTAS(env->verbose, filename) != CFITSIO_SUCCESS)
+            {
+                fprintf(stderr, "could not initialize FITS TAS file '%s'\n", filename);
+                status = DRMS_ERROR_CANTCREATETASFILE;
+            }
          }
       }
       else
       {
-         fprintf(stderr, "Couldn't set FITS TAS file image info.\n"); 
+         fprintf(stderr, "couldn't set FITS TAS file image info\n"); 
          status = DRMS_ERROR_CANTCREATETASFILE;
       }
    }

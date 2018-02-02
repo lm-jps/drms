@@ -31,8 +31,6 @@
 #define ISBLANK(c) (c==' ' || c=='\t' || c=='\r')
 #define SKIPWS(p) {while(*p && ISBLANK(*p)) { ++p; }}
 
-typedef CFITSIO_IMAGE_INFO TASRW_FilePtrInfo_t;
-
 HContainer_t *gFFiles = NULL;
 HContainer_t *gFFPtrInfo = NULL;
 
@@ -124,12 +122,13 @@ fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeab
    char filehashkey[PATH_MAX + 2];
    char tmpfilehashkey[PATH_MAX + 2];
    char fileinfokey[64];
-   int stat = CFITSIO_SUCCESS;
+   int stat = CFITSIO_SUCCESS; /* a FITSRW error code is returned from this function */
    int fiostat = 0;
    int datachk;
    int hduchk;
    int newfile = 0;
    char cfitsiostat[FLEN_STATUS];
+   int exit_code = CFITSIO_SUCCESS;
    
    if (fileCreated)
    {
@@ -217,10 +216,7 @@ fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeab
                }
             }
 
-            if (!stat)
-            {
-               hcon_remove(gFFiles, tmpfilehashkey);
-            }
+           hcon_remove(gFFiles, tmpfilehashkey);
             
             pfptr = NULL;
          }
@@ -280,7 +276,6 @@ fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeab
          if (verchksum)
          {
              fiostat = 0;
-             
             if (fits_verify_chksum(fptr, &datachk, &hduchk, &fiostat))
             {
                 fprintf(stderr, "FITSIO error: %d.\n", fiostat);
@@ -304,6 +299,8 @@ fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeab
          }
       }
       
+      exit_code = stat;
+      
       if (!stat && gFFiles->num_total >= MAXFFILES - 1)
       {
          /* Must close some open files */
@@ -319,6 +316,7 @@ fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeab
          {
             while (ifile < MAXFFILES / 2)
             {
+                stat = 0;
                pfptr = (fitsfile **)hiter_extgetnext(hit, &fhkey);
 
                if (pfptr)
@@ -328,64 +326,102 @@ fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeab
                      /* remove fileptr into structure */
                      snprintf(fileinfokey, sizeof(fileinfokey), "%p", (void *)*pfptr);
 
-                     /* Before removing the file info, get the dirty flag value and the value of NAXISn. */
-                     stat = fitsrw_getfpinfo(*pfptr, &finfo);
-
-                     if (stat)
-                     {
-                        fprintf(stderr, "Missing file info for fits file '%s'.\n", fhkey);
-                        stat = CFITSIO_ERROR_CANT_GET_FILEINFO;
-                        break;
-                     }
-
                      hcon_remove(gFFPtrInfo, fileinfokey);
 
                      if (IsWriteable(fhkey))
                      {
-                        if (finfo.bitfield & kInfoPresent_Dirt)
-                        {
-                           /* If this is a writable fits file AND the dirty flag is set (which means that
-                            * since the file was first created, the NAXISn length has changed due to 
-                            * slice writing), then update the NAXISn keyword value before closing the 
-                            * fits file. */
-                           char naxisname[64];
-                           int dimlen;
+                          /* Before removing the file info, get the dirty flag value and the value of NAXISn. */
+                         stat = fitsrw_getfpinfo(*pfptr, &finfo);
 
-                           snprintf(naxisname, sizeof(naxisname), "NAXIS%d", finfo.naxis);
-                           dimlen = (int)finfo.naxes[finfo.naxis - 1];
-                            fiostat = 0;
-                           fits_update_key(*pfptr, TINT, naxisname, &dimlen, NULL, &fiostat);
+                         if (stat)
+                         {
+                            fprintf(stderr, "missing file info for fits file '%s'\n", fhkey);
+                            stat = CFITSIO_ERROR_CANT_GET_FILEINFO;
+                         }
+                         else
+                         {
+                            if (finfo.bitfield & kInfoPresent_Dirt)
+                            {
+                                /* If this is a writable fits file AND the dirty flag is set (which means that
+                                 * since the file was first created, the NAXISn length has changed due to 
+                                 * slice writing), then update the NAXISn keyword value before closing the 
+                                 * fits file. */
 
-                           if (fiostat)
-                           {
-                               fprintf(stderr, "FITSIO error: %d.\n", fiostat);
-                              fprintf(stderr, "Unable to update %s keyword.\n", naxisname);
-                              stat = CFITSIO_ERROR_LIBRARY;
-                              break;
-                           }
+                                /* It is not sufficient to simply change the NAXISn keyword value. Although this WILL
+                                 * make FITSIO think the image is smaller, the actual image data does not get removed
+                                 * from the FITS file. So, we ALSO have to call fits_resize_imgll().
+                                 */
+                                int dimlen;
+                                int imgType;
+                                long long *axes = NULL;
+                                int iaxis;
+                                
+                                axes = calloc(finfo.naxis, sizeof(long long));
+                                
+                                if (!axes)
+                                {
+                                    stat = CFITSIO_ERROR_OUT_OF_MEMORY;
+                                }
+                                else
+                                {
+                                    for (iaxis = 0; iaxis < finfo.naxis; iaxis++)
+                                    {
+                                        axes[iaxis] = finfo.naxes[iaxis];
+                                    }
+
+                                    switch(finfo.bitpix)
+                                    {
+                                        case(BYTE_IMG): imgType = SBYTE_IMG; break;
+                                        case(SHORT_IMG): imgType = SHORT_IMG; break;
+                                        case(LONG_IMG): imgType = LONG_IMG; break; 
+                                        case(LONGLONG_IMG): imgType = LONGLONG_IMG; break;
+                                        case(FLOAT_IMG): imgType = FLOAT_IMG; break;
+                                        case(DOUBLE_IMG): imgType = DOUBLE_IMG; break;
+                                    }
+
+                                    fiostat = 0;
+                                    fits_resize_imgll(*pfptr, imgType, finfo.naxis, axes, &fiostat);
+                            
+                                    if (fiostat)
+                                    {
+                                        fprintf(stderr, "FITSIO error: %d\n", fiostat);
+                                        fprintf(stderr, "unable to resize image in fits file %s\n", filename);
+                                        stat = CFITSIO_ERROR_LIBRARY;
+                                    }
+                                
+                                    /* no need to manually modify NAXISn (the value of the slice dimension); 
+                                     * fits_resize_imgll() does this 
+                                     */
+                                     
+                                    free(axes);
+                                    axes = NULL;
+                                 }
+                            }
                         }
 
-                        if (verbose)
+                        if (!stat)
                         {
-                           PushTimer();
-                        }
-
-                         fiostat = 0;
-                        fits_write_chksum(*pfptr, &fiostat);
-
-                        if (fiostat)
-                        {
-                           fits_get_errstatus(fiostat, cfitsiostat);
-                           fprintf(stderr, "Purging cache: error calculating and writing checksum for fitsfile '%s'.\n", fhkey);
-                           fprintf(stderr, "CFITSIO error '%s'\n", cfitsiostat);
-                           stat = 0;
-                           fiostat = 0;
-                        }
+                            if (verbose)
+                            {
+                               PushTimer();
+                            }
                         
-                        if (verbose)
-                        {
-                           fprintf(stdout, "Time to write checksum on fitsfile '%s' = %f sec.\n", fhkey, PopTimer());
-                        }
+                            fiostat = 0;
+                            fits_write_chksum(*pfptr, &fiostat);
+
+                            if (fiostat)
+                            {
+                               fits_get_errstatus(fiostat, cfitsiostat);
+                               fprintf(stderr, "Purging cache: error calculating and writing checksum for fitsfile '%s'.\n", fhkey);
+                               fprintf(stderr, "CFITSIO error '%s'\n", cfitsiostat);
+                               stat = CFITSIO_ERROR_LIBRARY;
+                            }
+                            
+                            if (verbose)
+                            {
+                               fprintf(stdout, "Time to write checksum on fitsfile '%s' = %f sec.\n", fhkey, PopTimer());
+                            }                            
+                        }                        
                      }
 
                      if (verbose)
@@ -409,8 +445,10 @@ fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeab
                         fprintf(stderr, "Purging cache: error closing fitsfile '%s'.\n", fhkey);
                         fprintf(stderr, "CFITSIO error '%s'\n", cfitsiostat);
                         perror("fitsrw_getfptr_internal() system error");
-                        stat = CFITSIO_ERROR_FILE_IO;
-                        break;
+                        if (!stat)
+                        {
+                            stat = CFITSIO_ERROR_FILE_IO;
+                        }
                      }
                      
                      if (verbose)
@@ -430,6 +468,12 @@ fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeab
                {
                   break;
                }
+               
+               if (stat && exit_code == CFITSIO_SUCCESS)
+                {
+                    exit_code = stat;
+                }
+               
             } /* loop over files being purged */
 
             hiter_destroy(&hit);
@@ -446,10 +490,10 @@ fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeab
          list_llfree(&llist);
       }
 
-      if (!stat)
+      if (!exit_code)
       {
          /* We just opened a new fits-file. Cache it. */
-
+        stat = 0;
          CFITSIO_IMAGE_INFO *imginfo = NULL;
 
          /* Read essential keyword information and cache that for later use */
@@ -492,12 +536,14 @@ fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeab
          {
             fprintf(stdout, "Number fitsfiles opened: %d\n", gFFiles->num_total);
          }
+         
+         exit_code = stat;
       }
    }
 
    if (status)
    {
-      *status = stat;
+      *status = exit_code;
    }
 
    return fptr;
@@ -950,7 +996,14 @@ int fitsrw_writeslice(int verbose, const char *filename, int *fpixel, int *lpixe
 #endif
 
    /* Must update the file pointer info's naxis value with dimlen if dimlen is greater than 
-    * fpinfo.naxis */
+    * fpinfo.naxis 
+    *
+    * As we write slices, we store the value of the cube's last dimension where the slice resides.
+    * We can write slices out of order, so we only modify this value if the slice currently being 
+    * written increases the size of the cube in this last dimension.
+    *
+    * When we close the file, the NAXISn keyword will be updated (in fitsrw_closefptr()).
+    */
    dimlen = lpixel[fpinfo.naxis - 1] + 1;
    if (dimlen > fpinfo.naxes[fpinfo.naxis - 1])
    {
@@ -987,7 +1040,7 @@ int fitsrw_writeslice(int verbose, const char *filename, int *fpixel, int *lpixe
 int fitsrw_closefptr(int verbose, fitsfile *fptr)
 {
     char fileinfokey[64];
-    int stat = 0; /* fitsio status */
+    int fiostat = 0; /* fitsio status */
     TASRW_FilePtrInfo_t fpinfo;
     char cfitsiostat[FLEN_STATUS];
     int error_code = CFITSIO_SUCCESS;
@@ -1015,35 +1068,82 @@ int fitsrw_closefptr(int verbose, fitsfile *fptr)
                          * since the file was first created, the NAXISn length has changed due to 
                          * slice writing), then update the NAXISn keyword value before closing the 
                          * fits file. */
-                        char naxisname[64];
+                         
+                        /* It is not sufficient to simply change the NAXISn keyword value. Although this WILL
+                         * make FITSIO think the image is smaller, the actual image data does not get removed
+                         * from the FITS file. So, we ALSO have to call fits_resize_imgll().
+                         */
                         int dimlen;
+                        int imgType;
+                        long long *axes = NULL;
+                        int iaxis;
+
+                        axes = calloc(fpinfo.naxis, sizeof(long long));
+                                
+                        if (!axes)
+                        {
+                            error_code = CFITSIO_ERROR_OUT_OF_MEMORY;
+                        }
+                        else
+                        {
+                            for (iaxis = 0; iaxis < fpinfo.naxis; iaxis++)
+                            {
+                                axes[iaxis] = fpinfo.naxes[iaxis];
+                            }
+
+                            switch(fpinfo.bitpix)
+                            {
+                                case(BYTE_IMG): imgType = SBYTE_IMG; break;
+                                case(SHORT_IMG): imgType = SHORT_IMG; break;
+                                case(LONG_IMG): imgType = LONG_IMG; break; 
+                                case(LONGLONG_IMG): imgType = LONGLONG_IMG; break;
+                                case(FLOAT_IMG): imgType = FLOAT_IMG; break;
+                                case(DOUBLE_IMG): imgType = DOUBLE_IMG; break;
+                            }
+
+                            fiostat = 0;
+                            fits_resize_imgll(fptr, imgType, fpinfo.naxis, axes, &fiostat);
                         
-                        snprintf(naxisname, sizeof(naxisname), "NAXIS%d", fpinfo.naxis);
-                        dimlen = (int)fpinfo.naxes[fpinfo.naxis - 1];
-                        fits_update_key(fptr, TINT, naxisname, &dimlen, NULL, &stat);
+                            if (fiostat)
+                            {
+                                fprintf(stderr, "FITSIO error: %d\n", fiostat);
+                                fprintf(stderr, "unable to resize image in fits file\n");
+                                error_code = CFITSIO_ERROR_LIBRARY;
+                            }
+                        
+                            /* no need to manually modify NAXISn (the value of the slice dimension); 
+                             * fits_resize_imgll() does this 
+                             */
+                             
+                            free(axes);
+                            axes = NULL;
+                         }
                     }
                     
-                    if (verbose)
+                    if (!error_code)
                     {
-                        PushTimer();
-                    }
+                        if (verbose)
+                        {
+                            PushTimer();
+                        }
+
+                        fiostat = 0;
+                        fits_write_chksum(fptr, &fiostat);
                     
-                    fits_write_chksum(fptr, &stat);
-                    
-                    if (stat)
-                    {
-                        fits_get_errstatus(stat, cfitsiostat);
-                        fprintf(stderr, "Closing fitsfile: error calculating and writing checksum for fitsfile '%s'.\n", fpinfo.fhash);
-                        fprintf(stderr, "CFITSIO error '%s'\n", cfitsiostat);
-                        fits_report_error(stderr, stat);
-                        error_code = CFITSIO_ERROR_LIBRARY;
-                        stat = 0;
-                    }
-                    
-                    if (verbose)
-                    {
-                        fprintf(stdout, "Time to write checksum on fitsfile '%s' = %f sec.\n", fpinfo.fhash, PopTimer());
-                    }
+                        if (fiostat)
+                        {
+                            fits_get_errstatus(fiostat, cfitsiostat);
+                            fprintf(stderr, "Closing fitsfile: error calculating and writing checksum for fitsfile '%s'.\n", fpinfo.fhash);
+                            fprintf(stderr, "CFITSIO error '%s'\n", cfitsiostat);
+                            fits_report_error(stderr, fiostat);
+                            error_code = CFITSIO_ERROR_LIBRARY;
+                        }
+                        
+                        if (verbose)
+                        {
+                            fprintf(stdout, "Time to write checksum on fitsfile '%s' = %f sec.\n", fpinfo.fhash, PopTimer());
+                        }
+                    }                    
                 }
                 
                 if (verbose)
@@ -1051,9 +1151,10 @@ int fitsrw_closefptr(int verbose, fitsfile *fptr)
                     PushTimer();
                 }        
                 
-                fits_close_file(fptr, &stat);
+                fiostat = 0;
+                fits_close_file(fptr, &fiostat);
                 
-                if (stat == 0)
+                if (fiostat == 0)
                 {
                     if (verbose)
                     {
@@ -1062,11 +1163,15 @@ int fitsrw_closefptr(int verbose, fitsfile *fptr)
                 }
                 else
                 {
-                    fits_get_errstatus(stat, cfitsiostat);
+                    fits_get_errstatus(fiostat, cfitsiostat);
                     fprintf(stderr, "Closing fitsfile: error closing fitsfile '%s'.\n", fpinfo.fhash);
                     fprintf(stderr, "CFITSIO error '%s'\n", cfitsiostat);
                     perror("fitsrw_closefptr() system error");
-                    error_code = CFITSIO_ERROR_FILE_IO;
+
+                    if (!error_code)
+                    {
+                        error_code = CFITSIO_ERROR_FILE_IO;
+                    }
                 }
                 
                 if (verbose)
@@ -1174,6 +1279,7 @@ int fitsrw_closefptrs(int verbose)
                 list_llreset(llist);
                 while ((node = list_llnext(llist)) != NULL)
                 {
+                    stat = 0;
                     onefile = *((char **)node->data);
                     pfptr = (fitsfile **)hcon_lookup(gFFiles, onefile);
                     
@@ -1182,52 +1288,104 @@ int fitsrw_closefptrs(int verbose)
                         /* remove fileptr info structure */         
                         snprintf(fileinfokey, sizeof(fileinfokey), "%p", (void *)*pfptr);
                         
-                        /* Before removing the file info, get the dirty flag value and the value of NAXISn. */
-                        stat = fitsrw_getfpinfo(*pfptr, &fpinfo);
-                        
-                        if (stat)
-                        {
-                            fprintf(stderr, "Missing file info for fits file '%s'.\n", onefile);
-                            break;
-                        }
-                        
                         hcon_remove(gFFPtrInfo, fileinfokey);
                         
                         if (IsWriteable(onefile))
                         {
-                            if (fpinfo.bitfield & kInfoPresent_Dirt)
+                            /* Before removing the file info, get the dirty flag value and the value of NAXISn. */
+
+                            /* it is OK to overwrite stat from previous iterations; the previous iteration
+                             * stat value was saved in exit_code */
+                            stat = fitsrw_getfpinfo(*pfptr, &fpinfo);
+                        
+                            if (stat)
                             {
-                                /* If this is a writable fits file AND the dirty flag is set (which means that
-                                 * since the file was first created, the NAXISn length has changed due to 
-                                 * slice writing), then update the NAXISn keyword value before closing the 
-                                 * fits file. */
-                                char naxisname[64];
-                                int dimlen;
+                                fprintf(stderr, "Missing file info for fits file '%s'.\n", onefile);
+                                /* keep going - we just skip the removal of the file info from the global container */
+                            }
+                            else
+                            {
+                                if (fpinfo.bitfield & kInfoPresent_Dirt)
+                                {
+                                    /* If this is a writable fits file AND the dirty flag is set (which means that
+                                     * since the file was first created, the NAXISn length has changed due to 
+                                     * slice writing), then update the NAXISn keyword value before closing the 
+                                     * fits file. */
+                                 
+                                    /* It is not sufficient to simply change the NAXISn keyword value. Although this WILL
+                                     * make FITSIO think the image is smaller, the actual image data does not get removed
+                                     * from the FITS file. So, we ALSO have to call fits_resize_imgll().
+                                     */
+                                    int dimlen;
+                                    int imgType;
+                                    long long *axes = NULL;
+                                    int iaxis;
+
+                                    axes = calloc(fpinfo.naxis, sizeof(long long));
                                 
-                                snprintf(naxisname, sizeof(naxisname), "NAXIS%d", fpinfo.naxis);
-                                dimlen = (int)fpinfo.naxes[fpinfo.naxis - 1];
-                                fits_update_key(*pfptr, TINT, naxisname, &dimlen, NULL, &fiostat);
+                                    if (!axes)
+                                    {
+                                        stat = CFITSIO_ERROR_OUT_OF_MEMORY;
+                                    }
+                                    else
+                                    {
+                                        for (iaxis = 0; iaxis < fpinfo.naxis; iaxis++)
+                                        {
+                                            axes[iaxis] = fpinfo.naxes[iaxis];
+                                        }
+
+                                        switch(fpinfo.bitpix)
+                                        {
+                                            case(BYTE_IMG): imgType = SBYTE_IMG; break;
+                                            case(SHORT_IMG): imgType = SHORT_IMG; break;
+                                            case(LONG_IMG): imgType = LONG_IMG; break; 
+                                            case(LONGLONG_IMG): imgType = LONGLONG_IMG; break;
+                                            case(FLOAT_IMG): imgType = FLOAT_IMG; break;
+                                            case(DOUBLE_IMG): imgType = DOUBLE_IMG; break;
+                                        }
+
+                                        fiostat = 0;
+                                        fits_resize_imgll(*pfptr, imgType, fpinfo.naxis, axes, &fiostat);
+
+                                        if (fiostat)
+                                        {
+                                            fprintf(stderr, "FITSIO error: %d.\n", fiostat);
+                                            fprintf(stderr, "unable to resize image in fits file\n");
+                                            stat = CFITSIO_ERROR_LIBRARY;
+                                        }
+                                
+                                        /* no need to manually modify NAXISn (the value of the slice dimension); 
+                                         * fits_resize_imgll() does this 
+                                         */
+                                         
+                                        free(axes);
+                                        axes = NULL;
+                                     }
+                                }
                             }
                             
-                            if (verbose)
+                            if (!stat)
                             {
-                                PushTimer();
-                            }
-                            
-                            fits_write_chksum(*pfptr, &fiostat);
-                            
-                            if (fiostat)
-                            {
-                                fits_get_errstatus(fiostat, cfitsiostat);
-                                fprintf(stderr, "Closing all fitsfiles: error calculating and writing checksum for fitsfile '%s'.\n", onefile);
-                                fprintf(stderr, "CFITSIO error '%s'\n", cfitsiostat);
+                                if (verbose)
+                                {
+                                    PushTimer();
+                                }
+
                                 fiostat = 0;
-                                stat = CFITSIO_ERROR_LIBRARY;
-                            }
+                                fits_write_chksum(*pfptr, &fiostat);
                             
-                            if (verbose)
-                            {
-                                fprintf(stdout, "Time to write checksum on fitsfile '%s' = %f sec.\n", onefile, PopTimer());
+                                if (fiostat)
+                                {
+                                    fits_get_errstatus(fiostat, cfitsiostat);
+                                    fprintf(stderr, "Closing all fitsfiles: error calculating and writing checksum for fitsfile '%s'.\n", onefile);
+                                    fprintf(stderr, "CFITSIO error '%s'\n", cfitsiostat);
+                                    stat = CFITSIO_ERROR_LIBRARY;
+                                }
+                                
+                                if (verbose)
+                                {
+                                    fprintf(stdout, "Time to write checksum on fitsfile '%s' = %f sec.\n", onefile, PopTimer());
+                                }                                
                             }
                         }
                         
@@ -1236,6 +1394,7 @@ int fitsrw_closefptrs(int verbose)
                             PushTimer();
                         }
                         
+                        fiostat = 0;
                         fits_close_file(*pfptr, &fiostat);
                         
                         if (fiostat == 0)
@@ -1251,8 +1410,10 @@ int fitsrw_closefptrs(int verbose)
                             fprintf(stderr, "Closing all fitsfiles: error closing fitsfile '%s'.\n", onefile);
                             fprintf(stderr, "CFITSIO error '%s'\n", cfitsiostat);
                             perror("fitsrw_closefptrs() system error");
-                            fiostat = 0;
-                            stat = CFITSIO_ERROR_FILE_IO;
+                            if (!stat)
+                            {
+                                stat = CFITSIO_ERROR_FILE_IO;
+                            }
                         }
                         
                         if (verbose)
@@ -1261,8 +1422,11 @@ int fitsrw_closefptrs(int verbose)
                         }
                     }
                     else
-                    {
-                        stat = CFITSIO_ERROR_FILE_IO;
+                    {   if (!stat)
+                        {
+                            stat = CFITSIO_ERROR_FILE_IO;
+                        }
+
                         fprintf(stderr, "Unknown fitsfile '%s'.\n", onefile);
                     }
                     
@@ -1328,4 +1492,40 @@ int fitsrw_iscompressed(const char *cparms)
    }
 
    return rv;
+}
+
+int fitsrw_initializeTAS(int verbose, const char *filename)
+{
+    int fitsrwErr = CFITSIO_SUCCESS;
+    fitsfile *fptr = fitsrw_getfptr(verbose, filename, 1, &fitsrwErr, NULL);
+            
+    if (!fptr || fitsrwErr != CFITSIO_SUCCESS)
+    {
+        fprintf(stderr, "could not locate FITS TAS file '%s'\n", filename);
+        fitsrwErr = CFITSIO_ERROR_FILE_IO;
+    }
+    else
+    {
+        TASRW_FilePtrInfo_t fpinfo;
+
+        if (fitsrw_getfpinfo(fptr, &fpinfo))
+        {
+            fprintf(stderr, "unable to get fitsfile image parameters\n");
+            fitsrwErr = CFITSIO_ERROR_CANT_GET_FILEINFO;
+        }
+        else
+        {
+            TASRW_FilePtrInfo_t newinfo = fpinfo;
+
+            newinfo.naxes[fpinfo.naxis - 1] = 0; /* set the value of the slice-dimension length to 0 ==> empty cube with no slices */
+            newinfo.bitfield |= kInfoPresent_Dirt; /* set the dirty bit */
+            if (fitsrw_setfpinfo(fptr, &newinfo) != 0)
+            {
+                fprintf(stderr, "could not set FITS TAS-file (%s) information\n", filename);
+                fitsrwErr = CFITSIO_ERROR_FILE_IO;
+            }
+        }            
+    }
+    
+    return fitsrwErr;
 }

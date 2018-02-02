@@ -3,6 +3,7 @@
 
 #include "fitsio.h"
 
+typedef CFITSIO_IMAGE_INFO TASRW_FilePtrInfo_t;
 #define HUGE_HDU_THRESHOLD 3758096384 /* 3.5 GB */
 
 int fitsrw_readslice(int verbose,
@@ -23,6 +24,7 @@ int fitsrw_closefptrs(int verbose);
 int fitsrw_getfpinfo_ext(fitsfile *fptr, CFITSIO_IMAGE_INFO *info);
 int fitsrw_setfpinfo_ext(fitsfile *fptr, CFITSIO_IMAGE_INFO *info);
 int fitsrw_iscompressed(const char *cparms);
+int fitsrw_initializeTAS(int verbose, const char *filename);
 
 #endif /* _TASRW_H */
 
