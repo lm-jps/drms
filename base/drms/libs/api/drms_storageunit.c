@@ -494,6 +494,10 @@ static int drms_su_newslots_internal(DRMS_Env_t *env, int n, char *series,
                                      int createslotdirs,
                                      int gotosums)
 {
+    /* Let's try to document this complex function:
+     *   1. It first looks in the series' Storage Unit (SU) cache for any SU that has unused slots
+     *   2. 
+     */
   int i, status, slot;
   HContainer_t *scon; 
   HIterator_t hit; 
@@ -522,8 +526,18 @@ static int drms_su_newslots_internal(DRMS_Env_t *env, int n, char *series,
   hiter_new(&hit, scon);  
   while( (su[0] = (DRMS_StorageUnit_t *)hiter_getnext(&hit)) )
   {
+    /* FIND EXISTING SU FOR THIS SERIES WITH AT LEAST ONE FREE SLOT */
     if ( su[0]->mode == DRMS_READWRITE && su[0]->nfree > 0 )
-    { 
+    {
+        /* We found a storage unit (in scon, the series' SU cache) that is a read-write SU, and it has 
+         * free (unused and available) slots. slot EVENTUALLY holds the index of such a slot. This code
+         * uses slot == -1 to indicate that no such free slot has been found, so it sloppily sets slot to
+         * 0 to trick the following code into thinking that a usable slot has been found. However, the
+         * usable slot is not necessarily the one with index == 0. The actual slot-index determination
+         * is performed later on (I labeled that block DETERMINE USABLE SLOT INDEX).
+         *
+         * HOWEVER, su[0] DOES point to an SU with free slots.
+         */
       slot = 0;
       break;
     }
@@ -538,15 +552,44 @@ static int drms_su_newslots_internal(DRMS_Env_t *env, int n, char *series,
   for (i=0; i<n; i++)
   {    
     if (slot >= 0)
-    {     
-      if (i>0) /* If previous storage unit still has room, use it. */
-	su[i] = su[i-1];
-      XASSERT(su[i]->nfree>0);
-      while( su[i]->state[slot] != DRMS_SLOT_FREE ) 
-	++slot;
+    {
+        /* a usable slot has been found */
+        if (i > 0) 
+        {
+            /* the usable slot is in fact in the PREVIOUS SU */
+            /* We know that the previous SU, su[i - 1], had at least one free slot during the last iteration
+             * of this loop over i, and we know that is still does have a free slot since slot != -1. But if 
+             * i == 0, then there was no previous iteration of this loop, so it must be su[0] that has the
+             * free slot.
+             */
+            su[i] = su[i-1];
+        }
+        else
+        {
+            /* We already located the first available SU with free slots in the block of code labeled 
+             * "FIND EXISTING SU FOR THIS SERIES WITH AT LEAST ONE FREE SLOT"; su[0] points to it. The
+             * block of code "DETERMINE USABLE SLOT INDEX" will find which slot is actually free.
+             */
+        }
+        
+        XASSERT(su[i]->nfree>0);
+        
+        /* DETERMINE USABLE SLOT INDEX */
+        while (su[i]->state[slot] != DRMS_SLOT_FREE) 
+        {
+            /* A slot can have these states: DRMS_SLOT_FREE, DRMS_SLOT_FULL, DRMS_SLOT_TEMP. If the state is DRMS_SLOT_FREE,
+             * then the slot has never been assigned to a DRMS record. If the state is DRMS_SLOT_FULL, then the record is
+             * permanent as have been assigned a slot. A transient record still gets a slot assigned to it, but the slot has
+             * the state DRMS_SLOT_TEMP. When DRMS commits SUs at module termination, temporary records are not saved. */
+            ++slot;
+        }
     }
     if (slot == -1) /* Out of slots: It's time to allocate a new SU. */
     {
+        /* There is no free slot in the current SU. It may be that the code labeled 
+         * "FIND EXISTING SU FOR THIS SERIES WITH AT LEAST ONE FREE SLOT" never found an SU with 
+         * at least one free slot to begin with. */
+    
        /* ART - if gotosums == 0, then we cannot talk to SUMS, and we cannot allocate
         * the requested new slots, so we have to error out. */
        if (gotosums == 0)

@@ -2702,6 +2702,10 @@ DRMS_RecordSet_t *drms_create_records_fromtemplate(DRMS_Env_t *env, int n,
           // This will unset seg->filename. drms_segment_write() will re-set seg->filename in the event
           // a record's slice of data gets written to the TAS file.
           *(seg->filename) = '\0';
+          
+          // seg->axis is statically defined, so even though seg->info->naxis implies that there are
+          // seg->info->naxis - 1 elements in this array, we can still put the slice dimension in the
+          // next element in the array (seg->axis[seg->info->naxis])
 	    seg->axis[seg->info->naxis] = rs->records[i]->seriesinfo->unitsize;
 	    seg->blocksize[seg->info->naxis] = 1; 
 #ifdef DEBUG

@@ -1204,6 +1204,8 @@ int fitsrw_writeintfile(int verbose,
    }
    else
    {
+        /* TAS-file branch */
+
       /* If you avoid writing an image, then fitsio fills in all unspecified values 
        * with zeros, which is not what we want. Instead, we need to allocate 
        * blocks of missing values and write them out one at a time (we don't
