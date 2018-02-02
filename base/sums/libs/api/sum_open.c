@@ -3594,7 +3594,7 @@ static int jsonizeSumputRequest(SUM_t *sums, SUMID_t sessionid, uint64_t *sunums
     
     if (err)
     {
-        (*history)("Out of memory calling cJSON_CreateArray().\n");
+        (*history)("out of memory calling cJSON_CreateArray()\n");
     }
     else
     {
@@ -3605,25 +3605,42 @@ static int jsonizeSumputRequest(SUM_t *sums, SUMID_t sessionid, uint64_t *sunums
             
             if (err)
             {
-                (*history)("Out of memory calling cJSON_CreateObject().\n");
+                (*history)("out of memory calling cJSON_CreateObject()\n");
                 break;
             }
             else
             {
-                snprintf(numBuf, sizeof(numBuf), "%llx", sunums[isu]);
+                char *sunumStr = NULL;
                 
-                err = ((jsonValue = cJSON_CreateString(sudirs[isu])) == NULL);
+                snprintf(numBuf, sizeof(numBuf), "%llx", sunums[isu]);
+                err = ((sunumStr = strdup(numBuf)) == NULL);
+
                 if (err)
                 {
-                    (*history)("Out of memory calling cJSON_CreateString().\n");
+                    (*history)("out of memory calling strdup()\n");
                     break;
-                }
+                }                
                 else
                 {
-                    cJSON_AddItemToObjectCS(jsonArrayElement, numBuf, jsonValue);
-                }
+                    err = ((jsonValue = cJSON_CreateString(sudirs[isu])) == NULL);
+
+                    if (err)
+                    {
+                        (*history)("out of memory calling cJSON_CreateString()\n");
+                        break;
+                    }
+                    else
+                    {
+                        /* do not use cJSON_AddItemToObjectCS() with the same buffer - if you overwrite
+                         * the buffer contents, then you will change the value of the attribute;
+                         *
+                         * sunumStr will be freed by cjson
+                         */
+                        cJSON_AddItemToObject(jsonArrayElement, sunumStr, jsonValue);
+                    }
              
-                cJSON_AddItemToArray(jsonArray, jsonArrayElement);
+                    cJSON_AddItemToArray(jsonArray, jsonArrayElement);
+                }
             }
         }
     }
