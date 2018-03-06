@@ -18,7 +18,6 @@
 
 /* third-party stuff */
 #include "fitsio.h"
-#include "libtar.h"
 
 char *module_name = "export-to-stdout";
 
@@ -137,54 +136,16 @@ static void *GetOptionValue(ModuleArgs_Type_t type, const char *key)
     return rv;
 }
 
-static int sendMsg(FILE *stream, const char *msg, uint32_t msgLen)
-{
-    size_t bytesSentTotal;
-    size_t bytesSent;
-    char numBytesMesssage[MSGLEN_NUMBYTES + 1];
-    const char *pBuf = NULL;
-    int err = 0;
-    
-    if (msg && *msg)
-    {
-        /* first send the length of the message, msgLen */
-        snprintf(numBytesMesssage, sizeof(numBytesMesssage), "%08x", msgLen);
-        bytesSent = fwrite(numBytesMesssage, 1, MSGLEN_NUMBYTES, stream);
-    
-        if (bytesSent != MSGLEN_NUMBYTES)
-        {
-            fprintf(stderr, "unable to send message length\n");
-            err = 1;
-        }
-        else
-        {
-            /* then send the message */
-            bytesSent = fwrite(msg, 1, msgLen, stream);
-            if (bytesSent != msgLen)
-            {
-                fprintf(stderr, "unable to send message\n");
-                err = 1;
-            }
-        }
-    }
-    else
-    {
-        fprintf(stderr, "invalid arguments to sendMsg()\n");
-    }
-    
-    fflush(stream);
-    
-    return err;
-}
-
 /* outBuf is dynamically allocated; outSize is the current size of allocation */
-static ExpToStdoutStatus_t Dump(FILE *stream, const char *buf, size_t numBytes)
+static ExpToStdoutStatus_t Dump(FILE *stream, const char *buf, size_t numBytes, size_t *numBytesDumped)
 {
     ExpToStdoutStatus_t expStatus = ExpToStdoutStatus_Success;
+    size_t numDumped = 0;
 
     if (stream)
-    {    
-        if (fwrite(buf, 1, numBytes, stream) != numBytes)
+    {
+        numDumped = fwrite(buf, 1, numBytes, stream);
+        if (numDumped != numBytes)
         {
             fprintf(stderr, "unable to dump to stream\n");
             expStatus = ExpToStdoutStatus_Dump;
@@ -195,12 +156,25 @@ static ExpToStdoutStatus_t Dump(FILE *stream, const char *buf, size_t numBytes)
         fprintf(stderr, "Dump(): invalid arguments\n");
     }
     
+    if (numBytesDumped)
+    {
+        if (expStatus == ExpToStdoutStatus_Success)
+        {
+            *numBytesDumped = *numBytesDumped + numDumped;
+        }
+        else
+        {
+            *numBytesDumped = *numBytesDumped + 0;
+        }
+    }
+
     return expStatus;
 }
 
-static ExpToStdoutStatus_t DumpPadding(FILE *stream, size_t existing, size_t total)
+static ExpToStdoutStatus_t DumpPadding(FILE *stream, size_t existing, size_t total, size_t *numBytesDumped)
 {
     ExpToStdoutStatus_t expStatus = ExpToStdoutStatus_Success;
+    size_t numDumped = 0;
     
     if (total > existing)
     {
@@ -209,7 +183,7 @@ static ExpToStdoutStatus_t DumpPadding(FILE *stream, size_t existing, size_t tot
         buf = calloc(total - existing, 1);
         if (buf)
         {
-            expStatus = Dump(stream, buf, total - existing);
+            expStatus = Dump(stream, buf, total - existing, &numDumped);
             free(buf);
         }
         else
@@ -223,36 +197,74 @@ static ExpToStdoutStatus_t DumpPadding(FILE *stream, size_t existing, size_t tot
         expStatus = ExpToStdoutStatus_DumpPadding;
     }
     
-    return expStatus;
-}
-
-static ExpToStdoutStatus_t DumpAndPad(FILE *stream, const char *buf, size_t numBytes, size_t total)
-{
-    ExpToStdoutStatus_t expStatus = ExpToStdoutStatus_Success;
-
-    if (total >= numBytes)
+    if (numBytesDumped)
     {
-        expStatus = Dump(stream, buf, numBytes);
         if (expStatus == ExpToStdoutStatus_Success)
         {
-            expStatus = DumpPadding(stream, numBytes, total);
+            *numBytesDumped = *numBytesDumped + numDumped;
+        }
+        else
+        {
+            *numBytesDumped = *numBytesDumped + 0;
         }
     }
     
     return expStatus;
 }
 
-static ExpToStdoutStatus_t DumpOctal(FILE *stream, long long value, size_t fieldWidth)
+static ExpToStdoutStatus_t DumpAndPad(FILE *stream, const char *buf, size_t numBytes, size_t total, size_t *numBytesDumped)
 {
     ExpToStdoutStatus_t expStatus = ExpToStdoutStatus_Success;
+    size_t numDumped = 0;
+
+    if (total >= numBytes)
+    {
+        expStatus = Dump(stream, buf, numBytes, &numDumped);
+        if (expStatus == ExpToStdoutStatus_Success)
+        {
+            expStatus = DumpPadding(stream, numBytes, total, &numDumped);
+        }
+    }
+    
+    if (numBytesDumped)
+    {
+        if (expStatus == ExpToStdoutStatus_Success)
+        {
+            *numBytesDumped = *numBytesDumped + numDumped;
+        }
+        else
+        {
+            *numBytesDumped = *numBytesDumped + 0;
+        }
+    }
+    
+    return expStatus;
+}
+
+static ExpToStdoutStatus_t DumpOctal(FILE *stream, long long value, size_t fieldWidth, size_t *numBytesDumped)
+{
+    ExpToStdoutStatus_t expStatus = ExpToStdoutStatus_Success;
+    size_t numDumped = 0;
     
     char *field = NULL;
     
     field = calloc(1, fieldWidth + 1);
     if (field)
     {
-        snprintf(field, sizeof(field), "%07llo\0", value); /* trailing NUL ('\0') char */
-        expStatus = Dump(stream, field, fieldWidth);
+        snprintf(field, fieldWidth + 1, "%0*llo\0", (int)fieldWidth - 1, value); /* trailing NUL ('\0') char */
+        expStatus = Dump(stream, field, fieldWidth, &numDumped);
+    }
+    
+    if (numBytesDumped)
+    {
+        if (expStatus == ExpToStdoutStatus_Success)
+        {
+            *numBytesDumped = *numBytesDumped + numDumped;
+        }
+        else
+        {
+            *numBytesDumped = *numBytesDumped + 0;
+        }
     }
     
     return expStatus;
@@ -276,6 +288,7 @@ static ExpToStdoutStatus_t DumpFileObjectHeader(FILE *stream, const char *fileNa
     FILE *writeStream = NULL;
     FILE *readStream = NULL;
     unsigned long long chksum = 0;
+    size_t numBytesDumped = 0;
     
     if (pipe(pipefds))
     {
@@ -304,13 +317,13 @@ static ExpToStdoutStatus_t DumpFileObjectHeader(FILE *stream, const char *fileNa
     if (expStatus == ExpToStdoutStatus_Success)
     {
         /* file name - left-justified string will all trailing '\0' bytes */
-        expStatus = DumpAndPad(writeStream, fileName, strlen(fileName), 100);
+        expStatus = DumpAndPad(writeStream, fileName, strlen(fileName), 100, NULL);
     }
     
     if (expStatus == ExpToStdoutStatus_Success)
     {
         /* file mode - octal */
-        expStatus = DumpOctal(writeStream, 436, 8); /* O0664 */
+        expStatus = DumpOctal(writeStream, 436, 8, NULL); /* O0664 */
     }    
 
     if (expStatus == ExpToStdoutStatus_Success)
@@ -341,26 +354,26 @@ static ExpToStdoutStatus_t DumpFileObjectHeader(FILE *stream, const char *fileNa
             }
         }
 
-        expStatus = DumpOctal(writeStream, pwd.pw_uid, 8);
+        expStatus = DumpOctal(writeStream, pwd.pw_uid, 8, NULL);
     }
 
     if (expStatus == ExpToStdoutStatus_Success)
     {
         /* gid - octal */
         gid = pwd.pw_gid;
-        expStatus = DumpOctal(writeStream, gid, 8);
+        expStatus = DumpOctal(writeStream, gid, 8, NULL);
     }
 
     if (expStatus == ExpToStdoutStatus_Success)
     {
         /* size - octal */    
-        expStatus = DumpOctal(writeStream, fileSize, 12);
+        expStatus = DumpOctal(writeStream, fileSize, 12, NULL);
     }
 
     if (expStatus == ExpToStdoutStatus_Success)
     {
         /* mtime - octal */
-        expStatus = DumpOctal(writeStream, time(NULL), 12);
+        expStatus = DumpOctal(writeStream, time(NULL), 12, NULL);
     }
 
     if (expStatus == ExpToStdoutStatus_Success)
@@ -370,37 +383,37 @@ static ExpToStdoutStatus_t DumpFileObjectHeader(FILE *stream, const char *fileNa
         /* for now, pretend that the checksum is 8 spaces, because the spec says
          * to set this field to all spaces when calculating the checksum
          */
-         expStatus = Dump(writeStream, "        ", 8);
+         expStatus = Dump(writeStream, "        ", 8, NULL);
     }
 
     if (expStatus == ExpToStdoutStatus_Success)
     {
         /* file type (regular) */
-        expStatus = DumpOctal(writeStream, 0, 1);
+        expStatus = DumpOctal(writeStream, 0, 1, NULL);
     }
 
     if (expStatus == ExpToStdoutStatus_Success)
     {
         /* linkname - string (unused) */
-        expStatus = DumpPadding(writeStream, 0, 100);
+        expStatus = DumpPadding(writeStream, 0, 100, NULL);
     }
 
     if (expStatus == ExpToStdoutStatus_Success)
     {
         /* magic - "ustar" */
-        expStatus = DumpAndPad(writeStream, "ustar", 5, 6);
+        expStatus = DumpAndPad(writeStream, "ustar", 5, 6, NULL);
     }
 
     if (expStatus == ExpToStdoutStatus_Success)
     {
         /* version - "00" with NO terminating NUL char */
-        expStatus = DumpAndPad(writeStream, "00", 2, 2);
+        expStatus = DumpAndPad(writeStream, "00", 2, 2, NULL);
     }
 
     if (expStatus == ExpToStdoutStatus_Success)
     {
         /* uname */
-        expStatus = DumpAndPad(writeStream, pwd.pw_name, strlen(pwd.pw_name), 32);
+        expStatus = DumpAndPad(writeStream, pwd.pw_name, strlen(pwd.pw_name), 32, NULL);
         
         /* no longer need pwd - we need gid, but we copied that already */
         if (idBuf)
@@ -439,7 +452,7 @@ static ExpToStdoutStatus_t DumpFileObjectHeader(FILE *stream, const char *fileNa
             }
             else
             {
-                expStatus = DumpAndPad(writeStream, grp.gr_name, strlen(grp.gr_name), 32);
+                expStatus = DumpAndPad(writeStream, grp.gr_name, strlen(grp.gr_name), 32, NULL);
             }
         }
 
@@ -454,19 +467,19 @@ static ExpToStdoutStatus_t DumpFileObjectHeader(FILE *stream, const char *fileNa
     if (expStatus == ExpToStdoutStatus_Success)
     {
         /* device major */
-        expStatus = DumpPadding(writeStream, 0, 8);
+        expStatus = DumpPadding(writeStream, 0, 8, NULL);
     }
     
     if (expStatus == ExpToStdoutStatus_Success)
     {
         /* device minor */
-        expStatus = DumpPadding(writeStream, 0, 8);
+        expStatus = DumpPadding(writeStream, 0, 8, NULL);
     }
     
     if (expStatus == ExpToStdoutStatus_Success)
     {
         /* prefix - path to file (just a base name) */
-        expStatus = DumpPadding(writeStream, 0, 155);
+        expStatus = DumpPadding(writeStream, 0, 155, NULL);
     }
     
     /* now we have to read back the header */
@@ -516,19 +529,26 @@ static ExpToStdoutStatus_t DumpFileObjectHeader(FILE *stream, const char *fileNa
     if (expStatus == ExpToStdoutStatus_Success)
     {
         /* now dump all the bytes before the checksum */
-        expStatus = Dump(stream, header, 148);
+        numBytesDumped = 0;
+        expStatus = Dump(stream, header, 148, &numBytesDumped);
     }
     
     if (expStatus == ExpToStdoutStatus_Success)
     {
-        /* dump the checksum */
-        expStatus = DumpOctal(stream, chksum, 8);
+        /* dump the checksum - dump 6 octal numbers, followed by NUL, ...*/
+        expStatus = DumpOctal(stream, chksum, 7, &numBytesDumped);
+        
+        /* and then followed by a space char */
+        if (expStatus == ExpToStdoutStatus_Success)
+        {
+            expStatus = Dump(stream, " ", 1, &numBytesDumped);
+        }
     }
 
     if (expStatus == ExpToStdoutStatus_Success)
     {
         /* finally, dump the rest */
-        expStatus = Dump(stream, &header[156], 357);
+        expStatus = Dump(stream, &header[numBytesDumped], sizeof(header) - numBytesDumped, &numBytesDumped);
     }
 
     /* on error, this might not have gotten cleaned up */
@@ -542,8 +562,15 @@ static ExpToStdoutStatus_t DumpFileObjectHeader(FILE *stream, const char *fileNa
 }
 
 static ExpToStdoutStatus_t FillBlock(FILE *stream, int blockSize, int writeSize)
-{  
-    return DumpPadding(stream, 0, blockSize - writeSize % blockSize);
+{
+    int remainder = writeSize % blockSize;
+    
+    if (remainder != 0)
+    {
+        return DumpPadding(stream, 0, blockSize - remainder, NULL);
+    }
+
+    return ExpToStdoutStatus_Success;
 }
 
 /* filePath - path of the file to be stored in the TAR file 
@@ -908,7 +935,7 @@ int DoIt(void)
     
     size_t bytesExported = 0;
     size_t numFilesExported = 0;
-    
+        
     /* read and process arguments */
     rsSpec = params_get_str(&cmdparams, ARG_RS_SPEC);
     fileTemplate = (const char *)GetOptionValue(ARG_STRING, ARG_FILE_TEMPLATE);
@@ -974,14 +1001,7 @@ int DoIt(void)
         expRS = drms_open_records(drms_env, rsSpec, &drmsStatus);
         if (!expRS || drmsStatus != DRMS_SUCCESS)
         {
-            fprintf(stderr, "unable to open records for specification %s\n", rsSpec);
-        
-            msg = RV_BAD_RECORDSET;
-            if (sendMsg(stdout, msg, strlen(msg)))
-            {
-                fprintf(stderr, "unable to send %s status\n", RV_BAD_RECORDSET);
-            }
-    
+            fprintf(stderr, "unable to open records for specification %s\n", rsSpec);    
             expStatus = ExpToStdoutStatus_DRMS;
         }
     }
@@ -1050,7 +1070,7 @@ int DoIt(void)
 
     /* write the end-of-archive marker (1024 zero bytes) */
     /* pad - fill up last 512 block with zeroes */
-    intStatus = DumpPadding(stdout, 0, 1024);
+    intStatus = DumpPadding(stdout, 0, 1024, NULL);
     if (intStatus != ExpToStdoutStatus_Success && expStatus == ExpToStdoutStatus_Success)
     {
         expStatus = intStatus;
