@@ -19,27 +19,25 @@
 /* third-party stuff */
 #include "fitsio.h"
 
-char *module_name = "export-to-stdout";
+char *module_name = "drms-export-to-stdout";
 
 #define ARG_RS_SPEC "spec"
 #define ARG_KEYMAP_CLASS "mapclass"
 #define ARG_KEYMAP_FILE "mapfile"
 #define ARG_FILE_TEMPLATE "ffmt"
 #define ARG_CPARMS_STRING "cparms"
-
-#define MSGLEN_NUMBYTES 8
-#define MAX_MSG_BUFSIZE 4096
+#define ARG_ACK_FILE "ackfile"
+#define ARG_MAX_TAR_FILE_SIZE "maxfilesize"
+#define ARG_COMPRESSALLSEGS "a" /* if set, then apply a single CPARMS value to all segments */
 
 #define FILE_LIST_PATH "jsoc/file_list.txt"
 #define ERROR_PATH "jsoc/error_list.txt"
 
-#define MAX_CGI_TAR_SIZE 2147483648 /* 2 GB*/
-#define MAX_TAR_SIZE 53687091200 /* 50 GB */
+#define DEFAULT_MAX_TAR_FILE_SIZE "4294967296" /* 4 GB*/
+#define MAX_MAX_TAR_FILE_SIZE 53687091200 /* 50 GB - the maxfilesize argument cannot be larger than this */
 #define TAR_BLOCK_SIZE 512
-
-/* return statuses */
-#define RV_BAD_RECORDSET "bad-recordset"
-#define RV_DONE "done"
+#define TAR_HEADER_SIZE 512
+#define ACK_FILE_BUFFER 96
 
 /* status codes */
 enum __ExpToStdoutStatus_enum__
@@ -54,7 +52,8 @@ enum __ExpToStdoutStatus_enum__
     ExpToStdoutStatus_IO = 7,
     ExpToStdoutStatus_BadFilenameTemplate = 8,
     ExpToStdoutStatus_DRMS = 9,
-    ExpToStdoutStatus_Stdout = 10
+    ExpToStdoutStatus_Stdout = 10,
+    ExpToStdoutStatus_TarTooLarge = 11
 };
 
 typedef enum __ExpToStdoutStatus_enum__ ExpToStdoutStatus_t;
@@ -86,14 +85,15 @@ ModuleArgs_t module_args[] =
     { ARG_STRING, ARG_KEYMAP_CLASS, " ", "export key-map class" },
     { ARG_STRING, ARG_KEYMAP_FILE, " ", "export key-map file" },
     { ARG_STRING, ARG_FILE_TEMPLATE, " ", "export filename template" },
-    { ARG_STRINGS, ARG_CPARMS_STRING, " ", "a list of FITSIO compression types (none, rice, gzip, plio, hcompress), one for each segment" },
+    { ARG_STRINGS, ARG_CPARMS_STRING, " ", "a list of FITSIO compression types (none, rice, gzip1, gzip2, plio, hcompress), one for each segment; default is rice for all segments" },
+    { ARG_STRING, ARG_ACK_FILE, " ", "a file provided by the caller to include in the tar file"},
+    { ARG_INT, ARG_MAX_TAR_FILE_SIZE, DEFAULT_MAX_TAR_FILE_SIZE, "the maximum size in bytes of the resulting tar file"},
+    { ARG_FLAG, ARG_COMPRESSALLSEGS, NULL, "apply the single string in ARG_CPARMS_STRING to all segments" },
     { ARG_END }
 };
 
-static void *GetOptionValue(ModuleArgs_Type_t type, const char *key)
+static void GetOptionValue(ModuleArgs_Type_t type, const char *key, void *result)
 {
-    void *rv = NULL;
-
     switch (type)
     {
         case ARG_STRING:
@@ -103,10 +103,10 @@ static void *GetOptionValue(ModuleArgs_Type_t type, const char *key)
             innards = params_get_str(&cmdparams, (char *)key); /* stupid cmdparams does not make this parameter const */
             if (strcmp(innards, " "))
             {
-                rv = (char *)innards;
+                *(const char **)result = innards;
             }
-            break;
         }
+        break;
         case ARG_STRINGS:
         {
             char **strings = NULL;
@@ -126,14 +126,28 @@ static void *GetOptionValue(ModuleArgs_Type_t type, const char *key)
                         list_llinserttail(list, strings[iElem]);
                     }
 
-                    rv = list;                
+                    *(LinkedList_t **)result = list;                
                 }
             }
-            break;
         }
+        break;
+        case ARG_INT:
+        {
+            long long intVal = 0;
+            
+            intVal = params_get_int64(&cmdparams, (char *)key);
+            *(long long *)result = intVal;
+        }
+        break;
+        case ARG_FLAG:
+        {
+            int flag = 0;
+            
+            flag = cmdparams_isflagset(&cmdparams, (char *)key);
+            *(int *)result = flag;
+        }
+        break;
     }
-    
-    return rv;
 }
 
 /* outBuf is dynamically allocated; outSize is the current size of allocation */
@@ -284,7 +298,7 @@ static ExpToStdoutStatus_t DumpFileObjectHeader(FILE *stream, const char *fileNa
     char *idBuf = NULL;
     size_t idBufSize;
     int pipefds[2];  /* stupid checksum - we cannot dump bytes on stdout in one pass */
-    char header[512];
+    char header[TAR_HEADER_SIZE];
     FILE *writeStream = NULL;
     FILE *readStream = NULL;
     unsigned long long chksum = 0;
@@ -498,7 +512,7 @@ static ExpToStdoutStatus_t DumpFileObjectHeader(FILE *stream, const char *fileNa
         ptr = header;
         while (1)
         {
-            num = fread(header, sizeof(char), 512, readStream);
+            num = fread(header, sizeof(char), TAR_HEADER_SIZE, readStream);
             if (num <= 0)
             {
                 break;
@@ -590,7 +604,7 @@ static ExpToStdoutStatus_t WriteFileBuffer(FILE *stream, const char *filePath, c
         fprintf(stream, buffer);
     
         /* pad - fill up last 512 block with zeroes */
-        expStatus = FillBlock(stream, 512, size);
+        expStatus = FillBlock(stream, TAR_BLOCK_SIZE, size);
     }
     
     fflush(stream);
@@ -598,8 +612,151 @@ static ExpToStdoutStatus_t WriteFileBuffer(FILE *stream, const char *filePath, c
     return expStatus;
 }
 
+static ExpToStdoutStatus_t WriteFile(FILE *writeStream, const char *filePath, size_t bufSize)
+{
+    ExpToStdoutStatus_t expStatus = ExpToStdoutStatus_Success;
+    const char *baseName = NULL;
+    struct stat stBuf;
+    char *readBuffer = NULL;
+    size_t numBytesRead;
+    char *ptr = NULL;
+    FILE *readStream = NULL;
+
+
+    if (lstat(filePath, &stBuf) != 0)
+    {
+        fprintf(stderr, "cannot get %s file status\n", filePath);
+        expStatus = ExpToStdoutStatus_IO;
+    }
+    
+    if (expStatus == ExpToStdoutStatus_Success)
+    {
+        /* dump TAR header */
+        baseName = strrchr(filePath, '/');
+        baseName = baseName ? baseName + 1 : filePath;
+        expStatus = DumpFileObjectHeader(writeStream, baseName, stBuf.st_size);    
+    }
+    
+    if (expStatus == ExpToStdoutStatus_Success)
+    {        
+        readStream = fopen(filePath, "r");
+        if (readStream == NULL)
+        {
+            fprintf(stderr, "cannot open file %s for reading\n", filePath);
+            expStatus = ExpToStdoutStatus_IO;
+        }
+    }
+    
+    if (expStatus == ExpToStdoutStatus_Success)
+    {
+        readBuffer = calloc(sizeof(char), bufSize);
+        if (!readBuffer)
+        {
+            expStatus = ExpToStdoutStatus_OutOfMemory;
+        }
+    }
+    
+    if (expStatus == ExpToStdoutStatus_Success)
+    {
+        /* read file contents */
+        while (1)
+        {
+            numBytesRead = fread(readBuffer, sizeof(char), bufSize - 1, readStream);
+            if (numBytesRead <= 0)
+            {
+                break;
+            }
+            else
+            {
+                readBuffer[numBytesRead] = '\0';
+                fprintf(writeStream, readBuffer);
+            }
+        }
+        
+        free(readBuffer);
+        readBuffer = NULL;
+        
+        fclose(readStream);
+        readStream = NULL;
+    }
+    
+    if (expStatus == ExpToStdoutStatus_Success)
+    {    
+        /* pad - fill up last 512 block with zeroes */
+        expStatus = FillBlock(writeStream, TAR_BLOCK_SIZE, stBuf.st_size);
+    }
+    
+    fflush(writeStream);
+    
+    return expStatus;
+}
+
+static ExpToStdoutStatus_t WriteAckFile(FILE *writeStream, const char *path)
+{
+    return WriteFile(writeStream, path, ACK_FILE_BUFFER);
+}
+
+static ExpToStdoutStatus_t DropDataOnFloor(fitsfile *fitsPtr)
+{
+    ExpToStdoutStatus_t expStatus = ExpToStdoutStatus_Success;
+    long long numBytesFitsFile = fitsPtr->Fptr->logfilesize;
+    int savedStdout = -1;
+    char fileBuf[4096];
+    int num;
+    int fiostat = 0;
+    int devnull = -1;
+
+    if (numBytesFitsFile > 0)
+    {
+        /* open /dev/null */
+        devnull = open("/dev/null", O_WRONLY);
+        
+        if (!devnull)
+        {
+            fprintf(stderr, "unable to open /dev/null for writing\n");
+            expStatus = ExpToStdoutStatus_IO;
+        }
+    
+        if (expStatus == ExpToStdoutStatus_Success)
+        {
+            savedStdout = dup(STDOUT_FILENO);
+            if (savedStdout != -1)
+            {
+                if (dup2(devnull, STDOUT_FILENO) != -1)
+                {
+                    fiostat = 0;
+                    fits_close_file(fitsPtr, &fiostat);
+                    if (fiostat)
+                    {
+                        fprintf(stderr, "unable to close and send FITS file\n");
+                    }
+            
+                    fflush(stdout);
+                }
+                else
+                {
+                    /* can't flush FITSIO internal buffers */
+                    fprintf(stderr, "unable to flush FITSIO internal buffers following error\n");
+                }
+            
+                /* restore stdout */
+                dup2(savedStdout, STDOUT_FILENO);
+            }
+            else
+            {
+                /* can't flush FITSIO internal buffers */
+                fprintf(stderr, "unable to flush FITSIO internal buffers following error\n");
+            }
+        }
+    }
+    
+    return expStatus;
+}
+
 /* loop over segments */
-static ExpToStdoutStatus_t ExportRecordToStdout(DRMS_Record_t *expRec, const char *ffmt, ExpToStdout_Compression_t *segCompression, const char *classname, const char *mapfile, size_t *bytesExported, size_t *numFilesExported, char **infoBuf, size_t *szInfoBuf, char **errorBuf, size_t *szErrorBuf)
+/* segCompression is an array of FITSIO macros, one for each segment, that specify the type of compression to perform; if NULL, then compress all segments with Rice compression
+ */
+static ExpToStdoutStatus_t ExportRecordToStdout(DRMS_Record_t *expRec, const char *ffmt, ExpToStdout_Compression_t *segCompression, int compressAllSegs, const char *classname, const char *mapfile, size_t *bytesExported, size_t maxTarFileSize, size_t *numFilesExported, char **infoBuf, size_t *szInfoBuf, char **errorBuf, size_t *szErrorBuf)
 {
     ExpToStdoutStatus_t expStatus = ExpToStdoutStatus_Success;
     int drmsStatus = DRMS_SUCCESS;
@@ -615,9 +772,9 @@ static ExpToStdoutStatus_t ExportRecordToStdout(DRMS_Record_t *expRec, const cha
     long long numBytesFitsFile; /* the actual FITSIO type is LONGLONG */
     size_t totalBytes = 0;
     size_t totalFiles = 0;
-    char msg[128];
-    char errMsg[256];
-       
+    char msg[256];
+    char errMsg[512];
+
     drms_sprint_rec_query(recordSpec, expRec);
 
     iSeg = 0;
@@ -627,7 +784,15 @@ static ExpToStdoutStatus_t ExportRecordToStdout(DRMS_Record_t *expRec, const cha
         {
             if ((segTgt = drms_segment_lookup(expRec, segIn->info->name)) == NULL)
             {
-                fprintf(stderr, "unable to locate linked segment file %s\n", segIn->info->name);
+                snprintf(msg, sizeof(msg), "unable to locate linked segment file %s", segIn->info->name);
+                fprintf(stderr, msg);
+                fprintf(stderr, "\n");
+                if (errorBuf)
+                {
+                    snprintf(errMsg, sizeof(errMsg), "record = %s, segment = %s, message = %s\n", recordSpec, segIn->info->name, msg);
+                    *errorBuf = base_strcatalloc(*errorBuf, errMsg, szErrorBuf);
+                }
+                
                 iSeg++;
                 continue;
             }
@@ -641,23 +806,36 @@ static ExpToStdoutStatus_t ExportRecordToStdout(DRMS_Record_t *expRec, const cha
         {
             if (expUStat == kExpUtlStat_InvalidFmt)
             {
-                fprintf(stderr, "invalid file-name format template %s\n", ffmt);
+                snprintf(msg, sizeof(msg), "invalid file-name format template %s", ffmt);
             }
             else if (expUStat == kExpUtlStat_UnknownKey)
             {
-                fprintf(stderr, "one or more keywords in the file-name-format template %s do not exist in series %s\n", ffmt, expRec->seriesinfo->seriesname);
+                snprintf(msg, sizeof(msg), "one or more keywords in the file-name-format template %s do not exist in series %s", ffmt, expRec->seriesinfo->seriesname);
+            }
+            else
+            {
+                snprintf(msg, sizeof(msg), "unable to resolve file-name template %s", ffmt);
+            }
+            
+            fprintf(stderr, msg);
+            fprintf(stderr, "\n");
+            if (errorBuf)
+            {
+                snprintf(errMsg, sizeof(errMsg), "record = %s, file format = %s, message = %s\n", recordSpec, ffmt, msg);
+                *errorBuf = base_strcatalloc(*errorBuf, errMsg, szErrorBuf);
             }
 
-            expStatus = ExpToStdoutStatus_BadFilenameTemplate;
+            expStatus = ExpToStdoutStatus_BadFilenameTemplate;            
             break;
         }
         
         fiostat = 0;
         if (fits_create_file(&fitsPtr, "-", &fiostat))
         {
-            fprintf(stderr, "FITSIO error: %d\n", fiostat);
             fits_report_error(stderr, fiostat);
-            snprintf(msg, sizeof(msg), "cannot create FITS file\n");
+            snprintf(msg, sizeof(msg), "cannot create FITS file");
+            fprintf(stderr, msg);
+            fprintf(stderr, "\n");
             if (errorBuf)
             {
                 snprintf(errMsg, sizeof(errMsg), "record = %s, file = %s, message = %s\n", recordSpec, formattedFitsName, msg);
@@ -669,15 +847,40 @@ static ExpToStdoutStatus_t ExportRecordToStdout(DRMS_Record_t *expRec, const cha
         }
         
         /* set compression, if requested */
-        if (segCompression[iSeg] != ExpToStdout_Compression_NONE)
+        fiostat = 0;
+        if (segCompression)
         {
-            fits_set_compression_type(fitsPtr, segCompression[iSeg], &fiostat);
-            if (fiostat)
+            if (compressAllSegs && (segCompression[0] != ExpToStdout_Compression_NONE))
             {
-                fits_report_error(stderr, fiostat);
-                iSeg++;
-                continue;
+                fits_set_compression_type(fitsPtr, segCompression[0], &fiostat);
             }
+            else if (segCompression[iSeg] && segCompression[iSeg] != ExpToStdout_Compression_NONE)
+            {
+                fits_set_compression_type(fitsPtr, segCompression[iSeg], &fiostat);
+            }
+        }
+        else
+        {
+            fits_set_compression_type(fitsPtr, ExpToStdout_Compression_RICE, &fiostat);
+        }
+
+        if (fiostat)
+        {
+            fits_report_error(stderr, fiostat);
+            /* close the fitsfile * - there should be no data written to stdout */
+            fits_close_file(fitsPtr, &fiostat);
+
+            snprintf(msg, sizeof(msg), "unable to set FITS compression");
+            fprintf(stderr, msg);
+            fprintf(stderr, "\n");
+            if (errorBuf)
+            {
+                snprintf(errMsg, sizeof(errMsg), "record = %s, file = %s, message = %s\n", recordSpec, formattedFitsName, msg);
+                *errorBuf = base_strcatalloc(*errorBuf, errMsg, szErrorBuf);
+            }
+            
+            iSeg++;
+            continue;
         }
 
         /* writes FITS file to write end of pipe (by re-directing stdout to the pipe) */
@@ -686,22 +889,29 @@ static ExpToStdoutStatus_t ExportRecordToStdout(DRMS_Record_t *expRec, const cha
         if (drmsStatus == DRMS_ERROR_INVALIDFILE)
         {
             /* no input segment file, so no error - there is nothing to export because the segment file was never created */
-            fprintf(stderr, "no segment file (segment %s) for this record\n", segIn->info->name);
+            snprintf(msg, sizeof(msg), "no segment file (segment %s) for this record", segIn->info->name);
+            fprintf(stderr, msg);
+            fprintf(stderr, "\n");
+            if (errorBuf)
+            {
+                snprintf(errMsg, sizeof(errMsg), "record = %s, file = %s, message = %s\n", recordSpec, formattedFitsName, msg);
+                *errorBuf = base_strcatalloc(*errorBuf, errMsg, szErrorBuf); 
+            }
         }
         else if (drmsStatus != DRMS_SUCCESS)
         {
             if (drmsStatus == DRMS_ERROR_CANTCOMPRESSFLOAT)
             {
-                snprintf(msg, sizeof(msg), "cannot export Rice-compressed floating-point images\n");
+                snprintf(msg, sizeof(msg), "cannot export Rice-compressed floating-point images");
             }
             else
             {
                 /* there was an input segment file, but for some reason the export failed */
-                snprintf(msg, sizeof(msg), "failure exporting segment %s\n", segIn->info->name);
+                snprintf(msg, sizeof(msg), "failure exporting segment %s", segIn->info->name);
             }
 
             fprintf(stderr, msg);
-
+            fprintf(stderr, "\n");
             if (errorBuf)
             {
                 snprintf(errMsg, sizeof(errMsg), "record = %s, file = %s, message = %s\n", recordSpec, formattedFitsName, msg);
@@ -713,67 +923,12 @@ static ExpToStdoutStatus_t ExportRecordToStdout(DRMS_Record_t *expRec, const cha
              * to redirect stdout, then read back from the pipe and drop the data on the floor; there might not actually be 
              * any data in the FITSIO internal buffers, so check fitsPtr->Fptr->logfilesize first
              */
-            numBytesFitsFile = fitsPtr->Fptr->logfilesize;
-            if (numBytesFitsFile > 0)
+             
+            /* closes fitsfile * too (unless there was an IO error) */
+            expStatus = DropDataOnFloor(fitsPtr);
+            if (expStatus != ExpToStdoutStatus_Success)
             {
-                int pipefds[2];
-                int savedStdout = -1;
-                FILE *writeStream = NULL;
-                FILE *readStream = NULL;
-                char fileBuf[4096];
-                int num;
-                
-                if (pipe(pipefds))
-                {
-                    expStatus = ExpToStdoutStatus_IO;
-                    break;
-                }
-
-                if (expStatus == ExpToStdoutStatus_Success)
-                {
-                    savedStdout = dup(STDOUT_FILENO);
-                    if (savedStdout != -1)
-                    {
-                        if (dup2(pipefds[1], STDOUT_FILENO) != -1)
-                        {
-                            fiostat = 0;
-                            fits_close_file(fitsPtr, &fiostat);
-                            if (fiostat)
-                            {
-                                fprintf(stderr, "unable to close and send FITS file\n");
-                            }
-                        
-                            fflush(stdout);
-                            close(pipefds[1]);
-
-                            while (1)
-                            {
-                                num = read(pipefds[0], fileBuf, sizeof(fileBuf));
-                                if (num <= 0)
-                                {
-                                    break;
-                                }
-                            
-                                /* drop the data */
-                            }
-
-                            close(pipefds[0]);
-                        }
-                        else
-                        {
-                            /* can't flush FITSIO internal buffers */
-                            fprintf(stderr, "unable to flush FITSIO internal buffers following error\n");
-                        }
-                        
-                        /* restore stdout */
-                        dup2(savedStdout, STDOUT_FILENO);
-                    }
-                    else
-                    {
-                        /* can't flush FITSIO internal buffers */
-                        fprintf(stderr, "unable to flush FITSIO internal buffers following error\n");
-                    }
-                }
+                break;
             }
         }
         else
@@ -784,6 +939,24 @@ static ExpToStdoutStatus_t ExportRecordToStdout(DRMS_Record_t *expRec, const cha
             numBytesFitsFile = fitsPtr->Fptr->logfilesize;
             if (numBytesFitsFile > 0)
             {
+                if (numBytesFitsFile + totalBytes > maxTarFileSize)
+                {
+                    /* tar file is too big */
+                    snprintf(msg, sizeof(msg), "the tar file size has exceeded the maximum size of %llu bytes; please consider requesting data for fewer records and Rice-compressing images", maxTarFileSize);
+                    fprintf(stderr, msg);
+                    fprintf(stderr, "\n");
+                    if (errorBuf && *errorBuf)
+                    {
+                        snprintf(errMsg, sizeof(errMsg), "record = %s, file = %s, message = %s\n", recordSpec, formattedFitsName, msg);
+                        *errorBuf = base_strcatalloc(*errorBuf, errMsg, szErrorBuf); 
+                    }
+                    
+                    /* closes fitsfile * too */
+                    DropDataOnFloor(fitsPtr);
+                    expStatus = ExpToStdoutStatus_TarTooLarge;
+                    break;
+                }
+
                 /* dump FITS file to stdout (0-pads header block) */
                 DumpFileObjectHeader(stdout, formattedFitsName, numBytesFitsFile);
     
@@ -792,7 +965,14 @@ static ExpToStdoutStatus_t ExportRecordToStdout(DRMS_Record_t *expRec, const cha
                 fits_close_file(fitsPtr, &fiostat);
                 if (fiostat)
                 {
-                    fprintf(stderr, "unable to close and send FITS file\n");
+                    snprintf(msg, sizeof(msg), "unable to close and send FITS file");
+                    fprintf(stderr, msg);
+                    fprintf(stderr, "\n");
+                    if (errorBuf && *errorBuf)
+                    {
+                        snprintf(errMsg, sizeof(errMsg), "record = %s, file = %s, message = %s\n", recordSpec, formattedFitsName, msg);
+                        *errorBuf = base_strcatalloc(*errorBuf, errMsg, szErrorBuf); 
+                    }
                 }
                 
                 fflush(stdout);
@@ -819,6 +999,11 @@ static ExpToStdoutStatus_t ExportRecordToStdout(DRMS_Record_t *expRec, const cha
             }
         }
     } /* seg loop */
+    
+    if (last)
+    {
+        hiter_destroy(&last);
+    }
 
     if (bytesExported)
     {
@@ -835,7 +1020,9 @@ static ExpToStdoutStatus_t ExportRecordToStdout(DRMS_Record_t *expRec, const cha
 }
 
 /* loop over records */
-static ExpToStdoutStatus_t ExportRecordSetToStdout(DRMS_Env_t *env, DRMS_RecordSet_t *expRS, const char *ffmt, ExpToStdout_Compression_t *segCompression, const char *classname, const char *mapfile, size_t *bytesExported, size_t *numFilesExported, char **infoBuf, size_t *szInfoBuf, char **errorBuf, size_t *szErrorBuf)
+/* segCompression is an array of FITSIO macros, one for each segment, that specify the type of compression to perform; if NULL, then compress all segments with Rice compression
+ */
+static ExpToStdoutStatus_t ExportRecordSetToStdout(DRMS_Env_t *env, DRMS_RecordSet_t *expRS, const char *ffmt, ExpToStdout_Compression_t *segCompression, int compressAllSegs, const char *classname, const char *mapfile, size_t *bytesExported, size_t maxTarFileSize, size_t *numFilesExported, char **infoBuf, size_t *szInfoBuf, char **errorBuf, size_t *szErrorBuf)
 {
     int drmsStatus = DRMS_SUCCESS;
     ExpToStdoutStatus_t expStatus = ExpToStdoutStatus_Success;
@@ -846,7 +1033,6 @@ static ExpToStdoutStatus_t ExportRecordSetToStdout(DRMS_Env_t *env, DRMS_RecordS
     DRMS_Record_t *expRecord = NULL;
     const char *msg = NULL;
     int fiostat = 0;
-    char numBytesMesssage[MSGLEN_NUMBYTES + 1];
     long long numBytesFitsFile; /* the actual FITSIO type is LONGLONG */
     size_t bytesSent;
     int terminate = 0;
@@ -878,7 +1064,11 @@ static ExpToStdoutStatus_t ExportRecordSetToStdout(DRMS_Env_t *env, DRMS_RecordS
                 recsAttempted++;
 
                 /* export each segment file in this record */
-                expStatus = ExportRecordToStdout(expRecord, ffmt, segCompression, classname, mapfile, bytesExported, numFilesExported, infoBuf, szInfoBuf, errorBuf, szErrorBuf);
+                expStatus = ExportRecordToStdout(expRecord, ffmt, segCompression, compressAllSegs, classname, mapfile, bytesExported, maxTarFileSize, numFilesExported, infoBuf, szInfoBuf, errorBuf, szErrorBuf);
+                if (expStatus == ExpToStdoutStatus_TarTooLarge)
+                {
+                    break;
+                }
 
                 /* IF the internal FITSIO buffers have data, there is no way to NOT flush output to stdout;
                  * hopefully this error will not happen often; if the pipe to the parent process breaks, 
@@ -901,17 +1091,19 @@ static ExpToStdoutStatus_t ExportRecordSetToStdout(DRMS_Env_t *env, DRMS_RecordS
             }              
         }
     }
-    
-    //if rec okcount == 0 && rec error count > 0 ==> error
-    
+
     return expStatus;
 }
-
 
 int DoIt(void)
 {
     ExpToStdoutStatus_t expStatus = ExpToStdoutStatus_Success;
     ExpToStdoutStatus_t intStatus = ExpToStdoutStatus_Success;
+    ExpToStdoutStatus_t tarStatus = ExpToStdoutStatus_Dump; /* cancel this error if we dump successfully; 
+                                                             * we can't report an error to the user once we dump 
+                                                             * the first tar-file byte; at that point, we can
+                                                             * only write a message to our server's error log
+                                                             */
     int drmsStatus = DRMS_SUCCESS;
     int fiostat = 0;
     fitsfile *fitsPtr = NULL;
@@ -919,30 +1111,56 @@ int DoIt(void)
     long long tsizeMB = 0; /* total size of export payload in Mbytes */
     void *misspix = NULL;
     const char *rsSpec = NULL;
+    const char *fileTemplate = NULL;
     const char *mapClass = NULL;
     const char *mapFile = NULL;
-    const char *fileTemplate = NULL;
     LinkedList_t *cparmsStrings = NULL;
+    const char *ackFile = NULL;
+    size_t maxTarFileSize = 0;
+    int compressAllSegs = 0;
     ListNode_t *cparmNode = NULL;
     ExpToStdout_Compression_t *segCompression = NULL;
     int iComp;
     DRMS_RecordSet_t *expRS = NULL;
-    char *msg = NULL;
+    char errMsg[1024]; /* if things die before the tar begins its journey to the client */
     char *infoBuf = NULL;
     size_t szInfoBuf = 0;
     char *errorBuf = NULL;
     size_t szErrorBuf = 0;
-    
     size_t bytesExported = 0;
     size_t numFilesExported = 0;
         
     /* read and process arguments */
     rsSpec = params_get_str(&cmdparams, ARG_RS_SPEC);
-    fileTemplate = (const char *)GetOptionValue(ARG_STRING, ARG_FILE_TEMPLATE);
-    cparmsStrings = (LinkedList_t *)GetOptionValue(ARG_STRINGS, ARG_CPARMS_STRING);
-    mapClass = (const char *)GetOptionValue(ARG_STRING, ARG_KEYMAP_CLASS);
-    mapFile = (const char *)GetOptionValue(ARG_STRING, ARG_KEYMAP_FILE);
+    GetOptionValue(ARG_STRING, ARG_FILE_TEMPLATE, (void *)&fileTemplate);
+    GetOptionValue(ARG_STRING, ARG_KEYMAP_CLASS, (void *)&mapClass);
+    GetOptionValue(ARG_STRING, ARG_KEYMAP_FILE, (void *)&mapFile);
+    GetOptionValue(ARG_STRINGS, ARG_CPARMS_STRING, (void *)&cparmsStrings);
+    GetOptionValue(ARG_STRING, ARG_ACK_FILE, (void *)&ackFile);
+    GetOptionValue(ARG_INT, ARG_MAX_TAR_FILE_SIZE, (void *)&maxTarFileSize);
+    GetOptionValue(ARG_FLAG, ARG_COMPRESSALLSEGS, (void *)&compressAllSegs);
     
+    memset(errMsg, '\0', sizeof(errMsg));
+    
+    if (expStatus == ExpToStdoutStatus_Success)
+    {
+        szInfoBuf = 512;
+        infoBuf = calloc(1, szInfoBuf);
+        if (infoBuf)
+        {
+            szErrorBuf = 512;
+            errorBuf = calloc(1, szErrorBuf);
+            if (!errorBuf)
+            {
+                expStatus == ExpToStdoutStatus_OutOfMemory;
+            }
+        }
+        else
+        {
+            expStatus == ExpToStdoutStatus_OutOfMemory;
+        }
+    }
+
     /* map cparms strings to an enum */
     if (cparmsStrings)
     {
@@ -984,15 +1202,35 @@ int DoIt(void)
                 }
                 else
                 {
+                    snprintf(errMsg, sizeof(errMsg), "invalid compression-string argument element %s\n", cparmStr);
                     expStatus = ExpToStdoutStatus_InvalidArgs;
                 }
                 
                 iComp++;
             }
+            
+            if (iComp != 1 && compressAllSegs)
+            {
+                snprintf(errMsg, sizeof(errMsg), "invalid combination of %s and %s arguments\n", ARG_CPARMS_STRING, ARG_COMPRESSALLSEGS);
+                expStatus = ExpToStdoutStatus_InvalidArgs;
+            }
         }
         else
         {
             expStatus = ExpToStdoutStatus_OutOfMemory;
+        }
+    }
+    else
+    {
+        /* default is all rice all the time */
+    }
+    
+    if (expStatus == ExpToStdoutStatus_Success)
+    {
+        if (maxTarFileSize > MAX_MAX_TAR_FILE_SIZE)
+        {
+            snprintf(errMsg, sizeof(errMsg), "maximum tar file size argument, %llu, exceeds limit of %llu bytes\n", maxTarFileSize, MAX_MAX_TAR_FILE_SIZE);
+            expStatus = ExpToStdoutStatus_InvalidArgs;
         }
     }
     
@@ -1001,7 +1239,7 @@ int DoIt(void)
         expRS = drms_open_records(drms_env, rsSpec, &drmsStatus);
         if (!expRS || drmsStatus != DRMS_SUCCESS)
         {
-            fprintf(stderr, "unable to open records for specification %s\n", rsSpec);    
+            snprintf(errMsg, sizeof(errMsg), "unable to open records for specification %s\n", rsSpec);
             expStatus = ExpToStdoutStatus_DRMS;
         }
     }
@@ -1011,71 +1249,151 @@ int DoIt(void)
         /* stage records to reduce number of calls to SUMS */
         if (drms_stage_records(expRS, 1, 0) != DRMS_SUCCESS)
         {
-            fprintf(stderr, "unable to stage records for specification %s\n", rsSpec);
+            snprintf(errMsg, sizeof(errMsg), "unable to stage records for specification %s\n", rsSpec);
             expStatus = ExpToStdoutStatus_DRMS;
         }
     }
-    
+
     if (expStatus == ExpToStdoutStatus_Success)
     {
-        szInfoBuf = 512;
-        infoBuf = calloc(1, szInfoBuf);
-        if (infoBuf)
+        /* at this point, there has been no error; it may turn out that the tar file dumped is bad, but we cannot tell 
+         * the caller that because the failure could happen anywhere during the dump process; the caller will detect 
+         * the problem only after there is an attempt to use the tar file
+         */
+        
+        /* create a TAR file object header block plus data blocks for each FITS file that is being exported */
+        tarStatus = ExportRecordSetToStdout(drms_env, expRS, fileTemplate, segCompression, compressAllSegs, mapClass, mapFile, &bytesExported, maxTarFileSize, &numFilesExported, &infoBuf, &szInfoBuf, &errorBuf, &szErrorBuf);
+    }
+
+    if (infoBuf)
+    {
+        if (*infoBuf)
         {
-            szErrorBuf = 512;
-            errorBuf = calloc(1, szErrorBuf);
-            if (!errorBuf)
+            /* if we never got to the point of dumping the tar file, then there is no info to provide the caller; 
+             * the info buffer will have content only if at least one FITS file was dumped */
+
+            /* 0-pads to TAR block size */
+            intStatus = WriteFileBuffer(stdout, FILE_LIST_PATH, infoBuf, strlen(infoBuf));
+            if (tarStatus == ExpToStdoutStatus_Success)
             {
-                expStatus == ExpToStdoutStatus_OutOfMemory;
+                tarStatus = intStatus;
+            }
+        }
+
+        free(infoBuf);
+        infoBuf = NULL;
+    }
+    
+    /* regardless of error, we dump all error (ASCII) messages into the TAR file */
+    if (errorBuf)
+    {
+        if (expStatus == ExpToStdoutStatus_Success)
+        {
+            /* we got to the point where started dumping FITS files */
+            if (*errorBuf)
+            {
+                /* 0-pads to TAR block size */
+                intStatus = WriteFileBuffer(stdout, ERROR_PATH, errorBuf, strlen(errorBuf));
+                if (tarStatus == ExpToStdoutStatus_Success)
+                {
+                    tarStatus = intStatus;
+                }
             }
         }
         else
         {
-            expStatus == ExpToStdoutStatus_OutOfMemory;
-        }
-    }
-
-    if (expStatus == ExpToStdoutStatus_Success)
-    {
-        /* create a TAR file object header block plus data blocks for each FITS file that is being exported */
-        expStatus = ExportRecordSetToStdout(drms_env, expRS, fileTemplate, segCompression, mapClass, mapFile, &bytesExported, &numFilesExported, &infoBuf, &szInfoBuf, &errorBuf, &szErrorBuf);
-    }
-    
-    /* regardless of error, we dump all info/error (ASCII) messages into the TAR file */
-    if (infoBuf && *infoBuf)
-    {
-        /* 0-pads to TAR block size */
-        intStatus = WriteFileBuffer(stdout, FILE_LIST_PATH, infoBuf, strlen(infoBuf));
-        if (intStatus != ExpToStdoutStatus_Success && expStatus == ExpToStdoutStatus_Success)
-        {
-            expStatus = intStatus;
-        }
+            /* an error occurred before any FITS file was dumped (*errorBuf == '\0') - loop through all records and print the same error 
+             * message for each */
+            if (!*errMsg)
+            {
+                if (expStatus == ExpToStdoutStatus_OutOfMemory)
+                {
+                    snprintf(errMsg, sizeof(errMsg), "out of memory on web server\n");
+                }
+                else
+                {
+                    snprintf(errMsg, sizeof(errMsg), "the dreaded 'internal server error' message\n");
+                }
+            }
         
-        free(infoBuf);
-        infoBuf = NULL;
-    }
+            /* write the same message for every segment */
+            if (expRS)
+            {
+                DRMS_Record_t *expRecord = NULL;
+                char recordSpec[DRMS_MAXQUERYLEN];
+                HIterator_t *last = NULL;
+                DRMS_Segment_t *seg = NULL;
+                char errorBufMsg[1024];
 
-    if (errorBuf && *errorBuf)
-    {
-        /* 0-pads to TAR block size */
-        intStatus = WriteFileBuffer(stdout, ERROR_PATH, errorBuf, strlen(errorBuf));
-        if (intStatus != ExpToStdoutStatus_Success && expStatus == ExpToStdoutStatus_Success)
-        {
-            expStatus = intStatus;
+                drms_recordset_fetchnext_setcurrent(expRS, -1);
+                
+                while ((expRecord = drms_recordset_fetchnext(drms_env, expRS, &drmsStatus, NULL, NULL)) != NULL)
+                {
+                    drms_sprint_rec_query(recordSpec, expRecord);
+
+                    while ((seg = drms_record_nextseg(expRecord, &last, 0)) != NULL)
+                    {
+                        snprintf(errMsg, sizeof(errMsg), "record = %s, segment = %s, message = %s\n", recordSpec, seg->info->name, errMsg);
+                        errorBuf = base_strcatalloc(errorBuf, errorBufMsg, &szErrorBuf);
+                    }
+                }
+                
+                if (last)
+                {
+                    hiter_destroy(&last);
+                }
+            
+                if (*errorBuf)
+                {
+                    /* 0-pads to TAR block size */
+                    intStatus = WriteFileBuffer(stdout, ERROR_PATH, errorBuf, strlen(errorBuf));
+                    if (tarStatus == ExpToStdoutStatus_Success)
+                    {
+                        tarStatus = intStatus;
+                    }
+                }
+            }
+            else
+            {
+                errorBuf = base_strcatalloc(errorBuf, errMsg, &szErrorBuf);
+
+                intStatus = WriteFileBuffer(stdout, ERROR_PATH, errorBuf, strlen(errorBuf));
+                if (tarStatus == ExpToStdoutStatus_Success)
+                {
+                    tarStatus = intStatus;
+                }
+            }
         }
-        
+
         free(errorBuf);
         errorBuf = NULL;
+    }
+    
+    if (ackFile && *ackFile)
+    {
+        /* the VSO workflow expects the ack file to exist, regardless of the existence of catastrophic errors */
+        intStatus = WriteAckFile(stdout, ackFile);
+        if (tarStatus == ExpToStdoutStatus_Success)
+        {
+            tarStatus = intStatus;
+        }
     }
 
     /* write the end-of-archive marker (1024 zero bytes) */
     /* pad - fill up last 512 block with zeroes */
-    intStatus = DumpPadding(stdout, 0, 1024, NULL);
-    if (intStatus != ExpToStdoutStatus_Success && expStatus == ExpToStdoutStatus_Success)
+    intStatus = DumpPadding(stdout, 0, TAR_BLOCK_SIZE * 2, NULL);
+    if (tarStatus == ExpToStdoutStatus_Success)
     {
-        expStatus = intStatus;
+        tarStatus = intStatus;
     }
+
+    expStatus = ((expStatus != ExpToStdoutStatus_Success) ? expStatus : tarStatus);
     
+    if (expRS)
+    {
+        drms_close_records(expRS, DRMS_FREE_RECORD);
+    }
+
     if (cparmsStrings)
     {
         list_llfree(&cparmsStrings);
