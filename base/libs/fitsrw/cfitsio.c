@@ -1696,12 +1696,12 @@ int fitsrw_write(int verbose,
 }
 
 int fitsrw_write2(int verbose,
-                  const char* filein,
+                  const char* filein, /* "-" for stdout */
                   CFITSIO_IMAGE_INFO* info,  
                   void* image,
-                  const char* cparms,
+                  const char* cparms, /* NULL for stdout */
                   CFITSIO_KEYWORD* keylist,
-                  export_callback_func_t callback) //ISS fly-tar
+                  export_callback_func_t callback) //ISS fly-tar - fitsfile * for stdout
 {
    int err = CFITSIO_SUCCESS;
    int idim;
@@ -1770,26 +1770,40 @@ int fitsrw_write2(int verbose,
       
          /* In the future, perhaps we override this method of specifying compression 
           * with the CFITSIO API call that specifies it. */
-         if (cparms && *cparms)
-         {
-            snprintf(filename, sizeof(filename), "%s[%s]", filein, cparms);
-         }
-         else
-         {
-            snprintf(filename, sizeof(filename), "%s", filein);
-         }
+        if (strcmp(filein, "-") != 0)
+        {
+            /* not stdout */
+            if (cparms && *cparms)
+            {
+                snprintf(filename, sizeof(filename), "%s[%s]", filein, cparms);
+            }
+            else
+            {
+                snprintf(filename, sizeof(filename), "%s", filein);
+            }
 
-         remove(filein);
+            remove(filein);
+         }
          
          //ISS fly-tar START
          if (callback != NULL) 
          {
-            int retVal =0;
-            
-            (*callback)("create", &fptr, filein, cparms, &cfiostat, &retVal);
-            if (retVal)
+            if (strcmp(filein, "-") != 0)
             {
-               err = CFITSIO_ERROR_FILE_IO;
+                /* not stdout */
+                int retVal =0;
+            
+                (*callback)("create", &fptr, filein, cparms, &cfiostat, &retVal);
+                if (retVal)
+                {
+                   err = CFITSIO_ERROR_FILE_IO;
+                }
+            }
+            else
+            {
+                /* we are writing the FITS file to stdout; the FITS file has already been created (in memory);
+                 * callback has the fitsfile */
+                fptr = (fitsfile *)callback;
             }
          } 
          else 
@@ -1921,12 +1935,17 @@ int fitsrw_write2(int verbose,
 
       //ISS fly-tar
       if (callback != NULL ) 
-      {   //ISS fly-tar
-         (*callback)("stdout",fptr, image, &cfiostat);
-         if (cfiostat) {
-            fprintf(stderr, "Trouble executing callback [%s]\n", filename);
-            err = CFITSIO_ERROR_LIBRARY;
-         }
+      {
+            if (strcmp(filein, "-") != 0)
+            {
+                //ISS fly-tar
+                (*callback)("stdout", fptr, image, &cfiostat);
+                if (cfiostat) 
+                {
+                    fprintf(stderr, "Trouble executing callback [%s]\n", filename);
+                    err = CFITSIO_ERROR_LIBRARY;
+                }
+            }
       } 
       else 
       {

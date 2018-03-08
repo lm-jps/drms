@@ -486,10 +486,10 @@ int ExportFITS(DRMS_Env_t *env,
 /* keys may be NULL, in which case no extra keywords are placed into the FITS file. */
 static int ExportFITS2(DRMS_Env_t *env,
                        DRMS_Array_t *arrout,
-                       const char *fileout,
-                       const char *cparms,
+                       const char *fileout, /* "-" for stdout */
+                       const char *cparms, /* NULL for stdout */
                        CFITSIO_KEYWORD *fitskeys,
-                       export_callback_func_t callback) //ISS fly-tar
+                       export_callback_func_t callback) //ISS fly-tar - fitsfile * for stdout
 {
     int stat = DRMS_SUCCESS;
     
@@ -498,17 +498,39 @@ static int ExportFITS2(DRMS_Env_t *env,
         /* Need to manually add required keywords that don't exist in the record's 
          * DRMS keywords. */
         CFITSIO_IMAGE_INFO imginfo;
+        int compType;
+        int isRiceCompressed = 0;
+        int fiostat;
         
         /* To deal with CFITSIO not handling signed bytes, must convert DRMS_TYPE_CHAR to 
          * DRMS_TYPE_SHORT */
         if (arrout->type == DRMS_TYPE_CHAR)
         {
             drms_array_convert_inplace(DRMS_TYPE_SHORT, 0, 1, arrout);
-            fprintf(stdout, "FITS doesn't support signed char, converting to signed short.\n");
+            fprintf(stderr, "FITS doesn't support signed char, converting to signed short.\n");
+        }
+        
+        if (strcmp(fileout, "-") == 0)
+        {
+            fiostat = 0;
+            fits_get_compression_type((fitsfile *)callback, &compType, &fiostat);
+            if (fiostat)
+            {
+                fits_report_error(stderr, fiostat);
+                stat = CFITSIO_ERROR_LIBRARY;
+            }
+            else
+            {
+                isRiceCompressed = (compType == RICE_1);
+            }
+        }
+        else
+        {
+            isRiceCompressed = fitsrw_iscompressed(cparms);
         }
         
         /* Reject exports of Rice-compressed floating-point images. */
-        if (fitsrw_iscompressed(cparms) && (arrout->type == DRMS_TYPE_FLOAT || arrout->type == DRMS_TYPE_DOUBLE))
+        if (isRiceCompressed && (arrout->type == DRMS_TYPE_FLOAT || arrout->type == DRMS_TYPE_DOUBLE))
         {
             fprintf(stderr, "Cannot export Rice-compressed floating-point images.\n");
             stat = DRMS_ERROR_CANTCOMPRESSFLOAT;
@@ -527,7 +549,7 @@ static int ExportFITS2(DRMS_Env_t *env,
                 else
                 {
                    //ISS fly-tar START
-                   if (callback != NULL) 
+                   if (strcmp(fileout, "-") != 0 && callback != NULL) 
                    {
                       (*callback)("setarrout", arrout);
                    }
@@ -709,13 +731,13 @@ int fitsexport_mapexport_tofile(DRMS_Segment_t *seg,
 }
 
 int fitsexport_mapexport_tofile2(DRMS_Segment_t *seg,
-                                 const char *cparms,
+                                 const char *cparms, /* NULL for stdout */
                                  const char *clname,
                                  const char *mapfile,
-                                 const char *fileout,
-                                 char **actualfname,
-                                 unsigned long long *expsize,
-                                 export_callback_func_t callback) //ISS fly-tar
+                                 const char *fileout, /* "-" for stdout */
+                                 char **actualfname, /* NULL for stdout */
+                                 unsigned long long *expsize, /* NULL for stdout */
+                                 export_callback_func_t callback) //ISS fly-tar - fitsfile * for stdout
 {
    int status = DRMS_SUCCESS;
 
@@ -767,7 +789,15 @@ int fitsexport_mapexport_tofile2(DRMS_Segment_t *seg,
             swval = seg->info->protocol;
          }
           
-          snprintf(realfileout, sizeof(realfileout), "%s", fileout);
+          if (strcmp(fileout, "-") == 0)
+          {
+            /* to stdout case */
+            snprintf(realfileout, sizeof(realfileout), "-");
+          }
+          else
+          {
+              snprintf(realfileout, sizeof(realfileout), "%s", fileout);
+          }
 
          switch (swval)
          {
@@ -853,7 +883,24 @@ int fitsexport_mapexport_tofile2(DRMS_Segment_t *seg,
 
                  if (arrout)
                  {
-                    status = ExportFITS2(seg->record->env, arrout, realfileout, cparms ? cparms : (seg->info->islink ? tgtseg->cparms : seg->cparms), fitskeys, callback); //ISS fly-tar
+                    const char *cparmsArg = NULL;
+                    
+                    if (strcmp(fileout, "-") == 0)
+                    {
+                        /* stdout case */                        
+                    }
+                    else
+                    {
+                        cparmsArg = cparms ? cparms : (seg->info->islink ? tgtseg->cparms : seg->cparms);
+                    }
+                    
+                    if (strcmp(fileout, "-") == 0)
+                    {
+                        /* to stdout case */
+                        snprintf(realfileout, sizeof(realfileout), "-");
+                    }
+                    
+                    status = ExportFITS2(seg->record->env, arrout, realfileout, cparmsArg, fitskeys, callback); //ISS fly-tar
                     drms_free_array(arrout);	     
                  }
               }
@@ -911,6 +958,14 @@ int fitsexport_mapexport_tofile2(DRMS_Segment_t *seg,
    }
 
    return status;
+}
+
+int fitsexport_mapexport_tostdout(fitsfile *fitsPtr, DRMS_Segment_t *seg, const char *clname, const char *mapfile)
+{
+    /* ugh - use "-" to indicate that we are exporting to stdout; when that happens the fitsfile * is stored in
+     * the callback argument
+     */
+    return fitsexport_mapexport_tofile2(seg, NULL, clname, mapfile, "-", NULL, NULL, (export_callback_func_t)fitsPtr);
 }
 
 /* Map keys that are specific to a segment to fits keywords.  User must free. 
