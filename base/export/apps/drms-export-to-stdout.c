@@ -31,7 +31,8 @@ char *module_name = "drms-export-to-stdout";
 #define ARG_COMPRESSALLSEGS "a" /* if set, then apply a single CPARMS value to all segments */
 
 #define FILE_LIST_PATH "jsoc/file_list.txt"
-#define ERROR_PATH "jsoc/error_list.txt"
+#define ERROR_LIST_PATH "jsoc/error_list.txt"
+#define ERROR_PATH "jsoc/error.txt"
 
 #define DEFAULT_MAX_TAR_FILE_SIZE "4294967296" /* 4 GB*/
 #define MAX_MAX_TAR_FILE_SIZE 53687091200 /* 50 GB - the maxfilesize argument cannot be larger than this */
@@ -53,7 +54,8 @@ enum __ExpToStdoutStatus_enum__
     ExpToStdoutStatus_BadFilenameTemplate = 8,
     ExpToStdoutStatus_DRMS = 9,
     ExpToStdoutStatus_Stdout = 10,
-    ExpToStdoutStatus_TarTooLarge = 11
+    ExpToStdoutStatus_TarTooLarge = 11,
+    ExpToStdoutStatus_AllExportsFailed = 12
 };
 
 typedef enum __ExpToStdoutStatus_enum__ ExpToStdoutStatus_t;
@@ -821,7 +823,7 @@ static ExpToStdoutStatus_t ExportRecordToStdout(DRMS_Record_t *expRec, const cha
             fprintf(stderr, "\n");
             if (errorBuf)
             {
-                snprintf(errMsg, sizeof(errMsg), "record = %s, file format = %s, message = %s\n", recordSpec, ffmt, msg);
+                snprintf(errMsg, sizeof(errMsg), "record = %s, segment = %s, message = %s\n", recordSpec, segIn->info->name, msg);
                 *errorBuf = base_strcatalloc(*errorBuf, errMsg, szErrorBuf);
             }
 
@@ -1031,11 +1033,6 @@ static ExpToStdoutStatus_t ExportRecordSetToStdout(DRMS_Env_t *env, DRMS_RecordS
     int iRec;
     int nRecs;
     DRMS_Record_t *expRecord = NULL;
-    const char *msg = NULL;
-    int fiostat = 0;
-    long long numBytesFitsFile; /* the actual FITSIO type is LONGLONG */
-    size_t bytesSent;
-    int terminate = 0;
     
     int recsExported = 0;
     int recsAttempted = 0;
@@ -1046,7 +1043,8 @@ static ExpToStdoutStatus_t ExportRecordSetToStdout(DRMS_Env_t *env, DRMS_RecordS
 
         if (drmsStatus != DRMS_SUCCESS)
         {
-            fprintf(stderr, "failure calling drms_recordset_getssnrecs(), skipping subset '%d'\n", iSet);
+            /* this is a general error, do not write to errorBuf */
+            fprintf(stderr, "failure calling drms_recordset_getssnrecs(), skipping subset %d\n", iSet);
             expStatus = ExpToStdoutStatus_DRMS;
         }
         else
@@ -1069,6 +1067,10 @@ static ExpToStdoutStatus_t ExportRecordSetToStdout(DRMS_Env_t *env, DRMS_RecordS
                 {
                     break;
                 }
+                else if (expStatus == ExpToStdoutStatus_Success)
+                {
+                    recsExported++;
+                }
 
                 /* IF the internal FITSIO buffers have data, there is no way to NOT flush output to stdout;
                  * hopefully this error will not happen often; if the pipe to the parent process breaks, 
@@ -1085,11 +1087,15 @@ static ExpToStdoutStatus_t ExportRecordSetToStdout(DRMS_Env_t *env, DRMS_RecordS
                  * ignore all data till the next record's data gets returned; in 
                  * this case, we want to go on to the next DRMS record, resetting expStatus to 
                  * ExpToStdoutStatus_Success */
-                 
-                 /* */
                  expStatus = ExpToStdoutStatus_Success;
             }              
         }
+    }
+    
+    if (recsAttempted > 0 && recsExported == 0)
+    {
+        fprintf(stderr, "exports failed for %d records of %d records attempted\n", recsAttempted - recsExported, recsAttempted);
+        expStatus = ExpToStdoutStatus_AllExportsFailed;
     }
 
     return expStatus;
@@ -1122,11 +1128,11 @@ int DoIt(void)
     ExpToStdout_Compression_t *segCompression = NULL;
     int iComp;
     DRMS_RecordSet_t *expRS = NULL;
-    char errMsg[1024]; /* if things die before the tar begins its journey to the client */
     char *infoBuf = NULL;
     size_t szInfoBuf = 0;
     char *errorBuf = NULL;
     size_t szErrorBuf = 0;
+    char generalErrorBuf[TAR_BLOCK_SIZE]; /* the last file object in the tar file will be a single tar block */
     size_t bytesExported = 0;
     size_t numFilesExported = 0;
         
@@ -1140,7 +1146,7 @@ int DoIt(void)
     GetOptionValue(ARG_INT, ARG_MAX_TAR_FILE_SIZE, (void *)&maxTarFileSize);
     GetOptionValue(ARG_FLAG, ARG_COMPRESSALLSEGS, (void *)&compressAllSegs);
     
-    memset(errMsg, '\0', sizeof(errMsg));
+    memset(generalErrorBuf, '\0', sizeof(generalErrorBuf));
     
     if (expStatus == ExpToStdoutStatus_Success)
     {
@@ -1202,16 +1208,23 @@ int DoIt(void)
                 }
                 else
                 {
-                    snprintf(errMsg, sizeof(errMsg), "invalid compression-string argument element %s\n", cparmStr);
+                    if (sizeof(generalErrorBuf) - strlen(generalErrorBuf) > 0)
+                    {
+                        snprintf(generalErrorBuf + strlen(generalErrorBuf), sizeof(generalErrorBuf) - strlen(generalErrorBuf), "invalid compression-string argument element %s\n", cparmStr);
+                    }
                     expStatus = ExpToStdoutStatus_InvalidArgs;
+                    break;
                 }
                 
                 iComp++;
             }
             
-            if (iComp != 1 && compressAllSegs)
+            if (expStatus == ExpToStdoutStatus_Success && iComp != 1 && compressAllSegs)
             {
-                snprintf(errMsg, sizeof(errMsg), "invalid combination of %s and %s arguments\n", ARG_CPARMS_STRING, ARG_COMPRESSALLSEGS);
+                if (sizeof(generalErrorBuf) - strlen(generalErrorBuf) > 0)
+                {
+                    snprintf(generalErrorBuf + strlen(generalErrorBuf), sizeof(generalErrorBuf) - strlen(generalErrorBuf), "invalid combination of %s and %s arguments\n", ARG_CPARMS_STRING, ARG_COMPRESSALLSEGS);
+                }
                 expStatus = ExpToStdoutStatus_InvalidArgs;
             }
         }
@@ -1229,7 +1242,10 @@ int DoIt(void)
     {
         if (maxTarFileSize > MAX_MAX_TAR_FILE_SIZE)
         {
-            snprintf(errMsg, sizeof(errMsg), "maximum tar file size argument, %llu, exceeds limit of %llu bytes\n", maxTarFileSize, MAX_MAX_TAR_FILE_SIZE);
+            if (sizeof(generalErrorBuf) - strlen(generalErrorBuf) > 0)
+            {
+                snprintf(generalErrorBuf + strlen(generalErrorBuf), sizeof(generalErrorBuf) - strlen(generalErrorBuf), "maximum tar file size argument, %llu, exceeds limit of %llu bytes\n", maxTarFileSize, MAX_MAX_TAR_FILE_SIZE);
+            }
             expStatus = ExpToStdoutStatus_InvalidArgs;
         }
     }
@@ -1239,7 +1255,10 @@ int DoIt(void)
         expRS = drms_open_records(drms_env, rsSpec, &drmsStatus);
         if (!expRS || drmsStatus != DRMS_SUCCESS)
         {
-            snprintf(errMsg, sizeof(errMsg), "unable to open records for specification %s\n", rsSpec);
+            if (sizeof(generalErrorBuf) - strlen(generalErrorBuf) > 0)
+            {
+                snprintf(generalErrorBuf + strlen(generalErrorBuf), sizeof(generalErrorBuf) - strlen(generalErrorBuf), "unable to open records for specification %s\n", rsSpec);
+            }                
             expStatus = ExpToStdoutStatus_DRMS;
         }
     }
@@ -1249,7 +1268,10 @@ int DoIt(void)
         /* stage records to reduce number of calls to SUMS */
         if (drms_stage_records(expRS, 1, 0) != DRMS_SUCCESS)
         {
-            snprintf(errMsg, sizeof(errMsg), "unable to stage records for specification %s\n", rsSpec);
+            if (sizeof(generalErrorBuf) - strlen(generalErrorBuf) > 0)
+            {
+                snprintf(generalErrorBuf + strlen(generalErrorBuf), sizeof(generalErrorBuf) - strlen(generalErrorBuf), "unable to stage records for specification %s\n", rsSpec);
+            }
             expStatus = ExpToStdoutStatus_DRMS;
         }
     }
@@ -1263,6 +1285,33 @@ int DoIt(void)
         
         /* create a TAR file object header block plus data blocks for each FITS file that is being exported */
         tarStatus = ExportRecordSetToStdout(drms_env, expRS, fileTemplate, segCompression, compressAllSegs, mapClass, mapFile, &bytesExported, maxTarFileSize, &numFilesExported, &infoBuf, &szInfoBuf, &errorBuf, &szErrorBuf);
+        
+        /* general error messages */
+        if (tarStatus == ExpToStdoutStatus_DRMS)
+        {
+            if (sizeof(generalErrorBuf) - strlen(generalErrorBuf) > 0)
+            {
+                snprintf(generalErrorBuf + strlen(generalErrorBuf), sizeof(generalErrorBuf) - strlen(generalErrorBuf), "a DRMS error occurred while processing the record set %s\n", rsSpec);
+            }
+        }
+        else if (tarStatus == ExpToStdoutStatus_TarTooLarge)
+        {
+            if (sizeof(generalErrorBuf) - strlen(generalErrorBuf) > 0)
+            {
+                snprintf(generalErrorBuf + strlen(generalErrorBuf), sizeof(generalErrorBuf) - strlen(generalErrorBuf), "the tar file size exceeded the limit and has been truncated");
+            }
+        }
+        else if (tarStatus == ExpToStdoutStatus_AllExportsFailed)
+        {
+            if (sizeof(generalErrorBuf) - strlen(generalErrorBuf) > 0)
+            {
+                snprintf(generalErrorBuf + strlen(generalErrorBuf), sizeof(generalErrorBuf) - strlen(generalErrorBuf), "attempts were made to export files, but they all failed");
+            }
+        }
+        else
+        {
+            /* this is an error - there are no other possible errors */        
+        }
     }
 
     if (infoBuf)
@@ -1293,7 +1342,7 @@ int DoIt(void)
             if (*errorBuf)
             {
                 /* 0-pads to TAR block size */
-                intStatus = WriteFileBuffer(stdout, ERROR_PATH, errorBuf, strlen(errorBuf));
+                intStatus = WriteFileBuffer(stdout, ERROR_LIST_PATH, errorBuf, strlen(errorBuf));
                 if (tarStatus == ExpToStdoutStatus_Success)
                 {
                     tarStatus = intStatus;
@@ -1302,18 +1351,17 @@ int DoIt(void)
         }
         else
         {
+            char errorBufMsg[512];
+
             /* an error occurred before any FITS file was dumped (*errorBuf == '\0') - loop through all records and print the same error 
              * message for each */
-            if (!*errMsg)
+            if (expStatus == ExpToStdoutStatus_OutOfMemory)
             {
-                if (expStatus == ExpToStdoutStatus_OutOfMemory)
-                {
-                    snprintf(errMsg, sizeof(errMsg), "out of memory on web server\n");
-                }
-                else
-                {
-                    snprintf(errMsg, sizeof(errMsg), "the dreaded 'internal server error' message\n");
-                }
+                snprintf(errorBufMsg, sizeof(errorBufMsg), "out of memory on web server\n");
+            }
+            else
+            {
+                snprintf(errorBufMsg, sizeof(errorBufMsg), "the dreaded 'internal server error' message\n");
             }
         
             /* write the same message for every segment */
@@ -1323,7 +1371,7 @@ int DoIt(void)
                 char recordSpec[DRMS_MAXQUERYLEN];
                 HIterator_t *last = NULL;
                 DRMS_Segment_t *seg = NULL;
-                char errorBufMsg[1024];
+                char transBuf[1024];
 
                 drms_recordset_fetchnext_setcurrent(expRS, -1);
                 
@@ -1333,7 +1381,7 @@ int DoIt(void)
 
                     while ((seg = drms_record_nextseg(expRecord, &last, 0)) != NULL)
                     {
-                        snprintf(errMsg, sizeof(errMsg), "record = %s, segment = %s, message = %s\n", recordSpec, seg->info->name, errMsg);
+                        snprintf(transBuf, sizeof(transBuf), "record = %s, segment = %s, message = %s\n", recordSpec, seg->info->name, errorBufMsg);
                         errorBuf = base_strcatalloc(errorBuf, errorBufMsg, &szErrorBuf);
                     }
                 }
@@ -1346,7 +1394,7 @@ int DoIt(void)
                 if (*errorBuf)
                 {
                     /* 0-pads to TAR block size */
-                    intStatus = WriteFileBuffer(stdout, ERROR_PATH, errorBuf, strlen(errorBuf));
+                    intStatus = WriteFileBuffer(stdout, ERROR_LIST_PATH, errorBuf, strlen(errorBuf));
                     if (tarStatus == ExpToStdoutStatus_Success)
                     {
                         tarStatus = intStatus;
@@ -1355,12 +1403,10 @@ int DoIt(void)
             }
             else
             {
-                errorBuf = base_strcatalloc(errorBuf, errMsg, &szErrorBuf);
-
-                intStatus = WriteFileBuffer(stdout, ERROR_PATH, errorBuf, strlen(errorBuf));
-                if (tarStatus == ExpToStdoutStatus_Success)
+                /* we have no record-set; write a general error message */
+                if (sizeof(generalErrorBuf) - strlen(generalErrorBuf) > 0)
                 {
-                    tarStatus = intStatus;
+                    snprintf(generalErrorBuf + strlen(generalErrorBuf), sizeof(generalErrorBuf) - strlen(generalErrorBuf), "%s", errorBufMsg);
                 }
             }
         }
@@ -1378,6 +1424,18 @@ int DoIt(void)
             tarStatus = intStatus;
         }
     }
+    
+    /* dump a general error message if one exists */
+    if (*generalErrorBuf)
+    {    
+        intStatus = WriteFileBuffer(stdout, ERROR_PATH, generalErrorBuf, strlen(generalErrorBuf));
+        if (tarStatus == ExpToStdoutStatus_Success)
+        {
+            tarStatus = intStatus;
+        }
+        
+        *generalErrorBuf = '\0';   
+    }
 
     /* write the end-of-archive marker (1024 zero bytes) */
     /* pad - fill up last 512 block with zeroes */
@@ -1387,6 +1445,14 @@ int DoIt(void)
         tarStatus = intStatus;
     }
 
+    /* if expStatus != ExpToStdoutStatus_Success, then we encountered some fatal error before the first FITS file was 
+     * dumped; if tarStatus != ExpToStdoutStatus_Success, then there was some problem writing to the tar file during or 
+     * after the FITS files were dumped; regardless of status, a valid tar file may be the result, albeit with
+     * potentially missing data;
+     *
+     * if, after this line, expStatus != ExpToStdoutStatus_Success, then there will be a general error message
+     * (unless the call to write the general error message to stdout fails)
+     */
     expStatus = ((expStatus != ExpToStdoutStatus_Success) ? expStatus : tarStatus);
     
     if (expRS)
