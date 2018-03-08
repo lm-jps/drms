@@ -48,7 +48,7 @@ ifeq ($(HOST),j1)
 endif
 
 CF_TGT_$(d) := $(CF_TGT_$(d)) $(ADD_TGT_$(d))
-LL_TGT_$(d) := $(PGL) -lecpg -lpq -lssl -lcrypto
+LL_TGT_$(d) := -L $(POSTGRES_LIBS) -lecpg -lpq -lssl -lcrypto
 
 MULTI_SUMS_C_$(d) := $(wildcard $(SRCDIR)/$(d)/Salloc*.c) $(wildcard $(SRCDIR)/$(d)/Sdelser*.c) $(wildcard $(SRCDIR)/$(d)/Sinfo*.c) $(wildcard $(SRCDIR)/$(d)/Sput*.c) $(wildcard $(SRCDIR)/$(d)/Sget*.c) $(wildcard $(SRCDIR)/$(d)/Sopen*.c)
 MULTI_SUMS_$(d) := $(addprefix $(d)/, sum_svc $(notdir $(patsubst %.c,%,$(MULTI_SUMS_C_$(d)))))
