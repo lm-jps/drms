@@ -10,7 +10,7 @@ d		:= $(dir)
 # NOTE: Add the base of the module's filename below (next to mymod)
 MODEXE_$(d)	:= $(addprefix $(d)/, jsoc_export_as_fits jsoc_export_as_is jsoc_export_SU_as_is jsoc_fetch jsoc_stats1 jsoc_export_clone drms_export_cgi segment-file-name)
 
-MODEXE_ONLY_$(d)	:= $(addprefix $(d)/, jsoc_info jsoc_export_manage)
+MODEXE_ONLY_$(d)	:= $(addprefix $(d)/, drms-export-to-stdout jsoc_info jsoc_export_manage)
 
 MODEXE		:= $(MODEXE) $(MODEXE_$(d)) $(MODEXE_ONLY_$(d))
 CEXE_$(d)       := $(addprefix $(d)/, GetJsocRequestID jsoc_WebRequestID jsoc_export_make_index jsoc_manage_cgibin_handles)
