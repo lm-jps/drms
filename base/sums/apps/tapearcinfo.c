@@ -9,6 +9,9 @@
  * It gets all the archive pending working
  * directories from the Oracle sum_partn_alloc table.
  *
+ * ART: THIS IS NOT USED ANY MORE!! The list of SUs to get archived gets determined by a system(archprobe.pl) made in 
+ * tape_do_archiveX.pl. The list is then printed to a 'manifest file', which is then read by tapearcX.c. It makes a keylist
+ * of all the SUNUMs, and then calls the WRITEDO tape_svc RPC call.
 */
 
 #include <SUM.h>
