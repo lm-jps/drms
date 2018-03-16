@@ -5,7 +5,9 @@
 
 #include "drms.h"
 #include "cfitsio.h"
+#if USE_FITS_STRUCTS
 #include "fitsio.h"
+#endif
 
 enum FE_Keyword_ExtType_enum
 {
@@ -51,7 +53,9 @@ int fitsexport_mapexport_tofile2(DRMS_Segment_t *seg,
                                  unsigned long long *expsize,
                                  export_callback_func_t callback); //ISS fly-tar
 
+#if USE_FITS_STRUCTS
 int fitsexport_mapexport_tostdout(fitsfile *fitsPtr, DRMS_Segment_t *seg, const char *clname, const char *mapfile);
+#endif
 
 CFITSIO_KEYWORD *fitsexport_mapkeys(DRMS_Segment_t *seg, 
                                     const char *clname, 
