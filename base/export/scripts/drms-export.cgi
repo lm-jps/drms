@@ -194,6 +194,7 @@ if ($expProgType eq 'export-cgi')
 }
 elsif ($expProgType eq 'export-stdout')
 {
+    my($makeTarFile);
     my($dbHost) ||= $config->{'JSOC_DB_HOST'} || 'unknownhost';
     my($dbName) ||= $config->{'JSOC_DB_NAME'} || 'data';
     my($dbUser) ||= $config->{'JSOC_DB_USER'} || 'apache';
@@ -203,7 +204,14 @@ elsif ($expProgType eq 'export-stdout')
     # this program dumps a tar file directly to stdout; it makes an effort to always write some kind of tar file; 
     # should there be problems putting FITS files in the tar file, it will put errors in the jsoc/error_list.txt
     # file in the tar; if a tar could not be created 
+    
+    $makeTarFile = ((defined($tarfile) && length($tarfile) > 0) ? 1 : 0);
+    
     @cmd = ($export_cmd, 'spec='.sprintf($drms_query, @series_args), "ffmt=$filename_pattern", 'ackfile=/tmp/ACKFILE');
+    if (!$makeTarFile)
+    {
+        push @cmd, 's=1';
+    }
     push @cmd, ('JSOC_DB_HOST=' . $dbHost, 'JSOC_DB_NAME=' . $dbName, 'JSOC_DB_USER=' . $dbUser);
     
     if ($compression ne 'rice')
