@@ -26,9 +26,9 @@ my($DUMMY_TAR_FILE_NAME) = 'data.tar';
 # actually, JSOC::Registry uses VSO::Config, so probably doesn't matter
 
 my $config     ||= Physics::Solar::VSO::Config->new();
-my $export_cmd ||= $config->{'JSOC_EXPORT_CMD'} || '/opt/netdrms/bin/linux_x86_64/drms_export_cgi';
+my $export_cmd ||= $config->{'JSOC_EXPORT_CMD'} || '/opt/netdrms/bin/linux_avx/drms-export-cgi';
 my $instance   ||= $config->{'INSTANCE_ID'} || $config->{'SERVER_ID'} || 'VSO';
-my($expProgType) ||= $config->{'JSOC_EXPORT_CMD_TYPE'} || 'streamableExport';
+my($expProgType) ||= $config->{'JSOC_EXPORT_CMD_TYPE'} || 'export-cgi';
 
 my @file_handles = ();
 
@@ -212,7 +212,7 @@ elsif ($expProgType eq 'export-stdout')
     {
         push @cmd, 's=1';
     }
-    push @cmd, ('JSOC_DB_HOST=' . $dbHost, 'JSOC_DB_NAME=' . $dbName, 'JSOC_DB_USER=' . $dbUser);
+    push @cmd, ('JSOC_DBHOST=' . $dbHost, 'JSOC_DBNAME=' . $dbName, 'JSOC_DBUSER=' . $dbUser);
     
     if ($compression ne 'rice')
     {
