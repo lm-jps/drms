@@ -803,17 +803,19 @@ int fitsexport_mapexport_tofile2(DRMS_Segment_t *seg,
          {
             case DRMS_TAS:
              {
-                 /* If we are reading a single record from a TAS file, this means that we're 
-                  * reading a single slice. fileout will have a .tas extension, since 
-                  * the output file name is derived from the input file name. We need to 
-                  * substitute .fits for .tas. */
-                 size_t len = strlen(realfileout) + 64;
-                 size_t lenstr;
-                 char *dup = malloc(len);
-                 snprintf(dup, len, "%s", realfileout);
+                if (strcmp(fileout, "-") != 0)
+                {
+                    /* If we are reading a single record from a TAS file, this means that we're 
+                     * reading a single slice. fileout will have a .tas extension, since 
+                     * the output file name is derived from the input file name. We need to 
+                     * substitute .fits for .tas. */
+                    size_t len = strlen(realfileout) + 64;
+                    size_t lenstr;
+                    char *dup = malloc(len);
+                    snprintf(dup, len, "%s", realfileout);
 
-                 if (dup)
-                 {
+                    if (dup)
+                    {
                      lenstr = strlen(dup);
                      if (lenstr > 0 && 
                          (dup[lenstr - 1] == 's' || dup[lenstr - 1] == 'S') && 
@@ -831,12 +833,13 @@ int fitsexport_mapexport_tofile2(DRMS_Segment_t *seg,
                          status = DRMS_ERROR_EXPORT;
                          break;
                      }
-                     
+ 
                      free(dup);
-                 }
-                 else
-                 {
+                    }
+                    else
+                    {
                      status = DRMS_ERROR_OUTOFMEMORY;
+                    }
                  }
              }
                  
