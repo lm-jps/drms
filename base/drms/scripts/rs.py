@@ -166,7 +166,7 @@ def runJsocfetch(**kwargs):
         # which is the only easy way to capture stdout, will raise an error if jsoc_fetch returns 1. So we have to do some
         # additional processing if check_output() raises. If status is 6, then DO NOT RERAISE. Instead, fall through to the code below
         # that processes the output of jsoc_fetch.
-        print('running ' + ' '.join(cmd))
+        print('running ' + ' '.join(cmd), file=sys.stderr)
         resp = check_output(cmd)
         output = resp.decode('utf-8')
 
