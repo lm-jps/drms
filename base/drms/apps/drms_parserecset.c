@@ -12,6 +12,7 @@
  *            "settype"    : "drms"
  *            "seriesname" : "hmi.MEharp_720s",
  *            "filter"     : "[][2014.5.12/10m]",
+ *            "segments"   : "{field}"
  *            "autobang"   : true,
  *        },
  *        {
@@ -66,6 +67,7 @@ int DoIt(void)
     DRMS_RecordSetType_t *settypes = NULL; /* a maximum doesn't make sense */
     char **snames = NULL;
     char **filts = NULL;
+    char **segs = NULL;
     int nsets = 0;
     DRMS_RecQueryInfo_t rsinfo; /* Filled in by parser as it encounters elements. */
     
@@ -122,7 +124,7 @@ int DoIt(void)
 
         if (rv == PRSSTAT_SUCCESS)
         {
-           rv = (drms_record_parserecsetspec(spec, &allvers, &sets, &settypes, &snames, &filts, &nsets, &rsinfo) == 0) ? PRSSTAT_SUCCESS : PRSSTAT_CANTPARSE;
+           rv = (drms_record_parserecsetspec_plussegs(spec, &allvers, &sets, &settypes, &snames, &filts, &segs, &nsets, &rsinfo) == 0) ? PRSSTAT_SUCCESS : PRSSTAT_CANTPARSE;
            errMsg = "Unable to parse specification.";
         }
         
@@ -262,6 +264,7 @@ int DoIt(void)
                     {
                         rv = (json_insert_pair_into_object(elem, "filter", (escapedStr != NULL) ? json_new_string(escapedStr) : json_new_null()) == JSON_OK) ? PRSSTAT_SUCCESS : PRSSTAT_JSONELEM;
                         free(escapedStr);
+                        escapedStr = NULL;
                     }
                     
                     if (rv != PRSSTAT_SUCCESS)
@@ -270,6 +273,34 @@ int DoIt(void)
                         break;
                     }
                     
+                    if (segs[iSet])
+                    {
+                        escapedStr = json_escape(segs[iSet]);
+                        
+                        if (!escapedStr)
+                        {
+                            rv = PRSSTAT_NOMEM;
+                            errMsg = "Not enough memory to create segment-list string.";
+                        }
+                    }
+                    else
+                    {
+                        escapedStr = NULL;
+                    }
+                    
+                    if (rv == PRSSTAT_SUCCESS)
+                    {
+                        rv = (json_insert_pair_into_object(elem, "segments", (escapedStr != NULL) ? json_new_string(escapedStr) : json_new_null()) == JSON_OK) ? PRSSTAT_SUCCESS : PRSSTAT_JSONELEM;
+                        free(escapedStr);
+                        escapedStr = NULL;
+                    }
+                    
+                    if (rv != PRSSTAT_SUCCESS)
+                    {
+                        errMsg = "Unable to create segments property in subset object.";
+                        break;
+                    }
+
                     rv = (json_insert_pair_into_object(elem, "autobang", (allvers[iSet] == 'Y' ||  allvers[iSet] == 'y') ? json_new_true() : json_new_false()) == JSON_OK) ? PRSSTAT_SUCCESS : PRSSTAT_JSONELEM;
                     if (rv != PRSSTAT_SUCCESS)
                     {
@@ -300,7 +331,7 @@ int DoIt(void)
         free(spec);
         spec = NULL;
         
-        drms_record_freerecsetspecarr(&allvers, &sets, &settypes, &snames, &filts, nsets);
+        drms_record_freerecsetspecarr_plussegs(&allvers, &sets, &settypes, &snames, &filts, &segs, nsets);
     }
     else
     {
