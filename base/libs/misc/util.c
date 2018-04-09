@@ -1135,3 +1135,27 @@ int base_doubleIsEqual(const double val1, const double val2)
     
     return (conv1.integer == conv2.integer);
 }
+
+int base_nsAndTab(const char *name, char **ns, char **tab)
+{
+    int err = 0;
+    char *nspace = strdup(name);
+    char *pc = strrchr(nspace, '.');
+
+    if (pc) 
+    {
+        *pc = '\0';
+    }
+    else
+    {
+        err = 1;
+    }
+
+    if (!err)
+    {
+        *ns = nspace;
+        *tab = strdup(++pc);
+    }
+
+    return err;   
+}
