@@ -11,6 +11,8 @@
  *            "spec"       : "hmi.MEharp_720s[][2014.5.12/10m][! 1=1 !]{field}"
  *            "settype"    : "drms"
  *            "seriesname" : "hmi.MEharp_720s",
+ *            "seriesns"   : "hmi",
+ *            "seriestab"  : "meharp_720s",
  *            "filter"     : "[][2014.5.12/10m]",
  *            "segments"   : "{field}"
  *            "autobang"   : true,
@@ -19,6 +21,8 @@
  *            "spec"       : "hmi.M_720s[2014.5.12/10m]"
  *            "settype"    : "drms"
  *            "seriesname" : "hmi.M_720s",
+ *            "seriesns"   : "hmi",
+ *            "seriestab"  : "m_720s",
  *            "filter"     : "[2014.5.12/10m]",
  *            "autobang"   : false,
  *        }
@@ -176,6 +180,8 @@ int DoIt(void)
             if (subsets)
             {
                 int iSet;
+                char *ns = NULL;
+                char *tab = NULL;
                 
                 for (iSet = 0; iSet < nsets; iSet++)
                 {
@@ -241,7 +247,66 @@ int DoIt(void)
                         
                     if (rv != PRSSTAT_SUCCESS)
                     {
-                        errMsg = "Unable to create seriesname property in subset object.";
+                        if (!errMsg)
+                        {
+                            errMsg = "Unable to create seriesname property in subset object.";
+                        }
+                        break;
+                    }
+                    
+                    rv = (!base_nsAndTab(snames[iSet], &ns, &tab)) ? PRSSTAT_SUCCESS : PRSSTAT_CANTPARSE;
+                    
+                    if (rv == PRSSTAT_SUCCESS)
+                    {
+                        strtolower(ns);
+                        escapedStr = json_escape(ns);
+                        if (!escapedStr)
+                        {
+                            rv = PRSSTAT_NOMEM;
+                            errMsg = "Not enough memory to create series-namespace string.";
+                        }                        
+                    }
+                    
+                    if (rv == PRSSTAT_SUCCESS)
+                    {
+                        rv = (json_insert_pair_into_object(elem, "seriesns", json_new_string(escapedStr)) == JSON_OK) ? PRSSTAT_SUCCESS : PRSSTAT_JSONELEM;
+                        free(escapedStr);
+                        free(ns);
+                    }
+                    
+                    if (rv != PRSSTAT_SUCCESS)
+                    {
+                        if (!errMsg)
+                        {
+                            errMsg = "Unable to create seriesns property in subset object.";
+                        }
+                        break;
+                    }
+
+                    if (rv == PRSSTAT_SUCCESS)
+                    {
+                        strtolower(tab);
+                        escapedStr = json_escape(tab);
+                        if (!escapedStr)
+                        {
+                            rv = PRSSTAT_NOMEM;
+                            errMsg = "Not enough memory to create series-table string.";
+                        }                        
+                    }
+                    
+                    if (rv == PRSSTAT_SUCCESS)
+                    {
+                        rv = (json_insert_pair_into_object(elem, "seriestab", json_new_string(escapedStr)) == JSON_OK) ? PRSSTAT_SUCCESS : PRSSTAT_JSONELEM;
+                        free(escapedStr);
+                        free(tab);
+                    }
+
+                    if (rv != PRSSTAT_SUCCESS)
+                    {
+                        if (!errMsg)
+                        {
+                            errMsg = "Unable to create seriestab property in subset object.";
+                        }
                         break;
                     }
                     
