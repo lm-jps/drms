@@ -185,205 +185,175 @@ int DoIt(void)
                 
                 for (iSet = 0; iSet < nsets; iSet++)
                 {
-                    elem = json_new_object();
-                    
-                    if (!elem)
+                    if (rv == PRSSTAT_SUCCESS)
                     {
-                        rv = PRSSTAT_NOMEM;
+                        rv = (elem = json_new_object()) ? PRSSTAT_SUCCESS : PRSSTAT_NOMEM;
                         errMsg = "Not enough memory to create JSON subset object.";
+                    }
+                    
+                    if (rv != PRSSTAT_SUCCESS)
+                    {
+                        break;
+                    }
+
+                    rv = (escapedStr = json_escape(sets[iSet])) ? PRSSTAT_SUCCESS : PRSSTAT_NOMEM;
+                    errMsg = "Not enough memory to create spec string.";
+                    
+                    if (rv != PRSSTAT_SUCCESS)
+                    {
                         break;
                     }
                     
-                    escapedStr = json_escape(sets[iSet]);
-                    if (!escapedStr)
-                    {
-                        rv = PRSSTAT_NOMEM;
-                        errMsg = "Not enough memory to create spec string.";
-                    }
-                    
-                    if (rv == PRSSTAT_SUCCESS)
-                    {
-                        rv = (json_insert_pair_into_object(elem, "spec", json_new_string(escapedStr)) == JSON_OK) ? PRSSTAT_SUCCESS : PRSSTAT_JSONELEM;
-                        free(escapedStr);
-                    }
-                        
+                    rv = (json_insert_pair_into_object(elem, "spec", json_new_string(escapedStr)) == JSON_OK) ? PRSSTAT_SUCCESS : PRSSTAT_JSONELEM;
+                    errMsg = "Unable to create spec property in subset object.";
+                    free(escapedStr);
+
                     if (rv != PRSSTAT_SUCCESS)
                     {
-                        errMsg = "Unable to create spec property in subset object.";
+                        break;
+                    }
+
+                    rv = (escapedStr = json_escape(drms_type_recsetnames[settypes[iSet]])) ? PRSSTAT_SUCCESS : PRSSTAT_NOMEM;
+                    errMsg = "Not enough memory to create set-type string.";
+                    
+                    if (rv != PRSSTAT_SUCCESS)
+                    {
+                        break;
+                    }
+
+                    rv = (json_insert_pair_into_object(elem, "settype", json_new_string(escapedStr)) == JSON_OK) ? PRSSTAT_SUCCESS : PRSSTAT_JSONELEM;
+                    errMsg = "Unable to create settype property in subset object.";
+                    free(escapedStr);
+
+                    if (rv != PRSSTAT_SUCCESS)
+                    {
                         break;
                     }
                     
-                    escapedStr = json_escape(drms_type_recsetnames[settypes[iSet]]);
-                    if (!escapedStr)
-                    {
-                        rv = PRSSTAT_NOMEM;
-                        errMsg = "Not enough memory to create set-type string.";
-                    }
+                    rv = (escapedStr = json_escape(snames[iSet])) ? PRSSTAT_SUCCESS : PRSSTAT_NOMEM;
+                    errMsg = "Not enough memory to create series-name string.";
                     
-                    if (rv == PRSSTAT_SUCCESS)
-                    {
-                        rv = (json_insert_pair_into_object(elem, "settype", json_new_string(escapedStr)) == JSON_OK) ? PRSSTAT_SUCCESS : PRSSTAT_JSONELEM;
-                        free(escapedStr);
-                    }
-                        
                     if (rv != PRSSTAT_SUCCESS)
                     {
-                        errMsg = "Unable to create settype property in subset object.";
                         break;
                     }
                     
-                    escapedStr = json_escape(snames[iSet]);
-                    if (!escapedStr)
-                    {
-                        rv = PRSSTAT_NOMEM;
-                        errMsg = "Not enough memory to create series-name string.";
-                    }
-                    
-                    if (rv == PRSSTAT_SUCCESS)
-                    {
-                        rv = (json_insert_pair_into_object(elem, "seriesname", json_new_string(escapedStr)) == JSON_OK) ? PRSSTAT_SUCCESS : PRSSTAT_JSONELEM;
-                        free(escapedStr);
-                    }
-                        
+                    rv = (json_insert_pair_into_object(elem, "seriesname", json_new_string(escapedStr)) == JSON_OK) ? PRSSTAT_SUCCESS : PRSSTAT_JSONELEM;
+                    errMsg = "Unable to create seriesname property in subset object.";
+                    free(escapedStr);
+
                     if (rv != PRSSTAT_SUCCESS)
                     {
-                        if (!errMsg)
-                        {
-                            errMsg = "Unable to create seriesname property in subset object.";
-                        }
                         break;
                     }
                     
                     rv = (!base_nsAndTab(snames[iSet], &ns, &tab)) ? PRSSTAT_SUCCESS : PRSSTAT_CANTPARSE;
-                    
-                    if (rv == PRSSTAT_SUCCESS)
-                    {
-                        strtolower(ns);
-                        escapedStr = json_escape(ns);
-                        if (!escapedStr)
-                        {
-                            rv = PRSSTAT_NOMEM;
-                            errMsg = "Not enough memory to create series-namespace string.";
-                        }                        
-                    }
-                    
-                    if (rv == PRSSTAT_SUCCESS)
-                    {
-                        rv = (json_insert_pair_into_object(elem, "seriesns", json_new_string(escapedStr)) == JSON_OK) ? PRSSTAT_SUCCESS : PRSSTAT_JSONELEM;
-                        free(escapedStr);
-                        free(ns);
-                    }
+                    errMsg = "Invalid series name.";
                     
                     if (rv != PRSSTAT_SUCCESS)
                     {
-                        if (!errMsg)
-                        {
-                            errMsg = "Unable to create seriesns property in subset object.";
-                        }
+                        break;
+                    }
+                    
+                    strtolower(ns);
+                    rv = (escapedStr = json_escape(ns)) ? PRSSTAT_SUCCESS : PRSSTAT_NOMEM;
+                    errMsg = "Not enough memory to create series-namespace string.";
+                    
+                    if (rv != PRSSTAT_SUCCESS)
+                    {
                         break;
                     }
 
-                    if (rv == PRSSTAT_SUCCESS)
-                    {
-                        strtolower(tab);
-                        escapedStr = json_escape(tab);
-                        if (!escapedStr)
-                        {
-                            rv = PRSSTAT_NOMEM;
-                            errMsg = "Not enough memory to create series-table string.";
-                        }                        
-                    }
+                    rv = (json_insert_pair_into_object(elem, "seriesns", json_new_string(escapedStr)) == JSON_OK) ? PRSSTAT_SUCCESS : PRSSTAT_JSONELEM;
+                    errMsg = "Unable to create seriesns property in subset object.";
+                    free(escapedStr);
+                    free(ns);
                     
-                    if (rv == PRSSTAT_SUCCESS)
+                    if (rv != PRSSTAT_SUCCESS)
                     {
-                        rv = (json_insert_pair_into_object(elem, "seriestab", json_new_string(escapedStr)) == JSON_OK) ? PRSSTAT_SUCCESS : PRSSTAT_JSONELEM;
-                        free(escapedStr);
-                        free(tab);
+                        break;
                     }
+
+                    strtolower(tab);
+                    rv = (escapedStr = json_escape(tab)) ? PRSSTAT_SUCCESS : PRSSTAT_NOMEM;
+                    errMsg = "Not enough memory to create series-table string.";
+                    
+                    if (rv != PRSSTAT_SUCCESS)
+                    {
+                        break;
+                    }
+
+                    rv = (json_insert_pair_into_object(elem, "seriestab", json_new_string(escapedStr)) == JSON_OK) ? PRSSTAT_SUCCESS : PRSSTAT_JSONELEM;
+                    errMsg = "Unable to create seriestab property in subset object.";
+                    free(escapedStr);
+                    free(tab);
 
                     if (rv != PRSSTAT_SUCCESS)
                     {
-                        if (!errMsg)
-                        {
-                            errMsg = "Unable to create seriestab property in subset object.";
-                        }
                         break;
                     }
-                    
+
                     if (filts[iSet])
                     {
-                        escapedStr = json_escape(filts[iSet]);
-                        
-                        if (!escapedStr)
-                        {
-                            rv = PRSSTAT_NOMEM;
-                            errMsg = "Not enough memory to create filter string.";
-                        }
-                    }
-                    else
-                    {
-                        escapedStr = NULL;
-                    }
-                    
-                    if (rv == PRSSTAT_SUCCESS)
-                    {
-                        rv = (json_insert_pair_into_object(elem, "filter", (escapedStr != NULL) ? json_new_string(escapedStr) : json_new_null()) == JSON_OK) ? PRSSTAT_SUCCESS : PRSSTAT_JSONELEM;
-                        free(escapedStr);
-                        escapedStr = NULL;
+                        rv = (escapedStr = json_escape(filts[iSet])) ? PRSSTAT_SUCCESS : PRSSTAT_NOMEM;
+                        errMsg = "Not enough memory to create filter string.";
                     }
                     
                     if (rv != PRSSTAT_SUCCESS)
                     {
-                        errMsg = "Unable to create filter property in subset object.";
+                        break;
+                    }
+                    
+                    rv = (json_insert_pair_into_object(elem, "filter", (escapedStr != NULL) ? json_new_string(escapedStr) : json_new_null()) == JSON_OK) ? PRSSTAT_SUCCESS : PRSSTAT_JSONELEM;
+                    errMsg = "Unable to create filter property in subset object.";
+                    free(escapedStr);
+
+                    if (rv != PRSSTAT_SUCCESS)
+                    {
                         break;
                     }
                     
                     if (segs[iSet])
                     {
-                        escapedStr = json_escape(segs[iSet]);
-                        
-                        if (!escapedStr)
-                        {
-                            rv = PRSSTAT_NOMEM;
-                            errMsg = "Not enough memory to create segment-list string.";
-                        }
+                        rv = (escapedStr = json_escape(segs[iSet])) ? PRSSTAT_SUCCESS : PRSSTAT_NOMEM;
+                        errMsg = "Not enough memory to create segment-list string.";                          
                     }
-                    else
-                    {
-                        escapedStr = NULL;
-                    }
-                    
-                    if (rv == PRSSTAT_SUCCESS)
-                    {
-                        rv = (json_insert_pair_into_object(elem, "segments", (escapedStr != NULL) ? json_new_string(escapedStr) : json_new_null()) == JSON_OK) ? PRSSTAT_SUCCESS : PRSSTAT_JSONELEM;
-                        free(escapedStr);
-                        escapedStr = NULL;
-                    }
-                    
+
                     if (rv != PRSSTAT_SUCCESS)
                     {
-                        errMsg = "Unable to create segments property in subset object.";
+                        break;
+                    }
+
+                    rv = (json_insert_pair_into_object(elem, "segments", (escapedStr != NULL) ? json_new_string(escapedStr) : json_new_null()) == JSON_OK) ? PRSSTAT_SUCCESS : PRSSTAT_JSONELEM;
+                    errMsg = "Unable to create segments property in subset object.";
+                    free(escapedStr);
+
+                    if (rv != PRSSTAT_SUCCESS)
+                    {
                         break;
                     }
 
                     rv = (json_insert_pair_into_object(elem, "autobang", (allvers[iSet] == 'Y' ||  allvers[iSet] == 'y') ? json_new_true() : json_new_false()) == JSON_OK) ? PRSSTAT_SUCCESS : PRSSTAT_JSONELEM;
+                    errMsg = "Unable to create autobang property in subset object.";
+
                     if (rv != PRSSTAT_SUCCESS)
                     {
-                        errMsg = "Unable to create autobang property in subset object.";
                         break;
                     }
                     
                     rv = (json_insert_child(subsets, elem) == JSON_OK) ? PRSSTAT_SUCCESS : PRSSTAT_JSONELEM;
+                    errMsg = "Unable to insert a set into the subsets array.";
+                    
                     if (rv != PRSSTAT_SUCCESS)
-                    {
-                        errMsg = "Unable to insert a set into the subsets array.";
+                    {    
                         break;
                     }
-                }
+                } // loop over subsets
                 
                 if (rv == PRSSTAT_SUCCESS)
                 {
                     rv = (json_insert_pair_into_object(root, "subsets", subsets) == JSON_OK) ? PRSSTAT_SUCCESS : PRSSTAT_JSONELEM;
+                    errMsg = "Not enough memory to create JSON subsets array.";
                 }
             }
             else
@@ -407,33 +377,42 @@ int DoIt(void)
     /* Since this is always run as a CGI, always return 0, but provide an error message if there was an error. */
     if (rv != PRSSTAT_SUCCESS)
     {
+        if (errMsg)
+        {
+            fprintf(stderr, "%s\n", errMsg);
+        }
+    
         json_free_value(&root);
         root = json_new_object();
         
         if (root)
         {
             escapedStr = json_escape(errMsg);
-            if (!escapedStr)
+            if (escapedStr)
             {
-                rv = PRSSTAT_NOMEM;
-                errMsg = "Not enough memory to create error-message string.";
-            }
-                    
-            if (rv == PRSSTAT_SUCCESS)
-            {
-                rv = (json_insert_pair_into_object(root, "errMsg", json_new_string(escapedStr)) == JSON_OK) ? PRSSTAT_SUCCESS : PRSSTAT_JSONELEM;
+                if (json_insert_pair_into_object(root, "errMsg", json_new_string(escapedStr)) != JSON_OK)
+                {
+                    fprintf(stderr, "%s\n", "Unable to insert errMsg into JSON root object");
+                }
+
                 free(escapedStr);
+            }
+            else
+            {
+                fprintf(stderr, "%s\n", "Not enough memory to create error-message string.");
             }
         }
         else
         {
-            rv = PRSSTAT_NOMEM;
-            errMsg = "Not enough memory to create JSON root object.";
+            fprintf(stderr, "%s\n", "Not enough memory to create JSON root object.");
         }
     }
     else
     {
-        rv = (json_insert_pair_into_object(root, "errMsg", json_new_null()) == JSON_OK) ? PRSSTAT_SUCCESS : PRSSTAT_JSONELEM;
+        if (json_insert_pair_into_object(root, "errMsg", json_new_null()) != JSON_OK)
+        {
+            fprintf(stderr, "Unable to insert errMsg into JSON root object");
+        }
     }
     
     char *jsonStr = NULL;
