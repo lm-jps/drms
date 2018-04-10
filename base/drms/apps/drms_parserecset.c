@@ -298,6 +298,10 @@ int DoIt(void)
                         rv = (escapedStr = json_escape(filts[iSet])) ? PRSSTAT_SUCCESS : PRSSTAT_NOMEM;
                         errMsg = "Not enough memory to create filter string.";
                     }
+                    else
+                    {
+                        escapedStr = NULL;
+                    }
                     
                     if (rv != PRSSTAT_SUCCESS)
                     {
@@ -317,6 +321,10 @@ int DoIt(void)
                     {
                         rv = (escapedStr = json_escape(segs[iSet])) ? PRSSTAT_SUCCESS : PRSSTAT_NOMEM;
                         errMsg = "Not enough memory to create segment-list string.";                          
+                    }
+                    else
+                    {
+                        escapedStr = NULL;
                     }
 
                     if (rv != PRSSTAT_SUCCESS)
