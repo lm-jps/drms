@@ -214,6 +214,8 @@ if __name__ == "__main__":
                         optD['atts'] = True
                     else:
                         optD['atts'] = False
+                elif key in ('DRMS_DBTIMEOUT'):
+                    optD['dbtimeout'] = int(val)
                 else:
                     errMsg = 'invalid argument ' + "'" + key + "'"
                     raise SIException(errMsg)
@@ -257,6 +259,8 @@ if __name__ == "__main__":
     
         # parse series
         cmdList = [ os.path.join(binDir, arch, 'drms_parserecset'), 'spec=' + ','.join(optD['series']) ]
+        if 'dbtimeout' in optD:
+            cmdList.append('DRMS_DBTIMEOUT=' + str(optD['dbtimeout']))
         print('running ' + ' '. join(cmdList), file=sys.stderr)
     
         try:
