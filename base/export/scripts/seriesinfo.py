@@ -307,6 +307,8 @@ if __name__ == "__main__":
 
                 if 'links' in optD:
                     getLinkInfo(optD['series'], seriesns, optD['links'], cursor, jsonObj)
+                    
+        jsonObj['errMsg'] = None
     except SIException as exc:
         jsonObj = {}
         if hasattr(exc, 'args'):
@@ -322,8 +324,8 @@ if __name__ == "__main__":
         jsonObj['errMsg'] = traceback.format_exc(5)
         rv = 1
         
-    
+    jsonOut = json.dumps(jsonObj)
     print('json out:', file=sys.stderr)
-    print(repr(jsonObj), file=sys.stderr)
-    print(json.dumps(jsonObj))
+    print(jsonOut, file=sys.stderr)
+    print(jsonOut)
     sys.exit(rv)
