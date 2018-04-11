@@ -56,7 +56,7 @@ def getAttributes(series, seriesns, cursor, jsonObj):
         raise SIException(errMsg)
 
 def getKeyInfo(series, seriesns, keys, cursor, jsonObj):
-    doAll = True
+    doAll = (len(keys) == 1 and keys[0] == '*')
     
     sql = ''
     for aseries, aseriesns in zip(series, seriesns):
@@ -64,9 +64,8 @@ def getKeyInfo(series, seriesns, keys, cursor, jsonObj):
             sql += 'UNION\n'
         sql += 'SELECT seriesname AS series, keywordname AS keyword, type AS datatype, defaultval AS constantvalue, unit, isconstant, (persegment >> 16)::integer AS rank, description FROM ' + aseriesns + '.drms_keyword WHERE lower(seriesname) = ' + "'" + aseries.lower() + "'"
     
-        if len(keys) > 1 or not keys[0] == '*':
+        if not doAll:
             sql += ' AND lower(keywordname) IN (' + ','.join([ "'" + key.lower() + "'" for key in keys ]) + ')'
-            doAll = False
 
         sql += '\n'
 
@@ -82,21 +81,18 @@ def getKeyInfo(series, seriesns, keys, cursor, jsonObj):
             errMsg = 'one or more keywords do not exist in the series ' + "'" + ','.join(series) + "'"
             raise SIException(errMsg)
 
-        for aseries in series:
-            if aseries not in jsonObj:
-                jsonObj[aseries.lower()] = {}
-
-            jsonObj[aseries.lower()]['keywords'] = {}
-        
-            for key in keys:
-                if key.lower() not in jsonObj[aseries.lower()]['keywords']:
-                    jsonObj[aseries.lower()]['keywords'][key.lower()] = {}
-
         for row in rows:
             if row[5] == 1:
                 constantValue = row[3]
             else:
                 constantValue = 'NA'
+            
+            if row[0].lower() not in jsonObj:
+                jsonObj[row[0].lower()] = {}
+            
+            if 'keywords' not in jsonObj[row[0].lower()]:
+                jsonObj[row[0].lower()]['keywords'] = {}
+            
             jsonObj[row[0].lower()]['keywords'][row[1].lower()] = { 'data-type' : row[2], 'constant-value': constantValue, 'physical-unit' : row[4], 'rank' : row[6], 'description' : row[7] }
             
     except psycopg2.Error as exc:
@@ -105,7 +101,7 @@ def getKeyInfo(series, seriesns, keys, cursor, jsonObj):
         raise SIException(errMsg)
 
 def getSegInfo(series, seriesns, segs, cursor, jsonObj):
-    doAll = True
+    doAll = (len(segs) == 1 and segs[0] == '*')
     
     sql = ''
     for aseries, aseriesns in zip(series, seriesns):
@@ -113,9 +109,8 @@ def getSegInfo(series, seriesns, segs, cursor, jsonObj):
             sql += 'UNION\n'
         sql += 'SELECT seriesname AS series, segmentname AS segment, type AS datatype, segnum, scope, naxis AS numaxes, axis AS dimensions, unit, protocol, description FROM ' + aseriesns + '.drms_segment WHERE lower(seriesname) = ' + "'" + aseries.lower() + "'"
     
-        if len(segs) > 1 or not segs[0] == '*':
+        if not doAll:
             sql += ' AND lower(segmentname) IN (' + ','.join([ "'" + seg.lower() + "'" for seg in segs ]) + ')'
-            doAll = False
 
         sql += '\n'
         
@@ -131,17 +126,13 @@ def getSegInfo(series, seriesns, segs, cursor, jsonObj):
             errMsg = 'one or more segments do not exist in the series ' + "'" + ','.join(series) + "'"
             raise SIException(errMsg)
 
-        for aseries in series:
-            if aseries not in jsonObj:
-                jsonObj[aseries.lower()] = {}
-
-            jsonObj[aseries.lower()]['segments'] = {}
-        
-            for seg in segs:
-                if seg.lower() not in jsonObj[aseries.lower()]['segments']:
-                    jsonObj[aseries.lower()]['segments'][seg.lower()] = {}
-
         for row in rows:
+            if row[0].lower() not in jsonObj:
+                jsonObj[row[0].lower()] = {}
+            
+            if 'segments' not in jsonObj[row[0].lower()]:
+                jsonObj[row[0].lower()]['segments'] = {}
+
             jsonObj[row[0].lower()]['segments'][row[1].lower()] = { 'data-type' : row[2], 'segment-number': row[3], 'scope' : row[4], 'number-axes' : row[5], 'dimensions' : row[6], 'physical-unit' : row[7], 'protocol' : row[8],'description' : row[9] }
             
     except psycopg2.Error as exc:
@@ -150,7 +141,7 @@ def getSegInfo(series, seriesns, segs, cursor, jsonObj):
         raise SIException(errMsg)
 
 def getLinkInfo(series, seriesns, links, cursor, jsonObj):
-    doAll = True
+    doAll = (len(links) == 1 and links[0] == '*')
     
     sql = ''
     for aseries, aseriesns in zip(series, seriesns):
@@ -158,7 +149,7 @@ def getLinkInfo(series, seriesns, links, cursor, jsonObj):
             sql += 'UNION\n'
         sql += 'SELECT seriesname AS series, linkname AS link, target_seriesname as tail_series, type, description FROM ' + aseriesns + '.drms_link WHERE lower(seriesname) = ' + "'" + aseries.lower() + "'"
     
-        if len(links) > 1 or not links[0] == '*':
+        if not doAll:
             sql += ' AND lower(linkname) IN (' + ','.join([ "'" + link.lower() + "'" for link in links ]) + ')'
             doAll = False
 
@@ -176,17 +167,13 @@ def getLinkInfo(series, seriesns, links, cursor, jsonObj):
             errMsg = 'one or more links do not exist in the series ' + "'" + ','.join(series) + "'"
             raise SIException(errMsg)
 
-        for aseries in series:
-            if aseries not in jsonObj:
-                jsonObj[aseries.lower()] = {}
-
-            jsonObj[aseries.lower()]['links'] = {}
-        
-            for link in links:
-                if link.lower() not in jsonObj[aseries.lower()]['links']:
-                    jsonObj[aseries.lower()]['links'][link.lower()] = {}
-
         for row in rows:
+            if row[0].lower() not in jsonObj:
+                    jsonObj[row[0].lower()] = {}
+            
+            if 'links' not in jsonObj[row[0].lower()]:
+                jsonObj[row[0].lower()]['links'] = {}
+        
             jsonObj[row[0].lower()]['links'][row[1].lower()] = { 'tail-series' : row[2], 'type': row[2], 'description' : row[3] }
             
     except psycopg2.Error as exc:
