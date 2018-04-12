@@ -73,19 +73,14 @@ def getKeyInfo(series, seriesns, keys, cursor, jsonObj):
         print('executing sql:', file=sys.stderr)
         print(sql, file=sys.stderr)
         cursor.execute(sql)
+        seen = set()
+        
         rows = cursor.fetchall()
-        if len(rows) == 0:
-            errMsg = 'one or more unknown DRMS data series ' + "'" + ','.join(series) + "'"
-            raise SIException(errMsg)
-        if not doAll and not len(rows) == len(keys) * len(series):
-            errMsg = 'one or more keywords do not exist in the series ' + "'" + ','.join(series) + "'"
-            raise SIException(errMsg)
-
         for row in rows:
             if row[5] == 1:
                 constantValue = row[3]
             else:
-                constantValue = 'NA'
+                constantValue = 'na'
             
             if row[0].lower() not in jsonObj:
                 jsonObj[row[0].lower()] = {}
@@ -94,6 +89,21 @@ def getKeyInfo(series, seriesns, keys, cursor, jsonObj):
                 jsonObj[row[0].lower()]['keywords'] = {}
             
             jsonObj[row[0].lower()]['keywords'][row[1].lower()] = { 'data-type' : row[2], 'constant-value': constantValue, 'physical-unit' : row[4], 'rank' : row[6], 'description' : row[7] }
+            seen.add(row[0].lower() + '::' + row[1].lower())
+            
+        # add elements for missing keywords
+        if not doAll:
+            for aseries in series:
+                for key in keys:
+                    if aseries.lower() + '::' + key.lower() not in seen:
+                        if aseries.lower() not in jsonObj:
+                            jsonObj[aseries.lower()] = {}
+
+                        if 'keywords' not in jsonObj[aseries.lower()]:
+                            jsonObj[aseries.lower()]['keywords'] = {}
+
+                        jsonObj[aseries.lower()]['keywords'][key.lower()] = { 'data-type' : 'na', 'constant-value': 'na', 'physical-unit' : 'na', 'rank' : -1, 'description' : 'unknown keyword' }
+                        seen.add(aseries.lower() + '::' + key.lower())
             
     except psycopg2.Error as exc:
         # handle database-command errors
@@ -118,14 +128,9 @@ def getSegInfo(series, seriesns, segs, cursor, jsonObj):
         print('executing sql:', file=sys.stderr)
         print(sql, file=sys.stderr)
         cursor.execute(sql)
-        rows = cursor.fetchall()
-        if len(rows) == 0:
-            errMsg = 'one or more unknown DRMS data series ' + "'" + ','.join(series) + "'"
-            raise SIException(errMsg)
-        if not doAll and not len(rows) == len(segs) * len(series):
-            errMsg = 'one or more segments do not exist in the series ' + "'" + ','.join(series) + "'"
-            raise SIException(errMsg)
+        seen = set()
 
+        rows = cursor.fetchall()
         for row in rows:
             if row[0].lower() not in jsonObj:
                 jsonObj[row[0].lower()] = {}
@@ -134,6 +139,21 @@ def getSegInfo(series, seriesns, segs, cursor, jsonObj):
                 jsonObj[row[0].lower()]['segments'] = {}
 
             jsonObj[row[0].lower()]['segments'][row[1].lower()] = { 'data-type' : row[2], 'segment-number': row[3], 'scope' : row[4], 'number-axes' : row[5], 'dimensions' : row[6], 'physical-unit' : row[7], 'protocol' : row[8],'description' : row[9] }
+            seen.add(row[0].lower() + '::' + row[1].lower())
+
+        # add elements for missing segments
+        if not doAll:
+            for aseries in series:
+                for seg in segs:
+                    if aseries.lower() + '::' + seg.lower() not in seen:
+                        if aseries.lower() not in jsonObj:
+                            jsonObj[aseries.lower()] = {}
+
+                        if 'segments' not in jsonObj[aseries.lower()]:
+                                jsonObj[aseries.lower()]['segments'] = {}
+                    
+                        jsonObj[aseries.lower()]['segments'][seg.lower()] = { 'data-type' : 'na', 'segment-number': -1, 'scope' : 'na', 'number-axes' : -1, 'dimensions' : 'na', 'physical-unit' : 'na', 'protocol' : 'na','description' : 'unknown segment' }
+                        seen.add(aseries.lower() + '::' + seg.lower())
             
     except psycopg2.Error as exc:
         # handle database-command errors
@@ -159,14 +179,9 @@ def getLinkInfo(series, seriesns, links, cursor, jsonObj):
         print('executing sql:', file=sys.stderr)
         print(sql, file=sys.stderr)
         cursor.execute(sql)
+        seen = set()
+                
         rows = cursor.fetchall()
-        if len(rows) == 0:
-            errMsg = 'one or more unknown DRMS data series ' + "'" + ','.join(series) + "'"
-            raise SIException(errMsg)
-        if not doAll and not len(rows) == len(links) * len(series):
-            errMsg = 'one or more links do not exist in the series ' + "'" + ','.join(series) + "'"
-            raise SIException(errMsg)
-
         for row in rows:
             if row[0].lower() not in jsonObj:
                     jsonObj[row[0].lower()] = {}
@@ -175,6 +190,21 @@ def getLinkInfo(series, seriesns, links, cursor, jsonObj):
                 jsonObj[row[0].lower()]['links'] = {}
         
             jsonObj[row[0].lower()]['links'][row[1].lower()] = { 'tail-series' : row[2], 'type': row[2], 'description' : row[3] }
+            seen.add(row[0].lower() + '::' + row[1].lower())
+            
+        # add elements for missing links
+        if not doAll:
+            for aseries in series:
+                for link in links:
+                    if aseries.lower() + '::' + link.lower() not in seen:
+                        if aseries.lower() not in jsonObj:
+                            jsonObj[aseries.lower()] = {}
+
+                        if 'links' not in jsonObj[aseries.lower()]:
+                                jsonObj[aseries.lower()]['links'] = {}
+                    
+                        jsonObj[aseries.lower()]['links'][link.lower()] = { 'tail-series' : 'na', 'type': 'na', 'description' : 'unknown link' }
+                        seen.add(aseries.lower() + '::' + link.lower())
             
     except psycopg2.Error as exc:
         # handle database-command errors
