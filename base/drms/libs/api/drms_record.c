@@ -11049,25 +11049,25 @@ int CopyPrimaryIndex(DRMS_Record_t *target, DRMS_Record_t *source)
 
 static int DSElem_IsWS(const char **c)
 {
-   const char *pC = *c;
-   const char *pWS = kDSElemParseWS;
+    const char *pC = *c;
+    const char *pWS = kDSElemParseWS;
 
-   while (*pWS)
-   {
-      if (*pC == *pWS)
-      {
-	 break;
-      }
+    while (*pWS)
+    {
+        if (*pC == *pWS)
+        {
+            break;
+        }
 
-      pWS++;
-   }
+        pWS++;
+    }
 
-   if (*pWS)
-   {
-      return 1;
-   }
+    if (*pWS)
+    {
+        return 1;
+    }
 
-   return 0;
+    return 0;
 }
 
 static int DSElem_IsDelim(const char **c)
@@ -11113,29 +11113,13 @@ static int DSElem_SkipWS(char **c)
     {
         char *pC = *c;
         
-        while (*pC)
+        while (*pC && DSElem_IsWS((const char **)&pC))
         {
-            const char *pWS = kDSElemParseWS;
-            
-            while (*pWS)
-            {
-                if (*pC == *pWS)
-                {
-                    pC++;
-                    break;
-                }
-                
-                pWS++;
-            }
-            
-            if (*pWS)
-            {
-                *c = pC;
-                return 1;
-            }
+            pC++;
         }
         
-        return 0;
+        *c = pC;
+        return **c != '\0';
     }
 }
 
@@ -11681,6 +11665,12 @@ int ParseRecSetDescInternal(const char *recsetsStr, char **allvers, char ***sets
                                                 DSElem_SkipComment(&pc);
                                                 state = kRSParseState_EndElem;
                                             }
+                                            else if (pc == endInput)
+                                            {
+                                                /* we skipped some whitespace after the ']' and we are now at 
+                                                 * the end of the specification */
+                                                state = kRSParseState_EndElem;                                                
+                                            }
                                             else
                                             {
                                                 state = kRSParseState_Error;
@@ -11688,7 +11678,7 @@ int ParseRecSetDescInternal(const char *recsetsStr, char **allvers, char ***sets
                                         }
                                         else
                                         {
-                                            state= kRSParseState_EndElem;
+                                            state = kRSParseState_EndElem;
                                         }
                                     }
                                 }
