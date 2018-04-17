@@ -42,14 +42,17 @@ records in the series. This argument is required.
 Comma-separated list of keyword names. For each keyword listed,
 information will be displayed. Several special psuedo keyword names
 are accepted.  These are: **ALL** means show all keywords (see show_info -a);
-**NONE** means show no keywords; *recnum* means show the hidden keyword "recnum";
+**NONE** means show no keywords; 
+*recnum* means show the hidden keyword "recnum";
 *sunum* means show the hidden keyword "sunum";
 *size* means show the size of storage unit (bytes);
 *online* means show the hidden keyword "online";
 *retain* means show retention date, i.e. date at which SUMS may remove the segment storage;
 *archive* means show archive status, i.e. has or will SUMS write the storage unit to tape;
-*logdir* means show the path to the processing log directory; and *dir_mtime* instructs
-jsoc_info to show the last modify time of the record directory in SUMS.
+*recdir* means show the SU dir;
+*logdir* means show the path to the processing log directory; 
+*dirmtime* means show the last modification time of the record directory in SUMS; and 
+*spec* means show the record's specification
 The results are presented in arrays named "name" and "value".
 
 \param seglist
@@ -138,15 +141,16 @@ do { \
 
 struct requisitionStructT
 { 
-    unsigned int requireRecnum : 1; 
-    unsigned int requireSunum : 1; 
-    unsigned int requireSUMinfoSize : 1; 
-    unsigned int requireSUMinfoOnline : 1; 
-    unsigned int requireSUMinfoRetain : 1; 
-    unsigned int requireSUMinfoArchive : 1; 
-    unsigned int requireRecdir : 1; 
-    unsigned int requireDirmtime : 1; 
-    unsigned int requireLogdir : 1; 
+    unsigned int requireRecnum : 1;
+    unsigned int requireSunum : 1;
+    unsigned int requireSUMinfoSize : 1;
+    unsigned int requireSUMinfoOnline : 1;
+    unsigned int requireSUMinfoRetain : 1;
+    unsigned int requireSUMinfoArchive : 1;
+    unsigned int requireRecdir : 1;
+    unsigned int requireLogdir : 1;
+    unsigned int requireDirmtime : 1;
+    unsigned int requireSpec : 1;
     unsigned int requireSUMinfo : 1;
 };
 
@@ -217,8 +221,9 @@ static int populateKeyList(const char *listOfKeys, LinkedList_t *reqSegs, DRMS_R
     int recnumKey = 0;
     int sunumKey = 0;
     int recdirKey = 0;
-    int dirmtimeKey = 0;
     int logdirKey = 0;
+    int dirmtimeKey = 0;
+    int specKey = 0;
     int sumInfoFakeKey = 0;
     int fakeKey = 0;
     
@@ -327,6 +332,11 @@ static int populateKeyList(const char *listOfKeys, LinkedList_t *reqSegs, DRMS_R
                     *recsStaged = 1;
                 }
             }
+            
+            if ((logdirKey = (strcasecmp(currentKey, "*logdir*") == 0)) && !requisition->requireLogdir)
+            {
+                requisition->requireLogdir = 1;
+            }
 
             if ((dirmtimeKey = (strcasecmp(currentKey, "*dirmtime*") == 0)) && !requisition->requireDirmtime)
             {
@@ -338,14 +348,14 @@ static int populateKeyList(const char *listOfKeys, LinkedList_t *reqSegs, DRMS_R
                     *recsStaged = 1;
                 }
             }
-
-            if ((logdirKey = (strcasecmp(currentKey, "*logdir*") == 0)) && !requisition->requireLogdir)
+            
+            if ((specKey = (strcasecmp(currentKey, "*spec*") == 0)) && !requisition->requireSpec)
             {
-                requisition->requireLogdir = 1;
+                requisition->requireSpec = 1;
             }
 
             sumInfoFakeKey = sumInfoSizeKey | sumInfoOnlineKey | sumInfoRetainKey | sumInfoArchiveKey;
-            fakeKey = sumInfoFakeKey | recnumKey | sunumKey | recdirKey | dirmtimeKey | logdirKey;
+            fakeKey = sumInfoFakeKey | recnumKey | sunumKey | recdirKey | logdirKey | dirmtimeKey | specKey;
 
             if (!requisition->requireSUMinfo)
             {                    
@@ -657,7 +667,7 @@ ModuleArgs_t module_args[] =
 { 
   {ARG_STRING, "op", "Not Specified", "<Operation>, values are: series_struct, rs_summary, or rs_list "},
   {ARG_STRING, "ds", "Not Specified", "<record_set query>"},
-  {ARG_STRING, "key", "Not Specified", "<comma delimited keyword list>, keywords or special values: **ALL**, **NONE**, *recnum*, *sunum*, *size*, *online*, *retain*, *archive*, *logdir*, *dir_mtime*  "},
+  {ARG_STRING, "key", "Not Specified", "<comma delimited keyword list>, keywords or special values: **ALL**, **NONE**, *recnum*, *sunum*, *size*, *online*, *retain*, *archive*, *recdir*, *logdir*, *dirmtime*, *spec*"},
   {ARG_STRING, "link", "Not Specified", "<comma delimited linkname list>, links or special values: **ALL**, **NONE**"},
   {ARG_STRING, "seg", "Not Specified", "<comma delimited segment list>, segnames or special values: **ALL**, **NONE** "},
   {ARG_STRING, "userhandle", "Not Specified", "Unique request identifier to allow possible user kill of this program."},
@@ -691,7 +701,7 @@ int nice_intro ()
 	"op=<command> tell which ajax function to execute, values are: series_struct, rs_summary, or rs_list \n"
 	"ds=<recordset query> as <series>{[record specifier]} - required\n"
         "n=<rslimit> set optional record count limit, <0 from end, >0 from head\n"
-	"key=<comma delimited keyword list>, keywords or special values: **ALL**, **NONE**, *recnum*, *sunum*, *size*, *online*, *retain*, *archive*, *logdir*, *dir_mtime* \n"
+	"key=<comma delimited keyword list>, keywords or special values: **ALL**, **NONE**, *recnum*, *sunum*, *size*, *online*, *retain*, *archive*, *recdir*, *logdir*, *dirmtime*, *spec* \n"
 	"seg=<comma delimited segment list>, segnames or special values: **ALL**, **NONE** \n"
         "userhandle=<userhandle> unique id to allow user to kill this program by passing userhandle to jsoc_userkill.\n"
 	"QUERY_STRING=<cgi-bin params>, parameter string as delivered from cgi-bin call.\n"
@@ -2646,21 +2656,6 @@ int DoIt(void)
                 json_insert_pair_into_object(recobj, "recdir", jsonVal);
                 jsonVal = NULL;
             }
-
-            if (requisition.requireDirmtime)
-            {
-                /* get record dir last change date */
-                struct stat buf;
-                char recPath[DRMS_MAXPATHLEN];
-                char timebuf[128];
-
-                drms_record_directory(rec, recPath, 0);
-                stat(recPath, &buf);
-                sprint_ut(timebuf, buf.st_mtime + UNIX_EPOCH);                
-                jsonVal = createJsonStringVal(timebuf);
-                json_insert_pair_into_object(recobj, "dirmtime", jsonVal);
-                jsonVal = NULL;
-            }
             
             if (requisition.requireLogdir)
             {
@@ -2676,6 +2671,32 @@ int DoIt(void)
                 }
                 
                 json_insert_pair_into_object(recobj, "logdir", jsonVal);
+                jsonVal = NULL;
+            }
+
+            if (requisition.requireDirmtime)
+            {
+                /* get record dir last change date */
+                struct stat buf;
+                char recPath[DRMS_MAXPATHLEN];
+                char timebuf[128];
+
+                drms_record_directory(rec, recPath, 0);
+                stat(recPath, &buf);
+                sprint_ut(timebuf, buf.st_mtime + UNIX_EPOCH);                
+                jsonVal = createJsonStringVal(timebuf);
+                json_insert_pair_into_object(recobj, "dirmtime", jsonVal);
+                jsonVal = NULL;
+            }
+                        
+            if (requisition.requireSpec)
+            {
+                char specBuf[DRMS_MAXSERIESNAMELEN * 2];
+
+                drms_snprint_rec_spec(specBuf, sizeof(specBuf), rec);
+                jsonVal = createJsonStringVal(specBuf);                
+                JSOC_INFO_ASSERT(jsonVal, "out of memory");
+                json_insert_pair_into_object(recobj, "spec", jsonVal);
                 jsonVal = NULL;
             }
 
@@ -2899,6 +2920,19 @@ int DoIt(void)
               val = json_new_string(jsonval);
               free(jsonval);
               }
+              else if (strcmp(keys[ikey], "*logdir*") == 0)
+              {
+          char *logdir = drms_record_getlogdir(rec);
+          if (logdir)
+            {
+            jsonval = string_to_json(logdir);
+            free(logdir);
+            }
+          else
+            jsonval = string_to_json("NO LOG");
+          val = json_new_string(jsonval);
+          free(jsonval);
+              }
             else if (strcmp(keys[ikey], "*dirmtime*") == 0)
               { // get record dir last change date
           struct stat buf;
@@ -2916,19 +2950,14 @@ int DoIt(void)
               val = json_new_string(jsonval);
               free(jsonval);
               }
-            else if (strcmp(keys[ikey], "*logdir*") == 0)
-              {
-          char *logdir = drms_record_getlogdir(rec);
-          if (logdir)
+            else if (strcmp(keys[ikey], "*spec*") == 0)
             {
-            jsonval = string_to_json(logdir);
-            free(logdir);
+                char specBuf[DRMS_MAXSERIESNAMELEN * 2];
+
+                drms_snprint_rec_spec(specBuf, sizeof(specBuf), rec);
+                val = createJsonStringVal(specBuf);                
+                JSOC_INFO_ASSERT(val, "out of memory");
             }
-          else
-            jsonval = string_to_json("NO LOG");
-          val = json_new_string(jsonval);
-          free(jsonval);
-              }
             else
           {
               rec_key_ikey = drms_keyword_lookup (rec, keys[ikey], 1); 

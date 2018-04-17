@@ -1085,6 +1085,7 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys,
 {
   int len;
   char *start, *p, *q;
+  int drmsStatus = DRMS_SUCCESS;
 
   HContainer_t *slotted = hcon_create(sizeof(DRMS_Keyword_t *),
 				      DRMS_MAXKEYNAMELEN,
@@ -1278,32 +1279,44 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys,
 
 		      if (!anckey)
 		      {
-			 fprintf(stderr, 
-				 "Missing required ancillary keyword '%s'.\n",
-				 keyname);
-			 failure = 1;
+                fprintf(stderr, "Missing required ancillary keyword '%s'.\n", keyname);
+                failure = 1;
+		      }
+		      
+		      if (!failure)
+		      {
+		        /* The value of the step keyword must not be zero. */
+		        double stepVal = drms2double(drms_keyword_gettype(anckey), (DRMS_Type_Value_t *)drms_keyword_getvalue(anckey), &drmsStatus);
+		        
+		        if (drmsStatus != DRMS_SUCCESS)
+		        {
+		            fprintf(stderr, "Cannot get step key value.");
+		            failure = 1;
+		        }
+		        else
+		        {
+                    if (base_doubleIsEqual(stepVal, 0.0))
+                    {
+                        fprintf(stderr, "The value of step keyword '%s' must not be 0.0\n", keyname);
+                        failure = 1;
+                    }
+		        }
 		      }
 		      
 		      if (!failure && anckey)
 		      {
-			 /* Step must be constant */
-			 if (drms_keyword_isconstant(anckey))
-			 {
-			    /* _unit is optional */
-			    snprintf(keyname, 
-				     sizeof(keyname), "%s%s", 
-				     slotKeyname, 
-				     kSlotAncKey_Unit);
-			    anckey = (DRMS_Keyword_t *)hcon_lookup_lower(&(template->keywords), 
-                                                                         keyname);
-			 }
-			 else
-			 {
-			    fprintf(stderr, 
-				    "Ancillary keyword '%s' must be constant.\n",
-				    keyname);
-			    failure = 1;
-			 }
+                /* Step must be constant */
+                if (drms_keyword_isconstant(anckey))
+                {
+                    /* _unit is optional */
+                    snprintf(keyname, sizeof(keyname), "%s%s", slotKeyname, kSlotAncKey_Unit);
+                    anckey = (DRMS_Keyword_t *)hcon_lookup_lower(&(template->keywords), keyname);
+                }
+                else
+                {
+                    fprintf(stderr, "Ancillary keyword '%s' must be constant.\n", keyname);
+                    failure = 1;
+                }
 		      }
 
 		      if (!failure && anckey)
@@ -1376,7 +1389,27 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys,
 				 keyname);
 			 failure = 1;
 		      }
-
+		      
+		      if (!failure)
+		      {
+		        /* The value of the step keyword must not be zero. */
+		        double stepVal = drms2double(drms_keyword_gettype(anckey), (DRMS_Type_Value_t *)drms_keyword_getvalue(anckey), &drmsStatus);
+		        
+		        if (drmsStatus != DRMS_SUCCESS)
+		        {
+		            fprintf(stderr, "Cannot get step key value.");
+		            failure = 1;
+		        }
+		        else
+		        {
+                    if (base_doubleIsEqual(stepVal, 0.0))
+                    {
+                        fprintf(stderr, "The value of step keyword '%s' must not be 0.0\n", keyname);
+                        failure = 1;
+                    }
+		        }
+		      }
+		      
 		      if (!failure && anckey)
 		      {
 			 /* Step must be constant */
@@ -1434,6 +1467,26 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys,
 				 "Missing required ancillary keyword '%s'.\n",
 				 keyname);
 			 failure = 1;
+		      }
+		      
+		      if (!failure)
+		      {
+		        /* The value of the step keyword must not be zero. */
+		        double stepVal = drms2double(drms_keyword_gettype(anckey), (DRMS_Type_Value_t *)drms_keyword_getvalue(anckey), &drmsStatus);
+		        
+		        if (drmsStatus != DRMS_SUCCESS)
+		        {
+		            fprintf(stderr, "Cannot get step key value.");
+		            failure = 1;
+		        }
+		        else
+		        {
+                    if (base_doubleIsEqual(stepVal, 0.0))
+                    {
+                        fprintf(stderr, "The value of step keyword '%s' must not be 0.0\n", keyname);
+                        failure = 1;
+                    }
+		        }
 		      }
 
 		      if (!failure && anckey)
@@ -2966,6 +3019,131 @@ void drms_sprint_rec_query(char *querystring, DRMS_Record_t *rec)
 
   free(external_pkeys);
   }
+  
+  /* safe string version */
+int drms_snprint_rec_spec(char *spec, size_t size, DRMS_Record_t *rec)
+{
+    int iprime = 0;
+    int nprime = 0;
+    char **external_pkeys = NULL;
+    char *pkey = NULL;
+    DRMS_Keyword_t *key = NULL;
+    char *specInternal = NULL;
+    size_t specInternalSz = 256;
+    int rv = DRMS_SUCCESS;
+
+    if (!spec)
+    {
+        fprintf(stderr, "drms_snprint_rec_spec(): missing specification argument\n");
+        rv = DRMS_ERROR_INVALIDDATA;
+    }
+    
+    if (rv == DRMS_SUCCESS)
+    {
+        specInternal = calloc(1, specInternalSz);
+        
+        if (!specInternal)
+        {
+            rv = DRMS_ERROR_OUTOFMEMORY;
+        }
+    }
+    
+    if (rv == DRMS_SUCCESS)
+    {
+        if (!rec)
+        {
+            specInternal = base_strcatalloc(specInternal, "** No Record **", &specInternalSz);
+            
+            fprintf(stderr, "drms_snprint_rec_spec(): missing record argument\n");
+            rv = DRMS_ERROR_INVALIDDATA;
+        }
+    }
+
+    if (rv == DRMS_SUCCESS)
+    {
+        // series
+        specInternal = base_strcatalloc(specInternal, rec->seriesinfo->seriesname, &specInternalSz);
+        if (!specInternal)
+        {
+            rv = DRMS_ERROR_OUTOFMEMORY;
+        }
+    }
+    
+    if (rv == DRMS_SUCCESS)
+    {
+        external_pkeys = drms_series_createpkeyarray(rec->env, rec->seriesinfo->seriesname, &nprime, &rv);
+    
+        if (rv == DRMS_SUCCESS)
+        {            
+            char filterValue[256];
+
+            if (external_pkeys && nprime > 0)
+            {
+                // prime-key filters
+                for (iprime = 0; iprime < nprime; iprime++)
+                {            
+                    pkey = external_pkeys[iprime];
+                    key = drms_keyword_lookup(rec, pkey, 1);
+            
+                    if (!key)
+                    {
+                        fprintf(stderr, "unknown keyword %s\n", pkey);
+                        rv = DRMS_ERROR_INVALIDKEYWORD;
+                        break;
+                    }
+            
+                    specInternal = base_strcatalloc(specInternal, "[", &specInternalSz);
+                    drms_keyword_snprintfval(key, filterValue, sizeof(filterValue));
+                    specInternal = base_strcatalloc(specInternal, filterValue, &specInternalSz);
+                    specInternal = base_strcatalloc(specInternal, "]", &specInternalSz);
+                }
+            }
+            else
+            {
+                specInternal = base_strcatalloc(specInternal, "[", &specInternalSz);
+                snprintf(filterValue, sizeof(filterValue), "[:#%lld]", rec->recnum);
+                specInternal = base_strcatalloc(specInternal, filterValue, &specInternalSz);
+                specInternal = base_strcatalloc(specInternal, "]", &specInternalSz);
+            }
+        }
+        else
+        {
+            fprintf(stderr, "unable to create prime-key array\n");
+        }
+    }
+
+    /* free external_pkeys */
+    if (external_pkeys)
+    {
+        for (iprime = 0; iprime < nprime; iprime++)
+        {
+            if (external_pkeys[iprime])
+            {
+                free(external_pkeys[iprime]);
+            }
+        }
+
+        free(external_pkeys);
+        external_pkeys = NULL;
+    }
+    
+    if (specInternal)
+    {
+        if (rv == DRMS_SUCCESS)
+        {
+            if (snprintf(spec, size, "%s", specInternal) >= size)
+            {
+                // output was truncated
+                rv = DRMS_QUERY_TRUNCATED;
+            }
+        }
+        
+        free(specInternal);
+        specInternal = NULL;
+    }
+    
+    return rv;
+}
 
 /* FILE* version */
 void drms_fprint_rec_query(FILE *fp, DRMS_Record_t *rec)
