@@ -18,8 +18,13 @@ DECLARE
 BEGIN
     SELECT regexp_split_to_array(dataseries, E'\\.') INTO parsed;
     namespace := parsed[1];
-    relation := parsed[2];        
-    RETURN QUERY EXECUTE 'SELECT S.seriesname::VARCHAR AS series, S.segmentname::VARCHAR as segment, L.target_seriesname::VARCHAR AS linkedseries, S.targetseg::VARCHAR AS linkedsegment FROM ' || quote_ident(namespace) || '.drms_segment AS S LEFT OUTER JOIN ' || quote_ident(namespace) || '.drms_link AS L ON lower(S.linkname) = lower(L.linkname) AND lower(S.seriesname) = lower(L.seriesname) WHERE lower(S.seriesname) = $1 AND lower(S.segmentname) = $2' USING lower(dataseries), lower(datasegment);
+    relation := parsed[2];
+    
+    IF datasegment IS NULL OR datasegment = '' THEN
+        RETURN QUERY EXECUTE 'SELECT S.seriesname::VARCHAR AS series, S.segmentname::VARCHAR as segment, L.target_seriesname::VARCHAR AS linkedseries, S.targetseg::VARCHAR AS linkedsegment FROM ' || quote_ident(namespace) || '.drms_segment AS S LEFT OUTER JOIN ' || quote_ident(namespace) || '.drms_link AS L ON lower(S.linkname) = lower(L.linkname) AND lower(S.seriesname) = lower(L.seriesname) WHERE lower(S.seriesname) = $1' USING lower(dataseries);
+    ELSE
+        RETURN QUERY EXECUTE 'SELECT S.seriesname::VARCHAR AS series, S.segmentname::VARCHAR as segment, L.target_seriesname::VARCHAR AS linkedseries, S.targetseg::VARCHAR AS linkedsegment FROM ' || quote_ident(namespace) || '.drms_segment AS S LEFT OUTER JOIN ' || quote_ident(namespace) || '.drms_link AS L ON lower(S.linkname) = lower(L.linkname) AND lower(S.seriesname) = lower(L.seriesname) WHERE lower(S.seriesname) = $1 AND lower(S.segmentname) = $2' USING lower(dataseries), lower(datasegment);
+    END IF;
 END;
 $$
 LANGUAGE plpgsql;
