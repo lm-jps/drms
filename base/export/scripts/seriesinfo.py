@@ -9,6 +9,8 @@ from subprocess import check_output, CalledProcessError
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../include'))
 from drmsparams import DRMSParams
 
+NULL = 'NULL'
+
 class SIException(Exception):
     def __init__(self, msg):
         super(SIException, self).__init__(msg)
@@ -117,12 +119,14 @@ def getSegInfo(series, seriesns, segs, cursor, jsonObj):
     for aseries, aseriesns in zip(series, seriesns):
         if len(sql) > 0:
             sql += 'UNION\n'
-        sql += 'SELECT seriesname AS series, segmentname AS segment, type AS datatype, segnum, scope, naxis AS numaxes, axis AS dimensions, unit, protocol, description FROM ' + aseriesns + '.drms_segment WHERE lower(seriesname) = ' + "'" + aseries.lower() + "'"
-    
-        if not doAll:
-            sql += ' AND lower(segmentname) IN (' + ','.join([ "'" + seg.lower() + "'" for seg in segs ]) + ')'
-
-        sql += '\n'
+        # sql += 'SELECT seriesname AS series, segmentname AS segment, type AS datatype, segnum, scope, naxis AS numaxes, axis AS dimensions, unit, protocol, description FROM ' + aseriesns + '.drms_segment WHERE lower(seriesname) = ' + "'" + aseries.lower() + "'"
+        if doAll:
+            sql += 'SELECT series, segment, datatype, segnum, scope, numaxes, dimensions, unit, protocol, description FROM drms_followsegmentlink(' + "'" + aseries.lower() + "'" + ',' + NULL + ")"
+            sql += '\n'
+        else:
+            for seg in segs:
+                sql += 'SELECT series, segment, datatype, segnum, scope, numaxes, dimensions, unit, protocol, description FROM drms_followsegmentlink(' + "'" + aseries.lower() + "'" + ',' + "'" + seg.lower() + "')"
+                sql += '\n'
         
     try:
         print('executing sql:', file=sys.stderr)
