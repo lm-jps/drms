@@ -41,9 +41,10 @@ BEGIN
                 EXIT;
             ELSE
                 -- linked series
-                -- must return original implicit (bit 1), internal-prime (bit 2), and external-prime (bit 3) flags values, but linked per-segment (bit 0) value 
+                -- must return original implicit (bit 1), internal-prime (bit 2), and external-prime (bit 3) flags values, but linked per-segment (bit 0) value;
+                -- also, must return original rank (top 16 bits)
                 EXECUTE 'SELECT persegment FROM ' || namespace || '.drms_keyword WHERE lower(seriesname) = lower(' || quote_literal(dataseries) || ') AND lower(keywordname) = lower(' || quote_literal(origkeyword) || ')' INTO origflags;
-                RETURN QUERY EXECUTE 'SELECT ' || quote_literal(dataseries) || '::varchar AS series, ' || quote_literal(origkeyword) || '::varchar AS keyword, datatype, keyworddefault, format, unit, isconstant, (' || quote_literal(origflags) || '::integer::bit(32) & X''FFFFFFFE'' | flags::bit(32) & X''00000001'')::integer AS flags, description FROM drms_followkeywordlink(' || quote_literal(linkedseries) || ',' || quote_literal(linkedkeyword) || ')';
+                RETURN QUERY EXECUTE 'SELECT ' || quote_literal(dataseries) || '::varchar AS series, ' || quote_literal(origkeyword) || '::varchar AS keyword, datatype, keyworddefault, format, unit, isconstant, ((' || quote_literal(origflags) || '::integer::bit(32) & X''FFFFFFFE'') | (flags::bit(32) & X''00000001''))::integer AS flags, description FROM drms_followkeywordlink(' || quote_literal(linkedseries) || ',' || quote_literal(linkedkeyword) || ')';
                 EXIT;
             END IF;
         END LOOP;
