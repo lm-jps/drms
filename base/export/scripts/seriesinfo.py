@@ -64,12 +64,16 @@ def getKeyInfo(series, seriesns, keys, cursor, jsonObj):
     for aseries, aseriesns in zip(series, seriesns):
         if len(sql) > 0:
             sql += 'UNION\n'
-        sql += 'SELECT seriesname AS series, keywordname AS keyword, type AS datatype, defaultval AS constantvalue, unit, isconstant, (persegment >> 16)::integer AS rank, description FROM ' + aseriesns + '.drms_keyword WHERE lower(seriesname) = ' + "'" + aseries.lower() + "'"
-    
-        if not doAll:
-            sql += ' AND lower(keywordname) IN (' + ','.join([ "'" + key.lower() + "'" for key in keys ]) + ')'
-
-        sql += '\n'
+        # sql += 'SELECT seriesname AS series, keywordname AS keyword, type AS datatype, defaultval AS constantvalue, unit, isconstant, (persegment >> 16)::integer AS rank, description FROM ' + aseriesns + '.drms_keyword WHERE lower(seriesname) = ' + "'" + aseries.lower() + "'"
+        if doAll:
+            sql += 'SELECT series, keyword, datatype, keyworddefault AS constantvalue, unit, isconstant, (flags >> 16)::integer AS rank, description FROM drms_followkeywordlink(' + "'" + aseries.lower() + "'" + ',' + NULL + ")"
+            sql += '\n'
+        else:        
+            for key in keys:
+                if len(sql) > 0:
+                    sql += 'UNION\n'
+                sql += 'SELECT series, keyword, datatype, keyworddefault AS constantvalue, unit, isconstant, (flags >> 16)::integer AS rank, description FROM drms_followkeywordlink(' + "'" + aseries.lower() + "'" + ',' + "'" + key.lower() + "'" + ")"
+                sql += '\n'
 
     try:
         print('executing sql:', file=sys.stderr)
@@ -78,6 +82,7 @@ def getKeyInfo(series, seriesns, keys, cursor, jsonObj):
         seen = set()
         
         rows = cursor.fetchall()
+        print('num rows ' + str(len(rows)), file=sys.stderr)
         for row in rows:
             if row[5] == 1:
                 constantValue = row[3]
@@ -119,13 +124,14 @@ def getSegInfo(series, seriesns, segs, cursor, jsonObj):
     for aseries, aseriesns in zip(series, seriesns):
         if len(sql) > 0:
             sql += 'UNION\n'
-        # sql += 'SELECT seriesname AS series, segmentname AS segment, type AS datatype, segnum, scope, naxis AS numaxes, axis AS dimensions, unit, protocol, description FROM ' + aseriesns + '.drms_segment WHERE lower(seriesname) = ' + "'" + aseries.lower() + "'"
         if doAll:
             sql += 'SELECT series, segment, datatype, segnum, scope, numaxes, dimensions, unit, protocol, description FROM drms_followsegmentlink(' + "'" + aseries.lower() + "'" + ',' + NULL + ")"
             sql += '\n'
         else:
             for seg in segs:
                 sql += 'SELECT series, segment, datatype, segnum, scope, numaxes, dimensions, unit, protocol, description FROM drms_followsegmentlink(' + "'" + aseries.lower() + "'" + ',' + "'" + seg.lower() + "')"
+                if len(sql) > 0:
+                    sql += 'UNION\n'
                 sql += '\n'
         
     try:
@@ -177,7 +183,7 @@ def getLinkInfo(series, seriesns, links, cursor, jsonObj):
             sql += ' AND lower(linkname) IN (' + ','.join([ "'" + link.lower() + "'" for link in links ]) + ')'
             doAll = False
 
-        sql += '\n'
+        sql += ';\n'
     
     try:
         print('executing sql:', file=sys.stderr)
