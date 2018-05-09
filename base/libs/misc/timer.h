@@ -18,7 +18,7 @@ struct TIMER_struct
 
 typedef struct TIMER_struct TIMER_t;
 
-TIMER_t *CreateTimer();
+TIMER_t *CreateTimer(void);
 float GetElapsedTime(TIMER_t *timer);
 void ResetTimer(TIMER_t *timer);
 void DestroyTimer(TIMER_t **timer);

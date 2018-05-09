@@ -71,7 +71,7 @@ float PopTimer(void)
  * at many times and locations after starting the timer - you don't want to
  * continually create and destroy the timer.
  */
-TIMER_t *CreateTimer()
+TIMER_t *CreateTimer(void)
 {
    TIMER_t *timer = NULL;
 
