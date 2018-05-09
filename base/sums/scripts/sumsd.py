@@ -9,6 +9,7 @@ import signal
 import select
 import copy
 from datetime import datetime, timedelta, timezone
+import time
 import re
 import random
 import json
@@ -98,6 +99,9 @@ RESPSTATUS_SESSIONOPENED = 'session-opened'
 RESPSTATUS_GENRESPONSE = 'cant-generate-response'
 RESPSTATUS_TAPEREAD = 'taperead'
 
+# JSON keys
+IS_ALIVE = 'is-alive'
+
 # Maximum number of DB rows returned
 MAX_MTSUMS_NSUS = 32768
 
@@ -159,7 +163,7 @@ class TerminationHandler(object):
             finally:
                 Worker.unlockTList()
 
-            if worker and isinstance(worker, (Worker)) and worker.isAlive():
+            if worker and isinstance(worker, (Worker)) and worker.is_alive():
                 # can't hold worker lock here - when the worker terminates, it acquires the same lock;
                 # due to a race condition in tList (we had to release the tList lock), we have to check 
                 # to see if the worker is alive before joining it.
@@ -686,7 +690,10 @@ class Request(object):
 
     def generateErrorResponse(self, status, errMsg):
         return ErrorResponse(self, status, errMsg)
-            
+        
+    def generateAliveResponse(self):
+        return AliveResponse(self)
+
     @staticmethod
     def hexToInt(hexStr):
         return int(hexStr, 16)
@@ -1179,7 +1186,7 @@ class Response(object):
         self.data = {} # A Py dictionary containing the response to the request. Will be JSONized before being sent to client.
         self.data['status'] = status        
         self.jsonizer = None
-        
+
     def __str__(self):
         if not hasattr(self, 'rspDict'):
             self._createRspDict()
@@ -1231,6 +1238,19 @@ class ErrorResponse(Response):
             
         if not 'errmsg' in self.rspDict:
             self.rspDict['errmsg'] = self.data['errmsg']
+
+
+class AliveResponse(Response):
+    def __init__(self, request):
+        super(AliveResponse, self).__init__(request, RESPSTATUS_OK)
+        self.data[IS_ALIVE] = True
+        
+    def _stringify(self):
+        if not hasattr(self, 'rspDict'):
+            super(AliveResponse, self)._createRspDict()
+            
+        if not IS_ALIVE in self.rspDict:
+            self.rspDict[IS_ALIVE] = self.data[IS_ALIVE]
 
 
 class OpenResponse(Response):
@@ -2043,6 +2063,7 @@ class TapeRequestClient(threading.Thread):
             TapeRequestClient.tMapLock.release()
 
 
+# one worker instance per SUMS session (if pure MT, a session is a set of SUMS calls, otherwise it is a single call)
 class Worker(threading.Thread):
 
     tList = [] # A list of running thread IDs.
@@ -2066,6 +2087,9 @@ class Worker(threading.Thread):
         self.sumsBinDir = sumsBinDir
         self.log = log
         self.reqFactory = None
+        self.msgLock = threading.Lock()
+        self.messageSent = True # disable alive server until we receive a request
+        self.aliveServer = None
         
         self.log.writeDebug([ 'successfully instantiated worker for connection ' + str(self.sock.getpeername()) ])
                 
@@ -2101,8 +2125,15 @@ class Worker(threading.Thread):
 
                         # First, obtain request.
                         msgStr = self.receiveJson() # msgStr is a string object.
-                
-                        self.extractRequest(msgStr) # Will raise if reqtype is not supported.
+                        
+                        # received a new request, enable alive server
+                        self.messageSent = False
+                        self.extractRequest(msgStr) # will raise if reqtype is not supported
+                        
+                        if not self.aliveServer:
+                            # we have received our first request; start AliveServer                        
+                            self.aliveServer = AliveServer(self)
+                            self.aliveServer.start() # spawn the alive-server thread; stop this thread when the worker terminates
                     
                         if not sessionOpened and not isinstance(self.request, OpenRequest):
                             # the first request from this client not an open request, so this client is using both
@@ -2194,8 +2225,18 @@ class Worker(threading.Thread):
                     # Send results back on the socket, which is connected to a single DRMS module. By sending the results
                     # back, the client request is completed. We want to construct a list of "SUM_info" objects. Each object
                     # { sunum:12592029, onlineloc:'/SUM52/D12592029', ...}
-                    self.sendJson(msgStr) # Expects a str object.
-                
+                    
+                    # the AliveServer thread (self.aliveServer) could send a 'im alive' - we don't want main and the worker thread 
+                    # stepping on each other
+                    self.msgLock.acquire()
+                    try:
+                        self.sendJson(msgStr) # expects a str object; can block if the socket buffer is full (the client needs to read
+                                              # from the socket; if the client terminates, this will unblock a blocked write too)
+                        self.log.writeDebug([ 'sent response to ' + peerName ])
+                    finally:
+                        self.messageSent = True
+                        self.msgLock.release()
+
                     if sessionClosed or rollback:
                         break
                     # end session loop
@@ -2252,6 +2293,12 @@ class Worker(threading.Thread):
                 # commit the db changes
                 self.dbconn.commit()
         finally:
+            # stop the alive server
+            if self.aliveServer and self.aliveServer.is_alive():
+                self.log.writeDebug([ 'stopping alive server for client ' + peerName ])
+                self.aliveServer.stop()
+                self.aliveServer.join(5.0) # should stop quickly since the worker is not holding the msgLock
+            
             # We need to check the class tList variable to update it, so we need to acquire the lock.
             try:
                 Worker.lockTList()
@@ -2285,6 +2332,12 @@ class Worker(threading.Thread):
         else:
             # will raise if the socket has been closed by client
             return str(self.sock.getpeername())
+            
+    def getRequest(self):
+        if hasattr(self, 'request') and self.request:
+            return self.request
+        else:
+            return None
     
     def extractClientInfo(self, msg):
         # msg is JSON:
@@ -2335,13 +2388,14 @@ class Worker(threading.Thread):
         bytesSentTotal = 0
         numBytesMessage = '{:08x}'.format(len(msg))
         
+        # send the size of the message
         while bytesSentTotal < Worker.MSGLEN_NUMBYTES:
             bytesSent = self.sock.send(bytearray(numBytesMessage[bytesSentTotal:], 'UTF-8'))
             if not bytesSent:
                 raise SendMsgException('socket broken - cannot send message-length data to client')
             bytesSentTotal += bytesSent
         
-        # Then send the message.
+        # then send the actual message
         bytesSentTotal = 0
         while bytesSentTotal < len(msg):
             bytesSent = self.sock.send(msg[bytesSentTotal:])
@@ -2428,6 +2482,38 @@ class Worker(threading.Thread):
     def setMaxThreads(cls, maxThreads):
         cls.maxThreads = maxThreads
 
+
+# one AliverServer per Worker/Session
+class AliveServer(threading.Thread):
+    workerList = []
+    
+    def __init__(self, worker):
+        threading.Thread.__init__(self)
+        self.worker = worker
+        self.halt = False
+    
+    def run(self):
+        while True:
+            # if the worker has the lock, it could block holding it if the client does not read from the socket AND
+            # the socket buffer is full
+            self.worker.msgLock.acquire()
+            try:
+                if not self.worker.messageSent:
+                    # do not send an alive response if the worker has already sent a response
+                    msgStr = self.worker.getRequest().generateAliveResponse().getJSON()
+                    self.worker.sendJson(msgStr) # expects a str object; can hang if client does not read AND socket buffer is full
+                    self.worker.log.writeDebug([ 'sent is-alive to ' + self.worker.getID() ])
+            finally:
+                self.worker.msgLock.release()
+                    
+            time.sleep(1.0)
+            if self.halt:
+                break
+    
+    # called by worker
+    def stop(self):
+        self.halt = True
+        
 
 class LogLevelAction(argparse.Action):
     def __call__(self, parser, namespace, value, option_string=None):
@@ -2674,7 +2760,7 @@ if __name__ == "__main__":
                         raise PollException('a failure occurred while checking for new client connections')
             
                     if len(fdList) == 0:
-                        # Nobody knocking on the door.
+                        # nobody is knocking on the door
                         continue
                     else:    
                         (clientSock, address) = serverSock.accept()
@@ -2743,3 +2829,4 @@ else:
 logging.shutdown()
 
 sys.exit(rv)
+# 

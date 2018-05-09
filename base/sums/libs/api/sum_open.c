@@ -42,11 +42,14 @@ http://sun.stanford.edu/web.hmi/development/SU_Development_Plan/SUM_API.html
 #include "serverdefs.h"
 #include "cJSON.h"
 #include "hcontainer.h"
+#include "timer.h"
 
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
+
+#define IS_ALIVE "is-alive"
 
 static HContainer_t *gMTCallMap = NULL;
 
@@ -374,6 +377,10 @@ static int sendMsg(SUM_t *sums, const char *msg, uint32_t msgLen, int (*history)
     return err;
 }
 
+/* 0 - success
+ * 1 - error
+ * 2 - timeout
+ */
 static int receiveMsg(SUM_t *sums, char **out, size_t *outLen, int (*history)(const char *fmt, ...))
 {
     size_t bytesReceivedTotal;
@@ -425,7 +432,7 @@ static int receiveMsg(SUM_t *sums, char **out, size_t *outLen, int (*history)(co
             
             if (nReady == 0)
             {
-                (*history)("Timeout receiving data from sumsd.py.\n");
+                (*history)("Timeout receiving message-length data from sumsd.py.\n");
                 err = 2;
                 break;
             }
@@ -471,7 +478,7 @@ static int receiveMsg(SUM_t *sums, char **out, size_t *outLen, int (*history)(co
                 
                 if (nReady == 0)
                 {
-                    (*history)("Timeout receiving data from sumsd.py.\n");
+                    (*history)("Timeout receiving message data from sumsd.py.\n");
                     err = 2;
                     break;
                 }
@@ -2071,6 +2078,37 @@ static int unjsonizeResponseCheckStatus(cJSON *response, int (*history)(const ch
     return err;
 }
 
+/* 0 ==> not alive
+ * 1 ==> error
+ * 2 ==> alive
+ */
+static int unjsonizeResponseCheckIsAlive(cJSON *response, int (*history)(const char *fmt, ...))
+{
+    int isAlive = 0;
+    cJSON *value = NULL;
+    
+    value = cJSON_GetObjectItem(response, IS_ALIVE);
+    
+    if (value)
+    {
+        if (value->type == cJSON_True)
+        {
+            isAlive = 2;
+        }
+        else if (value->type == cJSON_False) 
+        {
+            isAlive = 0;        
+        }
+        else
+        {
+            (*history)("unexpected data type for isAlive element\n");
+            isAlive = 1;
+        }
+    }
+    
+    return isAlive;
+}
+
 #if defined(SUMS_USEMTSUMS_CONNECTION) && SUMS_USEMTSUMS_CONNECTION
 /* The request JSON looks like this:
  * {
@@ -2173,6 +2211,11 @@ static int unjsonizeSumopenResponse(SUM_t *sums, const char *msg, int (*history)
     if (!err)
     {
         err = unjsonizeResponseCheckStatus(response, history);
+    }
+    
+    if (!err)
+    {
+        err = unjsonizeResponseCheckIsAlive(response, history);
     }
     
     if (!err)
@@ -2317,6 +2360,11 @@ static int unjsonizeSumcloseResponse(SUM_t *sums, const char *msg, int (*history
         err = unjsonizeResponseCheckStatus(response, history);
     }
     
+    if (!err)
+    {
+        err = unjsonizeResponseCheckIsAlive(response, history);
+    }
+    
     if (response)
     {
         cJSON_Delete(response);
@@ -2423,6 +2471,11 @@ static int unjsonizeSumrollbackResponse(SUM_t *sums, const char *msg, int (*hist
     if (!err)
     {
         err = unjsonizeResponseCheckStatus(response, history);
+    }
+    
+    if (!err)
+    {
+        err = unjsonizeResponseCheckIsAlive(response, history);
     }
     
     if (response)
@@ -2608,6 +2661,11 @@ static int unjsonizeSuminfoResponse(SUM_t *sums, const char *msg, int (*history)
     if (!err)
     {
         err = unjsonizeResponseCheckStatus(response, history);
+    }
+    
+    if (!err)
+    {
+        err = unjsonizeResponseCheckIsAlive(response, history);
     }
 
     if (!err)
@@ -3158,6 +3216,11 @@ static int unjsonizeSumgetResponse(SUM_t *sums, const char *msg, int (*history)(
     
     if (!err)
     {
+        err = unjsonizeResponseCheckIsAlive(response, history);
+    }
+    
+    if (!err)
+    {
         jsonValue = cJSON_GetObjectItem(response, "taperead-requestid");
         if (jsonValue)
         {
@@ -3411,6 +3474,10 @@ static int unjsonizeSumallocSumalloc2Response(SUM_t *sums, const char *msg, int 
     if (!err)
     {
         err = unjsonizeResponseCheckStatus(response, history);
+    }
+
+    {
+        err = unjsonizeResponseCheckIsAlive(response, history);
     }
 
     if (!err)
@@ -3724,6 +3791,11 @@ static int unjsonizeSumputResponse(SUM_t *sums, const char *msg, int (*history)(
         err = unjsonizeResponseCheckStatus(response, history);
     }
     
+    if (!err)
+    {
+        err = unjsonizeResponseCheckIsAlive(response, history);
+    }
+    
     if (response)
     {
         cJSON_Delete(response);
@@ -3834,6 +3906,11 @@ static int unjsonizeSumdeleteseriesResponse(SUM_t *sums, const char *msg, int (*
         err = unjsonizeResponseCheckStatus(response, history);
     }
     
+    if (!err)
+    {
+        err = unjsonizeResponseCheckIsAlive(response, history);
+    }
+    
     if (response)
     {
         cJSON_Delete(response);
@@ -3929,6 +4006,11 @@ static int unjsonizeSumnopResponse(SUM_t *sums, const char *msg, int (*history)(
     if (!err)
     {
         err = unjsonizeResponseCheckStatus(response, history);
+    }
+    
+    if (!err)
+    {
+        err = unjsonizeResponseCheckIsAlive(response, history);
     }
     
     if (response)
@@ -4057,6 +4139,11 @@ static int unjsonizeSumpollResponse(SUM_t *sums, const char *msg, int (*history)
     if (!err)
     {
         err = unjsonizeResponseCheckStatus(response, history);
+    }
+    
+    if (!err)
+    {
+        err = unjsonizeResponseCheckIsAlive(response, history);
     }
     
     if (!err)
@@ -4259,6 +4346,10 @@ int jsonizeRequest(SUM_t *sums, MTSums_CallType_t type, JSONIZER_DATA_t *data, c
     return err;
 }
 
+/* 0 ==> successfully parsed response
+ * 1 ==> error
+ * 2 ==> is alive (pending)
+ */
 int unjsonizeResponse(SUM_t *sums, MTSums_CallType_t type, const char *msg, int (*history)(const char *fmt, ...))
 {
     int err;
@@ -4341,6 +4432,7 @@ int callMTSums(SUM_t *sums, MTSums_CallType_t callType, JSONIZER_DATA_t *data, i
     char *response = NULL;
     size_t rspLen = 0;
     int err;
+    TIMER_t *timer = NULL;
     
     clprev = NULL;
 
@@ -4379,18 +4471,53 @@ int callMTSums(SUM_t *sums, MTSums_CallType_t callType, JSONIZER_DATA_t *data, i
     {    
         /* receive response - return value of 0 is success, return value of 1 is internal/client error, 
          * return value of 2 is timeout. */
-        err = receiveMsg(sums, &response, &rspLen, history);
-    }
-    
-    /* unjsonize response */
-    if (!err)
-    {
-        err = unjsonizeResponse(sums, callType, response, history);
-    }
+        timer = CreateTimer();
+        while (1)
+        {
+            err = receiveMsg(sums, &response, &rspLen, history);
+            
+            if (err)
+            {
+                /* break out if a timeout (err == 2) or error (err == 1) occurred */
+                break;
+            }
+            
+            /* successfully received response (err == 0), but it could be an is-alive response */
+        
+            err = unjsonizeResponse(sums, callType, response, history);    
+            
+            if (err == 0 /* got final response */ || err == 1 /* error */)
+            {
+                break;
+            }
+            else if (err == 2)
+            {
+                /* got isAlive response; wait for final response after checking for timeout (5m) */
+                if (GetElapsedTime(timer) > 300.0)
+                {
+                    /* timeout */
+                    err = 1;
+                    (*history)("timeout waiting for %s response from SUMS\n", MTSums_CallType_strings[callType]);
+                    break;
+                }
+                
+                err = 0;
+                continue;
+            }
+            else
+            {
+                /* unexpected status - error */
+                err = 1;
+                break;
+            }
+        }
+        
+        DestroyTimer(&timer);
+    }    
 
 #if (defined(SUMS_USEMTSUMS_ALL) && SUMS_USEMTSUMS_ALL)
-    /* pure MT SUMS */
-    if (callType == kMTSums_CallType_Close || callType == kMTSums_CallType_Rollback)
+    /* pure MT SUMS - if SUM_open() fails, then disconnect from MT SUMS (shutdown the socket connection) */
+    if ((callType == kMTSums_CallType_Open && sums->uid == 0) || callType == kMTSums_CallType_Close || callType == kMTSums_CallType_Rollback)
 #else
     /* mixed MT and RPC SUMS */
 #endif
