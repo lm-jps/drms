@@ -37,7 +37,7 @@ BEGIN
             IF linkedseries IS NULL THEN
                 -- not a linked series
                 -- return original series and keyword name so the caller can locate the information by input values easily
-                RETURN QUERY EXECUTE 'SELECT seriesname::varchar AS series, keywordname::varchar AS keyword, type::varchar AS datatype, defaultval::text AS keyworddefault, format::varchar AS format, unit::varchar AS unit, isconstant::boolean AS isconstant, persegment::integer AS flags, description::text as description FROM ' || quote_ident(namespace) || '.drms_keyword WHERE lower(seriesname) = $1 AND lower(keywordname) = $2' USING lower(dataseries), lower(origkeyword);
+                RETURN QUERY EXECUTE 'SELECT seriesname::varchar AS series, keywordname::varchar AS keyword, type::varchar AS datatype, defaultval::text AS keyworddefault, format::varchar AS format, unit::varchar AS unit, (isconstant=1)::boolean AS isconstant, persegment::integer AS flags, description::text as description FROM ' || quote_ident(namespace) || '.drms_keyword WHERE lower(seriesname) = $1 AND lower(keywordname) = $2' USING lower(dataseries), lower(origkeyword);
                 EXIT;
             ELSE
                 -- linked series
