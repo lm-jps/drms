@@ -84,11 +84,11 @@ def getKeyInfo(series, seriesns, keys, cursor, jsonObj):
         rows = cursor.fetchall()
         print('num rows ' + str(len(rows)), file=sys.stderr)
         for row in rows:
-            if row[5] == 1:
+            if row[5]:
                 constantValue = row[3]
             else:
                 constantValue = 'na'
-            
+
             if row[0].lower() not in jsonObj:
                 jsonObj[row[0].lower()] = {}
             
