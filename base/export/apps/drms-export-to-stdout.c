@@ -85,7 +85,9 @@ enum __ExpToStdout_Compression_enum__
     ExpToStdout_Compression_NONE = 0,
     ExpToStdout_Compression_RICE = RICE_1,
     ExpToStdout_Compression_GZIP1 = GZIP_1,
+#if CFITSIO_MAJOR >= 4 || (CFITSIO_MAJOR == 3 && CFITSIO_MINOR >= 27)
     ExpToStdout_Compression_GZIP2 = GZIP_2,
+#endif
     ExpToStdout_Compression_PLIO = PLIO_1,
     ExpToStdout_Compression_HCOMP = HCOMPRESS_1
 };
@@ -1215,10 +1217,12 @@ int DoIt(void)
                 {
                     segCompression[iComp] = ExpToStdout_Compression_GZIP1;
                 }
+#if CFITSIO_MAJOR >= 4 || (CFITSIO_MAJOR == 3 && CFITSIO_MINOR >= 27)
                 else if (strcasecmp(cparmStr, COMPRESSION_GZIP2) == 0)
                 {
                     segCompression[iComp] = ExpToStdout_Compression_GZIP2;
                 }
+#endif
                 else if (strcasecmp(cparmStr, COMPRESSION_PLIO) == 0)
                 {
                     segCompression[iComp] = ExpToStdout_Compression_PLIO;
