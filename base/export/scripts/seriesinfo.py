@@ -129,9 +129,9 @@ def getSegInfo(series, seriesns, segs, cursor, jsonObj):
             sql += '\n'
         else:
             for seg in segs:
-                sql += 'SELECT series, segment, datatype, segnum, scope, numaxes, dimensions, unit, protocol, description FROM drms_followsegmentlink(' + "'" + aseries.lower() + "'" + ',' + "'" + seg.lower() + "')"
                 if len(sql) > 0:
                     sql += 'UNION\n'
+                sql += 'SELECT series, segment, datatype, segnum, scope, numaxes, dimensions, unit, protocol, description FROM drms_followsegmentlink(' + "'" + aseries.lower() + "'" + ',' + "'" + seg.lower() + "')"
                 sql += '\n'
         
     try:
