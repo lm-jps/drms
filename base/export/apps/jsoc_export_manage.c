@@ -1,3 +1,4 @@
+#include <regex.h>
 #include "list.h"
 
 // #define DEBUG 1
@@ -1321,7 +1322,7 @@ static void DestroyVarConts(HContainer_t **pvarsargs)
 */
 static int GenProgArgs(ProcStepInfo_t *pinfo, 
                        HContainer_t *args, 
-                       ProcStep_t *stepdata,
+                       ProcStep_t *stepdata, /* stepdata->output is the output RECORD-SET SPECIFICATION */
                        const char *reclim,
                        char **argsout)
 {
@@ -1693,7 +1694,7 @@ static int KeyExists(DRMS_Env_t *env, const char *dbhost, const char *series, co
                 snprintf (query, 
                           sizeof(query), 
                           "SELECT * FROM %s.drms_keyword WHERE lower(seriesname) = lower(\'%s\') AND lower(keywordname) = lower(\'%s\')", 
-                          series, 
+                          schema, 
                           series,
                           keyname);
                 
@@ -1738,6 +1739,152 @@ static int KeyExists(DRMS_Env_t *env, const char *dbhost, const char *series, co
     return rv;
 }
 
+#define PATTERN_REGEX "s/(\\S+)/(\\S+)/"
+enum PatternStyle_enum
+{
+    PatternStyle_Unknown,
+    PatternStyle_None,
+    PatternStyle_SuffixOld,
+    PatternStyle_SuffixNew,
+    PatternStyle_Substitution,
+    PatternStyle_Replacement
+};
+typedef enum PatternStyle_enum PatternStyle_t;
+
+static char **ExtractPattern(const char *str, PatternStyle_t *style)
+{
+    char **pattern = NULL;
+    regex_t regexp;
+    regmatch_t matches[3]; /* index 0 is the entire string */
+    
+    if (style)
+    {
+        *style = PatternStyle_Unknown;
+    }
+    
+    if (str)
+    {
+        if (*str == '_' && strlen(str) > 1)
+        {
+            /* old-style suffix */
+            pattern = calloc(1, sizeof(char **));
+            pattern[0] = strdup(str + 1);
+
+            if (style)
+            {
+                *style = PatternStyle_SuffixOld;
+            }
+        }
+        else 
+        {
+            if (regcomp(&regexp, PATTERN_REGEX, REG_EXTENDED) != 0)
+            {
+                fprintf(stderr, "bad regular expression '%s'\n", PATTERN_REGEX);
+            }
+            else
+            {
+                if (regexec(&regexp, str, sizeof(matches) / sizeof(matches[0]), matches, 0) == 0)
+                {
+                    if (str[matches[1].rm_so] == '$' && (matches[1].rm_eo - matches[1].rm_so == 1))
+                    {
+                        /* a new-style suffix */
+                        pattern = calloc(1, sizeof(char **));
+                        if (pattern)
+                        {
+                            pattern[0] = calloc(1, sizeof(char) * (matches[2].rm_eo - matches[2].rm_so + 1));
+                            if (pattern[0])
+                            {
+                                strncpy(pattern[0], &(str[matches[2].rm_so]), matches[2].rm_eo - matches[2].rm_so);
+                            }
+                        }
+
+                        if (style)
+                        {
+                            *style = PatternStyle_SuffixNew;
+                        }
+                    }
+                    else
+                    {
+                        /* a substitution */
+                        pattern = calloc(2, sizeof(char **));
+                        if (pattern)
+                        {
+                            char *tmp = NULL;
+
+                            pattern[0] = calloc(1, sizeof(char) * (matches[1].rm_eo - matches[1].rm_so + 1));
+                            if (pattern[0])
+                            {
+                                strncpy(pattern[0], &(str[matches[1].rm_so]), matches[1].rm_eo - matches[1].rm_so);
+                            }
+
+                            pattern[1] = calloc(1, sizeof(char) * (matches[2].rm_eo - matches[2].rm_so + 1));
+                            if (pattern[1])
+                            {
+                                strncpy(pattern[1], &(str[matches[2].rm_so]), matches[2].rm_eo - matches[2].rm_so);
+                            }
+                            
+                            if (style)
+                            {
+                                *style = PatternStyle_Substitution;
+                            }
+
+                        }
+                    }
+                }
+                else
+                {
+                    pattern = calloc(1, sizeof(char **));
+                    if (pattern)
+                    {
+                        pattern[0] = strdup(str + 1);
+                    }
+                    
+                    if (style)
+                    {
+                        *style = PatternStyle_Replacement;
+                    }
+                }
+            }
+        }
+    }
+    else
+    {
+        if (style)
+        {
+            *style = PatternStyle_None;
+        }
+    }
+    
+    regfree(&regexp);
+    
+    return pattern;
+}
+
+static void FreePattern(char ***pattern, PatternStyle_t style)
+{
+    if (pattern && *pattern)
+    {
+        if ((*pattern)[0])
+        {
+            free((*pattern)[0]);
+            (*pattern)[0] = NULL;
+        }
+
+        if (style == PatternStyle_Substitution)
+        {
+            /* pattern has two elements */
+            if ((*pattern)[1])
+            {
+                free((*pattern)[1]);
+                (*pattern)[1] = NULL;
+            }
+        }
+    
+        free(*pattern);
+        *pattern = NULL;
+    }
+}
+
 /* cpinfo - the current processing step's processing information
  * ppinfo - the previous processing step's processing information. */
 static int GenOutRSSpec(DRMS_Env_t *env, 
@@ -1751,7 +1898,7 @@ static int GenOutRSSpec(DRMS_Env_t *env,
     
     if (cpinfo)
     {
-        const char *suffix = cpinfo->suffix;
+        const char *suffix = cpinfo->suffix; /* this is really the 'out' column */
         const char *psuffix = NULL;
         const char *pdataset = NULL;
         char **snamesIn = NULL;
@@ -1773,6 +1920,8 @@ static int GenOutRSSpec(DRMS_Env_t *env,
         int ierr = 0;
         size_t szCanon = 128;
         char *canonicalIn = NULL;
+        char **currentPattern = NULL;
+        PatternStyle_t currentPatternStyle;
         
         while (1)
         {
@@ -1827,58 +1976,70 @@ static int GenOutRSSpec(DRMS_Env_t *env,
                 }
             }
             
-            /* The suffix column's value is a true suffix only if the string begins with '_'. If
-             * not, then the value is actually the output series name. So if *psuffix != '_', 
-             * then there was really no suffix for the previous processing step, and if *suffix != '_',
-             * then we need to replace the input series name with the output series name. */
-            if (psuffix && *psuffix == '_' && suffix && *suffix == '_')
+            currentPattern = ExtractPattern(suffix, &currentPatternStyle);
+            
+            if (currentPatternStyle == PatternStyle_Unknown)
             {
-                /* The input series and output series both have suffixes. Replace the 
-                 * input series' suffixes with the output series' suffixes. */
-                for (iset = 0; iset < nsetsIn; iset++)
+                /* unable to extract a valid pattern */
+                fprintf(stderr, "unable to extract a valid series pattern from %s\n", suffix);
+            }
+            else if (currentPatternStyle == PatternStyle_None)
+            {
+                /* neither a suffix nor an output series specified; the input series might
+                 * have a suffix, but that is irrelevant - whatever the input series is, use that for
+                 * the output series too */
+                outseries = strdup(canonicalIn);
+            }
+            else if (currentPatternStyle == PatternStyle_Substitution)
+            {
+                /* a current pattern exists, and it is a substitution */
+                data->crout= 0;
+                if (strcmp(currentPattern[0], currentPattern[1]) != 0)
                 {
-                    outseries = base_strreplace(canonicalIn, psuffix, suffix);
-                }
+                    outseries = base_strreplace(canonicalIn, currentPattern[0], currentPattern[1]);
                 
-                if (strcmp(psuffix, suffix) != 0)
-                {
-                    /* If the suffixes differ, then the output series MAY not exist. In this case, 
-                     * we need to run jsoc_export_clone from the drms_run script. If the output series
-                     * already exists, then jsoc_export_clone is a no-op. */
+                    /* if the input and output series differ, then the output series MAY not exist; run 
+                     * jsoc_export_clone from the drms_run script; if the output series
+                     * already exists, then jsoc_export_clone is a no-op */
                     data->crout = 1;
                 }
             }
-            else if (suffix && *suffix == '_')
+            else if (currentPatternStyle == PatternStyle_Replacement)
             {
-                /* No suffix on previous proc steps' series names (or there was no previous proc step), 
-                 * but suffix on output series names. Append the output series' suffix onto the input series' names, 
-                 * unless there was no previous proc step, and the input names already have the suffix. In 
-                 * that case, use the input series name as the output series name. */
+                /* a current pattern exists, and it is a replacement */
+                outseries = strdup(canonicalIn);
+                data->crout = 0;
+                for (iset = 0; outseries, iset < nsetsIn; iset++)
+                {
+                    if (strcasecmp(snamesIn[iset], currentPattern[0]) != 0)
+                    {
+                        newoutseries = base_strreplace(outseries, snamesIn[iset], currentPattern[0]);
+                        free(outseries);
+                        outseries = newoutseries;
+                        data->crout = 1;
+                    }
+                }
+            }
+            else if (currentPatternStyle == PatternStyle_SuffixOld || currentPatternStyle == PatternStyle_SuffixNew)
+            {
+                /* a current pattern exists, and it is a suffix */                
                 char replname[DRMS_MAXSERIESNAMELEN];
                 char *psuff = NULL;
                 
-                /* Theoretically, outseries could be a comma-separated list of record-set specifications. We are 
-                 * going to add the suffix to each seriesname in that list. */
+                /* theoretically, outseries could be a comma-separated list of record-set specifications; we are 
+                 * going to add the suffix to each seriesname in that list */
                 outseries = strdup(canonicalIn);
                 data->crout = 0;
-                for (iset = 0; iset < nsetsIn; iset++)
+                for (iset = 0; outseries, iset < nsetsIn; iset++)
                 {
-                    /* If the input series name already ends in the suffix that the processing step would
-                     * like to add to the input series name, then we are to use the input series name as
-                     * the output series name. For example, if the input series is hmi.v_45s_mod and the current 
-                     * processing step has a suffix of _mod, then the output series name should be 
-                     * hmi.v_45s_mod. Since this series already exists, there should be no attempt to create
-                     * it (i.e., data->crout == 0). */
-                    if ((psuff = strcasestr(snamesIn[iset], suffix)) == NULL || *(psuff + strlen(suffix)) != '\0')
+                    if ((psuff = strcasestr(snamesIn[iset], currentPattern[0])) == NULL || *(psuff + strlen(currentPattern[0])) != '\0')
                     {
-                        /* The input series name does not end in the suffix. */
-                        
-                        /* Set the output-series name to the input-series name with the suffix appeneded to it. */
-                        snprintf(replname, sizeof(replname), "%s%s", snamesIn[iset], suffix);
+                        /* append the suffix because the input series does not end with that suffix (it may or may not have a suffix at all) */
+                        snprintf(replname, sizeof(replname), "%s%s", snamesIn[iset], currentPattern[0]);                                                    
                         newoutseries = base_strreplace(outseries, snamesIn[iset], replname);
                         free(outseries);
                         outseries = newoutseries;
-                        
+            
                         /* We are writing to at least one output series that differs fromt the input series. 
                          * We need to run jsoc_export_clone from the drms_run script. If the output series
                          * already exists, then jsoc_export_clone is a no-op. */
@@ -1886,31 +2047,18 @@ static int GenOutRSSpec(DRMS_Env_t *env,
                     }
                     else
                     {
-                        /* The input-series names end in the suffix. Do not modify the output series names (let them
-                         * stay as the input series names). */
+                        /* the series already ends with the current suffix - do not modify the series names */
                     }
-                }                
-            }
-            else if (suffix && *suffix)
-            {
-                /* No suffix on either the input series or the output series, but there 
-                 * is a new output series name. Replace input series names with the name
-                 * in suffix. */
-                for (iset = 0; iset < nsetsIn; iset++)
-                {
-                    outseries = base_strreplace(canonicalIn, snamesIn[iset], suffix);
                 }
-                
-                /* ART - This is the case for aia_scale processing (so far). This code will 
-                 * take whatever the input series is, and replace the series name with 
-                 * aia_test.lev1p5. Because we no longer have processing-step specific code, 
-                 * we cannot ensure that the input series is aia.lev1 only. If it isn't, then
-                 * this processing step is invalid. */
             }
             else
             {
-                /* No suffix on input series names, and no suffix on output series names. */
-                outseries = strdup(canonicalIn);
+                fprintf(stderr, "unknown pattern type %d\n", currentPatternStyle);
+            }
+            
+            if (currentPattern)
+            {
+                FreePattern(&currentPattern, currentPatternStyle);
             }
             
             /* Remove input series' filters. */
