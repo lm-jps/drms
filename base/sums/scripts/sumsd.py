@@ -1677,7 +1677,7 @@ class AllocResponse(Response):
         # but there were filesys changes that have to be undone
         if os.path.exists(self.data['sudir']):
             shutil.rmtree(self.data['sudir'])
-        self.request.worker.log.writeDebug([ 'undid alloc mkdir for client ' + str(self.request.worker.self.getID()) ])
+        self.request.worker.log.writeDebug([ 'undid alloc mkdir for client ' + str(self.request.worker.getID()) ])
 
     @classmethod
     def __callStatvfs(cls, suPartitionPath, rv):
