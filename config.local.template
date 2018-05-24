@@ -226,6 +226,27 @@ RS_SCP_MAXPAYLOAD                     512
 # then an ScpWorker will initiate a download.
 RS_SCP_TIMEOUT                        2
 
+##### Storage Unit Steward #####
+# The (advisory) lockfile used by the SU steward to prevent multiple instances of the steward from running.
+SS_LOCKFILE                           /usr/share/drms/locks/sustewie.lck
+
+# Each partition is scrubbed until its percent usage falls below the low-water mark.
+SS_LOW_WATER                          90
+
+# Partition scrubbing is initiated only after partition percent usage rises above the high-water mark.
+SS_HIGH_WATER                         95
+
+# The number of SUs in a partition that are deleted at one time. SUs are deleted one chunk at a time until the partition usage falls below the low-water mark.
+SS_SU_CHUNK                           4096
+
+# The interval, in seconds, between flushing/caching expired SU lists (use a smaller number if the system experience a high rate of SU expiration)
+SS_SLEEP_INTERVAL                     300
+
+# The time interval, in seconds, between updates to the per-partition cache of expired SUs. This value applies to all partitions that are scrubbed. For each partition, a steward thread queries its cache to select the next SUs to delete (which are sorted by increasing
+expiration date).
+SS_REHYDRATE_INTERVAL                 3600
+##### Storage Unit Steward #####
+
 # If set to 1, then this DRMS allows access by the public to series defined in the internal database (SERVER).
 WL_HASWL                              0
 
