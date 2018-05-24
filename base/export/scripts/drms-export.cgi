@@ -60,6 +60,8 @@ my $series_param = $cgi->param("series")
 
 my $compression = ( $cgi->param("compress") eq 'rice' ) ? 'rice' :  'none';
 
+# optional
+my($skiptar_param) = $cgi->param("skiptar");
 
 my %series_info = $registry->GetData_info( $series_param );
 abort ( 'Unknown series' ) if ! scalar %series_info;
@@ -205,7 +207,7 @@ elsif ($expProgType eq 'export-stdout')
     # should there be problems putting FITS files in the tar file, it will put errors in the jsoc/error_list.txt
     # file in the tar; if a tar could not be created 
     
-    $makeTarFile = ((defined($tarfile) && length($tarfile) > 0) ? 1 : 0);
+    $makeTarFile = ((defined($tarfile) && length($tarfile) > 0) ? 1 : 0) && (!$skiptar_param || $skiptar_param == 0);
     
     @cmd = ($export_cmd, 'spec='.sprintf($drms_query, @series_args), "ffmt=$filename_pattern", 'ackfile=/tmp/ACKFILE');
     if (!$makeTarFile)
