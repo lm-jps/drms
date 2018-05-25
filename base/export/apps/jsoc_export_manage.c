@@ -1830,6 +1830,8 @@ static char **ExtractPattern(const char *str, PatternStyle_t *style)
 
                         }
                     }
+                    
+                    regfree(&regexp);
                 }
                 else
                 {
@@ -1854,8 +1856,6 @@ static char **ExtractPattern(const char *str, PatternStyle_t *style)
             *style = PatternStyle_None;
         }
     }
-    
-    regfree(&regexp);
     
     return pattern;
 }
