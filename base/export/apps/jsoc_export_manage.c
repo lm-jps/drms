@@ -1827,7 +1827,6 @@ static char **ExtractPattern(const char *str, PatternStyle_t *style)
                             {
                                 *style = PatternStyle_Substitution;
                             }
-
                         }
                     }
                     
@@ -2035,7 +2034,7 @@ static int GenOutRSSpec(DRMS_Env_t *env,
                     if ((psuff = strcasestr(snamesIn[iset], currentPattern[0])) == NULL || *(psuff + strlen(currentPattern[0])) != '\0')
                     {
                         /* append the suffix because the input series does not end with that suffix (it may or may not have a suffix at all) */
-                        snprintf(replname, sizeof(replname), "%s%s", snamesIn[iset], currentPattern[0]);                                                    
+                        snprintf(replname, sizeof(replname), "%s_%s", snamesIn[iset], currentPattern[0]);                                                    
                         newoutseries = base_strreplace(outseries, snamesIn[iset], replname);
                         free(outseries);
                         outseries = newoutseries;
