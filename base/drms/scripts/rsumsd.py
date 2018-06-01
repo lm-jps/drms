@@ -97,6 +97,16 @@ from subprocess import check_output, check_call, CalledProcessError, Popen, PIPE
 #   Downloader sets to 'C' - complete
 #   If an error or time-out happens anywhere in this life cycle, then the status is set to 'E'
 
+# You can measure the total rate of download for a rsumsd.py session like this:
+# 1. start up rsumsd.py anew with the --loglevel=debug flag, first moving or deleting the existing log
+# 2. make many Remote SUMS requests; the rsums-clientd.py program is one way to do this
+# 3. stop rsumsd.py with the kill -2 command and wait for rsumsd.py to finish processing the existing requests
+# 4. run this command, first replacing rslog_20180530.txt with the log file created during the current run:
+#   grep -Ire 'Payload is' rslog_20180530.txt | perl -ne 'my($input) = $_; if ($input =~ m/(\S+)\s(\S+)\s.+Payload\sis\s(\d+)[.]/) { print $1 . " " . " " . $2 . " " . " " . $3 . "\n"; }' | awk '{ if (beg == "") { beg = $1 " " $2 }; end = $1 " " $2; s+=$3} END {print beg " to " end " " s}'
+# 5. the first two columns of the output of this command are a begin date and time, followed by 'to', followed by 
+#    the end date and time, followed by the total number of bytes downloaded and ingested into SUMS
+
+
 RET_SUCCESS = 0
 RET_UNKNOWN_ERROR = 1
 RET_UNKOWN_DRMSPARAMETER = 2
