@@ -7,11 +7,11 @@ LIBDRMS		:= $(d)/libdrmsserver.a
 LIBDRMSCLIENT	:= $(d)/libdrmsclient.a
 LIBDRMS_SERVER_FPIC	:= $(d)/libdrmsserver-fpic.a
 
-# Common to cLIBDRMS_SERVER_FPIC_OBJlient and server - keep .o files in parent.
 COMM_OBJ_$(d)	:= $(addprefix $(d)/, drms_types.o drms_keyword.o drms_link.o drms_segment.o drms_protocol.o drms_binfile.o drms_parser.o drms_names.o drms_array.o drms_dsdsapi.o drms_defs.o drms_fitsrw.o drms_fitstas.o drms_cmdparams.o)
 SERVER_OBJ_$(d)	:= $(addprefix $(d)/server/, drms_client.o drms_env.o drms_record.o drms_storageunit.o drms_server.o drms_series.o)
 CLIENT_OBJ_$(d)	:= $(addprefix $(d)/client/, drms_client.o drms_env.o drms_record.o drms_storageunit.o drms_series.o)
 
+# common to LIBDRMS_SERVER_FPIC_OBJ client and server - keep .o files in parent
 COMM_OBJ_FPIC_$(d)	:= $(addprefix $(d)/server-fpic/, $(notdir $(COMM_OBJ_$(d))))
 SERVER_OBJ_FPIC_$(d) := $(addprefix $(d)/server-fpic/, drms_client.o drms_env.o drms_record.o drms_series.o drms_server.o drms_storageunit.o)
 
@@ -43,9 +43,18 @@ $(SERVER_OBJ_$(d)):	$(d)/server/%.o	: $(d)/%.c
 			$(COMP)
 $(CLIENT_OBJ_$(d)):	$(d)/client/%.o : $(d)/%.c
 			$(COMP)
-$(COMM_OBJ_FPIC_$(d)) $(SERVER_OBJ_FPIC_$(d)):	$(d)/server-fpic/%.o : $(d)/%.c
-												$(COMP)
 
+$(COMM_OBJ_FPIC_$(d)):  $(d)/server-fpic/%.o : $(d)/%.c
+												$(COMP)
+												
+
+# THIS IS BUGGY ON gnu make 3.81; it causes a circular dependency; with gnu make 3.82, there is no circular dependency;
+# the problem is a bad interaction between VPATH and this recipe
+# $(SERVER_OBJ_FPIC_$(d)):    $(d)/server-fpic/%.o : $(d)/%.c
+#												$(COMP)
+
+$(SERVER_OBJ_FPIC_$(d)):    $(d)/server-fpic/%.o : $(SRCDIR)/$(d)/%.c
+												$(COMP)
 $(d)/client/fdrms.o:	$(d)/fdrms.f
 			$(FCOMP)
 
