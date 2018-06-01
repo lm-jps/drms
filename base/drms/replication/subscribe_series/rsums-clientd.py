@@ -1,5 +1,22 @@
 #!/usr/bin/env python3
 
+# The production user runs rsums-clientd.py in the background. The script needs read/write access to
+# the Remote SUMS requests table (drms.rs_requests) and the capture table (drms.ingested_sunums). It also
+# needs read-only access to the SUMS partition alloc table - it connects to the SUMS DB as the read-only user
+# identified with by the SUMS_READONLY_DB_USER user. Ensure that the SUMS DB has this user and that this 
+# user has the appropriate permissions:
+#
+# kasi2_sums=# CREATE ROLE readonlyuser;
+# CREATE ROLE
+# kasi2_sums=# GRANT CONNECT ON DATABASE kasi2_sums TO readonlyuser;
+# GRANT
+# kasi2_sums=# GRANT USAGE ON SCHEMA public TO readonlyuser;
+# GRANT
+# kasi2_sums=# GRANT SELECT ON sum_partn_alloc TO readonlyuser;
+# GRANT
+# kasi2_sums=# ALTER USER readonlyuser WITH LOGIN;
+# ALTER ROLE
+
 import sys
 
 if sys.version_info < (3, 4):
