@@ -39,12 +39,12 @@ TGT_LIB 	:= $(TGT_LIB) $(LIBDRMS) $(LIBDRMSCLIENT) $(LIBDRMS_SERVER_FPIC)
 S_$(d)		:= $(notdir $(LIBDRMS) $(LIBDRMSCLIENT) $(LIBDRMS_SERVER_FPIC))
 
 # Local rules
-$(SERVER_OBJ_$(d)):	$(d)/server/%.o	: $(d)/%.c
+$(SERVER_OBJ_$(d)):	$(d)/server/%.o	: $(SRCDIR)/$(d)/%.c
 			$(COMP)
-$(CLIENT_OBJ_$(d)):	$(d)/client/%.o : $(d)/%.c
+$(CLIENT_OBJ_$(d)):	$(d)/client/%.o : $(SRCDIR)/$(d)/%.c
 			$(COMP)
 
-$(COMM_OBJ_FPIC_$(d)):  $(d)/server-fpic/%.o : $(d)/%.c
+$(COMM_OBJ_FPIC_$(d)):  $(d)/server-fpic/%.o : $(SRCDIR)/$(d)/%.c
 												$(COMP)
 												
 
