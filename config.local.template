@@ -242,8 +242,10 @@ SS_SU_CHUNK                           4096
 # The interval, in seconds, between flushing/caching expired SU lists (use a smaller number if the system experience a high rate of SU expiration)
 SS_SLEEP_INTERVAL                     300
 
-# The time interval, in seconds, between updates to the per-partition cache of expired SUs. This value applies to all partitions that are scrubbed. For each partition, a steward thread queries its cache to select the next SUs to delete (which are sorted by increasing
-expiration date).
+# The time interval, in seconds, between updates to the per-partition cache of expired
+# SUs. This value applies to all partitions that are scrubbed. For each partition, a
+# steward thread queries its cache to select the next SUs to delete (which are sorted by
+# increasing expiration date).
 SS_REHYDRATE_INTERVAL                 3600
 ##### Storage Unit Steward #####
 
