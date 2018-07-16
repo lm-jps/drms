@@ -2075,7 +2075,7 @@ class Worker(threading.Thread):
                         # So, we can send back 4 GB of response!
     MAX_MSG_BUFSIZE = 4096 # Don't receive more than this in one call!
     
-    def __init__(self, sock, hasTapeSys, hasMultPartSets, sumsBinDir, log):
+    def __init__(self, sock, hasTapeSys, hasMultPartSets, sumsBinDir, timeout, log):
         threading.Thread.__init__(self)
         # Could raise. Handle in the code that creates the thread.
         if sock is None or sumsBinDir is None or log is None:
@@ -2085,6 +2085,7 @@ class Worker(threading.Thread):
         self.hasTapeSys = hasTapeSys
         self.hasMultPartSets = hasMultPartSets
         self.sumsBinDir = sumsBinDir
+        self.clientResponseTimeout = timeout
         self.log = log
         self.reqFactory = None
         self.msgLock = threading.Lock()
@@ -2217,8 +2218,9 @@ class Worker(threading.Thread):
                         self.log.writeError([ traceback.format_exc(3) ])
                         msgStr = self.generateErrorResponse(RESPSTATUS_GENRESPONSE, exc.args[0])
                     except:
+                        rollback = True
                         import traceback
-                        self.log.writeError([ traceback.format_exc(3) ])
+                        self.log.writeError([ traceback.format_exc(5) ])
 
                     if hasattr(self, 'response') and self.response:
                         self.log.writeDebug([ 'response:' + str(self.response) ])
@@ -2422,13 +2424,35 @@ class Worker(threading.Thread):
         # First, receive length of message.
         allTextReceived = b''
         bytesReceivedTotal = 0
-        
+
+        # time-out time
+        timeStart = datetime.now()
+        timeOutTime = timeStart + timedelta(minutes=self.clientResponseTimeout)
+
+        forceRecv = True # force a skip of the select() code for the first minute
+        readable = []
         while bytesReceivedTotal < Worker.MSGLEN_NUMBYTES:
-            textReceived = self.sock.recv(min(Worker.MSGLEN_NUMBYTES - bytesReceivedTotal, Worker.MAX_MSG_BUFSIZE))
-            if textReceived == b'':
-                raise ReceiveMsgException('socket broken - cannot receive message-length data from client')
-            allTextReceived += textReceived
-            bytesReceivedTotal += len(textReceived)
+            if datetime.now() > timeOutTime:
+                raise ReceiveMsgException('timeout waiting for response from client')
+
+            if forceRecv:
+                if datetime.now() > timedelta(minutes=1) + timeStart:
+                    forceRecv = False
+            
+            if not forceRecv:
+                toRead = [ self.sock ]
+                readable, writeable, problematic = select.select(toRead, [], [], 0) # does not block
+
+            if forceRecv or len(readable) > 0:
+                textReceived = self.sock.recv(min(Worker.MSGLEN_NUMBYTES - bytesReceivedTotal, Worker.MAX_MSG_BUFSIZE))
+                if textReceived == b'':
+                    raise ReceiveMsgException('socket broken - cannot receive message-length data from client')
+                allTextReceived += textReceived
+                bytesReceivedTotal += len(textReceived)
+            else:
+                # a recv() would block
+                self.log.writeDebug([ 'waiting for client ' + self.peerName + ' to send request' ])
+                time.sleep(1)
             
         # Convert hex string to number.
         numBytesMessage = int(allTextReceived.decode('UTF-8'), 16)
@@ -2436,13 +2460,32 @@ class Worker(threading.Thread):
         # Then receive the message.
         allTextReceived = b''
         bytesReceivedTotal = 0
-        
+
+        forceRecv = True # force a skip of the select() code for the first minute
+        readable = []
         while bytesReceivedTotal < numBytesMessage:
-            textReceived = self.sock.recv(min(numBytesMessage - bytesReceivedTotal, Worker.MAX_MSG_BUFSIZE))
-            if textReceived == b'':
-                raise ReceiveMsgException('socket broken - cannot receive message data from client')
-            allTextReceived += textReceived
-            bytesReceivedTotal += len(textReceived)
+            if datetime.now() > timeOutTime:
+                raise ReceiveMsgException('timeout waiting for response from client')
+            
+            if forceRecv:
+                if datetime.now() > timedelta(minutes=1) + timeStart:
+                    forceRecv = False
+                
+            if not forceRecv:
+                toRead = [ self.sock ]
+                readable, writeable, problematic = select.select(toRead, [], [], 0) # does not block
+
+            if forceRecv or len(readable) > 0:            
+                textReceived = self.sock.recv(min(numBytesMessage - bytesReceivedTotal, Worker.MAX_MSG_BUFSIZE))
+                if textReceived == b'':
+                    raise ReceiveMsgException('socket broken - cannot receive message data from client')
+                allTextReceived += textReceived
+                bytesReceivedTotal += len(textReceived)
+            else:
+                # a recv() would block
+                self.log.writeDebug([ 'waiting for client ' + self.peerName + ' to send request' ])
+                time.sleep(1)
+
         # Return a bytes object (not a string). The unjsonize function will need a str object for input.
         return allTextReceived
         
@@ -2457,8 +2500,8 @@ class Worker(threading.Thread):
 
     # Must acquire Worker lock BEFORE calling newThread() since newThread() will append to tList (the Worker threads will be deleted from tList as they complete).
     @staticmethod
-    def newThread(sock, hasTapeSys, hasMultPartSets, sumsBinDir, log):
-        worker = Worker(sock, hasTapeSys, hasMultPartSets, sumsBinDir, log)
+    def newThread(sock, hasTapeSys, hasMultPartSets, sumsBinDir, timeout, log):
+        worker = Worker(sock, hasTapeSys, hasMultPartSets, sumsBinDir, timeout, log)
         Worker.tList.append(worker)
         worker.start()
         
@@ -2670,12 +2713,13 @@ if __name__ == "__main__":
         sumsDrmsParams = SumsDrmsParams()
         if sumsDrmsParams is None:
             raise ParamsException('unable to locate DRMS parameters file (drmsparams.py)')
-            
+
         parser = CmdlParser(usage='%(prog)s [ -dht ] [ --dbhost=<db host> ] [ --dbport=<db port> ] [ --dbname=<db name> ] [ --dbuser=<db user>] [ --logfile=<log-file name> ]')
         parser.add_argument('-H', '--dbhost', help='The host machine of the database that contains the series table from which records are to be deleted.', metavar='<db host machine>', dest='dbhost', default=sumsDrmsParams.get('SUMS_DB_HOST'))
         parser.add_argument('-P', '--dbport', help='The port on the host machine that is accepting connections for the database that contains the series table from which records are to be deleted.', metavar='<db host port>', dest='dbport', default=sumsDrmsParams.get('SUMPGPORT'))
         parser.add_argument('-N', '--dbname', help='The name of the database that contains the series table from which records are to be deleted.', metavar='<db name>', dest='database', default=sumsDrmsParams.get('DBNAME') + '_sums')
         parser.add_argument('-U', '--dbuser', help='The name of the database user account.', metavar='<db user>', dest='dbuser', default=sumsDrmsParams.get('SUMS_MANAGER'))
+        parser.add_argument('-S', '--sumsserver', help='the machine hosting the SUMS server daemon', metavar='<SUMS host>', dest='sumsserver', default=sumsDrmsParams.get('SUMSERVER'))
         parser.add_argument('-s', '--sockport', help='The server port listening for incoming connection requests.', metavar='<listening socket port>', dest='listenport', type=int, default=int(sumsDrmsParams.get('SUMSD_LISTENPORT')))
         parser.add_argument('-l', '--logfile', help='The file to which logging is written.', metavar='<file name>', dest='logfile', default=os.path.join(sumsDrmsParams.get('SUMLOG_BASEDIR'), SUMSD + '-' + LISTEN_PORT + '-' + datetime.now().strftime('%Y%m%d.%H%M%S') + '.txt'))
         parser.add_argument('-L', '--loglevel', help='Specifies the amount of logging to perform. In order of increasing verbosity: critical, error, warning, info, debug', dest='loglevel', action=LogLevelAction, default=logging.ERROR)
@@ -2704,7 +2748,8 @@ if __name__ == "__main__":
         with TerminationHandler(thContainer) as th:
             try:
                 # use getaddrinfo() to try as many families/protocols as are supported; it returns a list
-                remoteAddresses = socket.getaddrinfo(sumsDrmsParams.get('SUMSERVER'), arguments.getArg('listenport'))
+                sumsServer = arguments.getArg('sumsserver')
+                remoteAddresses = socket.getaddrinfo(sumsServer, arguments.getArg('listenport'))
             
                 for address in remoteAddresses:
                     family = address[0]
@@ -2726,9 +2771,9 @@ if __name__ == "__main__":
                     
                     # now try binding
                     try:
-                        log.writeInfo([ 'attempting to bind socket to address ' + sumsDrmsParams.get('SUMSERVER') + ':' + str(arguments.getArg('listenport')) ])
-                        serverSock.bind((sumsDrmsParams.get('SUMSERVER'), arguments.getArg('listenport')))
-                        log.writeInfo([ 'successfully bound socket to address ' + sumsDrmsParams.get('SUMSERVER') + ':' + str(arguments.getArg('listenport')) ])
+                        log.writeInfo([ 'attempting to bind socket to address ' + sumsServer + ':' + str(arguments.getArg('listenport')) ])
+                        serverSock.bind((sumsServer, arguments.getArg('listenport')))
+                        log.writeInfo([ 'successfully bound socket to address ' + sumsServer + ':' + str(arguments.getArg('listenport')) ])
                         break # we're good!
                     except OSError:
                         import traceback
@@ -2783,7 +2828,7 @@ if __name__ == "__main__":
                             try:
                                 if Worker.freeThreadExists():
                                     log.writeDebug([ 'instantiating a Worker for client ' + str(address) ])
-                                    Worker.newThread(clientSock, int(sumsDrmsParams.get('SUMS_TAPE_AVAILABLE')) == 1, int(sumsDrmsParams.get('SUMS_MULTIPLE_PARTNSETS')) == 1, sumsDrmsParams.get('SUMBIN_BASEDIR'), log)
+                                    Worker.newThread(clientSock, int(sumsDrmsParams.get('SUMS_TAPE_AVAILABLE')) == 1, int(sumsDrmsParams.get('SUMS_MULTIPLE_PARTNSETS')) == 1, sumsDrmsParams.get('SUMBIN_BASEDIR'), int(sumsDrmsParams.get('SUMS_MT_CLIENT_RESP_TIMEOUT')), log)
                                     break # The finally clause will ensure the Worker lock is released.
                             finally:
                                 # ensures the tList lock is released, even if a KeyboardInterrupt occurs while the 
