@@ -2429,21 +2429,19 @@ class Worker(threading.Thread):
         timeStart = datetime.now()
         timeOutTime = timeStart + timedelta(minutes=self.clientResponseTimeout)
 
-        forceRecv = True # force a skip of the select() code for the first minute
-        readable = []
+        skipSleep = True # force a skip of the select() code for the first minute
         while bytesReceivedTotal < Worker.MSGLEN_NUMBYTES:
             if datetime.now() > timeOutTime:
                 raise ReceiveMsgException('timeout waiting for response from client')
 
-            if forceRecv:
+            if skipSleep:
                 if datetime.now() > timedelta(minutes=1) + timeStart:
-                    forceRecv = False
+                    skipSleep = False
             
-            if not forceRecv:
-                toRead = [ self.sock ]
-                readable, writeable, problematic = select.select(toRead, [], [], 0) # does not block
+            toRead = [ self.sock ]
+            readable, writeable, problematic = select.select(toRead, [], [], 0) # does not block
 
-            if forceRecv or len(readable) > 0:
+            if len(readable) > 0:
                 textReceived = self.sock.recv(min(Worker.MSGLEN_NUMBYTES - bytesReceivedTotal, Worker.MAX_MSG_BUFSIZE))
                 if textReceived == b'':
                     raise ReceiveMsgException('socket broken - cannot receive message-length data from client')
@@ -2451,8 +2449,9 @@ class Worker(threading.Thread):
                 bytesReceivedTotal += len(textReceived)
             else:
                 # a recv() would block
-                self.log.writeDebug([ 'waiting for client ' + self.peerName + ' to send request' ])
-                time.sleep(1)
+                if not skipSleep:
+                    self.log.writeDebug([ 'waiting for client ' + self.peerName + ' to send request' ])
+                    time.sleep(1)
             
         # Convert hex string to number.
         numBytesMessage = int(allTextReceived.decode('UTF-8'), 16)
@@ -2461,21 +2460,19 @@ class Worker(threading.Thread):
         allTextReceived = b''
         bytesReceivedTotal = 0
 
-        forceRecv = True # force a skip of the select() code for the first minute
-        readable = []
+        skipSleep = True # force a skip of the select() code for the first minute
         while bytesReceivedTotal < numBytesMessage:
             if datetime.now() > timeOutTime:
                 raise ReceiveMsgException('timeout waiting for response from client')
             
-            if forceRecv:
+            if skipSleep:
                 if datetime.now() > timedelta(minutes=1) + timeStart:
-                    forceRecv = False
+                    skipSleep = False
                 
-            if not forceRecv:
-                toRead = [ self.sock ]
-                readable, writeable, problematic = select.select(toRead, [], [], 0) # does not block
+            toRead = [ self.sock ]
+            readable, writeable, problematic = select.select(toRead, [], [], 0) # does not block
 
-            if forceRecv or len(readable) > 0:            
+            if len(readable) > 0:            
                 textReceived = self.sock.recv(min(numBytesMessage - bytesReceivedTotal, Worker.MAX_MSG_BUFSIZE))
                 if textReceived == b'':
                     raise ReceiveMsgException('socket broken - cannot receive message data from client')
@@ -2483,8 +2480,9 @@ class Worker(threading.Thread):
                 bytesReceivedTotal += len(textReceived)
             else:
                 # a recv() would block
-                self.log.writeDebug([ 'waiting for client ' + self.peerName + ' to send request' ])
-                time.sleep(1)
+                if not skipSleep:
+                    self.log.writeDebug([ 'waiting for client ' + self.peerName + ' to send request' ])
+                    time.sleep(1)
 
         # Return a bytes object (not a string). The unjsonize function will need a str object for input.
         return allTextReceived
