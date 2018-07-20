@@ -3,6 +3,7 @@ import sys
 import re
 import os
 import shutil
+import psutil
 import threading
 import socket
 import signal
@@ -2702,6 +2703,15 @@ class TestClient(threading.Thread):
             self.log.writeDebug(['pasubstatus=' + str(infoDict['paSubstatus'])])
             self.log.writeDebug(['effdate=' + infoDict['effectiveDate']])
 
+def extractAddresses(family):
+     addresses = []
+     for interface, snics in psutil.net_if_addrs().items():
+         for snic in snics:
+             if snic.family == family:
+                 addresses.append(snic.address)
+
+     return addresses
+
 
 if __name__ == "__main__":
     rv = RV_SUCCESS
@@ -2717,7 +2727,6 @@ if __name__ == "__main__":
         parser.add_argument('-P', '--dbport', help='The port on the host machine that is accepting connections for the database that contains the series table from which records are to be deleted.', metavar='<db host port>', dest='dbport', default=sumsDrmsParams.get('SUMPGPORT'))
         parser.add_argument('-N', '--dbname', help='The name of the database that contains the series table from which records are to be deleted.', metavar='<db name>', dest='database', default=sumsDrmsParams.get('DBNAME') + '_sums')
         parser.add_argument('-U', '--dbuser', help='The name of the database user account.', metavar='<db user>', dest='dbuser', default=sumsDrmsParams.get('SUMS_MANAGER'))
-        parser.add_argument('-S', '--sumsserver', help='the machine hosting the SUMS server daemon', metavar='<SUMS host>', dest='sumsserver', default=sumsDrmsParams.get('SUMSERVER'))
         parser.add_argument('-s', '--sockport', help='The server port listening for incoming connection requests.', metavar='<listening socket port>', dest='listenport', type=int, default=int(sumsDrmsParams.get('SUMSD_LISTENPORT')))
         parser.add_argument('-l', '--logfile', help='The file to which logging is written.', metavar='<file name>', dest='logfile', default=os.path.join(sumsDrmsParams.get('SUMLOG_BASEDIR'), SUMSD + '-' + LISTEN_PORT + '-' + datetime.now().strftime('%Y%m%d.%H%M%S') + '.txt'))
         parser.add_argument('-L', '--loglevel', help='Specifies the amount of logging to perform. In order of increasing verbosity: critical, error, warning, info, debug', dest='loglevel', action=LogLevelAction, default=logging.ERROR)
@@ -2745,42 +2754,49 @@ if __name__ == "__main__":
         thContainer = [ arguments, str(pid), log ]
         with TerminationHandler(thContainer) as th:
             try:
-                # use getaddrinfo() to try as many families/protocols as are supported; it returns a list
-                sumsServer = arguments.getArg('sumsserver')
-                remoteAddresses = socket.getaddrinfo(sumsServer, arguments.getArg('listenport'))
-            
-                for address in remoteAddresses:
-                    family = address[0]
-                    sockType = address[1]
-                    proto = address[2]
+
+                addresses = extractAddresses(socket.AF_INET)
+
+                bound = False
+                for address in addresses:
+                    # use getaddrinfo() to try as many families/protocols as are supported; it returns a list
+                    info = socket.getaddrinfo(address, arguments.getArg('listenport'))
+
+                    for oneAddrInfo in info:
+                        family = oneAddrInfo[0]
+                        sockType = oneAddrInfo[1]
+                        proto = oneAddrInfo[2]
                     
-                    try:
-                        log.writeInfo([ 'attempting to create socket with family ' + str(family) + ' and socket type ' + str(sockType) ])
-                        serverSock = socket.socket(family, sockType, proto)
-                        log.writeInfo([ 'successfully created socket with family ' + str(family) + ' and socket type ' + str(sockType) ])
-                    except OSError:
-                        import traceback
+                        try:
+                            log.writeInfo([ 'attempting to create socket with family ' + str(family) + ' and socket type ' + str(sockType) ])
+                            serverSock = socket.socket(family, sockType, proto)
+                            log.writeInfo([ 'successfully created socket with family ' + str(family) + ' and socket type ' + str(sockType) ])
+                        except OSError:
+                            import traceback
                         
-                        log.writeWarning([ traceback.format_exc(5) ])
-                        log.writeWarning([ 'trying next address' ])
-                        if serverSock:
-                            serverSock.close()
-                        continue
+                            log.writeWarning([ traceback.format_exc(5) ])
+                            log.writeWarning([ 'trying next address (could not create socket)' ])
+                            if serverSock:
+                                serverSock.close()
+                            continue
                     
-                    # now try binding
-                    try:
-                        log.writeInfo([ 'attempting to bind socket to address ' + sumsServer + ':' + str(arguments.getArg('listenport')) ])
-                        serverSock.bind((sumsServer, arguments.getArg('listenport')))
-                        log.writeInfo([ 'successfully bound socket to address ' + sumsServer + ':' + str(arguments.getArg('listenport')) ])
-                        break # we're good!
-                    except OSError:
-                        import traceback
+                        # now try binding
+                        try:
+                            serverSock.bind(('', arguments.getArg('listenport')))
+                            log.writeInfo([ 'successfully bound socket to address ' + str(serverSock.getsockname()) + ':' + str(arguments.getArg('listenport')) ])
+                            bound = True
+                            break # we're good!
+                        except OSError:
+                            import traceback
                         
-                        log.writeWarning([ traceback.format_exc(5) ])
-                        log.writeWarning([ 'trying next address' ])
-                        if serverSock:
-                            serverSock.close()
-                        continue
+                            log.writeWarning([ traceback.format_exc(5) ])
+                            log.writeWarning([ 'trying next address (could not bind address)' ])
+                            if serverSock:
+                                serverSock.close()
+                            continue
+                    
+                    if bound:
+                        break
 
                 # it is possible that we never succeeded in creating and binding the socket
                 try:
