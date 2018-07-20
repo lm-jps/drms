@@ -4,8 +4,8 @@
 #   <absolute path to script> (array) - the pids identifying each instance of the script, and the port on which the instance is listening
 #
 #   {
-#      "/home/jsoc/cvs/Development/JSOC/base/sums/scripts" : { "12695" : 5008, "14888" },
-#      "/home/jsoc/cvs/Development/JSOC_20180708/base/sums/scripts" : { 18742 : "6028" }
+#      "/home/jsoc/cvs/Development/JSOC/base/sums/scripts" : { "5008": 12695, "5010": 14888" },
+#      "/home/jsoc/cvs/Development/JSOC_20180708/base/sums/scripts" : { "6028" : 18742}
 #   }
 import json
 from subprocess import Popen
@@ -14,6 +14,8 @@ import sys
 import argparse
 import os
 import copy
+from signal import SIGINT, SIGKILL
+import time
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../include'))
 from drmsparams import DRMSParams
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../base/libs/py'))
@@ -99,7 +101,7 @@ class ListAction(argparse.Action):
 def ShutDownInstance(path, pid):
     if psutil.pid_exists(pid):
         # send a SIGINT signal to the pid
-        os.kill(pid, signal.SIGINT)
+        os.kill(pid, SIGINT)
 
         # wait for shutdown; if a timeout occurs, force shut down
         count = 0
@@ -109,18 +111,16 @@ def ShutDownInstance(path, pid):
             
         # kill -9 it
         if psutil.pid_exists(pid):
-            os.kill(pid, signal.SIGKILL)
+            os.kill(pid, SIGKILL)
             
             count = 0
             while psutil.pid_exists(pid) and count < 10:
                 time.sleep(1)
                 count += 1
 
-def StartUpInstance(path, server, port, loglevel, logfile):
+def StartUpInstance(path, port, loglevel, logfile):
     cmdList = [ sys.executable, path, '--loglevel=' + loglevel ]
     
-    if server is not None:
-        cmdList.append('--sumsserver=' + server)
     if port is not None:
         cmdList.append('--sockport=' + str(port))
     if loglevel is not None:
@@ -141,7 +141,6 @@ parser.add_argument('p', 'ports', help='a comma-separated list of listening-port
 
 # optional
 parser.add_argument('-i', '--instancesfile', help='the json file which contains a list of all the sumsd.py instances running', metavar='<instances file path>', dest='instancesfile', default=os.path.join(sumsDrmsParams.get('SUMLOG_BASEDIR'), DEFAULT_INSTANCES_FILE))
-parser.add_argument('-S', '--sumsserver', help='the machine hosting the SUMS server daemon', metavar='<SUMS host>', dest='sumsserver')
 parser.add_argument('-l', '--loglevel', help='specifies the amount of logging to perform; in order of increasing verbosity: critical, error, warning, info, debug', dest='loglevel', default='info')
 parser.add_argument('-L', '--logfile', help='the file to which sumsd logging is written', metavar='<file name>', dest='logfile')
 
@@ -151,7 +150,6 @@ arguments = Arguments(parser)
 instances = None # object to flush to instances file
 instancesFile = arguments.getArg('instancesfile')
 path = arguments.getArg('daemon')
-server = arguments.getArg('sumsserver')
 ports = arguments.getArg('ports')
 loglevel = arguments.getArg('loglevel')
 logfile = arguments.getArg('logfile')
@@ -168,39 +166,42 @@ try:
                 
                 # copy instances since we are iterating over them
                 instancesCopy = copy.deepcopy(instances)
-                for path in instancesCopy:
-                    for pidStr in instancesCopy[path]:
-                        pid = int(pidStr)
-                        port = instancesCopy[path][pidStr]
+                for onePath in instancesCopy:
+                    for portStr in instancesCopy[onePath]:
+                        port = int(portStr)
+                        pid = instancesCopy[onePath][portStr]
         
                         if not psutil.pid_exists(pid):
                             # an entry in the instances file that should not exist
                             print('pid ' + str(pid) + ' from instances file does not exist', file=sys.stderr)
-                            del instances[path][pidStr]
+                            del instances[onePath][portStr]
                         else:                
-                            if portStrOrig in usedPorts:
+                            if portStr in usedPorts:
                                 print('port ' + portStr + ' is already being used', file=sys.stderr)
                                 # cannot have duplicate port numbers in use
-                                pathOrig, pidOrig = usedPorts[portStrOrig]
+                                pathOrig, pidOrig = usedPorts[portStr]
                     
                                 # shut-down and delete duplicate instance
-                                ShutDownInstance(path, pid)
-                                del instances[path][pidStr]
+                                ShutDownInstance(onePath, pid)
+                                del instances[onePath][portStr]
                     
                                 # shut-down and delete original instance
-                                ShutDownInstance(pathOrig, pidOrig)
-                                del instances[pathOrig][str(pidOrig)]
-                    
-                                # remove original port from tracker
-                                del usedPorts[portStrOrig]
+                                if portStr not in instances[pathOrig]:
+                                    ShutDownInstance(pathOrig, pidOrig)
+                                    del instances[pathOrig][portStr]
                             else:
                                 # track used ports
-                                usedPorts[portStr] = [ path, pid ]
+                                usedPorts[portStr] = [ onePath, pid ]
+          
+                    if len(instances[onePath].keys()) == 0:
+                        # we removed ALL port instances of this path
+                        del instances[onePath]
                         
         # leaving open block - the instances file will be closed
 except FileNotFoundError:
     # ignore a file-not-found error (this means that this is the first time sumsd.py was started)
     pass
+    # any other exception will cause an exit with a return code of 1
 
 if instances is None:
     instances = {} # even though the json module says this is an object, it is actually a dictionary
@@ -213,17 +214,20 @@ for port in ports:
     if portStr in usedPorts:
         raise Exception('port ' + portStr + ' is already in use')
 
-    
-    pid = StartUpInstance(path, server, port, loglevel, logfile)
+    pid = StartUpInstance(path, port, loglevel, logfile)
     # add another instance of this path
     if path not in instances:
         instances[path] = {}
 
-    instances[path][str(pid)] = port
+    instances[path][portStr] = pid
 
-with open(instancesFile, mode='w', encoding='UTF8') as fout:
-    json.dump(instances, fout)
-    print('', file=fout) # add a newline to the end of the instances file
-    # leaving open block - this will save file changes
+try:
+    with open(instancesFile, mode='w', encoding='UTF8') as fout:
+        json.dump(instances, fout)
+        print('', file=fout) # add a newline to the end of the instances file
+        # leaving open block - this will save file changes
+except:
+    print('ERROR: unable to write instances file ' + instancesFile, file=sys.stderr)
+    raise # will cause an exit with a return code of 1
 
 sys.exit(0)
