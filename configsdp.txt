@@ -22,7 +22,7 @@ q:DRMSPGPORT                    5432
 q:SUMS_DB_HOST                  hmidb3
 q:SUMPGPORT                     5434
 a:SUMSD_MAX_THREADS             32
-a:SUMSD_LISTENPORT              6006
+a:SUMSD_LISTENPORT              6100
 a:DRMS_LOCAL_SITE_CODE          0x0000
 q:DBNAME                        jsoc
 q:WEB_DBUSER                    apache
@@ -95,6 +95,7 @@ q:BIN_PY                                /home/jsoc/bin/linux_x86_64/activepython
 q:BIN_PY3                               /home/jsoc/anaconda3/bin/python3
 a:SUMS_USEMTSUMS                        1
 a:SUMS_USEMTSUMS_INFO                   1
+a:SUMS_MT_CLIENT_RESP_TIMEOUT           1440
 # Email registration
 a:REGEMAIL_TIMEOUT                      15
 # Slony
