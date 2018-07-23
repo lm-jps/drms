@@ -153,6 +153,11 @@ try:
                 # ensure that each instance listed is indeed running, if not, remove it from the instance file
                 
                 portsList = list(ports)
+                if len(portsList) > 0:
+                    portsSpecified = True
+                else:
+                    portsSpecified = False
+
                 # copy instances since we are iterating over them
                 instancesCopy = copy.deepcopy(instances)
                 for onePath in instancesCopy:
@@ -186,7 +191,7 @@ try:
                                         terminatedInstances['terminated'].append(onePort)
                             else:
                                 if onePath == path:
-                                    if len(portsList) == 0 or onePort in ports:
+                                    if not portsSpecified or onePort in ports:
                                         # this is an instance to be shut down
                                         print('shutting down instance ' + onePath + ':' + onePortStr)
                                         ShutDownInstance(onePath, pid)
