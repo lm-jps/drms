@@ -133,7 +133,7 @@ instancesFile = arguments.getArg('instancesfile')
 path = arguments.getArg('daemon')
 ports = arguments.getArg('ports') # a set
 loglevel = arguments.getArg('loglevel')
-logfile = arguments.getArg('logfile')
+logfile = arguments.getArg('logfile') # will be None if no --logfile argument is provided
 
 # return list
 terminatedInstances = { 'terminated' : [] }
