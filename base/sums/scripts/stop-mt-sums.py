@@ -94,6 +94,7 @@ class SetAction(argparse.Action):
 def ShutDownInstance(path, pid):
     if psutil.pid_exists(pid):
         # send a SIGINT signal to the pid
+        print('sending SIGINT to pid ' + str(pid))
         os.kill(pid, SIGINT)
 
         # wait for shutdown; if a timeout occurs, force shut down
@@ -104,6 +105,7 @@ def ShutDownInstance(path, pid):
             
         # kill -9 it
         if psutil.pid_exists(pid):
+            print('sending SIGKILL to pid ' + str(pid))
             os.kill(pid, SIGKILL)
             
             count = 0
@@ -166,27 +168,32 @@ try:
                             if onePortStr in usedPorts:
                                 print('WARNING: instances file has entry for port ' + onePortStr + ' already; shutting-down and removing', file=sys.stderr)
                                 # cannot have duplicate port numbers in use
-                                pathOrig, pidOrig = usedPorts[portStr]
+                                pathOrig, pidOrig = usedPorts[onePortStr]
                     
                                 # shut-down and delete duplicate instance
+                                print('shutting down duplicate instance ' + onePath + ':' + onePortStr)
                                 ShutDownInstance(onePath, pid)
                                 del instances[onePath][onePortStr]
-                                terminatedInstances['terminated'].append(onePort)
+                                if onePort not in terminatedInstances['terminated']:
+                                    terminatedInstances['terminated'].append(onePort)
                     
                                 # shut-down and delete original instance (unless the original has already been removed)
-                                if portStr not in instances[pathOrig]:
+                                if onePortStr in instances[pathOrig]:
+                                    print('shutting down original instance ' + pathOrig + ':' + portStr)
                                     ShutDownInstance(pathOrig, pidOrig)
-                                    del instances[pathOrig][portStr]
-                                    terminatedInstances['terminated'].append(int(portStr))
+                                    del instances[pathOrig][onePortStr]
+                                    if onePort not in terminatedInstances['terminated']:
+                                        terminatedInstances['terminated'].append(onePort)
                             else:
                                 if onePath == path:
                                     if len(portsList) == 0 or onePort in ports:
                                         # this is an instance to be shut down
+                                        print('shutting down instance ' + onePath + ':' + onePortStr)
                                         ShutDownInstance(onePath, pid)
                                         del instances[onePath][onePortStr]
                                         terminatedInstances['terminated'].append(onePort)
                                         if len(ports) > 0:
-                                            portsList.remove(onePort)                                      
+                                            portsList.remove(onePort)
                                 else:                            
                                     # track used ports
                                     usedPorts[onePortStr] = [ onePath, pid ]
