@@ -119,10 +119,8 @@ def ShutDownInstance(path, pid):
                 count += 1
 
 def StartUpInstance(path, port, loglevel, logfile):
-    cmdList = [ sys.executable, path, '--loglevel=' + loglevel ]
+    cmdList = [ sys.executable, path, '--sockport=' + str(port) ]
     
-    if port is not None:
-        cmdList.append('--sockport=' + str(port))
     if loglevel is not None:
         cmdList.append('--loglevel=' + loglevel)
     if logfile is not None:
