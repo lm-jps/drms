@@ -572,7 +572,7 @@ static MSUMSCLIENT_t ConnectToMtSums(SUM_t *sums, int (*history)(const char *fmt
     {
         memset(&hints, 0, sizeof(struct addrinfo));
         hints.ai_flags = 0; /* A field to make this as complicated as possible. */
-        hints.ai_family = AF_UNSPEC;
+        hints.ai_family = AF_INET;
         hints.ai_socktype = SOCK_STREAM;
         hints.ai_protocol = 0; /* Another field to make this as complicated as possible. */
 
