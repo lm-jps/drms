@@ -1,10 +1,18 @@
 #!/usr/bin/env python
 
-# The instances json file contains one property for each sumsd.py script:
-#   <absolute path to script> (array) - the pids identifying each instance of the script, and the port on which the instance is listening
+# Use this script to start one or more instances of Python SUMS (sumsd.py) on a host. The instances will be launched on the host on which the script is run. The first time this script is run, it creates a state file. The global variable DEFAULT_INSTANCES_FILE identifies the name of the file. And by default, the file is created in the directory identified by the SUMLOG_BASEDIR parameter of config.local. The caller of this script can override the name and full path to the script with the --instancesfile option.
+# 
+# This script will spawn one sumsd.py per port identified in the required ports argument. The value of this argument is a comma-separated list of port numbers. The caller identifies the path to the sumsd.py to launch with the daemon argument. By default, for each instance, this script will start sumsd.py with only the --sockport option specified. The value of the --sockport option is an element of the ports argument. The caller can pass two additional and optional arguments to sumsd.py: --loglevel (specifies the amount of sumsd.py logging to perform; the value specified will be passed as the --loglevel argument to sumsd.py), and --logfile (specifies the full path to the sumsd.py log file; the value specified will be passed as the --logfile argument to sumsd.py).
+# 
+# To start a sumsd.py instance that will listen to the port that DRMS modules connect to, ensure that at least one value in the ports argument is the same as the SUMSD_LISTENPORT value in config.local.
+# 
+# To ensure that the state file accurately reflects the set of actively running sumsd.py processes, please do not manually start or stop sumsd.py processes. Always use start-mt-sums.py and stop-mt-sums.py.
+#
+# The instances file (json) contains one property for each sumsd.py script:
+#   <absolute path to script> (object) - key: the port on which the instance is listening; value: the pid identifying the sumsd.py instance
 #
 #   {
-#      "/home/jsoc/cvs/Development/JSOC/base/sums/scripts" : { "5008": 12695, "5010": 14888" },
+#      "/home/jsoc/cvs/Development/JSOC/base/sums/scripts" : { "5008": 12695, "5010": 14888 },
 #      "/home/jsoc/cvs/Development/JSOC_20180708/base/sums/scripts" : { "6028" : 18742}
 #   }
 import json
