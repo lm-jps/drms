@@ -1,5 +1,20 @@
 #!/usr/bin/env python
 
+# Use this script to stop one or more instances of Python SUMS (sumsd.py) on a host. The instances to be stopped must be running on the host on which the script is run. The global variable DEFAULT_INSTANCES_FILE identifies the name of the instances file. The default path to the instances file is identified by the SUMLOG_BASEDIR parameter of config.local. The caller of this script can override the name and full path to the script with the --instancesfile option.
+# 
+# By default, this script will terminate all sumsd.py instances identified by the required daemon argument. To terminate a subset of these instances, the caller can provide the ports argument. The value of this argument is a comma-separated list of port numbers. If this optional ports argument is provided, then the instances identified by the daemon and ports arguments will be terminated. 
+# 
+# To stop a sumsd.py instance that DRMS modules connect to, ensure that at least one value in the ports argument is the same as the SUMSD_LISTENPORT value in config.local.
+# 
+# To ensure that the state file accurately reflects the set of actively running sumsd.py processes, please do not manually start or stop sumsd.py processes. Always use start-mt-sums.py and stop-mt-sums.py.
+# 
+# The instances file (json) contains one property for each sumsd.py script:
+#   <absolute path to script> (object) - key: the port on which the instance is listening; value: the pid identifying the sumsd.py instance
+#
+#   {
+#      "/home/jsoc/cvs/Development/JSOC/base/sums/scripts/sumsd.py" : { "5008": 12695, "5010": 14888 },
+#      "/home/jsoc/cvs/Development/JSOC_20180708/base/sums/scripts/sumsd.py" : { "6028" : 18742}
+#   }
 import json
 from subprocess import Popen
 import psutil
@@ -124,8 +139,6 @@ parser.add_argument('d', 'daemon', help='path of the sumsd.py daemon to halt', m
 # optional
 parser.add_argument('-p', '--ports', help='a comma-separated list of listening-port numbers, one for each instance to be stopped', metavar='<listening ports>', dest='ports', action=SetAction, default=set())
 parser.add_argument('-i', '--instancesfile', help='the json file which contains a list of all the sumsd.py instances running', metavar='<instances file path>', dest='instancesfile', default=os.path.join(sumsDrmsParams.get('SUMLOG_BASEDIR'), DEFAULT_INSTANCES_FILE))
-parser.add_argument('-l', '--loglevel', help='specifies the amount of logging to perform; in order of increasing verbosity: critical, error, warning, info, debug', dest='loglevel', default='info')
-parser.add_argument('-L', '--logfile', help='the file to which sumsd logging is written', metavar='<file name>', dest='logfile')
 
 arguments = Arguments(parser)
 
@@ -134,8 +147,6 @@ instances = None # object to flush to instances file
 instancesFile = arguments.getArg('instancesfile')
 path = arguments.getArg('daemon')
 ports = arguments.getArg('ports') # a set
-loglevel = arguments.getArg('loglevel')
-logfile = arguments.getArg('logfile') # will be None if no --logfile argument is provided
 
 # return list
 terminatedInstances = { 'terminated' : [] }
