@@ -425,6 +425,7 @@ int file_from_manifest()
   char eff_date[32];
   uint64_t sumid, sunum;
   double bytes;
+  int tmp;
 
   while(fgets(mline, 256, fpman)) {       //get manifest lines
     if(!strncmp(mline, "\n", 1)) { continue; }
@@ -456,6 +457,8 @@ int file_from_manifest()
     sumid = (uint64_t)strtol(token, NULL, 0);
     token = (char *)strtok(NULL, " ");
     strcpy(eff_date, token);
+    tmp = strlen(eff_date);
+    if (eff_date[tmp-1] == '\n') eff_date[tmp-1] = '\0';
     setpadatar(&aplist, sudir, sumid, bytes, l_status, l_archsub, eff_date, group, 0, sunum);
   }
   if(found) do_tape_file();
