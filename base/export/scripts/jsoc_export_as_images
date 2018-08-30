@@ -288,7 +288,7 @@ if ($mvtype != none) then
 
   #make movie
   cd tmpImages
-  ffmpeg -qscale 5 -r 20 -b 9600 -i %04d.$imtype ../$seriesname.$mvtype
+  ffmpeg -i %04d.$imtype -qscale 5 -r 20 -b 9600 ../$seriesname.$mvtype
   set ffmpeg_status = $?
   cd ..
   rm -rf tmpImages
