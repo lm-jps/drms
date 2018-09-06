@@ -1570,7 +1570,7 @@ class ReqTable:
                                 self.reqDict[requestidStr][c] = [ int(asunum) for asunum in v.split(',') ]
                             elif c.lower() == 'type':
                                 # ensure this is a valid type
-                                if v not in REQTYPES_CODE:
+                                if v not in REQTYPE_CODES:
                                     raise ReqtableReadException('unknown request type ' + v)
                                 self.reqDict[requestidStr][c] = dict(zip(REQTYPE_CODES, REQTYPE_TEXT))[v]
                             else:
@@ -2908,14 +2908,18 @@ class Dispatcher(threading.Thread):
                                 continue
                 
                             if path is None:
-                                # A path of None means that the SUNUM was invalid. We want to set the SU status to 'E'.    
-                                su.setStatus('E', 'SU ' + str(sunum) + ' is not valid at the providing site.')
+                                # A path of None means that the SUNUM was invalid. We want to set the SU status to 'E'.
+                                msg = 'SU ' + str(sunum) + ' is not valid at the providing site'
+                                su.setStatus('E', msg)
+                                self.log.writeWarning([ msg ])
                                 continue
                             elif path == '':
                                 # An empty-string path means that the SUNUM was valid, but that the SU referred to was offline (it may or
                                 # may be archived). Regardless, RS will not attempt to perform an export request to obtain the path.
                                 # ART - I need to figure out how to place the SUNUM in SUMS so that its archive flag is N (not archived).
-                                su.setStatus('C', 'SU ' + str(sunum) + ' refers to an SU that is valid at the providing site, but it is offline and cannot be downloaded.')
+                                msg = 'SU ' + str(sunum) + ' refers to an SU that is valid at the providing site, but it is offline and cannot be downloaded'
+                                self.log.writeWarning([ msg ])
+                                su.setStatus('C', msg)
                                 continue
             
                             if suSize is None:
