@@ -7,7 +7,9 @@
 //ISS fly-tar START
 #include "fitsio.h"
 #include "cfitsio.h"
+#if defined(JMD_IS_INSTALLED) && JMD_IS_INSTALLED
 #include "libtar.h"
+#endif
 #define  MAXTARSIZE 2147483648
 #define  MAXFILETARSIZE 21474836480
 //#define  MAXTARSIZE 59910560

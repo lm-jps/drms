@@ -8,7 +8,10 @@ d		:= $(dir)
 
 # Local variables
 # NOTE: Add the base of the module's filename below (next to mymod)
-MODEXE_$(d)	:= $(addprefix $(d)/, jsoc_export_as_fits jsoc_export_as_is jsoc_export_SU_as_is jsoc_fetch jsoc_stats1 jsoc_export_clone drms_export_cgi segment-file-name)
+MODEXE_$(d)	:= $(addprefix $(d)/, jsoc_export_as_fits jsoc_export_as_is jsoc_export_SU_as_is jsoc_fetch jsoc_stats1 jsoc_export_clone segment-file-name)
+ifeq ($(JMD_IS_INSTALLED), 1)
+MODEXE_$(d)	:= $(MODEXE_$(d)) $(d)/drms_export_cgi
+endif
 
 MODEXE_ONLY_$(d)	:= $(addprefix $(d)/, drms-export-to-stdout jsoc_info jsoc_export_manage)
 
