@@ -868,7 +868,7 @@ class Worker(threading.Thread):
                 
                         if self.action == 'subscribe':
                             # 2. Run createns for the schema of the series being subscribed to.
-                            cmdList = [ os.path.join(self.arguments.getArg('kModDir'), 'createns'), 'JSOC_DBHOST=' + self.arguments.getArg('SLAVEHOSTNAME'), 'ns=' + ns, 'nsgroup=user', 'dbusr=' + self.arguments.getArg('subuser') ]
+                            cmdList = [ os.path.join(self.arguments.getArg('kModDir'), 'createns'), 'JSOC_DBHOST=' + self.arguments.getArg('SLAVEHOSTNAME'), 'ns=' + ns, 'nsgroup=user', 'dbusr=' + self.subuser ]
                             if not os.path.exists(self.triggerDir):
                                 os.mkdir(self.triggerDir)
                                 os.chmod(self.triggerDir, 0O2755)
