@@ -320,6 +320,11 @@ class ResumeResponse(Response):
         else:
             raise Exception('invalidArgument', 'tapegroup is required for ResumeResponse constructor.')
             
+        if 'subuser' in kwargs:
+            self.subuser = kwargs['subuser']
+        else:
+            raise Exception('invalidArgument', 'subuser is required for ResumeResponse constructor.')
+            
         if 'resumeaction' in kwargs:
             self.resumeaction = kwargs['resumeaction']
         else:
@@ -340,10 +345,11 @@ class ResumeResponse(Response):
             self.jsonRoot['archive'] = self.archive
             self.jsonRoot['retention'] = self.retention
             self.jsonRoot['tapegroup'] = self.tapegroup
+            self.jsonRoot['subuser'] = self.subuser
             self.jsonRoot['resumeaction'] = self.resumeaction
             self.jsonRoot['resumestatus'] = self.resumestatus
         else:
-            self.jsonRoot = { 'reqid' : self.reqid, 'reqtype' : self.reqtype, 'series' : self.series, 'archive' : self.archive, 'retention' : self.retention, 'tapegroup' : self.tapegroup, 'resumeaction' : self.resumeaction, 'resumestatus' : self.resumestatus }
+            self.jsonRoot = { 'reqid' : self.reqid, 'reqtype' : self.reqtype, 'series' : self.series, 'archive' : self.archive, 'retention' : self.retention, 'tapegroup' : self.tapegroup, 'subuser' : self.subuser, 'resumeaction' : self.resumeaction, 'resumestatus' : self.resumestatus }
         super(ResumeResponse, self).createContent()
         
     def logMsg(self):
@@ -430,11 +436,12 @@ def getPendingRequest(conn, reqTable, client):
     pendArchive = None
     pendRetention = None
     pendTapegroup = None
+    pendSubuser = None
     pendStatus = None
     pendErrMsg = None
     
     # Slave database.
-    cmd = 'SELECT requestid, action, series, archive, retention, tapegroup, status, errmsg FROM ' + reqTable + " WHERE lower(client) = '" + client.lower() + "'"
+    cmd = 'SELECT requestid, action, series, archive, retention, tapegroup, subuser, status, errmsg FROM ' + reqTable + " WHERE lower(client) = '" + client.lower() + "'"
 
     numPending = 0        
     try:
@@ -443,7 +450,7 @@ def getPendingRequest(conn, reqTable, client):
             records = cursor.fetchall()
 
             for record in records:
-                if record[6].upper() != 'E' and record[6].upper() != 'S':
+                if record[7].upper() != 'E' and record[7].upper() != 'S':
                     numPending += 1
                     pendingRequestID = record[0]
                     pendAction = record[1]
@@ -451,8 +458,9 @@ def getPendingRequest(conn, reqTable, client):
                     pendArchive = record[3]
                     pendRetention = record[4]
                     pendTapegroup = record[5]
-                    pendStatus = record[6]
-                    pendErrMsg = record[7]
+                    pendSubuser = record[6] # added on 2018-09-14
+                    pendStatus = record[7]
+                    pendErrMsg = record[8]
 
             if numPending > 1:
                 raise Exception('dbResponse', 'There is more than one pending request for client ' + client + ' (at most there should be one).')
@@ -462,9 +470,9 @@ def getPendingRequest(conn, reqTable, client):
         conn.rollback() # Closes the transaction.
     
     if numPending > 0:
-        return (True, pendingRequestID, pendAction, pendSeriesList, pendArchive, pendRetention, pendTapegroup, pendStatus, pendErrMsg)
+        return (True, pendingRequestID, pendAction, pendSeriesList, pendArchive, pendRetention, pendTapegroup, pendSubuser, pendStatus, pendErrMsg)
     else:
-        return (False, None, None, None, None, None, None, None, None)
+        return (False, None, None, None, None, None, None, None, None, None)
 
 def clientIsSubscribed(arguments, conn, client, series):
     # Master database.
@@ -606,6 +614,11 @@ def insertRequest(conn, log, dbTable, **kwargs):
     else:
         tapegroup = '0'
         
+    if 'subuser' in kwargs and len(kwargs['subuser']) > 0:
+        subuser = kwargs['subuser']
+    else:
+        subuser = 'slony'
+        
     reqid = -1
     
     try:
@@ -619,11 +632,11 @@ def insertRequest(conn, log, dbTable, **kwargs):
         
             reqid = records[0][0] # integer
 
-            guts = str(reqid) + ", '" + client + "', '" + datetime.now().strftime('%Y-%m-%d %T') + "', '" + action + "', '" + series + "', " + archive + ", " + retention + ", " + tapegroup + ", 'N'"
+            guts = str(reqid) + ", '" + client + "', '" + datetime.now().strftime('%Y-%m-%d %T') + "', '" + action + "', '" + series + "', " + archive + ", " + retention + ", " + tapegroup + ", '" + subuser + "', 'N'"
             log.writeInfo([ 'Inserting new request into db table ' + dbTable + ': (' + guts + ')' ])
     
-            # Slave database.
-            cmd = 'INSERT INTO ' + dbTable + '(requestid, client, starttime, action, series, archive, retention, tapegroup, status) VALUES(' + guts + ')'
+            # slave database
+            cmd = 'INSERT INTO ' + dbTable + '(requestid, client, starttime, action, series, archive, retention, tapegroup, subuser, status) VALUES(' + guts + ')'
             cursor.execute(cmd)
         conn.commit() # commit only if there are no errors.
     except psycopg2.Error as exc:
@@ -641,9 +654,9 @@ if __name__ == "__main__":
     
         # Use REQUEST_URI as surrogate for the invocation coming from a CGI request.
         if os.getenv('REQUEST_URI') or DEBUG_CGI:
-            parser = CgiParser(usage='%(prog)s action=<action string> [ client=<client> ] [ requestid=<id> ] [ series=<series list> ] [ archive=<archive code> ] [ retention=<number of days> ] [ tapegroup=<group id> ] [ cfg=<configuration file> ]')
+            parser = CgiParser(usage='%(prog)s action=<action string> [ client=<client> ] [ requestid=<id> ] [ series=<series list> ] [ archive=<archive code> ] [ retention=<number of days> ] [ tapegroup=<group id> ] [ subuser=<subscription client DB account>] [ cfg=<configuration file> ]')
         else:
-            parser = CmdlParser(usage='%(prog)s action=<action string> [ client=<client> ] [ requestid=<id> ] [ series=<series list> ] [ archive=<archive code> ] [ retention=<number of days> ] [ tapegroup=<group id> ] [ cfg=<configuration file> ]')
+            parser = CmdlParser(usage='%(prog)s action=<action string> [ client=<client> ] [ requestid=<id> ] [ series=<series list> ] [ archive=<archive code> ] [ retention=<number of days> ] [ tapegroup=<group id> ] [ subuser=<subscription client DB account>] [ cfg=<configuration file> ]')
             
         # Required (name does not start with a dash).
         parser.add_argument('a', 'action', '--action', help='The request action (subscribe, unsubscribe, resubscribe, polldump, pollcomplete).', metavar='<action>', required=True, dest='action')
@@ -660,6 +673,7 @@ if __name__ == "__main__":
         parser.add_argument('-b', '--archive', 'archive', help='A comma-separated list of series.', metavar='<archive action>', dest='archive', type=int, default=argparse.SUPPRESS)
         parser.add_argument('-r', '--retention', 'retention', help='The number of days to archive the data files.', metavar='<retention>', dest='retention', type=int, default=argparse.SUPPRESS)
         parser.add_argument('-t', '--tapegroup', 'tapegroup', help='The group id of the archive tapes.', metavar='<tape group>', dest='tapegroup', type=int, default=argparse.SUPPRESS)
+        parser.add_argument('-u', '--subuser', 'subuser', help='The DB account the subscription client uses.', metavar='<subscripton client DB user>', dest='subuser', default=argparse.SUPPRESS)
         parser.add_argument('-l', '--loglevel', 'loglevel', help='Specifies the amount of logging to perform. In increasing order: critical, error, warning, info, debug', dest='loglevel', action=LogLevelAction, default=logging.DEBUG)
     
         arguments.setParser(parser)
@@ -713,6 +727,7 @@ if __name__ == "__main__":
                     archive = arguments.get('archive')
                     retention = arguments.get('retention')
                     tapegroup = arguments.get('tapegroup')
+                    subuser = arguments.get('subuser')
             
                     pendingRequest = False    
                     # The server should always send the create schema command. Put logic in the client side that decided whether it should be 
@@ -725,7 +740,7 @@ if __name__ == "__main__":
                             
                     # Check for an existing request. If there is such a request, return a status code telling the user to poll on the request to
                     # await completion.
-                    pendingRequest, pendRequestID, pendAction, pendSeriesList, pendArchive, pendRetention, pendTapegroup, pendStatus, pendErrMsg = getPendingRequest(connSlave, arguments.getArg('kSMreqTable'), client)
+                    pendingRequest, pendRequestID, pendAction, pendSeriesList, pendArchive, pendRetention, pendTapegroup, pendSubuser, pendStatus, pendErrMsg = getPendingRequest(connSlave, arguments.getArg('kSMreqTable'), client)
 
                     if pendingRequest:
                         rsLog.writeInfo([ 'client ' + client + ' has a pending request:' + ' id - ' + str(pendRequestID) + ', action - ' + pendAction + ', series - ' + pendSeriesList + ', status - ' + pendStatus + ', errMsg - ' + str(pendErrMsg if pendErrMsg else "''") ])
@@ -746,7 +761,7 @@ if __name__ == "__main__":
                             # Error response.
                             raise Exception('requestFailed', 'There was an error processing your request. Please try again or contact the JSOC.')
                     
-                        resp = ResumeResponse(log=rsLog, status=STATUS_REQUEST_RESUMING, msg='To continue, make a ' + respAction.lower() + ' request.', reqid=pendRequestID, reqtype=pendAction, series=pendSeriesList.split(','), archive=pendArchive, retention=pendRetention, tapegroup=pendTapegroup, resumeaction=respAction, resumestatus=respStatus, client=client)
+                        resp = ResumeResponse(log=rsLog, status=STATUS_REQUEST_RESUMING, msg='To continue, make a ' + respAction.lower() + ' request.', reqid=pendRequestID, reqtype=pendAction, series=pendSeriesList.split(','), archive=pendArchive, retention=pendRetention, tapegroup=pendTapegroup, subuser=pendSubuser, resumeaction=respAction, resumestatus=respStatus, client=client)
                         resp.logMsg()
                         resp.send()
                     elif action.lower() == 'subscribe' or action.lower() == 'resubscribe':
@@ -797,7 +812,7 @@ if __name__ == "__main__":
 
                         # Insert a pending row into the su_production.slonyreq table. Ensure that the series name comprises lower-case letters.
                         # Slave database.
-                        reqid = insertRequest(connSlave, rsLog, arguments.getArg('kSMreqTable'), client=client, action=action, series=','.join(seriesList), archive=archive, retention=retention, tapegroup=tapegroup)
+                        reqid = insertRequest(connSlave, rsLog, arguments.getArg('kSMreqTable'), client=client, action=action, series=','.join(seriesList), archive=archive, retention=retention, tapegroup=tapegroup, subuser=subuser)
                 
                         if action.lower() == 'subscribe':
                             respMsg = 'Request for subscription to series ' + series + ' is queued. Poll for completion with a polldump request. Please sleep between iterations when looping over this request.'
