@@ -644,7 +644,7 @@ if __name__ == "__main__":
 
         arguments = Arguments()
 
-        parser = CmdlParser(usage='%(prog)s [ -hjpl ] cfg=<client configuration file> reqtype=<subscribe, resubscribe, unsubscribe> series=<comma-separated list of series> [ --archive=<0, 1>] [ --retention=<number of days>] [ --tapegroup=<tape-group number> ] [ --logfile=<log-file name> ]')
+        parser = CmdlParser(usage='%(prog)s [ -hjpl ] cfg=<client configuration file> reqtype=<subscribe, resubscribe, unsubscribe> series=<comma-separated list of series> [ --archive=<0, 1>] [ --retention=<number of days>] [ --tapegroup=<tape-group number> ] [ --pg_user=<subscripton client DB user> ] [ --logfile=<log-file name> ]')
 
         parser.add_argument('cfg', '--config', help='The client-side configuration file used by the subscription service.', metavar='<client configuration file>', dest='slonyCfg', action=CfgAction, arguments=arguments, required=True)
         parser.add_argument('reqtype', '--reqtype', help='The type of request (subscribe, resubscribe, or unsubscribe).', metavar='<request type>', dest='reqtype', required=True)
@@ -652,6 +652,7 @@ if __name__ == "__main__":
         parser.add_argument('archive', '--archive', help='The tape archive flag for the series - either 0 (do not archive) or 1 (archive).', metavar='<series archive flag>', dest='archive', type=int, action=OverrideAction, arguments=arguments, default=argparse.SUPPRESS)
         parser.add_argument('retention', '--retention', help='The number of days the series SUs remain on disk before becoming subject to deletion.', metavar='<series SU disk retention>', dest='retention', type=int, action=OverrideAction, arguments=arguments, default=argparse.SUPPRESS)
         parser.add_argument('tapegroup', '--tapegroup', help='If the archive flag is 1, the number identifying the group of series that share tape files.', metavar='<series SU tape group>', dest='tapegroup', type=int, action=OverrideAction, arguments=arguments, default=argparse.SUPPRESS)
+        parser.add_argument('pg_user', '--pg_user', help='The DB account the subscription client uses.', metavar='<series SU tape group>', dest='pg_user', action=OverrideAction, arguments=arguments, default=argparse.SUPPRESS)
         parser.add_argument('-p', '--pause', help='Pause and ask for user confirmation before applying the downloaded SQL dump file.', dest='pause', action='store_true', default=False)
         parser.add_argument('-t', '--loglevel', help='Specifies the amount of logging to perform. In increasing order: critical, error, warning, info, debug', dest='loglevel', action=LogLevelAction, default=logging.ERROR)
         parser.add_argument('-l', '--logfile', help='The file to which logging is written.', metavar='<file name>', dest='logfile', default=os.path.join('.', 'subscribe_' + datetime.now().strftime('%Y%m%d') + '.log'))
@@ -741,16 +742,18 @@ if __name__ == "__main__":
                         archive = info['archive']
                         retention = info['retention']
                         tapeGroup = info['tapegroup']
+                        subuser = info['subuser']
 
                         resuming = True
                         resumeAction = info['resumeaction']
                         resumeStatus = info['resumestatus'].upper()
-                        log.writeInfo([ 'Found existing request at server: reqid=' + str(reqId) + ', reqtype=' + reqType + ', series=' + ','.join(seriesList) + ', archive=' + str(archive) + ', retention=' + str(retention) + ', tapegroup=' + str(tapeGroup) ])
+                        log.writeInfo([ 'Found existing request at server: reqid=' + str(reqId) + ', reqtype=' + reqType + ', series=' + ','.join(seriesList) + ', archive=' + str(archive) + ', retention=' + str(retention) + ', tapegroup=' + str(tapeGroup) + ', subuser=' + subuser ])
                     else:
                         reqType = arguments.getArg('reqtype').lower()
                         archive = arguments.getArg('archive')
                         retention = arguments.getArg('retention')
                         tapeGroup = arguments.getArg('tapegroup')
+                        subuser = arguments.getArg('pg_user')
                         seriesList = arguments.getArg('series')
 
                         resuming = False
@@ -896,10 +899,10 @@ if __name__ == "__main__":
                                     termios.tcsetattr(stdinFD, termios.TCSADRAIN, oldAttr)
                             
                                 if ans.lower() != 'y':
-                                    cmdList = [ deleteSeriesBin, series, 'JSOC_DBUSER=slony']
+                                    cmdList = [ deleteSeriesBin, series, 'JSOC_DBUSER=' + subuser ]
                                     print('  ...deleting SUs of series ' + series + '.')
                                 else:
-                                    cmdList = [ deleteSeriesBin, '-k', series, 'JSOC_DBUSER=slony']
+                                    cmdList = [ deleteSeriesBin, '-k', series, 'JSOC_DBUSER=' + subuser ]
                                     print('  ...NOT deleting SUs of series ' + series + '.')
                                 
                                 log.writeInfo([ 'Running ' + ' '.join(cmdList) + '.' ])
@@ -994,12 +997,12 @@ if __name__ == "__main__":
                                     raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database table: ' + schema + '.drms_sessionid_seq')
 
                             if reqType == 'subscribe':
-                                # To subscribe to a series, provide client, series, archive, retention, tapegroup, newSite.
-                                cgiArgs = { 'action' : 'subscribe', 'client' : client, 'newsite' : newSite, 'series' : series, 'archive' : archive, 'retention' : retention, 'tapegroup' : tapeGroup }
+                                # To subscribe to a series, provide client, series, archive, retention, tapegroup, subuser, newSite.
+                                cgiArgs = { 'action' : 'subscribe', 'client' : client, 'newsite' : newSite, 'series' : series, 'archive' : archive, 'retention' : retention, 'tapegroup' : tapeGroup, 'subuser' : subuser }
                                 print('Subscribing to series ' + series + '.')
                             else:
                                 # To re-subscribe to a series, provide client, series.
-                                cgiArgs = { 'action' : 'resubscribe', 'client' : client, 'newsite' : False, 'series' : series, 'archive' : archive, 'retention' : retention, 'tapegroup' : tapeGroup }
+                                cgiArgs = { 'action' : 'resubscribe', 'client' : client, 'newsite' : False, 'series' : series, 'archive' : archive, 'retention' : retention, 'tapegroup' : tapeGroup, 'subuser' : subuser }
                                 print('Resetting series ' + series + '.')
 
                             # make the request to the subscription service
@@ -1092,7 +1095,7 @@ if __name__ == "__main__":
                                     # Ingest createns.sql. Will raise if a problem occurs. When that happens, the cursor is rolled back.
                                     # The sql in fin is piped to a psql process.
                                     print('Ingesting dump file (' + dest + ').')
-                                    ingestSQLFile(fin, arguments.getArg('PSQL').strip(" '" + '"'), arguments.getArg('pg_host'), str(arguments.getArg('pg_port')), arguments.getArg('pg_dbname'), arguments.getArg('pg_user'), log)
+                                    ingestSQLFile(fin, arguments.getArg('PSQL').strip(" '" + '"'), arguments.getArg('pg_host'), str(arguments.getArg('pg_port')), arguments.getArg('pg_dbname'), subuser, log)
                                     print('  ...ingestion complete.')
                                     
                                 # Remove the create-ns file.
@@ -1129,7 +1132,7 @@ if __name__ == "__main__":
                                     # If reqType == 'resubscribe', then the sql will truncate the 'series table' and reset the series-table sequence
                                     # only.
                                     print('Ingesting dump file (' + dest + ').')
-                                    ingestSQLFile(fin, arguments.getArg('PSQL').strip(" '" + '"'), arguments.getArg('pg_host'), str(arguments.getArg('pg_port')), arguments.getArg('pg_dbname'), arguments.getArg('pg_user'), log)
+                                    ingestSQLFile(fin, arguments.getArg('PSQL').strip(" '" + '"'), arguments.getArg('pg_host'), str(arguments.getArg('pg_port')), arguments.getArg('pg_dbname'), subuser, log)
                                     log.writeInfo([ 'Successfully ingested dump file: ' + dest + ' (number ' +  str(fileNo) + ')' ])
                                     print('  ...ingestion complete.')
                                     
