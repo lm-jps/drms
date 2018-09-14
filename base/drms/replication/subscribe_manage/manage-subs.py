@@ -639,6 +639,7 @@ class Worker(threading.Thread):
         self.archive = self.request.archive
         self.retention = self.request.retention
         self.tapegroup = self.request.tapegroup
+        self.subuser = self.request.subuser
         
         self.siteLogDir = self.arguments.getArg('subscribers_dir')
         self.repDir = self.arguments.getArg('kRepDir')
@@ -867,12 +868,12 @@ class Worker(threading.Thread):
                 
                         if self.action == 'subscribe':
                             # 2. Run createns for the schema of the series being subscribed to.
-                            cmdList = [ os.path.join(self.arguments.getArg('kModDir'), 'createns'), 'JSOC_DBHOST=' + self.arguments.getArg('SLAVEHOSTNAME'), 'ns=' + ns, 'nsgroup=user', 'dbusr=' + self.arguments.getArg('REPUSER') ]
+                            cmdList = [ os.path.join(self.arguments.getArg('kModDir'), 'createns'), 'JSOC_DBHOST=' + self.arguments.getArg('SLAVEHOSTNAME'), 'ns=' + ns, 'nsgroup=user', 'dbusr=' + self.arguments.getArg('subuser') ]
                             if not os.path.exists(self.triggerDir):
                                 os.mkdir(self.triggerDir)
                                 os.chmod(self.triggerDir, 0O2755)
                             outFile = os.path.join(self.triggerDir, self.client + '.' + ns + '.createns.sql.gz')
-                
+
                             wroteIntMsg = False
                             with gzip.open(outFile, mode='wt', compresslevel=9, encoding='UTF8') as fout:
                                 self.log.writeInfo([ 'Creating createns.sql file:' + ' '.join(cmdList) + '.' ])
@@ -1411,7 +1412,7 @@ class Worker(threading.Thread):
                 
         if self.action == 'subscribe':
             # Run createtabstruct for the table of the series being subscribed to.
-            cmdList = [ os.path.join(self.arguments.getArg('kModDir'), 'createtabstructure'), '-u', 'JSOC_DBHOST=' + self.arguments.getArg('SLAVEHOSTNAME'), 'in=' + self.series[0].lower(), 'out=' + self.series[0].lower(), 'archive=' + str(self.archive), 'retention=' + str(self.retention), 'tapegroup=' + str(self.tapegroup), 'owner=' + self.arguments.getArg('REPUSER') ]
+            cmdList = [ os.path.join(self.arguments.getArg('kModDir'), 'createtabstructure'), '-u', 'JSOC_DBHOST=' + self.arguments.getArg('SLAVEHOSTNAME'), 'in=' + self.series[0].lower(), 'out=' + self.series[0].lower(), 'archive=' + str(self.archive), 'retention=' + str(self.retention), 'tapegroup=' + str(self.tapegroup), 'owner=' + self.subuser ]
             outFile = os.path.join(self.triggerDir, self.client + '.subscribe_series.ddl.sql.gz')
 
             wroteIntMsg = False
@@ -1573,7 +1574,7 @@ class Worker(threading.Thread):
                 with psycopg2.connect(database=self.arguments.getArg('SLAVEDBNAME'), user=self.arguments.getArg('REPUSER'), host=self.arguments.getArg('SLAVEHOSTNAME'), port=str(self.arguments.getArg('SLAVEPORT'))) as connSlave:
                     connSlave.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_SERIALIZABLE)
                     connSlave.set_client_encoding('UTF-8')
-                    self.log.writeInfo([ 'Starting a new serializable transaction to slave db.' ])
+                    self.log.writeInfo([ 'Starting a new serializable transaction on slave db.' ])
                     self.log.writeDebug([ 'Memory usage (MB) ' + str(self.proc.memory_info().vms / 1048576) + '.' ])
 
                     if self.newSite:
@@ -2016,7 +2017,7 @@ class Worker(threading.Thread):
         return worker
         
 class Request(object):
-    def __init__(self, conn, log, reqtable, dbtable, requestid, client, starttime, action, series, archive, retention, tapegroup, status, errmsg):
+    def __init__(self, conn, log, reqtable, dbtable, requestid, client, starttime, action, series, archive, retention, tapegroup, subuser, status, errmsg):
         self.conn = conn
         self.log = log
         self.reqtable = reqtable
@@ -2029,6 +2030,7 @@ class Request(object):
         self.archive = archive
         self.retention = retention
         self.tapegroup = tapegroup
+        self.subuser = subuser
         self.status = status
         self.errmsg = errmsg
         
@@ -2045,6 +2047,7 @@ class Request(object):
         self.archive = source.archive
         self.retention = source.retention
         self.tapegroup = source.tapegroup
+        self.subuser = source.subuser
         self.status = source.status
         self.errmsg = source.errmsg
         
@@ -2130,7 +2133,7 @@ class Request(object):
             self.worker = None
 
     def dump(self, toLog=True):
-        text = 'requestID=' + str(self.requestid) + ', client=' + self.client + ', starttime=' + self.starttime.strftime('%Y-%m-%d %T') + ', series=' + ','.join(self.series) + ', action=' + self.action + ', archive=' + str(self.archive) + ', retention=' + str(self.retention) + ', tapegroup=' + str(self.tapegroup) + ', status=' + self.status + ', errmsg=' + str(self.errmsg if (self.errmsg and len(self.errmsg) > 0) else "''")
+        text = 'requestID=' + str(self.requestid) + ', client=' + self.client + ', starttime=' + self.starttime.strftime('%Y-%m-%d %T') + ', series=' + ','.join(self.series) + ', action=' + self.action + ', archive=' + str(self.archive) + ', retention=' + str(self.retention) + ', tapegroup=' + str(self.tapegroup) + ', subuser=' + self.subuser + ', status=' + self.status + ', errmsg=' + str(self.errmsg if (self.errmsg and len(self.errmsg) > 0) else "''")
         if toLog:
             self.log.writeInfo([ text ])
         return text
@@ -2148,7 +2151,7 @@ class ReqTable(object):
     
     def read(self):
         # requests(client, requestid, starttime, action, series, status, errmsg)
-        cmd = 'SELECT requestid, client, starttime, action, series, archive, retention, tapegroup, status, errmsg FROM ' + self.tableName
+        cmd = 'SELECT requestid, client, starttime, action, series, archive, retention, tapegroup, subuser, status, errmsg FROM ' + self.tableName
 
         try:
             with self.conn.cursor() as cursor:
@@ -2166,9 +2169,10 @@ class ReqTable(object):
                     archive = record[5]   # int
                     retention = record[6] # int
                     tapegroup = record[7] # int
-                    status = record[8]    # text
-                    errmsg = record[9]    # text
-                    req = Request(self.conn, self.log, self, self.tableName, requestid, client, starttime, action, series, archive, retention, tapegroup, status, errmsg)
+                    subuser = record[8] # text
+                    status = record[9]    # text
+                    errmsg = record[10]    # text
+                    req = Request(self.conn, self.log, self, self.tableName, requestid, client, starttime, action, series, archive, retention, tapegroup, subuser, status, errmsg)
                     self.reqDict[requestidStr] = req
         except psycopg2.Error as exc:
             raise Exception('reqtableRead', exc.diag.message_primary + ': ' + cmd + '.')
@@ -2211,7 +2215,7 @@ class ReqTable(object):
         if len(oldReqs) == 0:
             # Copy all from latestReqs.
             for latestReq in latestReqs:
-                req = Request(self.conn, self.log, self, self.tableName, latestReq.requestid, latestReq.client, latestReq.starttime, latestReq.action, latestReq.series, latestReq.archive, latestReq.retention, latestReq.tapegroup, latestReq.status, latestReq.errmsg)
+                req = Request(self.conn, self.log, self, self.tableName, latestReq.requestid, latestReq.client, latestReq.starttime, latestReq.action, latestReq.series, latestReq.archive, latestReq.retention, latestReq.tapegroup, latestReq.subuser, latestReq.status, latestReq.errmsg)
                 # This new request has a pointer to the old request table, which is correct.
                 self.reqDict[str(latestReq.requestid)] = req
                 
