@@ -2775,6 +2775,7 @@ class Dispatcher(threading.Thread):
                             self.log.writeInfo([ 'incrementing refcount for ' + ','.join([ str(su.sunum) for su in sus ]) ])
                             list(map((lambda su : su.incrementRefcount()), sus))
                             for su in sus:
+                                self.log.writeDebug([ '[ processRequest() ]adding SU ' + str(su.sunum) + ' to suMap' ])
                                 queueItem.sutable.addRequestToSUMap(sunum, requestID)
 
                         for sunum in missingSunums:
@@ -2782,12 +2783,13 @@ class Dispatcher(threading.Thread):
                             # create a new SU table record for this SU (the SU Table is locked); will set status to P
                             queueItem.sutable.insert(sunums=[ sunum ], lockTable=False)
                             self.log.writeDebug([ 'successfully inserted SU ' + str(sunum) ])
-                            sus, missingSunums = queueItem.sutable.getSUs(lockTable=False, releaseTableLock=False, sunum=sunum, filter=SuTable.removeGhosts)
+                            sus, missingSunums = queueItem.sutable.getSUs(lockTable=False, releaseTableLock=False, sunums=[ sunum ], filter=SuTable.removeGhosts)
                             workingSus[str(sunum)] = sus[0]
                             # set the worker to indicate that a Downloader should exist; at this point, it does not, but the
                             # call to Downloader.newThread() will set it; the main thread will catch the error that
                             # we added an SU to the SU Table, but no Downloader was ever created
                             sus[0].setWorker(DummyDownloader())
+                            self.log.writeDebug([ '[ processRequest() ]adding SU ' + str(sus[0].sunum) + ' to suMap' ])
                             queueItem.sutable.addRequestToSUMap(sunum, requestID)
                     finally:
                         # no longer need SU table lock
