@@ -2544,8 +2544,6 @@ class Downloader(threading.Thread):
                 # set SU status to E
                 self.log.writeError([ 'setting SU ' + str(self.sunum) + ' status to E' ])
                 self.log.writeError(msg)
-                self.log.writeDebug([ 'downloader for SU ' + str(self.sunum) + ' terminating; unsetting worker' ])
-                self.su.removeWorker()
                 self.su.setStatus('E', msg[0]) # do not put traceback strings into DB (weird chars in tracebacks mess things up)
 
             if cleanUpSUDir:                
@@ -2569,6 +2567,10 @@ class Downloader(threading.Thread):
             # We need to check the class tList variable to update it, so we need to acquire the lock.
             try:
                 self.lock.acquire()
+
+                self.log.writeDebug([ 'downloader for SU ' + str(self.sunum) + ' terminating; unsetting worker' ])
+                self.su.removeWorker()
+                
                 self.tList.remove(self) # This thread is no longer one of the running threads.
                 self.log.writeInfo([ 'downloader (SUNUM ' + str(self.sunum) + ') halted' ])
                 # Use <= because we don't know if we were able to reach Downloader.maxThreads thread running due 
@@ -2634,16 +2636,6 @@ class HighPriorityDownloader(Downloader):
     def __init__(self, **kwargs):
         super(HighPriorityDownloader, self).__init__(**kwargs)
             
-class DummyDownloader(Downloader):
-    '''
-    before the Dispatcher creates the Downloader for the SU, the SU gets a DummyDownloader assigned so that
-    we can check for the error condition where the Dispatcher added the SU to the SU Table, but failed to
-    start a Downloader for the SU
-    '''
-    def __init__(self, **kwargs):
-        pass
-
-
 def readTables(sus, requests, sites):
     if sus:
         sus.tryRead()
@@ -2788,7 +2780,6 @@ class Dispatcher(threading.Thread):
                             # set the worker to indicate that a Downloader should exist; at this point, it does not, but the
                             # call to Downloader.newThread() will set it; the main thread will catch the error that
                             # we added an SU to the SU Table, but no Downloader was ever created
-                            sus[0].setWorker(DummyDownloader())
                             self.log.writeDebug([ '[ processRequest() ]adding SU ' + str(sus[0].sunum) + ' to suMap' ])
                             queueItem.sutable.addRequestToSUMap(sunum, requestID)
                     finally:
@@ -2901,9 +2892,6 @@ class Dispatcher(threading.Thread):
                                 try:                                    
                                     if len(self.downloaderType.tList) < self.downloaderType.maxThreads:
                                         self.log.writeInfo([ 'instantiating a ' + self.downloaderType.__name__ + ' for SU ' + str(su.sunum) ])
-                                        
-                                        # remove dummy worker
-                                        su.removeWorker()
 
                                         # assign new worker to su
                                         self.downloaderType.newThread(su=su, path=path, sutable=queueItem.sutable, scpuser=dlInfo['scpUser'], scphost=dlInfo['scpHost'], scpport=dlInfo['scpPort'], binpath=queueItem.binpath, hastapesys=queueItem.hastapesys, tmpdir=queueItem.tmpdir, log=self.log)
@@ -3418,7 +3406,7 @@ if __name__ == "__main__":
                                 # the Downloader no longer exists, so this is an error
                                 completeItem.su.setStatus('E', 'download for SU ' + str(completeItem.su.sunum) + ' did not properly complete')
                             else:
-                                # unknown status; set status to 'E' (next pass through this loop, this SU will be considered complete)
+                                # unknown status; set status to 'E'
                                 completeItem.su.setStatus('E', 'SU ' + str(completeItem.su.sunum) + ' has an unknown status of ' + completeItem.su.status + '.')
 
                             # find all requests that refer to this SU with the SU's map to all its requests    
@@ -3445,6 +3433,7 @@ if __name__ == "__main__":
                         rslog.writeDebug([ 'request sunums: ' + ','.join([ str(sunum) for sunum in request['sunums'] ]) ])
                         rslog.writeDebug([ 'complete SUs: ' + ','.join([ str(sunum) for sunum in request['complete'] ]) ])
                         if len(set(request['sunums']).symmetric_difference(request['complete'])) == 0:
+                            # request has completed
                             reqError = False
                         
                             sunums = list(set(request['sunums']))
@@ -3535,30 +3524,31 @@ if __name__ == "__main__":
                                 # there is the error case where an SU has been dispatched, but no Downloader was ever created (a queue
                                 # item was added, but for some reason, the dispatcher never created a Downloader);
                                 # sunums are the pending SUs (all SUs have been dispatched)
-                                sunums = list(set(request['sunums']) - set(request['complete']))
+                                sunums = list(set(request['todispatch']))
                                 sus, missingSunums = suTableObj.getSUs(releaseTableLock=False, sunums=sunums, filter=SuTable.removeGhosts)
                                 try:
                                     # the sus are in the SU Table, so they should have a Downloader (it is possible that an SU has been dispatched
-                                    # but has not yet been assigned a Downloader because the Dispatcher thread has yet to read its queue item)
+                                    # but has not yet been assigned a Downloader because the Dispatcher thread has yet to read its queue item)                                    
+                                    dispatcher = Dispatcher.getDispatcher(request['type'])
+
                                     for su in sus:
-                                        noDownloader = False
-                                        if not hasattr(su, 'worker') or not su.worker or not isinstance(su.worker, (Downloader)):
-                                            # this SU's Downloader is missing
-                                            noDownloader = True
-                                        else:
-                                            # this SU has a Downloader - if it is not the DummyDownloader, then its thread should be alive
-                                            if not isinstance(su.worker, (DummyDownloader)) and not su.worker.isAlive():
-                                                # this SU's Downloader is missing
-                                                noDownloader = True
-                                            
-                                        if noDownloader:
-                                            # set SU status to E
-                                            su.setStatus('E', 'download for SU ' + str(su.sunum) + ' lost its Downloader unexpectedly')
+                                        # we lock the Downloader lock whenever we set/unset the worker in the su object
+                                        dispatcher.downloaderType.lock.acquire()
+                                        try:
+                                            if hasattr(su, 'worker') and su.worker is not None:
+                                                # a downloader thread has definitely been started; it should be alive
+                                                if not isinstance(su.worker, (Downloader)) or not su.worker.isAlive():
+                                                    # set SU status to E
+                                                    su.setStatus('E', 'download for SU ' + str(su.sunum) + ' lost its Downloader unexpectedly')
                                         
-                                            for otherRequest in suTableObj.suMap[str(su.sunum)]:
-                                                # add this SU to the request['complete'] list
-                                                if su.sunum not in otherRequest['complete']:
-                                                    otherRequest['complete'].append(su.sunum)
+                                                    # put a complete item in the queue so that the main thread will handle this in the 
+                                                    # pending requests section (do no further SU-completion processing here)
+                                                    DownloaderCompleteQueueItem.addCompleteQueueItemToQueue(su=su, queue=suTableObj.queue, log=rslog)
+                                                    rslog.writeDebug([ 'successfully added a DownloaderCompleteQueueItem for SU ' +  str(su.sunum)])
+                                            
+                                        finally:
+                                            downloaderType.lock.release()
+                                            
                                 finally:
                                     suTableObj.releaseLock()
                 except:
