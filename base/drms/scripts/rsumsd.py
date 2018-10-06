@@ -14,6 +14,8 @@ import psycopg2
 import threading
 import fcntl
 from datetime import datetime, timedelta, timezone
+from dateutil import parser as dateparser # in anaconda
+from distutils import util as distroutil # in anaconda
 import urllib.request
 import json
 import signal
@@ -117,8 +119,6 @@ RET_SU_NOT_REFERENCED = 5
 RET_WORKER_REFERENCE_ERROR = 6
 RET_UNABLE_TO_ACQUIRE_LOCK = 7
 RET_UNABLE_TO_LOCK_OBJECT = 8
-RET_UNABLE_TO_READ_SUTABLE = 9
-RET_UNABLE_TO_WRITE_SUTABLE = 10
 RET_UNABLE_TO_READ_REQTABLE = 11
 RET_UNABLE_TO_WRITE_REQTABLE = 12
 RET_UNABLE_TO_READ_SITETABLE = 13
@@ -126,7 +126,7 @@ RET_DUPLICATE_SUNUM = 14
 RET_UNKNOWN_SUNUM = 15
 RET_ERROR_CALLING_SUMS_API = 16
 RET_UNKNOWN_REQUESTID = 17
-RET_UNABLE_TO_GET_RETENTION = 18
+RET_UNABLE_TO_GET_SERIES_INFO = 18
 RET_INVALID_SUNUM = 19
 RET_UNKNOWN_SITE_CODE = 20
 RET_UNABLE_TO_DOWNLOAD_SU = 21
@@ -151,6 +151,11 @@ SUM_PARTN_ALLOC = 'public.sum_partn_alloc'
 REQTYPE_CODES = [ 'U', 'M', 'G' ]
 REQTYPE_TEXT = [ 'USER', 'MIRROR', 'GENERIC' ] # generic implies that the system does not specify a request type (it is an older system that did not differentiate request types)
 REQTYPE_DOWNLOADER = [ 'HighPriorityDownloader', 'Downloader', 'Downloader' ]
+
+# SUMS archive type codes (archive substatus)
+DAAEDDP = 32
+DAADP = 128
+
 
 def terminator(signo, frame):
     # Raise the SystemExit exception (which will be caught by the __exit__() method below).
@@ -268,7 +273,7 @@ class TerminationHandler(object):
         try:
             for dispatcher in Dispatcher.tList:
                 # send lastitem queue item to dispatchers
-                lastitem = DispatcherQueueItem(cgi=None, sunums=None, sutable=None, dbuser=None, request=None, binpath=None, hastapesys=None, tmpdir=None, lastitem=True, log=self.log)                
+                lastitem = DispatcherQueueItem(cgi=None, sunums=None, sutable=None, dbuser=None, request=None, binpath=None, hastapesys=None, tmpdir=None, lastitem=True, expiration=None, archive=None, tapegroup=None, log=self.log)
                 dispatcher.queue.put_nowait(lastitem)
                 self.log.writeInfo([ 'waiting for Dispatcher ' + dispatcher.name + ' to halt' ])
         finally:
@@ -628,18 +633,6 @@ class LockAndHoldException(RemoteSumsException):
     def __init__(self, msg):
         super(LockAndHoldException, self).__init__(msg)
         self.retcode = RET_UNABLE_TO_LOCK_OBJECT
-
-class SutableReadException(RemoteSumsException):
-
-    def __init__(self, msg):
-        super(SutableReadException, self).__init__(msg)
-        self.retcode = RET_UNABLE_TO_READ_SUTABLE
-
-class SutableWriteException(RemoteSumsException):
-
-    def __init__(self, msg):
-        super(SutableWriteException, self).__init__(msg)
-        self.retcode = RET_UNABLE_TO_WRITE_SUTABLE
         
 class ReqtableReadException(RemoteSumsException):
 
@@ -683,11 +676,11 @@ class UnknownRequestidException(RemoteSumsException):
         super(UnknownRequestidException, self).__init__(msg)
         self.retcode = RET_UNKNOWN_REQUESTID
 
-class GetRetentionException(RemoteSumsException):
+class GetSeriesInfoException(RemoteSumsException):
 
     def __init__(self, msg):
-        super(GetRetentionException, self).__init__(msg)
-        self.retcode = RET_UNABLE_TO_GET_RETENTION
+        super(GetSeriesInfoException, self).__init__(msg)
+        self.retcode = RET_UNABLE_TO_GET_SERIES_INFO
         
 class InvalidSunumException(RemoteSumsException):
 
@@ -788,28 +781,14 @@ class TerminationException(RemoteSumsException):
 
         
 class StorageUnit(object):
-    def __init__(self, sunum, series, retention, starttime, refcount, status, errmsg):
+    def __init__(self, sunum, starttime, refcount, status, errmsg):
         self.sunum = sunum
-        self.series = series
-        self.retention = retention
         self.starttime = starttime
         self.refcount = refcount
         self.status = status
         self.errmsg = errmsg
-        
-        # not saved in the DB
-        self.giveUpTheGhost = False
-        self.dirty = False
-        self.new = False
-        self.path = None
         self.suSize = None
         self.worker = None
-        
-    def setDirty(self, value):
-        if not isinstance(value, (bool)):
-            raise InvalidArgumentException('setDirty(): argument must be a bool')
-        
-        self.dirty = value
         
     def getSunum(self):
         return self.sunum
@@ -822,18 +801,38 @@ class StorageUnit(object):
             raise InvalidArgumentException('setSeries(): argument must be a str')
 
         self.series = value
-        self.setDirty(True)
         
-    def getRetention(self):
-        return self.retention
-        
-    def setRetention(self, value):
-        if not isinstance(value, (int)):
-            raise InvalidArgumentException('setRetention(): argument must be an integer')
+    def getExpiration(self):
+        if self.expiration < datetime.now():
+            self.expiration = datetime.now()
+
+        return self.expiration
+
+    def setExpiration(self, value):
+        if not isinstance(value, (datetime)):
+            raise InvalidArgumentException('setExpiration(): argument must be a datetime')
             
-        self.retention = value
-        self.setDirty(True)
+        if value < datetime.now():
+            self.expiration = datetime.now()
+        else:            
+            self.expiration = value
         
+    def getArchive(self):
+        return self.archive
+        
+    def setArchive(self, value):
+        if not isinstance(value, (bool)):
+            raise InvalidArgumentException('setArchive(): argument must be a bool')
+
+    def getTapegroup(self):
+        return self.tapegroup
+        
+    def setTapegroup(self, value):
+        if not isinstance(value, (int)):
+            raise InvalidArgumentException('setTapegroup(): argument must be an int')
+            
+        self.tapegroup = value
+
     def getStarttime(self):
         return self.starttime
     
@@ -842,33 +841,9 @@ class StorageUnit(object):
             raise InvalidArgumentException('setStarttime(): argument must be a datetime')
             
         self.starttime = value
-        self.setDirty(True)
         
     def touch(self):
         self.setStarttime(datetime.now(timezone.utc))
-        
-    def incrementRefcount(self):
-        if self.giveUpTheGhost:
-            # cannot increment refcount on an SU that has already been marked for deletion; it is as if
-            # the SU does not exist any more
-            raise NoSUReferenceException('cannot increment refcount on unreferenced SU record ' + str(self.sunum))
-
-        self.refcount += 1
-        self.setDirty(True)
-        
-        return self.refcount
-        
-    def decrementRefcount(self):
-        if self.giveUpTheGhost:
-            raise NoSUReferenceException('cannot decrement refcount on unreferenced SU record ' + str(self.sunum))
-                    
-        self.refcount -= 1
-        if self.refcount == 0:
-            self.giveUpTheGhost = True
-
-        self.setDirty(True)
-        
-        return self.refcount
     
     def getStatus(self):
         return self.status
@@ -886,19 +861,7 @@ class StorageUnit(object):
             self.errmsg = msgValue
         else:
             self.errmsg = ''
-
-        self.setDirty(True)
-        
-    # properties that are NOT saved to the DB
-    def getNew(self):
-        return self.new
-    
-    def setNew(self, value):
-        if not isinstance(value, (bool)):
-            raise InvalidArgumentException('setNew(): argument must be a bool')
-            
-        self.new = value
-        
+                
     def getPath(self):
         path = None
         if hasattr(self, 'path'):
@@ -969,136 +932,13 @@ class SuTable:
                       # on these connections are not isolated. Use a lock to ensure a consistent view in the
                       # offline() method.
     
-    def __init__(self, tableName, timeOut, log):
-        self.tableName = tableName
+    def __init__(self, timeOut, log):
         self.timeOut = timeOut # A timedelta object - the length of time to wait for a download to complete.
         self.lock = threading.Lock()
         self.log = log
         self.suDict = {}
         self.queue = Queue(0) # non-blocking, infinite sized
         self.suMap = {} # map an SU to a ReqTable request
-
-    def read(self):
-        # sus(sunum, starttime, refcount, status, errmsg)
-        cmd = 'SELECT sunum, series, retention, starttime, refcount, status, errmsg FROM ' + self.tableName
-    
-        try:
-            gotRsDbLock = SuTable.rsDbLock.acquire()
-            if gotRsDbLock:
-                with SuTable.rsConn.cursor() as cursor:
-                    cursor.execute(cmd)
-            
-                    for record in cursor:
-                        sunumStr = str(record[0])
-
-                        self.suDict[sunumStr] = {}
-                        sunum = record[0]         # integer
-                        series = record[1]        # text
-                        retention = record[2]     # integer
-                        # Whoa! pyscopg returns timestamps as datetime.datetime objects already!
-                        starttime = record[3]     # datetime.datetime
-                        refcount = record[4]      # integer
-                        status = record[5]        # text
-                        errmsg = record[6]        # text
-
-                        su = StorageUnit(sunum, series, retention, starttime, refcount, status, errmsg)
-
-                        # Not read from or saved to database.
-                        su.setDirty(False)
-                        su.setNew(False)
-                        su.setPath(None)              # The server path of the SU to be downloaded.
-                        # worker is already None
-                        self.suDict[sunumStr] = su
-        except psycopg2.Error as exc:
-            raise SutableReadException(exc.diag.message_primary)
-        finally:
-            SuTable.rsConn.rollback() # We read from the DB only, so no need to commit anything.
-            if gotRsDbLock:
-                SuTable.rsDbLock.release()
-
-    def tryRead(self):
-        nAtts = 0
-        while True:
-            try:
-                self.read()
-                break
-            except SutableReadException:                
-                if nAtts > 10:
-                    raise # Re-raise
-
-            nAtts += 1
-            time.sleep(1)
-            
-    def getUpdateDBSql(self, sunums=None):
-        sql = []
-
-        sus, missingSunums = self.getSUs(sunums=sunums, releaseTableLock=False, filter=None) # want to get giveUpTheGhost sus
-        try:
-            if len(missingSunums) > 0:
-                # the caller provided the sunums argument and it was not empty, and some of the provided sunums were invalid
-                sunumStr = ','.join([ str(sunum) for sunum in missingSunums] )
-                self.log.writeWarning([ 'SuTable.getUpdateDBSql() called with invalid SUNUMs: ' + sunumStr + '; skipping' ])
-
-            for su in sus:
-                if su.giveUpTheGhost:
-                    sql.append('DELETE FROM ' + self.tableName + ' WHERE sunum = ' + str(su.sunum))
-                    del self.suDict[ str(su.sunum) ]
-                elif su.dirty:
-                    if su.new:
-                        sql.append('INSERT INTO ' + self.tableName + '(sunum, series, retention, starttime, refcount, status, errmsg) VALUES(' + str(su.sunum) + ",'" + su.series + "', " + str(su.retention) + ", '" + su.starttime.strftime('%Y-%m-%d %T%z') + "', " + str(su.refcount) + ", '" + su.status + "', '" + su.errmsg + "')")
-                    else:
-                        sql.append('UPDATE ' + self.tableName + " SET series='" + su.series + "', retention=" + str(su.retention) + ", starttime='" + su.starttime.strftime('%Y-%m-%d %T%z') + "', refcount=" + str(su.refcount) + ", status='" + su.status + "', errmsg='" + su.errmsg + "' WHERE sunum=" + str(su.sunum))
-
-                    su.setDirty(False)
-                    su.setNew(False)
-        finally:
-            self.releaseLock()
-                
-        return sql
-    
-    # This will NOT commit database changes. You are generally going to want to do this as part of a larger db change. Commit the changes
-    # after all changes that form the atomic set of changes. Do not call rsConn.commit().
-    #
-    # ACQUIRES THE SU TABLE LOCK.
-    # returns True if the DB was changed (in a uncommitted transaction)
-    def updateDB(self, sql):
-        if len(sql) > 0:
-            # execute the SQL
-            try:
-                cmd = ';\n'.join(sql)
-
-                self.log.writeDebug([ 'executing DB command: ' + cmd ])
-                with SuTable.rsConn.cursor() as cursor:
-                    cursor.execute(cmd)
-                # The cursor has been closed, but the transaction has not been committed, as designed.
-                self.log.writeDebug([ 'DB command succeeded: ' + cmd ])
-            except psycopg2.Error as exc:
-                import traceback
-            
-                SuTable.rsConn.rollback()
-                self.log.writeError([ traceback.format_exc(5) ])
-                raise SutableWriteException(exc.diag.message_primary)
-            
-            return True
-        else:
-            return False
-        
-    # This WILL commit changes to the db.
-    def updateDbAndCommit(self, sunums=None):
-        sql = self.getUpdateDBSql(sunums)
-
-        SuTable.rsDbLock.acquire()
-        try:
-            if self.updateDB(sql):
-                SuTable.rsConn.commit()
-                self.log.writeDebug([ 'committed RS DB changes' ])
-            else:
-                self.log.writeDebug([ 'no SU changes made to DB' ])
-        except:
-            SuTable.rsConn.rollback()
-            self.log.writeDebug([ 'rolled-back RS DB changes' ])
-        finally:
-            SuTable.rsDbLock.release()
 
     def acquireLock(self):
         return self.lock.acquire()
@@ -1108,59 +948,36 @@ class SuTable:
         self.lock.release()
         # self.log.writeDebug(['Released SU-Table lock.'])
     
-    # can be called from multiple threads; must have SU Table lock, or lockTable must be True
-    def insert(self, **kwargs):
-        sunums = Arguments.checkArg('sunums', None, None, **kwargs)
-        lockTable = Arguments.checkArg('lockTable', None, True, **kwargs)
-    
-        gotTableLock = False
-        try:
-            # Get lock because we are modifying self.suDict.
-            if lockTable:
-                gotTableLock = self.acquireLock()
- 
-            for asunum in sunums:
-                sunumStr = str(asunum)
-        
-                if sunumStr in self.suDict:
-                    raise DuplicateSUException('SU-table record already exists for SU ' + sunumStr + '.')
-                
-                # sets refcount to 1
-                su = StorageUnit(asunum, '', -1, datetime.now(timezone.utc), 1, 'P', '')
-
-                su.setDirty(True)
-                # Set the new flag (so that the record will be INSERTed into the SU database table instead of UPDATEd).
-                su.setNew(True)
-        
-                self.suDict[sunumStr] = su
-        finally:
-            if lockTable and gotTableLock:
-                self.releaseLock()
-    
     # main thread only
-    def newSUs(self, **kwargs):        
+    def addSUs(self, **kwargs):
         sunums = Arguments.checkArg('sunums', None, None, **kwargs)
+        locktable = Arguments.checkArg('locktable', None, True, **kwargs)
 
-        sus, missingSunums = self.getSUs(sunums=sunums, releaseTableLock=False, filter=SuTable.removeGhosts)
+        # must lock the SU Table, either here, or in the enclosing block of code
+        sus, missingSunums = self.getSUs(sunums=sunums, lockTable=locktable, releaseTableLock=False)
         try:            
             # increment refcount of existing SUs
-            list(map((lambda su : su.incrementRefcount()), sus))
+            self.__incrementRefcount(sunums=[ su.sunum for su in sus ], locktable=False)
 
             # create new SU objects for SUs that do not currently exist
             for sunum in missingSunums:
                 # sets refcount to 1
-                su = StorageUnit(sunum, '', -1, datetime.now(timezone.utc), 1, 'P', '')
-
-                su.setDirty(True)
-                # Set the new flag (so that the record will be INSERTed into the SU database table instead of UPDATEd).
-                su.setNew(True)
+                su = StorageUnit(sunum, datetime.now(timezone.utc), 1, 'P', '')
     
                 self.suDict[str(su.sunum)] = su
-        finally:            
-            self.releaseLock()
+        finally:
+            if locktable:
+                self.releaseLock()
+                
+    def removeSUs(self, **kwargs):
+        sunums = Arguments.checkArg('sunums', None, None, **kwargs)
+        locktable = Arguments.checkArg('locktable', None, True, **kwargs)
+
+        # increment refcount of existing SUs
+        self.__decrementRefcount(sunums=sunums, locktable=locktable)
 
     def setStatus(self, sunums, code, msg=None):
-        sus, missingSunums = self.getSUs(sunums=sunums, releaseTableLock=False, filter=SuTable.removeGhosts)
+        sus, missingSunums = self.getSUs(sunums=sunums, releaseTableLock=False)
         try:
             for su in sus:
                 su.setStatus(code, msg)
@@ -1168,51 +985,65 @@ class SuTable:
             self.releaseLock()
 
     def setSeries(self, sunums, series):
-        sus, missingSunums = self.getSUs(sunums=sunums, releaseTableLock=False, filter=SuTable.removeGhosts)
+        sus, missingSunums = self.getSUs(sunums=sunums, releaseTableLock=False)
         try:
             for su in sus:
                 su.setSeries(series)
         finally:
             self.releaseLock()
 
-    def setRetention(self, sunums, retention):    
-        sus, missingSunums = self.getSUs(sunums=sunums, releaseTableLock=False, filter=SuTable.removeGhosts)
+    def setExpiration(self, sunums, expiration):    
+        sus, missingSunums = self.getSUs(sunums=sunums, releaseTableLock=False)
         try:
             for su in sus:
-                su.setRetention(retention)
+                su.setExpiration(expiration)
         finally:
             self.releaseLock()
 
     def setStarttime(self, sunums, starttime):
-        sus, missingSunums = self.getSUs(sunums=sunums, releaseTableLock=False, filter=SuTable.removeGhosts)
+        sus, missingSunums = self.getSUs(sunums=sunums, releaseTableLock=False)
         try:
             for su in sus:
                 su.setStarttime(starttime)
         finally:
             self.releaseLock()
 
-    def incrementRefcount(self, sunums):
-        sus, missingSunums = self.getSUs(sunums=sunums, releaseTableLock=False, filter=SuTable.removeGhosts)
+    def __incrementRefcount(self, **kwargs):
+        sunums = Arguments.checkArg('sunums', None, None, **kwargs)
+        locktable = Arguments.checkArg('locktable', None, True, **kwargs)
+
+        sus, missingSunums = self.getSUs(sunums=sunums, lockTable=locktable, releaseTableLock=False)
         try:
             for su in sus:
-                refCount = su.incrementRefcount()
+                refCount = su.refcount + 1
+                su.refcount = refCount
                 self.log.writeDebug([ 'incremented refcount for ' + str(su.sunum) + '; refcount is now ' + str(refCount) ])
         finally:
-            self.releaseLock()
+            if locktable:
+                self.releaseLock()
 
-    def decrementRefcount(self, sunums):
-        sus, missingSunums = self.getSUs(sunums=sunums, releaseTableLock=False, filter=SuTable.removeGhosts)
+    def __decrementRefcount(self, **kwargs):
+        sunums = Arguments.checkArg('sunums', None, None, **kwargs)
+        locktable = Arguments.checkArg('locktable', None, True, **kwargs)
+
+        sus, missingSunums = self.getSUs(sunums=sunums, lockTable=locktable, releaseTableLock=False)
         try:
             for su in sus:
-                refCount = su.decrementRefcount()
+                refCount = su.refcount - 1
+                su.refcount = refCount
                 self.log.writeDebug([ 'decremented refcount for ' + str(su.sunum) + '; refcount is now ' + str(refCount) ])
+
+                if su.refcount == 0:
+                    del self.suDict[str(su.sunum)]
+                    self.log.writeDebug([ 'refcount 0 - deleted SU ' + str(su.sunum) ])
         finally:
-            self.releaseLock()
+            if locktable:
+                self.releaseLock()
 
     def setWorker(self, sunum, worker):
         sunumStr = str(sunum)
 
-        sus, missingSunums = self.getSUs(sunums=[ sunum ], releaseTableLock=False, filter=SuTable.removeGhosts)
+        sus, missingSunums = self.getSUs(sunums=[ sunum ], releaseTableLock=False)
         try:
             if len(sus) == 1:
                 su = sus[0]
@@ -1226,8 +1057,7 @@ class SuTable:
     # we need to lock the table since it reads self.suDict
     def __get(self, sunums=None):
         # DOES NOT acquire table lock; this method is called by SUTable.getSUs(), which acquires the
-        # table lock; does not filter-out SUs with the giveUpTheGhost attribute since callers of this
-        # function may need to act on those SUs
+        # table lock
         foundSUs = []
         notfoundSunums = []
         
@@ -1256,7 +1086,7 @@ class SuTable:
         filter = Arguments.checkArg('filter', None, None, **kwargs)
 
         sus = [] # known SUs
-        missingSunums = [] # missing SUs plus ghosts
+        missingSunums = [] # missing SUs
 
         if lockTable:
             self.acquireLock()
@@ -1365,17 +1195,19 @@ class SuTable:
     def getTimeout(self):
         return self.timeOut
 
-    def addRequestToSUMap(self, sunum, requestID):
-        if str(sunum) not in self.suMap:
-            self.suMap[str(sunum)] = []
+    def addRequestToSUMap(self, **kwargs):
+        for sunum in kwargs['sunums']:
+            if str(sunum) not in self.suMap:
+                self.suMap[str(sunum)] = []
 
-        self.suMap[str(sunum)].append(requestID)
+            self.suMap[str(sunum)].append(kwargs['requestid'])
         
-    def removeRequestFromSUMap(self, su, requestID):
-        if str(su.sunum) in self.suMap:
-            self.suMap[str(su.sunum)].remove(requestID)
-            if len(self.suMap[str(su.sunum)]) == 0:
-                del self.suMap[str(su.sunum)]                
+    def removeRequestFromSUMap(self, **kwargs):
+        for su in kwargs['sus']:
+            if str(su.sunum) in self.suMap:
+                self.suMap[str(su.sunum)].remove(kwargs['requestid'])
+                if len(self.suMap[str(su.sunum)]) == 0:
+                    del self.suMap[str(su.sunum)]                
 
     @classmethod
     def offline(cls, sunums, log):
@@ -1414,20 +1246,6 @@ class SuTable:
 
         return rv
     
-    # must call from a getSU...() method
-    @classmethod
-    def removeGhosts(cls, sus):
-        retKept = []
-        retRemoved = []
-
-        for su in sus:
-            if not su.giveUpTheGhost:
-                retKept.append(su)
-            else:
-                retRemoved.append(su)
-
-        return (retKept, retRemoved)
-
 
 class ReqTable:
     '''
@@ -1989,7 +1807,7 @@ class ScpWorker(threading.Thread):
                             atLeastOneGoodSU = False
 
                             # this locks and releases the SU Table
-                            sus, missingSunums = self.suTable.getSUs(sunums=sunums, filter=SuTable.removeGhosts)
+                            sus, missingSunums = self.suTable.getSUs(sunums=sunums)
                             for su in sus:
                                 # check for SU download time-out; we keep doing the download, unless all SUs have timed out
                                 timeNow = datetime.now(su.starttime.tzinfo)
@@ -2025,7 +1843,7 @@ class ScpWorker(threading.Thread):
                             # end proc-wait loop
 
                         # this locks and releases the SU Table
-                        sus, missingSunums = self.suTable.getSUs(sunums=sunums, filter=SuTable.removeGhosts)
+                        sus, missingSunums = self.suTable.getSUs(sunums=sunums)
                         for su in sus:
                             self.log.writeInfo([ 'ScpWorker setting SU ' + str(su.sunum) + ' status to F' ])
                             su.setStatus('F', None)
@@ -2039,7 +1857,7 @@ class ScpWorker(threading.Thread):
                         self.log.writeError([ exc.args[0] ])
                         
                         # this locks and releases the SU Table
-                        sus, missingSunums = self.suTable.getSUs(sunums=sunums, filter=SuTable.removeGhosts)
+                        sus, missingSunums = self.suTable.getSUs(sunums=sunums)
                         for su in sus:
                             self.log.writeInfo([ 'ScpWorker setting SU ' + str(su.sunum) + ' status to E' ])
                             su.setStatus('E', exc.args[0])
@@ -2156,7 +1974,6 @@ class Downloader(threading.Thread):
         setErrorStatus = False
         cleanUpSUDir = False
         
-        retentionCached = None
         seriesCached = None
         
         try:        
@@ -2168,7 +1985,6 @@ class Downloader(threading.Thread):
                 # this SU cannot have been removed from the SU Table at this point; that can only happen
                 # after this thread sets the SU status to C or E; so, there is no chance that the SU has been orphaned and
                 # there is no need to check for that
-                retentionCached = self.su.getRetention()
                 seriesCached = self.su.getSeries()
                 
                 self.log.writeInfo([ 'Downloader is running for SU ' + str(self.sunum) ])
@@ -2410,13 +2226,13 @@ class Downloader(threading.Thread):
 
                             createDate = datetime.now()
                             createDateStr = createDate.strftime('%Y-%m-%d %H:%M:%S')
-                            expDate = createDate + timedelta(days=retentionCached)
+                            expDate = self.su.getExpiration()
                             effDate = expDate.strftime('%Y%m%d%H%M')
 
                             # storage_group is the tape group. It should come from the series definition, but remote sites have been using 0 for years.            
                             cmd = "INSERT INTO public.sum_main(online_loc, online_status, archive_status, offsite_ack, history_comment, owning_series, storage_group, storage_set, bytes, ds_index, create_sumid, creat_date, access_date, username) VALUES ('" + sudir + "', 'Y', 'N', 'N', '', '" + seriesCached + "', 0, 0, " + str(numBytes) + ', ' + str(self.sunum) + ', ' + str(sumid) + ", '" + createDateStr + "', '" + createDateStr + "', '" + os.getenv('USER', 'nouser') + "')"
                             cursor.execute(cmd)
-            
+
                             self.log.writeInfo([ 'Successfully inserted record into sum_main for SU ' + str(self.sunum) + '.' ])
 
                             #    Third, update SUMS sum_partn_alloc table - Insert a new row into sum_partn_alloc for this SU. The SUM_alloc2() port will result in
@@ -2551,12 +2367,7 @@ class Downloader(threading.Thread):
                 if sudir and os.path.exists(sudir):
                     shutil.rmtree(sudir)
                 if suDlPath and os.path.exists(suDlPath):
-                    shutil.rmtree(suDlPath)
-            
-            # update SU table (write-out status, error or success, to the DB)
-            # this is a no-op if no SUs were actually modified
-            self.log.writeDebug([ 'downloader for SU ' + str(self.sunum) + ' updating SU table with final status' ])
-            self.suTable.updateDbAndCommit([ self.sunum ])
+                    shutil.rmtree(suDlPath)            
         finally:
             # this thread is about to terminate
 
@@ -2636,10 +2447,7 @@ class HighPriorityDownloader(Downloader):
     def __init__(self, **kwargs):
         super(HighPriorityDownloader, self).__init__(**kwargs)
             
-def readTables(sus, requests, sites):
-    if sus:
-        sus.tryRead()
-
+def readTables(requests, sites):
     if requests:
         requests.tryRead()
     
@@ -2650,8 +2458,10 @@ def readTables(sus, requests, sites):
 # request (ReqTable::reqDict[requestidStr] object) - Contains the dbhost, dbport, dbname that identifies the
 #    database that contains the series.
 
-def getRetention(series, dbuser, dbname, dbhost, dbport, log):
-    # et the retention from the db; we have the host/port/dbname information from the request
+def getSeriesInfo(series, dbuser, dbname, dbhost, dbport, log, **kwargs):
+    default = kwargs['default']
+
+    # get the expiration from the db; we have the host/port/dbname information from the request
     newSuRetention = -1
     ns, tab = series.split('.')
 
@@ -2661,18 +2471,23 @@ def getRetention(series, dbuser, dbname, dbhost, dbport, log):
         with psycopg2.connect(user=dbuser, database=dbname, host=dbhost, port=dbport) as conn:
             with conn.cursor() as cursor:
                 # We want the new-SU retention too, not the staging retention. So extract the bottom 15 bits.
-                cmd = "SELECT retention & x'00007FFF'::int AS retention FROM " + ns + ".drms_series WHERE seriesname ILIKE '" + series + "'"
-                log.writeInfo(['Obtaining new-SU retention for series ' + series + ': ' + cmd])
+                cmd = "SELECT retention & x'00007FFF'::int AS retention, archive, tapegroup FROM " + ns + ".drms_series WHERE lower(seriesname) = '" + series.lower() + "'"
+                log.writeInfo(['Obtaining series info for series ' + series + ': ' + cmd])
 
                 try:
                     cursor.execute(cmd)
                     if cursor.rowcount == 0:
-                        raise GetRetentionException('series ' + series + ' does not exist')
-                    newSuRetention = cursor.fetchone()[0]
-                    log.writeInfo([ 'retention for series ' + series + ' is ' + str(newSuRetention) ])
+                        # series does not exist - use defaults
+                        expiration, archive, tapegroup = default
+                        log.writeInfo([ 'series ' + series + ' does not exist; using defaults' ])
+
+                    row = cursor.fetchone()
+                    expiration, archive, tapegroup = (datetime.now() + timedelta(days=row[0]), row[1] == 1, row[2], row[3])
+                    log.writeInfo([ 'info for series ' + series + ' (expiration, archive, tapegroup): ' + expiration.strftime("%Y-%m-%d") + str(archive) + str(tapegroup) ])
                 except psycopg2.Error as exc:
                     # Handle database-command errors.
-                    raise GetRetentionException(exc.diag.message_primary)
+                    log.writeDebug([ 'error executing DB command', exc.diag.message_primary, 'using defaults' ])
+                    expiration, archive, tapegroup = default
         # The connection is read-only, so there is not need to commit a transaction.
     except psycopg2.DatabaseError as exc:
         # Closes the cursor and connection
@@ -2680,9 +2495,9 @@ def getRetention(series, dbuser, dbname, dbhost, dbport, log):
         # Man, there is no way to get an error message from any exception object that will provide any information why
         # the connection failed.
         msg = 'unable to connect to the database (no, I do not know why)'
-        raise GetRetentionException(msg)
+        raise GetSeriesInfoException(msg)
 
-    return newSuRetention
+    return (expiration, archive, tapegroup)
 
 class DispatcherQueueItem(object):
     def __init__(self, **kwargs):
@@ -2710,6 +2525,10 @@ class DispatcherQueueItem(object):
         self.binpath = kwargs['binpath']
         self.hastapesys = kwargs['hastapesys']
         self.tmpdir = kwargs['tmpdir']
+        self.expiration = kwargs['expiration']
+        self.archive = kwargs['archive']
+        self.tapegroup = kwargs['tapegroup']
+        
         if 'lastitem' in kwargs:
             self.lastitem = kwargs['lastitem']
         else:
@@ -2755,39 +2574,28 @@ class Dispatcher(threading.Thread):
                 workingSus = {}
 
                 try:
-                    sus, missingSunums = queueItem.sutable.getSUs(releaseTableLock=False, sunums=queueItem.sunums, filter=SuTable.removeGhosts)
+                    sus, missingSunums = queueItem.sutable.getSUs(releaseTableLock=False, sunums=queueItem.sunums)
                     try:
+                        allSunums = missingSunums + [ su.sunum for su in sus ]
                         # because the main thread cannot check to see if an SU is in the dispatch queue AND insert into 
                         # the dispatch queue atomically, it may put the same SU into different dispatch queue items; 
                         # however, we do not want to start more than one Downloader for an SU; instead, increase the
                         # refcount if we detect this condition; the first SU dispatched will get a Downloader, but the second one
                         # will not
-                        if len(sus) > 0:
-                            # attempt to reprocess an SU whose processing has already started
-                            self.log.writeInfo([ 'incrementing refcount for ' + ','.join([ str(su.sunum) for su in sus ]) ])
-                            list(map((lambda su : su.incrementRefcount()), sus))
-                            for su in sus:
-                                self.log.writeDebug([ '[ processRequest() ]adding SU ' + str(su.sunum) + ' to suMap' ])
-                                queueItem.sutable.addRequestToSUMap(sunum, requestID)
 
-                        for sunum in missingSunums:
-                            self.log.writeInfo([ 'inserting a new SU table record for ' + str(sunum) ])
-                            # create a new SU table record for this SU (the SU Table is locked); will set status to P
-                            queueItem.sutable.insert(sunums=[ sunum ], lockTable=False)
-                            self.log.writeDebug([ 'successfully inserted SU ' + str(sunum) ])
-                            sus, missingSunums = queueItem.sutable.getSUs(lockTable=False, releaseTableLock=False, sunums=[ sunum ], filter=SuTable.removeGhosts)
-                            workingSus[str(sunum)] = sus[0]
-                            # set the worker to indicate that a Downloader should exist; at this point, it does not, but the
-                            # call to Downloader.newThread() will set it; the main thread will catch the error that
-                            # we added an SU to the SU Table, but no Downloader was ever created
-                            self.log.writeDebug([ '[ processRequest() ]adding SU ' + str(sus[0].sunum) + ' to suMap' ])
-                            queueItem.sutable.addRequestToSUMap(sunum, requestID)
+                        # we want to increment the refcount on existing SUs (that are part of other requests); addSUs()
+                        # does that
+                        queueItem.sutable.addSUs(sunums=allSunums, locktable=False)
+                        self.log.writeDebug([ '[ processRequest() ] successfully inserted SUs ' + ','.join([ str(sunum) for sunum in missingSunums ]) ])
+                        queueItem.sutable.addRequestToSUMap(sunums=allSunums, requestid=requestID)
+                        self.log.writeDebug([ '[ processRequest() ] added SU ' + ','.join([ str(sunum) for sunum in allSunums ]) + ' to suMap' ])
+                        sus, emptyList = queueItem.sutable.getSUs(lockTable=False, releaseTableLock=False, sunums=missingSunums)
+                        workingSus = dict([ [ str(su.sunum), su ] for su in sus ])
+                        
                     finally:
                         # no longer need SU table lock
                         queueItem.sutable.releaseLock()
                         
-                    # save the newly added SU
-                    queueItem.sutable.updateDbAndCommit()
                     sunumLst = ','.join(list(workingSus.keys()))
                     values = { 'requestid' : 'none', 'sunums' : sunumLst, 'N' : 1 }
                     data = urllib.parse.urlencode(values)
@@ -2820,7 +2628,7 @@ class Dispatcher(threading.Thread):
                         paths = dlInfo['paths']
 
                         # Start a download for each SU. If we cannot start the download for any reason, then set the SU status to 'E'.
-                        retentions = {}
+                        infos = {}
                         for (sunum, path, series, suSize) in paths:
                             skip = False
 
@@ -2853,15 +2661,22 @@ class Dispatcher(threading.Thread):
                                 if suSize is None:
                                     suSize = 0
 
-                                if series in retentions:
-                                    retention = retentions[series]
+                                if series in infos:
+                                    expiration, archive, tapegroup = infos[series]
                                 else:
                                     # request provides the host, port, and dbname to use with jsoc_info to fetch the retention value
                                     try:
-                                        retention = getRetention(series, queueItem.dbuser, queueItem.dbname, queueItem.dbhost, queueItem.dbport, self.log) 
-                                        retentions[series] = retention
-                                    except GetRetentionException:
-                                        su.setStatus('E', 'unable to get retention for SU ' + str(sunum))
+                                        if queueItem.hastapesys:
+                                            tapegroup = queueItem.tapegroup
+                                        else:
+                                            tapegroup = 0
+
+                                        default = (queueItem.expiration, queueItem.archive, tapegroup)
+                                        infos[series] = getSeriesInfo(series, queueItem.dbuser, queueItem.dbname, queueItem.dbhost, queueItem.dbport, self.log, default=default) 
+                                        expiration, archive, tapegroup = infos[series]                                            
+                                    except GetSeriesInfoException as exc:
+                                        self.log.writeError([ exc.args[0] ])
+                                        su.setStatus('E', 'unable to get series info for series ' + series + ' for SU ' + str(sunum))
                                         # no need to acquire the SU Table lock since the status is accessed by exactly one thread at a time
                                         skip = True
 
@@ -2873,9 +2688,11 @@ class Dispatcher(threading.Thread):
                                 self.log.writeDebug([ 'successfully added a DownloaderCompleteQueueItem for SU ' +  str(sunum)])
                                 continue
 
-                            # save series and retention
+                            # save series and expiration
                             su.setSeries(series)
-                            su.setRetention(retention)
+                            su.setExpiration(expiration)
+                            su.setArchive(archive)
+                            su.setTapegroup(tapegroup)
                             su.setSize(suSize)
                     
                             # either HighPriorityDownloader or Downloader
@@ -2949,9 +2766,6 @@ class Dispatcher(threading.Thread):
                     self.queue.task_done()
             # end of while loop; thread is terminating
         finally:        
-            if queueItem is not None and queueItem.sutable is not None:
-                queueItem.sutable.updateDbAndCommit()
-        
             # this thread is about to terminate; we need to check the class tList variable to update it, so we need to acquire the lock
             Dispatcher.lock.acquire()
             try:
@@ -3023,31 +2837,59 @@ class LogLevelAction(argparse.Action):
 
         setattr(namespace, self.dest, level)
 
+    
+class ExpirationAction(argparse.Action):
+    def __call__(self, parser, namespace, value, option_string=None):
+        # make a date (local timezone) from the value
+        expires = dateparser.parse(value)
+        setattr(namespace, self.dest, expires)
 
-def updateDbAndCommit(log, rsConn, rsDbLock, reqTable, suTable, reqIDs, sunums):
+
+class ArchiveAction(argparse.Action):
+    # the DRMS archive flag is one of: 
+    #   -1 : do not archive, and when the SU expires, delete the DRMS records using that SU; when SUM_put() is called, 
+    #        DRMS puts a flag file into the SU; then when sum_rm runs, it deletes the DRMS records; so, -1 is not
+    #        relevant to Remote SUMS; the flag file is in the downloaded SU, and it is used in sum_rm
+    #    0 : do not archive
+    #    1 : archive
+    # 
+    # DRMS maps this flag into a set of SUMS flags: ARCH (archive to SU to tape), TEMP (the SU will expire at some point),
+    # PERM (the SU will never expire); the mapping is:
+    #    -1, 0 --> DAAEDDP (!PERM && TEMP && !ARCH)
+    #        1 --> DAADP (!PERM && TEMP && ARCH)
+    # 
+    # in all cases, SUs are always temporary and the PERM flag is never used
+    # 
+    def __call__(self, parser, namespace, value, option_string=None):
+        # distutils will make sure that the value isn't something other than a string that can be considered a boolean value
+        if bool(distutils.util.strtobool(value)):
+            archiveType = DAADP
+        else:
+            archiveType = DAAEDDP
+
+        setattr(namespace, self.dest, archiveType)
+
+
+def updateDbAndCommit(log, rsConn, rsDbLock, reqTable, reqIDs):
     # lock the SU table, the SUs, and access to the DB until the SU table SQL has been run so that nothing changes out from under us;
     # no need to lock anything having to do with the requests table - it is accessed by a single thread only
     # we acquire the DB Lock so that our transaction cannot get polluted - we do not want another thread committing the
     # transaction (all cursors share the same transaction)
-    
-    suSql = suTable.getUpdateDBSql(sunums)
     rqSql = reqTable.getUpdateDBSql(reqIDs)
     
     rsDbLock.acquire() # do not allow other threads to commit the DB changes in the middle of this
     try:
-        # neither of these calls commits changes to the DB
-        log.writeDebug([ 'updating the DB with SU table changes (SUs ' + ','.join([ str(sunum) for sunum in sunums ]) + ')' ])
-        suTable.updateDB(suSql)
+        # this calls does not commit changes to the DB
         log.writeDebug([ 'updating the DB with request table changes (request ' + ','.join(str(reqID) for reqID in reqIDs) + ')' ])
         reqTable.updateDB(rqSql)
         
-        log.writeDebug([ 'committing Req-table and SU-table changes to DB' ])
+        log.writeDebug([ 'committing Req-table changes to DB' ])
         rsConn.commit()
-        log.writeDebug([ 'successfully committed Req and SU changes' ])
+        log.writeDebug([ 'successfully committed Req changes' ])
     except:
         import traceback
         
-        log.writeWarning([ 'failed to commit Req and SU changes; changed rolled back' ])
+        log.writeWarning([ 'failed to commit Req changes; changed rolled back' ])
         log.writeWarning([ traceback.format_exc(5) ])
         rsConn.rollback() # it could be that the first call succeeds and the second fails - we need to rollback the first too
         # continue on with the next request (do not terminate)
@@ -3095,7 +2937,7 @@ def getSUSites(sunums, sites, request, log):
     return (siteSUs, onlineSUs)
 
 # called from the main thread only
-def dispatchSUs(sunums, sites, request, sutable, reqtable, dbuser, binpath, tapesysexists, tmpdir, log):
+def dispatchSUs(sunums, sites, request, sutable, reqtable, dbuser, binpath, tapesysexists, tmpdir, expiration, archive, tapegroup, log):
     # siteSunums is a dictionary where key is the site CGI, and the value is a list of unknown, offline SUs that
     # the site serves;
     # toComplete is a list of undispatched, but online remote SUs    
@@ -3109,7 +2951,7 @@ def dispatchSUs(sunums, sites, request, sutable, reqtable, dbuser, binpath, tape
             for chunk in chunker:
                 try:
                     # will NOT block if there are no spots in the Dispatcher queue
-                    Dispatcher.addSUChunk(cgi=cgi, sunums=chunk, reqtable=reqtable, sutable=sutable, dbuser=dbuser, request=request, binpath=binpath, hastapesys=tapesysexists, tmpdir=tmpdir, log=log)
+                    Dispatcher.addSUChunk(cgi=cgi, sunums=chunk, reqtable=reqtable, sutable=sutable, dbuser=dbuser, request=request, binpath=binpath, hastapesys=tapesysexists, tmpdir=tmpdir, expiration=expiration, archive=archive, tapegroup=tapegroup, log=log)
                     log.writeInfo([ 'added an item to the dispatcher queue for SU chunk: ' + ','.join([ str(ansunum) for ansunum in chunk ]) ])
                 except QueueFullException as exc:
                     # non-blocking put failed (because queue was full);
@@ -3144,7 +2986,6 @@ if __name__ == "__main__":
         # Optional parameters - no default argument is provided, so the default is None, which will trigger the use of what exists in the configuration file
         # (which is drmsparams.py).
         parser.add_argument('r', '--reqtable', help='The database table that contains records of the SU-request being processed. If provided, overrides default specified in configuration file.', metavar='<request unit table>', dest='reqtable', default=sumsDrmsParams.get('RS_REQUEST_TABLE'))
-        parser.add_argument('s', '--sutable', help='The database table that contains records of the storage units being processed. If provided, overrides default specified in configuration file.', metavar='<storage unit table>', dest='sutable', default=sumsDrmsParams.get('RS_SU_TABLE'))
         parser.add_argument('n', '--nworkers', help='The number of scp worker threads.', metavar='<number of worker threads>', dest='nWorkers', type=int, default=sumsDrmsParams.get('RS_N_WORKERS'))
         parser.add_argument('t', '--tmpdir', help='The temporary directory to use for scp downloads.', metavar='<temporary directory>', dest='tmpdir', default=sumsDrmsParams.get('RS_TMPDIR'))
         parser.add_argument('-N', '--dbname', help='The name of the database that contains the series table from which records are to be deleted.', metavar='<db name>', dest='dbname', default=sumsDrmsParams.get('RS_DBNAME'))
@@ -3153,9 +2994,45 @@ if __name__ == "__main__":
         parser.add_argument('-P', '--dbport', help='The port on the host machine that is accepting connections for the database that contains the series table from which records are to be deleted.', metavar='<db host port>', dest='dbport', default=int(sumsDrmsParams.get('RS_DBPORT')))
         parser.add_argument('-b', '--binpath', help='The path to executables run by this daemon (e.g., vso_sum_alloc, vso_sum_put).', metavar='<executable path>', dest='binpath', default=sumsDrmsParams.get('RS_BINPATH'))
         parser.add_argument('-l', '--loglevel', help='Specifies the amount of logging to perform. In order of increasing verbosity: critical, error, warning, info, debug', dest='loglevel', action=LogLevelAction, default=logging.ERROR)
+        parser.add_argument('-E', '--expiration', help='The default date (ISO 8601) at which ingested SUs expire and become eligible for deletion.', dest='expiration', action=ExpirationAction, default=argparse.SUPPRESS)
+        parser.add_argument('-L', '--lifespan', help='The lifespan of ingested SUs (number of days).', dest='lifespan', type=int, default=argparse.SUPPRESS)
+        parser.add_argument('-a', '--archive', help='If set, then data are archived to tape.', dest='archive', action=ArchiveAction, default=argparse.SUPPRESS)
+        parser.add_argument('-g', '--tapegroup', help='', dest='tapegroup', type=int, default=argparse.SUPPRESS)
                 
         arguments = Arguments(parser)
-        
+
+        if not hasattr(arguments, 'expiration') and not hasattr(arguments, 'lifespan'):
+            # try RS_SU_EXPIRATION first
+            try:
+                expiration = dateparser.parse(sumsDrmsParams.get('RS_SU_EXPIRATION'))
+                arguments.setArg('expiration', expiration)
+            except DrmsParamsException:
+                try:
+                    # try RS_SU_LIFESPAN next
+                    lifespan = int(sumsDrmsParams.get('RS_SU_LIFESPAN'))
+                    
+                    # convert to expiration
+                    arguments.setArg('expiration', datetime.now() + timedelta(days=lifespan))
+                except DrmsParamsException:
+                    # neither expiration nor lifepan
+                    raise RSArgsException('must provide either the expiration or lifespan argument')
+                    
+        if not hasattr(arguments, 'archive'):
+            try:
+                archive = bool(distroutil.strtobool(sumsDrmsParams.get('RS_SU_ARCHIVE')))
+            except DrmsParamsException:
+                archive = False
+
+            arguments.setArg('archive', archive)
+
+        if not hasattr(arguments, 'tapegroup'):
+            try:
+                tapegroup = int(sumsDrmsParams.get('RS_SU_TAPEGROUP'))
+            except DrmsParamsException:
+                tapegroup = 0
+
+            arguments.setArg('tapegroup', tapegroup)
+
         arguments.setArg('lockfile', sumsDrmsParams.get('RS_LOCKFILE'))
         arguments.setArg('dltimeout', timedelta(seconds=int(sumsDrmsParams.get('RS_DLTIMEOUT'))))
         arguments.setArg('reqtimeout', timedelta(seconds=int(sumsDrmsParams.get('RS_REQTIMEOUT'))))
@@ -3196,9 +3073,8 @@ if __name__ == "__main__":
             rsDbLock = threading.RLock() # global
             sumsDbLock = threading.Lock() # global
             
-            rslog.writeInfo([ 'Obtained script file lock.' ])
+            rslog.writeInfo([ 'obtained script file lock' ])
 
-            suTable = arguments.sutable
             reqTable = arguments.reqtable
 
             suTableObj = None
@@ -3217,7 +3093,7 @@ if __name__ == "__main__":
             SuTable.sumsConn = sumsConn # Class variable
             SuTable.rsDbLock = rsDbLock # Class variable
             SuTable.sumsDbLock = sumsDbLock # Class variable
-            suTableObj = SuTable(suTable, arguments.dltimeout, rslog)
+            suTableObj = SuTable(arguments.dltimeout, rslog)
 
             ReqTable.rsConn = rsConn # Class variable
             ReqTable.rsDbLock = rsDbLock # Class variable
@@ -3229,7 +3105,7 @@ if __name__ == "__main__":
             sites = SiteTable(arguments.rsSiteInfoURL, rslog)
 
             # This function will try to read each table 10 times before giving up (and raising an exception).
-            readTables(suTableObj, reqTableObj, sites)
+            readTables(reqTableObj, sites)
 
             # Set max number of threads we can process at once.
             Downloader.setMaxThreads(arguments.maxthreads)
@@ -3283,25 +3159,6 @@ if __name__ == "__main__":
             
                 reqsPending = reqTableObj.getPending()
                 rslog.writeInfo([ 'there are ' + str(len(reqsPending)) + ' pending requests on start-up'])
-                              
-                # remove ALL SUs from the SU Table; as we iterate through the pending requests, we will dispatch
-                # the request's SUs to Downloaders (which will insert the SUs into the SU Table with a status of P)
-                # if an SU exists in the SU Table and it is not part of a pending request, then it is orphaned and
-                # should also be deleted; getSUs() locks and releases the SU Table lock
-                sus, missingSunums = suTableObj.getSUs(releaseTableLock=False, sunums=None, filter=None)
-                try:
-                    if sus and len(sus) > 0:
-                        rslog.writeInfo([ 'deleting SUs (via decrementRefcount()) from previous run of Remote SUMS: ' + ','.join([ str(su.sunum) for su in sus ]) ])
-                        for su in sus:
-                            # the existing SUs should all have refcount 1 (since we are starting up Remote SUMS);
-                            # so, basically delete all SUs from the sutable
-                            su.decrementRefcount()
-                finally:
-                    suTableObj.releaseLock()
-            
-                # gotta commit changes to the DB, else we'll get a duplicate SU exception when we attempt to initiate
-                # the download of the SUs again
-                suTableObj.updateDbAndCommit()
             
                 # request is a dictionary
                 sunumsSetToComplete = set()
@@ -3311,7 +3168,7 @@ if __name__ == "__main__":
                     rslog.writeInfo([ 'found an interrupted download request, id ' + str(request['requestid']) + ', for SUNUMs ' + ','.join([str(sunum) for sunum in sunums]) ])
                 
                     # returns the set of sunums that were are online already
-                    sunumsToSetToComplete = set(dispatchSUs(sunums, sites, request, suTableObj, reqTableObj, arguments.dbuser, arguments.binpath, arguments.tapesysexists, arguments.tmpdir, rslog))
+                    sunumsToSetToComplete = set(dispatchSUs(sunums, sites, request, suTableObj, reqTableObj, arguments.dbuser, arguments.binpath, arguments.tapesysexists, arguments.tmpdir, arguments.expiration, arguments.archive, arguments.tapegroup, rslog))
                 
                     # insert a new SU record for all unknown SUs that are already online; these calls modify the sus object;
                     # in this case, there was no SU inserted into the SU Table, but at least one request contained the SU; 
@@ -3322,16 +3179,16 @@ if __name__ == "__main__":
                 
                     # we want to insert a new SU object if the SU object does not already exist; otherwise, we want to
                     # increment the refcount on the SU object; set the SU statuses to C
-                    suTableObj.newSUs(sunums=list(sunumsToSetToComplete))
+                    suTableObj.addSUs(sunums=list(sunumsToSetToComplete))
                     suTableObj.setStatus(list(sunumsToSetToComplete - sunumsSetToComplete), 'C')
 
-                    sus, missingSunums = suTableObj.getSUs(releaseTableLock=False, sunums=list(sunumsToSetToComplete - sunumsSetToComplete), filter=SuTable.removeGhosts)
+                    sus, missingSunums = suTableObj.getSUs(releaseTableLock=False, sunums=list(sunumsToSetToComplete - sunumsSetToComplete))
                     try:
                         for su in sus:
                             # we have to put these sus into the sumap; normally the dispatcher thread does this, but since
                             # these sus were already online, they never got dispatched
                             rslog.writeDebug([ 'adding SU ' + str(su.sunum) + ' to suMap' ])
-                            suTableObj.addRequestToSUMap(su.sunum, request['requestid'])
+                            suTableObj.addRequestToSUMap(sunums=[ su.sunum ], requestid=request['requestid'])
                             
                             # we also have to add a complete queue item in the SU Table queue; normally the Downloader 
                             # thread does this, but a Downloader was not started for these online SUs
@@ -3347,7 +3204,7 @@ if __name__ == "__main__":
 
                     # At this point, both the requests table and SU table have been modified, but have not been flushed to disk.
                     # Flush them, but do this inside a transaction so that the first does not happen without the second.
-                    updateDbAndCommit(rslog, rsConn, rsDbLock, reqTableObj, suTableObj, [ request['requestid'] ], sunums)
+                    updateDbAndCommit(rslog, rsConn, rsDbLock, reqTableObj, [ request['requestid'] ])
             except:
                 raise
             finally:    
@@ -3435,13 +3292,15 @@ if __name__ == "__main__":
                         if len(set(request['sunums']).symmetric_difference(request['complete'])) == 0:
                             # request has completed
                             reqError = False
+                            errMsg = None
                         
                             sunums = list(set(request['sunums']))
-                            sus, missingSunums = suTableObj.getSUs(releaseTableLock=False, sunums=sunums, filter=SuTable.removeGhosts)
+                            sus, missingSunums = suTableObj.getSUs(releaseTableLock=False, sunums=sunums)
                             try:                       
                                 for su in sus:
                                     if su.status == 'E':
                                         reqError = True
+                                        errMsg = su.errmsg
                                         break   
                             finally:
                                 suTableObj.releaseLock()
@@ -3457,21 +3316,15 @@ if __name__ == "__main__":
                             # remove sunum-->request map items
                             suTableObj.acquireLock()
                             try:
-                                for su in sus:
-                                    suTableObj.removeRequestFromSUMap(su, request['requestid'])
+                                suTableObj.removeRequestFromSUMap(sus=sus, requestid=request['requestid'])
+                                rslog.writeDebug([ 'removed SUs: ' + ','.join([ str(sunum) for sunum in sunums ]) + ' from SU map' ])
+                                suTableObj.removeSUs(sunums=sunums, locktable=False)
+                                rslog.writeDebug([ 'removed SUs: ' + ','.join([ str(sunum) for sunum in sunums ]) ])
                             finally:
                                 suTableObj.releaseLock()
-                        
-                            # ART - Do not hold rsDbLock here! The functions called may acquire other locks, leading to deadlock.
-                            # The rsDbLock should be for executing SQL only.
-                            rslog.writeDebug([ 'decrementing refcount for SUs: ' + ','.join([ str(sunum) for sunum in sunums ]) ])
-                            # Remove duplicates from list first. We do not need to preserve the order of the SUNUMs
-                            # before calling decrementRefcount() since that function uses a hash lookup on the SUNUM
-                            # to find the associated refcount. Does not modify SU db table.
-                            suTableObj.decrementRefcount(sunums)
 
-                            # commit status changes to the requests and su table (decrementRefcount modified SUs)
-                            updateDbAndCommit(rslog, rsConn, rsDbLock, reqTableObj, suTableObj, [ request['requestid'] ], sunums)
+                            # commit status changes to the requests table
+                            updateDbAndCommit(rslog, rsConn, rsDbLock, reqTableObj, [ request['requestid'] ])
                         else:
                             # check to see if any request has undispatched SUs
                             if len(request['todispatch']) > 0:
@@ -3488,18 +3341,18 @@ if __name__ == "__main__":
                                 # which SUs to put into the dispatch queue
                                 sunums = list(set(request['todispatch']) ) # the SUs that have not been dispatched yet        
                                 rslog.writeDebug([ 'request ' + str(request['requestid']) + ' (obj ' + str(id(request)) + ')' + ' has un-dispatched SUs: ' + ','.join([ str(sunum) for sunum in sunums ]) ])
-                                sunumsToSetToComplete = set(dispatchSUs(sunums, sites, request, suTableObj, reqTableObj, arguments.dbuser, arguments.binpath, arguments.tapesysexists, arguments.tmpdir, rslog))
+                                sunumsToSetToComplete = set(dispatchSUs(sunums, sites, request, suTableObj, reqTableObj, arguments.dbuser, arguments.binpath, arguments.tapesysexists, arguments.tmpdir, arguments.expiration, arguments.archive, arguments.tapegroup, rslog))
 
-                                suTableObj.newSUs(sunums=list(sunumsSetToComplete))
+                                suTableObj.addSUs(sunums=list(sunumsSetToComplete))
                                 suTableObj.setStatus(list(sunumsToSetToComplete - sunumsSetToComplete), 'C')
 
-                                sus, missingSunums = suTableObj.getSUs(releaseTableLock=False, sunums=list(sunumsToSetToComplete - sunumsSetToComplete), filter=SuTable.removeGhosts)
+                                sus, missingSunums = suTableObj.getSUs(releaseTableLock=False, sunums=list(sunumsToSetToComplete - sunumsSetToComplete))
                                 try:
                                     for su in sus:
                                         # we have to put these sus into the sumap; normally the dispatcher thread does this, but since
                                         # these sus were already online, they never got dispatched
                                         rslog.writeDebug([ 'adding SU ' + str(su.sunum) + ' to suMap' ])
-                                        suTableObj.addRequestToSUMap(su.sunum, request['requestid'])
+                                        suTableObj.addRequestToSUMap(sunums=[ su.sunum ], requestid=request['requestid'])
                             
                                         # we also have to add a complete queue item in the SU Table queue; normally the Downloader 
                                         # thread does this, but a Downloader was not started for these online SUs
@@ -3515,7 +3368,7 @@ if __name__ == "__main__":
 
                                 # At this point, both the requests table and SU table have been modified, but have not been flushed to disk.
                                 # Flush them, but do this inside a transaction so that the first does not happen without the second.
-                                updateDbAndCommit(rslog, rsConn, rsDbLock, reqTableObj, suTableObj, [ request['requestid'] ], list(sunumsToSetToComplete - sunumsSetToComplete))
+                                updateDbAndCommit(rslog, rsConn, rsDbLock, reqTableObj, [ request['requestid'] ])
                             else:
                                 # not all SU have been processed, but at the same time all have been dispatched; if the worker attribute
                                 # (Downloader) of the SU is not None, then we started a Downloader for this SU; if that Downloader died,
@@ -3525,7 +3378,7 @@ if __name__ == "__main__":
                                 # item was added, but for some reason, the dispatcher never created a Downloader);
                                 # sunums are the pending SUs (all SUs have been dispatched)
                                 sunums = list(set(request['todispatch']))
-                                sus, missingSunums = suTableObj.getSUs(releaseTableLock=False, sunums=sunums, filter=SuTable.removeGhosts)
+                                sus, missingSunums = suTableObj.getSUs(releaseTableLock=False, sunums=sunums)
                                 try:
                                     # the sus are in the SU Table, so they should have a Downloader (it is possible that an SU has been dispatched
                                     # but has not yet been assigned a Downloader because the Dispatcher thread has yet to read its queue item)                                    
@@ -3597,7 +3450,7 @@ if __name__ == "__main__":
                         sunums = list(set(request['todispatch'])) # the SUs that have not been dispatched yet
                         rslog.writeInfo([ 'found a new download request, id ' + str(request['requestid']) + ', for SUNUMs ' + ','.join([ str(sunum) for sunum in sunums ]) ])
                     
-                        sunumsToSetToComplete = set(dispatchSUs(sunums, sites, request, suTableObj, reqTableObj, arguments.dbuser, arguments.binpath, arguments.tapesysexists, arguments.tmpdir, rslog))
+                        sunumsToSetToComplete = set(dispatchSUs(sunums, sites, request, suTableObj, reqTableObj, arguments.dbuser, arguments.binpath, arguments.tapesysexists, arguments.tmpdir, arguments.expiration, arguments.archive, arguments.tapegroup, rslog))
 
                         # REGARDLESS IF ANY SUS WERE INSERTED INTO THE SU TABLE (if none got inserted, then no downloads will happen), 
                         # a request was initiated; if any Downloader thread fails, or if at least one was never started, then
@@ -3613,16 +3466,16 @@ if __name__ == "__main__":
                         # suTableObj.insert(sunums=list(sunumsToSetToComplete - sunumsSetToComplete))
                     
                         # if we already created an SU obj for this SU, this will increment refcount
-                        suTableObj.newSUs(sunums=list(sunumsToSetToComplete))
+                        suTableObj.addSUs(sunums=list(sunumsToSetToComplete))
                         suTableObj.setStatus(list(sunumsToSetToComplete - sunumsSetToComplete), 'C')
                     
-                        sus, missingSunums = suTableObj.getSUs(releaseTableLock=False, sunums=list(sunumsToSetToComplete - sunumsSetToComplete), filter=SuTable.removeGhosts)
+                        sus, missingSunums = suTableObj.getSUs(releaseTableLock=False, sunums=list(sunumsToSetToComplete - sunumsSetToComplete))
                         try:
                             for su in sus:
                                 # we have to put these sus into the sumap; normally the dispatcher thread does this, but since
                                 # these sus were already online, they never got dispatched
                                 rslog.writeDebug([ 'adding SU ' + str(su.sunum) + ' to suMap' ])
-                                suTableObj.addRequestToSUMap(su.sunum, request['requestid'])
+                                suTableObj.addRequestToSUMap(sunums=[ su.sunum ], requestid=request['requestid'])
 
                                 DownloaderCompleteQueueItem.addCompleteQueueItemToQueue(su=su, queue=suTableObj.queue, log=rslog)
                                 rslog.writeDebug([ 'successfully added a DownloaderCompleteQueueItem for SU ' +  str(su.sunum)])
@@ -3640,7 +3493,7 @@ if __name__ == "__main__":
 
                         # At this point, both the requests table and SU table have been modified, but have not been flushed to disk.
                         # Flush them, but do this inside a transaction so that the first does not happen without the second.
-                        updateDbAndCommit(rslog, rsConn, rsDbLock, reqTableObj, suTableObj, [ request['requestid'] ], sunums)
+                        updateDbAndCommit(rslog, rsConn, rsDbLock, reqTableObj, [ request['requestid'] ])
                 except:
                     raise
                 finally:                    
@@ -3659,7 +3512,7 @@ if __name__ == "__main__":
             
             # Save the db state when exiting.
             rslog.writeInfo([ 'Remote-sums daemon is exiting. Saving database tables.' ])
-            updateDbAndCommit(rslog, rsConn, rsDbLock, reqTableObj, suTableObj, None, None)
+            updateDbAndCommit(rslog, rsConn, rsDbLock, reqTableObj, None)
 
         # DB connection was terminated.            
         # Lock was released     
