@@ -150,6 +150,7 @@ SUM_PARTN_ALLOC = 'public.sum_partn_alloc'
 # decreasing priority is by increasing index
 REQTYPE_CODES = [ 'U', 'M', 'G' ]
 REQTYPE_TEXT = [ 'USER', 'MIRROR', 'GENERIC' ] # generic implies that the system does not specify a request type (it is an older system that did not differentiate request types)
+REQTYPE_PRIORITY = [ 0, 10, 100 ]
 REQTYPE_DOWNLOADER = [ 'HighPriorityDownloader', 'Downloader', 'Downloader' ]
 
 # SUMS archive type codes (archive substatus)
@@ -931,14 +932,15 @@ class SuTable:
     sumsDbLock = None # Since all Downloader threads and the main thread share the same connection, their cursors 
                       # on these connections are not isolated. Use a lock to ensure a consistent view in the
                       # offline() method.
-    
-    def __init__(self, timeOut, log):
+
+    def __init__(self, timeOut, reqtable, log):
         self.timeOut = timeOut # A timedelta object - the length of time to wait for a download to complete.
         self.lock = threading.Lock()
+        self.reqtable = reqtable # the table of requests that the contained SUs map to
         self.log = log
         self.suDict = {}
         self.queue = Queue(0) # non-blocking, infinite sized
-        self.suMap = {} # map an SU to a ReqTable request
+        self.suMap = {} # map an SU to a ReqTable request id
 
     def acquireLock(self):
         return self.lock.acquire()
@@ -1147,7 +1149,8 @@ class SuTable:
     # Sort by start time - process the oldest first.
     #
     # All SUs returned MUST have the same scpUser, scpHost, and scpPort.
-    def getNextNWorkingSUs(self, id, num):
+    def getNextNWorkingSUs(self, id, num, priority):
+        # this ScpWorker can collect SUs with 'priority' level priority, or higher
         nworking = []
         scpUser = None
         scpHost = None
@@ -1157,8 +1160,16 @@ class SuTable:
         # get lock because we are reading self.suDict
         self.acquireLock()
         try:
+            # filter by priority
+            reqTypeToPriority = dict(zip(REQTYPE_TEXT, REQTYPE_PRIORITY))
+            suAndPriority = [ (su, min([ reqTypeToPriority[self.reqtable.get(reqid)[0].type] for reqid in self.suMap[str(su.sunum)] ])) for su in list(self.suDict.values()) ]
+            filteredSUs = list(filter(lambda elem: elem[1] <= priority, suAndPriority))
+            # filteredSUs = list(filter(lambda su: min([ reqTypeToPriority[self.get(reqid)[0].type] for reqid in self.suMap[str(su.sunum)] ]) <= priority, list(self.suDict.values())))
+        
             # do a double sort (priority, start-time)
-            sortedSUs = sorted(list(self.suDict.values()), key=lambda su : (0 if hasattr(su, 'worker') and isinstance(su.worker, (HighPriorityDownloader)) else 100, su.starttime.strftime('%Y-%m-%d %T')))
+            # sortedSUs = sorted(filteredSUs, key=lambda su : (0 if hasattr(su, 'worker') and isinstance(su.worker, (HighPriorityDownloader)) else 100, su.starttime.strftime('%Y-%m-%d %T')))
+            sortedSUs = sorted(filteredSUs, key=lambda elem: (elem[1], elem[0].starttime.strftime('%Y-%m-%d %T')))
+            
             it = iter(sortedSUs)
             try:
                 while num > 0:
@@ -1259,7 +1270,7 @@ class ReqTable:
         self.timeOut = timeOut
         self.log = log
         self.reqDict = {}
-    
+
     def read(self):
         # to support SU priority, we had to add a column at some point; not all releases have this column; as a result, we do not know the exact set of columns; so basically we have to deal with a PITA
         try:
@@ -1662,20 +1673,20 @@ class ScpWorker(threading.Thread):
     scpNeeded = threading.Event() # event fired by main when a Downloader thread has changed the state of an SU from 'P' to 'W'
     lock = threading.Lock() # Guard tList.
     
-    def __init__(self, id, suTable, arguments, log):
+    def __init__(self, **kwargs):
         threading.Thread.__init__(self)
-        self.id = id
-        self.suTable = suTable
-        self.tmpdir = arguments.tmpdir
-        self.arguments = arguments
-        self.log = log
+        self.id = kwargs['id']
+        self.suTable = kwargs['sutable']
+        self.tmpdir = kwargs['tmpdir']
+        self.maxsus = kwargs['maxsus']
+        self.maxpayload = kwargs['maxpayload']
+        self.scptimeout = kwargs['scptimeout']
+        self.priority = kwargs['priority']
+        self.log = kwargs['log']
         self.sdEvent = threading.Event()
 
     def run(self):
         gotSULock = False
-        maxNumSUs = self.arguments.scpMaxNumSUs
-        maxPayloadSUs = self.arguments.scpMaxPayload
-        scpTimeOut = self.arguments.scpTimeOut
         doDownload = False
         lastDownloadTime = None
         
@@ -1693,7 +1704,7 @@ class ScpWorker(threading.Thread):
                 # to 'F' so the requesting Downloader thread can clean-up and set the status to 'C' for the main thread to handle
                 # 
                 # acquires SU table lock
-                (workingSUs, (user, host, port)) = self.suTable.getNextNWorkingSUs(self.id, maxNumSUs)
+                (workingSUs, (user, host, port)) = self.suTable.getNextNWorkingSUs(self.id, self.maxsus, self.priority)
                 try:
                     # no SU in workingSUs can have errored out at this point
                     susToDownload = []
@@ -1704,20 +1715,20 @@ class ScpWorker(threading.Thread):
 
                     if numSUs > 0:
                         self.log.writeDebug([ 'examining ' + str(numSUs) + ' working SUs' ])
-                        doDownload = payload > maxPayloadSUs or numSUs == maxNumSUs
+                        doDownload = payload > self.maxpayload or numSUs == self.maxsus
                     
                         # Now we need to modify workingSUs if the payload would be too large, or there would be too many SUs for this scp.
                         payload = 0
                         numSUs = 0
                         for su in workingSUs:
-                            if (payload + su.suSize > maxPayloadSUs and numSUs > 0) or numSUs + 1 > maxNumSUs:
+                            if (payload + su.suSize > self.maxpayload and numSUs > 0) or numSUs + 1 > self.maxsus:
                                 break
                         
                             susToDownload.append(su)
                             payload += su.suSize
                             numSUs += 1                    
                     
-                        self.log.writeDebug([ 'doDownload calc (payload, maxPayLoadSUs, numSUs, maxNumSUs, currentTime, lastDownloadTime, scpTimeOut): ' + str(payload) + ',' + str(maxPayloadSUs) + ',' + str(numSUs) + ',' + str(maxNumSUs) + ',' + str(currentTime) + ',' + str(lastDownloadTime) + ',' + str(scpTimeOut) + ')' ])
+                        self.log.writeDebug([ 'doDownload calc (payload, maxPayLoadSUs, numSUs, maxNumSUs, currentTime, lastDownloadTime, scpTimeOut): ' + str(payload) + ',' + str(self.maxpayload) + ',' + str(numSUs) + ',' + str(self.maxsus) + ',' + str(currentTime) + ',' + str(lastDownloadTime) + ',' + str(self.scptimeout) + ')' ])
 
                         if doDownload:                            
                             # Set lastDownloadTime. We will keep setting this, until we complete the scp - that is the best place to
@@ -1729,7 +1740,7 @@ class ScpWorker(threading.Thread):
                             if lastDownloadTime is None:
                                 lastDownloadTime = datetime.now(timezone.utc)
                             
-                            if currentTime - lastDownloadTime > scpTimeOut:
+                            if currentTime - lastDownloadTime > self.scptimeout:
                                 doDownload = True
                     else:
                         doDownload = False
@@ -1880,7 +1891,7 @@ class ScpWorker(threading.Thread):
                     # to trigger a download. If that is the case, then we must let scpNeeded time-out before we do check to see
                     # if it is time to do a download. If the scpNeeded.wait() timeout is long, then we won't check for the 
                     # ScpWorker timeout for a long time, even though the ScpWorker timeout might be short.
-                    timeOutToUse = min(scpTimeOut, timedelta(seconds=10))
+                    timeOutToUse = min(self.scptimeout, timedelta(seconds=10))
                 
                     try:
                         ScpWorker.scpNeeded.wait(timeOutToUse.total_seconds())
@@ -1907,10 +1918,10 @@ class ScpWorker(threading.Thread):
         # Fire scpNeeded event so that the ScpWorker thread will not block on wait.
         ScpWorker.scpNeeded.set()
     
-    @staticmethod
-    def newThread(id, suTable, arguments, log):
-        worker = ScpWorker(id, suTable, arguments, log)
-        ScpWorker.tList.append(worker)
+    @classmethod
+    def newThread(cls, **kwargs):
+        worker = cls(**kwargs)
+        cls.tList.append(worker)
         worker.start()
 
 class DownloaderCompleteQueueItem(object):
@@ -2515,6 +2526,7 @@ class DispatcherQueueItem(object):
         self.sunums = kwargs['sunums']
         self.sutable = kwargs['sutable']
         self.dbuser = kwargs['dbuser']
+        self.reqtable = kwargs['reqtable']
         request = kwargs['request']
         if request:
             self.requestID = request['requestid']
@@ -3000,6 +3012,9 @@ if __name__ == "__main__":
         parser.add_argument('-g', '--tapegroup', help='', dest='tapegroup', type=int, default=argparse.SUPPRESS)
                 
         arguments = Arguments(parser)
+        
+        if arguments.nWorkers < 3:
+            raise RSArgsException('must specify a minimum of 3 worker threads')
 
         if not hasattr(arguments, 'expiration') and not hasattr(arguments, 'lifespan'):
             # try RS_SU_EXPIRATION first
@@ -3089,15 +3104,16 @@ if __name__ == "__main__":
             # A fancier implementation would be some kind of download manager that can recover partially downloaded
             # storage units, but who has the time :)
 
+            ReqTable.rsConn = rsConn # Class variable
+            ReqTable.rsDbLock = rsDbLock # Class variable
+            reqTableObj = ReqTable(reqTable, arguments.reqtimeout, rslog)
+
             SuTable.rsConn = rsConn # Class variable
             SuTable.sumsConn = sumsConn # Class variable
             SuTable.rsDbLock = rsDbLock # Class variable
             SuTable.sumsDbLock = sumsDbLock # Class variable
-            suTableObj = SuTable(arguments.dltimeout, rslog)
+            suTableObj = SuTable(arguments.dltimeout, reqTableObj, rslog)
 
-            ReqTable.rsConn = rsConn # Class variable
-            ReqTable.rsDbLock = rsDbLock # Class variable
-            reqTableObj = ReqTable(reqTable, arguments.reqtimeout, rslog)
             
             Downloader.sumsConn = sumsConn
             Downloader.sumsDbLock = sumsDbLock # Class variable
@@ -3119,16 +3135,21 @@ if __name__ == "__main__":
             # started. The ScpWorker threads need the parent Downloader threads to exist before it can process 'W' SUs, but if there
             # are more than maxThreads 'P' SUs, then the Dispatcher code will block until threads free up, and that cannot happen
             # if the ScpWorker threads are not running
-            for nthread in range(1, arguments.nWorkers + 1):
-                ScpWorker.lock.acquire()
-                try:
-                    if len(ScpWorker.tList) < ScpWorker.maxThreads:
-                        rslog.writeInfo([ 'Instantiating ScpWorker ' + str(nthread) + '.' ])
-                        ScpWorker.newThread(nthread, suTableObj, arguments, rslog)
+            ScpWorker.lock.acquire()
+            try:
+                for nthread in range(1, arguments.nWorkers + 1):
+                    if len(ScpWorker.tList) < ScpWorker.maxThreads - 2:
+                        rslog.writeInfo([ 'instantiating ScpWorker ' + str(nthread) + ' with priority ' + str(100) ])
+                        ScpWorker.newThread(id=nthread, sutable=suTableObj, tmpdir=arguments.tmpdir, maxsus=arguments.scpMaxNumSUs, maxpayload=arguments.scpMaxPayload, scptimeout=arguments.scpTimeOut, priority=100, log=rslog)
                     else:
                         break # The finally clause will ensure the ScpWorker lock is released.
-                finally:
-                    ScpWorker.lock.release()
+        
+                # high priority ScpWorkers
+                for nthread in range(arguments.nWorkers + 1, arguments.nWorkers + 3):
+                    rslog.writeInfo([ 'instantiating ScpWorker ' + str(nthread) + ' with priority ' + str(0) ])
+                    ScpWorker.newThread(id=nthread, sutable=suTableObj, tmpdir=arguments.tmpdir, maxsus=arguments.scpMaxNumSUs, maxpayload=arguments.scpMaxPayload, scptimeout=arguments.scpTimeOut, priority=0, log=rslog)
+            finally:
+                ScpWorker.lock.release()
                     
             Dispatcher.lock.acquire()
             try:                                    
@@ -3196,7 +3217,7 @@ if __name__ == "__main__":
                             rslog.writeDebug([ 'successfully added a DownloaderCompleteQueueItem for SU ' +  str(su.sunum)])
                     finally:
                         suTableObj.releaseLock()
-                
+
                     # the request object is accessed by the main thread only - no lock needed
                     request['todispatch'] = list(set(request['todispatch']) - sunumsToSetToComplete)
                     
