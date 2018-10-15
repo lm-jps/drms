@@ -226,6 +226,18 @@ RS_SCP_MAXPAYLOAD                     512
 # then an ScpWorker will initiate a download.
 RS_SCP_TIMEOUT                        2
 
+# The default expiration date for all SUs ingested by Remote SUMS. If the SU being ingested is part of a data series, then Remote SUMS obtains the expiration for the SU from the data series' definition instead. As an alternative to RS_SU_EXPIRATION, RS_SU_LIFESPAN can be used to specify the expiration date of newly ingested SUs. RS_SU_EXPIRATION takes predent over RS_SU_LIFESPAN.
+RS_SU_EXPIRATION                      2018-10-15
+
+# The default lifespan ("retention time"), in days, of a newly ingested SU. If the SU being ingested is part of a data series, then Remote SUMS obtains the lifespan for the SU from the data series' definition instead. As an alternative to RS_SU_LIFESPAN, RS_SU_EXPIRATION can be used to specify the lifespan of newly ingested SUs. RS_SU_EXPIRATION takes predent over RS_SU_LIFESPAN.
+RS_SU_LIFESPAN                        28
+
+# The default value of the archive flag for newly ingested SUs. If the SU being ingested is part of a data series, then Remote SUMS obtains the archive flag from the data series' definition instead. The truth value can be one of several character strings that implies TRUE or FALSE.
+RS_SU_ARCHIVE                         no
+
+# The default value of the tapegroup for newly ingested SUs. If the SU being ingested is part of a data series, then Remote SUMS obtains the tapegroup from the data series' definition instead. 
+RS_SU_TAPEGROUP                       0
+
 ##### Storage Unit Steward #####
 # The (advisory) lockfile used by the SU steward to prevent multiple instances of the steward from running.
 SS_LOCKFILE                           /usr/share/drms/locks/sustewie.lck
