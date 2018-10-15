@@ -723,7 +723,8 @@ if __name__ == "__main__":
                                         raise DBCommandException(traceback.format_exc(5))
                                 
                                     # make the Remote SUMS request (by inserting a row into the RS requests table)
-                                    cmd = 'INSERT INTO ' + tableOut + '(requestid, dbhost, dbport, dbname, starttime, sunums, status) VALUES(' + str(requestID) + ", '" + arguments.dbhost + "', " + str(arguments.dbport) + ", '" + arguments.dbdatabase + "', " + 'clock_timestamp()' + ", '" + sunumsStr + "', " + "'N'" + ')'
+                                    cmd = 'INSERT INTO ' + tableOut + '(requestid, dbhost, dbport, dbname, type, starttime, sunums, status) VALUES(' + str(requestID) + ", '" + arguments.dbhost + "', " + str(arguments.dbport) + ", '" + arguments.dbdatabase + "', 'M', " + 'clock_timestamp()' + ", '" + sunumsStr + "', " + "'N'" + ')'
+                                    log.writeDebug([ 'running SQL: ' + cmd ])
                                     try:
                                         cursor.execute(cmd)
                                     except psycopg2.Error as exc:

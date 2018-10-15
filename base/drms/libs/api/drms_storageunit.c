@@ -1001,7 +1001,7 @@ static int processRemoteSums(DRMS_RsHandle_t *handle, int64_t *sunums, unsigned 
                         
                         cmd = base_strcatalloc(cmd, "INSERT INTO ", &szCmd);
                         cmd = base_strcatalloc(cmd, handle->requestsTable, &szCmd);
-                        cmd = base_strcatalloc(cmd, "(requestid, dbhost, dbport, dbname, starttime, sunums, status, errmsg) VALUES (", &szCmd);
+                        cmd = base_strcatalloc(cmd, "(requestid, dbhost, dbport, dbname, type, starttime, sunums, status, errmsg) VALUES (", &szCmd);
                         cmd = base_strcatalloc(cmd, idBuf, &szCmd);
                         cmd = base_strcatalloc(cmd, ", '", &szCmd);
                         cmd = base_strcatalloc(cmd, handle->dbh->dbhost, &szCmd);
@@ -1011,7 +1011,7 @@ static int processRemoteSums(DRMS_RsHandle_t *handle, int64_t *sunums, unsigned 
                         cmd = base_strcatalloc(cmd, ", '", &szCmd);
                         cmd = base_strcatalloc(cmd, handle->dbh->dbname, &szCmd);
                         /* Use the localtimestamp() function for the starttime column. */
-                        cmd = base_strcatalloc(cmd, "', localtimestamp(0), '", &szCmd);
+                        cmd = base_strcatalloc(cmd, "', 'U', localtimestamp(0), '", &szCmd);
                         cmd = base_strcatalloc(cmd, sunumList, &szCmd);
                         cmd = base_strcatalloc(cmd, "', 'N', '')", &szCmd);
                         

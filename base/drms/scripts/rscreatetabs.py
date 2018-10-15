@@ -158,7 +158,7 @@ if __name__ == "__main__":
                                     raise Exception('tabExists', 'The database table ' + tab + '_seq already exists.')
 
                             if tab == optD['reqtable']:
-                                sql = 'CREATE TABLE ' + tab + ' (requestid bigint NOT NULL, dbhost text NOT NULL, dbport integer NOT NULL, dbname text NOT NULL, starttime timestamp with time zone NOT NULL, sunums text NOT NULL, status character(1) NOT NULL, errmsg text); '
+                                sql = 'CREATE TABLE ' + tab + ' (requestid bigint NOT NULL, dbhost text NOT NULL, dbport integer NOT NULL, dbname text NOT NULL, type character(1) NOT NULL, starttime timestamp with time zone NOT NULL, sunums text NOT NULL, status character(1) NOT NULL, errmsg text); '
                                 sql += 'ALTER TABLE ' + tab + ' ADD CONSTRAINT ' + tabName + '_pkey PRIMARY KEY (requestid); '
 
                                 # All users must be able to insert new records into this table. That is how users request storage-unit downloads. They must
