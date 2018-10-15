@@ -36,6 +36,8 @@ Indexes:
 create index sum_main_ds_index_idx on sum_main (ds_index);
 create index sum_main_owner_idx on sum_main (OWNING_SERIES);
 
+GRANT ALL ON sum_main TO CURRENT_USER;
+
 
 --    "sum_main_owner_idx" btree (owning_series)
 
@@ -50,6 +52,8 @@ create table SUM_OPEN (
     constraint pk_sumopen primary key (SUMID)
 );
 
+GRANT ALL ON sum_open TO CURRENT_USER;
+
 /* =============================================================== */
 
 create table SUM_PARTN_ALLOC (
@@ -63,6 +67,8 @@ create table SUM_PARTN_ALLOC (
     ds_index           bigint not null,
     safe_id            integer
 );
+
+GRANT ALL ON sum_partn_alloc TO CURRENT_USER;
 
 /*
 Indexes:
@@ -85,6 +91,8 @@ create table SUM_PARTN_AVAIL (
        constraint pk_sumpartnavail primary key (partn_name)
 );
 
+GRANT ALL ON sum_partn_avail TO CURRENT_USER;
+
 /* ===============================================================*/
 create table SUM_TAPE (
         tapeid          varchar(20) not null,
@@ -101,6 +109,8 @@ Indexes:
     "sum_tape_tapeid_idx" btree (tapeid)
 */
 create index sum_tape_tapeid_idx on SUM_TAPE (tapeid);
+
+GRANT ALL ON sum_tape TO CURRENT_USER;
 /* ===============================================================*/
 
 create sequence SUM_SEQ
@@ -109,6 +119,8 @@ create sequence SUM_SEQ
   no maxvalue
   no cycle
   cache 50;
+  
+GRANT ALL ON sum_seq TO CURRENT_USER;
 
 create sequence SUM_DS_INDEX_SEQ
   increment 1
@@ -116,6 +128,8 @@ create sequence SUM_DS_INDEX_SEQ
   no maxvalue
   no cycle
   cache 50;
+  
+GRANT ALL ON sum_ds_index_seq TO CURRENT_USER;
 
 /* This is the file checksum table. For each file written to tape */
 /* it will get an entry here of the file md5 checksum value. */
@@ -126,6 +140,8 @@ create table SUM_FILE (
 	md5cksum	varchar(36) not null,
 	constraint pk_file primary key (tapeid, filenum)
        );
+       
+GRANT ALL ON sum_file TO CURRENT_USER;
 
 create table SUM_ARCH_GROUP (
 	group_id	integer not null,
@@ -136,6 +152,8 @@ create table SUM_ARCH_GROUP (
 	sum_set		integer not null,
 	constraint pk_arch_group primary key (group_id)
 );
+
+GRANT ALL ON sum_arch_group TO CURRENT_USER;
 
 /* The group id for a dataseries is defined by the drms definition */
 /* for the series. */
@@ -150,3 +168,4 @@ create table SUM_GROUP (
 	constraint pk_group primary key (group_id)
        );
 
+GRANT ALL ON sum_group TO CURRENT_USER;
