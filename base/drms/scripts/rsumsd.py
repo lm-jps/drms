@@ -22,7 +22,6 @@ import signal
 import time
 from copy import deepcopy
 import shutil
-import psycopg2
 import random
 import argparse
 import inspect
@@ -274,7 +273,7 @@ class TerminationHandler(object):
         try:
             for dispatcher in Dispatcher.tList:
                 # send lastitem queue item to dispatchers
-                lastitem = DispatcherQueueItem(cgi=None, sunums=None, sutable=None, dbuser=None, request=None, binpath=None, hastapesys=None, tmpdir=None, lastitem=True, expiration=None, archive=None, tapegroup=None, log=self.log)
+                lastitem = DispatcherQueueItem(cgi=None, sunums=None, sutable=None, dbuser=None, reqtable=None, request=None, binpath=None, hastapesys=None, tmpdir=None, lastitem=True, expiration=None, archive=None, tapegroup=None, log=self.log)
                 dispatcher.queue.put_nowait(lastitem)
                 self.log.writeInfo([ 'waiting for Dispatcher ' + dispatcher.name + ' to halt' ])
         finally:
@@ -1162,7 +1161,7 @@ class SuTable:
         try:
             # filter by priority
             reqTypeToPriority = dict(zip(REQTYPE_TEXT, REQTYPE_PRIORITY))
-            suAndPriority = [ (su, min([ reqTypeToPriority[self.reqtable.get(reqid)[0].type] for reqid in self.suMap[str(su.sunum)] ])) for su in list(self.suDict.values()) ]
+            suAndPriority = [ (su, min([ reqTypeToPriority[self.reqtable.get([ reqid ])[0]['type']] for reqid in self.suMap[str(su.sunum)] ])) for su in list(self.suDict.values()) ]
             filteredSUs = list(filter(lambda elem: elem[1] <= priority, suAndPriority))
             # filteredSUs = list(filter(lambda su: min([ reqTypeToPriority[self.get(reqid)[0].type] for reqid in self.suMap[str(su.sunum)] ]) <= priority, list(self.suDict.values())))
         
@@ -1173,7 +1172,7 @@ class SuTable:
             it = iter(sortedSUs)
             try:
                 while num > 0:
-                    su = next(it)
+                    su, priority = next(it)
                     try:
                         if su.status == 'W':
                             su.touch()
@@ -2493,11 +2492,14 @@ def getSeriesInfo(series, dbuser, dbname, dbhost, dbport, log, **kwargs):
                         log.writeInfo([ 'series ' + series + ' does not exist; using defaults' ])
 
                     row = cursor.fetchone()
-                    expiration, archive, tapegroup = (datetime.now() + timedelta(days=row[0]), row[1] == 1, row[2], row[3])
+                    expiration, archive, tapegroup = (datetime.now() + timedelta(days=row[0]), row[1] == 1, row[2])
                     log.writeInfo([ 'info for series ' + series + ' (expiration, archive, tapegroup): ' + expiration.strftime("%Y-%m-%d") + str(archive) + str(tapegroup) ])
                 except psycopg2.Error as exc:
                     # Handle database-command errors.
-                    log.writeDebug([ 'error executing DB command', exc.diag.message_primary, 'using defaults' ])
+                    log.writeDebug([ 'error executing DB command ', exc.diag.message_primary, ' using defaults' ])
+                    expiration, archive, tapegroup = default
+                except Exception as exc:
+                    log.writeDebug([ 'error executing DB command ', exc.diag.message_primary,  'using defaults' ])
                     expiration, archive, tapegroup = default
         # The connection is read-only, so there is not need to commit a transaction.
     except psycopg2.DatabaseError as exc:
@@ -2777,7 +2779,7 @@ class Dispatcher(threading.Thread):
                         
                     self.queue.task_done()
             # end of while loop; thread is terminating
-        finally:        
+        finally:
             # this thread is about to terminate; we need to check the class tList variable to update it, so we need to acquire the lock
             Dispatcher.lock.acquire()
             try:
@@ -3287,7 +3289,8 @@ if __name__ == "__main__":
                                 # unknown status; set status to 'E'
                                 completeItem.su.setStatus('E', 'SU ' + str(completeItem.su.sunum) + ' has an unknown status of ' + completeItem.su.status + '.')
 
-                            # find all requests that refer to this SU with the SU's map to all its requests    
+                            # find all requests that refer to this SU with the SU's map to all its requests
+                            XXX Lock SUtable
                             for requestID in suTableObj.suMap[str(completeItem.su.sunum)]:
                                 # add this SU to the request['complete'] list
                                 
@@ -3317,7 +3320,7 @@ if __name__ == "__main__":
                         
                             sunums = list(set(request['sunums']))
                             sus, missingSunums = suTableObj.getSUs(releaseTableLock=False, sunums=sunums)
-                            try:                       
+                            try:
                                 for su in sus:
                                     if su.status == 'E':
                                         reqError = True
