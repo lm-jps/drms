@@ -167,33 +167,39 @@ class TerminationHandler(object):
 
     def __init__(self, thContainer):
         self.container = thContainer
-        arguments = thContainer[0]
+        self.arguments = thContainer[0]
         self.pidStr = thContainer[1]
         self.log = thContainer[2]
         
-        self.lockFile = arguments.lockfile
-        self.dbname = arguments.dbname
-        self.dbuser = arguments.dbuser
-        self.dbhost = arguments.dbhost
-        self.dbport = arguments.dbport
+        self.lockFile = self.arguments.lockfile
+        self.dbname = self.arguments.dbname
+        self.dbuser = self.arguments.dbuser
+        self.dbhost = self.arguments.dbhost
+        self.dbport = self.arguments.dbport
         self.conn = None
         
-        self.sumsdbname = arguments.sumsdbname
-        self.sumsdbuser = arguments.sumsdbuser
-        self.sumsdbhost = arguments.sumsdbhost
-        self.sumsdbport = arguments.sumsdbport
+        self.sumsdbname = self.arguments.sumsdbname
+        self.sumsdbuser = self.arguments.sumsdbuser
+        self.sumsdbhost = self.arguments.sumsdbhost
+        self.sumsdbport = self.arguments.sumsdbport
         self.sumsconn = None
         
         self.savedSignals = None
 
         super(TerminationHandler, self).__init__()
         
-    def __enter__(self):
+    def __enter__(self):    
         self.enableInterrupts()
 
         # Acquire locks.
-        self.rsLock = DrmsLock(self.lockFile, self.pidStr)
-        self.rsLock.acquireLock()
+        self.rsLock = DrmsLock(self.lockFile, self.pidStr, False)
+        if not self.rsLock.acquireLock():
+            raise LockException('remote SUMS already running')
+            
+        self.log.writeCritical([ 'starting up remote-SUMS daemon' ])
+        self.log.writeCritical([ 'logging threshold level is ' + self.log.getLevel() ]) # Critical - always write the log level to the log
+        self.log.writeCritical([ 'arguments:' ])
+        self.arguments.dump(rslog)
         
         # Make main DB connection to RS database. We also have to connect to the SUMS database, so connect to that too.
         # The connections are NOT in autocommit mode. If changes need to be saved, then conn.commit() must be called.
@@ -201,10 +207,10 @@ class TerminationHandler(object):
         # supports this properly.
         try:
             self.conn = psycopg2.connect(database=self.dbname, user=self.dbuser, host=self.dbhost, port=self.dbport)
-            rslog.writeInfo([ 'Connected to DRMS database ' + self.dbname + ' on ' + self.dbhost + ':' + str(self.dbport) + ' as user ' + self.dbuser + '.' ])
+            self.log.writeInfo([ 'Connected to DRMS database ' + self.dbname + ' on ' + self.dbhost + ':' + str(self.dbport) + ' as user ' + self.dbuser + '.' ])
 
             self.sumsconn = psycopg2.connect(database=self.sumsdbname, user=self.sumsdbuser, host=self.sumsdbhost, port=self.sumsdbport)
-            rslog.writeInfo([ 'Connected to SUMS database ' + self.sumsdbname + ' on ' + self.sumsdbhost + ':' + str(self.sumsdbport) + ' as user ' + self.sumsdbuser + '.' ])            
+            self.log.writeInfo([ 'Connected to SUMS database ' + self.sumsdbname + ' on ' + self.sumsdbhost + ':' + str(self.sumsdbport) + ' as user ' + self.sumsdbuser + '.' ])            
         except psycopg2.DatabaseError as exc:
             self.__exit__(*sys.exc_info()) # clean up
             raise DBConnectionException('Unable to connect to a database.')
@@ -542,48 +548,6 @@ class Log(object):
                 self.log.critical(self.__prependFrameInfo(line))
             self.fileHandler.flush()
 
-class IntervalLogger(object):
-    """create one object per loop"""
-    def __init__(self, log, logInterval):
-        self.log = log
-        self.logInterval = logInterval
-        self.lastWriteTime = None
-
-    def timeToLog(self):        
-        if self.lastWriteTime is None:
-            return True
-        else:
-            timeNow = datetime.now(timezone.utc)
-            if timeNow > self.lastWriteTime + self.logInterval:
-                return True
-            else:
-                return False
-            
-    def updateLastWriteTime(self):
-        if self.timeToLog():
-            # update last print time only if the interval between last print and now has elapsed
-            self.lastWriteTime = datetime.now(timezone.utc)
-
-    def writeDebug(self, text):
-        if self.timeToLog():
-            self.log.writeDebug(text)
-
-    def writeInfo(self, text):
-        if self.timeToLog():
-            self.log.writeInfo(text)
-
-    def writeWarning(self, text):
-        if self.timeToLog():
-            self.log.writeWarning(text)
-
-    def writeError(self, text):
-        if self.timeToLog():
-            self.log.writeError(text)
-
-    def writeCritical(self, text):
-        if self.timeToLog():
-            self.log.writeCritical(text)
-
 
 class RemoteSumsException(Exception):
 
@@ -778,6 +742,79 @@ class TerminationException(RemoteSumsException):
     def __init__(self, msg):
         super(TerminationException, self).__init__(msg)
         self.retcode = RET_USER_TERMINATED
+
+
+class NotTimeToLogException(RemoteSumsException):
+    def __init__(self):
+        super(NotTimeToLogException, self).__init__('')
+
+class CheckTimer(object):
+    """context manager for checking for time-to-write, and updating last write time"""
+    def __init__(self, iLogger, fxn, updateTime):
+        self.iLogger = iLogger
+        self.fxn = getattr(self.iLogger.log, fxn)
+        self.updateTime = updateTime
+        self.wrote = False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, etype, value, traceback):
+        if etype == None:
+            if self.updateTime and self.wrote:
+                self.iLogger.updateLastWriteTime()
+            return True
+        else:
+            return etype == NotTimeToLogException # swallow NotTimeToLogException exception
+            
+    def call(self, text):
+        if not self.iLogger.timeToLog():
+            raise NotTimeToLogException()
+        self.fxn(text)
+        self.wrote = True
+    
+
+class IntervalLogger(object):
+    """create one object per loop"""
+    def __init__(self, log, logInterval):
+        self.log = log
+        self.logInterval = logInterval
+        self.lastWriteTime = None
+
+    def timeToLog(self):        
+        if self.lastWriteTime is None:
+            return True
+        else:
+            timeNow = datetime.now(timezone.utc)
+            if timeNow > self.lastWriteTime + self.logInterval:
+                return True
+            else:
+                return False
+            
+    def updateLastWriteTime(self):
+        if self.timeToLog():
+            # update last print time only if the interval between last print and now has elapsed
+            self.lastWriteTime = datetime.now(timezone.utc)
+
+    def writeDebug(self, text, updateTime=True):
+        with CheckTimer(self, 'writeDebug', updateTime) as ct:
+            ct.call(text)
+
+    def writeInfo(self, text, updateTime=True):
+        with CheckTimer(self, 'writeInfo', updateTime) as ct:
+            ct.call(text)
+
+    def writeWarning(self, text, updateTime=True):
+        with CheckTimer(self, 'writeWarning', updateTime) as ct:
+            ct.call(text)
+
+    def writeError(self, text, updateTime=True):
+        with CheckTimer(self, 'writeError', updateTime) as ct:
+            ct.call(text)
+
+    def writeCritical(self, text, updateTime=True):
+        with CheckTimer(self, 'writeCritical', updateTime) as ct:
+            ct.call(text)
 
         
 class StorageUnit(object):
@@ -1165,10 +1202,8 @@ class SuTable:
             reqTypeToPriority = dict(zip(REQTYPE_TEXT, REQTYPE_PRIORITY))
             suAndPriority = [ (su, min([ reqTypeToPriority[self.reqtable.get([ reqid ])[0]['type']] for reqid in self.suMap[str(su.sunum)] ])) for su in list(self.suDict.values()) ]
             filteredSUs = list(filter(lambda elem: elem[1] <= priority, suAndPriority))
-            # filteredSUs = list(filter(lambda su: min([ reqTypeToPriority[self.get(reqid)[0].type] for reqid in self.suMap[str(su.sunum)] ]) <= priority, list(self.suDict.values())))
         
             # do a double sort (priority, start-time)
-            # sortedSUs = sorted(filteredSUs, key=lambda su : (0 if hasattr(su, 'worker') and isinstance(su.worker, (HighPriorityDownloader)) else 100, su.starttime.strftime('%Y-%m-%d %T')))
             sortedSUs = sorted(filteredSUs, key=lambda elem: (elem[1], elem[0].starttime.strftime('%Y-%m-%d %T')))
             
             it = iter(sortedSUs)
@@ -1356,30 +1391,37 @@ class ReqTable:
     # all other changes to the database table (made from outside this program) that have happened. To read those changes,
     # shut down this program, then make the changes, then start this program again.
     def refresh(self):
-        # save attributes not saved in the db
-        saved = {}
-        for (key, val) in self.reqDict.items():
-            if 'todispatch' not in saved:
-                saved['todispatch'] = {}
-                
-            if 'complete' not in saved:
-                saved['complete'] = {}
-                
-            saved['todispatch'][key] = val['todispatch']
-            saved['complete'][key] = val['complete']
+        # read the table from the database anew, but put the new request info into a temporary ReqTable
+        # SLOW code
+        tmpTable = ReqTable(self.tableName, self.timeOut, self.log)
+        tmpTable.tryRead()
+        # end SLOW code
     
-        # delete existing items from self
-        self.reqDict = {}
+        self.acquireLock()
+        try:
+            # save attributes not saved in the db
+            saved = {}
+            for (key, val) in self.reqDict.items():
+                if 'todispatch' not in saved:
+                    saved['todispatch'] = {}
+                
+                if 'complete' not in saved:
+                    saved['complete'] = {}
+                
+                saved['todispatch'][key] = val['todispatch']
+                saved['complete'][key] = val['complete']
+
+            # replace existing reqDict items with newly read items
+            self.reqDict = tmpTable.reqDict.copy()
         
-        # Read the table from the database anew.
-        self.tryRead()
-        
-        # we have to restore the things that do not stick in the db (but only for pending requests)
-        # no need to hold a lock since only the main thread accesses the request status
-        for (key, val) in self.reqDict.items():
-            if self.reqDict[key]['status'] != 'N':
-                self.reqDict[key]['todispatch'] = saved['todispatch'][key]
-                self.reqDict[key]['complete'] = saved['complete'][key]
+            # we have to restore the things that do not stick in the db (but only for pending requests)
+            # no need to hold a lock since only the main thread accesses the request status
+            for (key, val) in self.reqDict.items():
+                if self.reqDict[key]['status'] != 'N':
+                    self.reqDict[key]['todispatch'] = saved['todispatch'][key]
+                    self.reqDict[key]['complete'] = saved['complete'][key]
+        finally:
+            self.releaseLock()
 
     def getUpdateDBSql(self, requestids=None):
         sql = []
@@ -1756,7 +1798,8 @@ class ScpWorker(threading.Thread):
                                 if lastDownloadTime is None:
                                     lastDownloadTime = datetime.now(timezone.utc)
                             
-                                if currentTime - lastDownloadTime > self.scptimeout:
+                                # for the highest priority (priority == 0) do not wait for additional SUs to be requested - download now
+                                if currentTime - lastDownloadTime > self.scptimeout or self.priority == 0:
                                     doDownload = True
                         else:
                             doDownload = False
@@ -2605,14 +2648,10 @@ class Dispatcher(threading.Thread):
         try:
             queueItem = None
             while True:
-                errorOut = False
-
-                try:
-                    # pop a DispatcherQueueItem from the queue (time-out after 2 seconds - if a timeout occurs, then the queue was empty )              
-                    queueItem = self.queue.get(timeout=2)
-                except Empty:                
-                    # check for stop event
-                    continue
+                # pop a DispatcherQueueItem from the queue; OK to block waiting because if no item is in the queue, there
+                # is nothing to do, and there is no need to check on a shutdown periodically; a shutdown will put a
+                # termination item in the queue
+                queueItem = self.queue.get()
                     
                 if queueItem.lastitem:
                     # shutdown
@@ -2623,6 +2662,7 @@ class Dispatcher(threading.Thread):
 
                 # process the SUs for the source site represented by its url
                 workingSus = {}
+                hasDownloader = []
 
                 try:
                     sus, missingSunums = queueItem.sutable.getSUs(releaseTableLock=False, sunums=queueItem.sunums)
@@ -2652,25 +2692,17 @@ class Dispatcher(threading.Thread):
                     data = urllib.parse.urlencode(values)
                     url = queueItem.cgi + '?' + data
 
-                    natt = 0
-                    while True:
-                        try:
-                            self.log.writeInfo([ 'requesting paths for SUNUMs ' + sunumLst + '; URL is ' + url ])
-                            with urllib.request.urlopen(url) as response:    
-                                dlInfoStr = response.read().decode('UTF-8')
-                                natt = 0
-                                break
-                        except urllib.error.URLError as exc:
-                            # we want to try again, until we time-out
-                            natt += 1
-                            if natt > 10:
-                                raise SUPathCGIException('unable to access URL ' + url + '; skipping')
-                            if type(exc.response) is str:
-                                msg = exc.response
-                            else:
-                                msg = ''
-                            self.log.writeWarning([ 'unable to obtain SU info from provider (' + msg + '); trying again' ])
-                            time.sleep(1)
+                    try:
+                        self.log.writeInfo([ 'requesting paths for SUNUMs ' + sunumLst + '; URL is ' + url ])
+                        with urllib.request.urlopen(url) as response:    
+                            dlInfoStr = response.read().decode('UTF-8')
+                    except urllib.error.URLError as exc:
+                        if type(exc.response) is str:
+                            msg = exc.response
+                        else:
+                            msg = ''
+                        self.log.writeWarning([ 'unable to obtain SU info from provider (' + msg + ')' ])
+                        raise SUPathCGIException(msg)
 
                     dlInfo = json.loads(dlInfoStr)
     
@@ -2686,10 +2718,8 @@ class Dispatcher(threading.Thread):
                             try:
                                 su = workingSus[str(sunum)]
                             except KeyError:
-                                self.log.writeWarning([ 'SUNUM ' + str(sunum) + ' returned by SU-path CGI is not recognized; skipping ' ])
-                                # no need to acquire the SU Table lock since the status is accessed by exactly one thread at a time
-                                DownloaderCompleteQueueItem.addCompleteQueueItemToQueue(su=su, queue=queueItem.sutable.queue, log=self.log)
-                                self.log.writeDebug([ 'successfully added a DownloaderCompleteQueueItem for SU ' +  str(sunum)])
+                                self.log.writeWarning([ 'SUNUM ' + str(sunum) + ' returned by SU-path CGI is not recognized; skipping' ])
+                                # can't set status since there is no su
                                 skip = True
 
                             if not skip:
@@ -2727,16 +2757,12 @@ class Dispatcher(threading.Thread):
                                         expiration, archive, tapegroup = infos[series]                                            
                                     except GetSeriesInfoException as exc:
                                         self.log.writeError([ exc.args[0] ])
-                                        su.setStatus('E', 'unable to get series info for series ' + series + ' for SU ' + str(sunum))
+                                        su.setStatus('E', 'unable to get series info for series ' + series)
                                         # no need to acquire the SU Table lock since the status is accessed by exactly one thread at a time
                                         skip = True
 
                             if skip:
-                                # must put a DownloaderCompleteQueueItem in SU Table queue since a Downloader will not be started
-                                # for this SU
-                                # no need to acquire the SU Table lock since the status is accessed by exactly one thread at a time
-                                DownloaderCompleteQueueItem.addCompleteQueueItemToQueue(su=su, queue=queueItem.sutable.queue, log=self.log)
-                                self.log.writeDebug([ 'successfully added a DownloaderCompleteQueueItem for SU ' +  str(sunum)])
+                                su.setStatus('E', 'providing site cannot provide an SU path')
                                 continue
 
                             # save series and expiration
@@ -2777,15 +2803,10 @@ class Dispatcher(threading.Thread):
                                 self.downloaderType.eventMaxThreads.wait()
                                 # we woke up, but we do not know if there are any open threads in the thread pool; loop and check
                                 # tList again
-
-                        # end loop over SUs
-                        
-                        # for each SU that was requested, but for which no path was given in the response, update its SU-table record with an error status.
-                        pathInResp = set([ sunum for (sunum, path, series, suSize) in paths ])
-        
-                        for sunumStr, su in workingSus.items():
-                            if su.sunum not in pathInResp:
-                                su.setStatus('E', 'providing site cannot provide a path for SU ' + str(su.sunum))
+                                
+                            # we successfully started a Downloader for this SU
+                            hasDownloader.append(su.sunum)
+                        # end loop over SUs                        
                     elif dlInfo['status'] == 'pending':
                         # one or more of the requested SUs is offline; this can no longer happen (rs.sh is called
                         # with the N=1 argument now)!! Do not perform an export request!; there are a limited number ofexport-request 
@@ -2796,26 +2817,31 @@ class Dispatcher(threading.Thread):
                         for sunumStr, su in workingSus.items():
                             su.setStatus('E', 'an export request was started - this is no longer allowed')
                     else:
-                        # Error of some kind.
-                        # Update the SU-table status of the SUs to 'E'.
+                        # error of some kind
+                        # update the SU-table status of the SUs to 'E'
                         for sunumStr, su in workingSus.items():
                             su.setStatus('E', 'unable to obtain paths from providing site; ' + dlInfo['statusMsg'])
                 except RemoteSumsException as exc:
                     # there was a problem with this queue item; the finally statement will call task_done(), and then we go on to the
                     # next queue item
                     self.log.writeWarning([ exc.msg ])
-                    errorOut = True
+
+                    for sunumStr, su in workingSus.items():
+                        su.setStatus('E', 'exception ' + exc.__class__.__name__ + ' in dispatcher')
                 except ValueError: # it would be better to use JSONDecodeError, but that is not available till Py 3.5
-                    self.log.writeWarning([ 'not properly formatted JSON in response to ' + url ])
-                    errorOut = True
+                    self.log.writeWarning([ 'improperly formatted JSON in response to ' + url ])
+                    
+                    for sunumStr, su in workingSus.items():
+                        su.setStatus('E', 'improperly formatted JSON in response')
                 # all other exceptions are fatal and should raise, terminating the dispatcher thread
                 finally:
-                    if errorOut:
-                        for sunumStr, su in workingSus.items():
-                            su.setStatus('E', 'SU ' + str(su.sunum) + ': setting status to E')
-                        
+                    for sunumStr, su in workingSus.items():
+                        if su.sunum not in hasDownloader:
+                            DownloaderCompleteQueueItem.addCompleteQueueItemToQueue(su=su, queue=queueItem.sutable.queue, log=self.log)
+                            self.log.writeDebug([ 'successfully added a DownloaderCompleteQueueItem for SU ' +  str(su.sunum)])
+
                     self.queue.task_done()
-            # end of while loop; thread is terminating
+            # end of while loop over queue item; thread is terminating
         finally:
             # this thread is about to terminate; we need to check the class tList variable to update it, so we need to acquire the lock
             Dispatcher.lock.acquire()
@@ -3113,18 +3139,14 @@ if __name__ == "__main__":
         # Create/Initialize the log file.
         formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
         rslog = Log(os.path.join(sumsDrmsParams.get('RS_LOGDIR'), LOG_FILE_BASE_NAME + '_' + datetime.now().strftime('%Y%m%d') + '.txt'), arguments.loglevel, formatter)
-        rslog.writeCritical([ 'Starting up remote-SUMS daemon.' ])
-        rslog.writeCritical([ 'Logging threshold level is ' + rslog.getLevel() + '.' ]) # Critical - always write the log level to the log.
-        arguments.dump(rslog)
-        
-        rslog.writeInfo([ 'Setting download timeout to ' + str(arguments.dltimeout) + ' (the daemon must complete the download within this interval).' ])
-        rslog.writeInfo([ 'Setting request timeout to ' + str(arguments.reqtimeout) + ' (the daemon must locate the request within this interval).' ])
-        rslog.writeInfo([ 'Setting scp timeout to ' + str(arguments.scpTimeOut) + ' (each ScpWorker waits this long at most before initiating the next scp.).' ])
-
         thContainer = [ arguments, str(pid), rslog ]
         
         # TerminationHandler opens a DB connection to the RS database (which is the same as the DRMS database, most likely).
-        with TerminationHandler(thContainer) as th:
+        with TerminationHandler(thContainer) as th:        
+            rslog.writeInfo([ 'Setting download timeout to ' + str(arguments.dltimeout) + ' (the daemon must complete the download within this interval).' ])
+            rslog.writeInfo([ 'Setting request timeout to ' + str(arguments.reqtimeout) + ' (the daemon must locate the request within this interval).' ])
+            rslog.writeInfo([ 'Setting scp timeout to ' + str(arguments.scpTimeOut) + ' (each ScpWorker waits this long at most before initiating the next scp.).' ])
+        
             rsConn = th.rsConn()
             sumsConn = th.sumsConn()
 
@@ -3278,9 +3300,9 @@ if __name__ == "__main__":
                 th.enableInterrupts()
             # END RESTART REQUESTS #
 
-            #############
-            # MAIN LOOP #
-            #############
+            ###############
+            ## MAIN LOOP ##
+            ###############
             ilogger = IntervalLogger(rslog, timedelta(seconds=5))
             # sleep for at least one second between iterations
             while True:
@@ -3308,8 +3330,8 @@ if __name__ == "__main__":
                         try:
                             suTableObj.acquireLock()
                             try:
-                                completeItem = suTableObj.queue.get(timeout=0.5)
-                                rslog.writeDebug([ 'processing download-complete item for SU ' + str(completeItem.su.sunum)  ])
+                                completeItem = suTableObj.queue.get_nowait()
+                                rslog.writeDebug([ 'processing download-complete item for SU ' + str(completeItem.su.sunum) ])
                             except Empty:
                                 # no DownloaderCompleteItem item available; move on to processing new requests
                                 break
@@ -3367,8 +3389,8 @@ if __name__ == "__main__":
                         
                         sunumList = ','.join([ str(sunum) for sunum in list(sunums) ])
                     
-                        rslog.writeDebug([ 'request sunums: ' + sunumList ])
-                        rslog.writeDebug([ 'complete SUs: ' + ','.join([ str(sunum) for sunum in list(completedSunums) ]) ])
+                        ilogger.writeDebug([ 'request sunums: ' + sunumList ], False)
+                        ilogger.writeDebug([ 'complete SUs: ' + ','.join([ str(sunum) for sunum in list(completedSunums) ]) ])
                         
                         if len(sunums.symmetric_difference(completedSunums)) == 0:
                             # request has completed
@@ -3502,11 +3524,9 @@ if __name__ == "__main__":
                 try:
                     # when disabling interrupts, add an exception handler with a finally clause so that we re-enable
                     # interrupts when an exception happens (so we can terminate remote sums)
-                    reqTableObj.acquireLock()
-                    try:                    
-                        reqTableObj.refresh() # clients may have added requests to the queue
-                    finally:
-                        reqTableObj.releaseLock()
+                    
+                    # locks reqDict, but only for a brief period of time (during swap of new reqDict for old reqDict)
+                    reqTableObj.refresh() # clients may have added requests to the queue
 
                     reqsNew = reqTableObj.getNew()
 
@@ -3595,10 +3615,9 @@ if __name__ == "__main__":
                 # CLIENTS DO NOT APPEAR TO SET REQ STATUS TO D - THIS IS A NO-OP
                 reqsToDelete = reqTableObj.getDelete()
                 reqTableObj.deleteDB(reqsToDelete)
-               
-                # Must poll for new requests to appear in requests table.
-                time.sleep(1)
-                # End of main loop.
+                ######################
+                ## END OF MAIN LOOP ##
+                ######################
             
             # Save the db state when exiting.
             rslog.writeInfo([ 'Remote-sums daemon is exiting. Saving database tables.' ])
@@ -3609,7 +3628,11 @@ if __name__ == "__main__":
     except TerminationException as exc:
         msg = exc.args[0]
         if rslog:
-            rslog.writeInfo([ msg ]) 
+            rslog.writeInfo([ msg ])
+    except LockException as exc:
+        msg = exc.args[0]
+        print(msg)
+        rslog = None
     except RemoteSumsException as exc:
         msg = exc.args[0]
         if rslog:

@@ -14,13 +14,10 @@ class DrmsLock(object):
 
     def __init__(self, fileName, content, retry=True):
         if self:
-            # Try to open lock file.
             try:
-                fobj = open(fileName, 'w')
-
-                # Save the lock file information.
+                # save the lock file information
                 self._lockFile = fileName
-                self._lfObj = fobj
+                self._lfObj = None
                 self._lfContent = content
                 self._hasLock = False
                 self._retry = retry
@@ -38,8 +35,14 @@ class DrmsLock(object):
         self.close()
 
     def acquireLock(self):
-        '''Use acquireLock() when not using DrmsLock in a context-manager context.'''
+        '''use acquireLock() when not using DrmsLock in a context-manager context'''
         if not self._hasLock:
+            if not self._lfObj:
+                try:
+                    self._lfObj = open(self._lockFile, 'a')
+                except Exception as exc:
+                    raise Exception('drmsLock', 'unable to open lock file ' + self._lockFile)
+
             natt = 0
             gotLock = False
 
@@ -64,6 +67,8 @@ class DrmsLock(object):
             if self._lfContent and len(self._lfContent) > 0:
                 self._lfObj.write(self._lfContent)
                 self._lfObj.flush()
+                
+        return self._hasLock
 
     def releaseLock(self):
         '''Use releaseLock() when not using DrmsLock in a context-manager context.'''
@@ -79,14 +84,14 @@ class DrmsLock(object):
             
     def close(self):
         '''Use close(), after calling releaseLock(), when not using DrmsLock in a context-manager context.'''
-        # Release the lock.
+        # release the lock
         if self._hasLock:
             self.releaseLock()
             
-        # Close the file.
-        self._lfObj.close()
-        self._lfObj = None
+        # close the file
+        if self._lfObj:
+            self._lfObj.close()
+            self._lfObj = None
     
-        # Delete the lock file.
-        unlink(self._lockFile)
-        self._lockFile = None
+            # delete the lock file
+            unlink(self._lockFile)
