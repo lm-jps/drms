@@ -78,6 +78,7 @@
 #define kArgRequestorid	"requestorid"
 #define kArgFile	"file"
 #define kArgTestmode    "t"
+#define kArgOnlineOnly  "o"
 #define kArgPassthrough "p"
 #define kOpSeriesList	"series_list"	// show_series
 #define kOpSeriesStruct	"series_struct"	// jsoc_info, series structure, ike show_info -l -s
@@ -129,6 +130,7 @@ ModuleArgs_t module_args[] =
   {ARG_FLAG, kArgTestmode, NULL, "if set, then creates new requests with status 12 (not 2)"},
   {ARG_FLAG, kArgPassthrough, NULL, "if set, then inserts an X into the request ID to denote that the request originated from an external user, but was executed on the internal database."},
   {ARG_FLAG, kArgDontGenWebPage, NULL, "if set, print to stdout HTML headers."},
+  {ARG_FLAG, kArgOnlineOnly, "1", "-o, Only process normal request if all requested SUs are online."},
   {ARG_FLAG, "h", "0", "help - show usage"},
   {ARG_STRING, "QUERY_STRING", kNotSpecified, "AJAX query from the web"},
   {ARG_STRING, "REMOTE_ADDR", "0.0.0.0", "Remote IP address"},
@@ -159,6 +161,7 @@ int nice_intro ()
 	"method=return method\n"
         "userhandle=unique session id\n"
 	"h=help - show usage\n"
+	"o=data must be online\n"
 	"QUERY_STRING=AJAX query from the web"
 	);
     return(1);
@@ -815,6 +818,7 @@ static void report_summary(const char *host,
                            const char *ds, 
                            int n, 
                            int internal, 
+			   int requireOnline,
                            int status)
   {
   double EndTime;
@@ -836,6 +840,7 @@ static void report_summary(const char *host,
   WriteLog(logfile, "op='%s'\t",op);
   WriteLog(logfile, "ds='%s'\t",ds);
   WriteLog(logfile, "n=%d\t",n);
+  WriteLog(logfile, "o=%d\t",requireOnline);
   WriteLog(logfile, "status=%d\n",status);
   }
 
@@ -1393,6 +1398,7 @@ int DoIt(void)
   int testmode = 0;
   int passthrough = 0;
   int genWebPage = 1;
+  int requireOnline = 1;
   char *errorreply;
   int64_t *sunumarr = NULL; /* array of 64-bit sunums provided in the'sunum=...' argument. */
   int nsunums;
@@ -1517,6 +1523,7 @@ int DoIt(void)
             SetWebFileArg(req, kArgFile, &webarglist, &webarglistsz);
             SetWebArg(req, kArgTestmode, &webarglist, &webarglistsz);
             SetWebArg(req, kArgPassthrough, &webarglist, &webarglistsz);
+            SetWebArg(req, kArgOnlineOnly, &webarglist, &webarglistsz);
             SetWebArg(req, kArgDontGenWebPage, &webarglist, &webarglistsz);
                         
             qEntryFree(req); 
@@ -1580,6 +1587,7 @@ int DoIt(void)
   testmode = (TESTMODE || cmdparams_isflagset(&cmdparams, kArgTestmode));
   passthrough = cmdparams_isflagset(&cmdparams, kArgPassthrough);
   genWebPage = (cmdparams_isflagset(&cmdparams, kArgDontGenWebPage) == 0);
+  requireOnline = cmdparams_isflagset(&cmdparams, kArgOnlineOnly);
   gGenWebPage = genWebPage;
 
   dodataobj = strcmp(formatvar, "dataobj") == 0;
@@ -2536,7 +2544,7 @@ int DoIt(void)
           printf("%lld\t%s\t%s\t%c\t%s\n",sunums[i],series[i],paths[i], sustatus[i], susize[i]);
         }
 
-      report_summary(Server, StartTime, Remote_Address, op, dsin, 0, internal, 0);
+      report_summary(Server, StartTime, Remote_Address, op, dsin, 0, internal, requireOnline, 0);
       if (!dodataobj || (sums_status == 1 || all_online))
         {
          /* If not a VSO request, we're done. If a VSO request, done if all online, or if SUMS is down. 
@@ -3610,6 +3618,14 @@ check for requestor to be valid remote DRMS site
       return(0);
       }
 
+     // Check for offline data, if only_online flag is set then return an error
+     // to the user.
+
+    if (requireOnline &&  !all_online)
+      {
+      JSONDIE2("Some requested records are offline, try again later: ", dsquery);
+      }
+
      // Must do full export processing
 
     // Get RequestID
@@ -4183,7 +4199,7 @@ JSONDIE("Re-Export requests temporarily disabled.");
         sunums = NULL;
     }
 
-  report_summary(Server, StartTime, Remote_Address, op, dsin, rcountlimit, internal, status);
+  report_summary(Server, StartTime, Remote_Address, op, dsin, rcountlimit, internal, requireOnline, status);
   CleanUp(&sunumarr, &infostructs, &webarglist, &series, &paths, &susize, arrsize, userhandle);
     
     if (exprec)
