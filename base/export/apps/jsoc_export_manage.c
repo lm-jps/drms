@@ -92,6 +92,7 @@
 #define kArgTestmode    "t"
 #define kArgProcSeries  "procser"
 #define kArgTestConvQuotes "tQuotes"
+#define kArgLogDir "logdir"
 #define kArgValNotUsed "NoT UsEd"
 
 #define kMaxProcNameLen 128
@@ -137,12 +138,13 @@ typedef struct ExpProcArg_struct ExpProcArg_t;
 
 struct ProcStep_struct
 {
-    char *name;   /* Name of program. */
-    char *path;   /* Path to program. */
-    char *args;   /* Program argument key=value pairs, comma-separated. */
-    char *input;  /* data-set input to processing */
-    char *output; /* data-set output by processing */
-    int crout;    /* The processing step may need its intermediate output series created. */
+    char *name;                      /* name of program */
+    char *path;                      /* path to program */
+    char *args;                      /* program argument key=value pairs, comma-separated */
+    char *input;                     /* data-set input to processing */
+    char *output;                    /* data-set output by processing */
+    struct ProcStep_struct *parent;  /* the previous step's ProcStep_struct */
+    int crout;                       /* the processing step may need its intermediate output series created */
 };
 
 typedef struct ProcStep_struct ProcStep_t;
@@ -173,6 +175,7 @@ ModuleArgs_t module_args[] =
     {ARG_STRING, "op", "process", "<Operation>"},
     {ARG_STRING, kArgProcSeries, "jsoc.export_procs", "The series containing the list of available processing steps. There is one such series on hmidb and one on hmidb2."},
     {ARG_STRING, kArgTestConvQuotes, kArgValNotUsed, "Put a record-set query in here to test the code that converts double-quoted strings to single-quoted strings."},
+    {ARG_STRING, kArgLogDir, "/home/jsoc/exports/tmp", "The temporary directory for the jsoc_export_manage processing log for the requests."},
     {ARG_FLAG, kArgTestmode, NULL, "if set, then operates on new requests with status 12 (not 2)"},
     {ARG_FLAG, "h", "0", "help - show usage"},
     {ARG_END}
@@ -184,6 +187,66 @@ char *module_name = "jsoc_export_manage";
  * argument values. */
 HContainer_t *gIntVars = NULL;
 HContainer_t *gShVars = NULL;
+
+#define WriteLog(fh, ...) __WriteLog(__FILE__, __LINE__, fh, __VA_ARGS__)
+
+static void __WriteLog(const char *file, int lineno, FILE *fh, ...)
+{
+    va_list args;
+    char *finalFmt = NULL;
+    char *fmt = NULL;
+    size_t sz;
+    char timestr[256];
+
+    sz = 512;
+    finalFmt = calloc(1, sz);
+    if (finalFmt)
+    {
+        /* print a timestamp and file location prefix */ 
+        time_t ltime;
+        ltime = time(NULL); /* get current time */  
+        snprintf(timestr, sizeof(timestr), "%s", asctime(localtime(&ltime)));
+        timestr[strcspn(timestr, "\n")] = '\0';
+        snprintf(finalFmt, sz, "[ %s (%s:%d) ] ", timestr, basename(file), lineno);
+
+        va_start(args, fh);
+        fmt = va_arg(args, char *);
+        finalFmt = base_strcatalloc(finalFmt, fmt, &sz);
+
+        if (finalFmt)
+        {
+            finalFmt = base_strcatalloc(finalFmt, "\n", &sz);
+            if (finalFmt)
+            {
+                vfprintf(fh, finalFmt, args);
+            }
+        }
+        
+        va_end(args);
+    }
+    
+    if (finalFmt)
+    {
+        free(finalFmt);
+    }
+}
+
+static FILE *OpenWriteLog(const char *name)
+{
+    FILE *fp = NULL;
+    
+    fp = fopen(name, "w");
+    WriteLog(fp, "starting export manager");
+    return fp;
+}
+
+static void CloseWriteLog(FILE *fh)
+{
+    if (fh)
+    {
+        fclose(fh);
+    }
+}
 
 static void FreeIntVars(void *data)
 {
@@ -1324,6 +1387,7 @@ static int GenProgArgs(ProcStepInfo_t *pinfo,
                        HContainer_t *args, 
                        ProcStep_t *stepdata, /* stepdata->output is the output RECORD-SET SPECIFICATION */
                        const char *reclim,
+                       FILE *emLogFH,
                        char **argsout)
 {
     /*
@@ -1884,6 +1948,143 @@ static void FreePattern(char ***pattern, PatternStyle_t style)
     }
 }
 
+static char *FindLastSeriesInPipeline(DRMS_Env_t *env, const char *dbhost, ProcStep_t *stepData, const char *outSeries, int iset, int *isAncestor, int *ierr)
+{
+    int istat = DRMS_SUCCESS;
+    
+    char *series = NULL;
+    int seriesExists = 0;
+    DB_Handle_t *dbh = NULL;
+    int contextOK = 0;
+    ProcStep_t *step = NULL;
+    const char *setSpec = NULL;
+    DRMS_RecordSet_t *recSet = NULL;
+    
+    /* returns NULL on error. */
+    dbh = GetDBHandle(env, dbhost, &contextOK, 0);
+    
+    if (!dbh)
+    {
+        fprintf(stderr, "jsoc_export_manage: unable to connect to database\n");
+        istat = 1;
+    }
+    else
+    {
+        int firstTime = 1;
+        char **snames = NULL;
+        char **filts = NULL;
+        int nsets;
+        DRMS_RecQueryInfo_t info;
+
+        step = stepData;
+        while (istat == DRMS_SUCCESS && step && !seriesExists)
+        {
+            if (firstTime)
+            {
+                setSpec = outSeries;
+            }
+            else
+            {
+                setSpec = step->input; /* for the rest of the steps, */
+            }
+            
+            if (ParseRecSetSpec(setSpec, &snames, &filts, &nsets, &info) || nsets < 1)
+            {
+                fprintf(stderr, "invalid record-set specification %s\n", setSpec);
+                istat = DRMS_ERROR_INVALIDDATA;
+            }
+            else
+            {
+                series = snames[iset];
+            }
+
+            if (istat == DRMS_SUCCESS)
+            {            
+                if (!contextOK)
+                {
+                    /* The caller wants to check for series existence in a db on host to which 
+                     * this module has no connection. Use dbh, not env. */
+            
+                    /* Successfully connected to dbhost; can't use DRMS calls since we don't have a 
+                     * functioning environment for this ad hoc connection. */
+                    char query[512];
+                    char *schema = NULL;
+                    char *table = NULL;
+                    DB_Text_Result_t *res = NULL;
+            
+                    if (get_namespace(snames[iset], &schema, &table))
+                    {
+                        fprintf(stderr, "invalid series name %s\n", snames[iset]);
+                        istat = DRMS_ERROR_INVALIDDATA;
+                    }
+                    else
+                    {
+                        snprintf (query, sizeof(query), "SELECT * FROM pg_catalog.pg_tables WHERE schemaname = lower(\'%s\') AND tablename = lower(\'%s\')", schema, table);
+                        res = db_query_txt(dbh, query);
+                
+                        if (res) 
+                        {
+                            seriesExists = (res->num_rows != 0);
+                            db_free_text_result(res);
+                            res = NULL;
+                        }
+                        else
+                        {
+                            fprintf(stderr, "invalid SQL query: %s\n", query);
+                            istat = DRMS_ERROR_QUERYFAILED;
+                        }
+                
+                        free(schema);
+                        free(table);
+                    }
+                }
+                else
+                {
+                    /* the caller wants to check for the existence of a series in the database to which 
+                     * this module is currently connected */
+                    seriesExists = drms_series_exists(env, snames[iset], &istat);
+                    if (istat != DRMS_SUCCESS && istat != DRMS_ERROR_UNKNOWNSERIES)
+                    {
+                        fprintf(stderr, "problems checking for series '%s' existence on %s\n", snames[iset], dbhost);
+                        seriesExists = 0;
+                    }
+                    else
+                    {
+                        istat = DRMS_SUCCESS;
+                    }
+                }
+            }
+            
+            if (seriesExists && istat == DRMS_SUCCESS)
+            {
+                series = strdup(snames[iset]);
+            }
+            
+            FreeRecSpecParts(&snames, &filts, nsets);
+            
+            if (!firstTime)
+            {
+                /* change the step only after the first iteration*/
+                step = step->parent;
+            }
+
+            firstTime = 0;
+        } /* end while */
+        
+        if (isAncestor)
+        {
+            *isAncestor = series && !firstTime;
+        }
+    }
+    
+    if (ierr)
+    {
+        *ierr = istat;
+    }
+    
+    return series;
+}
+
 /* cpinfo - the current processing step's processing information
  * ppinfo - the previous processing step's processing information. */
 static int GenOutRSSpec(DRMS_Env_t *env, 
@@ -1891,7 +2092,8 @@ static int GenOutRSSpec(DRMS_Env_t *env,
                         ProcStepInfo_t *cpinfo, 
                         ProcStepInfo_t *ppinfo,
                         ProcStep_t *data,
-                        const char *reqid)
+                        const char *reqid, 
+                        FILE *emLogFH)
 {
     int err = 0;
     
@@ -1909,8 +2111,8 @@ static int GenOutRSSpec(DRMS_Env_t *env,
         int iset;
         DRMS_RecQueryInfo_t infoIn;
         DRMS_RecQueryInfo_t infoOut;
-        char *outseries = NULL;
-        char *newoutseries = NULL;
+        char *outDataSets = NULL;
+        char *newoutDataSets = NULL;
         char *newfilter = NULL;
         int npkeys;
         size_t sz;
@@ -1921,6 +2123,8 @@ static int GenOutRSSpec(DRMS_Env_t *env,
         char *canonicalIn = NULL;
         char **currentPattern = NULL;
         PatternStyle_t currentPatternStyle;
+        int isAncestor;
+        char *existingSeries = NULL;
         
         while (1)
         {
@@ -1987,7 +2191,7 @@ static int GenOutRSSpec(DRMS_Env_t *env,
                 /* neither a suffix nor an output series specified; the input series might
                  * have a suffix, but that is irrelevant - whatever the input series is, use that for
                  * the output series too */
-                outseries = strdup(canonicalIn);
+                outDataSets = strdup(canonicalIn);
             }
             else if (currentPatternStyle == PatternStyle_Substitution)
             {
@@ -1995,7 +2199,7 @@ static int GenOutRSSpec(DRMS_Env_t *env,
                 data->crout= 0;
                 if (strcmp(currentPattern[0], currentPattern[1]) != 0)
                 {
-                    outseries = base_strreplace(canonicalIn, currentPattern[0], currentPattern[1]);
+                    outDataSets = base_strreplace(canonicalIn, currentPattern[0], currentPattern[1]);
                 
                     /* if the input and output series differ, then the output series MAY not exist; run 
                      * jsoc_export_clone from the drms_run script; if the output series
@@ -2006,15 +2210,15 @@ static int GenOutRSSpec(DRMS_Env_t *env,
             else if (currentPatternStyle == PatternStyle_Replacement)
             {
                 /* a current pattern exists, and it is a replacement */
-                outseries = strdup(canonicalIn);
+                outDataSets = strdup(canonicalIn);
                 data->crout = 0;
-                for (iset = 0; outseries, iset < nsetsIn; iset++)
+                for (iset = 0; outDataSets, iset < nsetsIn; iset++)
                 {
                     if (strcasecmp(snamesIn[iset], currentPattern[0]) != 0)
                     {
-                        newoutseries = base_strreplace(outseries, snamesIn[iset], currentPattern[0]);
-                        free(outseries);
-                        outseries = newoutseries;
+                        newoutDataSets = base_strreplace(outDataSets, snamesIn[iset], currentPattern[0]);
+                        free(outDataSets);
+                        outDataSets = newoutDataSets;
                         data->crout = 1;
                     }
                 }
@@ -2025,19 +2229,19 @@ static int GenOutRSSpec(DRMS_Env_t *env,
                 char replname[DRMS_MAXSERIESNAMELEN];
                 char *psuff = NULL;
                 
-                /* theoretically, outseries could be a comma-separated list of record-set specifications; we are 
+                /* theoretically, outDataSets could be a comma-separated list of record-set specifications; we are 
                  * going to add the suffix to each seriesname in that list */
-                outseries = strdup(canonicalIn);
+                outDataSets = strdup(canonicalIn);
                 data->crout = 0;
-                for (iset = 0; outseries, iset < nsetsIn; iset++)
+                for (iset = 0; outDataSets, iset < nsetsIn; iset++)
                 {
                     if ((psuff = strcasestr(snamesIn[iset], currentPattern[0])) == NULL || *(psuff + strlen(currentPattern[0])) != '\0')
                     {
                         /* append the suffix because the input series does not end with that suffix (it may or may not have a suffix at all) */
                         snprintf(replname, sizeof(replname), "%s_%s", snamesIn[iset], currentPattern[0]);                                                    
-                        newoutseries = base_strreplace(outseries, snamesIn[iset], replname);
-                        free(outseries);
-                        outseries = newoutseries;
+                        newoutDataSets = base_strreplace(outDataSets, snamesIn[iset], replname);
+                        free(outDataSets);
+                        outDataSets = newoutDataSets;
             
                         /* We are writing to at least one output series that differs fromt the input series. 
                          * We need to run jsoc_export_clone from the drms_run script. If the output series
@@ -2065,14 +2269,14 @@ static int GenOutRSSpec(DRMS_Env_t *env,
             {
                 if (filtsIn[iset])
                 {
-                    newoutseries = base_strreplace(outseries, filtsIn[iset], "");
-                    free(outseries);
-                    outseries = newoutseries;
+                    newoutDataSets = base_strreplace(outDataSets, filtsIn[iset], "");
+                    free(outDataSets);
+                    outDataSets = newoutDataSets;
                 }
             }
             
             /* Add filters to output series names. */
-            if (ParseRecSetSpec(outseries, &snamesOut, &filtsOut, &nsetsOut, &infoOut))
+            if (ParseRecSetSpec(outDataSets, &snamesOut, &filtsOut, &nsetsOut, &infoOut))
             {
                 err = 1;
                 break;
@@ -2094,30 +2298,57 @@ static int GenOutRSSpec(DRMS_Env_t *env,
                  * obtain the number of prime keys of the input series, snamesIn[iset]. 
                  * Actually, all the snamesIn should be identical, since we don't 
                  * allow exporting from more than one series. */
-                if (data->crout == 1 && (!SeriesExists(env, snamesOut[iset], dbhost, &ierr) || ierr))
+                 
+                 /* Find last series in pipeline that already exists
+                  * 
+                  */
+                isAncestor = 0;
+                existingSeries = FindLastSeriesInPipeline(env, dbhost, data, snamesOut[iset], iset, &isAncestor, &ierr);
+                WriteLog(emLogFH, "[ GenOutRSSpec() ] last existing series in pipeline is %s", existingSeries);
+
+                if (!existingSeries || ierr)
                 {
-                    npkeys = NumPKeyKeys(env, dbhost, snamesIn[iset]);
-                    
-                    /* Now, need to check to see if the input series has the RequestID keyword.
-                     * The environment might not allow this check, since we might 
-                     * not be connected to the dbmainhost, so we have to come up with an 
-                     * independent SQL query that tests for the existence of a keyword. 
-                     * KeyExists() does connect to the correct db. */
-                    if (!KeyExists(env, dbhost, snamesIn[iset], "RequestID", &ierr) || ierr)
-                    {
-                        /* Need to add one to npkeys, since the output series will have one 
-                         * more prime-key key constituent (RequestID) than the input series. */
-                        npkeys++;
-                    }
+                    fprintf(stderr, "cannot find a valid, existing series in the processing pipeline\n");
+                    npkeys = 0;
                 }
                 else
                 {
-                    npkeys = NumPKeyKeys(env, dbhost, snamesOut[iset]);
+                    npkeys = NumPKeyKeys(env, dbhost, existingSeries);
+                    
+                    if (isAncestor)
+                    {
+                        if (data->crout != 1)
+                        {
+                            /* the output series does not exist, and we are not allowed to create it */
+                            fprintf(stderr, "the output series %s does not exist and cannot be created\n", snamesOut[iset]);
+                            npkeys = 0;
+                        }
+                        else
+                        {
+                            /* Now, need to check to see if the ancestor series has the RequestID keyword.
+                             * The environment might not allow this check, since we might 
+                             * not be connected to the dbmainhost, so we have to come up with an 
+                             * independent SQL query that tests for the existence of a keyword. 
+                             * KeyExists() does connect to the correct db. */
+                            if (!KeyExists(env, dbhost, existingSeries, "RequestID", &ierr) || ierr)
+                            {
+                                /* Need to add one to npkeys, since the output series will have one 
+                                 * more prime-key key constituent (RequestID) than the input series. */
+                                npkeys++;
+                            }
+                        }
+                    }
                 }
                 
+                if (existingSeries)
+                {
+                    free(existingSeries);
+                    existingSeries = NULL;
+                }
+                 
                 if (npkeys < 1)
                 {
-                    /* There must be at least one prime key constituent - the reqid keyword. */
+                    /* there must be at least one prime key constituent - the reqid keyword */
                     err = 1;
                     break;
                 }
@@ -2138,7 +2369,7 @@ static int GenOutRSSpec(DRMS_Env_t *env,
                 if (repl)
                 {
                     snprintf(repl, len, "%s%s", snamesOut[iset], newfilter);
-                    newoutseries = base_strreplace(outseries, snamesOut[iset], repl);
+                    newoutDataSets = base_strreplace(outDataSets, snamesOut[iset], repl);
                     free(repl);
                     repl = NULL;
                 }
@@ -2149,8 +2380,8 @@ static int GenOutRSSpec(DRMS_Env_t *env,
                     break;
                 }
                 
-                free(outseries);
-                outseries = newoutseries;
+                free(outDataSets);
+                outDataSets = newoutDataSets;
                 
                 *newfilter = '\0';
             }
@@ -2165,9 +2396,9 @@ static int GenOutRSSpec(DRMS_Env_t *env,
             
             FreeRecSpecParts(&snamesOut, &filtsOut, nsetsOut);
             FreeRecSpecParts(&snamesIn, &filtsIn, nsetsIn);
-            /* Done! outseries has record-set specifications that have the proper 
+            /* Done! outDataSets has record-set specifications that have the proper 
              * suffix and that have the proper filters. */
-            data->output = outseries;
+            data->output = outDataSets;
             
             break; /* one-time through */
         }  
@@ -2205,6 +2436,7 @@ static LinkedList_t *ParseFields(DRMS_Env_t *env, /* dbhost of jsoc.export_new. 
                                  const char *dset, 
                                  const char *reqid, 
                                  char **reclim, /* returned by reference */
+                                 FILE *emLogFH,
                                  int *status)
 {
     LinkedList_t *rv = NULL;
@@ -2214,6 +2446,7 @@ static LinkedList_t *ParseFields(DRMS_Env_t *env, /* dbhost of jsoc.export_new. 
     char *onecmd = NULL;
     char *args = NULL;
     ProcStep_t data; /* current step's data. */
+    ProcStep_t *parentData = NULL;
     int procnum; /* The number of the proc-step being currently processed. */
     char *adataset = NULL;
     char *end = NULL;
@@ -2224,6 +2457,7 @@ static LinkedList_t *ParseFields(DRMS_Env_t *env, /* dbhost of jsoc.export_new. 
     int gettingargs;
     char *reclimint = NULL;
     int bar;
+    ListNode_t *parentNode = NULL;
     
     HContainer_t *varsargs = NULL;
     
@@ -2264,6 +2498,7 @@ static LinkedList_t *ParseFields(DRMS_Env_t *env, /* dbhost of jsoc.export_new. 
             data.args = NULL; /* complete set of arguments with which to call processing step. */
             data.input = adataset; 
             data.output = NULL;
+            data.parent = NULL;
             data.crout = 0;
             cpinfo = NULL;
             gettingargs = 0;
@@ -2326,7 +2561,7 @@ static LinkedList_t *ParseFields(DRMS_Env_t *env, /* dbhost of jsoc.export_new. 
                 else
                 {
                     /* Unknown type - processing error */
-                    fprintf(stderr, "Unknown processing step %s.\n", onecmd);
+                    WriteLog(emLogFH, "unknown processing step %s\n", onecmd);
                     state = kPPStError;
                 }
             }
@@ -2383,18 +2618,22 @@ static LinkedList_t *ParseFields(DRMS_Env_t *env, /* dbhost of jsoc.export_new. 
                     continue;
                 }
                 
+                data.parent = parentData;
+                                
                 /* Generate output name. The plan is to take the input name, strip its suffix (if one
                  * exists), then add the new suffix (if one exists). The output series will have 
                  * requestid as a keyword. So the output record-set will be <series>[][][reqid]. */
-                if (GenOutRSSpec(env, dbhost, cpinfo, ppinfo, &data, reqid))
+                if (GenOutRSSpec(env, dbhost, cpinfo, ppinfo, &data, reqid, emLogFH))
                 {
                     state = kPPStError;
+                    data.parent = NULL;
                     continue;
                 }
                 
-                if (GenProgArgs(cpinfo, varsargs, &data, reclimint, &finalargs))
+                if (GenProgArgs(cpinfo, varsargs, &data, reclimint, emLogFH, &finalargs))
                 {
                     state = kPPStError;
+                    data.parent = NULL;
                     continue;
                 }
                 
@@ -2413,9 +2652,8 @@ static LinkedList_t *ParseFields(DRMS_Env_t *env, /* dbhost of jsoc.export_new. 
                 {
                     rv = list_llcreate(sizeof(ProcStep_t), (ListFreeFn_t)FreeProcStep);
                 }
-                
-                list_llinserttail(rv, &data);
-                
+
+                parentNode = list_llinserttail(rv, &data);
                 ppinfo = cpinfo;
                 
                 /* The output record-set now becomes the input record-set of the next processing step. */
@@ -2433,6 +2671,8 @@ static LinkedList_t *ParseFields(DRMS_Env_t *env, /* dbhost of jsoc.export_new. 
                     state = kPPStBeginProc;
                     pc++; /* Advance to first char after the proc-step delimiter. */
                 }
+                
+                parentData = (ProcStep_t *)parentNode->data;
             }
             else
             {
@@ -3284,9 +3524,19 @@ int DoIt(void)
   char msgbuf[1024];
   int submitcode = -1;
   DRMS_Env_t *seriesEnv = NULL;
+  char logfile[PATH_MAX];
+    char logdir[PATH_MAX];
+  FILE *emLogFH = NULL;
       
   if (nice_intro ()) return (0);
   
+    const char *logdirArg = cmdparams_get_str(&cmdparams, kArgLogDir, NULL);
+    snprintf(logdir, sizeof(logdir), "%s", logdirArg);
+    if (logdir[strlen(logdir) - 1] == '/')
+    {
+        logdir[strlen(logdir) - 1] = '\0';
+    }
+
   const char *testQuotes = cmdparams_get_str(&cmdparams, kArgTestConvQuotes, NULL);
   if (testQuotes)
   {
@@ -3358,7 +3608,7 @@ int DoIt(void)
   }
 
   op = cmdparams_get_str (&cmdparams, "op", NULL);
-      procser = cmdparams_get_str(&cmdparams, kArgProcSeries, NULL);
+    procser = cmdparams_get_str(&cmdparams, kArgProcSeries, NULL);
 
   /*  op == process, this is export_manage cmd line, NOT for request being managed 
    * By default, op is "process". We have never run jsoc_export_manage when op is not "process".
@@ -3368,6 +3618,7 @@ int DoIt(void)
     {
     int irec;
     char ctlrecspec[1024];
+    char logfile[PATH_MAX];
         
     snprintf(ctlrecspec, sizeof(ctlrecspec), "%s[][? Status=%d ?]", EXPORT_SERIES_NEW, submitcode);
     exports_new_orig = drms_open_records(drms_env, ctlrecspec, &status);
@@ -3431,6 +3682,12 @@ int DoIt(void)
           
         printf("New Request #%d/%d: %s, Status=%d, Processing=%s, DataSet=%s, Protocol=%s, Method=%s\n", irec, exports_new->n, requestid, status, process, dataset, protocol, method);
         fflush(stdout);
+        
+        
+        /* open log file for writing */
+        snprintf(logfile, sizeof(logfile), "%s/%s.emlog", logdir, requestid);
+        emLogFH = OpenWriteLog(logfile);
+        WriteLog(emLogFH, "request ID is %s", requestid);
           
         RegisterIntVar("requestid", 's', requestid);
 
@@ -3481,6 +3738,14 @@ int DoIt(void)
       drms_setkey_time(export_rec, "EstTime", esttime); // Crude guess for now
       drms_setkey_longlong(export_rec, "Size", size);
       drms_setkey_int(export_rec, "Requestor", requestorid); /* This is the name of the requestor. */
+      
+        WriteLog(emLogFH, "dataset: %s", dataset);
+        WriteLog(emLogFH, "processing: %s", process);
+        WriteLog(emLogFH, "protocol: %s", protocol);
+        WriteLog(emLogFH, "filenamefmt: %s", filenamefmt);
+        WriteLog(emLogFH, "method: %s", method);
+        WriteLog(emLogFH, "format: %s", format);
+      
   
       // check  security risk dataset spec or processing request
         if (isbadDataSet() || isbadProcessing())
@@ -3531,7 +3796,7 @@ int DoIt(void)
         * It is connected to the db on dbexporthost. dbmainhost is the host
         * of the correct jsoc database. This function will ensure that
         * it talks to dbmainhost. */
-        proccmds = ParseFields(drms_env, procser, dbmainhost, process, dataset, requestid, &RecordLimit, &ppstat);
+        proccmds = ParseFields(drms_env, procser, dbmainhost, process, dataset, requestid, &RecordLimit, emLogFH, &ppstat);
         if (ppstat == 0)
         {
             snprintf(msgbuf, sizeof(msgbuf), "Invalid process field value: %s.", process);          
@@ -3735,7 +4000,7 @@ int DoIt(void)
                      
                     ppstat = 0;
                     list_llfree(&proccmds);
-                    proccmds = ParseFields(drms_env, procser, dbmainhost, process, dataset, requestid, &RecordLimit, &ppstat);
+                    proccmds = ParseFields(drms_env, procser, dbmainhost, process, dataset, requestid, &RecordLimit, emLogFH, &ppstat);
                 }
             }
   
@@ -4267,6 +4532,11 @@ int DoIt(void)
       fprintf(fp, "set_info_sock JSOC_DBHOST=%s ds='jsoc.export[%s]' Status=0 ExpTime=$DoneTime\n", dbexporthost, requestid);
                   // copy the drms_run log file
       fprintf(fp, "cp /home/jsoc/exports/tmp/%s.runlog ./%s.runlog \n", requestid, requestid);
+      
+        /* move the export manager run log to the export su dir */
+        fprintf(fp, "if ( -f %s ) then\n", logfile);
+        fprintf(fp, "  mv %s ./%s.emlog \n", logfile, requestid);      
+        fprintf(fp, "endif\n");
 
       // DONE, Standard exit here if errors, falls through to here if OK
       fprintf(fp, "EXITPLACE:\n");
@@ -4291,10 +4561,17 @@ int DoIt(void)
   	" -e /home/jsoc/exports/tmp/%s.runlog "
   	"  %s/%s.qsub ",
         jsocrootstr, requestid, requestid, reqdir, requestid);
+        
+    printf(command);
   /*
   	"  >>& /home/jsoc/exports/tmp/%s.runlog",
   */
 // fprintf(stderr,"export_manage for %s, qsub=%s\n",requestid, command);
+      /* close the write log - at the end of the drmsrun script, it will be moved into the export SU dir; cannot do this
+       * mv in qsub for some unknown reason
+       */
+      CloseWriteLog(emLogFH);
+
       if (system(command))
       {
           return DBCOMM(&export_rec, "Submission of qsub command failed", 4);
