@@ -684,9 +684,9 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
   if (GetShutdownState(drms_env) == kSHUTDOWN_UNINITIATED)
   {
      if (verbose)
-       printf("Setting isolation level to SERIALIZABLE.\n");
+       printf("Setting isolation level to REPEATABLE READ.\n");
      /* Set isolation level to serializable. */
-     if ( db_isolation_level(db_handle, DB_TRANS_SERIALIZABLE) )
+     if ( db_isolation_level(db_handle, DB_TRANS_REPEATABLEREAD) )
      {
         fprintf(stderr,"Failed to set database isolation level.\n");
         Exit(1);

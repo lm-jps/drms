@@ -661,9 +661,9 @@ int main (int argc, char *argv[]) {
   if (!noshare)
   {    
     if (verbose)
-      printf("Setting isolation level to SERIALIZABLE.\n");
+      printf("Setting isolation level to REPEATABLE READ.\n");
     /* Set isolation level to serializable. */
-    if ( db_isolation_level(db_handle, DB_TRANS_SERIALIZABLE) )
+    if ( db_isolation_level(db_handle, DB_TRANS_REPEATABLEREAD) )
     {
       fprintf(stderr,"Failed to set database isolation level.\n");
       Exit(1);

@@ -102,9 +102,10 @@ static inline const char *DB_GetErrmsg(DB_Handle_t *dbh)
 
 
 /* Transaction isolation level constants. */
-#define DB_TRANS_READCOMMIT   0
-#define DB_TRANS_SERIALIZABLE 1
-#define DB_TRANS_READONLY     2
+#define DB_TRANS_READCOMMIT      0
+#define DB_TRANS_SERIALIZABLE    1
+#define DB_TRANS_READONLY        2
+#define DB_TRANS_REPEATABLEREAD  3
 
 
 /* Table privileges. */

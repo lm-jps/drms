@@ -179,7 +179,7 @@ int main(int argc, char **argv) {
 	 "user '%s'.\n",db_handle->dbname, db_handle->dbhost, db_handle->dbport,
 	 db_handle->dbuser);
 
-  if (db_isolation_level (db_handle, DB_TRANS_SERIALIZABLE) ) {
+  if (db_isolation_level (db_handle, DB_TRANS_REPEATABLEREAD) ) {
     fprintf (stderr,"Failed to set database isolation level.\n");
     goto failure;
   }

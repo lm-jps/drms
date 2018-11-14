@@ -1535,8 +1535,12 @@ int db_isolation_level(DB_Handle_t  *dbin, int level)
     dbin->isolation_level = DB_TRANS_READONLY;
     return db_dms(dbin, NULL, "SET SESSION CHARACTERISTICS AS TRANSACTION ISOLATION LEVEL READ ONLY");
     break;
+    case DB_TRANS_REPEATABLEREAD:
+        dbin->isolation_level = DB_TRANS_REPEATABLEREAD;
+        return db_dms(dbin, NULL, "SET SESSION CHARACTERISTICS AS TRANSACTION ISOLATION LEVEL REPEATABLE READ");
+        break;
   default:
-    fprintf(stderr,"db_isolation_level: Invalid isolation level (%d) specified. Legal values are 0 = read commited, 1 = serializable, 2 = read only.\n", level);
+    fprintf(stderr,"db_isolation_level: Invalid isolation level (%d) specified. Legal values are 0 = read commited, 1 = serializable, 2 = read only, 3 = repeatable read.\n", level);
     return 1;
     break;    
   }

@@ -1572,7 +1572,7 @@ class Worker(threading.Thread):
 
             try:
                 with psycopg2.connect(database=self.arguments.getArg('SLAVEDBNAME'), user=self.arguments.getArg('REPUSER'), host=self.arguments.getArg('SLAVEHOSTNAME'), port=str(self.arguments.getArg('SLAVEPORT'))) as connSlave:
-                    connSlave.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_SERIALIZABLE)
+                    connSlave.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_REPEATABLE_READ)
                     connSlave.set_client_encoding('UTF-8')
                     self.log.writeInfo([ 'Starting a new serializable transaction on slave db.' ])
                     self.log.writeDebug([ 'Memory usage (MB) ' + str(self.proc.memory_info().vms / 1048576) + '.' ])
