@@ -601,20 +601,19 @@ def insertRequest(conn, log, dbTable, **kwargs):
     action = kwargs['action'].lower()
     series = kwargs['series']
     
-    if 'archive' in kwargs and kwargs['archive']:
+    if 'archive' in kwargs and kwargs['archive'] and kwargs['archive']:
         archive = str(kwargs['archive'])
     else:
         archive = '0'
-    if 'retention' in kwargs and kwargs['retention']:
+    if 'retention' in kwargs and kwargs['retention'] and kwargs['retention']:
         retention = str(kwargs['retention'])
     else:
         retention = '7'
-    if 'tapegroup' in kwargs and kwargs['tapegroup']:
+    if 'tapegroup' in kwargs and kwargs['tapegroup'] and kwargs['tapegroup']:
         tapegroup = str(kwargs['tapegroup'])
     else:
         tapegroup = '0'
-        
-    if 'subuser' in kwargs and len(kwargs['subuser']) > 0:
+    if 'subuser' in kwargs and kwargs['subuser'] and len(kwargs['subuser']) > 0:
         subuser = kwargs['subuser']
     else:
         subuser = 'slony'
