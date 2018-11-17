@@ -1490,7 +1490,7 @@ int write_wd_to_drive(int sim, KEY *params, int drive, int fnum, char *logname)
   unsigned char md5val[16];
   char buf[BLOCK_SIZE];
   char cmd[CMDLENWRT], dname[64], tmpname[64], wdroot[64], wdD[64];
-  char *cptr, *wd;
+  char *cptr, *wd, *cptr2;
   int status, cnt, i, len, tapefilenum, fd;
 
   sprintf(dname, "%s%d", SUMDR, drive);
@@ -1507,9 +1507,16 @@ int write_wd_to_drive(int sim, KEY *params, int drive, int fnum, char *logname)
     sprintf(tmpname, "wd_%i", i);
     wd = GETKEY_str(params, tmpname);
     cptr = strstr(wd, "/D");
+
+// deal with wd of the form /SUMxx/Dyyyy/Dzzzz
+    cptr2 = strstr(cptr+2, "/D");
+    if (cptr2)			// found /Dzzzz
+	cptr = cptr2;
+
     strcpy(wdD, cptr+1);
     strcpy(wdroot, wd);
-    cptr = strstr(wdroot, "/D");
+    //cptr = strstr(wdroot, "/D");
+    cptr = wdroot + (cptr - wd);
     *cptr = (char)NULL;
     len = strlen(cmd) + strlen(wdroot) + strlen(wdD) + 8;
     if(len > CMDLENWRT) {
