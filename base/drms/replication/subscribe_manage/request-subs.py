@@ -28,6 +28,7 @@ import time
 import socket
 import select
 import inspect
+import copy
 from datetime import datetime, timedelta
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../../include'))
 from drmsparams import DRMSParams
@@ -354,7 +355,10 @@ class ServerRequest(object):
         response = self.unjsonizeJson(strReceived) # dict
         self.log.writeDebug([ 'response from server: ' + str(response) ])
         responseObj = self.getRspObj(response)
-        responseObj.validate(self) # pass request to response validate method
+        # XXX - maybe validate takes the response from the server (a ServerResponse), and modifies it
+        # so that this script can use it
+        responseObj.validate(self) # pass request to response validate method (will raise on error)
+        return clientify(responseObj) # translate to something useful for this script
 
 
 class GetPendingRequest(ServerRequest):
@@ -374,7 +378,7 @@ class GetPendingRequest(ServerRequest):
         return reqDict
     
     # response is:
-    #   { 'serverstatus': { 'code': 'ok', 'errmsg': '' } # ok, error, timeout (acquiring locks)
+    #   { 'serverstatus': { 'code': 'ok', 'errmsg': '' } # ok, error, timeout (acquiring reqtable lock)
     #     'requests': # if no pending requests, then the list is empty
     #        [
     #           { 'requestid': 230,
@@ -391,7 +395,6 @@ class GetPendingRequest(ServerRequest):
     #   }
     def getRspObj(self, responseDict):
         return GetPendingServerResponse(elements=responseDict)
-
 
 # request that server sets the request status to E
 class ErrorRequest(ServerRequest):
@@ -416,7 +419,7 @@ class ErrorRequest(ServerRequest):
         return reqDict
         
     # response is:
-    #  { 'serverstatus': { 'code': 'ok', 'errmsg': '' }, # ok, error, timeout (acquiring locks)
+    #  { 'serverstatus': { 'code': 'ok', 'errmsg': '' }, # ok, error, timeout (acquiring reqtable lock)
     #  }
     def getRspObj(self, responseDict):
         return ErrorServerResponse(elements=responseDict)
@@ -448,8 +451,7 @@ class SetStatusRequest(ServerRequest):
         return reqDict
 
     # response is:
-    #  { 'serverstatus': { 'code': 'ok', 'errmsg': '' }, # ok, error, timeout (acquiring locks)
-    #    'requestid': 252 # or -1 if the request cannot be found
+    #  { 'serverstatus': { 'code': 'ok', 'errmsg': '' }, # ok, error, timeout (acquiring reqtable lock)
     #  }
     def getRspObj(self, responseDict):
         return SetStatusServerResponse(elements=responseDict)
@@ -509,6 +511,13 @@ class GetPendingServerResponse(ServerResponse):
             if request.reqidCGI is not None:
                 if self.requests[0].requestid != request.reqidCGI:
                     raise InvalidArgument("the ID of the client's pending request (" + str(self.requestid) + ") does not match the ID specified for the current action (" + str(request.reqid) + ")")
+                    
+    def clientify(self):          
+        # maybe make a new response object suitable for the client and return it
+        req = self.requests[0]
+        elements = copy.deepcopy(req)        
+        
+        return GetPendingServerResponse(elements=elements)
 
 
 class ErrorServerResponse(ServerResponse):
@@ -517,6 +526,10 @@ class ErrorServerResponse(ServerResponse):
 
     def validate(self, request):
         super(ErrorServerResponse, self).validate()
+        
+    def clientify(self):          
+        # maybe make a new response object suitable for the client and return it
+        return None
 
 
 class SetStatusServerResponse(ServerResponse):
@@ -525,6 +538,11 @@ class SetStatusServerResponse(ServerResponse):
 
     def validate(self, request):
         super(SetStatusServerResponse, self).validate()
+
+    def clientify(self):
+        # maybe make a new response object suitable for the client and return it
+        return None
+
 
 class Response(object):
     def __init__(self, **kwargs):
@@ -1282,6 +1300,9 @@ if __name__ == "__main__":
                             try:
                                 request = GetPendingRequest(client=client, reqid=reqid, acquirereqlock=True, timeout=5, log=rsLog)
                                 pendingRequest = connection.sendRequest(request)
+                                
+                                # XXX - pendingRequest has a list of requests of size one - maybe fix this in the return from
+                                # the server after validation
 
                                 if pendingRequest is None:
                                     raise InvalidRequest('you cannot make a polldump request; no subscription request is pending')
