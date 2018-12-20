@@ -246,10 +246,6 @@ class MSException(Exception):
     def __init__(self, msg):
         super(MSException, self).__init__(msg)
 
-class LockTimeOut(MSException):
-    def __init__(self, msg):
-        super(LockTimeOut, self).__init__(msg)
-
 class SendMsg(MSException):
     def __init__(self, msg):
         super(SendMsg, self).__init__(msg)
@@ -1424,52 +1420,43 @@ class Worker(threading.Thread):
             self.log.writeError([ 'Error running gentables.pl, status ' +  str(exc.returncode) + '.'])
 
     # runs in a Worker thread
-    # must start a new transaction to see changes made by clients to the status of the request
+    # all changes to request statuses are made within a single transaction, regardless of the thread
+    # that the change is initiated from
+    # MUST BE HOLDING REQUEST TABLE LOCK
     def checkClientStatus(self, fileNoIngested, nextFileIsReadyForDownload, ilogger):
-        with psycopg2.connect(database=self.arguments.getArg('SLAVEDBNAME'), user=self.arguments.getArg('REPUSER'), host=self.arguments.getArg('SLAVEHOSTNAME'), port=str(self.arguments.getArg('SLAVEPORT'))) as subscriberDBConn:
-            with subscriberDBConn.cursor() as cursor:
-                # The requestid column is an integer.
-                cmd = 'SELECT status, errmsg FROM ' + self.request.dbtable + " WHERE requestid=" + str(self.request.requestid)
-                cursor.execute(cmd)
-                records = cursor.fetchall()
-                if len(records) != 1:
-                    raise Exception('reqtableRead', 'unexpected number of database rows returned from query: ' + cmd)
+        code, msg = self.request.getStatus()
 
-                code, msg = records[0] # (text, text)
-        
-            if code.upper() == 'E':
-                raise Exception('clientSignalledError', self.client + ' cancelling request')
-            elif code.upper() == 'D':
-                if fileNoIngested is None:
-                    ilogger.writeDebug([ 'waiting for client ' + self.client + ' to download DDL dump file (request ' + str(self.requestID) + '); status ' + code.upper()] )
-                else:
-                    ilogger.writeDebug([ 'waiting for client ' + self.client + ' to download DML dump file ' + str(fileNoIngested + 1) + ' (request ' + str(self.requestID) + '); status ' + code.upper() ])
-                ilogger.updateLastWriteTime()
-            elif code.upper() == 'A':
-                if fileNoIngested is None:
-                    ilogger.writeDebug([ 'waiting for client ' + self.client + ' to ingest DDL dump file (request ' + str(self.requestID) + '); status ' + code.upper() ])
-                else:
-                    ilogger.writeDebug([ 'waiting for client ' + self.client + ' to ingest DML dump file ' + str(fileNoIngested + 1) + ' (request ' + str(self.requestID) + '); status ' + code.upper() ])
-                ilogger.updateLastWriteTime()
-            elif code.upper() == 'I':
-                if nextFileIsReadyForDownload:
-                    if fileNoIngested is None:
-                        self.log.writeDebug([ 'client ' + self.client + ' has signaled that they have successfully ingested DDL dump file (request ' + str(self.requestID) + '); status ' + code.upper() ])
-                        fileNoIngested = 0
-                    else:
-                        self.log.writeDebug([ 'client ' + self.client + ' has signaled that they have successfully ingested DML dump file number ' + str(fileNoIngested + 1) + ' (request ' + str(self.requestID) + '); status ' + code.upper() ])
-                        fileNoIngested += 1
-
-                    outFile = os.path.join(self.dumpDir, self.client + '.subscribe_series.sql.gz')
-                    if os.path.exists(outFile):
-                        # clean up current dump file
-                        os.remove(outFile)
-                    
-                    nextFileIsReadyForDownload = False   
+        if code.upper() == 'E':
+            raise Exception('clientSignalledError', self.client + ' cancelling request')
+        elif code.upper() == 'D':
+            if fileNoIngested is None:
+                ilogger.writeDebug([ 'waiting for client ' + self.client + ' to download DDL dump file (request ' + str(self.requestID) + '); status ' + code.upper()] )
             else:
-                raise Exception('invalidReqStatus', 'unexpected request status ' + code.upper())
+                ilogger.writeDebug([ 'waiting for client ' + self.client + ' to download DML dump file ' + str(fileNoIngested + 1) + ' (request ' + str(self.requestID) + '); status ' + code.upper() ])
+            ilogger.updateLastWriteTime()
+        elif code.upper() == 'A':
+            if fileNoIngested is None:
+                ilogger.writeDebug([ 'waiting for client ' + self.client + ' to ingest DDL dump file (request ' + str(self.requestID) + '); status ' + code.upper() ])
+            else:
+                ilogger.writeDebug([ 'waiting for client ' + self.client + ' to ingest DML dump file ' + str(fileNoIngested + 1) + ' (request ' + str(self.requestID) + '); status ' + code.upper() ])
+            ilogger.updateLastWriteTime()
+        elif code.upper() == 'I':
+            if nextFileIsReadyForDownload:
+                if fileNoIngested is None:
+                    self.log.writeDebug([ 'client ' + self.client + ' has signaled that they have successfully ingested DDL dump file (request ' + str(self.requestID) + '); status ' + code.upper() ])
+                    fileNoIngested = 0
+                else:
+                    self.log.writeDebug([ 'client ' + self.client + ' has signaled that they have successfully ingested DML dump file number ' + str(fileNoIngested + 1) + ' (request ' + str(self.requestID) + '); status ' + code.upper() ])
+                    fileNoIngested += 1
+
+                outFile = os.path.join(self.dumpDir, self.client + '.subscribe_series.sql.gz')
+                if os.path.exists(outFile):
+                    # clean up current dump file
+                    os.remove(outFile)
                 
-        subscriberDBConn.close()
+                nextFileIsReadyForDownload = False   
+        else:
+            raise Exception('invalidReqStatus', 'unexpected request status ' + code.upper())
                 
         return (fileNoIngested, nextFileIsReadyForDownload, code.upper())
     
@@ -2187,7 +2174,6 @@ class Worker(threading.Thread):
 
 class Request(object):
     def __init__(self, conn, log, reqtable, dbtable, requestid, client, starttime, action, series, archive, retention, tapegroup, subuser, status, errmsg):
-        self.lock = threading.Lock() # concurrent access by main the Worker thread
         self.conn = conn
         self.log = log
         self.reqtable = reqtable
@@ -2221,12 +2207,6 @@ class Request(object):
         self.status = source.status
         self.errmsg = source.errmsg
         
-    def acquireLock(self, blocking=True, timeout=-1):
-        return self.lock.acquire(blocking=blocking, timeout=timeout)
-    
-    def releaseLock(self):
-        self.lock.release()
-        
     def setStatus(self, code, msg=None):
         # ART - Validate code
         self.status = code
@@ -2234,7 +2214,8 @@ class Request(object):
             self.errmsg = msg
 
         try:            
-            # Write to the DB.
+            # write to the DB (but do not commit to disk just yet, because that ends the transaction); call commit right before 
+            # refreshing the requests table
             with self.conn.cursor() as cursor:
                 # The requestid column is an integer.
                 if self.errmsg:
@@ -2243,7 +2224,6 @@ class Request(object):
                     cmd = 'UPDATE ' + self.dbtable + " SET status='" + self.status + "' WHERE requestid=" + str(self.requestid)
 
                 cursor.execute(cmd)
-                self.conn.commit()
         except psycopg2.Error as exc:
             self.conn.rollback()
             raise Exception('reqtableWrite', exc.diag.message_primary)
@@ -2252,24 +2232,7 @@ class Request(object):
             raise
             
     def getStatus(self):
-        try:
-            with self.conn.cursor() as cursor:
-                # The requestid column is an integer.
-                cmd = 'SELECT status, errmsg FROM ' + self.dbtable + " WHERE requestid=" + str(self.requestid)
-
-                cursor.execute(cmd)
-                records = cursor.fetchall()
-                if len(records) != 1:
-                    raise Exception('reqtableRead', 'Unexpected number of database rows returned from query: ' + cmd + '.')
-
-                self.status = records[0][0]    # text
-                self.errmsg = records[0][1]    # text
-
-                return (self.status, self.errmsg)
-        except psycopg2.Error as exc:
-            raise Exception('reqtableRead', exc.diag.message_primary)
-        finally:
-            self.conn.rollback()
+        return (self.status, self.errmsg)
     
     def hasWorker(self):
         return hasattr(self, 'worker') and self.worker
@@ -2391,7 +2354,7 @@ class ReqTable(object):
         
     def removeRequest(self, req):
         if req.client in self.clientMap:
-            req.clientMap[req.client].remove(req.requestid)
+            self.clientMap[req.client].remove(req.requestid)
 
         del self.reqDict[str(req.requestid)]
 
@@ -2408,7 +2371,7 @@ class ReqTable(object):
         oldReqs.sort(key=lambda req : req.requestid)
 
         if len(oldReqs) == 0:
-            # Copy all from latestReqs.
+            # copy all from latestReqs into reqtable (no requests currently exist in reqtable)
             for latestReq in latestReqs:
                 req = Request(self.conn, self.log, self, self.tableName, latestReq.requestid, latestReq.client, latestReq.starttime, latestReq.action, latestReq.series, latestReq.archive, latestReq.retention, latestReq.tapegroup, latestReq.subuser, latestReq.status, latestReq.errmsg)
                 # This new request has a pointer to the old request table, which is correct.
@@ -2417,7 +2380,7 @@ class ReqTable(object):
             return
         
         if len(latestReqs) == 0:
-            # Delete all requests.
+            # delete all requests (somebody deleted all our existing requests in the reqtable)
             for oldReq in oldReqs:
                 # Stop any associated worker.
                 oldReq.stopWorker(wait=True, timeout=120)
@@ -2430,8 +2393,8 @@ class ReqTable(object):
         # Step through all reqs in both lists. If the current requestIDs match, then copy from latest to old, and 
         # increment both pointers. If they do not match, then if the smaller requestID is from the latest, copy over.
         # Increment the iLatest pointer. If the smaller requestID is from the old, delete and increment iOld.
-        toDel = []
-        toAdd = []
+        toDel = [] # requests deleted from the reqtable db table externally
+        toAdd = [] # new requests added to the reqtable db table externally
         iLatest = 0
         iOld = 0
         
@@ -2439,7 +2402,7 @@ class ReqTable(object):
             if iLatest < len(latestReqs):
                 latestReq = latestReqs[iLatest]
                 
-                # We don't want the new request table being referenced from any new request.
+                # we don't want the new request table being referenced from any new request
                 latestReq.conn = self.conn
                 latestReq.log = self.log
                 latestReq.reqtable = self
@@ -2599,7 +2562,6 @@ class ReqTable(object):
                 cmd = 'DELETE FROM ' + self.tableName + ' WHERE requestid=' + str(self.reqDict[requestidStr].requestid)
                 with self.conn.cursor() as cursor:
                     cursor.execute(cmd)
-                    self.conn.commit()
             except psycopg2.Error as exc:
                 self.conn.rollback()
                 raise Exception('reqtableWrite', exc.diag.message_primary + ': ' + cmd + '.')
@@ -2954,7 +2916,7 @@ class ServerRequest(object):
         self.reqtype = kwargs['args']['reqtype']
         self.client = kwargs['args']['client']
         self.timeout = kwargs['args']['timeout']
-        self.acquirereqlock = kwargs['args']['acquirereqlock']
+        self.acquirereqlock = kwargs['args']['acquirereqlock'] # ignore this, no longer needed (we have a req table lock only now)
         self.reqtable = kwargs['reqtable']
         self.worker = kwargs['worker']
 
@@ -2964,27 +2926,11 @@ class GetPendingRequest(ServerRequest):
 
     def process(self):
         rspDict = None
-        self.requestsLocked = []
         try:
             rspDict = { 'serverstatus': { 'code': 'ok', 'errmsg': '' }, 'requests': [] }
-
             requests = self.reqtable.getClientRequests(client=self.client.lower(), status=[ 'N', 'P', 'D', 'A', 'I', 'C' ])
-
-            if self.acquirereqlock:
-                for request in requests:
-                    if request.acquireLock(blocking=True, timeout=self.timeout):
-                        try:
-                            rspDict['requests'].append({ 'requestid': request.requestid, 'action': request.action, 'series': request.series, 'archive': request.archive, 'retention': request.retention, 'tapegroup': request.tapegroup, 'subuser': request.subuser, 'status': request.status, 'errmsg': request.errmsg })
-                        finally:
-                            request.releaseLock()
-                    else:
-                        # timeout
-                        raise LockTimeOut('timeout acquiring request lock')
-            else:
-                for request in requests:
-                    rspDict['requests'].append({ 'requestid': request.requestid, 'action': request.action, 'series': request.series, 'archive': request.archive, 'retention': request.retention, 'tapegroup': request.tapegroup, 'subuser': request.subuser, 'status': request.status, 'errmsg': request.errmsg })            
-        except LockTimeOut as exc:
-            rspDict = { 'serverstatus': { 'code': 'timeout', 'errmsg': exc.args[0] } }
+            for request in requests:
+                rspDict['requests'].append({ 'requestid': request.requestid, 'action': request.action, 'series': request.series, 'archive': request.archive, 'retention': request.retention, 'tapegroup': request.tapegroup, 'subuser': request.subuser, 'status': request.status, 'errmsg': request.errmsg })
         except:
             import traceback
             
@@ -3002,30 +2948,14 @@ class ErrorRequest(ServerRequest):
         
     def process(self):
         rspDict = None
-        self.requestsLocked = []
         try:
             requests = self.reqtable.get([ self.requestid ])
-
             if len(requests) == 0:
                 rspDict = { 'serverstatus': { 'code': 'error', 'errmsg': 'request ' + str(self.requestid) + ' does not exist' } }
-            else:
-                if self.acquirereqlock:
-                    # now lock request
-                    if requests[0].acquireLock(blocking=True, timeout=self.timeout):
-                        try:
-                            # set status to error
-                            requests[0].setStatus('E', self.errmsg)
-                        finally:
-                            requests[0].releaseLock()
-                    else:
-                        # timeout
-                        raise LockTimeOut('timeout acquiring request lock')
-                else:
-                    requests[0].setStatus('E', self.errmsg)
+            else:                
+                requests[0].setStatus('E', self.errmsg)
 
             rspDict = { 'serverstatus': { 'code': 'ok', 'errmsg': '' } }
-        except LockTimeOut as exc:
-            rspDict = { 'serverstatus': { 'code': 'timeout', 'errmsg': exc.args[0] } }
         except:
             import traceback
             
@@ -3046,7 +2976,6 @@ class SetStatusRequest(ServerRequest):
         
     def process(self):
         rspDict = None
-        self.requestsLocked = []
         try:
             requests = self.reqtable.get([ self.requestid ])
             if len(requests) == 0:
@@ -3057,23 +2986,9 @@ class SetStatusRequest(ServerRequest):
                 else:
                     errmsg = None
 
-                if self.acquirereqlock:
-                    # now lock request
-                    if requests[0].acquireLock(blocking=True, timeout=self.timeout):
-                        try:
-                            requests[0].setStatus(self.status, errmsg)
-                        finally:
-                            requests[0].releaseLock()
-                    else:
-                        # timeout
-                        raise LockTimeOut('timeout acquiring request lock')
-                else:
-                    requests[0].setStatus(self.status, errmsg)
+                requests[0].setStatus(self.status, errmsg)
 
             rspDict = { 'serverstatus': { 'code': 'ok', 'errmsg': '' } }
-            rspDict['requestid'] = request.requestid            
-        except LockTimeOut as exc:
-            rspDict = { 'serverstatus': { 'code': 'timeout', 'errmsg': exc.args[0] } }
         except:
             import traceback
             
@@ -3287,7 +3202,7 @@ if __name__ == "__main__":
                                                     # The worker thread died. Remove old Worker object.
                                                     areq.stopWorker(wait=False)
                                                     doClean = False
-                                                    
+                                                # XXX - newThread already sets status to P
                                                 areq.setWorker(Worker.newThread(areq, newSite, arguments, connMaster, connSlave, msLog, doClean, proc))
                                                 if doClean:
                                                     reqTable.setStatus([ areq.requestid ], 'P') # The new request is now being processed. If there was an issue creating the new thread, an exception will have been raised, and we will not execute this line.
@@ -3397,6 +3312,12 @@ if __name__ == "__main__":
                     # refresh() will not see change because the worker changes the status in its own transaction, and the main thread
                     # is using old transaction to get status
                     reqTable.acquireLock()
+                    
+                    # end the current transaction so that the refresh() will start a new transaction and pick-up new requests;
+                    # the changes committed will be changes to the status/errmsg columns of requests, and deletions of old 
+                    # errored-out requests 
+                    connSlave.commit()
+
                     try:
                         reqTable.refresh()
                     finally:
