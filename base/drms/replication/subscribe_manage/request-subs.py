@@ -427,6 +427,7 @@ class ErrorRequest(ServerRequest):
 
 class SetStatusRequest(ServerRequest):
     def __init__(self, **kwargs):
+        self.requestid = kwargs['reqid']
         self.status = kwargs['status']
         if 'errmsg' in kwargs:
             self.errmsg = kwargs['errmsg']
