@@ -98,6 +98,7 @@ CFG_TABLE_NODE = 'node'
 REQUEST_TYPE_GETPENDING = 'getPending'
 REQUEST_TYPE_ERROR = 'error'
 REQUEST_TYPE_SETSTATUS = 'setStatus'
+REQUEST_TYPE_DONE = 'done'
 
 
 SLONY_DB_OBJECTS = """\
@@ -1873,7 +1874,7 @@ class Worker(threading.Thread):
                 # the first file - DDL only
                 logQueue.put([ 'info', 'generating DDL dump file' ])
             
-                # temporary dot file
+                # write to the temporary dot file that was created in Worker.dumpAndStartGeneratingClientLogs()
                 outFile = os.path.join(dumperInfo.serverInfo['dumpDir'], '.' + dumperInfo.clientInfo['client'] + '.subscribe_series.ddl.sql.gz')
                 # this actually creates a binary file (UTF8), but the file data in memory is represented as strs
                 with gzip.open(outFile, mode='at', compresslevel=5, encoding='UTF8') as fout:                                
@@ -1944,7 +1945,10 @@ class Worker(threading.Thread):
         if self.action == 'subscribe':
             # Run createtabstruct for the table of the series being subscribed to.
             cmdList = [ os.path.join(self.arguments.getArg('kModDir'), 'createtabstructure'), '-u', 'JSOC_DBHOST=' + self.arguments.getArg('SLAVEHOSTNAME'), 'in=' + self.series[0].lower(), 'out=' + self.series[0].lower(), 'archive=' + str(self.archive), 'retention=' + str(self.retention), 'tapegroup=' + str(self.tapegroup), 'owner=' + self.subuser ]
-            outFile = os.path.join(self.dumpDir, self.client + '.subscribe_series.ddl.sql.gz')
+            
+            # create a temporary dot file; this gets made a permanent file (by removal of the dot) inside the
+            # child process (Worker.__initializeSubscription())
+            outFile = os.path.join(self.dumpDir, '.' + self.client + '.subscribe_series.ddl.sql.gz')
 
             wroteIntMsg = False
             with gzip.open(outFile, mode='wt', compresslevel=5, encoding='UTF8') as fout:
@@ -2739,6 +2743,8 @@ class RequestFactory(object):
             return ErrorRequest(args=requestDict, reqtable=self.worker.reqtable, worker=self.worker)
         elif reqType == REQUEST_TYPE_SETSTATUS:
             return SetStatusRequest(args=requestDict, reqtable=self.worker.reqtable, worker=self.worker)
+        elif reqType == REQUEST_TYPE_DONE:
+            return DoneRequest(args=requestDict, reqtable=self.worker.reqtable, worker=self.worker)
         else:
             raise RequestTypeException('the request type ' + reqType + ' is not supported')
 
@@ -2756,43 +2762,48 @@ class RequestWorker(threading.Thread):
         self.log = kwargs['log']
     
     def run(self):
-        # read request first - it has the timeout value in it
-        msgStr = self.receiveJson() # msgStr is a string object.
-        req = self.extractRequest(msgStr) # will raise if reqtype is not supported
-        rspDict = None
-        peerName = self.getID()
+        while True: # request loop
+            # read request first - it has the timeout value in it
+            msgStr = self.receiveJson() # msgStr is a string object.
+            req = self.extractRequest(msgStr) # will raise if reqtype is not supported
+            rspDict = None
+            peerName = self.getID()
 
-        # always acquire the reqtable lock
-        if self.reqtable.acquireLock(blocking=True, timeout=req.timeout):
-            try:
-                self.log.writeDebug([ 'processing ' + req.__class__.__name__ + ' client request' ])
-                rspDict = req.process() # optionally acquires request object lock
-                
-                # send response to client
-                self.log.writeDebug([ 'sending response to client: ' + str(rspDict) ])
-                self.sendJson(json.dumps(rspDict))
-            
-                # wait for client to close connection, and when that happens, release all locks
+            # always acquire the reqtable lock
+            if self.reqtable.acquireLock(blocking=True, timeout=req.timeout):
                 try:
-                    textReceived = self.sock.recv(RequestWorker.MAX_MSG_BUFSIZE)
-                    # self.sock can be dead if the client broke the socket 
-                    if textReceived == b'':
-                        # the client closed their end of the socket (they shutdown the write half of the socket);
-                        # so the client most likely called shutdown() followed by close()
-                        self.log.writeDebug([ 'client ' + peerName + ' properly terminated connection' ])
-                    else:
-                        self.log.writeDebug([ 'client ' + peerName + ' sent extraneous data over socket connection (ignoring)' ])
-                except OSError:
-                    self.log.writeDebug([ 'problem reading from socket (client ' + peerName + ')' ])
-                    rspDict = { 'serverstatus': { 'code': 'error', 'errmsg': 'broken socket' } }
+                    self.log.writeDebug([ 'processing ' + req.__class__.__name__ + ' client request' ])
+                    rspDict = req.process() # optionally acquires request object lock
+                
+                    # send response to client
+                    self.log.writeDebug([ 'sending response to client: ' + str(rspDict) ])
                     self.sendJson(json.dumps(rspDict))
-            finally:
-                # release reqtable lock
-                self.reqtable.releaseLock()
-        else:
-            # generate a failure response and send it to the client
-            rspDict = { 'serverstatus': { 'code': 'timeout', 'errmsg': 'unable to acquire request table lock' } }
-            self.sendJson(json.dumps(rspDict))
+            
+                    # there may be additional client requests in this connection
+                    if isinstance(req, DoneRequest):            
+                        # wait for client to close connection, and when that happens, release all locks
+                        try:
+                            textReceived = self.sock.recv(RequestWorker.MAX_MSG_BUFSIZE)
+                            # self.sock can be dead if the client broke the socket 
+                            if textReceived == b'':
+                                # the client closed their end of the socket (they shutdown the write half of the socket);
+                                # so the client most likely called shutdown() followed by close()
+                                self.log.writeDebug([ 'client ' + peerName + ' properly terminated connection' ])
+                            else:
+                                self.log.writeDebug([ 'client ' + peerName + ' sent extraneous data over socket connection (ignoring)' ])
+                        except OSError:
+                            self.log.writeDebug([ 'problem reading from socket (client ' + peerName + ')' ])
+                            rspDict = { 'serverstatus': { 'code': 'error', 'errmsg': 'broken socket' } }
+                            self.sendJson(json.dumps(rspDict))
+                        finally:
+                            break # out of request loop
+                finally:
+                    # release reqtable lock
+                    self.reqtable.releaseLock()
+            else:
+                # generate a failure response and send it to the client
+                rspDict = { 'serverstatus': { 'code': 'timeout', 'errmsg': 'unable to acquire request table lock' } }
+                self.sendJson(json.dumps(rspDict))
             
     def getID(self):
         if hasattr(self, 'peerName') and self.peerName and len(self.peerName) > 0:
@@ -2916,7 +2927,6 @@ class ServerRequest(object):
         self.reqtype = kwargs['args']['reqtype']
         self.client = kwargs['args']['client']
         self.timeout = kwargs['args']['timeout']
-        self.acquirereqlock = kwargs['args']['acquirereqlock'] # ignore this, no longer needed (we have a req table lock only now)
         self.reqtable = kwargs['reqtable']
         self.worker = kwargs['worker']
 
@@ -2935,8 +2945,6 @@ class GetPendingRequest(ServerRequest):
             import traceback
             
             rspDict = { 'serverstatus': { 'code': 'error', 'errmsg': traceback.format_exc(1) } }
-        finally:
-            pass
             
         return rspDict
 
@@ -2960,8 +2968,6 @@ class ErrorRequest(ServerRequest):
             import traceback
             
             rspDict = { 'serverstatus': { 'code': 'error', 'errmsg': traceback.format_exc(1) } }
-        finally:
-            pass
             
         return rspDict
 
@@ -2993,10 +2999,23 @@ class SetStatusRequest(ServerRequest):
             import traceback
             
             rspDict = { 'serverstatus': { 'code': 'error', 'errmsg': traceback.format_exc(1) } }
-        finally:
-            pass
             
         return rspDict
+        
+class DoneRequest(ServerRequest):
+    def __init__(self, **kwargs):
+        super(DoneRequest, self).__init__(**kwargs)
+    
+    def process(self):
+        rspDict = None
+        try:
+            rspDict = { 'serverstatus': { 'code': 'ok', 'errmsg': '' } }
+        except:
+            import traceback
+            
+            rspDict = { 'serverstatus': { 'code': 'error', 'errmsg': traceback.format_exc(1) } }
+
+        return rspDict    
 
         
 # a single thread that accepts socket connects, and then spawns a threads to handle the requests
