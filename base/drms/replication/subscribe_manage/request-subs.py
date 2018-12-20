@@ -358,7 +358,7 @@ class ServerRequest(object):
         # XXX - maybe validate takes the response from the server (a ServerResponse), and modifies it
         # so that this script can use it
         responseObj.validate(self) # pass request to response validate method (will raise on error)
-        return self.clientify(responseObj) # translate to something useful for this script
+        return responseObj.clientify(responseObj) # translate to something useful for this script
 
 
 class GetPendingRequest(ServerRequest):
