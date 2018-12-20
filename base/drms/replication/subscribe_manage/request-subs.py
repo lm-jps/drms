@@ -514,10 +514,12 @@ class GetPendingServerResponse(ServerResponse):
                     
     def clientify(self):          
         # maybe make a new response object suitable for the client and return it
-        req = self.requests[0]
-        elements = copy.deepcopy(req)        
-        
-        return GetPendingServerResponse(elements=elements)
+        if len(self.requests) > 0:
+            req = self.requests[0]
+            elements = copy.deepcopy(req)        
+            return GetPendingServerResponse(elements=elements)
+        else:
+            return None
 
 
 class ErrorServerResponse(ServerResponse):
