@@ -1110,6 +1110,7 @@ if __name__ == "__main__":
                         raise InvalidArgument('the newsite status at the client does not match the newsite status at the server')
                     newSite = newSiteServer
                     rsLog.writeInfo([ 'newSite is ' + str(newSite) ])
+                    resp = None
 
                     if action.lower() == 'continue':
                         # make socket connection to manage-subs.py
@@ -1437,9 +1438,10 @@ if __name__ == "__main__":
                     else:
                         # Unrecognized action.
                         raise InvalidRequest('request of type ' + "'" + action + "'" + ' is not recognized')
-                        
-                    resp.logMsg()
-                    resp.send()
+                    
+                    if resp is not None:
+                        resp.logMsg()
+                        resp.send()
                 except RSException as exc:
                     # notify client that something went wrong in request-subs.py, but let client decide what to do - 
                     # it will probably send an error request (which will be handled in request-subs.py) and then terminate
