@@ -75,6 +75,7 @@ STATUS_ERR_CANNOT_CONNECT_TO_SERVER = 'cannotConnectToServer'
 REQTYPE_GET_PENDING = 'getPending'
 REQTYPE_ERROR = 'error'
 REQTYPE_SET_STATUS = 'setStatus'
+REQTYPE_DONE = 'done'
 
         
 def terminator(*args):
@@ -328,12 +329,11 @@ class ServerRequest(object):
         # these assignments will validate that arguments exist
         self.client = kwargs['client']
         self.timeout = kwargs['timeout']
-        self.acquirereqlock = kwargs['acquirereqlock']
         self.log = kwargs['log']
         self.kwargs = kwargs
         
     def getReqDict(self):
-        return { 'client': self.client, 'timeout': self.timeout, 'acquirereqlock': self.acquirereqlock }
+        return { 'client': self.client, 'timeout': self.timeout }
     
     # msg is a string
     def jsonizeMsg(self, msg):
@@ -355,8 +355,6 @@ class ServerRequest(object):
         response = self.unjsonizeJson(strReceived) # dict
         self.log.writeDebug([ 'response from server: ' + str(response) ])
         responseObj = self.getRspObj(response)
-        # XXX - maybe validate takes the response from the server (a ServerResponse), and modifies it
-        # so that this script can use it
         responseObj.validate(self) # pass request to response validate method (will raise on error)
         return responseObj.clientify() # translate to something useful for this script
 
@@ -369,8 +367,7 @@ class GetPendingRequest(ServerRequest):
     # request is:
     #   { 'reqtype': 'getPending',
     #     'timeout': 20, # the acquire-locks timeout in seconds
-    #     'client': 'nso',
-    #     'acquirereqlock': true
+    #     'client': 'nso'
     #   }
     def getReqDict(self):
         reqDict = super(GetPendingRequest, self).getReqDict()
@@ -408,7 +405,6 @@ class ErrorRequest(ServerRequest):
     #     'timeout': 20, # the acquire-locks timeout in seconds
     #     'requestid': 23,
     #     'client': 'nso',
-    #     'acquirereqlock': true,
     #     'ermsg': 'generic problem in the subscription client'
     #   }
     def getReqDict(self):
@@ -438,7 +434,6 @@ class SetStatusRequest(ServerRequest):
     #     'timeout': 20, # the acquire-locks timeout in seconds
     #     'requestid': 25,
     #     'client': 'nso',
-    #     'acquirereqlock': true,
     #     'status': 'A'
     #     'errmsg': 'whatever' # optional
     #   }
@@ -457,6 +452,25 @@ class SetStatusRequest(ServerRequest):
     def getRspObj(self, responseDict):
         return SetStatusServerResponse(elements=responseDict)
 
+class DoneRequest(ServerRequest):
+    def __init__(self, **kwargs):
+        super(DoneRequest, self).__init__(**kwargs)
+        
+    # request is:
+    #  { 'reqtype': 'close',
+    #    'timeout': 20, # the acquire-lock timeout in seconds
+    #    'client': 'nso'
+    #  }
+    def getReqDict(self):  
+        reqDict = super(DoneRequest, self).getReqDict()
+        reqDict['reqtype'] = REQTYPE_DONE
+        return reqDict
+        
+    # response is:
+    #  { 'serverstatus': { 'code': 'ok', 'errmsg': '' }, # ok, error, timeout (acquiring reqtable lock)
+    #  }
+    def getRspObj(self, responseDict):
+        return DoneServerResponse(elements=responseDict)
 
 class ServerResponse(object):
     def __init__(self, **kwargs):
@@ -541,6 +555,18 @@ class SetStatusServerResponse(ServerResponse):
 
     def validate(self, request):
         super(SetStatusServerResponse, self).validate()
+
+    def clientify(self):
+        # maybe make a new response object suitable for the client and return it
+        return None
+
+
+class DoneServerResponse(ServerResponse):
+    def __init__(self, **kwargs):
+        super(DoneServerResponse, self).__init__(**kwargs)
+
+    def validate(self, request):
+        super(DoneServerResponse, self).validate()
 
     def clientify(self):
         # maybe make a new response object suitable for the client and return it
@@ -790,6 +816,12 @@ class Connection(object):
         return self.peerName
         
     def close(self):
+        # we need to tell the server that we are done - send a DoneRequest
+        request =  DoneRequest(client=self.client, timeout=5, log=self.log)
+        
+        # always returns None, no response needed by client (they already received one)
+        self.sendRequest(request)
+        
         self.sock.shutdown(socket.SHUT_RDWR)
         self.sock.close()
         
@@ -1156,7 +1188,7 @@ if __name__ == "__main__":
                         try:
                             # acquire the request-table lock, and the request lock too, if one exists - we will not be
                             # modifying the request, but we will read it then take action based upon what we read 
-                            request = GetPendingRequest(client=client, reqid=None, acquirereqlock=True, timeout=5, log=rsLog)
+                            request = GetPendingRequest(client=client, reqid=None, timeout=5, log=rsLog)
                             pendingRequest = connection.sendRequest(request)
                             
                             if pendingRequest is None:
@@ -1180,7 +1212,7 @@ if __name__ == "__main__":
                     elif action.lower() == 'subscribe':
                         connection = Connection(client=client, host=serverhost, port=serverport, log=rsLog)
                         try:
-                            request = GetPendingRequest(client=client, reqid=None, acquirereqlock=False, timeout=5, log=rsLog)
+                            request = GetPendingRequest(client=client, reqid=None, timeout=5, log=rsLog)
                             pendingRequest = connection.sendRequest(request)
                             
                             if pendingRequest is not None:
@@ -1232,7 +1264,7 @@ if __name__ == "__main__":
                             # acquire the request-table lock, but not the request lock; we are not modifying an existing request
                             # (it does not exist yet since the client is the entity that creates it); blocks until 
                             # req table lock is acquired (or time-out occurs)
-                            request = GetPendingRequest(client=client, reqid=None, acquirereqlock=False, timeout=5, log=rsLog)
+                            request = GetPendingRequest(client=client, reqid=None, timeout=5, log=rsLog)
                             pendingRequest = connection.sendRequest(request)
                             
                             if pendingRequest is not None:
@@ -1283,7 +1315,7 @@ if __name__ == "__main__":
                             # acquire the request-table lock, but not the request lock; we are not modifying an existing request
                             # (it does not exist yet since the client is the entity that creates it); blocks until 
                             # req table lock is acquired (or time-out occurs)
-                            request = GetPendingRequest(client=client, reqid=None, acquirereqlock=False, timeout=5, log=rsLog)
+                            request = GetPendingRequest(client=client, reqid=None, timeout=5, log=rsLog)
                             pendingRequest = connection.sendRequest(request)
                             
                             if pendingRequest is not None:
@@ -1301,11 +1333,8 @@ if __name__ == "__main__":
                         connection = Connection(client=client, host=serverhost, port=serverport, log=rsLog)
                         try:
                             try:
-                                request = GetPendingRequest(client=client, reqid=reqid, acquirereqlock=True, timeout=5, log=rsLog)
+                                request = GetPendingRequest(client=client, reqid=reqid, timeout=5, log=rsLog)
                                 pendingRequest = connection.sendRequest(request)
-                                
-                                # XXX - pendingRequest has a list of requests of size one - maybe fix this in the return from
-                                # the server after validation
 
                                 if pendingRequest is None:
                                     raise InvalidRequest('you cannot make a polldump request; no subscription request is pending')
@@ -1327,7 +1356,7 @@ if __name__ == "__main__":
                                     elif pendingRequest.status.upper() == 'D':
                                         try:
                                             # set status to A to indicate to the server that the client is downloading the dump file
-                                            request = SetStatusRequest(client=client, reqid=reqid, acquirereqlock=True, log=rsLog, timeout=5, status='A')
+                                            request = SetStatusRequest(client=client, reqid=reqid, log=rsLog, timeout=5, status='A')
                                             connection.sendRequest(request)
                                             resp = ContinueResponse(log=rsLog, status=STATUS_REQUEST_DUMP_READY, msg='the SQL dump file is ready for ingestion', client=client)
                                         except ServerSideTimeout as exc:
@@ -1344,7 +1373,7 @@ if __name__ == "__main__":
                                     elif pendingRequest.status.upper() == 'D':
                                         try:
                                             # set status to A to indicate to the server that the client is downloading the dump file
-                                            request = SetStatusRequest(client=client, reqid=reqid, acquirereqlock=True, log=rsLog, timeout=5, status='A')
+                                            request = SetStatusRequest(client=client, reqid=reqid, log=rsLog, timeout=5, status='A')
                                             connection.sendRequest(request)
                                             resp = ContinueResponse(log=rsLog, status=STATUS_REQUEST_DUMP_READY, msg='the SQL dump file is ready for ingestion', client=client)
                                         except ServerSideTimeout as exc:
@@ -1364,7 +1393,7 @@ if __name__ == "__main__":
                         connection = Connection(client=client, host=serverhost, port=serverport, log=rsLog)
                         try:
                             try:
-                                request = GetPendingRequest(client=client, reqid=reqid, acquirereqlock=True, timeout=5, log=rsLog)
+                                request = GetPendingRequest(client=client, reqid=reqid, timeout=5, log=rsLog)
                                 pendingRequest = connection.sendRequest(request)
                             
                                 if pendingRequest is None:
@@ -1390,7 +1419,7 @@ if __name__ == "__main__":
                                     if pendingRequest.status.upper() == 'D':
                                         try:
                                             # set status to A to indicate to the server that the client is downloading the dump file
-                                            request = SetStatusRequest(client=client, reqid=reqid, acquirereqlock=True, log=rsLog, timeout=5, status='A')
+                                            request = SetStatusRequest(client=client, reqid=reqid, log=rsLog, timeout=5, status='A')
                                             connection.sendRequest(request)                                            
                                             resp = ContinueResponse(log=rsLog, status=STATUS_REQUEST_DUMP_READY, msg='the SQL dump file is ready for ingestion', client=client)
                                         except ServerSideTimeout as exc:
@@ -1399,7 +1428,7 @@ if __name__ == "__main__":
                                     elif pendingRequest.status.upper() == 'A':
                                         try:
                                             # set status to I to indicate to the server that the client has ingested the dump file
-                                            request = SetStatusRequest(client=client, reqid=reqid, acquirereqlock=True, log=rsLog, timeout=5, status='I')
+                                            request = SetStatusRequest(client=client, reqid=reqid, log=rsLog, timeout=5, status='I')
                                             connection.sendRequest(request)
                                             resp = WaitResponse(log=rsLog, status=STATUS_REQUEST_FINALIZING, msg='requesting finalization for subscription to series ' + ','.join(pendingRequest.series) + '; poll for completion with a pollcomplete request; please sleep between iterations when looping over this request', client=client, reqid=reqid)
                                         except ServerSideTimeout as exc:
@@ -1411,7 +1440,7 @@ if __name__ == "__main__":
                                     elif pendingRequest.status.upper() == 'C':
                                         try:
                                             # set status to S to indicate to the server that the client has seen that the request is complete
-                                            request = SetStatusRequest(client=client, reqid=reqid, acquirereqlock=True, log=rsLog, timeout=5, status='S')
+                                            request = SetStatusRequest(client=client, reqid=reqid, log=rsLog, timeout=5, status='S')
                                             connection.sendRequest(request)
                                             resp = ContinueResponse(log=rsLog, status=STATUS_REQUEST_COMPLETE, msg='your subscription request has successfully completed', client=client)
                                         except ServerSideTimeout as exc:
@@ -1424,7 +1453,7 @@ if __name__ == "__main__":
                                     if pendingRequest.status.upper() == 'D':
                                         try:
                                             # set status to A to indicate to the server that the client is downloading the dump file
-                                            request = SetStatusRequest(client=client, reqid=reqid, acquirereqlock=True, log=rsLog, timeout=5, status='A')
+                                            request = SetStatusRequest(client=client, reqid=reqid, log=rsLog, timeout=5, status='A')
                                             connection.sendRequest(request)
                                             resp = ContinueResponse(log=rsLog, status=STATUS_REQUEST_DUMP_READY, msg='the SQL dump file is ready for ingestion', client=client)
                                         except ServerSideTimeout as exc:
@@ -1433,7 +1462,7 @@ if __name__ == "__main__":
                                     elif pendingRequest.status.upper() == 'A':
                                         try:
                                             # set status to I to indicate to the server that the client has ingested the dump file
-                                            request = SetStatusRequest(client=client, reqid=reqid, acquirereqlock=True, log=rsLog, timeout=5, status='I')
+                                            request = SetStatusRequest(client=client, reqid=reqid, log=rsLog, timeout=5, status='I')
                                             connection.sendRequest(request)
                                             resp = WaitResponse(log=rsLog, status=STATUS_REQUEST_FINALIZING, msg='requesting finalization for re-subscription to series ' + ','.join(pendingRequest.series) + '; poll for completion with a pollcomplete request; please sleep between iterations when looping over this request', client=client, reqid=reqid)
                                         except ServerSideTimeout as exc:
@@ -1445,7 +1474,7 @@ if __name__ == "__main__":
                                     elif pendingRequest.status.upper() == 'C':
                                         try:
                                             # set status to S to indicate to the server that the client has seen that the request is complete
-                                            request = SetStatusRequest(client=client, reqid=reqid, acquirereqlock=True, log=rsLog, timeout=5, status='S')
+                                            request = SetStatusRequest(client=client, reqid=reqid, log=rsLog, timeout=5, status='S')
                                             connection.sendRequest(request)
                                             resp = ContinueResponse(log=rsLog, status=STATUS_REQUEST_COMPLETE, msg='your re-susbscription request has successfully completed', client=client)
                                         except ServerSideTimeout as exc:
@@ -1467,7 +1496,7 @@ if __name__ == "__main__":
                         try:
                             # set request status to E
                             # XXX need to modify subscribe.py to pass an error message
-                            request = ErrorRequest(client=client, reqid=reqid, acquirereqlock=True, log=rsLog, timeout=5, errmsg='generic problem at client ' + client)
+                            request = ErrorRequest(client=client, reqid=reqid, log=rsLog, timeout=5, errmsg='generic problem at client ' + client)
                             connection.sendRequest(request)
                         except ServerSideTimeout as exc:
                             # do not handle a server time-out here; the client has done all it can do to tell the server that
