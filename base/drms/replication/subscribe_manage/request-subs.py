@@ -462,7 +462,7 @@ class ServerResponse(object):
         elements = kwargs['elements']
         for key,val in elements.items():
             if type(val) is dict:
-                nested = ServerResponse(elements=val)
+                nested = self.__class__(elements=val)
                 self.__dict__.update({ key: nested })
             elif type(val) is list:
                 nested = self.dealWithList(val)
@@ -474,7 +474,7 @@ class ServerResponse(object):
         listElems = []
         for elem in l:
             if type(elem) is dict:
-                nested = ServerResponse(elements=elem)
+                nested = self.__class__(elements=elem)
                 listElems.append(nested)
             elif type(elem) is list:
                 nested = self.dealWithList(elem)
@@ -516,8 +516,8 @@ class GetPendingServerResponse(ServerResponse):
         # maybe make a new response object suitable for the client and return it
         if len(self.requests) > 0:
             req = self.requests[0]
-            elements = copy.deepcopy(req)        
-            return GetPendingServerResponse(elements=elements)
+            responseObj = copy.deepcopy(req) # elements is a GetPendingServerResponse object, not a dict
+            return responseObj
         else:
             return None
 
