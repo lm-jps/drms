@@ -462,8 +462,25 @@ class ServerResponse(object):
             if type(val) is dict:
                 nested = ServerResponse(elements=val)
                 self.__dict__.update({ key: nested })
+            elif type(val) is list:
+                nested = self.dealWithList(val)
+                self.__dict__.update({ key: nested })
             else:
                 self.__dict__.update({ key: val })
+                
+    def dealWithList(self, l):
+        listElems = []
+        for elem in l:
+            if type(elem) is dict:
+                nested = ServerResponse(elements=elem)
+                listElems.append(nested)
+            elif type(elem) is list:
+                nested = self.dealWithList(elem)
+                listElems.append(nested)
+            else:
+                listElems.append(elem)
+                
+        return listElems
                 
     def validate(self):
         # check for server-side timeout
@@ -487,7 +504,7 @@ class GetPendingServerResponse(ServerResponse):
         elif len(self.requests) > 1:
             raise UnexpectedDbResponse('client ' + request.connection.client + ' has multiple pending requests (there should be one at most)')
         else:
-            request.log.writeInfo([ 'client ' + request.connection.client + ' has a pending request:' + ' id - ' + str(self.requests[0].requestid) + ', action - ' + self.requests[0].action + ', series - ' + ','.join(self.requests[0].series) + ', status - ' + self.requests[0].status + ', errMsg - ' + str(self.requests[0].errmsg if self.requests[0].errmsg else "''") ])            
+            request.log.writeInfo([ 'client ' + request.connection.client + ' has a pending request:' + ' id - ' + str(self.requests[0].requestid) + ', action - ' + self.requests[0].action + ', series - ' + ','.join(self.requests[0].series) + ', status - ' + self.requests[0].status + ', errMsg - ' + str(self.requests[0].errmsg if self.requests[0].errmsg else "''") ])
     
             if request.reqidCGI is not None:
                 if self.requests[0].requestid != request.reqidCGI:
