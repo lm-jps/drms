@@ -500,8 +500,6 @@ class ErrorServerResponse(ServerResponse):
 
     def validate(self, request):
         super(ErrorServerResponse, self).validate()
-        if self.requestid == -1:
-            raise InvalidArgment('you cannot indicate a client-side error for request ' + str(request.reqid) + '; that request is not pending')        
 
 
 class SetStatusServerResponse(ServerResponse):
