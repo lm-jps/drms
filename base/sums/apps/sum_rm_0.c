@@ -303,11 +303,10 @@ int stat_storage()
               partnchange = 1;		//must resync memory w/db
             }
         }
-      }
       if(SUMLIB_PavailUpdate(pptr->name, df_avail))
        printk("Err: SUMLIB_PavailUpdate(%s, %e, ...)\n",
                       pptr->name, df_avail);
-      else
+      else {
         //printk("%s Update free bytes to %e\n", pptr->name, df_avail);
         //#of bytes need free for this partition. Remember only one SUM set [0]
         max_free_set_need[i] = df_total * max_free_set_percent[0];
@@ -320,6 +319,8 @@ int stat_storage()
           printk("%s Attempt to del %e bytes\n", pptr->name, df_del);
           DS_RmDoX(pptr->name, df_del); 
         }
+       }
+      }
     }
   }
   if(partnchange) {
