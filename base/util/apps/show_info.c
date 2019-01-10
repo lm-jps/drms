@@ -240,35 +240,36 @@ ModuleArgs_t module_args[] =
   {ARG_STRING, "ds", "Not Specified", "<record_set query>"},
   {ARG_STRING, "key", "Not Specified", "<comma delimited keyword list>"},
   {ARG_STRING, "seg", "Not Specified", "<comma delimited segment list>"},
-  {ARG_FLAG, "a", "0", "Show info for all keywords"},
-  {ARG_FLAG, "A", "0", "Show info for all segments"},
-  {ARG_FLAG, "b", NULL, "Disable prime-key logic"},
-  {ARG_FLAG, "c", "0", "Show count of records in query"},
-  {ARG_FLAG, "d", "0", "Show dimensions of segment files with selected segs"},
-  {ARG_FLAG, "e", NULL, "Parse the provided record-set query into seriesnames and filters"},
+  {ARG_FLAG, "a", "0", "print all keyword values"},
+  {ARG_FLAG, "A", "0", "print all segment file names/paths"},
+  {ARG_FLAG, "b", NULL, "disable prime-key logic"},
+  {ARG_FLAG, "c", "0", "print number of records specified"},
+  {ARG_FLAG, "C", NULL, "if the -P or p flag is set, then do not retrieve linked DRMS records; otherwise this flag is a noop"},
+  {ARG_FLAG, "d", "0", "print segment data units, protocols, and dimensions"},
+  {ARG_FLAG, "e", NULL, "parse the provided record-set query into series and filters"},
   {ARG_FLAG, "h", "0", "help - print usage info"},
-  {ARG_FLAG, "i", "0", "print record query, for each record, will be before any keywwords or segment data"},
-  {ARG_FLAG, "I", "0", "print session information for record creation, host, sessionid, runtime, jsoc_version, and logdir"},
-  {ARG_FLAG, "j", "0", "list series info in jsd format"},
-  {ARG_FLAG, "k", "0", "keyword list one per line"},
-  {ARG_FLAG, "l", "0", "just list series keywords with descriptions"},
-  {ARG_FLAG, "K", "0", "Show info for all links"},
-  {ARG_INT,  "n", "0", "number of records to show, +from first, -from last"},
-  {ARG_FLAG, "o", "0", "list the record\'s storage_unit online status"},
-  {ARG_FLAG, "O", NULL, "disable the code that sets a database query time-out of 10 minutes"},
-  {ARG_FLAG, "p", "0", "list the record\'s storage_unit path"},
-  {ARG_FLAG, "P", "0", "list the record\'s storage_unit path but no retrieve"},
-  {ARG_FLAG, "q", "0", "quiet - skip header of chosen keywords"},
-  {ARG_FLAG, "r", "0", "recnum - show record number as first keyword"},
-  {ARG_FLAG, "R", "0", "show the online retention date, i.e. expire date"},
-  {ARG_FLAG, "s", "0", "stats - show some statistics about the series"},
-  {ARG_FLAG, "S", "0", "SUNUM - show the sunum for the record"},
-  {ARG_FLAG, "t", "0", "types - show types and print formats for keyword values"},
-  {ARG_FLAG, "T", "0", "tapeinfo - show archive tapename and file number, or NA if not archived"},
-  {ARG_FLAG, "v", NULL, "verbosity"},
-  {ARG_FLAG, "x", "0", "archive - show archive status for storage unit"},
-  {ARG_FLAG, "z", "0", "size - show size of storage unit containing record's segments"},
-  {ARG_INTS, "sunum", "-1", "A list of comma-separated SUNUMs, find matching records"},
+  {ARG_FLAG, "i", "0", "print record specifications"},
+  {ARG_FLAG, "I", "0", "print DRMS session information (host, sessionid, runtime, jsoc_version, and logdir)"},
+  {ARG_FLAG, "j", "0", "print series specification in jsd format"},
+  {ARG_FLAG, "k", "0", "print one keyword value per line"},
+  {ARG_FLAG, "K", "0", "print linked-record specifications"},
+  {ARG_FLAG, "l", "0", "print keyword and segment specifications"},
+  {ARG_INT,  "n", "0", "select subset of records from set specified (a positive value N selects the first N records in the set, and a negative value selects that last N records)"},
+  {ARG_FLAG, "o", "0", "print Storage Unit online statuses"},
+  {ARG_FLAG, "O", NULL, "disable the database query time-out (defaults to 10 minutes)"},
+  {ARG_FLAG, "p", "0", "print Storage Unit paths, staging offline SUs"},
+  {ARG_FLAG, "P", "0", "print online Storage Unit paths"},
+  {ARG_FLAG, "q", "0", "quiet - omit header row"},
+  {ARG_FLAG, "r", "0", "recnum - print DRMS record numbers"},
+  {ARG_FLAG, "R", "0", "print online expiration dates"},
+  {ARG_FLAG, "s", "0", "stats - print series statistics"},
+  {ARG_FLAG, "S", "0", "SUNUM - print SUNUMs"},
+  {ARG_FLAG, "t", "0", "types - print data types and formats for keyword values"},
+  {ARG_FLAG, "T", "0", "tapeinfo - print archive tapename and file number, or NA if not archived"},
+  {ARG_FLAG, "v", NULL, "verbosity - print detailed information about the run"},
+  {ARG_FLAG, "x", "0", "archive - print archive status for Storage Unit"},
+  {ARG_FLAG, "z", "0", "size - print size (in bytes) of Storage Unit"},
+  {ARG_INTS, "sunum", "-1", "select records with a comma-separated list of SUNUMs"},
   {ARG_STRING, "QUERY_STRING", "Not Specified", "show_info called as cgi-bin program args here"},
   {ARG_END}
 };
@@ -2125,6 +2126,7 @@ int DoIt(void)
   int show_segs;
   int jsd_list;
   int list_keys;
+  int retrieveLinks = 1;
   int show_all;
   int show_all_segs;
   int autobang = 0;
@@ -2241,6 +2243,7 @@ int DoIt(void)
             if (SetWebArg(req, "A", &webarglist, &webarglistsz)) show_info_return(1);
             if (SetWebArg(req, "b", &webarglist, &webarglistsz)) show_info_return(1);
             if (SetWebArg(req, "c", &webarglist, &webarglistsz)) show_info_return(1);
+            if (SetWebArg(req, "C", &webarglist, &webarglistsz)) show_info_return(1);
             if (SetWebArg(req, "d", &webarglist, &webarglistsz)) show_info_return(1);
             if (SetWebArg(req, "e", &webarglist, &webarglistsz)) show_info_return(1);
             if (SetWebArg(req, "h", &webarglist, &webarglistsz)) show_info_return(1);
@@ -2304,13 +2307,14 @@ int DoIt(void)
   show_all_segs = cmdparams_get_int (&cmdparams, "A", NULL) != 0;
   autobang = cmdparams_isflagset(&cmdparams, "b");
   want_count = cmdparams_get_int (&cmdparams, "c", NULL) != 0;
+  retrieveLinks = !cmdparams_isflagset(&cmdparams, "C");
   want_dims = cmdparams_get_int (&cmdparams, "d", NULL) != 0;
   show_recordspec = cmdparams_get_int (&cmdparams, "i", NULL) != 0;
   show_session = cmdparams_get_int (&cmdparams, "I", NULL) != 0;
   jsd_list = cmdparams_get_int (&cmdparams, "j", NULL) != 0;
   keyword_list =  cmdparams_get_int(&cmdparams, "k", NULL) != 0;
-  list_keys = cmdparams_get_int (&cmdparams, "l", NULL) != 0;
   show_all_links = cmdparams_get_int (&cmdparams, "K", NULL) != 0;
+  list_keys = cmdparams_get_int (&cmdparams, "l", NULL) != 0;
   show_stats = cmdparams_get_int (&cmdparams, "s", NULL) != 0;
   show_online = cmdparams_get_int (&cmdparams, "o", NULL) != 0;
   disableTO = cmdparams_isflagset(&cmdparams, "O");
@@ -3052,15 +3056,26 @@ int DoIt(void)
 
     if (recordset)
     {
-        if (want_path_noret)
+        /* MUST check want_path_noret (-P) before want_path (-p) because if you run with -P, then want_path gets set too */
+        if (want_path_noret && retrieveLinks)
         {
              /* -P - don't retrieve but wait for SUMS to give dir info */
-             drms_stage_records(recordset, 0, 0); 
+             drms_stage_records(recordset, 0, 0);
         }
-        else if (want_path) 
+        else if (want_path_noret && !retrieveLinks)
         {
-             /* -p - retrieve and wait for retrieval */
-             drms_sortandstage_records(recordset, 1, 0, &suinfo); 
+            /* -P - don't retrieve but wait for SUMS to give dir info */
+            drms_stage_records_dontretrievelinks(recordset, 0);
+        }  
+        else if (want_path && retrieveLinks)
+        {
+            /* -p - retrieve and wait for retrieval */
+            drms_sortandstage_records(recordset, 1, 0, &suinfo);
+        }
+        else if (want_path && !retrieveLinks)
+        {
+            /* -p - retrieve and wait for retrieval */
+            drms_sortandstage_records_dontretrievelinks(recordset, 1, &suinfo);
         }
     }
 
