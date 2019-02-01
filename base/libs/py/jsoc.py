@@ -93,7 +93,7 @@ register_server(PrivateServerConfig(
     cgi_jsoc_info='jsoc_info',
     cgi_jsoc_fetch='jsoc_fetch',
     cgi_check_address='checkAddress.sh',
-    cgi_show_series_wrapper='showextseries',
+    cgi_show_series_wrapper='showintseries',
     show_series_wrapper_dbhost='hmidb',
     http_download_baseurl='http://jsoc.stanford.edu/',
     ftp_download_baseurl='ftp://pail.stanford.edu/export/'))
