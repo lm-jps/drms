@@ -26,6 +26,7 @@ size_t base_strlcat(char *dst, const char *src, size_t size);
 void *base_strcatalloc(char *dst, const char *src, size_t *sizedst);
 char *base_strreplace(const char *text, const char *orig, const char *repl);
 char *base_strcasereplace(const char *text, const char *orig, const char *repl);
+void base_strcasereplace_inplace(char **text, const char *orig, const char *repl);
 int convert_int_field(char *field, int len);
 long convert_long_field(char *field, int len);
 float convert_float_field(char *field, int len);

@@ -323,9 +323,30 @@ char *base_strcasereplace(const char *text, const char *orig, const char *repl)
             strncpy(pc, pcin, strlen(pcin));
             *(pc + strlen(pcin)) = '\0';
         }
+        else
+        {
+            result = strdup(orig);
+        }
     }
     
     return result;
+}
+
+void base_strcasereplace_inplace(char **text, const char *orig, const char *repl)
+{
+    char *replacement = NULL;
+    
+    if (text)
+    {
+        replacement = base_strcasereplace(*text, orig, repl);
+                
+        if (replacement)
+        {
+            /* if replacement != NULL, then *text != NULL */
+            free(*text);
+            *text = replacement;
+        }
+    }
 }
 
 int convert_int_field(char *field, int len)
