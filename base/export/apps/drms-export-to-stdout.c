@@ -107,7 +107,7 @@ ModuleArgs_t module_args[] =
     { ARG_INT, ARG_MAX_TAR_FILE_SIZE, DEFAULT_MAX_TAR_FILE_SIZE, "the maximum size in bytes of the resulting tar file"},
     { ARG_FLAG, ARG_COMPRESS_ALL_SEGS, NULL, "apply the single string in ARG_CPARMS_STRING to all segments" },
     { ARG_FLAG, ARG_DO_NOT_CREATE_TAR, NULL, "skip producing a tar file if a single FITS file is being exported" },
-    { ARG_FLAG, ARG_DUMP_FILE_NAME, NULL, "dump the name of the FITS file at the beginning of the stream"}
+    { ARG_FLAG, ARG_DUMP_FILE_NAME, NULL, "dump the name of the FITS file at the beginning of the stream"},
     { ARG_END }
 };
 
