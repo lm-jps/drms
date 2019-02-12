@@ -600,7 +600,7 @@ def ingestSQLFile(sqlIn, psqlBin, dbhost, dbport, dbname, dbuser, log):
                 while True:
                     pipeBytes = pipeReadEndErr.read(4096)
                     if len(pipeBytes) > 0:
-                        log.writeInfo([ pipeBytes.decode('UTF8') ])
+                        log.writeInfo([ pipeBytes ])
                     else:
                         break
             
