@@ -71,7 +71,7 @@ class CmdlParser(argparse.ArgumentParser):
                 # ACK! super() with no arguments is compatible with Py 3, not Py 2, in which case 1 argument is required.
                 self.reqGroup = super(CmdlParser, self).add_argument_group('required arguments')
             
-            self.reqGroup.add_argument(*args, **kwargs)
+            return self.reqGroup.add_argument(*args, **kwargs)
         else:
             # ACK! super() with no arguments is compatible with Py 3, not Py 2, in which case 1 argument is required.
-            super(CmdlParser, self).add_argument(*args, **kwargs)
+            return super(CmdlParser, self).add_argument(*args, **kwargs)
