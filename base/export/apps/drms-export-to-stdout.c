@@ -1162,7 +1162,7 @@ int DoIt(void)
     size_t maxTarFileSize = 0;
     int compressAllSegs = 0;
     int skipTarCreation = 0;
-    int dumpFileName - 0;
+    int dumpFileName = 0;
     int makeTar = 1;
     ListNode_t *cparmNode = NULL;
     ExpToStdout_Compression_t *segCompression = NULL;
