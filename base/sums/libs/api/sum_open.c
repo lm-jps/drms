@@ -5729,6 +5729,8 @@ int SUM_repartn(SUM_t *sum, int (*history)(const char *fmt, ...))
       (*history)("SUM_repartn() failed on call to sum_svc\n");
       failflg = 1;
     }
+
+#if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || (!defined(SUMS_USEMTSUMS_ALLOC) || !SUMS_USEMTSUMS_ALLOC)
     if(sum->clalloc) {
       status = clnt_call(sum->clalloc, SUMREPARTN, (xdrproc_t)xdr_Rkey, 
   	(char *)klist, (xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
@@ -5793,6 +5795,10 @@ int SUM_repartn(SUM_t *sum, int (*history)(const char *fmt, ...))
         failflg = 1;
       }
     }
+#endif
+
+#if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || (!defined(SUMS_USEMTSUMS_GET) || !SUMS_USEMTSUMS_GET)
+    
     if(sum->clget) {
       status = clnt_call(sum->clget, SUMREPARTN, (xdrproc_t)xdr_Rkey, 
   	(char *)klist, (xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
@@ -5857,6 +5863,7 @@ int SUM_repartn(SUM_t *sum, int (*history)(const char *fmt, ...))
         failflg = 1;
       }
     }
+#endif
 
 #if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || (!defined(SUMS_USEMTSUMS_INFO) || !SUMS_USEMTSUMS_INFO)
     if(sum->clinfo) {
