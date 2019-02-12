@@ -327,13 +327,14 @@ class TerminationHandler(DrmsLock):
             self.log.writeDebug([ 'Worker (request ID ' + str(worker.requestID) + ') halted.' ])
         
         # 
-        self.log.writeInfo([ 'halting dispatcher' ])
-        self.dispatcher.stop()
-        if self.dispatcher.isAlive():
-            # can't hold worker lock here - when the worker terminates, it acquires the same lock
-            self.log.writeInfo([ 'waiting for dispatcher to halt' ])
-            self.dispatcher.join() # will block, possibly for ever
-            self.log.writeInfo([ 'dispatcher successfully halted' ])
+        if hasattr(self, 'dispatcher'):
+            self.log.writeInfo([ 'halting dispatcher' ])
+            self.dispatcher.stop()
+            if self.dispatcher.isAlive():
+                # can't hold worker lock here - when the worker terminates, it acquires the same lock
+                self.log.writeInfo([ 'waiting for dispatcher to halt' ])
+                self.dispatcher.join() # will block, possibly for ever
+                self.log.writeInfo([ 'dispatcher successfully halted' ])
 
         # Do not do this! The call of Log::__del__ is deferred until after the program exits. If you end your program by
         # calling sys.exit(), then sys.exit() gets called BEFORE Log::__del__ is called, and this causes a race condition.
@@ -1902,7 +1903,7 @@ class Worker(threading.Thread):
                         # will block if the output buffer is full
                         # cursor.copy_to(self.file, self.table, columns=self.columns)
                         #cursor.copy_to(fout, self.table)
-                    cursor.execute('COPY ' + 'hmi.v_avg120' + ' TO STDOUT', stream=fout)
+                    cursor.execute('COPY ' + dumperInfo.subscriptionInfo['series'][0].lower() + ' TO STDOUT', stream=fout)
                     cursor.close()
                     print('leaving dbtabledumper child process')
                     sys.stdout.flush()
