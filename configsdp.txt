@@ -79,6 +79,7 @@ q:RS_TMPDIR                             /tmp
 a:RS_SCP_MAXSUS                         48
 a:RS_SCP_MAXPAYLOAD                     512
 a:RS_SCP_TIMEOUT                        2
+a:RSCLIENT_TIMEOUT                      1440
 q:SS_LOCKFILE                           /home/jsoc/locks/sustewie.lck
 a:SS_LOW_WATER                          90
 a:SS_HIGH_WATER                         95
