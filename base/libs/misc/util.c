@@ -325,7 +325,7 @@ char *base_strcasereplace(const char *text, const char *orig, const char *repl)
         }
         else
         {
-            result = strdup(orig);
+            result = strdup(text);
         }
     }
     
