@@ -820,14 +820,6 @@ static char *PrependWhere(DRMS_Env_t *env, const char *pkwhere, const char *seri
                     snprintf(repl, sizeof(repl), "%s%s", prefix, lckeyname);
                     orig = qualpkwhere;
                     qualpkwhere = base_strcasereplace(orig, lckeyname, repl);
-                    if (!qualpkwhere)
-                    {
-                        /* This means that there were no instances of lckeyname to 
-                         * replace. */
-                        qualpkwhere = orig;
-                        orig = NULL;
-                        continue;
-                    }
                     free(orig);
                     orig = NULL;
                 }
