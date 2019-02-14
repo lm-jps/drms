@@ -5765,11 +5765,6 @@ char *drms_series_all_querystringB(DRMS_Env_t *env, const char *series, const ch
                      * the case, then npkwhere will have recnum in it, and then "recnum" is ambiguous. We must prepend 
                      * with T1. */
                     qualnpkwhere = base_strcasereplace(npkwhere, "recnum", "T1.recnum");
-                    if (!qualnpkwhere)
-                    {
-                        /* recnum did not appear in the npkwhere clause */
-                        qualnpkwhere = strdup(npkwhere);
-                    }
                 }
                 
                 if (qualnpkwhere)
@@ -6130,11 +6125,6 @@ char *drms_series_all_querystringD(DRMS_Env_t *env, const char *series, const ch
                      * the case, then npkwhere will have recnum in it, and then "recnum" is ambiguous. We must prepend 
                      * with T1. */
                     qualnpkwhere = base_strcasereplace(npkwhere, "recnum", "T1.recnum");
-                    if (!qualnpkwhere)
-                    {
-                        /* recnum did not appear in the npkwhere clause */
-                        qualnpkwhere = strdup(npkwhere);
-                    }
                     
                     if (qualnpkwhere)
                     {
