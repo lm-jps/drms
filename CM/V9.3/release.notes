@@ -1,0 +1,139 @@
+                       Release Notes JSOC V9.3         19FEB2018
+                       ------------------------        ---------
+
+
+A release is a set of binary and text files, each having a specific version. The release itself is
+also versioned to facilitate the identification of the release. For example, release 1.3 may 
+contain fileA#1.8, fileB#1.2, and fileC#2.2 and release 1.4 may contain fileA#2.5, fileB#2.1, 
+and fileC#2.9. JSOC releases are similarly versioned and contain a set of such files.  JSOC release
+code is guaranteed to compile on cluster nodes (e.g., n04 and solar3).  At the time of the 
+creation of the release, the versions of each file will be very recent - most will be the
+"head" versions. The set of files is stable. They have been tested and verified to work properly
+on the supported systems. As time passes, newer versions of files will be committed to the 
+code repository and there is no guarantee that these changes will not destabilize JSOC 
+(i.e., they may cause JSOC to no longer compile or execute properly).  
+
+There are several ways to use this release.  If you wish to simply use pre-built
+binaries, you can use the production binaries, which are located at 
+/home/jsoc/cvs/Development/JSOC (The release binaries are actually in
+/home/jsoc/cvs/JSOC, but as our production code changes more quickly
+than releases are generated, we put critical fixes in the
+"Development" tree. To be sure you use code that has been built with
+these critical fixes, you'll need to use the "Development" tree). 
+Every time a release is created, the binaries in this location get updated
+by the jsoc user. To use these binaries, you can run them directly, 
+"/home/jsoc/cvs/JSOC/Development/bin/linux_x86_64/show_info -j hmi.M_45s", 
+for example. Or you can put /home/jsoc/cvs/JSOC/Development/bin/linux_x86_64 in 
+your path environment variable.
+
+If instead you want to work with stable source files, then you must have a local copy (e.g., 
+in your home directory) of the source code in the CVS code repository. You must "build" or "make" 
+the code this local code before it can be used. You will want to work with a local copy if you 
+plan on making changes to the repository files (i.e., you plan on doing development). Changes you 
+make to your local copy are not visible to other users until you commit those changes back to the 
+CVS repository.  
+
+Obtaining the Release
+---------------------
+To update your working directory to this release, or to check-out this release anew, 
+please visit http://jsoc.stanford.edu/jsocwiki/CvsInit (please see the section entitled
+Update Your Existing Working Directory ("Sandbox")). Please keep in mind that
+users may have modified files since the release was created, so use of the 
+scripts documented in the web page may result in a working directory whose
+content is not identical to the release.  
+
+Additional Info
+---------------
+Use the Apache CVS gui to see diffs between file revisions. For example, go to http://jsoc2.stanford.edu/cvs/JSOC/base/drms/
+and click on the name in the File column and then click on "diffs to previous #" to see the diffs.
+
+Changes since previous release (V9.2 -  June 7, 2018)
+----------------------------------------------------------
+New Features:
+
++ added support to Remote SUMS for ingestion of SUs that are not part of a data series
++ added a time-out to rsums-clientd.py for SU downloads
++ added the ability to print the record-set specification to jsoc_info
++ added -C flag to show_info (do not resolve linked records, do not open linked records, do not stage linked records)
++ added some comments to help explain TAS-file generation
++ to the subscription manager, added DoneRequest so that the client can tell server when it is done with the connection; 
+  removed obsolete request-locking code
++ modified subscription manager to use existing db transaction in subscription manager to check status during dump download 
+  (as opposed to a separate transaction), and to commit the current transaction only immediately before refreshing the requests table
++ modified the subscription request CGI (request-subs.py) and subscription manager to communicate via a network socket, instead 
+  of communicting through the database; this prevents a race condition whereby the CGI was acting on information that became obsolete
+  after querying the manager, but before taking that action
++ modified the subscription manager to perform the series-table dump in a separate process so that we can use PostgreSQL's 
+  copy_to() method to let PG handle encoding issues; previously, we had tried using copy_to() in the same process, but that 
+  had resulted in Python holding onto memory with no apparent way to free it - we then tried writing our own code to deal with 
+  encoding issues, and that code was insufficient; now we run copy_to() in its own child process so that when the process terminates, 
+  the large amount of allocate memory is freed
++ modified Remote SUMS so that there are of two types of requests: mirror and user requests; user requests now get priority over 
+  mirror requests; NetDRMS sites will generally want to do their background pre-fetching of SUs with mirror requests, while making user requests when a user requests an SU that is not local
++ modified Remote SUMS so that the client can pass in the name of the subscription database user to the server (subscription manager); 
+  previously, the user was hard-coded as 'slony'
++ added a timeout to the remote-sums client (rsums-clientd.py) code that retries SU downloads after failure
++ modified Remote SUMS so no slow operations run while a lock is being held; got rid of sleep calls where possible; 
+  fixed the interval-logger update-last-write check (use context manager) 
++ from Remote SUMS removed Storage-Unit-object locking code
++ add flags to drms-export-to-stdout to dump the name of the FITS file being dumped
++ implemented a webservice that calls drms-export-to-stdout; this is to be used by the export system for the url_direct method
++ to the miscellany library, added base_strcasereplace_inplace(), an in-place version of case-insensitive string replacement
++ modified the Python DRMS command-line wrapper to return the argparse.action that argparse.add_argument() returns so that 
+  the caller can execute the action manually, if desired
++ implemented a wrapper around Kolja's Py DRMS wrapper to allow subclassing of the configuration class; used by Monica to 
+  connect to internal systems from outside of Stanford
++ modified the SU tape-retrieval code to restore SUs to /SUMxx/Dzzzz instead of /SUMxx/Dyyyy/Dzzzz (when the working 
+  directory is /SUMxx/Dyyyy/Dzzzz)
++ added code to the DRMS/SUMS API to detect an inappropriate combination of the USEMTSUMS macros
++ added start-mt-sums.py and stop-mt-sums.py - scripts to manage the existing SUMS server instances using a state file
++ improved the way that the SUMS Py server obtains the SUMS server name - by using the Py net utils module
++ added copyprod.py - a script to use when copying over a release build from a staging directory to the production directory; 
+  it first checks to see whether the running production SUMS server is incompatible with the new build, and if so, it shuts it down, 
+  and then relaunches the existing server script after it has been moved
++ added run-exportmanager.csh - this script sets-up the correct environment before launching the export-manager daemon (exportmanage.pl)
++ defineed a new QUALITY bit for the HMI anomaly that appeared in August 2018
+
+Bug Fixes:
++ increased the email-registration timeout to 15 minutes
++ modifed drms_parserecset so that it does not crash when no filter / seglist is provided, to handle series-name errors, to provide 
+  better error logging, and to provide more information about series and segments
++ changed the PostgreSQL isolation level to "repeatable read"; this affects only PG >= 9.1, changing the >=9.1 serializable level 
+  to the >=9.1 repeatable read level, which is equivalent to the <9.1 serializable level
++ fixed the non-context-manager part of drmsLock.py
++ worked-around a GNU make bug - in one Rules.mk file, the rules now explicity use the SRCDIR make variable to prevent a 
+  circular dependency involving VPATH
++ fixed a bug where the empty slices at the end of a TAS file were not being truncated by initializing the TAS slice-dimension 
+  value to 0 and calling fits_resize_imgll() when closing the fits file if there are empty slices
++ fixed a problem in the parser that recognizes white space in record-set specifications
++ fixed a race condition in Remote SUMS between threads that read from the requests table, and the main thread that refreshes 
+  the table; fixed a race condition between main and downloader threads when checking if the downloader thread is alive
++ modified the make rules to disable the build of drms_export_cgi if the DRMS is not configured to use the JMD
++ fixed the jsoc_export_manage code that finds last existing series in a processing pipeline
++ modified jsoc_fetch to reject all requests that contain offline records
++ fixed badly-placed curly braces in stat_storage() in sum_rm
++ removed an extra newline at the end of effective_date in the SUMS tape-archive code
++ modified the the SUMS client code (in DRMS) to try only the AF_INET socket address family (instead of trying all address families); 
+  the SUMS server supports AF_INET only
++ modified the datacapture make files to use a make variable synonymous to the one that was being used (which is was actually undefined)
++ for the for url_quick and url_direct methods, modified the export web page to display the UI that allows a user to enter their email address
++ modified lookdata to use, when launching the exportdata page, the text content of the HTML element holding the exportdata arguments, not 
+  the HTML content - the latter has ampersand-encoding
++ removed code from export_as_maproj that used the bscale/bzero with input segments' values, in favor of using the output segments
+
+Project-specific Modifications:
++ Modifications to module proj/rings/apps/datavg (v 1.7 -> 1.8)
+  see http://hmi.stanford.edu/teams/rings/modules/datavg.html
++ Modifications to module proj/rings/apps/maproj (v 1.2 -> 1.3)
+  see http://hmi.stanford.edu/teams/rings/modules/maproj.html
++ Significant modifications to module proj/rings/apps/rdvinv (v 0.92 -> 0.93)
+  see http://hmi.stanford.edu/teams/rings/modules/rdvinv.html
++ Modifications to script proj/rings/scripts/avgpsbycr (v 1.7 -> 1.8)
+  see http://hmi.stanford.edu/teams/rings/pipes/avgpsbycr.html
++ Modifications to script proj/rings/scripts/rdday (v 2.1 -> 2.3)
+  see http://hmi.stanford.edu/teams/rings/pipes/rdday.html
++ Modifications to script proj/rings/scripts/runrdsyn (v 2.1 -> 2.2)
+  see http://hmi.stanford.edu/teams/rings/pipes/runrdsyn.html
++ Modifications to script proj/timed/scripts/tdsynop (v 1.4 -> 1.5)
+  fixed bug in cleanup when processing abandoned because of insufficient
+  coverage; fixed OS-dependent problem in test for continuation runs
