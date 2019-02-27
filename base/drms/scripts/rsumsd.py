@@ -2887,8 +2887,11 @@ class Dispatcher(threading.Thread):
         try:
             # since we have the SU Table lock, if we cannot put the item on the dispatcher queue, 
             # we can rollback the changes to the SU Map and the SU Table sudict
+            allSUs = []
             existingSUs, newSUs = sutable.addSUs(sunums=item.sunums, locktable=False)
             log.writeDebug([ '[ addSUChunk() ] successfully inserted new SU objects ' + ','.join([ str(sunum) for sunum in item.sunums ]) ])
+            allSUs.extend(existingSUs)
+            allSUs.extend(newSUs)
         
             # we also have to add to the SU map before sending to the dispatcher thread
             sutable.addRequestToSUMap(sunums=item.sunums, requestid=request['requestid'])
