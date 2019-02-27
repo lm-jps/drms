@@ -1953,7 +1953,6 @@ static char *FindLastSeriesInPipeline(DRMS_Env_t *env, const char *dbhost, ProcS
     int istat = DRMS_SUCCESS;
     
     char *series = NULL;
-    int seriesExists = 0;
     DB_Handle_t *dbh = NULL;
     int contextOK = 0;
     ProcStep_t *step = NULL;
@@ -1970,16 +1969,17 @@ static char *FindLastSeriesInPipeline(DRMS_Env_t *env, const char *dbhost, ProcS
     }
     else
     {
-        int firstTime = 1;
+        int loopNo;
+        int seriesExists;
         char **snames = NULL;
         char **filts = NULL;
         int nsets;
         DRMS_RecQueryInfo_t info;
 
         step = stepData;
-        while (istat == DRMS_SUCCESS && step && !seriesExists)
+        for (loopNo = 0, seriesExists = 0; istat == DRMS_SUCCESS && step && !seriesExists; loopNo++)
         {
-            if (firstTime)
+            if (loopNo == 0)
             {
                 setSpec = outSeries;
             }
@@ -2062,18 +2062,17 @@ static char *FindLastSeriesInPipeline(DRMS_Env_t *env, const char *dbhost, ProcS
             
             FreeRecSpecParts(&snames, &filts, nsets);
             
-            if (!firstTime)
+            if (loopNo > 0)
             {
-                /* change the step only after the first iteration*/
+                /* change the step only after the first iteration */
                 step = step->parent;
             }
-
-            firstTime = 0;
         } /* end while */
         
         if (isAncestor)
         {
-            *isAncestor = series && !firstTime;
+            /* loopNo > 1 --> iterated through loop at least twice */
+            *isAncestor = series && loopNo > 1;
         }
     }
     
