@@ -257,6 +257,7 @@ class TerminationHandler(object):
                 
                     # don't wait forever
                     if datetime.now(starttime.tzinfo)  > starttime + timedelta(minutes=10):
+                        self.log.writeInfo([ 'timed-out waiting for Remote SUMS to finish processing pending SUs' ])
                         break
                 
                     time.sleep(2)
@@ -794,6 +795,7 @@ if __name__ == "__main__":
                                     
                                     # no errors, so we can update pendingSUs list
                                     for csu in csus:
+                                        # put each member of the csus set into the CapturedSU.__sus class variable
                                         csu.add() # will add only if SUNUM is unique
 
                                     pendingRequests[str(requestID)] = csus # map to a set
