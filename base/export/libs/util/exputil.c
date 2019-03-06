@@ -337,7 +337,7 @@ ExpUtlStat_t exputl_mk_expfilename(DRMS_Segment_t *srcseg,
 // Code from jsoc_manage_cgibin_handles. It is not easy to choose x86_64 vs. avx in a CGI context, and jsoc_info had assumed everything was x86_64.
 // Instead, port the code here (there wasn't that much of it) so that jsoc_info has access to the needed functions built for the correct
 // architecture.
-#define HANDLE_FILE "/home/jsoc/exports/Web_request_handles"
+#define HANDLE_FILE_BASE "Web_request_handles"
 
 static FILE *lock_open(const char *filename)
 {
@@ -488,7 +488,17 @@ ExpUtlStat_t exputl_manage_cgibin_handles(const char *op, const char *handle, pi
     {
         if (!file || *file == '\0')
         {
-            file = HANDLE_FILE;
+           char *lockfile = calloc(1, PATH_MAX);
+
+           base_strlcat(lockfile, DRMS_LOCK_DIR, PATH_MAX);
+
+           if (lockfile[strlen(lockfile) - 1] != '/')
+           {
+              base_strlcat(lockfile, "/", PATH_MAX);
+           }
+
+           base_strlcat(lockfile, HANDLE_FILE_BASE, PATH_MAX);
+           file = lockfile;
         }
         
         op_add = (*op == 'a');
