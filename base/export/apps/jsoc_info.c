@@ -1743,20 +1743,42 @@ void json_insert_runtime(json_t *jroot, double StartTime)
   json_insert_pair_into_object(jroot, "runtime", json_new_number(runtime));
   }
 
-#define LOGFILE     "/home/jsoc/exports/logs/fetch_log"
-#define kLockFile   "/home/jsoc/exports/tmp/lock.txt"
+
+#define LOGFILEBASE    "jsocinfo.log"
+#define LOCKFILEBASE   "lock.txt"
 
 // report_summary - record  this call of the program.
 void report_summary(const char *host, double StartTime, const char *remote_IP, const char *op, const char *ds, int n, int status)
-  {
+{
   FILE *log;
   int sleeps;
   double EndTime;
   struct timeval thistv;
   struct stat stbuf;
-  int mustchmodlck = (stat(kLockFile, &stbuf) != 0);
-  int mustchmodlog = (stat(LOGFILE, &stbuf) != 0);
-  int lockfd = open(kLockFile, O_WRONLY | O_CREAT, S_IRWXU | S_IRWXG);
+  char *logfile = calloc(1, PATH_MAX);
+  char *lockfile = calloc(1, PATH_MAX);
+
+  base_strlcat(logfile, DRMS_LOG_DIR, PATH_MAX);
+
+  if (logfile[strlen(logfile) - 1] != '/')
+  {
+     base_strlcat(logfile, "/", PATH_MAX);
+  }
+
+  base_strlcat(logfile, LOGFILEBASE, PATH_MAX);
+
+  base_strlcat(lockfile, DRMS_LOCK_DIR, PATH_MAX);
+
+  if (lockfile[strlen(lockfile) - 1] != '/')
+  {
+     base_strlcat(lockfile, "/", PATH_MAX);
+  }
+
+   base_strlcat(lockfile, LOCKFILEBASE, PATH_MAX);
+
+  int mustchmodlck = (stat(lockfile, &stbuf) != 0);
+  int mustchmodlog = (stat(logfile, &stbuf) != 0);
+  int lockfd = open(lockfile, O_WRONLY | O_CREAT, S_IRWXU | S_IRWXG);
       
   if (lockfd >= 0)
     {
@@ -1767,14 +1789,14 @@ void report_summary(const char *host, double StartTime, const char *remote_IP, c
       {
       if (sleeps >= 5)
         {
-        fprintf(stderr,"Lock stuck on %s, no report made.\n", LOGFILE);
+        fprintf(stderr,"Lock stuck on %s, no report made.\n", logfile);
         lockf(lockfd,F_ULOCK,0);
         return;
         }
         sleep(1);
       }
       
-      log = fopen(LOGFILE,"a");
+      log = fopen(logfile,"a");
       
       if (log)
         {
@@ -1802,9 +1824,9 @@ void report_summary(const char *host, double StartTime, const char *remote_IP, c
     }
   else
     {
-      fprintf(stderr, "Unable to open lock file for writing: %s.\n", kLockFile);
+       fprintf(stderr, "Unable to open lock file for writing: %s.\n", lockfile);
     }
-  }
+}
 
 /* callback that fires when the signal thread catches the SIGINT signal. */
 int OnSIGINT(void *data)
