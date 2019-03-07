@@ -1265,7 +1265,7 @@ class SuTable:
                 self.suMap[str(sunum)] = []
                 
             if kwargs['requestid'] in self.suMap[str(sunum)]:
-                raise 
+                raise DuplicateRequestidException('duplicate SU Map entry: requestid = ' + str(kwargs['requestid']) + ', sunum = ' + str(sunum))
 
             self.suMap[str(sunum)].append(kwargs['requestid'])
         
@@ -1274,7 +1274,19 @@ class SuTable:
             if str(su.sunum) in self.suMap:
                 self.suMap[str(su.sunum)].remove(kwargs['requestid'])
                 if len(self.suMap[str(su.sunum)]) == 0:
-                    del self.suMap[str(su.sunum)]                
+                    del self.suMap[str(su.sunum)]
+    
+    def presentInSUMap(self, **kwargs):
+        sunums = kwargs['sunums']
+        requestID = kwargs['requestid']
+        answer = True
+
+        for sunum in sunums:
+            if str(sunum) not in self.suMap or requestID not in self.suMap[str(sunum)]:
+                answer = False
+                break
+        
+        return answer
 
     @classmethod
     def offline(cls, sunums, log):
@@ -2250,8 +2262,8 @@ class Downloader(threading.Thread):
                                 self.sumsDbLock.release()
                         ##### SUM_open() port - end #####
                         openDone = True
-                        self.log.writeInfo([ 'Successfully called SUM_open() port for SU ' +  str(self.sunum) ])
-                        self.log.writeInfo([ 'sumid is ' + str(sumid) + '.' ])
+                        self.log.writeInfo([ 'successfully called SUM_open() port for SU ' +  str(self.sunum) ])
+                        self.log.writeInfo([ 'sumid is ' + str(sumid) ])
     
                         ##### SUM_alloc2() port #####
                         try:
@@ -2285,13 +2297,13 @@ class Downloader(threading.Thread):
                                 self.sumsDbLock.release()
                         ##### SUM_alloc2() port - end #####
                         alloc2Done = True
-                        self.log.writeInfo([ 'Successfully called SUM_alloc2() for SU ' +  str(self.sunum) ])
+                        self.log.writeDebug([ 'successfully called SUM_alloc2() for SU ' +  str(self.sunum) ])
             
                         #    Fourth, move the downloaded SU files into the chosen SUMS partition. SUM_alloc2() code calls mkdir, so we cannot
                         #    move the top-level D___ directory into the SUMS partition. Instead we have to move, recursively,  all files and directories in 
                         #    the downloaded D___ directory into the SUMS D___ directory.
                         files = os.listdir(suDlPath)
-                        self.log.writeInfo([ 'Moving downloaded SU content from ' + suDlPath + ' into allocated SU (' + sudir  + ').' ])
+                        self.log.writeDebug([ 'moving downloaded SU content from ' + suDlPath + ' into allocated SU (' + sudir  + ')' ])
 
                         try:
                             for afile in files:
@@ -2303,7 +2315,7 @@ class Downloader(threading.Thread):
                             self.log.writeError([ traceback.format_exc(5) ])
                             raise RSIOException('Unable to move SU file ' + afile + ' into SUdir ' + sudir + '.')
 
-                        self.log.writeInfo([ 'Move of SU ' + str(self.sunum) + ' content succeeded.' ])
+                        self.log.writeDebug([ 'move of SU ' + str(self.sunum) + ' content succeeded' ])
             
                         ##### SUM_put() port #####
                         try:
@@ -2345,7 +2357,7 @@ class Downloader(threading.Thread):
                             cmd = "INSERT INTO public.sum_main(online_loc, online_status, archive_status, offsite_ack, history_comment, owning_series, storage_group, storage_set, bytes, ds_index, create_sumid, creat_date, access_date, username) VALUES ('" + sudir + "', 'Y', 'N', 'N', '', '" + seriesCached + "', 0, 0, " + str(numBytes) + ', ' + str(self.sunum) + ', ' + str(sumid) + ", '" + createDateStr + "', '" + createDateStr + "', '" + os.getenv('USER', 'nouser') + "')"
                             cursor.execute(cmd)
 
-                            self.log.writeInfo([ 'Successfully inserted record into sum_main for SU ' + str(self.sunum) + '.' ])
+                            self.log.writeDebug([ 'successfully inserted record into sum_main for SU ' + str(self.sunum) ])
 
                             #    Third, update SUMS sum_partn_alloc table - Insert a new row into sum_partn_alloc for this SU. The SUM_alloc2() port will result in
                             #    a row in sum_partn_alloc with a ds_index of 0, which does not make sense to me. But the SUM_close() port will delete
@@ -2355,18 +2367,18 @@ class Downloader(threading.Thread):
                                 # We do this simply to ensure that we do not have two sum_partn_alloc records with status DADP (delete pending).
                                 cmd = 'DELETE FROM public.sum_partn_alloc WHERE ds_index = ' + str(self.sunum) + ' AND STATUS = 2'
                                 cursor.execute(cmd)
-                                self.log.writeInfo([ 'Successfully deleted old DADP record from sum_partn_alloc for SU ' + str(self.sunum) + '.' ])
+                                self.log.writeDebug([ 'successfully deleted old DADP record from sum_partn_alloc for SU ' + str(self.sunum) ])
             
                             cmd = "INSERT INTO public.sum_partn_alloc(wd, sumid, status, bytes, effective_date, archive_substatus, group_id, safe_id, ds_index) VALUES ('" + sudir + "', " + str(sumid) + ', ' + str(apStatus) + ', ' + str(numBytes) + ", '" + effDate + "', 32, 0, 0, " + str(self.sunum) + ')'
                             cursor.execute(cmd)
-                            self.log.writeInfo([ 'Successfully inserted record into sum_partn_alloc for SU ' + str(self.sunum) + '.' ])
+                            self.log.writeDebug([ 'successfully inserted record into sum_partn_alloc for SU ' + str(self.sunum) ])
                             self.sumsConn.commit()
                         finally:
                             if gotSumsDbLock:
                                 self.sumsDbLock.release()
                         ##### SUM_put() port - end #####
                         putDone = True
-                        self.log.writeInfo([ 'Successfully called SUM_put() for SU ' + str(self.sunum) ])
+                        self.log.writeDebug([ 'successfully called SUM_put() for SU ' + str(self.sunum) ])
             
                         ##### SUM_close() port #####
                         try:
@@ -2375,7 +2387,7 @@ class Downloader(threading.Thread):
                             # Delete sum_partn_alloc records for read-only partitions (status == 8) and read-write partitions (status == 1).
                             cmd = 'DELETE FROM public.sum_partn_alloc WHERE sumid = ' + str(sumid) + ' AND (status = 8 OR status = 1)'
                             cursor.execute(cmd)
-                            self.log.writeInfo([ 'Successfully deleted read-only and read-write records from sum_partn_alloc for SU ' + str(self.sunum) + '.' ])
+                            self.log.writeDebug([ 'successfully deleted read-only and read-write records from sum_partn_alloc for SU ' + str(self.sunum) ])
             
                             # Delete the temporary ds_index = 0 records created during the SUM_put() port. I still do not know why this record
                             # was created in the first place.
@@ -2388,8 +2400,8 @@ class Downloader(threading.Thread):
 
                         ##### SUM_close() port - end #####
                         closeDone = True
-                        self.log.writeInfo([ 'Successfully called SUM_close() for SU ' + str(self.sunum) ])
-                        self.log.writeInfo([ 'Successfully deleted temporary (ds_index == 0) records from sum_open for SU ' + str(self.sunum) + '.' ])
+                        self.log.writeDebug([ 'successfully called SUM_close() for SU ' + str(self.sunum) ])
+                        self.log.writeDebug([ 'successfully deleted temporary (ds_index == 0) records from sum_open for SU ' + str(self.sunum) ])
                     
                         allOK = True
                     except psycopg2.Error as exc:
@@ -2430,17 +2442,17 @@ class Downloader(threading.Thread):
                                 pass
 
                 # Remove temporary directory.
-                self.log.writeInfo([ 'removing empty temporary download directory ' + suDlPath ])
+                self.log.writeDebug([ 'removing empty temporary download directory ' + suDlPath ])
                 try:
                     if os.path.exists(suDlPath):
                         shutil.rmtree(suDlPath)
                 except OSError as exc:
                     raise RSIOException(exc.strerror)
            
-                self.log.writeInfo([ 'removal of temporary directory ' + suDlPath + ' succeeded' ])
+                self.log.writeDebug([ 'removal of temporary directory ' + suDlPath + ' succeeded' ])
                 self.log.writeDebug([ 'downloader for SU ' + str(self.sunum) + ' terminating; unsetting worker' ])
                 self.su.removeWorker()
-                self.log.writeInfo([ 'setting SU ' + str(self.sunum) + ' status to complete' ])
+                self.log.writeDebug([ 'setting SU ' + str(self.sunum) + ' status to complete' ])
                 self.su.setStatus('C', None)
             except ShutDownException as exc:
                 # the status can be P, W, or D here - we should set it to E since the download never completed
@@ -2512,7 +2524,7 @@ class Downloader(threading.Thread):
 
     # called from main thread only
     def stop(self):
-        self.log.writeInfo([ 'Stopping Downloader (SUNUM ' + str(self.sunum) + '). It may take 10 seconds for Downloader to stop.' ])
+        self.log.writeInfo([ 'stopping Downloader (SUNUM ' + str(self.sunum) + '). It may take 10 seconds for Downloader to stop' ])
         
         # Fire event to stop thread.
         self.sdEvent.set()
@@ -2584,18 +2596,18 @@ def getSeriesInfo(series, dbuser, dbname, dbhost, dbport, log, **kwargs):
             with conn.cursor() as cursor:
                 # We want the new-SU retention too, not the staging retention. So extract the bottom 15 bits.
                 cmd = "SELECT retention & x'00007FFF'::int AS retention, archive, tapegroup FROM " + ns + ".drms_series WHERE lower(seriesname) = '" + series.lower() + "'"
-                log.writeInfo(['Obtaining series info for series ' + series + ': ' + cmd])
+                log.writeDebug(['obtaining series info for series ' + series + ': ' + cmd])
 
                 try:
                     cursor.execute(cmd)
                     if cursor.rowcount == 0:
                         # series does not exist - use defaults
                         expiration, archive, tapegroup = default
-                        log.writeInfo([ 'series ' + series + ' does not exist; using defaults' ])
+                        log.writeDebug([ 'series ' + series + ' does not exist; using defaults' ])
 
                     row = cursor.fetchone()
                     expiration, archive, tapegroup = (datetime.now() + timedelta(days=row[0]), row[1] == 1, row[2])
-                    log.writeInfo([ 'info for series ' + series + ' (expiration, archive, tapegroup): ' + expiration.strftime("%Y-%m-%d") + str(archive) + str(tapegroup) ])
+                    log.writeDebug([ 'info for series ' + series + ' (expiration, archive, tapegroup): ' + expiration.strftime("%Y-%m-%d") + str(archive) + str(tapegroup) ])
                 except psycopg2.Error as exc:
                     # Handle database-command errors.
                     log.writeDebug([ 'error executing DB command ', exc.diag.message_primary, ' using defaults' ])
@@ -2708,7 +2720,7 @@ class Dispatcher(threading.Thread):
                         url = queueItem.cgi + '?' + data
 
                         try:
-                            self.log.writeInfo([ 'requesting paths for SUNUMs ' + sunumLst + '; URL is ' + url ])
+                            self.log.writeDebug([ 'requesting paths for SUNUMs ' + sunumLst + '; URL is ' + url ])
                             with urllib.request.urlopen(url) as response:    
                                 dlInfoStr = response.read().decode('UTF-8')
                         except urllib.error.URLError as exc:
@@ -2904,7 +2916,7 @@ class Dispatcher(threading.Thread):
                 dispatcher.queue.put_nowait(item)
                 item.queued = True
             except Full:
-                log.writeInfo([ 'cannot add Request to Dispatcher queue - it is full; request ' + str(request['requestid']) + ', unable to add SU chunk: ' + ','.join([ str(ansunum) for ansunum in item.sunums ]) ])
+                log.writeWarning([ 'cannot add Request to Dispatcher queue - it is full; request ' + str(request['requestid']) + ', unable to add SU chunk: ' + ','.join([ str(ansunum) for ansunum in item.sunums ]) ])
                 # undo 
                 sutable.removeRequestFromSUMap(sus=allSUs, requestid=request['requestid']) # decrements refcount
                 sutable.removeSUs(sunums=[ su.sunum for su in allSUs ], locktable=False) # decrements refcount            
@@ -3030,9 +3042,9 @@ def getSUSites(sunums, sites, request, log):
 
     for sunum in sunums:
         if sunum in offlineSUs:
-            log.writeInfo([ 'SU ' + str(sunum) + ' is offline - will start a download' ])
+            log.writeDebug([ 'SU ' + str(sunum) + ' is offline - will start a download' ])
         else:
-            log.writeInfo([ 'SU ' + str(sunum) + ' is online already - will NOT start a download.' ])
+            log.writeDebug([ 'SU ' + str(sunum) + ' is online already - will NOT start a download' ])
             onlineSUs.append(sunum)
 
     for sunum in offlineSUs:
@@ -3052,6 +3064,9 @@ def getSUSites(sunums, sites, request, log):
     return (siteSUs, onlineSUs)
 
 # called from the main thread only
+# for each SU that is dispatched (a DownloaderCompleteQueueItem will be created), we need to create an SU object
+# (or increase a refcount) and call addRequestToSUMap(request, SU); we also need to remove that SU from all
+# existing requests' todispatch lists
 def dispatchSUs(sites, request, sutable, reqtable, dbuser, binpath, tapesysexists, tmpdir, expiration, archive, tapegroup, log):
     queuedSUs = set()
     notQueuedSUs = set()
@@ -3076,16 +3091,15 @@ def dispatchSUs(sites, request, sutable, reqtable, dbuser, binpath, tapesysexist
                     # keep track of all SUs dispatched - we will need to use this information to update each request's todispatch list
                     if item.queued:
                         queuedSUs = queuedSUs | set(item.sunums)
+                        log.writeDebug([ 'added an item to the dispatcher queue for SU chunk: ' + ','.join([ str(ansunum) for ansunum in item.sunums ]) ])
                     else:
                         # pretend that these sunums were never passed to dispatchSUs()
                         notQueuedSUs = notQueuedSUs | set(item.sunums)
-                    
-                    log.writeInfo([ 'added an item to the dispatcher queue for SU chunk: ' + ','.join([ str(ansunum) for ansunum in chunk ]) ])
                 except QueueFullException as exc:
                     # non-blocking put failed (because queue was full);
                     # none of the SUs in this chunk will appear in the SU Table (and they will not have Downloaders);
                     # the todispatch list mechanism will ensure these SUs get dispatched during the check on pending request
-                    log.writeInfo([ 'dispatcher queue full; for request' + str(request['requestid']) + ', unable to add SU chunk: ' + ','.join([ str(ansunum) for ansunum in chunk ]) ])
+                    log.writeDebug([ 'dispatcher queue full; for request' + str(request['requestid']) + ', unable to add SU chunk: ' + ','.join([ str(ansunum) for ansunum in chunk ]) ])
                 except RemoteSumsException as exc:
                     # do not die - just reject the request's current chunk; we do not know exactly which SUs made it into the
                     # SU Table, but at least one either did not or it did, but with status E; the request will eventually 
@@ -3109,24 +3123,26 @@ def dispatchSUs(sites, request, sutable, reqtable, dbuser, binpath, tapesysexist
         # increment the refcount on the SU object; set the SU statuses to C;
         # set the initial status to 'C'; we have to lock this since the Dispatcher thread also creates new SUs
         existingSUs, newSUs = sutable.addSUs(sunums=onlineSunums, locktable=False, status='C') # this will bump refcount if the SU object already exist
+        for su in existingSUs + newSUs:
+            rslog.writeDebug([ '[ dispatchSUs() ] adding ' + str(request['requestid']) + ' to suMap for SU ' + str(su.sunum) ])
+            sutable.addRequestToSUMap(sunums=[ su.sunum ], requestid=request['requestid'])
+            # add all existingSUs to completedSUs; this request (time T2) might be newer than the previous request (time T1) 
+            # that contained the SU that was added to completedSUs previously (at T1); this SU was removed from all requests' 
+            # todispatch lists previously (at T1), before this request existed (at T2)
+            completedSUs.add(su.sunum)
 
         for su in newSUs:
             # only create ONE DownloaderCompleteQueueItem() for each SU across ALL new SU requests; if we attempt to 
             # dispatch an ONLINE SU that has already been dispatched, then the SU will not be in newSUs
             DownloaderCompleteQueueItem.addCompleteQueueItemToQueue(su=su, queue=sutable.queue, log=log)
-            log.writeDebug([ '[dispatchSUs()] successfully added a DownloaderCompleteQueueItem for SU ' +  str(su.sunum)])
-            completedSUs.add(su.sunum)
-    finally:
-        sutable.releaseLock()
-
-    # for every sunum in the request (request['sunums']), we have to call addRequestToSUMap() - however, we already did
-    # that for queuedSUs (that had to occur BEFORE we sent them to the dispatcher thread)
-    sutable.acquireLock()
-    try:
+            log.writeDebug([ '[ dispatchSUs() ] successfully added a DownloaderCompleteQueueItem for SU ' +  str(su.sunum)])
+            
         for sunum in request['sunums']:
-            if sunum not in queuedSUs and sunum not in notQueuedSUs:
-                rslog.writeDebug([ '[ dispatchSUs() ] adding ' + str(request['requestid']) + ' to suMap for SU ' + str(sunum) ])
+            if sunum not in notQueuedSUs and not sutable.presentInSUMap(sunums=[ sunum ], requestid=request['requestid']):
+                existingSUs, newSUs = sutable.addSUs(sunums=[ sunum ], locktable=False, status='C') # this will bump refcount if the SU object already exist
+                rslog.writeDebug([ '[ dispatchSUs() ] adding ' + str(request['requestid']) + ' to suMap for SU ' + str(su.sunum) ])
                 sutable.addRequestToSUMap(sunums=[ sunum ], requestid=request['requestid'])
+                completedSUs.add(sunum)
     finally:
         sutable.releaseLock()
     
@@ -3229,9 +3245,9 @@ if __name__ == "__main__":
         
         # TerminationHandler opens a DB connection to the RS database (which is the same as the DRMS database, most likely).
         with TerminationHandler(thContainer) as th:        
-            rslog.writeInfo([ 'Setting download timeout to ' + str(arguments.dltimeout) + ' (the daemon must complete the download within this interval).' ])
-            rslog.writeInfo([ 'Setting request timeout to ' + str(arguments.reqtimeout) + ' (the daemon must locate the request within this interval).' ])
-            rslog.writeInfo([ 'Setting scp timeout to ' + str(arguments.scpTimeOut) + ' (each ScpWorker waits this long at most before initiating the next scp.).' ])
+            rslog.writeInfo([ 'setting download timeout to ' + str(arguments.dltimeout) + ' (the daemon must complete the download within this interval)' ])
+            rslog.writeInfo([ 'setting request timeout to ' + str(arguments.reqtimeout) + ' (the daemon must locate the request within this interval)' ])
+            rslog.writeInfo([ 'setting scp timeout to ' + str(arguments.scpTimeOut) + ' (each ScpWorker waits this long at most before initiating the next scp)' ])
         
             rsConn = th.rsConn()
             sumsConn = th.sumsConn()
@@ -3335,7 +3351,7 @@ if __name__ == "__main__":
                 # request is a dictionary
                 for request in reqsPending:
                     # use a set() to remove duplicates IN THE SAME REQUEST
-                    sunums = list(set(request['sunums'])) # the SUs that have not been dispatched yet
+                    sunums = list(set(request['sunums'])) # the SUs may or may not have been dispatched in previous iterations
                     rslog.writeInfo([ 'found an interrupted download request, id ' + str(request['requestid']) + ', for SUNUMs ' + ','.join([str(sunum) for sunum in sunums]) ])
 
                     # FOR ALL OFFLINE SUs, dispatchSUs() will asynchronously add/++refcount a SU to the sutable, and add an entry in the SU map; 
@@ -3400,7 +3416,7 @@ if __name__ == "__main__":
                             if completeItem.su.status == 'E':
                                 rslog.writeInfo([ 'download of SU ' + str(completeItem.su.sunum)  + ' has errored-out; ' + completeItem.su.errmsg ])
                             elif completeItem.su.status == 'C':
-                                rslog.writeInfo([ 'Download of SU ' + str(completeItem.su.sunum)  + ' has completed.' ])
+                                rslog.writeInfo([ 'download of SU ' + str(completeItem.su.sunum)  + ' has completed' ])
                             elif completeItem.su.status == 'P' or completeItem.su.status == 'W' or completeItem.su.status == 'D':
                                 # the Downloader no longer exists, so this is an error
                                 completeItem.su.setStatus('E', 'download for SU ' + str(completeItem.su.sunum) + ' did not properly complete')
@@ -3610,7 +3626,7 @@ if __name__ == "__main__":
                 ######################
             
             # Save the db state when exiting.
-            rslog.writeInfo([ 'Remote-sums daemon is exiting. Saving database tables.' ])
+            rslog.writeInfo([ 'remote-sums daemon is exiting; saving database tables' ])
             updateDbAndCommit(rslog, rsConn, rsDbLock, reqTableObj, None)
 
         # DB connection was terminated.            
@@ -3640,7 +3656,7 @@ if __name__ == "__main__":
         rv = RET_UNKNOWN_ERROR
 
 if rslog:
-    rslog.writeInfo([ 'Exiting with return status ' + str(rv) + '.' ])
+    rslog.writeInfo([ 'exiting with return status ' + str(rv) ])
 # Will not exit process if threads are still running. Set global shutdown flag that threads are monitoring. When they see the flag, they
 # will terminate too.
 
