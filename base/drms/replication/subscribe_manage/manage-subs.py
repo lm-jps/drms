@@ -215,6 +215,17 @@ DROP TABLE IF EXISTS drms.ingested_sunums;
 CREATE TABLE drms.ingested_sunums (sunum bigint PRIMARY KEY, starttime timestamp with time zone NOT NULL);
 CREATE INDEX ingested_sunums_starttime ON drms.ingested_sunums(starttime);
 
+-- TABLE drms.capturesunum_series
+--
+-- A table with one row per series and three columns: series, timecol, timewindow. Each row identifies the 
+-- name of the column in a DRMS series table that will be used for the purpose of determining the 
+-- observation time of the series. window is the time interval ending NOW() - SU downloads
+-- will proceed only if the observation time lies within this interval. The rows are optional - 
+-- not every series needs to identify its time column.
+-- ---------------------------------------------------------------------------------------
+DROP TABLE IF EXISTS drms.capturesunum_series;
+CREATE TABLE drms.capturesunum_series (series text PRIMARY KEY, timecol text NOT NULL, timewindow interval NOT NULL);
+
 -- ---------------------------------------------------------------------------------------
 -- FUNCTION drms.capturesunum
 --
@@ -226,12 +237,32 @@ CREATE INDEX ingested_sunums_starttime ON drms.ingested_sunums(starttime);
 -- ---------------------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION drms.capturesunum() RETURNS TRIGGER AS
 $capturesunumtrig$
+DECLARE
+  time_col          text;
+  time_val          double precision;
+  time_window       interval;
+  isRecent          boolean;
 BEGIN
     IF EXISTS (SELECT n.nspname, c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'drms' AND c.relname = 'ingested_sunums') THEN
       IF (TG_OP='INSERT' AND new.sunum > 0) THEN
         IF EXISTS (SELECT 1 FROM drms.ingested_sunums WHERE sunum = new.sunum) THEN
           RETURN NULL;
         END IF;
+
+        SELECT timecol, timewindow INTO time_col, time_window FROM drms.capturesunum_series WHERE series = quote_ident(TG_TABLE_NAME);
+        IF FOUND THEN
+          EXECUTE format('SELECT ($1).%s::text', time_col)
+          USING NEW
+          INTO time_val;
+
+          --  timestamp 'epoch' +  '220924785 seconds' is the SDO epoch in unix time
+          -- time_val is the value of the time-column property in NEW
+          SELECT age(now(), timestamp 'epoch' +  '220924785 seconds' + interval '1 second' * time_val) < time_window INTO isRecent FROM dbTable;
+          IF isRecent THEN
+            RETURN NULL;
+          END IF;
+        END IF;
+
         INSERT INTO drms.ingested_sunums (sunum, starttime) VALUES (new.sunum, clock_timestamp());
       END IF;
     END IF;  
