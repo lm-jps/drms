@@ -241,6 +241,8 @@ DECLARE
   time_col          text;
   time_val          double precision;
   time_window       interval;
+  day_interval      double precision;
+  carr_epoch        timestamp;
   isRecent          boolean;
 BEGIN
     IF EXISTS (SELECT n.nspname, c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'drms' AND c.relname = 'ingested_sunums') THEN
@@ -255,9 +257,25 @@ BEGIN
           USING NEW
           INTO time_val;
 
-          --  timestamp 'epoch' +  '220924785 seconds' is the SDO epoch in unix time
           -- time_val is the value of the time-column property in NEW
-          SELECT age(now(), timestamp 'epoch' +  '220924785 seconds' + interval '1 second' * time_val) < time_window INTO isRecent FROM dbTable;
+          
+          IF time_col = 't_rec' OR time_col = 't_obs' THEN
+            -- timestamp 'epoch' +  '220924785 seconds' is the SDO epoch in unix time
+            -- convert interval from epoch to DRMS time from seconds to days
+            -- THESE TIMES DO NOT ACCOUNT FOR LEAP SECONDS - we don't need that kind of resolution
+            day_interval := time_val / 86400;
+            SELECT age(now(), timestamp 'epoch' + '220924785 seconds' + interval '1 day' * day_interval) < time_window INTO isRecent;
+          ELSIF time_col = 'carrrot' OR time_col = 'car_rot' THEN
+            -- for Rick's series (time is a Carrington Rotation value)
+            -- USING THE SYNODIC ROTATION PERIOD OF 27.2753 and Carrington epoch as November 9, 1853; again, 
+            -- accuracy is not that important
+            day_interval := time_val * 27.2753;
+            SELECT age(now(), timestamp 'epoch' + EXTRACT(DAY FROM timestamp 'November 9, 1853' - timestamp 'epoch') * 86400 + interval '1 day' * day_interval) < time_window INTO isRecent;
+          ELSE
+            -- some future thing; default to FALSE for now so we don't accidentally download all SUs and swamp disk
+            isRecent := FALSE;
+          END IF;
+
           IF isRecent THEN
             RETURN NULL;
           END IF;
