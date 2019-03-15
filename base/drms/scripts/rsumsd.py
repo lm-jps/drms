@@ -1287,6 +1287,9 @@ class SuTable:
                 break
         
         return answer
+        
+    def getActiveSUs(self, **kwargs):
+        return [ sunum for sunum in kwargs['sunums'] if str(sunum) in self.suMap ]
 
     @classmethod
     def offline(cls, sunums, log):
@@ -1853,7 +1856,7 @@ class ScpWorker(threading.Thread):
                                 # Set status to D to prevent another ScpWorker from processing the download. Must do this
                                 # before the SU Table lock is released, otherwise another ScpWorker could grab the same
                                 # SU that this ScpWorker just grabbed.
-                                self.log.writeInfo([ 'ScpWorker setting SU ' + str(su.sunum) + ' status to D' ])
+                                self.log.writeDebug([ 'ScpWorker setting SU ' + str(su.sunum) + ' status to D' ])
                                 su.setStatus('D', None)
                                 
                             if len(sunums) == 0:
@@ -1956,7 +1959,7 @@ class ScpWorker(threading.Thread):
                         # this locks and releases the SU Table
                         sus, missingSunums = self.suTable.getSUs(sunums=remainingSunums)
                         for su in sus:
-                            self.log.writeInfo([ 'ScpWorker setting SU ' + str(su.sunum) + ' status to F' ])
+                            self.log.writeDebug([ 'ScpWorker setting SU ' + str(su.sunum) + ' status to F' ])
                             su.setStatus('F', None)
                             remainingSunums.remove(su.sunum)
                             scpComplete = su.worker.getScpComplete()
@@ -1972,7 +1975,7 @@ class ScpWorker(threading.Thread):
                         # ALL SUs errored-out
                         sus, missingSunums = self.suTable.getSUs(sunums=sunums)
                         for su in sus:
-                            self.log.writeInfo([ 'ScpWorker setting SU ' + str(su.sunum) + ' status to E' ])
+                            self.log.writeDebug([ 'ScpWorker setting SU ' + str(su.sunum) + ' status to E' ])
                             su.setStatus('E', exc.args[0])
                             remainingSunums.remove(su.sunum)
                             scpComplete = su.worker.getScpComplete()
@@ -2111,7 +2114,7 @@ class Downloader(threading.Thread):
                 # there is no need to check for that
                 seriesCached = self.su.getSeries()
                 
-                self.log.writeInfo([ 'Downloader is running for SU ' + str(self.sunum) ])
+                self.log.writeDebug([ 'Downloader is running for SU ' + str(self.sunum) ])
 
                 if self.su.getStatus() != 'P':
                     raise DownloaderException('SU ' + str(self.sunum) + ' is not pending')
@@ -2127,7 +2130,7 @@ class Downloader(threading.Thread):
                     # Let an ScpWorker thread handle the download. We do that by setting the status to 'W'.
                     # Upon recovery from a daemon shutdown, we may start certain SUs in the W state, in which
                     # case we do not need to set the status to W.
-                    self.log.writeInfo([ 'setting SU ' + str(self.sunum) + " status to W" ])
+                    self.log.writeDebug([ 'setting SU ' + str(self.sunum) + " status to W" ])
 
                     # the ScpWorker learns of the source path, the SU size, the scp user, etc., from su.worker
                     self.su.setStatus('W', None)
@@ -2262,8 +2265,8 @@ class Downloader(threading.Thread):
                                 self.sumsDbLock.release()
                         ##### SUM_open() port - end #####
                         openDone = True
-                        self.log.writeInfo([ 'successfully called SUM_open() port for SU ' +  str(self.sunum) ])
-                        self.log.writeInfo([ 'sumid is ' + str(sumid) ])
+                        self.log.writeDebug([ 'successfully called SUM_open() port for SU ' +  str(self.sunum) ])
+                        self.log.writeDebug([ 'sumid is ' + str(sumid) ])
     
                         ##### SUM_alloc2() port #####
                         try:
@@ -2507,7 +2510,7 @@ class Downloader(threading.Thread):
                 self.su.removeWorker()
                 
                 self.tList.remove(self) # This thread is no longer one of the running threads.
-                self.log.writeInfo([ 'downloader (SUNUM ' + str(self.sunum) + ') halted' ])
+                self.log.writeDebug([ 'downloader (SUNUM ' + str(self.sunum) + ') halted' ])
                 # Use <= because we don't know if we were able to reach Downloader.maxThreads thread running due 
                 # to system-resource limitations.
                 if len(self.tList) <= self.maxThreads - 1:
@@ -3077,6 +3080,17 @@ def dispatchSUs(sites, request, sutable, reqtable, dbuser, binpath, tapesysexist
     # siteSunums is a dictionary where key is the site CGI, and the value is a list of unknown, offline SUs that
     # the site serves;
     # toComplete is a list of undispatched, but online remote SUs    
+    
+    # ART - this request could be very new so that its todispatch list was never updated when this code was run for 
+    # a previous request; so this request's todispatch list could be inaccurate; update that now (by looking at
+    # the SU map which has an entry for every 'dispatched' request)
+    sutable.acquireLock()
+    try:
+        activeSUs = sutable.getActiveSUs(sunums=request['todispatch'])
+        request['todispatch'] = list(set(request['todispatch']) - set(activeSUs))
+    finally:
+        sutable.releaseLock()
+
     siteSunums, onlineSunums = getSUSites(request['todispatch'], sites, request, log)
     for cgi, sunumList in siteSunums.items():
         if len(sunumList) > 0:
@@ -3140,7 +3154,7 @@ def dispatchSUs(sites, request, sutable, reqtable, dbuser, binpath, tapesysexist
         for sunum in request['sunums']:
             if sunum not in notQueuedSUs and not sutable.presentInSUMap(sunums=[ sunum ], requestid=request['requestid']):
                 existingSUs, newSUs = sutable.addSUs(sunums=[ sunum ], locktable=False, status='C') # this will bump refcount if the SU object already exist
-                rslog.writeDebug([ '[ dispatchSUs() ] adding ' + str(request['requestid']) + ' to suMap for SU ' + str(su.sunum) ])
+                rslog.writeDebug([ '[ dispatchSUs() ] adding ' + str(request['requestid']) + ' to suMap for SU ' + str(sunum) ])
                 sutable.addRequestToSUMap(sunums=[ sunum ], requestid=request['requestid'])
                 completedSUs.add(sunum)
     finally:
