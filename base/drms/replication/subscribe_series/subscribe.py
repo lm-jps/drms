@@ -654,8 +654,9 @@ if __name__ == "__main__":
         parser.add_argument('tapegroup', '--tapegroup', help='If the archive flag is 1, the number identifying the group of series that share tape files.', metavar='<series SU tape group>', dest='tapegroup', type=int, action=OverrideAction, arguments=arguments, default=argparse.SUPPRESS)
         parser.add_argument('pg_user', '--pg_user', help='The DB account the subscription client uses.', metavar='<series SU tape group>', dest='pg_user', action=OverrideAction, arguments=arguments, default=argparse.SUPPRESS)
         parser.add_argument('-p', '--pause', help='Pause and ask for user confirmation before applying the downloaded SQL dump file.', dest='pause', action='store_true', default=False)
-        parser.add_argument('-t', '--loglevel', help='Specifies the amount of logging to perform. In increasing order: critical, error, warning, info, debug', dest='loglevel', action=LogLevelAction, default=logging.ERROR)
-        parser.add_argument('-l', '--logfile', help='The file to which logging is written.', metavar='<file name>', dest='logfile', default=os.path.join('.', 'subscribe_' + datetime.now().strftime('%Y%m%d') + '.log'))
+        parser.add_argument('--loglevel', help='Specifies the amount of logging to perform. In increasing order: critical, error, warning, info, debug', dest='loglevel', action=LogLevelAction, default=logging.ERROR)
+        parser.add_argument('--logfile', help='The file to which logging is written.', metavar='<file name>', dest='logfile', default=os.path.join('.', 'subscribe_' + datetime.now().strftime('%Y%m%d') + '.log'))        
+        parser.add_argument('--filtersus', help='Specifies a series keyword K and a number of days D, comma separated; a remote-SUMS request for an SU will occur only if the keyword K of the record containing the SU has a value that lies within the time interval determined by the days D.', metavar='<SU filter>', dest='sufilter', action=ListAction, default=[ None, None ])
         
         arguments.setParser(parser)
 
@@ -670,6 +671,10 @@ if __name__ == "__main__":
         client = arguments.getArg('node')
         lockFile = os.path.join(arguments.getArg('kLocalLogDir'), LOCKFILE)
         dieFile = os.path.join(arguments.getArg('ingestion_path'), 'get_slony_logs.' + client + '.die')
+        suFilterKeyword, suFilterValue = arguments.getArg('sufilter')
+        if suFilterKeyword is not None:
+            suFilterValue = timedelta(days=int(suFilterValue))
+        
         strPid = str(os.getpid())
         
         log.writeCritical([ 'Client is ' + client + '.' ])
@@ -995,6 +1000,39 @@ if __name__ == "__main__":
                                     raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database table: ' + schema + '.drms_session')
                                 if not dbTableExists(conn, schema, 'drms_sessionid_seq'):
                                     raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database table: ' + schema + '.drms_sessionid_seq')
+                                    
+                            # if the user has provided the sufilter argument, they want to filter the set of SUs that will be sent to 
+                            # remote SUMS as part of the subscription process; the filter criteria is saved in drms.capturesunum_series; 
+                            # some NetDRMS sites will not have this table (since the initial subscribe.py did not have this feature)
+                            if dbTableExists(conn, 'drms', 'capturesunum_series'):
+                                if suFilterKeyword is not None:
+                                    # if the filter does not already exist, add it, otherwise update it
+                                    cmd = "SELECT timecol, timewindow FROM drms.capturesunum_series WHERE lower(series) = '" + series.lower() + "'"
+ 
+                                    try:
+                                        with conn.cursor() as cursor:
+                                            cursor.execute(cmd)
+                                            records = cursor.fetchall()
+                                            cmd = None
+                                            if len(records) > 1:
+                                                raise Exception('dbResponse', 'Unexpected number of database rows returned from query: ' + cmd + '.')
+                                            elif len(records) == 1:
+                                                timeColumn = records[0][0]
+                                                timeWindow = records[0][1] # timedelta
+                                                
+                                                if timeColumn.lower() != suFilterKeyword.lower() or timeWindow != suFilterValue:
+                                                    # update drms.capturesunum_series
+                                                    cmd = 'UPDATE drms.capturesunum_series SET timecol=' + timeColumn.lower() + ', timewindow=' + str(suFilterValue) + " WHERE lower(series)='" + series.lower() + "'"
+                                            else:
+                                                # add a row to drms.capturesunum_series
+                                                cmd = "INSERT INTO drms.capturesunum_series(series, timecol, timewindow) VALUES ('" + series.lower() + "', '" + suFilterKeyword.lower() + "', '" + str(suFilterValue) + "')"
+                                                
+                                            if cmd is not None:
+                                                cursor.execute(cmd)
+                                                conn.commit()
+                                    except psycopg2.Error as exc:
+                                        conn.rollback()
+                                        raise Exception('dbCmd', exc.diag.message_primary)
 
                             if reqType == 'subscribe':
                                 # To subscribe to a series, provide client, series, archive, retention, tapegroup, subuser, newSite.
