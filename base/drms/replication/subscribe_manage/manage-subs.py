@@ -251,7 +251,7 @@ BEGIN
           RETURN NULL;
         END IF;
 
-        SELECT timecol, timewindow INTO time_col, time_window FROM drms.capturesunum_series WHERE series = quote_ident(TG_TABLE_NAME);
+        SELECT timecol, timewindow INTO time_col, time_window FROM drms.capturesunum_series WHERE series = TG_TABLE_SCHEMA || '.' || TG_TABLE_NAME;
         IF FOUND THEN
           EXECUTE format('SELECT ($1).%s::text', time_col)
           USING NEW
@@ -270,13 +270,13 @@ BEGIN
             -- USING THE SYNODIC ROTATION PERIOD OF 27.2753 and Carrington epoch as November 9, 1853; again, 
             -- accuracy is not that important
             day_interval := time_val * 27.2753;
-            SELECT age(now(), timestamp 'epoch' + EXTRACT(DAY FROM timestamp 'November 9, 1853' - timestamp 'epoch') * 86400 + interval '1 day' * day_interval) < time_window INTO isRecent;
+            SELECT age(now(), timestamp 'November 9, 1853' + interval '1 day' * day_interval) < time_window INTO isRecent;
           ELSE
             -- some future thing; default to FALSE for now so we don't accidentally download all SUs and swamp disk
             isRecent := FALSE;
           END IF;
 
-          IF isRecent THEN
+          IF NOT isRecent THEN
             RETURN NULL;
           END IF;
         END IF;
