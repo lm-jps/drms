@@ -229,6 +229,16 @@ static int ProcessRecord(DRMS_Record_t *recin, DRMS_Record_t *recout)
                         
                         if (*infile != '\0' && *outfile != '\0')
                         {
+                            struct stat statBuf;
+                            
+                            if (stat(infile, &statBuf) == -1)
+                            {
+                                /* input segment file does not exist - this is not an error condition; segment files do not 
+                                 * necessarily need to exist */
+                                 fprintf(stderr, "input segment file %s does not exist; skipping to next input segment\n", infile);
+                                 continue;
+                            }
+                            
                             if (copyfile(infile, outfile) != 0)
                             {
                                 fprintf(stderr, "failure copying file '%s' to '%s'.\n", infile, outfile);
