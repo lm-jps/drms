@@ -230,7 +230,7 @@ class TerminationHandler(object):
         if etype is not None:
             # If the context manager was exited without an exception, then etype is None
             import traceback
-            self.log.writeDebug([ traceback.format_exc(5) ])
+            self.log.writeDebug(traceback.format_exc(5).splitlines())
 
         print('Remote SUMS shutting down...')
         self.finalStuff()
@@ -280,7 +280,7 @@ class TerminationHandler(object):
         try:
             for dispatcher in Dispatcher.tList:
                 # send lastitem queue item to dispatchers
-                lastitem = DispatcherQueueItem(cgi=None, sunums=None, sutable=None, dbuser=None, reqtable=None, request=None, binpath=None, hastapesys=None, tmpdir=None, lastitem=True, expiration=None, archive=None, tapegroup=None, log=self.log)
+                lastitem = DispatcherQueueItem(cgi=None, sunums=None, sutable=None, dbuser=None, request=None, binpath=None, hastapesys=None, tmpdir=None, lastitem=True, expiration=None, archive=None, tapegroup=None, log=self.log)
                 dispatcher.queue.put_nowait(lastitem)
                 self.log.writeInfo([ 'waiting for Dispatcher ' + dispatcher.name + ' to halt' ])
         finally:
@@ -1210,12 +1210,13 @@ class SuTable:
         scpPort = None
         scpInfoSet = False
 
-        # get lock because we are reading self.suDict
+        # get lock because we are reading self.suDict (released by caller)
         self.acquireLock()
         try:
             # filter by priority
             # ReqTable::get() needs to be locked because the main thread refreshes the ReqTable, and that can happen
             # concurrently with the call below to ReqTable::get()
+            # reqtable is locked before calling getNextNWorkingSUs()
             reqTypeToPriority = dict(zip(REQTYPE_TEXT, REQTYPE_PRIORITY))
             suAndPriority = [ (su, min([ reqTypeToPriority[self.reqtable.get([ reqid ])[0]['type']] for reqid in self.suMap[str(su.sunum)] ])) for su in list(self.suDict.values()) ]
             filteredSUs = list(filter(lambda elem: elem[1] <= priority, suAndPriority))
@@ -1251,7 +1252,7 @@ class SuTable:
                 pass
         except:
             import traceback
-            self.log.writeError([ traceback.format_exc(5) ])
+            self.log.writeError(traceback.format_exc(5).splitlines())
             nworking = []
 
         return (nworking, (scpUser, scpHost, scpPort))      
@@ -1504,7 +1505,7 @@ class ReqTable:
             except psycopg2.Error as exc:
                 import traceback
                 
-                self.log.writeError([ traceback.format_exc(5) ])
+                self.log.writeError(traceback.format_exc(5).splitlines())
                 ReqTable.rsConn.rollback()
                 self.log.writeDebug([ 'rolling-back req table DB update' ])
                 raise ReqtableWriteException(exc.diag.message_primary)
@@ -1887,11 +1888,11 @@ class ScpWorker(threading.Thread):
                             proc = Popen(cmd, shell=True, stdout=PIPE, stderr=PIPE, start_new_session=True)
                         except OSError as exc:
                             import traceback
-                            self.log.writeError([ traceback.format_exc(5) ])
+                            self.log.writeError(traceback.format_exc(5).splitlines())
                             raise ScpSUException('Cannot run scp command.')
                         except ValueError as exc:
                             import traceback
-                            self.log.writeError([ traceback.format_exc(5) ])
+                            self.log.writeError(traceback.format_exc(5).splitlines())
                             raise ScpSUException('scp command called with invalid arguments.')
 
                         # Poll for completion
@@ -2315,7 +2316,7 @@ class Downloader(threading.Thread):
                                 shutil.move(src, sudir)
                         except shutil.Error as exc: 
                             import traceback
-                            self.log.writeError([ traceback.format_exc(5) ])
+                            self.log.writeError(traceback.format_exc(5).splitlines())
                             raise RSIOException('Unable to move SU file ' + afile + ' into SUdir ' + sudir + '.')
 
                         self.log.writeDebug([ 'move of SU ' + str(self.sunum) + ' content succeeded' ])
@@ -2532,8 +2533,7 @@ class Downloader(threading.Thread):
         # Fire event to stop thread.
         self.sdEvent.set()
 
-    # the Dispatcher calls newThread() and it is holding the table lock (must hold table lock so that there is no contention among 
-    # the different dispatchers (which call queue.put()) and the main thread (which calls queue.get());
+    # the Dispatcher thread calls newThread() 
     # must acquire Downloader lock BEFORE calling newThread() since newThread() will append to tList (the Downloader threads will delete from tList as they complete).
     @classmethod
     def newThread(cls, **kwargs):
@@ -2645,7 +2645,6 @@ class DispatcherQueueItem(object):
         self.sunums = kwargs['sunums']
         self.sutable = kwargs['sutable']
         self.dbuser = kwargs['dbuser']
-        self.reqtable = kwargs['reqtable']
         request = kwargs['request']
         if request:
             self.requestID = request['requestid']
@@ -2695,10 +2694,11 @@ class Dispatcher(threading.Thread):
                     
                 if queueItem.lastitem:
                     # shutdown
+                    self.log.writeInfo([ 'got last item in dispatcher queue' ])
                     self.queue.task_done()
                     break
-
-                requestID = queueItem.requestID
+                    
+                self.log.writeDebug([ 'got dispatcher queue item for sunums ' + ','.join([ str(sunum) for sunum in queueItem.sunums ]) ])
 
                 # process the SUs for the source site represented by its url
                 workingSus = {}
@@ -2863,7 +2863,11 @@ class Dispatcher(threading.Thread):
                     
                     for sunumStr, su in workingSus.items():
                         su.setStatus('E', 'improperly formatted JSON in response')
-                # all other exceptions are fatal and should raise, terminating the dispatcher thread
+                except:
+                    # handle this unknown exception - do not allow the dispatcher thread to terminate with an unhandled exception
+                    self.log.writeError([ 'unknown exception in dispatcher ' + self.name + ' - printing call stack' ])
+                    import traceback
+                    self.log.writeError(traceback.format_exc(8).splitlines())
                 finally:
                     for sunumStr, su in workingSus.items():
                         if su.sunum not in hasDownloader:
@@ -2889,7 +2893,6 @@ class Dispatcher(threading.Thread):
     # called from the main thread only
     @classmethod
     def addSUChunk(cls, **kwargs):
-        reqtable = kwargs['reqtable']
         sutable = kwargs['sutable']
         request = kwargs['request']
         log = kwargs['log']
@@ -3020,7 +3023,7 @@ def updateDbAndCommit(log, rsConn, rsDbLock, reqTable, reqIDs):
         import traceback
         
         log.writeWarning([ 'failed to commit Req changes; changed rolled back' ])
-        log.writeWarning([ traceback.format_exc(5) ])
+        log.writeWarning(traceback.format_exc(5).splitlines())
         rsConn.rollback() # it could be that the first call succeeds and the second fails - we need to rollback the first too
         # continue on with the next request (do not terminate)
     finally:
@@ -3084,13 +3087,22 @@ def dispatchSUs(sites, request, sutable, reqtable, dbuser, binpath, tapesysexist
     # ART - this request could be very new so that its todispatch list was never updated when this code was run for 
     # a previous request; so this request's todispatch list could be inaccurate; update that now (by looking at
     # the SU map which has an entry for every 'dispatched' request)
+    # NO NEED to acquire reqtable lock since only the main thread looks at 'todispatch' lists and modifies requests table
     sutable.acquireLock()
     try:
         activeSUs = sutable.getActiveSUs(sunums=request['todispatch'])
-        request['todispatch'] = list(set(request['todispatch']) - set(activeSUs))
+        setBefore = set(request['todispatch'])
+        request['todispatch'] = list(setBefore - set(activeSUs))
+        
+        # these SUs removed from the 'todispatch' list also need to have a addSUs() and addRequestToSUMap() called on them; 
+        # otherwise, they will never be added to the 'complete' list; basically, whenever you dispatch on SU, you also
+        # have to add it to the global list of SUs and you have to add it to the SU Map
+        sutable.addSUs(sunums=list(setBefore - set(request['todispatch'])), locktable=False)
+        sutable.addRequestToSUMap(sunums=list(setBefore - set(request['todispatch'])), requestid=request['requestid'])        
     finally:
         sutable.releaseLock()
 
+    # from here to the end of this method, only 'todispatch' SUs will be processed
     siteSunums, onlineSunums = getSUSites(request['todispatch'], sites, request, log)
     for cgi, sunumList in siteSunums.items():
         if len(sunumList) > 0:
@@ -3100,7 +3112,7 @@ def dispatchSUs(sites, request, sutable, reqtable, dbuser, binpath, tapesysexist
             for chunk in chunker:
                 try:
                     # will NOT block if there are no spots in the Dispatcher queue
-                    item = Dispatcher.addSUChunk(cgi=cgi, sunums=chunk, reqtable=reqtable, sutable=sutable, dbuser=dbuser, request=request, binpath=binpath, hastapesys=tapesysexists, tmpdir=tmpdir, expiration=expiration, archive=archive, tapegroup=tapegroup, log=log)
+                    item = Dispatcher.addSUChunk(cgi=cgi, sunums=chunk, sutable=sutable, dbuser=dbuser, request=request, binpath=binpath, hastapesys=tapesysexists, tmpdir=tmpdir, expiration=expiration, archive=archive, tapegroup=tapegroup, log=log)
                     
                     # keep track of all SUs dispatched - we will need to use this information to update each request's todispatch list
                     if item.queued:
@@ -3598,7 +3610,7 @@ if __name__ == "__main__":
                             except:
                                 import traceback
                             
-                                ilogger.writeWarning([ traceback.format_exc(5) ])
+                                ilogger.writeWarning(traceback.format_exc(5).splitlines())
                                 # swallow the exception and continue with the next request
                                 pass
                             continue
