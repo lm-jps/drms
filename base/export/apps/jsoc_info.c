@@ -1744,7 +1744,7 @@ void json_insert_runtime(json_t *jroot, double StartTime)
   }
 
 
-#define LOGFILEBASE    "jsocinfo.log"
+#define LOGFILEBASE    "fetch_log"
 #define LOCKFILEBASE   "lock.txt"
 
 // report_summary - record  this call of the program.
@@ -1758,7 +1758,7 @@ void report_summary(const char *host, double StartTime, const char *remote_IP, c
   char *logfile = calloc(1, PATH_MAX);
   char *lockfile = calloc(1, PATH_MAX);
 
-  base_strlcat(logfile, DRMS_LOG_DIR, PATH_MAX);
+  base_strlcat(logfile, EXPORT_LOG_DIR, PATH_MAX);
 
   if (logfile[strlen(logfile) - 1] != '/')
   {
@@ -1767,7 +1767,7 @@ void report_summary(const char *host, double StartTime, const char *remote_IP, c
 
   base_strlcat(logfile, LOGFILEBASE, PATH_MAX);
 
-  base_strlcat(lockfile, DRMS_LOCK_DIR, PATH_MAX);
+  base_strlcat(lockfile, EXPORT_LOCK_DIR, PATH_MAX);
 
   if (lockfile[strlen(lockfile) - 1] != '/')
   {
@@ -2588,15 +2588,82 @@ int DoIt(void)
             
             if (requisition.requireSUMinfoSize)
             {
-                if (!rec->suinfo)
+                char size[64];
+                struct stat statBuf;
+                char *segFilePath = NULL;
+                size_t szPath = DRMS_MAXPATHLEN;
+                SUM_info_t *sinfo = NULL;
+                long long numBytes = -1;
+                DRMS_Segment_t *segTemplate = NULL;
+                DRMS_Segment_t *seg = NULL;
+
+                if (reqSegs && list_llgetnitems(reqSegs) > 0)
                 {
-                    jsonVal = createJsonStringVal("NA");
+                    /* first, let's see if the segment-file is online; if so, use the size as returned by stat() */
+                    segFilePath = calloc(1, szPath);
+
+                    if (segFilePath)
+                    {
+                        list_llreset(reqSegs);
+
+                        while ((lnSeg = list_llnext(reqSegs)) != NULL)
+                        {
+                            segTemplate = *((DRMS_Segment_t **)(lnSeg->data));
+                            seg = drms_segment_lookup(rec, segTemplate->info->name);
+                            
+                            if (seg)
+                            {
+                                /* make seg file path */
+                                drms_record_directory(rec, segFilePath, 0);
+            
+                                if (*segFilePath)
+                                {
+                                    segFilePath = base_strcatalloc(segFilePath, "/", &szPath);
+                                    segFilePath = base_strcatalloc(segFilePath, seg->filename, &szPath);
+                    
+                                    if (stat(segFilePath, &statBuf) == 0)
+                                    {
+                                        if (numBytes == -1)
+                                        {
+                                            numBytes++;
+                                        }
+                        
+                                        /* online */
+                                        numBytes += statBuf.st_size;
+                                    }
+                                }
+                            }
+                        }
+                
+                        if (numBytes != -1)
+                        {
+                            long long numBytesLL = numBytes;
+                            snprintf(size, sizeof(size), "%lld", numBytesLL);
+                            jsonVal = json_new_number(size);
+                            JSOC_INFO_ASSERT(jsonVal, "out of memory");
+                        }
+                    
+                        free(segFilePath);
+                        segFilePath = NULL;
+                    }
                 }
                 else
                 {
-                    snprintf(numStr, sizeof(numStr), "%.0f", rec->suinfo->bytes);
-                    jsonVal = json_new_number(numStr);
-                    JSOC_INFO_ASSERT(jsonVal, "out of memory");
+                    /* no segs listed; just use the entire SU size */
+                    sinfo = rec->suinfo;
+
+                    if (sinfo)
+                    {
+                        numBytes++;
+                        snprintf(size, sizeof(size), "%.0f", sinfo->bytes);
+                        jsonVal = json_new_number(size);
+                        JSOC_INFO_ASSERT(jsonVal, "out of memory");
+                    }   
+                }
+
+                if (numBytes == -1)
+                {
+                    jsonVal = createJsonStringVal("NA");
                 }
 
                 json_insert_pair_into_object(recobj, "size", jsonVal);
@@ -2877,18 +2944,80 @@ int DoIt(void)
           sprintf(rawval,"%lld",rec->sunum);
           val = json_new_number(rawval);
           }
-            else if (strcmp(keys[ikey],"*size*") == 0)
-          {
-              char size[40];
-          SUM_info_t *sinfo = rec->suinfo;
-              if (!sinfo)
-            val = json_new_string("NA");
-          else
+        else if (strcmp(keys[ikey], "*size*") == 0)
+        {
+            char size[64];
+            struct stat statBuf;
+            char *segFilePath = NULL;
+            size_t szPath = DRMS_MAXPATHLEN;
+            SUM_info_t *sinfo = NULL;
+            long long numBytes = -1;
+            DRMS_Segment_t *seg = NULL;
+
+            
+            if (segs_listed)
+            {
+                /* first, let's see if the segment-file is online; if so, use the size as returned by stat() */
+                segFilePath = calloc(1, szPath);
+
+                if (segFilePath)
                 {
-                sprintf(size,"%.0f", sinfo->bytes);
-            val = json_new_string(size);
+                    for (iseg = 0; iseg < nsegs; iseg++)
+                    {
+                        seg = drms_segment_lookup(rec, segs[iseg]);
+                        if (seg)
+                        {
+                            /* make seg file path */
+                            drms_record_directory(rec, segFilePath, 0);
+            
+                            if (*segFilePath)
+                            {
+                                segFilePath = base_strcatalloc(segFilePath, "/", &szPath);
+                                segFilePath = base_strcatalloc(segFilePath, seg->filename, &szPath);
+                    
+                                if (stat(segFilePath, &statBuf) == 0)
+                                {
+                                    if (numBytes == -1)
+                                    {
+                                        numBytes++;
+                                    }
+                        
+                                    /* online */
+                                    numBytes += statBuf.st_size;
+                                }
+                            }
+                        }
+                    }
+                
+                    if (numBytes != -1)
+                    {
+                        long long numBytesLL = numBytes;
+                        snprintf(size, sizeof(size), "%lld", numBytesLL);
+                        val = json_new_string(size);
+                    }
+                    
+                    free(segFilePath);
+                    segFilePath = NULL;
                 }
-          }
+            }
+            else
+            {
+                /* no segs listed; just use the entire SU size */
+                sinfo = rec->suinfo;
+
+                if (sinfo)
+                {
+                    numBytes++;
+                    snprintf(size, sizeof(size), "%.0f", sinfo->bytes);
+                    val = json_new_string(size);
+                }   
+            }
+
+            if (numBytes == -1)
+            {
+                val = json_new_string("NA");
+            }
+        }
             else if (strcmp(keys[ikey],"*online*") == 0)
           {
           SUM_info_t *sinfo = rec->suinfo;

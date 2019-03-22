@@ -435,7 +435,7 @@ ExpUtlStat_t exputl_manage_cgibin_handles_delete_proc_handle(const char *file, c
 {
     FILE *fp = NULL;
     FILE *fp_lock = NULL;
-    char cmd[1024];
+    char cmd[1024] = { 0 };
     
     fp_lock = lock_open(file);
     if (!fp_lock)
@@ -443,7 +443,7 @@ ExpUtlStat_t exputl_manage_cgibin_handles_delete_proc_handle(const char *file, c
         return kExpUtlStat_ManageHandles;
     }
     
-    sprintf(cmd, "ed -s %s <<END\ng/^%s\t/d\nwq\nEND\n", file, handle);
+    snprintf(cmd, sizeof(cmd), "ed -s %s <<END\ng/^%s\t/d\nwq\nEND\n", file, handle);
     system(cmd);
     lock_close(fp_lock);
     return kExpUtlStat_Success;
@@ -490,7 +490,7 @@ ExpUtlStat_t exputl_manage_cgibin_handles(const char *op, const char *handle, pi
         {
            char *lockfile = calloc(1, PATH_MAX);
 
-           base_strlcat(lockfile, DRMS_LOCK_DIR, PATH_MAX);
+           base_strlcat(lockfile, EXPORT_HANDLE_DIR, PATH_MAX);
 
            if (lockfile[strlen(lockfile) - 1] != '/')
            {
