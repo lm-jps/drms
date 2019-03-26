@@ -104,9 +104,11 @@ char *MISSING_KEY_VALUE = "???";
 char *MISSING_SEG_NAME = "???";
 char *MISSING_LINK_NAME = "???";
 char *INVALID = "invalid";
+char *INVALID_SEG = "InvalidSegName";
 
 #define USE_FITS_NAMES_FOR_COLUMNS (0)
 
+/* invalidObj is used simply for a fixed address to denote that a keyword, segment, or link struct is bad */
 char invalidObj;
 const char *userhandle = NULL;
 
@@ -380,13 +382,15 @@ static int populateKeyList(const char *listOfKeys, LinkedList_t *reqSegs, DRMS_R
                 {
                     keyTemplate = calloc(1, sizeof(DRMS_Keyword_t));
                     keyTemplate->record = (DRMS_Record_t *)(&invalidObj);
-                    keyTemplate->info = (DRMS_KeywordInfo_t *)(strdup(currentKey));
+                    keyTemplate->info = (DRMS_KeywordInfo_t *)calloc(1, sizeof(DRMS_KeywordInfo_t));
+                    snprintf(keyTemplate->info->name, sizeof(keyTemplate->info->name), "%s", currentKey);                    
                 }
                 else if (drms_keyword_getimplicit(keyTemplate))
                 {
                     keyTemplate = calloc(1, sizeof(DRMS_Keyword_t));
                     keyTemplate->record = (DRMS_Record_t *)(&invalidObj);
-                    keyTemplate->info = (DRMS_KeywordInfo_t *)(strdup(currentKey));
+                    keyTemplate->info = (DRMS_KeywordInfo_t *)calloc(1, sizeof(DRMS_KeywordInfo_t));
+                    snprintf(keyTemplate->info->name, sizeof(keyTemplate->info->name), "%s", currentKey);
                 }
 
                 if (!list_llfind(reqKeys, (void *)&keyTemplate))
@@ -403,7 +407,7 @@ static int populateKeyList(const char *listOfKeys, LinkedList_t *reqSegs, DRMS_R
     return list_llgetnitems(reqKeys);
 }
 
-static int populateSegList(const char *listOfSegs, int followLinks, DRMS_Record_t *template, DRMS_RecordSet_t *recordSet, int *recsStaged, struct requisitionStructT *requisition, LinkedList_t *reqSegs)
+static int populateSegList(const char *listOfSegs, int followLinks, DRMS_Record_t *template, DRMS_RecordSet_t *recordSet, int *recsStaged, struct requisitionStructT *requisition, LinkedList_t *reqSegs, int *allSegs)
 {
     char *listOfSegsWorking = NULL;
     char *currentSeg = NULL;
@@ -416,52 +420,57 @@ static int populateSegList(const char *listOfSegs, int followLinks, DRMS_Record_
     listOfSegsWorking = strdup(listOfSegs);
     JSOC_INFO_ASSERT(listOfSegsWorking, "populateSegList(): out of memory");
     
-    for (currentSeg = strtok_r(listOfSegsWorking, ",", &saver); currentSeg; currentSeg = strtok_r(NULL, ",", &saver))
+    if (strstr(listOfSegsWorking, "**NONE**") != NULL)
     {
-        if (strcmp(currentSeg, "**NONE**") == 0)
+        JSOC_INFO_ASSERT(list_llgetnitems(reqSegs) == 0, "Invalid segment list (cannot specify **NONE** with other segments).");
+    }
+    else if (strstr(listOfSegsWorking, "**ALL**") != NULL)
+    {
+        if (allSegs)
         {
-            JSOC_INFO_ASSERT(list_llgetnitems(reqSegs) == 0, "Invalid segment list (cannot specify **NONE** with other segments).");
+            *allSegs = 1;
         }
-        else if ((strcmp(currentSeg, "**ALL**") == 0))
+        
+        JSOC_INFO_ASSERT(last == NULL, "about to leak");
+
+        while ((segTemplate = drms_record_nextseg(template, &last, 0)) != NULL)
         {
-            JSOC_INFO_ASSERT(last == NULL, "about to leak");
-
-            while ((segTemplate = drms_record_nextseg(template, &last, 0)) != NULL)
+            JSOC_INFO_ASSERT(segTemplate && segTemplate->info && *(segTemplate->info->name) != '\0', "Invalid segment information.");
+        
+            if (followLinks && segTemplate->info->islink)
             {
-                JSOC_INFO_ASSERT(segTemplate && segTemplate->info && *(segTemplate->info->name) != '\0', "Invalid segment information.");
-            
-                if (followLinks && segTemplate->info->islink)
-                {
-                    /* Since rec is a template record, cannot follow links in the ordinary manner. Use this function - it finds the template
-                     * segment of the series linked to. */
-                    int lnkstat = DRMS_SUCCESS;
+                /* Since rec is a template record, cannot follow links in the ordinary manner. Use this function - it finds the template
+                 * segment of the series linked to. */
+                int lnkstat = DRMS_SUCCESS;
 
-                    drms_template_segment_followlink(segTemplate, &lnkstat);
-                    JSOC_INFO_ASSERT(lnkstat != DRMS_SUCCESS, "Unable to follow link.");
-                }
-                
-                if (!list_llfind(reqSegs, (void *)&segTemplate))
-                {
-                    /* this seg could have been provided (below); avoid duplicates */
-                    list_llinserttail(reqSegs, (void *)&segTemplate);
-                }
+                drms_template_segment_followlink(segTemplate, &lnkstat);
+                JSOC_INFO_ASSERT(lnkstat != DRMS_SUCCESS, "Unable to follow link.");
             }
             
-            if (last)
+            if (!list_llfind(reqSegs, (void *)&segTemplate))
             {
-                hiter_destroy(&last);
+                list_llinserttail(reqSegs, (void *)&segTemplate);
             }
         }
-        else
+        
+        if (last)
         {
+            hiter_destroy(&last);
+        }
+    }
+    else
+    {
+        for (currentSeg = strtok_r(listOfSegsWorking, ",", &saver); currentSeg; currentSeg = strtok_r(NULL, ",", &saver))
+        {        
             /* don't follow links */
             segTemplate = hcon_lookup_lower(&(template->segments), currentSeg);
-        
+    
             if (!segTemplate || !(segTemplate->info) || *(segTemplate->info->name) == '\0')
             {
                 segTemplate = calloc(1, sizeof(DRMS_Segment_t));
                 segTemplate->record = (DRMS_Record_t *)(&invalidObj);
-                segTemplate->info = (DRMS_SegmentInfo_t *)strdup(currentSeg);
+                segTemplate->info = calloc(1, sizeof(DRMS_SegmentInfo_t));
+                snprintf(segTemplate->info->name, sizeof(segTemplate->info->name), "%s", currentSeg);
             }
             else
             {
@@ -477,16 +486,17 @@ static int populateSegList(const char *listOfSegs, int followLinks, DRMS_Record_
                     {
                         segTemplate = calloc(1, sizeof(DRMS_Segment_t));
                         segTemplate->record = (DRMS_Record_t *)(&invalidObj);
-                        segTemplate->info = (DRMS_SegmentInfo_t *)(strdup(currentSeg));
+                        segTemplate->info = calloc(1, sizeof(DRMS_SegmentInfo_t));
+                        snprintf(segTemplate->info->name, sizeof(segTemplate->info->name), "%s", currentSeg);
                     }
                 }
             }
-            
+        
             if (!list_llfind(reqSegs, (void *)&segTemplate))
             {
-                /* **ALL** could have been provided; avoid duplicates */
+                /* avoid duplicates */
                 list_llinserttail(reqSegs, (void *)&segTemplate);
-            }            
+            }
         }
     }
 
@@ -554,7 +564,8 @@ static int populateLinkList(const char *listOfLinks, DRMS_Record_t *template, Li
             {
                 linkTemplate = calloc(1, sizeof(DRMS_Link_t));
                 linkTemplate->record = (DRMS_Record_t *)(&invalidObj);
-                linkTemplate->info = (DRMS_LinkInfo_t *)(strdup(currentLink));
+                linkTemplate->info = (DRMS_LinkInfo_t *)calloc(1, sizeof(DRMS_LinkInfo_t));
+                snprintf(linkTemplate->info->name, sizeof(linkTemplate->info->name), "%s", currentLink);
             }
         
             if (!list_llfind(reqLinks, (void *)&linkTemplate))
@@ -2181,6 +2192,7 @@ int DoIt(void)
     char *links[1000];
     int ikey, nkeys = 0;
     int iseg, nsegs = 0;
+    int allSegs = 0; /* did the user provide **ALL** for the seglist? */
     int ilink, nlinks = 0;
     char count[100];
     json_t *jroot, **keyvals = NULL, **segvals = NULL, **segdims = NULL, **linkvals = NULL, *recinfo = NULL;
@@ -2313,53 +2325,58 @@ int DoIt(void)
         
         if (useFitsKeyNames)
         {            
-            nsegs = populateSegList(seglist, followLinks, template, recordset, &record_set_staged, &requisition, reqSegs);
+            nsegs = populateSegList(seglist, followLinks, template, recordset, &record_set_staged, &requisition, reqSegs, &allSegs);
         }
         else
         {
-            for (thisseg=strtok(seglist, ","); thisseg; thisseg=strtok(NULL,","))
+            if (strstr(seglist, "**NONE**") != NULL)
             {
-                if (strcmp(thisseg,"**NONE**")==0)
-                {
-                    nsegs = 0;
-                    break;
-                }
-                if (strcmp(thisseg, "**ALL**")==0)
-                {
-                  DRMS_Segment_t *seg;
-                  DRMS_Segment_t *oseg = NULL;
+                nsegs = 0;
+            }
+            else if (strstr(seglist, "**ALL**") != NULL)
+            {
+                /* will never result in an InvalidSegName printed to the output */
+                DRMS_Segment_t *seg;
+                DRMS_Segment_t *oseg = NULL;
+                
+                allSegs = 1;
 
-                  while ((seg = drms_record_nextseg(template, &last, 0)))
-                  {
-                      oseg = seg; /* Original seg. */
-  
-                      if (followLinks && seg->info->islink)
-                      {
-                          /* Since rec is a template record, cannot follow links in the ordinary manner. Use this function - it finds the template
-                           * segment of the series linked to. */
-                          int lnkstat = DRMS_SUCCESS;
-      
-                          seg = drms_template_segment_followlink(seg, &lnkstat);
-                          if (lnkstat)
-                          {
-                              continue;
-                          }
-                      }
-  
-                      /* ART - Use original segment name (I'm not certain if this is the right name to use). */
-                      segs[nsegs++] = strdup (oseg->info->name);
-                  }
+                while ((seg = drms_record_nextseg(template, &last, 0)))
+                {
+                    oseg = seg; /* Original seg. */
 
-                  if (last)
-                  {
-                     hiter_destroy(&last);
-                  }
+                    if (followLinks && seg->info->islink)
+                    {
+                        /* Since rec is a template record, cannot follow links in the ordinary manner. Use this function - it finds the template
+                        * segment of the series linked to. */
+                        int lnkstat = DRMS_SUCCESS;
+
+                        seg = drms_template_segment_followlink(seg, &lnkstat);
+                        if (lnkstat)
+                        {
+                            continue;
+                        }
+                    }
+
+                    /* ART - Use original segment name (I'm not certain if this is the right name to use). */
+                    segs[nsegs++] = strdup (oseg->info->name);
                 }
-                else
+
+                if (last)
+                {
+                    hiter_destroy(&last);
+                }
+            }
+            else
+            {
+                /* can result in an InvalidSegName printed to the output */
+                for (thisseg=strtok(seglist, ","); thisseg; thisseg=strtok(NULL,","))
+                {                    
                     segs[nsegs++] = strdup(thisseg);
                 }
             }
         }
+    }
     free (seglist);
 
     /* get list of keywords to print for each record */
@@ -2611,10 +2628,10 @@ int DoIt(void)
                             segTemplate = *((DRMS_Segment_t **)(lnSeg->data));
                             seg = drms_segment_lookup(rec, segTemplate->info->name);
                             
-                            if (seg)
+                            if (seg && seg->record)
                             {
-                                /* make seg file path */
-                                drms_record_directory(rec, segFilePath, 0);
+                                /* make seg file path - use the parent record of seg (links may have been followed) */
+                                drms_record_directory(seg->record, segFilePath, 0);
             
                                 if (*segFilePath)
                                 {
@@ -2808,9 +2825,9 @@ int DoIt(void)
                 {
                     badKey = 1;
                     
-                    if (keyTemplate && keyTemplate->info && *((char *)(keyTemplate->info)) != '\0')
+                    if (keyTemplate && keyTemplate->info && *(keyTemplate->info->name) != '\0')
                     {
-                        keyNameOut = (char *)(keyTemplate->info); /* yoink! */
+                        keyNameOut = keyTemplate->info->name;
                     }
                     else
                     {
@@ -2954,63 +2971,51 @@ int DoIt(void)
             long long numBytes = -1;
             DRMS_Segment_t *seg = NULL;
 
-            
-            if (segs_listed)
-            {
-                /* first, let's see if the segment-file is online; if so, use the size as returned by stat() */
-                segFilePath = calloc(1, szPath);
+            /* first, let's see if the segment-file is online; if so, use the size as returned by stat() */
+            segFilePath = calloc(1, szPath);
 
-                if (segFilePath)
+            if (segFilePath)
+            {
+                for (iseg = 0; iseg < nsegs; iseg++)
                 {
-                    for (iseg = 0; iseg < nsegs; iseg++)
+                    /* if no segs were specified, we have to still iterate through all segments, and not use suinfo, 
+                     * because due to links, we don't know which record will contain the user-specified segments */
+
+                    /* follows links */
+                    seg = drms_segment_lookup(rec, segs[iseg]); 
+                    if (seg && seg->record)
                     {
-                        seg = drms_segment_lookup(rec, segs[iseg]);
-                        if (seg)
+                        /* make seg file path - use the parent record of seg (links may have been followed) */
+                        drms_record_directory(seg->record, segFilePath, 0);
+        
+                        if (*segFilePath)
                         {
-                            /* make seg file path */
-                            drms_record_directory(rec, segFilePath, 0);
-            
-                            if (*segFilePath)
+                            segFilePath = base_strcatalloc(segFilePath, "/", &szPath);
+                            segFilePath = base_strcatalloc(segFilePath, seg->filename, &szPath);
+                
+                            if (stat(segFilePath, &statBuf) == 0)
                             {
-                                segFilePath = base_strcatalloc(segFilePath, "/", &szPath);
-                                segFilePath = base_strcatalloc(segFilePath, seg->filename, &szPath);
-                    
-                                if (stat(segFilePath, &statBuf) == 0)
+                                if (numBytes == -1)
                                 {
-                                    if (numBytes == -1)
-                                    {
-                                        numBytes++;
-                                    }
-                        
-                                    /* online */
-                                    numBytes += statBuf.st_size;
+                                    numBytes++;
                                 }
+                    
+                                /* online */
+                                numBytes += statBuf.st_size;
                             }
                         }
                     }
-                
-                    if (numBytes != -1)
-                    {
-                        long long numBytesLL = numBytes;
-                        snprintf(size, sizeof(size), "%lld", numBytesLL);
-                        val = json_new_string(size);
-                    }
-                    
-                    free(segFilePath);
-                    segFilePath = NULL;
                 }
-            }
-            else
-            {
-                /* no segs listed; just use the entire SU size */
-                sinfo = rec->suinfo;
-
-                if (sinfo)
+            
+                if (numBytes != -1)
                 {
-                    numBytes++;
-                    snprintf(size, sizeof(size), "%.0f", sinfo->bytes);
+                    long long numBytesLL = numBytes;
+                    snprintf(size, sizeof(size), "%lld", numBytesLL);
                     val = json_new_string(size);
-                }   
+                }
+                
+                free(segFilePath);
+                segFilePath = NULL;
             }
 
             if (numBytes == -1)
@@ -3153,7 +3158,6 @@ int DoIt(void)
             int iaxis = 0;
             char keyName[DRMS_MAXKEYNAMELEN];
             DRMS_Keyword_t *anckey = NULL;
-            int missingSegName = 0;
             
             segmentArray = json_new_array(); /* each record has a segment array - an array of { "name" : "seg1", "value" : "rumble"}
                                               * objects */
@@ -3171,19 +3175,20 @@ int DoIt(void)
 
                 if (isInvalidSeg(segTemplate))
                 {
+                    /* the segment is not defined in this series */
                     badSeg = 1;
-                    
-                    /* name */
-                    if (segTemplate && segTemplate->info && *((char *)(segTemplate->info)) != '\0')
+                
+                    /* name */                    
+                    if (segTemplate && segTemplate->info && *(segTemplate->info->name) != '\0')
                     {
-                        jsonVal = createJsonStringVal((char *)(segTemplate->info)); /* yoink! */
+                        jsonVal = createJsonStringVal(segTemplate->info->name);
                     }
                     else
                     {
                         snprintf(missingSegNameBuf, sizeof(missingSegNameBuf), "%s%02d", MISSING_SEG_NAME, missingSegNumber++);
                         jsonVal = createJsonStringVal(missingSegNameBuf);
                     }
-                    
+                
                     json_insert_pair_into_object(segObj, "name", jsonVal);
                     jsonVal = NULL;
 
@@ -3194,22 +3199,28 @@ int DoIt(void)
                 }
                 else
                 {
+                    /* the segment IS defined in this series, but the current record may not have a segment struct (because
+                     * the user provided the segment filter in curly braces section of the record-set specification) */
                     segNum = segTemplate->info->segnum;
                 
                     /* segment info from actual record */
                     seg = drms_segment_lookup(rec, segTemplate->info->name); 
-                
-                    /* name */
-                    jsonVal = createJsonStringVal(segTemplate->info->name);
-                    json_insert_pair_into_object(segObj, "name", jsonVal);
-                    jsonVal = NULL;
 
                     if (seg)
                     {
+                        char *dimStr = NULL;
+                        size_t szDimStr = 32;
+                        
+                        /* the segment is defined in this series, AND a segment struct DOES exist for this record (or linked record) */
                         /* a record does not always have a segment */
-                    
+
+                        /* name */
+                        jsonVal = createJsonStringVal(segTemplate->info->name);
+                        json_insert_pair_into_object(segObj, "name", jsonVal);
+                        jsonVal = NULL;                        
+                        
                         /* path */
-                        drms_record_directory(rec, recordDir, 0);
+                        drms_record_directory(seg->record, recordDir, 0);
                         if (!*recordDir)
                         {
                             snprintf(path, sizeof(path), "NoDataDirectory");
@@ -3239,20 +3250,25 @@ int DoIt(void)
                     
                         /* dims */
                         dims[0] = '\0';
+                        dimStr = calloc(1, szDimStr);
+                        JSOC_INFO_ASSERT(dimStr, "out of memory");
+                        
                         for (iaxis = 0; iaxis < seg->info->naxis; iaxis++)
                         {
-                            if (iaxis == 0)
+                            snprintf(dims, sizeof(dims), "%d", seg->axis[iaxis]);
+
+                            if (iaxis != 0)
                             {
-                                snprintf(dims, sizeof(dims), "%d", seg->axis[iaxis]);
+                                dimStr = base_strcatalloc(dimStr, "x", &szDimStr);
                             }
-                            else
-                            {
-                                snprintf(dims, sizeof(dims), "x%d", seg->axis[iaxis]);
-                            }
+                            
+                            dimStr = base_strcatalloc(dimStr, dims, &szDimStr);
                         }
 
-                        jsonVal = createJsonStringVal(dims);
+                        jsonVal = createJsonStringVal(dimStr);
                         json_insert_pair_into_object(segObj, "dims", jsonVal);
+                        free(dimStr);
+                        dimStr = NULL;
                     
                         /* cparms */
                         if (seg->cparms && strlen(seg->cparms))
@@ -3437,35 +3453,55 @@ int DoIt(void)
                     }
                     else
                     {
+                        /* the segment is defined in this series, BUT a segment struct does NOT exist for this record because: 
+                         * 1. the record-set spec had curly braces and although the segment does exist in the series, the {} filtered it out;
+                         * OR
+                         * 2. the linked record was not successfully resolved */
+
                         /* could not find segment struct (followLinks is true) */
                         DRMS_Segment_t *testSeg = NULL;
                     
-                        /* could be a invalid segment name, or could be missing target record (we followed any link) */                
+                        /* could be missing target record (we followed tried following links); since we know that this segment is
+                         * valid, we must find the segment struct in the parent series, unless #1 above is true */
                         testSeg = hcon_lookup_lower(&rec->segments, segTemplate->info->name);
-                        
-                        jsonVal = createJsonStringVal(segTemplate->info->name);
-                        json_insert_pair_into_object(segObj, "name", jsonVal);
-                        jsonVal = NULL;
-                
-                        if (testSeg && testSeg->info->islink)
+
+                        if (testSeg)
                         {
+                            /* #2 above */
+                            jsonVal = createJsonStringVal(segTemplate->info->name);
+                            json_insert_pair_into_object(segObj, "name", jsonVal);
+                            
                             jsonVal = createJsonStringVal("BadSegLink");
                             json_insert_pair_into_object(segObj, "path", jsonVal);
+
                             jsonVal = NULL;
                         }
                         else
                         {
-                            /* either a bad seg name, or not a linked seg (and we could not obtain seg struct) */
+                            /* #1 above */
+                            if (!allSegs)
+                            {
+                                /* the user specified a segment in the seglist that IS part of the series, but it is NOT 
+                                 * in the curly braces clause */
+                                jsonVal = createJsonStringVal(segTemplate->info->name);
+                                json_insert_pair_into_object(segObj, "name", jsonVal);
+
+                                jsonVal = createJsonStringVal(INVALID_SEG);
+                                json_insert_pair_into_object(segObj, "path", jsonVal);
+                                
+                                jsonVal = createJsonStringVal("NA");
+                                json_insert_pair_into_object(segObj, "dims", jsonVal);
+                                jsonVal = NULL;                 
+                            }
                         }
-                        
-                        jsonVal = json_new_true();
-                        JSOC_INFO_ASSERT(jsonVal, "out of memory");
-                        json_insert_pair_into_object(segObj, INVALID, jsonVal);
-                        jsonVal = NULL;
                     }
                 }
                 
-                json_insert_child(segmentArray, segObj);
+                if (segObj->child)
+                {
+                    /* segment object is not empty */
+                    json_insert_child(segmentArray, segObj);
+                }
             }
         }
         else
@@ -3567,18 +3603,22 @@ int DoIt(void)
                 }
               }
             else
-              {
-              char *nosegmsg = "InvalidSegName";
-              DRMS_Segment_t *segment = hcon_lookup_lower(&rec->segments, segs[iseg]);
-              if (segment && segment->info->islink)
-                nosegmsg = "BadSegLink";
-              jsonpath = string_to_json(nosegmsg);
-              json_insert_child(thissegval, json_new_string(jsonpath));
-              free(jsonpath);
-              jsondims = string_to_json("NA");
-              json_insert_child(thissegdim, json_new_string(jsondims));
-              free(jsondims);
-              }
+            {
+                if (!allSegs)
+                {
+                    char *nosegmsg = INVALID_SEG;
+
+                    DRMS_Segment_t *segment = hcon_lookup_lower(&rec->segments, segs[iseg]);
+                    if (segment && segment->info->islink)
+                    nosegmsg = "BadSegLink";
+                    jsonpath = string_to_json(nosegmsg);
+                    json_insert_child(thissegval, json_new_string(jsonpath));
+                    free(jsonpath);
+                    jsondims = string_to_json("NA");
+                    json_insert_child(thissegdim, json_new_string(jsondims));
+                    free(jsondims);
+                }
+            }
             }
         }
 
@@ -3613,9 +3653,9 @@ int DoIt(void)
                 {
                     badLink = 1;
                     
-                    if (linkTemplate && linkTemplate->info && *((char *)(linkTemplate->info)) != '\0')
+                    if (linkTemplate && linkTemplate->info && *(linkTemplate->info->name) != '\0')
                     {
-                        valOut = (char *)(linkTemplate->info); /* yoink! */
+                        valOut = linkTemplate->info->name;
                     }
                     else
                     {
@@ -3861,15 +3901,19 @@ int DoIt(void)
 
           for (iseg=0; iseg<nsegs; iseg++) 
             {
-            json_t *segname = json_new_string(segs[iseg]); 
-            json_t *segobj = json_new_object();
-            json_insert_pair_into_object(segobj, "name", segname);
-            json_insert_pair_into_object(segobj, "values", segvals[iseg]);
-            json_insert_pair_into_object(segobj, "dims", segdims[iseg]);
-            json_insert_pair_into_object(segobj, "cparms", segcparms[iseg]);
-            json_insert_pair_into_object(segobj, "bzeros", segbzeros[iseg]);
-            json_insert_pair_into_object(segobj, "bscales", segbscales[iseg]);
-            json_insert_child(json_segments, segobj);
+                /* do not insert invalid segs if allSegs == 1 */
+                if (!allSegs || segvals[iseg]->child || segdims[iseg]->child || segcparms[iseg]->child || segbzeros[iseg]->child || segbscales[iseg]->child)
+                {
+                    json_t *segname = json_new_string(segs[iseg]); 
+                    json_t *segobj = json_new_object();
+                    json_insert_pair_into_object(segobj, "name", segname);
+                    json_insert_pair_into_object(segobj, "values", segvals[iseg]);
+                    json_insert_pair_into_object(segobj, "dims", segdims[iseg]);
+                    json_insert_pair_into_object(segobj, "cparms", segcparms[iseg]);
+                    json_insert_pair_into_object(segobj, "bzeros", segbzeros[iseg]);
+                    json_insert_pair_into_object(segobj, "bscales", segbscales[iseg]);
+                    json_insert_child(json_segments, segobj);
+                }
             }
 
           json_insert_pair_into_object(jroot, "segments", json_segments);
