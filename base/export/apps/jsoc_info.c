@@ -1875,6 +1875,50 @@ static int SetWebArg(Q_ENTRY *req, const char *key, char **arglist, size_t *size
     return(0);
 }
 
+static long long GetSegFileSize(DRMS_Record_t *rec, const char *segment)
+{
+    char size[64];
+    struct stat statBuf;
+    char *segFilePath = NULL;
+    size_t szPath = DRMS_MAXPATHLEN;
+    long long numBytes = -1;
+    DRMS_Segment_t *seg = NULL;
+    
+    segFilePath = calloc(1, szPath);
+    if (segFilePath)
+    {
+        /* follows links */
+        seg = drms_segment_lookup(rec, segment);
+        if (seg && seg->record)
+        {
+            /* make seg file path - use the parent record of seg (links may have been followed) */
+            drms_record_directory(seg->record, segFilePath, 0);
+
+            if (*segFilePath)
+            {
+                segFilePath = base_strcatalloc(segFilePath, "/", &szPath);
+                segFilePath = base_strcatalloc(segFilePath, seg->filename, &szPath);
+
+                if (stat(segFilePath, &statBuf) == 0)
+                {
+                    if (numBytes == -1)
+                    {
+                        numBytes++;
+                    }
+    
+                    /* online */
+                    numBytes += statBuf.st_size;
+                }
+            }
+        }
+
+        free(segFilePath);
+        segFilePath = NULL;
+    }
+    
+    return numBytes;
+}
+
 /* Module main function. */
 int DoIt(void)
   {
@@ -2965,62 +3009,50 @@ int DoIt(void)
         {
             char size[64];
             struct stat statBuf;
-            char *segFilePath = NULL;
-            size_t szPath = DRMS_MAXPATHLEN;
             SUM_info_t *sinfo = NULL;
             long long numBytes = -1;
+            long long numSubBytes = 0;
             DRMS_Segment_t *seg = NULL;
 
             /* first, let's see if the segment-file is online; if so, use the size as returned by stat() */
-            segFilePath = calloc(1, szPath);
-
-            if (segFilePath)
+            if (segs_listed)
             {
                 for (iseg = 0; iseg < nsegs; iseg++)
                 {
-                    /* if no segs were specified, we have to still iterate through all segments, and not use suinfo, 
-                     * because due to links, we don't know which record will contain the user-specified segments */
-
-                    /* follows links */
-                    seg = drms_segment_lookup(rec, segs[iseg]); 
-                    if (seg && seg->record)
+                    numSubBytes = GetSegFileSize(rec, segs[iseg]);
+                    if (numSubBytes > 0)
                     {
-                        /* make seg file path - use the parent record of seg (links may have been followed) */
-                        drms_record_directory(seg->record, segFilePath, 0);
-        
-                        if (*segFilePath)
-                        {
-                            segFilePath = base_strcatalloc(segFilePath, "/", &szPath);
-                            segFilePath = base_strcatalloc(segFilePath, seg->filename, &szPath);
-                
-                            if (stat(segFilePath, &statBuf) == 0)
-                            {
-                                if (numBytes == -1)
-                                {
-                                    numBytes++;
-                                }
-                    
-                                /* online */
-                                numBytes += statBuf.st_size;
-                            }
-                        }
+                        numBytes += numSubBytes;
                     }
                 }
-            
-                if (numBytes != -1)
+            }
+            else
+            {
+                last = NULL;
+                while ((seg = drms_record_nextseg(rec, &last, 1)) != NULL) /* follows links */
                 {
-                    long long numBytesLL = numBytes;
-                    snprintf(size, sizeof(size), "%lld", numBytesLL);
-                    val = json_new_string(size);
+                    numSubBytes = GetSegFileSize(rec, seg->info->name);
+                    if (numSubBytes > 0)
+                    {
+                        numBytes += numSubBytes;
+                    }
                 }
                 
-                free(segFilePath);
-                segFilePath = NULL;
+                if (last)
+                {
+                    hiter_destroy(&last);
+                }
             }
 
             if (numBytes == -1)
             {
                 val = json_new_string("NA");
+            }
+            else
+            {
+                long long numBytesLL = numBytes;
+                snprintf(size, sizeof(size), "%lld", numBytesLL);
+                val = json_new_string(size);
             }
         }
             else if (strcmp(keys[ikey],"*online*") == 0)
