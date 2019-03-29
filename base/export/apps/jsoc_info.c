@@ -2658,68 +2658,94 @@ int DoIt(void)
                 DRMS_Segment_t *segTemplate = NULL;
                 DRMS_Segment_t *seg = NULL;
 
-                if (reqSegs && list_llgetnitems(reqSegs) > 0)
+                if (segs_listed)
                 {
-                    /* first, let's see if the segment-file is online; if so, use the size as returned by stat() */
-                    segFilePath = calloc(1, szPath);
-
-                    if (segFilePath)
+                    if (reqSegs && list_llgetnitems(reqSegs) > 0)
                     {
-                        list_llreset(reqSegs);
+                        /* first, let's see if the segment-file is online; if so, use the size as returned by stat() */
+                        segFilePath = calloc(1, szPath);
 
-                        while ((lnSeg = list_llnext(reqSegs)) != NULL)
+                        if (segFilePath)
                         {
-                            segTemplate = *((DRMS_Segment_t **)(lnSeg->data));
-                            seg = drms_segment_lookup(rec, segTemplate->info->name);
-                            
-                            if (seg && seg->record)
+                            list_llreset(reqSegs);
+
+                            while ((lnSeg = list_llnext(reqSegs)) != NULL)
                             {
-                                /* make seg file path - use the parent record of seg (links may have been followed) */
-                                drms_record_directory(seg->record, segFilePath, 0);
-            
-                                if (*segFilePath)
+                                segTemplate = *((DRMS_Segment_t **)(lnSeg->data));
+                                seg = drms_segment_lookup(rec, segTemplate->info->name);
+                            
+                                if (seg && seg->record)
                                 {
-                                    segFilePath = base_strcatalloc(segFilePath, "/", &szPath);
-                                    segFilePath = base_strcatalloc(segFilePath, seg->filename, &szPath);
-                    
-                                    if (stat(segFilePath, &statBuf) == 0)
+                                    /* make seg file path - use the parent record of seg (links may have been followed) */
+                                    drms_record_directory(seg->record, segFilePath, 0);
+            
+                                    if (*segFilePath)
                                     {
-                                        if (numBytes == -1)
+                                        segFilePath = base_strcatalloc(segFilePath, "/", &szPath);
+                                        segFilePath = base_strcatalloc(segFilePath, seg->filename, &szPath);
+                    
+                                        if (stat(segFilePath, &statBuf) == 0)
                                         {
-                                            numBytes++;
-                                        }
+                                            if (numBytes == -1)
+                                            {
+                                                numBytes++;
+                                            }
                         
-                                        /* online */
-                                        numBytes += statBuf.st_size;
+                                            /* online */
+                                            numBytes += statBuf.st_size;
+                                        }
                                     }
                                 }
                             }
-                        }
                 
-                        if (numBytes != -1)
-                        {
-                            long long numBytesLL = numBytes;
-                            snprintf(size, sizeof(size), "%lld", numBytesLL);
-                            jsonVal = json_new_number(size);
-                            JSOC_INFO_ASSERT(jsonVal, "out of memory");
-                        }
+                            if (numBytes != -1)
+                            {
+                                long long numBytesLL = numBytes;
+                                snprintf(size, sizeof(size), "%lld", numBytesLL);
+                                jsonVal = json_new_number(size);
+                                JSOC_INFO_ASSERT(jsonVal, "out of memory");
+                            }
                     
-                        free(segFilePath);
-                        segFilePath = NULL;
+                            free(segFilePath);
+                            segFilePath = NULL;
+                        }
                     }
                 }
                 else
                 {
-                    /* no segs listed; just use the entire SU size */
-                    sinfo = rec->suinfo;
+                    /* no segs listed - use all segs in record */
+                    long long numSubBytes = 0;
 
-                    if (sinfo)
+                    last = NULL;
+                    while ((seg = drms_record_nextseg(rec, &last, 1)) != NULL) /* follows links */
                     {
-                        numBytes++;
-                        snprintf(size, sizeof(size), "%.0f", sinfo->bytes);
-                        jsonVal = json_new_number(size);
-                        JSOC_INFO_ASSERT(jsonVal, "out of memory");
-                    }   
+                        numSubBytes = GetSegFileSize(rec, seg->info->name);
+                        if (numSubBytes > 0)
+                        {
+                            if (numBytes == -1)
+                            {
+                                numBytes++;
+                            }
+
+                            numBytes += numSubBytes;
+                        }
+                    }
+                
+                    if (last)
+                    {
+                        hiter_destroy(&last);
+                    }
+                }
+
+                if (numBytes == -1)
+                {
+                    jsonVal = json_new_string("NA");
+                }
+                else
+                {
+                    long long numBytesLL = numBytes;
+                    snprintf(size, sizeof(size), "%lld", numBytesLL);
+                    jsonVal = json_new_string(size);
                 }
 
                 if (numBytes == -1)
