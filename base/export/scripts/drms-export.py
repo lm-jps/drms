@@ -339,9 +339,13 @@ try:
                     filename = DUMMY_FITS_FILE_NAME
                     
             if not htmlHeaderPrinted:
-                # force alphanumeric (plus '_')
-                filename = re.sub(r'[^a-zA-Z0-9_]', '_', filename)
-                
+                # force alphanumeric (plus '_'), preserving the file extension
+                matches = re.search(r'(^.+)[.]([^.]+$)', filename)
+                if matches is not None:
+                    base = matches.group(1)
+                    extension = matches.group(2)
+                    filename = re.sub(r'[^a-zA-Z0-9_]', '_', base) + '.' + extension
+
                 if debug:
                     print('file dumped ' + filename, file=sys.stderr)
 
@@ -350,7 +354,7 @@ try:
                 sys.stdout.buffer.write(b'Content-Disposition: attachment; filename="' + filename.encode() + b'"\n')
                 sys.stdout.buffer.write(b'Content-transfer-encoding: binary\n\n')
                 htmlHeaderPrinted = True;
-                
+
             pipeBytes = proc.stdout.read(4096)
             if len(pipeBytes) > 0:
                 # binary data (could be a FITS file for a tar file)                    
