@@ -309,6 +309,9 @@ SUMS_USEMTSUMS_ALL                    0
 SUMSD_MAX_THREADS                    32
 # The port to be used by the MT SUMS daemon for incoming requests.
 SUMSD_LISTENPORT                   6002
+
+# The amount of time, in minutes, sumsd.py will wait for a client response; after this interval elapses without a client resopnse sumsd.py will destroy the client connection
+SUMS_MT_CLIENT_RESP_TIMEOUT        1440
 ############ END MT SUMS ############
 
 # The Slony server configure file. This is used only if you are generating Slony logs to distribute DRMS series data
