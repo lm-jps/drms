@@ -864,7 +864,7 @@ class Connection(object):
 
         # time-out time
         timeStart = datetime.now()
-        timeOutTime = timeStart + timedelta(seconds=15) # the entire request bails out
+        timeOutTime = timeStart + timedelta(seconds=30) # the entire request bails out
 
         while bytesReceivedTotal < ServerRequest.MSGLEN_NUMBYTES:
             if datetime.now() > timeOutTime:
