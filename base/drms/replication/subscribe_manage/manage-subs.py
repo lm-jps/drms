@@ -252,11 +252,11 @@ BEGIN
         END IF;
 
         SELECT timecol, timewindow INTO time_col, time_window FROM drms.capturesunum_series WHERE series = TG_TABLE_SCHEMA || '.' || TG_TABLE_NAME;
+        
         IF FOUND THEN
-          EXECUTE format('SELECT ($1).%s::text', time_col)
-          USING NEW
+          -- EXECUTE format('SELECT ($1).%s::text', time_col)
+          EXECUTE 'SELECT cast(NEW.' || time_col || ' as double precision)'
           INTO time_val;
-
           -- time_val is the value of the time-column property in NEW
           
           IF time_col = 't_rec' OR time_col = 't_obs' THEN
@@ -1227,7 +1227,7 @@ class Worker(threading.Thread):
         except ValueError as exc:
             # Popen() and check_call() will raise this exception if arguments are bad.
             errorMsg = 'Command called with invalid arguments: ' + ' '.join(cmdList) + '.'
-            self.log.writeError([ errMsg ])
+            self.log.writeError([ errorMsg ])
         except FileNotFoundError as exc:
             import traceback
             
@@ -1474,42 +1474,43 @@ class Worker(threading.Thread):
     # all changes to request statuses are made within a single transaction, regardless of the thread
     # that the change is initiated from
     # MUST BE HOLDING REQUEST TABLE LOCK
-    def checkClientStatus(self, fileNoIngested, nextFileIsReadyForDownload, ilogger):
+    def checkClientStatus(self, fileNoIngested, nextFileIsReadyForDownload):
         code, msg = self.request.getStatus()
+        logMsg = None
 
         if code.upper() == 'E':
             raise Exception('clientSignalledError', self.client + ' cancelling request')
         elif code.upper() == 'D':
             if fileNoIngested is None:
-                ilogger.writeDebug([ 'waiting for client ' + self.client + ' to download DDL dump file (request ' + str(self.requestID) + '); status ' + code.upper()] )
+                logMsg = 'waiting for client ' + self.client + ' to download DDL dump file (request ' + str(self.requestID) + '); status ' + code.upper()
             else:
-                ilogger.writeDebug([ 'waiting for client ' + self.client + ' to download DML dump file ' + str(fileNoIngested + 1) + ' (request ' + str(self.requestID) + '); status ' + code.upper() ])
-            ilogger.updateLastWriteTime()
+                logMsg = 'waiting for client ' + self.client + ' to download DML dump file ' + str(fileNoIngested + 1) + ' (request ' + str(self.requestID) + '); status ' + code.upper()
         elif code.upper() == 'A':
             if fileNoIngested is None:
-                ilogger.writeDebug([ 'waiting for client ' + self.client + ' to ingest DDL dump file (request ' + str(self.requestID) + '); status ' + code.upper() ])
+                logMsg = 'waiting for client ' + self.client + ' to ingest DDL dump file (request ' + str(self.requestID) + '); status ' + code.upper()
             else:
-                ilogger.writeDebug([ 'waiting for client ' + self.client + ' to ingest DML dump file ' + str(fileNoIngested + 1) + ' (request ' + str(self.requestID) + '); status ' + code.upper() ])
-            ilogger.updateLastWriteTime()
+                logMsg = 'waiting for client ' + self.client + ' to ingest DML dump file ' + str(fileNoIngested + 1) + ' (request ' + str(self.requestID) + '); status ' + code.upper()
         elif code.upper() == 'I':
-            if nextFileIsReadyForDownload:
-                if fileNoIngested is None:
-                    self.log.writeDebug([ 'client ' + self.client + ' has signaled that they have successfully ingested DDL dump file (request ' + str(self.requestID) + '); status ' + code.upper() ])
+            if fileNoIngested is None:
+                logMsg = 'client ' + self.client + ' has signaled that they have successfully ingested DDL dump file (request ' + str(self.requestID) + '); status ' + code.upper()
+                if nextFileIsReadyForDownload:
                     fileNoIngested = 0
-                else:
-                    self.log.writeDebug([ 'client ' + self.client + ' has signaled that they have successfully ingested DML dump file number ' + str(fileNoIngested + 1) + ' (request ' + str(self.requestID) + '); status ' + code.upper() ])
+            else:
+                logMsg = 'client ' + self.client + ' has signaled that they have successfully ingested DML dump file number ' + str(fileNoIngested + 1) + ' (request ' + str(self.requestID) + '); status ' + code.upper()
+                if nextFileIsReadyForDownload:
                     fileNoIngested += 1
 
+            if nextFileIsReadyForDownload:
                 outFile = os.path.join(self.dumpDir, self.client + '.subscribe_series.sql.gz')
                 if os.path.exists(outFile):
                     # clean up current dump file
                     os.remove(outFile)
-                
-                nextFileIsReadyForDownload = False   
+            
+                nextFileIsReadyForDownload = False
         else:
             raise Exception('invalidReqStatus', 'unexpected request status ' + code.upper())
                 
-        return (fileNoIngested, nextFileIsReadyForDownload, code.upper())
+        return (fileNoIngested, nextFileIsReadyForDownload, code.upper(), logMsg)
     
     # in worker thread
     def initializeSubscription(self):
@@ -1529,26 +1530,32 @@ class Worker(threading.Thread):
             fileNo = 0 # 0-based number of file generated at server
             fileNoIngested = None # the last file ingested at the client (None means no file has been ingested)
             nextFileIsReadyForDownload = True # set to true when we have the next file created and ready for client download
-            limit = 10000000 # 10 million rows at a time (for aia.lev1, this should be a little over 20GB).
+            limit = 3221225472 # 3 GB of compressed data
             makeNewFile = True
             fileDone = False
             tableDone = False
-            ilogger = None
             fout = None
             offset = 0
             clientHappy = False
             maxLoop = 172800 # 48-hour timeout
             loggingDone = False
-            finalLoopStartTime = None
-            finalLoopIter = None
+            fin = None
+            chunkGen = None
+            ddlFile = None
+            ddlFileCreated = False
+            dumpLoopIter = 0
+            doClientCheck = True
 
             proc.start()
             self.log.writeInfo([ 'successfully forked child process' ])
             os.close(pipeWrite) # the parent process will be reading only            
-            fin = os.fdopen(pipeRead, 'rb')
 
             # log all messages generated by the child
+            dataBuf = bytearray(b'')
             while True:
+                if dumpLoopIter % 8192 == 0:
+                    doClientCheck = True
+            
                 # check for shutdown each iteration
                 if self.sdEvent.isSet():
                     # stop child process
@@ -1556,39 +1563,52 @@ class Worker(threading.Thread):
                                      # release lock, if held, before exiting
                     raise Exception('shutDown', 'received shut-down message from main thread')
 
-                if fileNoIngested is None:
+                if not ddlFileCreated:
                     # move the DDL file into place and set status
-                    ddlFile = os.path.join(self.dumpDir, self.client + '.subscribe_series.ddl.sql.gz')
+                    if not ddlFile:
+                        ddlFile = os.path.join(self.dumpDir, self.client + '.subscribe_series.ddl.sql.gz')
                     
                     if os.path.exists(ddlFile):
                         self.reqTable.acquireLock()
                         try:
                             destFile = os.path.join(self.dumpDir, self.client + '.subscribe_series.sql.gz')
                             shutil.move(ddlFile, destFile)
+                            logQueue.put([ 'debug', 'successfully moved DDL dump file to ' + destFile ])
 
                             # tell client that the DDL file is ready for download
                             self.request.setStatus('D')
+                            
+                            fin = os.fdopen(pipeRead, 'rb')
+                            chunkGen = Worker.__readDumpChunk(file=fin, chunksize=16384) # 16 KB
+                            
+                            ddlFileCreated = True
                         finally:
                             self.reqTable.releaseLock()
+                    else:
+                        # waiting for child to finish creating the DDL file
+                        time.sleep(0.5)
 
                 if fin is not None:
                     try:
-                        # each iteration, read a line from the dump pipe that the child is writing to
-                        # fin is a binary file that contains utf8 bytes
-                        line = fin.readline()
-
-                        if len(line) == 0:
-                            self.log.writeDebug([ 'read last line of COPY TO dump file' ])
+                        # each iteration, read a chunk of data from the dump pipe that the child is writing to
+                        # fin is a binary file that contains utf8 bytes                        
+                        try:
+                            # this is an array containing [ <total number of bytes read>, <bytearray 1 of data>, [ <bytearray 2 of data> ] ] 
+                            dataChunk = next(chunkGen)
+                        except StopIteration:
+                            logQueue.put([ 'debug', 'read last line of COPY TO dump file' ])
                             tableDone = True
                             fileDone = True
 
                         if not makeNewFile and fileDone:
                             # send an EOF to the COPY command
-                            fout.write(b'\.\n')
-                            fout.write(b'COMMIT;\n')
+                            dataBuf.extend(b'\.\n' + b'COMMIT;\n')
+                            fout.write(bytes(dataBuf))
+                            dataBuf = bytearray(b'')
                             fout.flush()
                             fout.close()
-                            self.log.writeInfo([ 'successfully completed dump file ' + str(fileNo) + ' (' + outFile + ')' ])
+                            fout = None
+                            logQueue.put([ 'info', 'successfully completed dump file ' + str(fileNo) + ' (' + outFile + ')' ])
 
                         if tableDone:
                             raise Exception('dumpDone')
@@ -1601,57 +1621,62 @@ class Worker(threading.Thread):
                             fileDone = False
                             fileNo += 1
         
-                            self.log.writeInfo([ 'generating DML dump file ' + str(fileNo) ])
-                            offset = 0 # into the dumpFile
-                            ilogger = IntervalLogger(self.log, timedelta(seconds=0))
+                            logQueue.put([ 'info', 'generating DML dump file ' + str(fileNo) ])
+                            offset = 0 # byte offset into the dumpFile
                             outFile = os.path.join(self.dumpDir, self.client + '.subscribe_series.dml' + str(fileNo).zfill(3) + '.sql.gz')
     
                             # although we are opening a binary file, the output from TableDumper is text, where UTF8 chars are encoded 
                             # as octal strings; so the file is all ASCII and we could have opened a text file
                             fout = gzip.open(outFile, mode='wb', compresslevel=5)
-                            fout.write(b'BEGIN;\n')
-                            fout.write(b"SET CLIENT_ENCODING TO 'UTF8';\n") 
-                            fout.flush()
-
+                            
+                            dataBuf.extend(b'BEGIN;\n' + b"SET CLIENT_ENCODING TO 'UTF8';\n")
                             # encode() will convert a unicode string to a UTF8 byte array
-                            fout.write(b'COPY ' + self.series[0].lower().encode() + ' ('.encode() + ','.join(self.columns).encode() + ') FROM STDIN;\n'.encode())
-                            fout.flush()
+                            dataBuf.extend(b'COPY ' + self.series[0].lower().encode() + ' ('.encode() + ','.join(self.columns).encode() + ') FROM STDIN;\n'.encode())
         
-                            self.log.writeDebug([ 'created new dump file ' +  outFile ])
+                            logQueue.put([ 'debug', 'created new dump file ' +  outFile ])
 
-                        # these lines are all UTF8 bytes
-                        fout.write(line)
-                        offset += 1
-
+                        # these data are all UTF8 bytes; we are writing to a compressed file so write a lot of data at once
+                        dataBuf.extend(dataChunk[1])
+                        dataBuf.extend(dataChunk[2])
+                        offset += dataChunk[0]
+                        
+                        dataChunk[1] = None
+                        dataChunk[2] = None
+                        dataChunk = None
                         # if offset >= limit, then we start a new dump file
-                        if offset % 4096 == 0 or offset >= limit:
-                            self.log.writeDebug([ 'time to check client status and check for completed dump file generation' ])
-                            # dumping an entire table could take a while; check for client-side error between db fetches
-                            # (each fetch is for 4096 rows, currently); also, check for client ready for next file
-                            fileDone = offset >= limit
+                        fileDone = offset >= limit
+                        if fileDone:
+                            doClientCheck = True
 
+                        if doClientCheck:
+                            doClientCheck = False
+
+                            # dumping an entire table could take a while; check for client-side error every N number of loop iterations
                             self.reqTable.acquireLock()
                             try:
-                                self.log.writeDebug([ 'checking client DL/ingestion status' ])
-
-                                (fileNoIngested, nextFileIsReadyForDownload, status) = self.checkClientStatus(fileNoIngested, nextFileIsReadyForDownload, ilogger)
+                                logQueue.put([ 'debug', 'checking client DL/ingestion status' ])
+                                (fileNoIngested, nextFileIsReadyForDownload, status, logMsg) = self.checkClientStatus(fileNoIngested, nextFileIsReadyForDownload)
+                                logQueue.put([ 'debug', logMsg ])
                                 if status == 'I':
+                                    logQueue.put([ 'debug', 'client is ready for next DML file' ])
                                     if fileNo - 1 > fileNoIngested:
+                                        logQueue.put([ 'debug', 'and the next DML file is ready for download' ])
                                         # fileNo is the file being currently generated; fileNo - 1 is the last one generated;
                                         # tell client another file is ready for download
-                
+        
                                         # rename file to name client looks for
                                         outFile = os.path.join(self.dumpDir, self.client + '.subscribe_series.dml' + str(fileNoIngested + 1).zfill(3) + '.sql.gz')
                                         destFile = os.path.join(self.dumpDir, self.client + '.subscribe_series.sql.gz')
                                         shutil.move(outFile, destFile)
-                
+                                        logQueue.put([ 'debug', 'successfully moved DML to ' + destFile ])
+        
                                         # Set request status to 'D' to indicate, to client, that a dump is ready for
                                         # download and ingestion. The client could have sent either a polldump request (for the first
                                         # dump file) or a pollcomplete request (for all subsequent dump files). Both of those requests
                                         # should handle a 'D' status. If the client makes a pollcomplete request, and the client
                                         # sees a 'D' status, then it should go back to the code where it sets the status to 'A' and
                                         # ingests the dump file, then sets status to 'I'.
-                                
+                        
                                         # it is OK to set the status outside of the child-process transaction; the checking and
                                         # setting of the request status can happen asynchronously because the child-process
                                         # transaction does not depend on the status; if an error does occur in the child or the client 
@@ -1659,6 +1684,8 @@ class Worker(threading.Thread):
                                         self.request.setStatus('D')
                                         nextFileIsReadyForDownload = True
                                         logQueue.put([ 'info', 'notified client ' + self.client + ' that dump file ' + outFile + ' is ready for download' ])
+                                    else:
+                                        logQueue.put([ 'debug', 'but next DML file is currently being dumped' ])
                             except shutil.Error as exc:
                                 import traceback
                                 logQueue.put([ 'error', traceback.format_exc(5) ])
@@ -1675,65 +1702,66 @@ class Worker(threading.Thread):
                             # and we also check for client feedback (error, done downloading or ingesting previous dump file
                     except Exception as exc:
                         if len(exc.args) > 0 and exc.args[0] == 'dumpDone':
-                            self.log.writeDebug([ 'no more rows to dump' ])
+                            logQueue.put([ 'debug', 'no more rows to dump' ])
                             fin.close() # do not close contained pipe fd now
                             fin = None
                 
-                            self.log.writeDebug([ 'entering loop that checks for completion of all downloads by client' ])
+                            logQueue.put([ 'debug', 'entering loop that checks for completion of all downloads by client' ])
                             # all dump files have been created; as client ingests each one, remove it and move on to
                             # the next one
-                            
-                            ilogger = IntervalLogger(self.log, timedelta(seconds=15))
-                            
-                            # set timer so that the final loop executes once a second
-                            finalLoopStartTime = datetime.now(timezone.utc)
-                            finalLoopIter = 0
                         else:
                             raise
-                elif not clientHappy:
+                elif ddlFileCreated and not clientHappy:
                     # the child process closed the dump pipe
-
-                    # check at most once a second
-                    if datetime.now(timezone.utc) > finalLoopStartTime + timedelta(seconds=finalLoopIter):
-                        if maxLoop <= 0:
-                            raise Exception('sqlAck', 'time-out waiting for client to ingest dump file')
+                    if maxLoop <= 0:
+                        raise Exception('sqlAck', 'time-out waiting for client to ingest dump file')
                     
-                        self.reqTable.acquireLock()
-                        try:
-                            (fileNoIngested, nextFileIsReadyForDownload, status) = self.checkClientStatus(fileNoIngested, nextFileIsReadyForDownload, ilogger)
-                            if status == 'I':                                    
-                                if fileNoIngested == fileNo:
-                                    # no more files to download; the calling function will set status to 'C'
-                                    clientHappy = True
-                                elif fileNo > fileNoIngested:
-                                    # fileNo is the last file generated; tell client the next file is ready for download
-            
-                                    # rename file to name client looks for
-                                    outFile = os.path.join(self.dumpDir, self.client + '.subscribe_series.dml' + str(fileNoIngested + 1).zfill(3) + '.sql.gz')
-                                    destFile = os.path.join(self.dumpDir, self.client + '.subscribe_series.sql.gz')
-                                    shutil.move(outFile, destFile)
-            
-                                    # Set request status to 'D' to indicate, to client, that a dump is ready for
-                                    # download and ingestion. The client could have sent either a polldump request (for the first
-                                    # dump file) or a pollcomplete request (for all subsequent dump files). Both of those requests
-                                    # should handle a 'D' status. If the client makes a pollcomplete request, and the client
-                                    # sees a 'D' status, then it should go back to the code where it sets the status to 'A' and
-                                    # ingests the dump file, then sets status to 'I'.
-                                    self.request.setStatus('D')
-                                    nextFileIsReadyForDownload = True
-                                    self.log.writeInfo([ 'notified client ' + self.client + ' that dump file ' + outFile + ' is ready for download' ])
-                                else:
-                                    # error (can't have ingested more file than were created)
-                                    raise Exception('sqlDump', 'cannot ingest more files than were created')
-                        except shutil.Error as exc:
-                            import traceback
-                            self.log.writeDebug([ traceback.format_exc(8) ])
-                            raise Exception('fileIO', 'unable to rename ' + outFile + ' to ' + destFile)                                        
-                        finally:
-                            self.reqTable.releaseLock()
+                    logQueue.put([ 'debug', '[ final subscription loop ] checking client DL/ingestion status' ])
+                    self.reqTable.acquireLock()
+                    try:
+                        (fileNoIngested, nextFileIsReadyForDownload, status, logMsg) = self.checkClientStatus(fileNoIngested, nextFileIsReadyForDownload)
+                        logQueue.put([ 'debug', '[ final subscription loop ]' + logMsg ])
+                        if status == 'I':
+                            logQueue.put([ 'debug', '[ final subscription loop ] client is ready for next DML file' ])
+                            if fileNoIngested == fileNo:
+                                logQueue.put([ 'debug', 'but there are no more DML files to download; done' ])
+                                # no more files to download; the calling function will set status to 'C'
+                                clientHappy = True
+                                # this will cause the loop reading the logQueue to terminate
+                                logQueue.put([ None, None ])
+                            elif fileNo > fileNoIngested:
+                                logQueue.put([ 'debug', 'and the next DML file is ready for download' ])
+                                # fileNo is the last file generated; tell client the next file is ready for download
+        
+                                # rename file to name client looks for
+                                outFile = os.path.join(self.dumpDir, self.client + '.subscribe_series.dml' + str(fileNoIngested + 1).zfill(3) + '.sql.gz')
+                                destFile = os.path.join(self.dumpDir, self.client + '.subscribe_series.sql.gz')
+                                shutil.move(outFile, destFile)
+                                logQueue.put([ 'debug', 'successfully moved DML to ' + destFile ])
+        
+                                # Set request status to 'D' to indicate, to client, that a dump is ready for
+                                # download and ingestion. The client could have sent either a polldump request (for the first
+                                # dump file) or a pollcomplete request (for all subsequent dump files). Both of those requests
+                                # should handle a 'D' status. If the client makes a pollcomplete request, and the client
+                                # sees a 'D' status, then it should go back to the code where it sets the status to 'A' and
+                                # ingests the dump file, then sets status to 'I'.
+                                self.request.setStatus('D')
+                                nextFileIsReadyForDownload = True
+                                logQueue.put([ 'info', 'notified client ' + self.client + ' that dump file ' + outFile + ' is ready for download' ])
+                            else:
+                                # error (can't have ingested more files than were created)
+                                raise Exception('sqlDump', 'cannot ingest more files than were created')
+                    except shutil.Error as exc:
+                        import traceback
+                        logQueue.put([ 'debug', traceback.format_exc(8) ])
+                        raise Exception('fileIO', 'unable to rename ' + outFile + ' to ' + destFile)                                        
+                    finally:
+                        self.reqTable.releaseLock()
 
-                        maxLoop -= 1
-                        finalLoopIter += 1
+                    maxLoop -= 1
+                    
+                    # check client status at most once a second
+                    time.sleep(1)
                 
                 if not loggingDone:    
                     # last thing to do is to get all log messages from child process
@@ -1757,8 +1785,12 @@ class Worker(threading.Thread):
                         elif level == 'critical':
                             self.log.writeCritical([ line ])
                             
+                        line = None
+                            
                 if clientHappy and loggingDone:
                     break
+                    
+                dumpLoopIter += 1
         finally:
             gc.collect()
             self.log.writeDebug([ 'memory usage (MB) after initializing subscription ' + str(self.proc.memory_info().vms / 1048576) ])
@@ -1774,6 +1806,33 @@ class Worker(threading.Thread):
         if exc is not None:
             # an exception occurred in the child process
             raise exc
+            
+    @classmethod
+    def __readDumpChunk(cls, **kwargs):
+        if 'file' in kwargs:
+            binaryFileObj = kwargs['file']
+        if 'chunksize' in kwargs:
+            chunkSize = kwargs['chunksize']
+        else:
+            chunkSize = 4096
+                
+        while True:
+            data = bytearray(binaryFileObj.read(chunkSize))
+            if data == b'':
+                break
+            
+            numBytes = len(data)
+        
+            if data[-1:] != b'\n':
+                newData = bytearray(binaryFileObj.readline())
+                if newData != b'':
+                    numBytes += len(newData)
+                    yield [ numBytes, data, newData ]
+                else:
+                    yield [ numBytes, data, bytearray(b'') ]
+            else:
+                yield [ numBytes, data, bytearray(b'') ]
+                
     
     # child process
     @classmethod
@@ -1952,6 +2011,8 @@ class Worker(threading.Thread):
                         # will block if the output buffer is full
                         # cursor.copy_to(self.file, self.table, columns=self.columns)
                         #cursor.copy_to(fout, self.table)
+                        
+                    # this write to stdout in binary format
                     cursor.execute('COPY ' + dumperInfo.subscriptionInfo['series'][0].lower() + ' TO STDOUT', stream=fout)
                     cursor.close()
                     print('leaving dbtabledumper child process')
@@ -1985,8 +2046,6 @@ class Worker(threading.Thread):
                 exceptionQueue.put(Exception('dumpProcess', traceback.format_exc(8)))
             finally:
                 sys.stdout.close()
-                # this will cause the parent to exit its loop reading the logQueue
-                logQueue.put([ None, None] )
 
     # runs in a Worker thread
     def dumpAndStartGeneratingClientLogs(self):
@@ -2824,6 +2883,8 @@ class RequestWorker(threading.Thread):
                 try:
                     self.log.writeDebug([ 'processing ' + req.__class__.__name__ + ' client request' ])
                     rspDict = req.process() # optionally acquires request object lock
+                    if hasattr(req, 'logMsg'):
+                        self.log.writeDebug([ req.logMsg ])
                 
                     # send response to client
                     self.log.writeDebug([ 'sending response to client: ' + str(rspDict) ])
@@ -2873,7 +2934,7 @@ class RequestWorker(threading.Thread):
     # Returns a bytes object.
     def receiveMsg(self):
         # First, receive length of message.
-        allTextReceived = b''
+        allTextReceived = bytearray(b'')
         bytesReceivedTotal = 0
 
         # time-out time
@@ -2893,10 +2954,11 @@ class RequestWorker(threading.Thread):
             readable, writeable, problematic = select.select(toRead, [], [], 0) # does not block
 
             if len(readable) > 0:
+                # textReceived is a bytes object
                 textReceived = self.sock.recv(min(RequestWorker.MSGLEN_NUMBYTES - bytesReceivedTotal, RequestWorker.MAX_MSG_BUFSIZE))
                 if textReceived == b'':
                     raise ReceiveMsg('socket broken - cannot receive message-length data from client')
-                allTextReceived += textReceived
+                allTextReceived.extend(textReceived)
                 bytesReceivedTotal += len(textReceived)
             else:
                 # a recv() would block
@@ -2908,7 +2970,7 @@ class RequestWorker(threading.Thread):
         numBytesMessage = int(allTextReceived.decode('UTF-8'), 16)
         
         # Then receive the message.
-        allTextReceived = b''
+        allTextReceived = bytearray(b'')
         bytesReceivedTotal = 0
 
         skipSleep = True # force a skip of the select() code for the first minute
@@ -2923,11 +2985,12 @@ class RequestWorker(threading.Thread):
             toRead = [ self.sock ]
             readable, writeable, problematic = select.select(toRead, [], [], 0) # does not block
 
-            if len(readable) > 0:            
+            if len(readable) > 0:
+                # textReceived is a bytes object          
                 textReceived = self.sock.recv(min(numBytesMessage - bytesReceivedTotal, RequestWorker.MAX_MSG_BUFSIZE))
                 if textReceived == b'':
                     raise ReceiveMsg('socket broken - cannot receive message data from client')
-                allTextReceived += textReceived
+                allTextReceived.extend(textReceived)
                 bytesReceivedTotal += len(textReceived)
             else:
                 # a recv() would block
@@ -2963,8 +3026,8 @@ class RequestWorker(threading.Thread):
 
         
     def receiveJson(self):
-        msgBytes = self.receiveMsg() # A bytes object, not a str object. json.loads requires a str object.
-        return msgBytes.decode('UTF-8') # Convert bytes to str.
+        msgBytes = self.receiveMsg() # a bytearray object, not a str object. json.loads requires a str object
+        return msgBytes.decode('UTF-8') # convert bytearray to str
         
     # msg is a str object.
     def sendJson(self, msgStr):
@@ -3043,6 +3106,7 @@ class SetStatusRequest(ServerRequest):
                     errmsg = None
 
                 requests[0].setStatus(self.status, errmsg)
+                self.logMsg = 'SetStatusRequest: set status to ' + self.status
 
             rspDict = { 'serverstatus': { 'code': 'ok', 'errmsg': '' } }
         except:
