@@ -1411,6 +1411,8 @@ if __name__ == "__main__":
                                     elif pendingRequest.status.upper() == 'P':
                                         resp = WaitResponse(log=rsLog, status=STATUS_REQUEST_PROCESSING, msg='request for un-subscription from series ' + ','.join(pendingRequest.series) + ' is being processed; poll for completion with a pollcomplete request; please sleep between iterations when looping over this request', client=client, reqid=reqid)
                                     elif pendingRequest.status.upper() == 'C':
+                                        request = SetStatusRequest(client=client, reqid=reqid, log=rsLog, timeout=5, status='S')
+                                        connection.sendRequest(request)
                                         resp = ContinueResponse(log=rsLog, status=STATUS_REQUEST_COMPLETE, msg='your ' + pendingRequest.action.lower() + ' request has successfully completed', client=client)
                                     else:
                                         raise InvalidServerResponse('pending-request status of ' + pendingRequest.status.upper() + ' is not valid for an action of ' + pendingRequest.action.lower())
