@@ -418,59 +418,65 @@ static int FitsKeyNameValidationStatus(const char *fitsName)
 /* XXX This has to change to Phil's default scheme */
 int GenerateFitsKeyName(const char *drmsName, char *fitsName, int size)
 {
-   const char *pC = drmsName;
-   int nch = 0;
+    const char *pC = drmsName;
+    int nch = 0;
 
-   memset(fitsName, 0, size);
+    memset(fitsName, 0, size);
 
-   if (size >= 9)
-   {
-      while (*pC && nch < 8)
-      {
-	 if (*pC >= 65 && *pC <= 90)
-	 {
-	    fitsName[nch] = *pC;
-	    nch++; 
-	 }
-	 else if (*pC >= 97 && *pC <= 122)
-	 {
-	    fitsName[nch] = (char)toupper(*pC);
-	    nch++;
-	 }
+    if (size >= 9)
+    {
+        while (*pC && nch < 8)
+        {
+            if (*pC >= 48 && *pC <= 57)
+            {
+                /* numerals are permitted according to the FITS standard */
+                fitsName[nch] = *pC;
+                nch++; 
+            }
+            else if (*pC >= 65 && *pC <= 90)
+            {
+                fitsName[nch] = *pC;
+                nch++; 
+            }
+            else if (*pC >= 97 && *pC <= 122)
+            {
+                /* convert lower-case DRMS keyword name characters to upper case (lower-case chars are not permitted) */
+                fitsName[nch] = (char)toupper(*pC);
+                nch++;
+            }
 
-	 pC++;
-      }
+            pC++;
+        }
 
-      /* Now check that the result, fitsName, is not a reserved FITS key name */
-      if (FitsKeyNameValidationStatus(fitsName) == 2)
-      {
-         /* but it could be reserved because of a suffix issue */
-         char *tmp = strdup(fitsName);
-         char *pch = NULL;
+        /* Now check that the result, fitsName, is not a reserved FITS key name */
+        if (FitsKeyNameValidationStatus(fitsName) == 2)
+        {
+            /* but it could be reserved because of a suffix issue */
+            char *tmp = strdup(fitsName);
+            char *pch = NULL;
 
-         if (tmp && (pch = strchr(tmp, '_')) != NULL && hcon_lookup_lower(gReservedFits, pch))
-         {
-            *pch = '\0';
-            snprintf(fitsName, 9, "_%s", tmp); /* FITS names can't have more than 8 chars */
-         }
-         else
-         {
-            snprintf(fitsName, 9, "_%s", tmp);
-         }
+            if (tmp && (pch = strchr(tmp, '_')) != NULL && hcon_lookup_lower(gReservedFits, pch))
+            {
+                *pch = '\0';
+                snprintf(fitsName, 9, "_%s", tmp); /* FITS names can't have more than 8 chars */
+            }
+            else
+            {
+                snprintf(fitsName, 9, "_%s", tmp);
+            }
 
-         if (tmp)
-         {
-            free(tmp);
-         }
-      }
+            if (tmp)
+            {
+                free(tmp);
+            }
+        }
+    }
+    else
+    {
+        return 0;
+    }
 
-   }
-   else
-   {
-      return 0;
-   }
-
-   return 1;
+    return 1;
 }
 
 /* keys may be NULL, in which case no extra keywords are placed into the FITS file. */
@@ -1231,8 +1237,8 @@ int fitsexport_getmappedextkeyname(DRMS_Keyword_t *key,
       }
    }
 
-   if (!success)
-   {
+    if (!success)
+    {
       /* Now try the map- and class-independent schemes. */
       char *pot = NULL;
       char *psep = NULL;
@@ -1304,25 +1310,34 @@ int fitsexport_getmappedextkeyname(DRMS_Keyword_t *key,
       }
 
       /* 3 - Use default rule. */
-      if (!success)
-      {
-	 pot = (char *)malloc(sizeof(char) * size);
-	 if (pot)
-	 {
-	    if (GenerateFitsKeyName(key->info->name, pot, size))
-	    {
-               vstat = fitsexport_fitskeycheck(pot);
+        if (!success)
+        {
+            char actualKeyName[DRMS_MAXKEYNAMELEN];
 
-               if (vstat != 1)
-               {
-                  snprintf(nameOut, size, "%s", pot);
-                  success = 1;
-               }
-	    }
+            pot = (char *)malloc(sizeof(char) * size);
+            if (pot)
+            {            
+                snprintf(actualKeyName, sizeof(actualKeyName), "%s", key->info->name);
+                if (drms_keyword_getperseg(key))
+                {
+                    /* strip off the _XXX from the end of the keyword's name */
+                    actualKeyName[strlen(actualKeyName) - 4] = '\0';
+                }
 
-	    free(pot);
-	 }
-      }
+                if (GenerateFitsKeyName(actualKeyName, pot, size))
+                {
+                    vstat = fitsexport_fitskeycheck(pot);
+
+                    if (vstat != 1)
+                    {
+                        snprintf(nameOut, size, "%s", pot);
+                        success = 1;
+                    }
+                }
+
+                free(pot);
+            }
+        }
    }
 
    if (success && vstat == 2)
