@@ -105,6 +105,9 @@ class ListAction(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
         setattr(namespace, self.dest, values.split(','))
 
+def PrintRunInfo(outfile, msg, quiet):
+    if not quiet:
+        print(msg, file=outfile)
 
 def ShutDownInstance(path, pid):
     if psutil.pid_exists(pid):
@@ -126,14 +129,15 @@ def ShutDownInstance(path, pid):
                 time.sleep(1)
                 count += 1
 
-def StartUpInstance(path, port, loglevel, logfile):
+def StartUpInstance(path, port, loglevel, logfile, quiet):
     cmdList = [ sys.executable, path, '--sockport=' + str(port) ]
     
     if loglevel is not None:
         cmdList.append('--loglevel=' + loglevel)
     if logfile is not None:
         cmdList.append('--logfile=' + logfile)
-    print('running ' + ' '.join(cmdList))
+        
+    PrintRunInfo(sys.stdout, 'running ' + ' '.join(cmdList), quiet)
     proc = Popen(cmdList) # spawn a new process
     return proc.pid
 
@@ -149,6 +153,7 @@ parser.add_argument('p', 'ports', help='a comma-separated list of listening-port
 parser.add_argument('-i', '--instancesfile', help='the json file which contains a list of all the sumsd.py instances running', metavar='<instances file path>', dest='instancesfile', default=os.path.join(sumsDrmsParams.get('SUMLOG_BASEDIR'), DEFAULT_INSTANCES_FILE))
 parser.add_argument('-l', '--loglevel', help='specifies the amount of logging to perform; in order of increasing verbosity: critical, error, warning, info, debug', dest='loglevel', default='info')
 parser.add_argument('-L', '--logfile', help='the file to which sumsd logging is written', metavar='<file name>', dest='logfile')
+parser.add_argument('-q', '--quiet', help='do not print any run information', dest='quiet', action='store_true')
 
 arguments = Arguments(parser)
 
@@ -159,6 +164,7 @@ path = arguments.getArg('daemon')
 ports = arguments.getArg('ports')
 loglevel = arguments.getArg('loglevel')
 logfile = arguments.getArg('logfile') # will be None if no --logfile argument is provided
+quiet = arguments.getArg('quiet')
 
 usedPorts = {} # portStr : [ path, pid ]
 
@@ -178,12 +184,14 @@ try:
                         pid = instancesCopy[onePath][portStr]
         
                         if not psutil.pid_exists(pid):
-                            # an entry in the instances file that should not exist
-                            print('pid ' + str(pid) + ' from instances file does not exist', file=sys.stderr)
+                            # an entry in the instances file that should not exist                            
+                            PrintRunInfo(sys.stderr, 'pid ' + str(pid) + ' from instances file does not exist', quiet)
+                            
                             del instances[onePath][portStr]
                         else:                
-                            if portStr in usedPorts:
-                                print('port ' + portStr + ' is already being used', file=sys.stderr)
+                            if portStr in usedPorts:                                
+                                PrintRunInfo(sys.stderr, 'port ' + portStr + ' is already being used', quiet)
+                                
                                 # cannot have duplicate port numbers in use
                                 pathOrig, pidOrig = usedPorts[portStr]
                     
@@ -212,6 +220,9 @@ except FileNotFoundError:
 if instances is None:
     instances = {} # even though the json module says this is an object, it is actually a dictionary
 
+startedInstances = { 'started' : [] } # a list of PIDs
+
+
 # launch the instances and add them to the instances file
 for port in ports:
     portStr = str(port)
@@ -220,20 +231,26 @@ for port in ports:
     if portStr in usedPorts:
         raise Exception('port ' + portStr + ' is already in use')
 
-    pid = StartUpInstance(path, port, loglevel, logfile)
+    pid = StartUpInstance(path, port, loglevel, logfile, quiet)
     # add another instance of this path
     if path not in instances:
         instances[path] = {}
 
     instances[path][portStr] = pid
+    PrintRunInfo(sys.stdout, 'started instance ' + path + ':' + portStr + ' (pid ' + str(pid) + ')', quiet)
+    startedInstances['started'] = pid
 
 try:
     with open(instancesFile, mode='w', encoding='UTF8') as fout:
         json.dump(instances, fout)
         print('', file=fout) # add a newline to the end of the instances file
         # leaving open block - this will save file changes
-except:
-    print('ERROR: unable to write instances file ' + instancesFile, file=sys.stderr)
+except:    
+    PrintRunInfo(sys.stderr, 'ERROR: unable to write instances file ' + instancesFile, quiet)
+    
     raise # will cause an exit with a return code of 1
+    
+startedInstancesJSON = json.dumps(startedInstances, ensure_ascii=False) + '\n'
+sys.stdout.buffer.write(startedInstancesJSON.encode('UTF8'))
 
 sys.exit(0)
