@@ -238,7 +238,7 @@ for port in ports:
 
     instances[path][portStr] = pid
     PrintRunInfo(sys.stdout, 'started instance ' + path + ':' + portStr + ' (pid ' + str(pid) + ')', quiet)
-    startedInstances['started'] = pid
+    startedInstances['started'].append(pid)
 
 try:
     with open(instancesFile, mode='w', encoding='UTF8') as fout:
