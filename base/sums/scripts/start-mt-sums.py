@@ -16,7 +16,7 @@
 #      "/home/jsoc/cvs/Development/JSOC_20180708/base/sums/scripts/sumsd.py" : { "6028" : 18742}
 #   }
 import json
-from subprocess import Popen
+from subprocess import Popen, DEVNULL
 import psutil
 import sys
 import argparse
@@ -138,7 +138,7 @@ def StartUpInstance(path, port, loglevel, logfile, quiet):
         cmdList.append('--logfile=' + logfile)
         
     PrintRunInfo(sys.stdout, 'running ' + ' '.join(cmdList), quiet)
-    proc = Popen(cmdList, start_new_session=True) # spawn a new process
+    proc = Popen(cmdList, start_new_session=True, stdout=DEVNULL, stderr=DEVNULL, stdin=DEVNULL) # spawn a new process
     return proc.pid
 
 # read arguments
