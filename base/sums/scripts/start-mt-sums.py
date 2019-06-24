@@ -138,7 +138,7 @@ def StartUpInstance(path, port, loglevel, logfile, quiet):
         cmdList.append('--logfile=' + logfile)
         
     PrintRunInfo(sys.stdout, 'running ' + ' '.join(cmdList), quiet)
-    proc = Popen(cmdList) # spawn a new process
+    proc = Popen(cmdList, start_new_session=True) # spawn a new process
     return proc.pid
 
 # read arguments
