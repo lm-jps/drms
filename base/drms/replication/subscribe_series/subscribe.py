@@ -532,12 +532,8 @@ def ingestSQLFile(sqlIn, psqlBin, dbhost, dbport, dbname, dbuser, log):
     # Make a pipe for capturing psql stderr as well.
     pipeReadEndFDErr, pipeWriteEndFDErr = os.pipe()
 
-    # Make these pipes not block on read (since we are going to be reading from the pipe here).
-    flag = fcntl.fcntl(pipeReadEndFDErr, fcntl.F_GETFL)
-    fcntl.fcntl(pipeReadEndFDErr, fcntl.F_SETFL, flag | os.O_NONBLOCK)
-
-    pipeReadEndErr = os.fdopen(pipeReadEndFDErr, 'r', encoding='UTF8')
-    pipeWriteEndErr = os.fdopen(pipeWriteEndFDErr, 'w', encoding='UTF8')
+    pipeReadEndErr = os.fdopen(pipeReadEndFDErr, 'rb')
+    pipeWriteEndErr = os.fdopen(pipeWriteEndFDErr, 'wb')
     
     try:
         cmdList = [ psqlBin, '-h', dbhost, '-p', dbport, '-d', dbname, '-vON_ERROR_STOP=1', '-U', dbuser, '-f', '-']
@@ -556,67 +552,57 @@ def ingestSQLFile(sqlIn, psqlBin, dbhost, dbport, dbname, dbuser, log):
         # psql exits, it does NOT close the read-end of the pipe, nor does it close the write-end of the pipe.
         # It does not close any of the pipes or fds opened in this script.
         if not doneWriting:
-            sqlInBytes = sqlIn.read(8192) # Returns str.
-            log.writeDebug([ 'Read ' + str(len(sqlInBytes)) + ' bytes from dump file.'])
-            if len(sqlInBytes) > 0:
+            sqlInBytes = sqlIn.read(131072) # 128 KB, returns bytes object
+            log.writeDebug([ 'read ' + str(len(sqlInBytes)) + ' bytes from dump file'])
+            if sqlInBytes != b'':
                 try:
                     # If there is a problem writing to the proc's stdin (like psql has died), this will raise.
                     # The only exception to handle is BrokenPipeError. proc.stdin is a blocking pipe.
                     # proc.stdin.write() needs a bytes object, not a str.
-                    bytesWritten = proc.stdin.write(bytes(sqlInBytes, 'UTF8'))
+                    bytesWritten = proc.stdin.write(sqlInBytes)
                     proc.stdin.flush() 
-                    log.writeDebug([ 'Wrote ' + str(bytesWritten) + ' bytes to psql pipe.' ])                    
+                    log.writeDebug([ 'wrote ' + str(bytesWritten) + ' bytes to psql pipe' ])
+                    sqlInBytes = None
                 except BrokenPipeError as exc:
                     # psql terminated. Time to error out. Let the proc.poll() block of code handle this.
                     doneWriting = True
-                    log.writeError([ 'The psql child process terminated - cannot send data to psql.' ])
+                    log.writeError([ 'the psql child process terminated - cannot send data to psql' ])
             else:
                 doneWriting = True
-                log.writeDebug([ 'Done sending data to psql.' ])
-        else:
-            if not proc.stdin.closed:
+                log.writeInfo([ 'done sending data to psql' ])
                 log.writeInfo([ 'closing psql stdin' ])
                 proc.stdin.close()
-                
-        # Log any stderr messages from psql. Don't worry about stdout - psql will print an insert line
-        # for every line ingested, and those don't provide any useful information
-        if not pipeReadEndErr.closed:
-            while True:
-                pipeBytes = pipeReadEndErr.read(4096)
-                if len(pipeBytes) > 0:
-                    log.writeDebug([ 'Read ' + str(len(pipeBytes)) + ' bytes from psql stderr.' ])
-                    log.writeInfo([ pipeBytes ])
-                else:
-                    break
 
         proc.poll()
         if proc.returncode is not None:
-            log.writeDebug([ 'psql finished.' ])
-            if not pipeWriteEndErr.closed:
-                pipeWriteEndErr.flush()
+            log.writeDebug([ 'psql finished' ])
+            
+            pipeWriteEndErr.close()
 
             # When the write end of this pipe is closed, the read end closes too.            
             if not pipeReadEndErr.closed:
                 while True:
                     pipeBytes = pipeReadEndErr.read(4096)
-                    if len(pipeBytes) > 0:
+                    if pipeBytes != b'':
                         log.writeInfo([ pipeBytes ])
                     else:
                         break
-            
-            # These can be called, even if the pipe is already closed.
-            pipeWriteEndErr.close()
+
             pipeReadEndErr.close()
         
             if proc.returncode != 0:
                 # Log error.
-                msg = 'Command "' + ' '.join(cmdList) + '" returned non-zero status code ' + str(proc.returncode) + '.'
+                msg = 'command "' + ' '.join(cmdList) + '" returned non-zero status code ' + str(proc.returncode)
                 log.writeError([ msg ])
-                raise Exception('ingestSQL', 'psql failed to ingest SQL file.')
-            log.writeInfo([ 'psql terminated - ingestion of SQL file complete.' ])
+                raise Exception('ingestSQL', 'psql failed to ingest SQL file')
+            log.writeInfo([ 'psql terminated - ingestion of SQL file complete' ])
             break
-        # Do not sleep! We want to pipe the dump-file data bytes to psql as quickly as possible. We don't want
-        # to sleep 1 second every 8192 bytes.
+        elif doneWriting:
+            # ok to sleep here, after we've sent psql all bytes, while we wait for psql to terminate
+            time.sleep(0.5)
+        
+        # do not sleep! we want to pipe the dump-file data bytes to psql as quickly as possible; we don't want
+        # to sleep 1 second every N bytes
 
 def extractSchema(series):
     regExp = re.compile(r'\s*(\S+)\.(\S+)\s*')
@@ -1129,7 +1115,7 @@ if __name__ == "__main__":
                                     log.writeInfo([ 'Successfully downloaded ' + dest + '.' ])
                                     print('  ...download complete.')
                                     
-                                with gzip.open(dest, mode='rt', encoding='UTF8') as fin:
+                                with gzip.open(dest, mode='rb') as fin:
                                     # Ingest createns.sql. Will raise if a problem occurs. When that happens, the cursor is rolled back.
                                     # The sql in fin is piped to a psql process.
                                     print('Ingesting dump file (' + dest + ').')
@@ -1154,25 +1140,25 @@ if __name__ == "__main__":
                                 # exists, the download completed and was successful.
                                 if not resuming or not os.path.exists(dest):
                                     if os.path.exists(dest):
-                                        log.writeInfo([ 'Removing stale dump ' + dest + '.' ])
+                                        log.writeInfo([ 'removing stale dump ' + dest ])
                                         os.remove(dest)
-                                    log.writeInfo([ 'Downloading ' + dest + '.' ])
-                                    print('Downloading dump file (to ' + dest + ').')
+                                    log.writeInfo([ 'downloading ' + dest ])
+                                    print('downloading dump file (to ' + dest + ')')
                                     dl = SmartDL(xferURL, dest)
                                     dl.start()
-                                    log.writeInfo([ 'Successfully downloaded ' + dest + '.' ])
+                                    log.writeInfo([ 'successfully downloaded ' + dest ])
                                     print('  ...download complete.')
 
-                                with gzip.open(dest, mode='rt', encoding='UTF8') as fin:
+                                with gzip.open(dest, mode='rb') as fin:
                                     # Will raise if a problem occurs. When that happens, the cursor is rolled back.
 
                                     # If reqType == 'subscribe', then the sql will create a new series and populate it. 
                                     # If reqType == 'resubscribe', then the sql will truncate the 'series table' and reset the series-table sequence
                                     # only.
-                                    print('Ingesting dump file (' + dest + ').')
+                                    print('ingesting dump file (' + dest + ')')
                                     ingestSQLFile(fin, arguments.getArg('PSQL').strip(" '" + '"'), arguments.getArg('pg_host'), str(arguments.getArg('pg_port')), arguments.getArg('pg_dbname'), subuser, log)
-                                    log.writeInfo([ 'Successfully ingested dump file: ' + dest + ' (number ' +  str(fileNo) + ')' ])
-                                    print('  ...ingestion complete.')
+                                    log.writeInfo([ 'successfully ingested dump file: ' + dest + ' (number ' +  str(fileNo) + ')' ])
+                                    print('  ...ingestion complete')
                                     
                                 # Remove the dump file.
                                 os.remove(dest)
