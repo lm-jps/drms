@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 # Use this script to copy all or part of the JSOC waystation tree to the production tree. Without any
 # arguments, the existing tree is moved to JSOC_YYYYMMDD_HHMMSS, and the tree in waystation is copied to
@@ -23,10 +23,13 @@ import sys
 import os
 import re
 import json
-from subprocess import check_output, check_call, CalledProcessError, Popen, PIPE
+from subprocess import check_call, CalledProcessError, Popen, PIPE
 from shlex import quote
-import smtplib
+import pexpect
+import getpass
 from datetime import datetime
+sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../include'))
+from drmsparams import DRMSParams
 
 # DEBUG = True
 
@@ -138,20 +141,24 @@ msg = None
 rv = RV_SUCCESS
 
 try:
+    drmsParams = DRMSParams()
+
     with Chdir(PROD_ROOTDIR) as ret:
         if ret == 0:
             updatingSUMS = False
             updatingSUMSPort = False
+            latestPort = int(drmsParams.get('SUMSD_LISTENPORT'))
+            pword = None
 
             # check to see if we are going to modify the production sumsd.py
-            print('checking for a SUMS update...')
+            print('checking for a sumsd.py update...')
             if CheckForFileUpdate(os.path.join(SUMS_SOURCE_DIR, SUMS_DAEMON), JSOC_ROOTDIR, os.path.join(WAYSTATION, JSOC_ROOTDIR)):
-                print('updating SUMS')
+                print('updating sumsd.py')
                 updatingSUMS = True
             else:
-                print('no SUMS update')
+                print('no sumsd.py update')
             
-            print('checking for a port update')
+            print('checking for a SUMS port update')
             newSUMSPort = CheckForPortNumberUpdate(JSOC_ROOTDIR, os.path.join(WAYSTATION, JSOC_ROOTDIR))
             if newSUMSPort is not None:
                 print('updating SUMS port to ' + str(newSUMSPort))
@@ -160,25 +167,37 @@ try:
                 print('no port update')
 
             if updatingSUMSPort and not updatingSUMS:
-                raise Exception('if you are updating the sumsd port, then you must also update sumsd')
+                raise Exception('if you are updating the sumsd port, then you must also update sumsd.py')
             
-            # if so, then we need to stop the existing use of it on k1; to do that, run the sumsd.py stop
-            # script
-            if updatingSUMS:
-                existingProdSumsd = os.path.join(PROD_ROOTDIR, JSOC_ROOTDIR, SUMS_SOURCE_DIR, SUMS_DAEMON)
-                # stops all SUMS instances that were started with the prodSumsd script, returning a list of the ports each
-                # instance was listening to
-                cmdList = [ sys.executable, os.path.join(PROD_ROOTDIR, JSOC_ROOTDIR, SUMS_SOURCE_DIR, STOP_SUMS_DAEMON), 'daemon=' + existingProdSumsd ]
-                ConditionalAppend(cmdList, ConditionalConstruction('--instancesfile=', 'INSTANCES_FILE', ''))
-                ConditionalAppend(cmdList, ConditionalConstruction('--logfile=', 'SUMS_LOG_FILE', ''))
-                print('stopping SUMS (if instances are running): ' + ' '.join(cmdList))
+            # always stop the current Development/JSOC sumsd.py; assume that MT SUMS is changing, even if
+            # sumsd.py itself is not; a dependency may be changing - it does not hurt to assume sumsd.py is changing
+            existingProdSumsd = os.path.join(PROD_ROOTDIR, JSOC_ROOTDIR, SUMS_SOURCE_DIR, SUMS_DAEMON)
+            # stops all SUMS instances that were started with the prodSumsd script, returning a list of the ports each
+            # instance was listening to
+            cmdList = [ sys.executable, os.path.join(PROD_ROOTDIR, JSOC_ROOTDIR, SUMS_SOURCE_DIR, STOP_SUMS_DAEMON), 'daemon=' + existingProdSumsd, '--quiet' ]
+            ConditionalAppend(cmdList, ConditionalConstruction('--instancesfile=', 'INSTANCES_FILE', ''))
+            ConditionalAppend(cmdList, ConditionalConstruction('--logfile=', 'SUMS_LOG_FILE', ''))
+            print('stopping SUMS (if instances are running), running on k1: ' + ' '.join(cmdList))
 
-                # gotta run this on the SUMS server
-                sshCmdList = [ '/usr/bin/ssh', SUMS_USER + '@' + SUMS_SERVER, ' '.join(cmdList) ]
-                resp = check_output(cmdList) # raises CalledProcessError if stop-sums-daemon does not return zero
-                portsTerminated = json.loads(resp.decode('UTF8'))['terminated']
-                if len(portsTerminated) > 0:
-                    print('stopped instance(s)s of ' + existingProdSumsd + ' listening on port(s) ' + ','.join([ str(port) for port in portsTerminated ]))
+            # gotta run this on the SUMS server; get production's password
+
+            # could raise
+            if pword is None:
+                print('please enter password for ' + SUMS_USER + '@' + SUMS_SERVER)
+                pword = getpass.getpass()
+
+            sshCmdList = [ '/usr/bin/ssh', SUMS_USER + '@' + SUMS_SERVER, ' '.join(cmdList) ]
+            child = pexpect.spawn(' '.join(sshCmdList))
+            child.expect('password:')
+            child.sendline(pword.encode('UTF8'))
+            child.expect(pexpect.EOF)
+            resp = child.before
+
+            portsTerminated = json.loads(resp.decode('UTF8'))['terminated']
+            print(os.path.join(PROD_ROOTDIR, JSOC_ROOTDIR, SUMS_SOURCE_DIR, STOP_SUMS_DAEMON) + ' ran properly')
+
+            if len(portsTerminated) > 0:
+                print('stopped instance(s)s of ' + existingProdSumsd + ' listening on port(s) ' + ','.join([ str(port) for port in portsTerminated ]))
             
             # copy files from the waystation to a temporary directory
             if not os.path.exists(JSOC_ROOTDIR_NEW):
@@ -208,30 +227,59 @@ try:
             cmdList = [ 'mv', JSOC_ROOTDIR_NEW, JSOC_ROOTDIR ]
             print('running ' + ' '.join(cmdList))
             check_call(cmdList)
-            
-            if updatingSUMS and len(portsTerminated) > 0:
-                # restart the prodSumsd SUMS instances that were shutdown earlier
+
+            if newSUMSPort is not None and len(portsTerminated) > 0:
+                # the Development/JSOC sumsd.py was stopped for at least one port, AND we are changing the SUMS port;
+                # restart the SUMS instances that were shutdown earlier using the new date dir for sumsd.py, with the OLD port numbers
                 # start-mt-sums.sh will edit the master file that lists running SUMS processes
-                cmdList = [ sys.executable, os.path.join(PROD_ROOTDIR, JSOC_ROOTDIR, SUMS_SOURCE_DIR, START_SUMS_DAEMON), 'daemon=' + newProdSumsd, 'ports=' + ','.join([ str(port) for port in portsTerminated ]) ]
+                cmdList = [ sys.executable, os.path.join(PROD_ROOTDIR, JSOC_ROOTDIR, SUMS_SOURCE_DIR, START_SUMS_DAEMON), 'daemon=' + newProdSumsd, 'ports=' + ','.join([ str(port) for port in portsTerminated ]), '--quiet' ]
                 ConditionalAppend(cmdList, ConditionalConstruction('--instancesfile=', 'INSTANCES_FILE', ''))
                 ConditionalAppend(cmdList, ConditionalConstruction('--logfile=', 'SUMS_LOG_FILE', ''))
                 print('restarting the production SUMS daemon(s) on port(s) ' + ','.join([ str(port) for port in portsTerminated ]))
+                print('running on k1' + ' '.join(cmdList))
                 
                 # gotta run this on the SUMS server
-                sshCmdList = [ '/usr/bin/ssh', SUMS_USER + '@' + SUMS_SERVER, ' '.join(cmdList) ]
-                print('running ' + ' '.join(sshCmdList))
-                check_call(cmdList) # raises CalledProcessError if start-sums-daemon does not return zero
-              
-            if newSUMSPort is not None:      
-                # start a sumsd.py instance using the current production sumsd.py source file
-                cmdList = [ sys.executable, os.path.join(PROD_ROOTDIR, JSOC_ROOTDIR, SUMS_SOURCE_DIR, START_SUMS_DAEMON), 'daemon=' + os.path.join(PROD_ROOTDIR, JSOC_ROOTDIR, SUMS_SOURCE_DIR, SUMS_DAEMON), 'ports=' + str(newSUMSPort) ]
-                ConditionalAppend(cmdList, ConditionalConstruction('--instancesfile=', 'INSTANCES_FILE', ''))
-                ConditionalAppend(cmdList, ConditionalConstruction('--logfile=', 'SUMS_LOG_FILE', ''))
                 
-                # gotta run this on the SUMS server
+                if pword is None:
+                    print('please enter password for ' + SUMS_USER + '@' + SUMS_SERVER)
+                    pword = getpass.getpass()
+
                 sshCmdList = [ '/usr/bin/ssh', SUMS_USER + '@' + SUMS_SERVER, ' '.join(cmdList) ]
-                print('running ' + ' '.join(sshCmdList))
-                check_call(cmdList) # raises CalledProcessError if start-sums-daemon does not return zero
+                print('running on ' + SUMS_SERVER + ' '.join(sshCmdList))
+                child = pexpect.spawn(' '.join(sshCmdList))
+                child.expect('password:')
+                child.sendline(pword.encode('UTF8'))
+                child.expect(pexpect.EOF)
+                resp = child.before
+
+                pidsStarted = json.loads(resp.decode('UTF8'))['started'] # list of ints
+                print(os.path.join(PROD_ROOTDIR, JSOC_ROOTDIR, SUMS_SOURCE_DIR, START_SUMS_DAEMON) + ' ran properly')
+                print('started pids ' + ','.join([ str(pid) for pid in pidsStarted ]))
+
+            # start a sumsd.py instance using the current production sumsd.py source file and latest port number;
+            # use the latest port number (if the port number changed, this will be the new port number, if it will be the old port number);
+            # the SUMSD_LISTENPORT parameter value will always be the latest port number
+            cmdList = [ sys.executable, os.path.join(PROD_ROOTDIR, JSOC_ROOTDIR, SUMS_SOURCE_DIR, START_SUMS_DAEMON), 'daemon=' + os.path.join(PROD_ROOTDIR, JSOC_ROOTDIR, SUMS_SOURCE_DIR, SUMS_DAEMON), 'ports=' + str(latestPort), '--quiet' ]
+            ConditionalAppend(cmdList, ConditionalConstruction('--instancesfile=', 'INSTANCES_FILE', ''))
+            ConditionalAppend(cmdList, ConditionalConstruction('--logfile=', 'SUMS_LOG_FILE', ''))
+            
+            # gotta run this on the SUMS server
+            if pword is None:
+                print('please enter password for ' + SUMS_USER + '@' + SUMS_SERVER)
+                pword = getpass.getpass()
+            
+            sshCmdList = [ '/usr/bin/ssh', SUMS_USER + '@' + SUMS_SERVER, ' '.join(cmdList) ]
+            print('running on ' + SUMS_SERVER + ' '.join(sshCmdList))
+            child = pexpect.spawn(' '.join(sshCmdList))
+            child.expect('password:')
+            child.sendline(pword.encode('UTF8'))
+            child.expect(pexpect.EOF)
+            resp = child.before
+            
+            pidsStarted = json.loads(resp.decode('UTF8'))['started'] # list of ints
+            print(os.path.join(PROD_ROOTDIR, JSOC_ROOTDIR, SUMS_SOURCE_DIR, START_SUMS_DAEMON) + ' ran properly')
+            print('started pids ' + ','.join([ str(pid) for pid in pidsStarted ]))
+            
 except CalledProcessError as exc:
     if exc.output:
         print('Error calling rsync: ' + exc.output, file=sys.stderr)
