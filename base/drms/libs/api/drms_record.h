@@ -46,6 +46,31 @@ enum DRMS_RecChunking_enum
 
 typedef enum DRMS_RecChunking_enum DRMS_RecChunking_t;
 
+
+enum DRMS_RecordSet_Sql_Statement_Type_enum
+{
+    RECORDSET_SQLSTATEMENT_LANGTYPE_UKNOWN = 0,
+    RECORDSET_SQLSTATEMENT_LANGTYPE_DDL = 1,
+    RECORDSET_SQLSTATEMENT_LANGTYPE_DML = 2
+};
+
+typedef enum DRMS_RecordSet_Sql_Statement_Type_enum DRMS_RecordSet_Sql_Statement_Type_t;
+
+struct DRMS_RecordSet_Sql_Statement_struct
+{
+    DRMS_RecordSet_Sql_Statement_Type_t type;
+    char *statement;
+    char *dmlSeries; /* if this is a DML statement, then this is the series for which we are selecting records */
+    char *pkeylist; /* if this is a DDL statement, this is the primary-key of the rows of the temp table */
+    char *parent; /* the parent series, if this is a DML statement for a child series */
+    char *link; /* the link from the parent to the child, if this is a DML statement for a child series */
+    char *temp; /* temporary DB table DDL statement is creating, or DML statement is selecting from */
+};
+
+typedef struct DRMS_RecordSet_Sql_Statement_struct DRMS_RecordSet_Sql_Statement_t;
+
+void FreeSqlStatement(void *data);
+
 /************** User level record functions ************/
 
 /**** For record sets. ****/
@@ -60,6 +85,9 @@ DRMS_RecordSet_t *drms_open_nrecords(DRMS_Env_t *env,
                                      int n,
                                      int *status);
 DRMS_RecordSet_t *drms_open_recordswithkeys(DRMS_Env_t *env, const char *specification, const char *keylist, int *status);
+
+/* swiss-army-knife open-records function that has all possible options */
+DRMS_RecordSet_t *drms_open_records2(DRMS_Env_t *env, const char *specification, LinkedList_t *keys, int chunkrecs, int nrecs, int openlinks, int *status);
 
 DRMS_RecordSet_t *drms_clone_records(DRMS_RecordSet_t *recset,  
 				     DRMS_RecLifetime_t lifetime, 

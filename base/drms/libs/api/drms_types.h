@@ -523,7 +523,7 @@ struct DRMS_RecSetCursor_struct
 {
   /** \brief Parent recordset */
   struct DRMS_RecordSet_struct *parent;
-  /** \brief Array of cursor names recognized by database query */
+  /** \brief Array of temp DB tables - each table holds all selected records for each subset of records */
   char **names;
   /** \brief DRMS session environment - needed for querying db for next chunk */
   DRMS_Env_t *env; 
@@ -549,6 +549,7 @@ struct DRMS_RecSetCursor_struct
   int infoneeded;
   /** \brief The SUM_info_t *, keyed by sunum, needed when opening record chunks. */
   HContainer_t *suinfo;
+    int openLinks; /* set in drms_open_recordset_internal(), passed into drms_open_recordset_internal() by client (e.g., show_info) */
 };
 
 /** \brief DRMS cursor struct reference */
