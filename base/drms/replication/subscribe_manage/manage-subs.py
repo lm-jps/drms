@@ -295,6 +295,7 @@ $capturesunumtrig$ LANGUAGE plpgsql;
 class MSException(Exception):
     def __init__(self, msg):
         super(MSException, self).__init__(msg)
+        self.msg = msg
 
 class SendMsg(MSException):
     def __init__(self, msg):
@@ -303,6 +304,15 @@ class SendMsg(MSException):
 class ReceiveMsg(MSException):
     def __init__(self, msg):
         super(ReceiveMsg, self).__init__(msg)
+
+class ExtractRequestException(MSException):
+    def __init__(self, msg):
+        super(ExtractRequestException, self).__init__(msg)
+
+class RequestTypeException(MSException):
+    def __init__(self, msg):
+        super(RequestTypeException, self).__init__(msg)
+
 
 def getNewSiteSQL(cluster):
     slony = SLONY_DB_OBJECTS.replace('<cluster>', cluster)
@@ -1728,7 +1738,7 @@ class Worker(threading.Thread):
                                 # no more files to download; the calling function will set status to 'C'
                                 clientHappy = True
                                 # this will cause the loop reading the logQueue to terminate
-                                logQueue.put([ None, None ])
+                                logQueue.put([ 'done', None ])
                             elif fileNo > fileNoIngested:
                                 logQueue.put([ 'debug', 'and the next DML file is ready for download' ])
                                 # fileNo is the last file generated; tell client the next file is ready for download
@@ -1759,38 +1769,47 @@ class Worker(threading.Thread):
                         self.reqTable.releaseLock()
 
                     maxLoop -= 1
-                    
-                    # check client status at most once a second
-                    time.sleep(1)
                 
-                if not loggingDone:    
-                    # last thing to do is to get all log messages from child process
+                if not loggingDone:
+                    # ART - loop until there are no more items to print; need to put temporary block on logQueue, empty it
+                    # then unblock it
+                    logQueue.put([ 'block', '' ])
                     try:
-                        level, line = logQueue.get(False) # do not block
-                    except queue.Empty:
-                        continue
-
-                    if line is None:
-                        self.log.writeDebug([ 'done fetching output from child process' ])
-                        loggingDone = True
-                    else:
-                        if level == 'debug':
-                            self.log.writeDebug([ line ])
-                        elif level == 'info':
-                            self.log.writeInfo([ line ])
-                        elif level == 'warning':
-                            self.log.writeWarning([ line ])
-                        elif level == 'error':
-                            self.log.writeError([ line ])
-                        elif level == 'critical':
-                            self.log.writeCritical([ line ])
+                        while True:
+                            level, line = logQueue.get(False) # do not block
+                        
+                            if level == 'block':
+                                # the 'block' element has been popped
+                                break
+                            elif level == 'done':
+                                self.log.writeDebug([ 'done fetching output from child process' ])
+                                loggingDone = True
+                            elif line is not None and len(line) > 0:
+                                if level == 'debug':
+                                    self.log.writeDebug([ line ])
+                                elif level == 'info':
+                                    self.log.writeInfo([ line ])
+                                elif level == 'warning':
+                                    self.log.writeWarning([ line ])
+                                elif level == 'error':
+                                    self.log.writeError([ line ])
+                                elif level == 'critical':
+                                    self.log.writeCritical([ line ])
                             
-                        line = None
+                                line = None
+                    except queue.Empty:
+                        pass
+
+                if fin is not None and ddlFileCreated and not clientHappy:
+                    # we are in the final subscription loop - sleep 1 sec
+                    time.sleep(1)
                             
                 if clientHappy and loggingDone:
                     break
                     
                 dumpLoopIter += 1
+                
+                # end while loop
         finally:
             gc.collect()
             self.log.writeDebug([ 'memory usage (MB) after initializing subscription ' + str(self.proc.memory_info().vms / 1048576) ])
@@ -2871,50 +2890,69 @@ class RequestWorker(threading.Thread):
         self.log = kwargs['log']
     
     def run(self):
-        while True: # request loop
-            # read request first - it has the timeout value in it
-            msgStr = self.receiveJson() # msgStr is a string object.
-            req = self.extractRequest(msgStr) # will raise if reqtype is not supported
-            rspDict = None
-            peerName = self.getID()
+        try:
+            while True: # request loop
+                # read request first - it has the timeout value in it
+                msgStr = self.receiveJson() # msgStr is a string object.
+                req = self.extractRequest(msgStr) # will raise if reqtype is not supported
+                rspDict = None
+                peerName = self.getID()
 
-            # always acquire the reqtable lock
-            if self.reqtable.acquireLock(blocking=True, timeout=req.timeout):
-                try:
-                    self.log.writeDebug([ 'processing ' + req.__class__.__name__ + ' client request' ])
-                    rspDict = req.process() # optionally acquires request object lock
-                    if hasattr(req, 'logMsg'):
-                        self.log.writeDebug([ req.logMsg ])
+                # always acquire the reqtable lock
+                if self.reqtable.acquireLock(blocking=True, timeout=req.timeout):
+                    try:
+                        self.log.writeDebug([ 'processing ' + req.__class__.__name__ + ' client request' ])
+                        rspDict = req.process() # optionally acquires request object lock
+                        if hasattr(req, 'logMsg'):
+                            self.log.writeDebug([ req.logMsg ])
                 
-                    # send response to client
-                    self.log.writeDebug([ 'sending response to client: ' + str(rspDict) ])
-                    self.sendJson(json.dumps(rspDict))
+                        # send response to client
+                        self.log.writeDebug([ 'sending response to client: ' + str(rspDict) ])
+                        self.sendJson(json.dumps(rspDict))
             
-                    # there may be additional client requests in this connection
-                    if isinstance(req, DoneRequest):            
-                        # wait for client to close connection, and when that happens, release all locks
-                        try:
-                            textReceived = self.sock.recv(RequestWorker.MAX_MSG_BUFSIZE)
-                            # self.sock can be dead if the client broke the socket 
-                            if textReceived == b'':
-                                # the client closed their end of the socket (they shutdown the write half of the socket);
-                                # so the client most likely called shutdown() followed by close()
-                                self.log.writeDebug([ 'client ' + peerName + ' properly terminated connection' ])
-                            else:
-                                self.log.writeDebug([ 'client ' + peerName + ' sent extraneous data over socket connection (ignoring)' ])
-                        except OSError:
-                            self.log.writeDebug([ 'problem reading from socket (client ' + peerName + ')' ])
-                            rspDict = { 'serverstatus': { 'code': 'error', 'errmsg': 'broken socket' } }
-                            self.sendJson(json.dumps(rspDict))
-                        finally:
-                            break # out of request loop
-                finally:
-                    # release reqtable lock
-                    self.reqtable.releaseLock()
-            else:
-                # generate a failure response and send it to the client
-                rspDict = { 'serverstatus': { 'code': 'timeout', 'errmsg': 'unable to acquire request table lock' } }
-                self.sendJson(json.dumps(rspDict))
+                        # there may be additional client requests in this connection
+                        if isinstance(req, DoneRequest):            
+                            # wait for client to close connection, and when that happens, release all locks
+                            try:                                                    
+                                textReceived = self.sock.recv(RequestWorker.MAX_MSG_BUFSIZE) # blocks until data avail, or EOF
+                                # self.sock can be dead if the client broke the socket 
+                                if textReceived == b'':
+                                    # the client closed their end of the socket (they shutdown the write half of the socket);
+                                    # so the client most likely called shutdown() followed by close()
+                                    self.log.writeDebug([ 'client ' + peerName + ' properly terminated connection' ])
+                                else:
+                                    self.log.writeDebug([ 'client ' + peerName + ' sent extraneous data over socket connection (ignoring)' ])
+                                    
+                                    # dump the miscellany on floor - try for 15 seconds
+                                    timeStart = datetime.now()
+                                    timeOutTime = timeStart + timedelta(seconds=15)
+                                    toRead = [ self.sock ]
+                                    while datetime.now() < timeOutTime:
+                                        readable, writeable, problematic = select.select(toRead, [], [], 1) # blocks for 1 second
+
+                                        if len(readable) > 0:
+                                            # got junk
+                                            textReceived = self.sock.recv(RequestWorker.MAX_MSG_BUFSIZE)
+                                            if textReceived == b'':
+                                                break
+                            except OSError:
+                                self.log.writeDebug([ 'problem reading from socket (client ' + peerName + ')' ])
+                                rspDict = { 'serverstatus': { 'code': 'error', 'errmsg': 'broken socket' } }
+                                self.sendJson(json.dumps(rspDict))
+                            finally:
+                                break # out of request loop
+                    finally:
+                        # release reqtable lock
+                        self.reqtable.releaseLock()
+                else:
+                    # generate a failure response and send it to the client
+                    self.log.writeDebug([ '[ RequestWorker::run() ] time-out acquiring reqtable lock' ])
+                    rspDict = { 'serverstatus': { 'code': 'timeout', 'errmsg': 'unable to acquire request table lock' } }
+                    self.sendJson(json.dumps(rspDict))
+        except MSException as exc:
+            self.log.writeError([ '[ RequestWorker::run() ] error: ' + exc.msg ])
+        finally:
+            self.log.writeDebug([ 'RequestWorker ' + self.getID() + ' terminating' ])
             
     def getID(self):
         if hasattr(self, 'peerName') and self.peerName and len(self.peerName) > 0:
@@ -2942,28 +2980,29 @@ class RequestWorker(threading.Thread):
         timeOutTime = timeStart + self.clientResponseTimeout
 
         skipSleep = True # force a skip of the select() code for the first minute
+        toRead = [ self.sock ]
         while bytesReceivedTotal < RequestWorker.MSGLEN_NUMBYTES:
             if datetime.now() > timeOutTime:
-                raise ReceiveMsg('timeout waiting for response from client')
+                raise ReceiveMsg('[ receiveMsg()-1 ] timeout waiting for request from client')
 
             if skipSleep:
                 if datetime.now() > timedelta(minutes=1) + timeStart:
                     skipSleep = False
-            
-            toRead = [ self.sock ]
-            readable, writeable, problematic = select.select(toRead, [], [], 0) # does not block
+
+            readable, writeable, problematic = select.select(toRead, [], [], 0.1) # blocks for 0.1 seconds
 
             if len(readable) > 0:
+                self.log.writeDebug([ '[ receiveMsg()-1 ] server found something on socket to read' ])
                 # textReceived is a bytes object
                 textReceived = self.sock.recv(min(RequestWorker.MSGLEN_NUMBYTES - bytesReceivedTotal, RequestWorker.MAX_MSG_BUFSIZE))
                 if textReceived == b'':
-                    raise ReceiveMsg('socket broken - cannot receive message-length data from client')
+                    raise ReceiveMsg('[ receiveMsg()-1 ] socket broken - cannot receive message-length data from client')
                 allTextReceived.extend(textReceived)
                 bytesReceivedTotal += len(textReceived)
             else:
                 # a recv() would block
                 if not skipSleep:
-                    self.log.writeDebug([ 'waiting for client ' + self.peerName + ' to send request' ])
+                    self.log.writeDebug([ '[ receiveMsg()-1 ] waiting for client ' + self.peerName + ' to send request' ])
                     time.sleep(1)
             
         # Convert hex string to number.
@@ -2974,28 +3013,29 @@ class RequestWorker(threading.Thread):
         bytesReceivedTotal = 0
 
         skipSleep = True # force a skip of the select() code for the first minute
+        toRead = [ self.sock ]
         while bytesReceivedTotal < numBytesMessage:
             if datetime.now() > timeOutTime:
-                raise ReceiveMsg('timeout waiting for response from client')
+                raise ReceiveMsg('[ receiveMsg()-2 ] timeout waiting for request from client')
             
             if skipSleep:
                 if datetime.now() > timedelta(minutes=1) + timeStart:
                     skipSleep = False
-                
-            toRead = [ self.sock ]
-            readable, writeable, problematic = select.select(toRead, [], [], 0) # does not block
+
+            readable, writeable, problematic = select.select(toRead, [], [], 0.1) # blocks for 0.1 seconds
 
             if len(readable) > 0:
+                self.log.writeDebug([ '[ receiveMsg()-2 ] server found something on socket to read' ])
                 # textReceived is a bytes object          
                 textReceived = self.sock.recv(min(numBytesMessage - bytesReceivedTotal, RequestWorker.MAX_MSG_BUFSIZE))
                 if textReceived == b'':
-                    raise ReceiveMsg('socket broken - cannot receive message data from client')
+                    raise ReceiveMsg('[ receiveMsg()-2 ] socket broken - cannot receive message data from client')
                 allTextReceived.extend(textReceived)
                 bytesReceivedTotal += len(textReceived)
             else:
                 # a recv() would block
                 if not skipSleep:
-                    self.log.writeDebug([ 'waiting for client ' + self.peerName + ' to send request' ])
+                    self.log.writeDebug([ '[ receiveMsg()-2 ] waiting for client ' + self.peerName + ' to send request' ])
                     time.sleep(1)
 
         # Return a bytes object (not a string). The unjsonize function will need a str object for input.
@@ -3024,7 +3064,6 @@ class RequestWorker(threading.Thread):
 
         self.log.writeDebug([ self.getID() + ' - sent ' + str(bytesSentTotal) + ' bytes response' ])
 
-        
     def receiveJson(self):
         msgBytes = self.receiveMsg() # a bytearray object, not a str object. json.loads requires a str object
         return msgBytes.decode('UTF-8') # convert bytearray to str
@@ -3202,13 +3241,13 @@ class RequestDispatcher(threading.Thread):
                 try:
                     fdList = pollObj.poll(500)
                 except IOError as exc:
-                    raise Exception('poll', 'a failure occurred while checking for new client connections')
-        
+                  raise Exception('poll', 'a failure occurred while checking for new client connections')
+
                 if len(fdList) == 0:
                     # nobody is knocking on the door
                     continue
                 else:
-                    (clientSock, address) = serverSock.accept()
+                    (clientSock, address) = serverSock.accept() # blocking socket
                     self.log.writeCritical([ 'accepting a client request from ' + str(clientSock.getpeername()) + ', connected to server ' + str(clientSock.getsockname()) ])
                     
                     # spawn a short-lived thread to handle the request-subs.py requests

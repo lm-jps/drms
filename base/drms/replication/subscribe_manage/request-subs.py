@@ -1184,7 +1184,7 @@ if __name__ == "__main__":
 
                     if action.lower() == 'continue':
                         # make socket connection to manage-subs.py
-                        connection = Connection(client=client, host=serverhost, port=serverport, log=rslog)
+                        connection = Connection(client=client, host=serverhost, port=serverport, log=rsLog)
                         try:
                             # acquire the request-table lock, and the request lock too, if one exists - we will not be
                             # modifying the request, but we will read it then take action based upon what we read 
