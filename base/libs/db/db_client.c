@@ -346,7 +346,7 @@ DB_Binary_Result_t **db_recv_binary_query_ntuple(int sockfd, char **errmsg)
     return results;
 }
 
-DB_Text_Result_t *db_client_query_txt(int sockfd, char *query, int compress, char **errmsg)
+DB_Text_Result_t *db_client_query_txt(int sockfd, const char *query, int compress, char **errmsg)
 {
   int len,ctmp;
   struct iovec vec[3];
@@ -369,7 +369,7 @@ DB_Text_Result_t *db_client_query_txt(int sockfd, char *query, int compress, cha
 }
 
 
-DB_Binary_Result_t *db_client_query_bin(int sockfd, char *query, int compress, char **errmsg)
+DB_Binary_Result_t *db_client_query_bin(int sockfd, const char *query, int compress, char **errmsg)
 {
   int len,ctmp;
   struct iovec vec[3];
@@ -391,9 +391,7 @@ DB_Binary_Result_t *db_client_query_bin(int sockfd, char *query, int compress, c
   return db_recv_binary_query(sockfd, compress, errmsg);
 }
 
-DB_Binary_Result_t *db_client_query_bin_array(int sockfd, char *query, 
-					      int compress, int n_args,  
-					      DB_Type_t *intype, void **argin )
+DB_Binary_Result_t *db_client_query_bin_array(int sockfd, const char *query, int compress, int n_args, DB_Type_t *intype, void **argin )
 {
   int i,vc,tc;  
   int *tmp;
@@ -621,7 +619,7 @@ DB_Binary_Result_t **db_client_query_bin_ntuple(int sockfd, const char *stmnt, u
     return db_recv_binary_query_ntuple(sockfd, &errmsg);
 }
 
-int db_client_dms(int sockfd, int *row_count, char *query)
+int db_client_dms(int sockfd, int *row_count, const char *query)
 {
   int status, n;
 
@@ -638,9 +636,7 @@ int db_client_dms(int sockfd, int *row_count, char *query)
 }
 
 
-int db_client_dms_array(int sockfd,  int *row_count, char *query, 
-			int n_rows, int n_args, DB_Type_t *intype, 
-			void **argin )
+int db_client_dms_array(int sockfd,  int *row_count, const char *query, int n_rows, int n_args, DB_Type_t *intype, void **argin)
 {
   int status, n, i, j, tmp[10+MAXARG], tc, vc;
   int *len, sum;

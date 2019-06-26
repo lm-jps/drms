@@ -208,7 +208,7 @@ void db_disconnect(DB_Handle_t **db)
   }
 }
 
-DB_Text_Result_t *db_query_txt(DB_Handle_t  *dbin,  char *query_string)
+DB_Text_Result_t *db_query_txt(DB_Handle_t  *dbin, const char *query_string)
 {
   PGconn *db;
   PGresult *res;
@@ -328,7 +328,7 @@ DB_Text_Result_t *db_query_txt(DB_Handle_t  *dbin,  char *query_string)
   
 
 
-DB_Binary_Result_t *db_query_bin(DB_Handle_t  *dbin,  char *query_string)
+DB_Binary_Result_t *db_query_bin(DB_Handle_t *dbin, const char *query_string)
 {
   PGconn *db;
   PGresult *res;
@@ -466,9 +466,7 @@ failure:
  *
  * The results-returning analog of db_drms_array() is db_query_bin_ntuple().
  */
-DB_Binary_Result_t *db_query_bin_array(DB_Handle_t  *dbin, 
-				        char *query, int n_args,
-				       DB_Type_t *intype, void **argin )
+DB_Binary_Result_t *db_query_bin_array(DB_Handle_t  *dbin, const char *query, int n_args, DB_Type_t *intype, void **argin )
 {
   PGconn *db;
   PGresult *res;
@@ -1078,7 +1076,7 @@ DB_Binary_Result_t **db_query_bin_ntuple(DB_Handle_t *dbin, const char *stmnt, u
 }
 
 /* Execute a data manipulation statement (DMS). */
-int db_dms(DB_Handle_t  *dbin, int *row_count,  char *query_string)
+int db_dms(DB_Handle_t *dbin, int *row_count, const char *query_string)
 {
   PGconn *db;
   PGresult *res;
@@ -1141,9 +1139,7 @@ int db_dms(DB_Handle_t  *dbin, int *row_count,  char *query_string)
  *
  * The results-returning analog of db_drms_array() is db_query_bin_ntuple().
  */
-int db_dms_array(DB_Handle_t  *dbin, int *row_count, 
-		 char *query, int n_rows, 
-		 int n_args, DB_Type_t *intype, void **argin )
+int db_dms_array(DB_Handle_t  *dbin, int *row_count, const char *query, int n_rows, int n_args, DB_Type_t *intype, void **argin )
 {
   PGconn *db;
   PGresult *res;

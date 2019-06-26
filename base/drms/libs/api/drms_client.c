@@ -634,7 +634,7 @@ int drms_rollback(DRMS_Session_t *session)
   }
 }
 
-DB_Text_Result_t *drms_query_txt(DRMS_Session_t *session,  char *query)
+DB_Text_Result_t *drms_query_txt(DRMS_Session_t *session, const char *query)
 {
     char *errmsg = NULL;
     DB_Text_Result_t *rv = NULL;
@@ -664,7 +664,7 @@ DB_Text_Result_t *drms_query_txt(DRMS_Session_t *session,  char *query)
   }
 }
 
-DB_Binary_Result_t *drms_query_bin(DRMS_Session_t *session,  char *query)
+DB_Binary_Result_t *drms_query_bin(DRMS_Session_t *session, const char *query)
 {
     char *errmsg = NULL;
     DB_Binary_Result_t *rv = NULL;
@@ -697,8 +697,7 @@ DB_Binary_Result_t *drms_query_bin(DRMS_Session_t *session,  char *query)
 
 
 
-DB_Binary_Result_t *drms_query_binv(DRMS_Session_t *session,  char *query,
-				    ...)
+DB_Binary_Result_t *drms_query_binv(DRMS_Session_t *session, const char *query, ...)
 {
   DB_Type_t intype[MAXARG];
   void *argin[MAXARG];
@@ -796,9 +795,7 @@ DB_Binary_Result_t *drms_query_binv(DRMS_Session_t *session,  char *query,
 
 
 
-DB_Binary_Result_t *drms_query_bin_array(DRMS_Session_t *session,  char *query,
-					 int n_args, DB_Type_t *intype, 
-					 void **argin)
+DB_Binary_Result_t *drms_query_bin_array(DRMS_Session_t *session, const char *query, int n_args, DB_Type_t *intype, void **argin)
 {
 #ifdef DEBUG
   printf("drms_query_bin_array: query = %s\n",query);
@@ -835,7 +832,7 @@ DB_Binary_Result_t **drms_query_bin_ntuple(DRMS_Session_t *session, const char *
 }
 
 
-int drms_dms(DRMS_Session_t *session, int *row_count,  char *query)
+int drms_dms(DRMS_Session_t *session, int *row_count, const char *query)
 {
 #ifndef DRMS_CLIENT
   if (session->db_direct)
@@ -855,8 +852,7 @@ int drms_dms(DRMS_Session_t *session, int *row_count,  char *query)
 
 /* DMS function with variable argument list. Collects arguments in
    list of void * and calls db_dms_array. */
-int drms_dmsv(DRMS_Session_t *session, int *row_count,  char *query, 
-	      int n_rows, ...)
+int drms_dmsv(DRMS_Session_t *session, int *row_count, const char *query, int n_rows, ...)
 {
   int status=1;
   DB_Type_t intype[MAXARG];
