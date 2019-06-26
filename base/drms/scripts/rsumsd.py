@@ -1337,12 +1337,18 @@ class ReqTable:
     rsDbLock = None # There is one global lock for the rs connection. Since the main thread and the Downloader and ScpWorker threads
                     # all share the rs connection, they all need to use the same lock.
 
-    def __init__(self, tableName, timeOut, log):
+    def __init__(self, tableName, timeOut, dlTimeOut, log):
         self.tableName = tableName
         self.timeOut = timeOut
+        # we sometimes check on new requests, in which case, we do not create a new SU table
+        if dlTimeOut is not None:
+            self.suTable = SuTable(dlTimeOut, self, log)
         self.log = log
         self.reqDict = {}
         self.lock = threading.Lock() # for concurrent access to reqDict (needed to get req type for determining priority)
+        
+    def getSuTable(self):
+        return self.suTable;
         
     def acquireLock(self):
         return self.lock.acquire()
@@ -1429,10 +1435,12 @@ class ReqTable:
     def refresh(self):
         # read the table from the database anew, but put the new request info into a temporary ReqTable
         # SLOW code
-        tmpTable = ReqTable(self.tableName, self.timeOut, self.log)
+        self.log.writeDebug([ 'refreshing requests dictionary' ])
+        tmpTable = ReqTable(self.tableName, self.timeOut, None, self.log)
         tmpTable.tryRead()
         # end SLOW code
     
+        # reqtable lock
         self.acquireLock()
         try:
             # save attributes not saved in the db
@@ -1448,9 +1456,28 @@ class ReqTable:
                 saved['complete'][key] = val['complete'] # list of SUs already downloaded for this request
 
             # replace existing reqDict items with newly read items
-            # ART - this could overwrite requests currently being processed; what we need to do is to 
-            # shut-down ScpWorkers with stop(), let the Workers quit; the dispatcher queue might have items with the
-            # request in them though
+            # the dispatcher queue might have items with the request in them
+            
+            # compare self.reqDict and tmpTable.reqDict; if there is a request in self.reqDict that is not in 
+            # tempTable.reqDict, then that means the request was deleted outside of rsumsd.py (most likely
+            # by lib DRMS when a remote SUMS request times-out); we need to:
+            #   1. collect the request's SUs in a list
+            #   2. call removeRequestFromSUMap() on the request and its SUs - this removes all traces of the request
+            #      from the SU map
+            #   3. call removeSUs() on the list of this request's SUs - this is necessary so that the refcount
+            #      on the SUs gets decremented, possibly removing the SUs entirely
+            for reqIDStr in self.reqDict:
+                if reqIDStr not in tmpTable.reqDict:
+                    self.log.writeDebug([ 'request ' + reqIDStr + ' removed from requests DB table by external agent' ])
+                    request = self.reqDict[reqIDStr]
+                    sunums = list(set(request['sunums']))
+                    sus, missingSunums = self.suTable.getSUs(releaseTableLock=False, sunums=list(sunums))
+                    try:
+                        self.suTable.removeRequestFromSUMap(sus=sus, requestid=request['requestid'])
+                        self.suTable.removeSUs(sunums=[ su.sunum for su in sus ], locktable=False)
+                    finally:
+                        self.suTable.releaseLock()
+
             self.reqDict = tmpTable.reqDict.copy()
         
             # we have to restore the things that do not stick in the db (but only for pending requests)
@@ -3299,14 +3326,14 @@ if __name__ == "__main__":
 
             ReqTable.rsConn = rsConn # Class variable
             ReqTable.rsDbLock = rsDbLock # Class variable
-            reqTableObj = ReqTable(reqTable, arguments.reqtimeout, rslog)
 
             SuTable.rsConn = rsConn # Class variable
             SuTable.sumsConn = sumsConn # Class variable
             SuTable.rsDbLock = rsDbLock # Class variable
             SuTable.sumsDbLock = sumsDbLock # Class variable
-            suTableObj = SuTable(arguments.dltimeout, reqTableObj, rslog)
 
+            reqTableObj = ReqTable(reqTable, arguments.reqtimeout, arguments.dltimeout, rslog)
+            suTableObj = reqTableObj.getSuTable()
             
             Downloader.sumsConn = sumsConn
             Downloader.sumsDbLock = sumsDbLock # Class variable
