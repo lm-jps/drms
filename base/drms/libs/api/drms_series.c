@@ -388,7 +388,7 @@ int GetTempTable(char *tabname, int size)
 
    if (id < INT_MAX)
    {
-      snprintf(tabname, size, "drmstemp%03d", id);
+      snprintf(tabname, size, "drmstemp%05llu_%03d", (unsigned long long)getpid(), id);
       id++;
       return 0;
    }
@@ -6640,7 +6640,8 @@ LinkedList_t *drms_series_querystringFL(DRMS_Env_t *env, const char *series, con
                 
                     if (nrecs != 0)
                     {
-                        query = base_strcatalloc(query, "\n(\n", &stsz);
+                        query = base_strcatalloc(query, " FROM\n", &stsz);
+                        query = base_strcatalloc(query, "(\n", &stsz);
                         query = base_strcatalloc(query, "SELECT ", &stsz);
                         query = base_strcatalloc(query, qualfieldsSeries, &stsz);
                     }
