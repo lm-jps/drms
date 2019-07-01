@@ -270,6 +270,11 @@ WL_FILE                               /usr/share/drms/whitelist.txt
 # The paths to various binaries.
 BIN_EXPORT                            /opt/drms/bin
 SCRIPTS_EXPORT                        /opt/drms/scripts
+
+EXPORT_LOG_DIR                        /opt/exports/logs
+EXPORT_LOCK_DIR                       /opt/exports/tmp
+EXPORT_HANDLE_DIR                     /opt/exports
+
 # The Python binary must be at least version 2.7. 3.x binaries will work.
 BIN_PY                                /usr/bin/python
 
