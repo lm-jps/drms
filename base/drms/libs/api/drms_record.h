@@ -64,7 +64,7 @@ struct DRMS_RecordSet_Sql_Statement_struct
     char *pkeylist; /* if this is a DDL statement, this is the primary-key of the rows of the temp table */
     char *parent; /* the parent series, if this is a DML statement for a child series */
     char *link; /* the link from the parent to the child, if this is a DML statement for a child series */
-    char *temp; /* temporary DB table DDL statement is creating, or DML statement is selecting from */
+    LinkedList_t *temp; /* temporary DB table DDL statement is creating, or DML statement is selecting from */
 };
 
 typedef struct DRMS_RecordSet_Sql_Statement_struct DRMS_RecordSet_Sql_Statement_t;

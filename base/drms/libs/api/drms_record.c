@@ -1614,6 +1614,42 @@ static void CreateRecordStructs(DRMS_Env_t *env, DRMS_Record_t *template, DB_Bin
     rs->records[recIndex]->readonly = 1;
 }
 
+static void DeleteTempTable(const void *key, const void *value, const void *data)
+{
+    DRMS_Env_t *env = (DRMS_Env_t *)(data);
+    char *tableName = (char *)value;
+    char query[1024];
+    int err = DRMS_SUCCESS;
+
+    snprintf(query, sizeof(query), "DROP TABLE %s CASCADE", tableName);
+
+    if (env->verbose)
+    {
+        fprintf(stdout, "executing SQL: %s\n", query);
+        TIME(err = drms_dms(env->session, NULL, query));
+    }
+    else
+    {
+        err = drms_dms(env->session, NULL, query);
+    }
+    
+    if (err)
+    {
+        fprintf(stderr, "unable to delete temporary DB table %s\n", tableName);
+    }
+}
+
+static void FreeTempTableName(void *val)
+{
+   char **str = (char **)val;
+
+   if (str && *str)
+   {
+      free(*str);
+      *str = NULL;
+   }
+}
+
 /* Retrieve a set of data records from a series satisfying the condition
    given in the string "where", which must be valid SQL WHERE clause wrt. 
    the main record table for the series.
@@ -1633,6 +1669,9 @@ static void CreateRecordStructs(DRMS_Env_t *env, DRMS_Record_t *template, DB_Bin
  * record cache.
  *
  * if fetching linked records, seriesname is the name of the parent series, not the child series
+ */
+ 
+/* cursor == 1 ONLY if drms_retrieve_records_internal is called from drms_open_recordchunk()
  */
 static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *seriesname, char *where, const char *pkwhere, const char *npkwhere, int filter, int mixed, HContainer_t *goodsegcont, LinkedList_t *qoverride, int allvers, int nrecs, HContainer_t *firstlast, HContainer_t *pkwhereNFL, int recnumq, int cursor, HContainer_t *links, /* Links to fetch from db. */ HContainer_t *keys, /* Keys to fetch from db. */ HContainer_t *segs, /* Segs to fetch from db. */ int fetchLinkedRecords, /* cached, but not put into returned set */ int *status)
 {
@@ -1738,7 +1777,7 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const c
                      * use this temp table that contains a chunk of records to query the child table */
                     statementTempTable = base_strcatalloc(statementTempTable, "CREATE TEMPORARY TABLE ", &statementTempTableSz);
                     statementTempTable = base_strcatalloc(statementTempTable, tempTable, &statementTempTableSz);
-                    statementTempTable = base_strcatalloc(statementTempTable, " AS\n", &statementTempTableSz);
+                    statementTempTable = base_strcatalloc(statementTempTable, " ON COMMIT DROP AS\n", &statementTempTableSz);
                     statementTempTable = base_strcatalloc(statementTempTable, "  ", &statementTempTableSz);
                     statementTempTable = base_strcatalloc(statementTempTable, statementRecordChunk->statement, &statementTempTableSz);
                     
@@ -1762,7 +1801,17 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const c
                     statementDDL.dmlSeries = NULL;
                     statementDDL.pkeylist = NULL;
                     statementDDL.link = NULL;
-                    statementDDL.temp = strdup(tempTable);
+
+                    if (tempTable && *tempTable != '\0')
+                    {
+                        statementDDL.temp = list_llcreate(sizeof(char *), FreeTempTableName);
+                        list_llinserttail(statementDDL.temp, &tempTable);
+                    }
+                    else
+                    {
+                        statementDDL.temp = NULL;
+                    }
+
                     list_llinserttail(statementList, &statementDDL); /* yoink! */
                     
                     statementSelect = base_strcatalloc(statementSelect, "SELECT * FROM ", &statementSelectSz);
@@ -1774,7 +1823,17 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const c
                     statementDML.dmlSeries = statementRecordChunk->dmlSeries ? strdup(statementRecordChunk->dmlSeries) : NULL; 
                     statementDML.pkeylist = statementRecordChunk->pkeylist ? strdup(statementRecordChunk->pkeylist) : NULL;
                     statementDML.link = statementRecordChunk->link ? strdup(statementRecordChunk->link) : NULL;
-                    statementDML.temp = strdup(tempTable);
+                    
+                    if (tempTable && *tempTable != '\0')
+                    {
+                        statementDML.temp = list_llcreate(sizeof(char *), FreeTempTableName);
+                        list_llinserttail(statementDML.temp, &tempTable);
+                    }
+                    else
+                    {
+                        statementDML.temp = NULL;
+                    }                    
+                    
                     list_llinserttail(statementList, &statementDML); /* yoink! */
                 }
                 else
@@ -1923,7 +1982,14 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const c
          *  by ones for the child series 
          */
         DRMS_RecordSet_Sql_Statement_t *statement = NULL;
+        ListNode_t *tempNode = NULL;
+        char *tempTableCreated = NULL;
+        
+        /* ART - keep track of all temp tables (aside from the parent temp tables for parent chunks) so we can
+         * drop all of them after we iterate through all the statements that use them */
+        Hash_Table_t tempTablesHT;
 
+        hash_init(&tempTablesHT, 13, 0, (int (*)(const void *, const void *))strcmp, hash_universal_hash);
         list_llreset(statementList);     
         while ((ln = list_llnext(statementList)) != 0)
         {
@@ -1934,6 +2000,26 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const c
             if (statement->type == RECORDSET_SQLSTATEMENT_LANGTYPE_DDL)
             {
                 /* likely a statement to create a temporary table */
+                if (statement->temp != NULL)
+                {
+                    /* ugh - need to loop over temp tables (could be more than one) */                    
+                    list_llreset(statement->temp);
+                    while ((tempNode = list_llnext(statement->temp)) != NULL)
+                    {
+                        tempTableCreated = *((char **)(tempNode->data));
+                        
+                        if (!hash_member(&tempTablesHT, tempTableCreated))
+                        {
+                            hash_insert(&tempTablesHT, tempTableCreated, "T");
+                        
+                            if (env->verbose)
+                            {
+                                fprintf(stdout, "[ drms_retrieve_records_internal() ] creating temporary table: %s\n", tempTableCreated);
+                            }
+                        }
+                    }
+                }
+                
                 if (env->verbose)
                 {
                     fprintf(stdout, "[ drms_retrieve_records_internal() ] running DDL query: %s\n", query);
@@ -1954,10 +2040,25 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const c
             else
             {            
                 /* a statement to select rows from the parent or child series */
+                
+                /* one all queries referring to a temp table have been completed, we need to delete the temp table; to do that, 
+                 * store the name of all temp tables here */
                 if (env->verbose)
                 {
                     fprintf(stdout, "[ drms_retrieve_records_internal() ] selecting rows from %s series\n", statement->parent ? "child" : "parent");
                     fprintf(stdout, "[ drms_retrieve_records_internal() ] running DML query: %s\n", query);
+                    
+                    if (statement->temp != NULL)
+                    {
+                        /* ugh - need to loop over temp tables (could be more than one) */
+                        list_llreset(statement->temp);
+                        while ((tempNode = list_llnext(statement->temp)) != NULL)
+                        {
+                            tempTableCreated = *((char **)(tempNode->data));
+                            fprintf(stdout, "[ drms_retrieve_records_internal() ] reading from temporary table: %s\n", tempTableCreated);
+                        }
+                    } 
+                    
                     TIME(qres = drms_query_bin(env->session, query));
                 }
                 else
@@ -2086,7 +2187,16 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const c
     
         rs = parentRecs;
         list_llfree(&statementList);
-    }
+    
+        /* ART - done running all SQL statements; we can drop all temp tables; for cursors, we do not want to drop the temp tables of all 
+         * parent chunks until the cursor is closed; but the SQL to create the temp tables is run in drms_open_records_internal(), and
+         * the SQL to drop all such temp tables is run in drms_free_cursor(); the DRMS_RecordSet_Sql_Statement_t struct for each 
+         * chunk temp table select is set to NULL, so we will not drop the parent cursor temp tables here, as desired;
+         * 
+         * iterate through tempTablesHT, dropping all temp tables created/used
+         */
+        hash_map_data(&tempTablesHT, DeleteTempTable, env);   
+    }  
 
   if (goodsegcont && rs->n > 0)
   {
@@ -2728,7 +2838,13 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *record
                                 }
                                 else
                                 {
+                                    /* create the cursor's temporary parent table; this hold all records for all chunks */
                                     qstat = drms_dms(env->session, NULL, statement->statement);
+                                    
+                                    /* ART - the N DDL statements create the temp tables (depending on the query);
+                                     * we need to drop all N temp tables in the 
+                                     */
+
                                 }
 
                                 if (qstat)
@@ -3139,6 +3255,8 @@ DRMS_RecordSet_t *drms_open_recordset_internal(DRMS_Env_t *env, const char *rsqu
         char *allvers = NULL;
         ListNode_t *ln = NULL;
         DRMS_RecordSet_Sql_Statement_t *statement = NULL;
+        ListNode_t *tempNode = NULL;
+        char *tempTableCreated = NULL;
         
         if (tmp)
         {
@@ -3185,7 +3303,16 @@ DRMS_RecordSet_t *drms_open_recordset_internal(DRMS_Env_t *env, const char *rsqu
                 
                 /* statement->temp is the name of the temp table that contains ALL of the selected records for the rec set; we
                  * will be selecting a chunk of these in drms_open_recordchunk() */
-                rs->cursor->names[iset] = strdup(statement->temp);
+
+                /* ugh - need to loop over temp tables (should be only one though!) */
+                XASSERT(statement->temp && list_llgetnitems(statement->temp) == 1);
+                list_llreset(statement->temp);
+                while ((tempNode = list_llnext(statement->temp)) != NULL)
+                {
+                    tempTableCreated = *((char **)(tempNode->data));
+                    rs->cursor->names[iset] = strdup(tempTableCreated);
+                }
+
                 XASSERT(allvers[iset] != '\0');
                 rs->cursor->allvers[iset] = (allvers[iset] == 'y');
                 
@@ -6751,8 +6878,7 @@ void FreeSqlStatement(void *data)
         
         if (statement->temp)
         {
-            free(statement->temp);
-            statement->temp = NULL;        
+            list_llfree(&statement->temp);
         }
         
         statement->type = RECORDSET_SQLSTATEMENT_LANGTYPE_UKNOWN;
@@ -12192,8 +12318,13 @@ static int drms_open_recordchunk(DRMS_Env_t *env, DRMS_RecordSet_t *rs, DRMS_Rec
                     statement.dmlSeries = strdup(seriesname);
                     statement.pkeylist = drms_series_createPkeyList(env, seriesname, NULL, NULL, NULL, NULL, &stat);
                     statement.link = NULL;
-                    statement.temp = NULL;
-        
+                    statement.temp = NULL; /* ART - very important! In drms_retrieve_records_internal() where this SQL is run, 
+                                            * we collect all temp tables from these DRMS_RecordSet_Sql_Statement_t structs, 
+                                            * and then we drop those tables; but we do not want to drop the cursor parent 
+                                            * temp tables until drms_free_cursor() is run; by setting this to NULL, we
+                                            * ensure that happens
+                                            */
+
                     if (!statementList)
                     {
                         statementList = list_llcreate(sizeof(DRMS_RecordSet_Sql_Statement_t), (ListFreeFn_t)FreeSqlStatement);
@@ -12684,7 +12815,26 @@ void drms_free_cursor(DRMS_RecSetCursor_t **cursor)
                 {
                     if ((*cursor)->names[iname])
                     {
-                        /* ART - we no longer use cursors for the drms_openrecordset() case - so do not CLOSE a cursor */
+                        /* ART - we no longer use cursors for the drms_openrecordset() case - so do not CLOSE a cursor; these
+                         * cursor names are actually the names of the temp tables that hold all parent records from which 
+                         * chunks are downloaded; drop them now
+                         */
+                        snprintf(sqlquery, sizeof(sqlquery), "DROP TABLE %s CASCADE", (*cursor)->names[iname]);
+
+                        if ((*cursor)->env->verbose)
+                        {
+                            fprintf(stdout, "[ drms_free_cursor() ] running DDL query: %s\n", sqlquery);
+                            TIME(drms_dms((*cursor)->env->session, NULL, sqlquery));
+                            
+                            /* ART - the first N DDL statements create the counting SQL temp tables (depending on the query), 
+                             * the second N drops them 
+                             */
+                        }
+                        else
+                        {
+                            drms_dms((*cursor)->env->session, NULL, sqlquery);                
+                        }
+                         
                         free((*cursor)->names[iname]);
                         (*cursor)->names[iname] = NULL;
                     }
@@ -12816,6 +12966,10 @@ int drms_count_records(DRMS_Env_t *env, const char *recordsetname, int *status)
                             {
                                 fprintf(stdout, "[ drms_count_records() ] running DDL query: %s\n", query);
                                 TIME(stat = drms_dms(env->session, NULL, query));
+                                
+                                /* ART - the first N DDL statements create the counting SQL temp tables (depending on the query), 
+                                 * the second N drops them 
+                                 */
                             }
                             else
                             {
@@ -13023,6 +13177,10 @@ DRMS_Array_t *drms_record_getvector(DRMS_Env_t *env,
                         else
                         {
                             stat = drms_dms(env->session, NULL, query);
+                            
+                            /* ART - the first N DDL statements create the counting SQL temp tables (depending on the query), 
+                             * the second N drops them 
+                             */
                         }
 
                         if (stat)

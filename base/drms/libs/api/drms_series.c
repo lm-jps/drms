@@ -5396,6 +5396,17 @@ void drms_series_unsetcreateshadows(DRMS_Env_t *env)
     env->createshadows = 0;
 }
 
+static void FreeTempTableName(void *val)
+{
+   char **str = (char **)val;
+
+   if (str && *str)
+   {
+      free(*str);
+      *str = NULL;
+   }
+}
+
 /* neither pkwhere nor npkwhere exists. */
 /* 
  * SELECT field1, field2, ..., fieldN FROM <series> as SERIEST
@@ -5472,7 +5483,7 @@ LinkedList_t *drms_series_querystringA(DRMS_Env_t *env, const char *series, cons
                      */
                     query = base_strcatalloc(query, "CREATE TEMPORARY TABLE ", &stsz);
                     query = base_strcatalloc(query, tempTable, &stsz);
-                    query = base_strcatalloc(query, " AS ", &stsz);
+                    query = base_strcatalloc(query, " ON COMMIT DROP AS\n", &stsz);
                 }
 
                 /* select the records from the series table; a JOIN clause seems to be the fastest method when
@@ -5518,9 +5529,19 @@ LinkedList_t *drms_series_querystringA(DRMS_Env_t *env, const char *series, cons
                         statement.dmlSeries = NULL;
                         statement.pkeylist = NULL;
                         statement.link = NULL;
+
                         /* save the name of the temp table so that the drms_open_recordchunk() knows which table
                          * to select chunks from */
-                        statement.temp = (cursor ? strdup(tempTable) : NULL);
+                        if (tempTable && *tempTable != '\0')
+                        {
+                            statement.temp = list_llcreate(sizeof(char *), FreeTempTableName);
+                            list_llinserttail(statement.temp, &tempTable);
+                        }
+                        else
+                        {
+                            statement.temp = NULL;
+                        }
+                        
                         list_llinserttail(queryList, &statement);
                         query = NULL;
                         stsz = 512;
@@ -5542,7 +5563,17 @@ LinkedList_t *drms_series_querystringA(DRMS_Env_t *env, const char *series, cons
                     statement.dmlSeries = strdup(series);
                     statement.pkeylist = strdup(pkeylist);
                     statement.link = NULL;
-                    statement.temp = (cursor ? strdup(tempTable) : NULL);
+                    
+                    if (tempTable && *tempTable != '\0')
+                    {
+                        statement.temp = list_llcreate(sizeof(char *), FreeTempTableName);
+                        list_llinserttail(statement.temp, &tempTable);
+                    }
+                    else
+                    {
+                        statement.temp = NULL;
+                    }
+
                     list_llinserttail(queryList, &statement);
                     query = NULL;
                 }
@@ -5686,7 +5717,7 @@ LinkedList_t *drms_series_querystringB(DRMS_Env_t *env, const char *series, cons
                      */
                     query = base_strcatalloc(query, "CREATE TEMPORARY TABLE ", &stsz);
                     query = base_strcatalloc(query, tempTable, &stsz);
-                    query = base_strcatalloc(query, " AS ", &stsz);
+                    query = base_strcatalloc(query, " ON COMMIT DROP AS\n", &stsz);
                 }
 
                 /* Select the records from the series table. */
@@ -5759,8 +5790,17 @@ LinkedList_t *drms_series_querystringB(DRMS_Env_t *env, const char *series, cons
                         statement.pkeylist = NULL;
                         statement.link = NULL;
                         /* save the name of the temp table so that the drms_open_recordchunk() knows which table
-                         * to select chunks from */                        
-                        statement.temp = (cursor ? strdup(tempTable) : NULL);
+                         * to select chunks from */
+                         
+                        if (tempTable && *tempTable != '\0')
+                        {
+                            statement.temp = list_llcreate(sizeof(char *), FreeTempTableName);
+                            list_llinserttail(statement.temp, &tempTable);
+                        }
+                        else
+                        {
+                            statement.temp = NULL;
+                        }
 
                         if (!statementList)
                         {
@@ -5786,7 +5826,16 @@ LinkedList_t *drms_series_querystringB(DRMS_Env_t *env, const char *series, cons
                 statement.dmlSeries = strdup(series);
                 statement.pkeylist = strdup(pkeylist);
                 statement.link = NULL;
-                statement.temp = (cursor ? strdup(tempTable) : NULL);
+                
+                if (tempTable && *tempTable != '\0')
+                {
+                    statement.temp = list_llcreate(sizeof(char *), FreeTempTableName);
+                    list_llinserttail(statement.temp, &tempTable);
+                }
+                else
+                {
+                    statement.temp = NULL;
+                }
 
                 if (!statementList)
                 {
@@ -5946,7 +5995,7 @@ LinkedList_t *drms_series_querystringC(DRMS_Env_t *env, const char *series, cons
                      */
                     query = base_strcatalloc(query, "CREATE TEMPORARY TABLE ", &stsz);
                     query = base_strcatalloc(query, tempTable, &stsz);
-                    query = base_strcatalloc(query, " AS ", &stsz);
+                    query = base_strcatalloc(query, " ON COMMIT DROP AS\n", &stsz);
                 }
 
                 query = base_strcatalloc(query, "WITH FILTEREDSHADOWT AS\n", &stsz);
@@ -6023,7 +6072,16 @@ LinkedList_t *drms_series_querystringC(DRMS_Env_t *env, const char *series, cons
                         statement.link = NULL;
                         /* save the name of the temp table so that the drms_open_recordchunk() knows which table
                          * to select chunks from */
-                        statement.temp = (cursor ? strdup(tempTable) : NULL);
+                         
+                        if (tempTable && *tempTable != '\0')
+                        {
+                            statement.temp = list_llcreate(sizeof(char *), FreeTempTableName);
+                            list_llinserttail(statement.temp, &tempTable);
+                        }
+                        else
+                        {
+                            statement.temp = NULL;
+                        }
 
                         if (!statementList)
                         {
@@ -6051,7 +6109,16 @@ LinkedList_t *drms_series_querystringC(DRMS_Env_t *env, const char *series, cons
                     statement.dmlSeries = strdup(series);
                     statement.pkeylist = strdup(pkeylist);
                     statement.link = NULL;
-                    statement.temp = (cursor ? strdup(tempTable) : NULL);
+                    
+                    if (tempTable && *tempTable != '\0')
+                    {
+                        statement.temp = list_llcreate(sizeof(char *), FreeTempTableName);
+                        list_llinserttail(statement.temp, &tempTable);
+                    }
+                    else
+                    {
+                        statement.temp = NULL;
+                    }
                     
                     if (!statementList)
                     {
@@ -6220,7 +6287,7 @@ LinkedList_t *drms_series_querystringD(DRMS_Env_t *env, const char *series, cons
                      */
                     query = base_strcatalloc(query, "CREATE TEMPORARY TABLE ", &stsz);
                     query = base_strcatalloc(query, tempTable, &stsz);
-                    query = base_strcatalloc(query, " AS\n", &stsz);
+                    query = base_strcatalloc(query, " ON COMMIT DROP AS\n", &stsz);
                 }
 
                 query = base_strcatalloc(query, "WITH FILTEREDSHADOWT AS\n", &stsz);
@@ -6308,9 +6375,18 @@ LinkedList_t *drms_series_querystringD(DRMS_Env_t *env, const char *series, cons
                         statement.dmlSeries = NULL;
                         statement.pkeylist = NULL;
                         statement.link = NULL;
+
                         /* save the name of the temp table so that the drms_open_recordchunk() knows which table
                          * to select chunks from */
-                        statement.temp = (cursor ? strdup(tempTable) : NULL);
+                        if (tempTable && *tempTable != '\0')
+                        {
+                            statement.temp = list_llcreate(sizeof(char *), FreeTempTableName);
+                            list_llinserttail(statement.temp, &tempTable);
+                        }
+                        else
+                        {
+                            statement.temp = NULL;
+                        }
                         
                         if (!statementList)
                         {
@@ -6336,7 +6412,16 @@ LinkedList_t *drms_series_querystringD(DRMS_Env_t *env, const char *series, cons
                     statement.dmlSeries = strdup(series);
                     statement.pkeylist = strdup(pkeylist);
                     statement.link = NULL;
-                    statement.temp = (cursor ? strdup(tempTable) : NULL);
+                    
+                    if (tempTable && *tempTable != '\0')
+                    {
+                        statement.temp = list_llcreate(sizeof(char *), FreeTempTableName);
+                        list_llinserttail(statement.temp, &tempTable);
+                    }
+                    else
+                    {
+                        statement.temp = NULL;
+                    }
 
                     if (!statementList)
                     {
@@ -6541,7 +6626,7 @@ LinkedList_t *drms_series_querystringFL(DRMS_Env_t *env, const char *series, con
                          */
                         query = base_strcatalloc(query, "CREATE TEMPORARY TABLE ", &stsz);
                         query = base_strcatalloc(query, tempTable, &stsz);
-                        query = base_strcatalloc(query, " AS ", &stsz);
+                        query = base_strcatalloc(query, " ON COMMIT DROP AS\n", &stsz);
                     }
                 }
 
@@ -6701,9 +6786,19 @@ LinkedList_t *drms_series_querystringFL(DRMS_Env_t *env, const char *series, con
                             statement.dmlSeries = NULL;
                             statement.pkeylist = NULL;
                             statement.link = NULL;
+
                             /* save the name of the temp table so that the drms_open_recordchunk() knows which table
                              * to select chunks from */
-                            statement.temp = (cursor ? strdup(tempTable) : NULL);
+                            if (tempTable && *tempTable != '\0')
+                            {
+                                statement.temp = list_llcreate(sizeof(char *), FreeTempTableName);
+                                list_llinserttail(statement.temp, &tempTable);
+                            }
+                            else
+                            {
+                                statement.temp = NULL;
+                            }
+
                             if (!statementList)
                             {
                                 statementList = list_llcreate(sizeof(DRMS_RecordSet_Sql_Statement_t), (ListFreeFn_t)FreeSqlStatement);
@@ -6729,7 +6824,16 @@ LinkedList_t *drms_series_querystringFL(DRMS_Env_t *env, const char *series, con
                     statement.dmlSeries = strdup(series);
                     statement.pkeylist = strdup(pkeylist);
                     statement.link = NULL;
-                    statement.temp = (cursor ? strdup(tempTable) : NULL);
+                    
+                    if (tempTable && *tempTable != '\0')
+                    {
+                        statement.temp = list_llcreate(sizeof(char *), FreeTempTableName);
+                        list_llinserttail(statement.temp, &tempTable);
+                    }
+                    else
+                    {
+                        statement.temp = NULL;
+                    }
 
                     if (!statementList)
                     {
@@ -6828,7 +6932,7 @@ LinkedList_t *drms_series_querystring_wrap(DRMS_Env_t *env, const char *series, 
                  */
                 queryTemp = base_strcatalloc(queryTemp, "CREATE TEMPORARY TABLE ", &stsz);
                 queryTemp = base_strcatalloc(queryTemp, tempTable, &stsz);
-                queryTemp = base_strcatalloc(queryTemp, " AS ", &stsz);
+                queryTemp = base_strcatalloc(queryTemp, " ON COMMIT DROP AS\n", &stsz);
                 queryTemp = base_strcatalloc(queryTemp, statementString, &stsz);
                 qualfieldsTemp = ModifyFieldList(fields, "TEMPT.", NULL, &istat);
 
@@ -6847,9 +6951,18 @@ LinkedList_t *drms_series_querystring_wrap(DRMS_Env_t *env, const char *series, 
                 statement.dmlSeries = NULL;
                 statement.pkeylist = NULL;
                 statement.link = NULL;
+                
                 /* save the name of the temp table so that the drms_open_recordchunk() knows which table
                  * to select chunks from */
-                statement.temp = (cursor ? strdup(tempTable) : NULL);
+                if (tempTable && *tempTable != '\0')
+                {
+                    statement.temp = list_llcreate(sizeof(char *), FreeTempTableName);
+                    list_llinserttail(statement.temp, &tempTable);
+                }
+                else
+                {
+                    statement.temp = NULL;
+                }
 
                 if (!statementList)
                 {
@@ -6886,9 +6999,19 @@ LinkedList_t *drms_series_querystring_wrap(DRMS_Env_t *env, const char *series, 
             statement.dmlSeries = strdup(series);
             statement.pkeylist = strdup(pkeylist);
             statement.link = NULL;
+            
             /* save the name of the temp table so that the drms_open_recordchunk() knows which table
-            * to select chunks from */
-            statement.temp = (cursor ? strdup(tempTable) : NULL);
+             * to select chunks from */
+            if (tempTable && *tempTable != '\0')
+            {
+                statement.temp = list_llcreate(sizeof(char *), FreeTempTableName);
+                list_llinserttail(statement.temp, &tempTable);
+            }
+            else
+            {
+                statement.temp = NULL;
+            }
+
             if (!statementList)
             {
                 statementList = list_llcreate(sizeof(DRMS_RecordSet_Sql_Statement_t), (ListFreeFn_t)FreeSqlStatement);
@@ -6952,7 +7075,7 @@ static char *CreateTemporaryTableDDL(DRMS_Env_t *env, const char *sql, const cha
             {
                 ddl = base_strcatalloc(ddl, "CREATE TEMPORARY TABLE ", &stsz);
                 ddl = base_strcatalloc(ddl, tableName, &stsz);
-                ddl = base_strcatalloc(ddl, " AS ", &stsz);
+                ddl = base_strcatalloc(ddl, " ON COMMIT DROP AS\n", &stsz);
                 ddl = base_strcatalloc(ddl, sql, &stsz);    
             }
         }
@@ -7008,6 +7131,7 @@ LinkedList_t *drms_series_links_statements(DRMS_Env_t *env, const char *parentTe
     char *statementRecInfo = NULL;
     size_t statementRecInfoSz = 128;
     char *lcParentSeries = NULL;
+    char *parentPkeys = NULL;
     int iRow = 0;
     const char *link = NULL;
     char *lcLink = NULL;
@@ -7041,6 +7165,15 @@ LinkedList_t *drms_series_links_statements(DRMS_Env_t *env, const char *parentTe
         err = 1;
     }
     
+    parentPkeys = CreatePKeyList(env, parentSeries, NULL, NULL, NULL, NULL, 0, &istat);
+
+    if (!parentPkeys || istat != DRMS_SUCCESS)
+    {
+        fprintf(stderr, " [drms_series_links_statements() ] unable to create prime-key list for '%s'\n", parentSeries);
+        err = 1;
+    }
+
+    
     if (!err)
     {
         lcParentSeries = strdup(parentSeries);
@@ -7052,7 +7185,7 @@ LinkedList_t *drms_series_links_statements(DRMS_Env_t *env, const char *parentTe
     }
     
     if (!err)
-    {
+    {    
         strtolower(lcParentSeries);
 
         for (iRow = 0; iRow < dbResult->num_rows && !err; iRow++)
@@ -7195,7 +7328,7 @@ LinkedList_t *drms_series_links_statements(DRMS_Env_t *env, const char *parentTe
 
                     statementRecInfo = base_strcatalloc(statementRecInfo, "CREATE TEMPORARY TABLE ", &statementRecInfoSz);
                     statementRecInfo = base_strcatalloc(statementRecInfo, tempTableA, &statementRecInfoSz);
-                    statementRecInfo = base_strcatalloc(statementRecInfo, " AS\n", &statementRecInfoSz);                    
+                    statementRecInfo = base_strcatalloc(statementRecInfo, " ON COMMIT DROP AS\n", &statementRecInfoSz);                    
                     statementRecInfo = base_strcatalloc(statementRecInfo, "  SELECT recnum AS parent_recnum, ", &statementRecInfoSz);
                     statementRecInfo = base_strcatalloc(statementRecInfo, linkCols, &statementRecInfoSz);
                     statementRecInfo = base_strcatalloc(statementRecInfo, " FROM ", &statementRecInfoSz);
@@ -7216,7 +7349,17 @@ LinkedList_t *drms_series_links_statements(DRMS_Env_t *env, const char *parentTe
                     statement.dmlSeries = NULL;
                     statement.pkeylist = NULL;
                     statement.link = NULL;
-                    statement.temp = NULL;
+                    
+                    if (tempTableA && *tempTableA != '\0')
+                    {
+                        statement.temp = list_llcreate(sizeof(char *), FreeTempTableName);
+                        list_llinserttail(statement.temp, &tempTableA);
+                    }
+                    else
+                    {
+                        statement.temp = NULL;
+                    }
+
                     list_llinserttail(statementList, &statement);
                     
                     statementRecInfo = NULL;
@@ -7298,7 +7441,7 @@ LinkedList_t *drms_series_links_statements(DRMS_Env_t *env, const char *parentTe
 
                     statementRecInfo = base_strcatalloc(statementRecInfo, "CREATE TEMPORARY TABLE ", &statementRecInfoSz);
                     statementRecInfo = base_strcatalloc(statementRecInfo, tempTableA, &statementRecInfoSz);
-                    statementRecInfo = base_strcatalloc(statementRecInfo, " AS\n", &statementRecInfoSz);                    
+                    statementRecInfo = base_strcatalloc(statementRecInfo, " ON COMMIT DROP AS\n", &statementRecInfoSz);                    
                     statementRecInfo = base_strcatalloc(statementRecInfo, "  SELECT recnum AS parent_recnum, ", &statementRecInfoSz);
                     statementRecInfo = base_strcatalloc(statementRecInfo, linkCols, &statementRecInfoSz);
                     statementRecInfo = base_strcatalloc(statementRecInfo, " FROM ", &statementRecInfoSz);
@@ -7313,7 +7456,7 @@ LinkedList_t *drms_series_links_statements(DRMS_Env_t *env, const char *parentTe
                     statementRecInfo = base_strcatalloc(statementRecInfo, ");\n", &statementRecInfoSz);
                     statementRecInfo = base_strcatalloc(statementRecInfo, "CREATE TEMPORARY TABLE ", &statementRecInfoSz);
                     statementRecInfo = base_strcatalloc(statementRecInfo, tempTableB, &statementRecInfoSz);
-                    statementRecInfo = base_strcatalloc(statementRecInfo, " AS\n", &statementRecInfoSz);
+                    statementRecInfo = base_strcatalloc(statementRecInfo, " ON COMMIT DROP AS\n", &statementRecInfoSz);
                     statementRecInfo = base_strcatalloc(statementRecInfo, "  SELECT parent_recnum, recnum, ", &statementRecInfoSz);
                     statementRecInfo = base_strcatalloc(statementRecInfo, childPkeys, &statementRecInfoSz);
                     statementRecInfo = base_strcatalloc(statementRecInfo, " FROM ", &statementRecInfoSz);
@@ -7327,14 +7470,35 @@ LinkedList_t *drms_series_links_statements(DRMS_Env_t *env, const char *parentTe
                     statementRecInfo = base_strcatalloc(statementRecInfo, childPkeys, &statementRecInfoSz);
                     statementRecInfo = base_strcatalloc(statementRecInfo, ");\n", &statementRecInfoSz);
                     
-                    /* DDL that creates this temporary table */
+                    /* DDL that creates these temporary tables */
                     statement.type = RECORDSET_SQLSTATEMENT_LANGTYPE_DDL;
                     statement.statement = statementRecInfo; /* yoink! */
                     statement.parent = NULL;
                     statement.dmlSeries = NULL;
                     statement.pkeylist = NULL;
                     statement.link = NULL;
-                    statement.temp = NULL;
+                    
+                    /* ART - add both temp tables to the statement struct's temp field */
+                    if (tempTableA && *tempTableA != '\0')
+                    {
+                        statement.temp = list_llcreate(sizeof(char *), FreeTempTableName);
+                        list_llinserttail(statement.temp, &tempTableA);
+                    }
+                    else
+                    {
+                        statement.temp = NULL;
+                    }
+
+                    if (tempTableB && *tempTableB != '\0')
+                    {
+                        if (!statement.temp)
+                        {
+                            statement.temp = list_llcreate(sizeof(char *), FreeTempTableName);
+                        }
+
+                        list_llinserttail(statement.temp, &tempTableB);
+                    }                    
+                    
                     list_llinserttail(statementList, &statement);
                     statementRecInfo = NULL;
                     
@@ -7481,7 +7645,20 @@ LinkedList_t *drms_series_links_statements(DRMS_Env_t *env, const char *parentTe
                 statement.dmlSeries = NULL;
                 statement.pkeylist = NULL;
                 statement.link = NULL;
-                statement.temp = strdup(childTempTable);
+                
+                /* the temp tables (A and B) used for the parent table were added to a DDL statement already, above;
+                 * childTempTableDDL is of the form 
+                 * create temp childtemptable as (create temp tableA as...create temp tableB as)*/
+                if (childTempTable && *childTempTable != '\0')
+                {
+                    statement.temp = list_llcreate(sizeof(char *), FreeTempTableName);
+                    list_llinserttail(statement.temp, &childTempTable);
+                }
+                else
+                {
+                    statement.temp = NULL;
+                }
+                
                 list_llinserttail(statementList, &statement);
             
                 /* DML that selects from this temporary child table */
@@ -7499,16 +7676,6 @@ LinkedList_t *drms_series_links_statements(DRMS_Env_t *env, const char *parentTe
                 statementRecInfo = base_strcatalloc(statementRecInfo, " FROM ", &statementRecInfoSz);
                 statementRecInfo = base_strcatalloc(statementRecInfo, childTempTable, &statementRecInfoSz);                
             
-                statement.type = RECORDSET_SQLSTATEMENT_LANGTYPE_DML;
-                statement.statement = statementRecInfo; /* yoink! */
-                statement.parent = strdup(parentSeries);
-                statement.dmlSeries = strdup(childSeries);
-                statement.pkeylist = strdup(childPkeys);
-                statement.link = strdup(lcLink); /* so that the parent link can be found when opening record chunks */
-                statement.temp = NULL;
-            }
-            else
-            {
                 /* DML that selects directly from the child series table */
                 statement.type = RECORDSET_SQLSTATEMENT_LANGTYPE_DML;
                 statement.statement = statementRecInfo; /* yoink! */
@@ -7516,7 +7683,49 @@ LinkedList_t *drms_series_links_statements(DRMS_Env_t *env, const char *parentTe
                 statement.dmlSeries = strdup(childSeries);
                 statement.pkeylist = strdup(childPkeys);
                 statement.link = strdup(lcLink); /* so that the parent link can be found when opening record chunks */
-                statement.temp = NULL;
+                
+                if (childTempTable && *childTempTable != '\0')
+                {
+                    statement.temp = list_llcreate(sizeof(char *), FreeTempTableName);
+                    list_llinserttail(statement.temp, &childTempTable);
+                }
+                else
+                {
+                    statement.temp = NULL;
+                }
+            }
+            else
+            {
+                /* DML that selects from the parent series table */
+                statement.type = RECORDSET_SQLSTATEMENT_LANGTYPE_DML;
+                statement.statement = statementRecInfo; /* yoink! */
+                statement.parent = NULL;
+                statement.dmlSeries = strdup(parentSeries);
+                statement.pkeylist = strdup(parentPkeys);
+                statement.link = NULL;
+
+                /* ART - add both temp tables to the statement struct's temp field; the DDL statement creating
+                 * these temp tables was created above 
+                 */
+                if (tempTableA && *tempTableA != '\0')
+                {
+                    statement.temp = list_llcreate(sizeof(char *), FreeTempTableName);
+                    list_llinserttail(statement.temp, &tempTableA);
+                }
+                else
+                {
+                    statement.temp = NULL;
+                }
+
+                if (tempTableB && *tempTableB != '\0')
+                {
+                    if (!statement.temp)
+                    {
+                        statement.temp = list_llcreate(sizeof(char *), FreeTempTableName);
+                    }
+
+                    list_llinserttail(statement.temp, &tempTableB);
+                }                                        
             }
             
             if (env->verbose)
