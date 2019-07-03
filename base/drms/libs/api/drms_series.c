@@ -5428,6 +5428,7 @@ LinkedList_t *drms_series_querystringA(DRMS_Env_t *env, const char *series, cons
     char tabname[256];
     char shadow[DRMS_MAXSERIESNAMELEN];
     DRMS_RecordSet_Sql_Statement_t statement;
+    char *tempTableDupe = NULL;
     
     /* there must be a tempTable if we are chunking records */
     XASSERT(tempTable || !cursor);
@@ -5534,8 +5535,9 @@ LinkedList_t *drms_series_querystringA(DRMS_Env_t *env, const char *series, cons
                          * to select chunks from */
                         if (tempTable && *tempTable != '\0')
                         {
+                            tempTableDupe = strdup(tempTable);
                             statement.temp = list_llcreate(sizeof(char *), FreeTempTableName);
-                            list_llinserttail(statement.temp, &tempTable);
+                            list_llinserttail(statement.temp, &tempTableDupe);
                         }
                         else
                         {
@@ -5566,8 +5568,9 @@ LinkedList_t *drms_series_querystringA(DRMS_Env_t *env, const char *series, cons
                     
                     if (tempTable && *tempTable != '\0')
                     {
+                        tempTableDupe = strdup(tempTable);
                         statement.temp = list_llcreate(sizeof(char *), FreeTempTableName);
-                        list_llinserttail(statement.temp, &tempTable);
+                        list_llinserttail(statement.temp, &tempTableDupe);
                     }
                     else
                     {
@@ -5665,6 +5668,7 @@ LinkedList_t *drms_series_querystringB(DRMS_Env_t *env, const char *series, cons
     char tabname[256];
     DRMS_RecordSet_Sql_Statement_t statement;
     LinkedList_t *statementList = NULL;
+    char *tempTableDupe = NULL;
 
     lcseries = strdup(series);
     
@@ -5794,8 +5798,9 @@ LinkedList_t *drms_series_querystringB(DRMS_Env_t *env, const char *series, cons
                          
                         if (tempTable && *tempTable != '\0')
                         {
+                            tempTableDupe = strdup(tempTable);
                             statement.temp = list_llcreate(sizeof(char *), FreeTempTableName);
-                            list_llinserttail(statement.temp, &tempTable);
+                            list_llinserttail(statement.temp, &tempTableDupe);
                         }
                         else
                         {
@@ -5829,8 +5834,9 @@ LinkedList_t *drms_series_querystringB(DRMS_Env_t *env, const char *series, cons
                 
                 if (tempTable && *tempTable != '\0')
                 {
+                    tempTableDupe = strdup(tempTable);
                     statement.temp = list_llcreate(sizeof(char *), FreeTempTableName);
-                    list_llinserttail(statement.temp, &tempTable);
+                    list_llinserttail(statement.temp, &tempTableDupe);
                 }
                 else
                 {
@@ -5944,6 +5950,7 @@ LinkedList_t *drms_series_querystringC(DRMS_Env_t *env, const char *series, cons
     char shadow[DRMS_MAXSERIESNAMELEN];
     DRMS_RecordSet_Sql_Statement_t statement;
     LinkedList_t *statementList = NULL;
+    char *tempTableDupe = NULL;
     
     lcseries = strdup(series);
 
@@ -6075,8 +6082,9 @@ LinkedList_t *drms_series_querystringC(DRMS_Env_t *env, const char *series, cons
                          
                         if (tempTable && *tempTable != '\0')
                         {
+                            tempTableDupe = strdup(tempTable);
                             statement.temp = list_llcreate(sizeof(char *), FreeTempTableName);
-                            list_llinserttail(statement.temp, &tempTable);
+                            list_llinserttail(statement.temp, &tempTableDupe);
                         }
                         else
                         {
@@ -6112,8 +6120,9 @@ LinkedList_t *drms_series_querystringC(DRMS_Env_t *env, const char *series, cons
                     
                     if (tempTable && *tempTable != '\0')
                     {
+                        tempTableDupe = strdup(tempTable);
                         statement.temp = list_llcreate(sizeof(char *), FreeTempTableName);
-                        list_llinserttail(statement.temp, &tempTable);
+                        list_llinserttail(statement.temp, &tempTableDupe);
                     }
                     else
                     {
@@ -6231,7 +6240,8 @@ LinkedList_t *drms_series_querystringD(DRMS_Env_t *env, const char *series, cons
     char shadow[DRMS_MAXSERIESNAMELEN];
     DRMS_RecordSet_Sql_Statement_t statement;
     LinkedList_t *statementList = NULL;
-    
+    char *tempTableDupe = NULL;
+
     lcseries = strdup(series);
 
     if (lcseries)
@@ -6380,8 +6390,9 @@ LinkedList_t *drms_series_querystringD(DRMS_Env_t *env, const char *series, cons
                          * to select chunks from */
                         if (tempTable && *tempTable != '\0')
                         {
+                            tempTableDupe = strdup(tempTable);
                             statement.temp = list_llcreate(sizeof(char *), FreeTempTableName);
-                            list_llinserttail(statement.temp, &tempTable);
+                            list_llinserttail(statement.temp, &tempTableDupe);
                         }
                         else
                         {
@@ -6415,8 +6426,9 @@ LinkedList_t *drms_series_querystringD(DRMS_Env_t *env, const char *series, cons
                     
                     if (tempTable && *tempTable != '\0')
                     {
+                        tempTableDupe = strdup(tempTable);
                         statement.temp = list_llcreate(sizeof(char *), FreeTempTableName);
-                        list_llinserttail(statement.temp, &tempTable);
+                        list_llinserttail(statement.temp, &tempTableDupe);
                     }
                     else
                     {
@@ -6515,6 +6527,7 @@ LinkedList_t *drms_series_querystringFL(DRMS_Env_t *env, const char *series, con
     int withDeclared = 0;
     DRMS_RecordSet_Sql_Statement_t statement;
     LinkedList_t *statementList = NULL;
+    char *tempTableDupe = NULL;
     
     lcseries = strdup(series);
     
@@ -6791,8 +6804,9 @@ LinkedList_t *drms_series_querystringFL(DRMS_Env_t *env, const char *series, con
                              * to select chunks from */
                             if (tempTable && *tempTable != '\0')
                             {
+                                tempTableDupe = strdup(tempTable);
                                 statement.temp = list_llcreate(sizeof(char *), FreeTempTableName);
-                                list_llinserttail(statement.temp, &tempTable);
+                                list_llinserttail(statement.temp, &tempTableDupe);
                             }
                             else
                             {
@@ -6827,8 +6841,9 @@ LinkedList_t *drms_series_querystringFL(DRMS_Env_t *env, const char *series, con
                     
                     if (tempTable && *tempTable != '\0')
                     {
+                        tempTableDupe = strdup(tempTable);
                         statement.temp = list_llcreate(sizeof(char *), FreeTempTableName);
-                        list_llinserttail(statement.temp, &tempTable);
+                        list_llinserttail(statement.temp, &tempTableDupe);
                     }
                     else
                     {
@@ -6907,6 +6922,7 @@ LinkedList_t *drms_series_querystring_wrap(DRMS_Env_t *env, const char *series, 
     char *qualfieldsTemp = NULL;
     char *statementSelect = NULL;
     int istat = DRMS_SUCCESS;
+    char *tempTableDupe = NULL;
     
     if (series)
     {
@@ -6956,8 +6972,9 @@ LinkedList_t *drms_series_querystring_wrap(DRMS_Env_t *env, const char *series, 
                  * to select chunks from */
                 if (tempTable && *tempTable != '\0')
                 {
+                    tempTableDupe = strdup(tempTable);
                     statement.temp = list_llcreate(sizeof(char *), FreeTempTableName);
-                    list_llinserttail(statement.temp, &tempTable);
+                    list_llinserttail(statement.temp, &tempTableDupe);
                 }
                 else
                 {
@@ -7004,8 +7021,9 @@ LinkedList_t *drms_series_querystring_wrap(DRMS_Env_t *env, const char *series, 
              * to select chunks from */
             if (tempTable && *tempTable != '\0')
             {
+                tempTableDupe = strdup(tempTable);
                 statement.temp = list_llcreate(sizeof(char *), FreeTempTableName);
-                list_llinserttail(statement.temp, &tempTable);
+                list_llinserttail(statement.temp, &tempTableDupe);
             }
             else
             {
@@ -7156,6 +7174,7 @@ LinkedList_t *drms_series_links_statements(DRMS_Env_t *env, const char *parentTe
     int ipkey = 0;
     char *pkeyarr[DRMS_MAXPRIMIDX];
     int npkeys = 0;
+    char *tempTableDupe = NULL;
     
     statementList = list_llcreate(sizeof(DRMS_RecordSet_Sql_Statement_t), (ListFreeFn_t)FreeSqlStatement);
     
@@ -7352,8 +7371,9 @@ LinkedList_t *drms_series_links_statements(DRMS_Env_t *env, const char *parentTe
                     
                     if (tempTableA && *tempTableA != '\0')
                     {
+                        tempTableDupe = strdup(tempTableA);
                         statement.temp = list_llcreate(sizeof(char *), FreeTempTableName);
-                        list_llinserttail(statement.temp, &tempTableA);
+                        list_llinserttail(statement.temp, &tempTableDupe);
                     }
                     else
                     {
@@ -7481,8 +7501,9 @@ LinkedList_t *drms_series_links_statements(DRMS_Env_t *env, const char *parentTe
                     /* ART - add both temp tables to the statement struct's temp field */
                     if (tempTableA && *tempTableA != '\0')
                     {
+                        tempTableDupe = strdup(tempTableA);
                         statement.temp = list_llcreate(sizeof(char *), FreeTempTableName);
-                        list_llinserttail(statement.temp, &tempTableA);
+                        list_llinserttail(statement.temp, &tempTableDupe);
                     }
                     else
                     {
@@ -7491,12 +7512,13 @@ LinkedList_t *drms_series_links_statements(DRMS_Env_t *env, const char *parentTe
 
                     if (tempTableB && *tempTableB != '\0')
                     {
+                        tempTableDupe = strdup(tempTableB);
                         if (!statement.temp)
                         {
                             statement.temp = list_llcreate(sizeof(char *), FreeTempTableName);
                         }
 
-                        list_llinserttail(statement.temp, &tempTableB);
+                        list_llinserttail(statement.temp, &tempTableDupe);
                     }                    
                     
                     list_llinserttail(statementList, &statement);
@@ -7651,8 +7673,9 @@ LinkedList_t *drms_series_links_statements(DRMS_Env_t *env, const char *parentTe
                  * create temp childtemptable as (create temp tableA as...create temp tableB as)*/
                 if (childTempTable && *childTempTable != '\0')
                 {
+                    tempTableDupe = strdup(childTempTable);
                     statement.temp = list_llcreate(sizeof(char *), FreeTempTableName);
-                    list_llinserttail(statement.temp, &childTempTable);
+                    list_llinserttail(statement.temp, &tempTableDupe);
                 }
                 else
                 {
@@ -7686,8 +7709,9 @@ LinkedList_t *drms_series_links_statements(DRMS_Env_t *env, const char *parentTe
                 
                 if (childTempTable && *childTempTable != '\0')
                 {
+                    tempTableDupe = strdup(childTempTable);
                     statement.temp = list_llcreate(sizeof(char *), FreeTempTableName);
-                    list_llinserttail(statement.temp, &childTempTable);
+                    list_llinserttail(statement.temp, &tempTableDupe);
                 }
                 else
                 {
@@ -7709,8 +7733,9 @@ LinkedList_t *drms_series_links_statements(DRMS_Env_t *env, const char *parentTe
                  */
                 if (tempTableA && *tempTableA != '\0')
                 {
+                    tempTableDupe = strdup(tempTableA);
                     statement.temp = list_llcreate(sizeof(char *), FreeTempTableName);
-                    list_llinserttail(statement.temp, &tempTableA);
+                    list_llinserttail(statement.temp, &tempTableDupe);
                 }
                 else
                 {
@@ -7719,12 +7744,13 @@ LinkedList_t *drms_series_links_statements(DRMS_Env_t *env, const char *parentTe
 
                 if (tempTableB && *tempTableB != '\0')
                 {
+                    tempTableDupe = strdup(tempTableB);
                     if (!statement.temp)
                     {
                         statement.temp = list_llcreate(sizeof(char *), FreeTempTableName);
                     }
 
-                    list_llinserttail(statement.temp, &tempTableB);
+                    list_llinserttail(statement.temp, &tempTableDupe);
                 }                                        
             }
             
