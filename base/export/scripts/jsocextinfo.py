@@ -150,7 +150,7 @@ try:
     ###################
     ## Run jsoc_info ##
     ###################
-    cmdList = [ os.path.join(binDir, arch, 'jsoc_info'), 'JSOC_DBHOST=' + server, 'DRMS_DBTIMEOUT=600000', 'DRMS_QUERY_MEM=2048', 'DRMS_DBUTF8CLIENTENCODING=1' ]
+    cmdList = [ os.path.join(binDir, arch, 'jsoc_info'), 'JSOC_DBHOST=' + server, 'DRMS_DBTIMEOUT=600000', 'DRMS_QUERY_MEM=4096', 'DRMS_DBUTF8CLIENTENCODING=1' ]
     # Provide all jsoc_info arguments passed through jsocextinfo.py to jsoc_info.
     cmdList.extend(allArgs)
 
