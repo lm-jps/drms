@@ -7287,7 +7287,7 @@ char *drms_series_querystring_linkcols(DRMS_Record_t *templateRec, const char *r
         
     if (templateRec && linkHit)
     {
-        /* get link types */
+        /* get link types (there might not be any links in this series) */
         while((link = (DRMS_Link_t *)hiter_getnext(linkHit)))
         {
             if (!firstTime)
@@ -7337,15 +7337,18 @@ char *drms_series_querystring_linkcols(DRMS_Record_t *templateRec, const char *r
             free(lcLinkName);
         }
         
-        stsz = 128;
-        linkInfoColsSQL = calloc(1, stsz);
-        linkInfoColsSQL = base_strcatalloc(linkInfoColsSQL, "SELECT recnum, ", &stsz);
-        linkInfoColsSQL = base_strcatalloc(linkInfoColsSQL, linkInfoCols, &stsz);
-        linkInfoColsSQL = base_strcatalloc(linkInfoColsSQL, " FROM ", &stsz);
-        linkInfoColsSQL = base_strcatalloc(linkInfoColsSQL, templateRec->seriesinfo->seriesname, &stsz);
-        linkInfoColsSQL = base_strcatalloc(linkInfoColsSQL, " WHERE recnum IN (", &stsz);
-        linkInfoColsSQL = base_strcatalloc(linkInfoColsSQL, recnumSQL, &stsz);
-        linkInfoColsSQL = base_strcatalloc(linkInfoColsSQL, ")", &stsz);
+        if (linkInfoCols)
+        {
+            stsz = 128;
+            linkInfoColsSQL = calloc(1, stsz);
+            linkInfoColsSQL = base_strcatalloc(linkInfoColsSQL, "SELECT recnum, ", &stsz);
+            linkInfoColsSQL = base_strcatalloc(linkInfoColsSQL, linkInfoCols, &stsz);
+            linkInfoColsSQL = base_strcatalloc(linkInfoColsSQL, " FROM ", &stsz);
+            linkInfoColsSQL = base_strcatalloc(linkInfoColsSQL, templateRec->seriesinfo->seriesname, &stsz);
+            linkInfoColsSQL = base_strcatalloc(linkInfoColsSQL, " WHERE recnum IN (", &stsz);
+            linkInfoColsSQL = base_strcatalloc(linkInfoColsSQL, recnumSQL, &stsz);
+            linkInfoColsSQL = base_strcatalloc(linkInfoColsSQL, ")", &stsz);
+        }
     }
     
     if (linkInfoCols)

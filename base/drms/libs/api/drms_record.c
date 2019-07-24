@@ -1829,7 +1829,7 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const c
         }
     }
 
-    if (fetchLinkedRecords)
+    if (fetchLinkedRecords && linkInfoColsSQL) /* there might be no links in this series */
     {
         /* if fetching linked records, then we need to put the results of parent query into a temp table; then we need to 
          * select all records from the temp table for download; then we need to wrap the temp table into another 
