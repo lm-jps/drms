@@ -60,11 +60,12 @@ struct DRMS_RecordSet_Sql_Statement_struct
 {
     DRMS_RecordSet_Sql_Statement_Type_t type;
     char *statement;
-    char *dmlSeries; /* if this is a DML statement, then this is the series for which we are selecting records */
-    char *pkeylist; /* if this is a DDL statement, this is the primary-key of the rows of the temp table */
+    char *dmlSeries; /* if this is a DML statement, then this is the series from which we are selecting records */
+    char *columns; /* if this is a DML SELECT statement (but not a count statement), these are the columns being 'SELECTed' */
     char *parent; /* the parent series, if this is a DML statement for a child series */
-    char *link; /* the link from the parent to the child, if this is a DML statement for a child series */
+    char *link; /* the name of the DRMS link from the parent to the child, if this is a DML statement for a child series */
     LinkedList_t *temp; /* temporary DB table DDL statement is creating, or DML statement is selecting from */
+    char linkInfoSQL; /* if this is a link-info DML statement, then this is 't', else 'f' */
 };
 
 typedef struct DRMS_RecordSet_Sql_Statement_struct DRMS_RecordSet_Sql_Statement_t;

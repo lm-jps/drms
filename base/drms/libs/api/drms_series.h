@@ -237,8 +237,10 @@ LinkedList_t *drms_series_querystringD(DRMS_Env_t *env, const char *series, cons
 LinkedList_t *drms_series_querystringFL(DRMS_Env_t *env, const char *series, const char *npkwhere, HContainer_t *pkwhereNFL, const char *fields, HContainer_t *firstlast, int nrecs, int limit, int cursor, const char *tempTable, int countingStatement, int *status);
 
 /* wrap query in temp table for following links or using a 'cursor' */
-LinkedList_t *drms_series_querystring_wrap(DRMS_Env_t *env, const char *series, const char *statementString, const char *fields, int cursor, const char *tempTable, int *status);
+LinkedList_t *drms_series_querystring_wrap(DRMS_Env_t *env, const char *series, const char *statementString, const char *fields, int cursor, const char *tempTable, int sortAsc, int *status);
 LinkedList_t *drms_series_links_statements(DRMS_Env_t *env, const char *parentTempTable, const char *parentSeries, DB_Text_Result_t *dbResult);
+char *drms_series_querystring_linkcols(DRMS_Record_t *templateRec, const char *recnumSQL);
+LinkedList_t *drms_series_querystring_recordchunk(DRMS_Env_t *env, const char *series, const char *chunkRecnumsSQL, const char *fields, int followLinks, int returnParentSQL, int *status);
 
 int drms_series_summaryexists(DRMS_Env_t *env, const char *series, int *status);
 int drms_series_canupdatesummaries(DRMS_Env_t *env, const char *series, int *status);

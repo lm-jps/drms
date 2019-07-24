@@ -1617,7 +1617,7 @@ static void CreateRecordStructs(DRMS_Env_t *env, DRMS_Record_t *template, DB_Bin
 static void DeleteTempTable(const void *key, const void *value, const void *data)
 {
     DRMS_Env_t *env = (DRMS_Env_t *)(data);
-    char *tableName = (char *)value;
+    char *tableName = (char *)key;
     char query[1024];
     int err = DRMS_SUCCESS;
 
@@ -1637,17 +1637,6 @@ static void DeleteTempTable(const void *key, const void *value, const void *data
     {
         fprintf(stderr, "unable to delete temporary DB table %s\n", tableName);
     }
-}
-
-static void FreeTempTableName(void *val)
-{
-   char **str = (char **)val;
-
-   if (str && *str)
-   {
-      free(*str);
-      *str = NULL;
-   }
 }
 
 /* Retrieve a set of data records from a series satisfying the condition
@@ -1691,6 +1680,8 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const c
     const char *query = NULL;
     const char *pTempTable = NULL;
     ListNode_t *ln = NULL;
+    char *linkInfoColsSQL = NULL;
+    char recnumColSQL[256];
 
     CHECKNULL_STAT(env, status);
   
@@ -1721,7 +1712,8 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const c
     if (qoverride)
     {
         /* qoverride branch is used for drms_open_recordset()/drms_open_recordchunk()/cursor; qoverride is for a chunk
-         * of records;  */
+         * of records; qoverride is freed by caller
+         */
         DRMS_RecordSet_Sql_Statement_t statementDDL;
         DRMS_RecordSet_Sql_Statement_t statementDML;
         DRMS_RecordSet_Sql_Statement_t *statementRecordChunk = NULL;
@@ -1762,87 +1754,41 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const c
             if (statementRecordChunk->type == RECORDSET_SQLSTATEMENT_LANGTYPE_DDL)
             {
                 list_llinserttail(statementList, statementRecordChunk); /* yoink! */
+                
+                /* qoverride will be freed, and unless we set the fields to NULL, then the non-NULL 
+                 * fields in the statement in statementList will be freed too (but we statementList to steal them) */
                 statementRecordChunk->statement = NULL;
                 statementRecordChunk->parent = NULL;
                 statementRecordChunk->dmlSeries = NULL;
-                statementRecordChunk->pkeylist = NULL;
+                statementRecordChunk->columns = NULL;
                 statementRecordChunk->link = NULL;
                 statementRecordChunk->temp = NULL;
             }
             else if (statementRecordChunk->type == RECORDSET_SQLSTATEMENT_LANGTYPE_DML)
             {
-                if (fetchLinkedRecords)
+                /* if this is the SQL for the parent table, pass it along to the main query-execution loop below; otherwise, 
+                 * this SQL is for the link-info cols of the parent table and should be passed to drms_series_links_statements() 
+                 * unadulterated
+                 */
+                if (statementRecordChunk->linkInfoSQL == 't')
                 {
-                    /* populate the temp table to hold the subset of records that compose the current record-chunk; we will
-                     * use this temp table that contains a chunk of records to query the child table */
-                    statementTempTable = base_strcatalloc(statementTempTable, "CREATE TEMPORARY TABLE ", &statementTempTableSz);
-                    statementTempTable = base_strcatalloc(statementTempTable, tempTable, &statementTempTableSz);
-                    statementTempTable = base_strcatalloc(statementTempTable, " ON COMMIT DROP AS\n", &statementTempTableSz);
-                    statementTempTable = base_strcatalloc(statementTempTable, "  ", &statementTempTableSz);
-                    statementTempTable = base_strcatalloc(statementTempTable, statementRecordChunk->statement, &statementTempTableSz);
+                    XASSERT(fetchLinkedRecords);
+                    XASSERT(!linkInfoColsSQL); /* there should only be one DML statement to select link cols (for all links) */
+                    linkInfoColsSQL = strdup(statementRecordChunk->statement); /* SQL to select ALL link cols, for all links */
                     
-                    /* index */
-                    if (statementRecordChunk->pkeylist)
-                    {
-                        statementTempTable = base_strcatalloc(statementTempTable, ";\n", &statementTempTableSz);
-                        statementTempTable = base_strcatalloc(statementTempTable, "CREATE INDEX ", &statementTempTableSz);                    
-                        statementTempTable = base_strcatalloc(statementTempTable, tempTable, &statementTempTableSz);
-                        statementTempTable = base_strcatalloc(statementTempTable, "_pkey ON ", &statementTempTableSz);
-                        statementTempTable = base_strcatalloc(statementTempTable, tempTable, &statementTempTableSz);
-                        statementTempTable = base_strcatalloc(statementTempTable, " (", &statementTempTableSz);
-                        statementTempTable = base_strcatalloc(statementTempTable, statementRecordChunk->pkeylist, &statementTempTableSz);
-                        statementTempTable = base_strcatalloc(statementTempTable, ")", &statementTempTableSz);
-                        statementTempTable = base_strcatalloc(statementTempTable, ";\n", &statementTempTableSz);
-                    }
-                    
-                    statementDDL.type = RECORDSET_SQLSTATEMENT_LANGTYPE_DDL;
-                    statementDDL.statement = statementTempTable; /* yoink! */
-                    statementDDL.parent = NULL;
-                    statementDDL.dmlSeries = NULL;
-                    statementDDL.pkeylist = NULL;
-                    statementDDL.link = NULL;
-
-                    if (tempTable && *tempTable != '\0')
-                    {
-                        statementDDL.temp = list_llcreate(sizeof(char *), FreeTempTableName);
-                        list_llinserttail(statementDDL.temp, &tempTable);
-                    }
-                    else
-                    {
-                        statementDDL.temp = NULL;
-                    }
-
-                    list_llinserttail(statementList, &statementDDL); /* yoink! */
-                    
-                    statementSelect = base_strcatalloc(statementSelect, "SELECT * FROM ", &statementSelectSz);
-                    statementSelect = base_strcatalloc(statementSelect, tempTable, &statementSelectSz);    
-                    
-                    statementDML.type = RECORDSET_SQLSTATEMENT_LANGTYPE_DML;
-                    statementDML.statement = statementSelect; /* yoink! */
-                    statementDML.parent = statementRecordChunk->parent ? strdup(statementRecordChunk->parent) : NULL; 
-                    statementDML.dmlSeries = statementRecordChunk->dmlSeries ? strdup(statementRecordChunk->dmlSeries) : NULL; 
-                    statementDML.pkeylist = statementRecordChunk->pkeylist ? strdup(statementRecordChunk->pkeylist) : NULL;
-                    statementDML.link = statementRecordChunk->link ? strdup(statementRecordChunk->link) : NULL;
-                    
-                    if (tempTable && *tempTable != '\0')
-                    {
-                        statementDML.temp = list_llcreate(sizeof(char *), FreeTempTableName);
-                        list_llinserttail(statementDML.temp, &tempTable);
-                    }
-                    else
-                    {
-                        statementDML.temp = NULL;
-                    }                    
-                    
-                    list_llinserttail(statementList, &statementDML); /* yoink! */
+                    /* the remainder of the DRMS_RecordSet_Sql_Statement_t is not needed and will be freed in the caller */
                 }
                 else
                 {
+                    /* to main SQL-execution loop below (for parent records) */
                     list_llinserttail(statementList, statementRecordChunk); /* yoink! */
+                    
+                    /* qoverride will be freed, and unless we set the fields to NULL, then the non-NULL 
+                     * fields in the statement in statementList will be freed too (but we statementList to steal them) */
                     statementRecordChunk->statement = NULL;
                     statementRecordChunk->parent = NULL;
                     statementRecordChunk->dmlSeries = NULL;
-                    statementRecordChunk->pkeylist = NULL;
+                    statementRecordChunk->columns = NULL;
                     statementRecordChunk->link = NULL;
                     statementRecordChunk->temp = NULL;
                 }
@@ -1871,6 +1817,16 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const c
     else
     {
         statementList = drms_query_string(env, template->seriesinfo->seriesname, where, pkwhere, npkwhere, filter, mixed, keys && hcon_size(keys) > 0 ? DRMS_QUERY_PARTIAL : (nrecs == 0 ? DRMS_QUERY_ALL : DRMS_QUERY_N), &nrecs, (char *)keys /* overload this argument */, allvers, firstlast, pkwhereNFL, recnumq, cursor, pTempTable, &limit);
+        
+        /* since this is not a cursor, we have not yet generated the SQL used to SELECT the link-column values needed to
+         * follow links to the child; no cursor -> selecting all records in the temp table */
+
+        /* SELECT rencnum FROM <temp table> */
+        if (pTempTable)
+        {
+            snprintf(recnumColSQL, sizeof(recnumColSQL), "SELECT recnum FROM %s", pTempTable);
+            linkInfoColsSQL = drms_series_querystring_linkcols(template, recnumColSQL);
+        }
     }
 
     if (fetchLinkedRecords)
@@ -1933,7 +1889,8 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const c
         }
 
         /* seriesname is the parent series of the child series, if any, discovered; this will set all link-struct pidx field info */
-        linkStatementList = drms_series_links_statements(env, tempTable, template->seriesinfo->seriesname, linkDbResult);
+        XASSERT(linkInfoColsSQL);
+        linkStatementList = drms_series_links_statements(env, linkInfoColsSQL, template->seriesinfo->seriesname, linkDbResult);
 
         db_free_text_result(linkDbResult);
         linkDbResult = NULL;
@@ -1945,16 +1902,19 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const c
             {
                 pSubStatement = (DRMS_RecordSet_Sql_Statement_t *)ln->data;
                 list_llinserttail(statementList, pSubStatement); /* yoink! */
+                
+                /* qoverride will be freed, and unless we set the fields to NULL, then the non-NULL 
+                 * fields in the statement in statementList will be freed too (but we statementList to steal them) */
                 pSubStatement->statement = NULL;
                 pSubStatement->parent = NULL;
                 pSubStatement->dmlSeries = NULL;
-                pSubStatement->pkeylist = NULL;
+                pSubStatement->columns = NULL;
                 pSubStatement->link = NULL;
                 pSubStatement->temp = NULL;
             }
         
             list_llfree(&linkStatementList);
-        }
+        }        
     }
     
     if (env->verbose)
@@ -2186,7 +2146,6 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const c
         } /* while */
     
         rs = parentRecs;
-        list_llfree(&statementList);
     
         /* ART - done running all SQL statements; we can drop all temp tables; for cursors, we do not want to drop the temp tables of all 
          * parent chunks until the cursor is closed; but the SQL to create the temp tables is run in drms_open_records_internal(), and
@@ -2194,8 +2153,10 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const c
          * chunk temp table select is set to NULL, so we will not drop the parent cursor temp tables here, as desired;
          * 
          * iterate through tempTablesHT, dropping all temp tables created/used
+         * !!!! MUST FREE tempTablesHT FIRST, THEN statementList - tempTablesHT has pointers into statementList !!!
          */
-        hash_map_data(&tempTablesHT, DeleteTempTable, env);   
+        hash_map_data(&tempTablesHT, DeleteTempTable, env);
+        list_llfree(&statementList);
     }  
 
   if (goodsegcont && rs->n > 0)
@@ -2259,6 +2220,13 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const c
   rs->ss_currentrecs = NULL;
   rs->cursor = NULL;
   rs->env = env;
+  
+    if (linkInfoColsSQL)
+    {
+        free(linkInfoColsSQL);
+        linkInfoColsSQL = NULL;
+    }
+
 
   free(series_lower);
   if (status)
@@ -2272,11 +2240,23 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const c
   }
   return parentRecs;
  bailout:
+    if (linkInfoColsSQL)
+    {
+        free(linkInfoColsSQL);
+        linkInfoColsSQL = NULL;
+    }
+ 
   db_free_binary_result(qres);   
   for (i=0;i<rs->n;i++)
     drms_free_records(rs);
   free(rs);
- bailout1:    
+ bailout1: 
+    if (linkInfoColsSQL)
+    {
+        free(linkInfoColsSQL);
+        linkInfoColsSQL = NULL;
+    }
+   
   free(series_lower);
   if (status)
     *status = err;
@@ -2856,10 +2836,13 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *record
                             else if (statement->type == RECORDSET_SQLSTATEMENT_LANGTYPE_DML)
                             {
                                 list_llinserttail(llist, statement); /* yoink! */
+                                
+                                /* qoverride will be freed, and unless we set the fields to NULL, then the non-NULL 
+                                 * fields in the statement in statementList will be freed too (but we statementList to steal them) */
                                 statement->statement = NULL;
                                 statement->parent = NULL;
                                 statement->dmlSeries = NULL;
-                                statement->pkeylist = NULL;
+                                statement->columns = NULL;
                                 statement->link = NULL;
                                 statement->temp = NULL;
                             }
@@ -3287,6 +3270,8 @@ DRMS_RecordSet_t *drms_open_recordset_internal(DRMS_Env_t *env, const char *rsqu
             rs->cursor = (DRMS_RecSetCursor_t *)calloc(1, sizeof(DRMS_RecSetCursor_t));
             rs->cursor->names = (char **)calloc(rs->ss_n, sizeof(char *));
             memset(rs->cursor->names, 0, sizeof(char *) * rs->ss_n);
+            rs->cursor->columns = (char **)calloc(rs->ss_n, sizeof(char *));
+            memset(rs->cursor->columns, 0, sizeof(char *) * rs->ss_n);
             rs->cursor->allvers = (int *)calloc(rs->ss_n, sizeof(int));
             memset(rs->cursor->allvers, 0, sizeof(int) * rs->ss_n);
             /* Future staging request applies to entire record_set */
@@ -3312,6 +3297,8 @@ DRMS_RecordSet_t *drms_open_recordset_internal(DRMS_Env_t *env, const char *rsqu
                     tempTableCreated = *((char **)(tempNode->data));
                     rs->cursor->names[iset] = strdup(tempTableCreated);
                 }
+                
+                rs->cursor->columns[iset] = strdup(statement->columns);
 
                 XASSERT(allvers[iset] != '\0');
                 rs->cursor->allvers[iset] = (allvers[iset] == 'y');
@@ -3385,7 +3372,7 @@ DRMS_RecordSet_t *drms_open_nrecords_internal(DRMS_Env_t *env, const char *recor
      * The record-set specification might specify more than one series. We have to loop through all
      * record-set subsets and check each one for the presence of shadow-table queries.
      */
-
+#if 0
     if (statint == DRMS_SUCCESS && rs && rs->n > 0 && n < 0)
     {
         for (iset = 0; iset < rs->ss_n && statint == DRMS_SUCCESS; iset++)
@@ -3437,6 +3424,7 @@ DRMS_RecordSet_t *drms_open_nrecords_internal(DRMS_Env_t *env, const char *recor
             }
         }
     }
+#endif
     
     if (hasshadow)
     {
@@ -6864,10 +6852,10 @@ void FreeSqlStatement(void *data)
             statement->dmlSeries = NULL;
         }
         
-        if (statement->pkeylist)
+        if (statement->columns)
         {
-            free(statement->pkeylist);
-            statement->pkeylist = NULL;
+            free(statement->columns);
+            statement->columns = NULL;
         }
         
         if (statement->link)
@@ -7393,14 +7381,20 @@ LinkedList_t *drms_query_string(DRMS_Env_t *env,
             /* p += sprintf(p, "select %s from %s, (select q2.max1 as max from  (select max(recnum) as max1, min(q1.max) as max2 from %s, (select %s, max(recnum) from %s where %s group by %s) as q1 where %s.%s = q1.%s", field_list, series_lower, series_lower, pidx_names, series_lower, where, pidx_names, series_lower, template->seriesinfo->pidx_keywords[0]->info->name, template->seriesinfo->pidx_keywords[0]->info->name); */          
             query = base_strcatalloc(query, "SELECT ", &cmdSz); XASSERT(query);
             
-            if (cursor)
+            if (tempTable && *tempTable != '\0')
             {
                 query = base_strcatalloc(query, "row_number() OVER (ORDER BY ", &cmdSz);
                 query = base_strcatalloc(query, pidx_names_bare, &cmdSz);
-                query = base_strcatalloc(query, ") AS row, ", &cmdSz);
+                query = base_strcatalloc(query, ") AS row, recnum", &cmdSz);
+                
+                /* we do not want to create a wide db temp table, so exclude all field, except recnum */
+                
             }
-            
-            query = base_strcatalloc(query, field_list, &cmdSz); XASSERT(query);
+            else
+            {
+                query = base_strcatalloc(query, field_list, &cmdSz); XASSERT(query);            
+            }
+
             query = base_strcatalloc(query, " FROM ", &cmdSz); XASSERT(query);
             query = base_strcatalloc(query, series_lower, &cmdSz); XASSERT(query);
             query = base_strcatalloc(query, ", (select q2.max1 as max from  (select max(recnum) as max1, min(q1.max) as max2 from ", &cmdSz);  XASSERT(query);
@@ -7456,14 +7450,17 @@ LinkedList_t *drms_query_string(DRMS_Env_t *env,
              */
             query = base_strcatalloc(query, "SELECT ", &cmdSz); XASSERT(query);
             
-            if (cursor)
+            if (tempTable && *tempTable != '\0')
             {
                 query = base_strcatalloc(query, "row_number() OVER (ORDER BY ", &cmdSz);
                 query = base_strcatalloc(query, pidx_names_bare, &cmdSz);
-                query = base_strcatalloc(query, ") AS row, ", &cmdSz);
+                query = base_strcatalloc(query, ") AS row, recnum", &cmdSz);
             }
-            
-            query = base_strcatalloc(query, field_list, &cmdSz); XASSERT(query);
+            else
+            {
+                query = base_strcatalloc(query, field_list, &cmdSz); XASSERT(query);
+            }
+
             query = base_strcatalloc(query, " FROM ", &cmdSz); XASSERT(query);
             query = base_strcatalloc(query, series_lower, &cmdSz); XASSERT(query);
             query = base_strcatalloc(query, ", (select q2.max1 as max from (select max(recnum) as max1, min(q1.max) as max2 from ", &cmdSz); XASSERT(query);
@@ -7521,14 +7518,17 @@ LinkedList_t *drms_query_string(DRMS_Env_t *env,
           
             query = base_strcatalloc(query, "SELECT ", &cmdSz); XASSERT(query);
             
-            if (cursor)
+            if (tempTable && *tempTable != '\0')
             {
                 query = base_strcatalloc(query, "row_number() OVER (ORDER BY ", &cmdSz);
                 query = base_strcatalloc(query, pidx_names_bare, &cmdSz);
-                query = base_strcatalloc(query, ") AS row, ", &cmdSz);
+                query = base_strcatalloc(query, ") AS row, recnum", &cmdSz);
             }
-            
-            query = base_strcatalloc(query, field_list, &cmdSz); XASSERT(query);
+            else
+            {
+                query = base_strcatalloc(query, field_list, &cmdSz); XASSERT(query);
+            }
+
             query = base_strcatalloc(query, " FROM ", &cmdSz); XASSERT(query);
             query = base_strcatalloc(query, series_lower, &cmdSz); XASSERT(query);
             query = base_strcatalloc(query, " WHERE recnum IN (select max(recnum) from ", &cmdSz); XASSERT(query);
@@ -7560,14 +7560,17 @@ LinkedList_t *drms_query_string(DRMS_Env_t *env,
                        
             query = base_strcatalloc(query, "SELECT ", &cmdSz); XASSERT(query);
             
-            if (cursor)
+            if (tempTable && *tempTable != '\0')
             {
                 query = base_strcatalloc(query, "row_number() OVER (ORDER BY ", &cmdSz);
                 query = base_strcatalloc(query, pidx_names_bare, &cmdSz);
-                query = base_strcatalloc(query, ") AS row, ", &cmdSz);
+                query = base_strcatalloc(query, ") AS row, recnum", &cmdSz);
+            }
+            else
+            {
+                query = base_strcatalloc(query, field_list, &cmdSz); XASSERT(query);
             }
 
-            query = base_strcatalloc(query, field_list, &cmdSz); XASSERT(query);
             query = base_strcatalloc(query, " FROM ", &cmdSz); XASSERT(query);
             query = base_strcatalloc(query, series_lower, &cmdSz); XASSERT(query);
             query = base_strcatalloc(query, " WHERE recnum IN (SELECT max(recnum) FROM (", &cmdSz); XASSERT(query);
@@ -7577,30 +7580,36 @@ LinkedList_t *drms_query_string(DRMS_Env_t *env,
             query = base_strcatalloc(query, ")", &cmdSz); XASSERT(query);
        }
     }
-  } else { // query on all records including all versions
-     /* same for  DRMS_QUERY_N and other types of queries */
-     /* p += sprintf(p, "select %s from %s where 1 = 1", field_list, series_lower); */
-     query = base_strcatalloc(query, "SELECT ", &cmdSz); XASSERT(query);
+  } 
+    else 
+    { 
+        // query on all records including all versions
+        /* same for  DRMS_QUERY_N and other types of queries */
+        /* p += sprintf(p, "select %s from %s where 1 = 1", field_list, series_lower); */
+        query = base_strcatalloc(query, "SELECT ", &cmdSz); XASSERT(query);
      
-        if (cursor)
+        if (tempTable && *tempTable != '\0')
         {
             query = base_strcatalloc(query, "row_number() OVER (ORDER BY ", &cmdSz);
             query = base_strcatalloc(query, pidx_names_bare, &cmdSz);
-            query = base_strcatalloc(query, ") AS row, ", &cmdSz);
-        }     
+            query = base_strcatalloc(query, ") AS row, recnum", &cmdSz);
+        }
+        else
+        {
+            query = base_strcatalloc(query, field_list, &cmdSz); XASSERT(query);
+        }    
+
+        query = base_strcatalloc(query, " FROM ", &cmdSz); XASSERT(query);
+        query = base_strcatalloc(query, series_lower, &cmdSz); XASSERT(query);
+        query = base_strcatalloc(query, " WHERE 1 = 1", &cmdSz); XASSERT(query);
      
-     query = base_strcatalloc(query, field_list, &cmdSz); XASSERT(query);
-     query = base_strcatalloc(query, " FROM ", &cmdSz); XASSERT(query);
-     query = base_strcatalloc(query, series_lower, &cmdSz); XASSERT(query);
-     query = base_strcatalloc(query, " WHERE 1 = 1", &cmdSz); XASSERT(query);
-     
-     if (where && *where) {
-        /* p += sprintf(p, " and %s", where); */
-        query = base_strcatalloc(query, " AND ", &cmdSz); XASSERT(query);
-        query = base_strcatalloc(query, where, &cmdSz); XASSERT(query);
-        
-     }    
-  }
+        if (where && *where) 
+        {
+            /* p += sprintf(p, " and %s", where); */
+            query = base_strcatalloc(query, " AND ", &cmdSz); XASSERT(query);
+            query = base_strcatalloc(query, where, &cmdSz); XASSERT(query);
+        }    
+    }
   if (qtype != DRMS_QUERY_COUNT) 
   {
     long long actualLimit = *limit;
@@ -7665,20 +7674,34 @@ LinkedList_t *drms_query_string(DRMS_Env_t *env,
          */   
         modquery = base_strcatalloc(modquery, "SELECT ", &qsize); XASSERT(modquery);
         
-        if (cursor)
+        if (tempTable && *tempTable != '\0')
         {
             modquery = base_strcatalloc(modquery, "row_number() OVER (ORDER BY ", &cmdSz);
             modquery = base_strcatalloc(modquery, pidx_names_bare, &cmdSz);
-            modquery = base_strcatalloc(modquery, ") AS row, ", &cmdSz);
+            modquery = base_strcatalloc(modquery, ") AS row, recnum", &cmdSz);
+        }
+        else
+        {
+            modquery = base_strcatalloc(modquery, field_list, &qsize); XASSERT(modquery);        
         }
         
-        modquery = base_strcatalloc(modquery, field_list, &qsize); XASSERT(modquery);
         modquery = base_strcatalloc(modquery, " FROM (", &qsize); XASSERT(modquery);
         modquery = base_strcatalloc(modquery, query, &qsize); XASSERT(modquery);
         modquery = base_strcatalloc(modquery, ") as subfoo group by ", &qsize); XASSERT(modquery);
-        modquery = base_strcatalloc(modquery, field_list, &qsize); XASSERT(modquery);
-        modquery = base_strcatalloc(modquery, " order by ", &qsize); XASSERT(modquery);
-        modquery = base_strcatalloc(modquery, field_list, &qsize); XASSERT(modquery);
+        
+        if (tempTable && *tempTable != '\0')
+        {
+            modquery = base_strcatalloc(modquery, "recnum", &qsize); XASSERT(modquery);
+            modquery = base_strcatalloc(modquery, " order by ", &qsize); XASSERT(modquery);
+            modquery = base_strcatalloc(modquery, "recnum", &qsize); XASSERT(modquery);
+        }
+        else
+        {
+            modquery = base_strcatalloc(modquery, field_list, &qsize); XASSERT(modquery);
+            modquery = base_strcatalloc(modquery, " order by ", &qsize); XASSERT(modquery);
+            modquery = base_strcatalloc(modquery, field_list, &qsize); XASSERT(modquery);        
+        }
+        
               
      if (query)
      {
@@ -7692,7 +7715,7 @@ LinkedList_t *drms_query_string(DRMS_Env_t *env,
   
     if (query)
     {
-        rqueryList = drms_series_querystring_wrap(env, seriesname, query, field_list, cursor, tempTable, &status);
+        rqueryList = drms_series_querystring_wrap(env, seriesname, query, field_list, cursor, tempTable, qtype == DRMS_QUERY_N && nrecs < 0, &status);
     }
   
  bailout:
@@ -12310,27 +12333,13 @@ static int drms_open_recordchunk(DRMS_Env_t *env, DRMS_RecordSet_t *rs, DRMS_Rec
          
                     /* the PG row_number() function is 1-based, so we need to adjust rowStart and rowEnd to a 0-based system
                      */
-                    snprintf(sqlquery, sizeof(sqlquery), "SELECT * FROM %s WHERE row >= %d AND row <= %d", rs->cursor->names[iset], rowStart + 1, rowEnd + 1);
-        
-                    statement.type = RECORDSET_SQLSTATEMENT_LANGTYPE_DML;
-                    statement.statement = strdup(sqlquery);
-                    statement.parent = NULL;
-                    statement.dmlSeries = strdup(seriesname);
-                    statement.pkeylist = drms_series_createPkeyList(env, seriesname, NULL, NULL, NULL, NULL, &stat);
-                    statement.link = NULL;
-                    statement.temp = NULL; /* ART - very important! In drms_retrieve_records_internal() where this SQL is run, 
-                                            * we collect all temp tables from these DRMS_RecordSet_Sql_Statement_t structs, 
-                                            * and then we drop those tables; but we do not want to drop the cursor parent 
-                                            * temp tables until drms_free_cursor() is run; by setting this to NULL, we
-                                            * ensure that happens
-                                            */
-
-                    if (!statementList)
-                    {
-                        statementList = list_llcreate(sizeof(DRMS_RecordSet_Sql_Statement_t), (ListFreeFn_t)FreeSqlStatement);
-                    }
-
-                    list_llinserttail(statementList, &statement);
+                     
+                    /* the temp table has (row, recnum) tuples; statementList will contain a DML statement to select all fields from
+                     * the parent table; if we are following links, then statementList will contain a second statement to 
+                     * select the link-info columns from the parent table; 
+                     */
+                    snprintf(sqlquery, sizeof(sqlquery), "SELECT row, recnum FROM %s WHERE row >= %d AND row <= %d", rs->cursor->names[iset], rowStart + 1, rowEnd + 1);
+                    statementList = drms_series_querystring_recordchunk(env, seriesname, sqlquery, rs->cursor->columns[iset], rs->cursor->openLinks, 1, &stat);
 
                     /* Extract segment list from subset query. */
                     psl = strchr(rs->ss_queries[iset], '{');
@@ -12853,6 +12862,11 @@ void drms_free_cursor(DRMS_RecSetCursor_t **cursor)
             if ((*cursor)->suinfo)
             {
                 hcon_destroy(&((*cursor)->suinfo));
+            }
+            
+            if ((*cursor)->columns)
+            {
+                free((*cursor)->columns);
             }
 
             free(*cursor);

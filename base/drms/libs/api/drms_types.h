@@ -550,6 +550,7 @@ struct DRMS_RecSetCursor_struct
   /** \brief The SUM_info_t *, keyed by sunum, needed when opening record chunks. */
   HContainer_t *suinfo;
     int openLinks; /* set in drms_open_recordset_internal(), passed into drms_open_recordset_internal() by client (e.g., show_info) */
+    char **columns; /* set in drms_open_recordset_internal(), these are the columns of the series being SELECTed from */
 };
 
 /** \brief DRMS cursor struct reference */
