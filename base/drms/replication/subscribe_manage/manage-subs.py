@@ -1649,6 +1649,7 @@ class Worker(threading.Thread):
                         dataBuf.extend(dataChunk[1])
                         dataBuf.extend(dataChunk[2])
                         offset += dataChunk[0]
+                        logQueue.put([ 'debug', 'offset into DML file is now ' + str(offset) ])
                         
                         dataChunk[1] = None
                         dataChunk[2] = None
@@ -1722,6 +1723,7 @@ class Worker(threading.Thread):
                         else:
                             raise
                 elif ddlFileCreated and not clientHappy:
+                    # this is the final subscription loop - there are no more DDL files to generate
                     # the child process closed the dump pipe
                     if maxLoop <= 0:
                         raise Exception('sqlAck', 'time-out waiting for client to ingest dump file')
@@ -1769,19 +1771,14 @@ class Worker(threading.Thread):
                         self.reqTable.releaseLock()
 
                     maxLoop -= 1
+                    time.sleep(1) # no more DDL files to dump, so we are waiting on client to ingest (check once a second)
                 
                 if not loggingDone:
-                    # ART - loop until there are no more items to print; need to put temporary block on logQueue, empty it
-                    # then unblock it
-                    logQueue.put([ 'block', '' ])
+                    # ART - loop until there are no more items to print
                     try:
                         while True:
                             level, line = logQueue.get(False) # do not block
-                        
-                            if level == 'block':
-                                # the 'block' element has been popped
-                                break
-                            elif level == 'done':
+                            if level == 'done':
                                 self.log.writeDebug([ 'done fetching output from child process' ])
                                 loggingDone = True
                             elif line is not None and len(line) > 0:
@@ -1800,10 +1797,6 @@ class Worker(threading.Thread):
                     except queue.Empty:
                         pass
 
-                if fin is not None and ddlFileCreated and not clientHappy:
-                    # we are in the final subscription loop - sleep 1 sec
-                    time.sleep(1)
-                            
                 if clientHappy and loggingDone:
                     break
                     
@@ -1973,8 +1966,6 @@ class Worker(threading.Thread):
                 print('started slony')
                 sys.stdout.flush()
 
-
-
                 # 9. Sequences - at some point in the distant past, we used to replicate sequences too. The list
                 #    of such sequences was stored in _jsoc.sl_sequence. However, we do not replicate sequences
                 #    so we now skip the step of dumping them.
@@ -2036,6 +2027,9 @@ class Worker(threading.Thread):
                     cursor.close()
                     print('leaving dbtabledumper child process')
                     sys.stdout.flush()
+                except:
+                    print('problem running PG COPY command in child; COPY terminated')
+                    raise
                 finally:
                     fout.flush()
                     fout.close() # very, very necessary, cannot close contained pipe fd now
