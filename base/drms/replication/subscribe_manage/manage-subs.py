@@ -1649,7 +1649,6 @@ class Worker(threading.Thread):
                         dataBuf.extend(dataChunk[1])
                         dataBuf.extend(dataChunk[2])
                         offset += dataChunk[0]
-                        logQueue.put([ 'debug', 'offset into DML file is now ' + str(offset) ])
                         
                         dataChunk[1] = None
                         dataChunk[2] = None
