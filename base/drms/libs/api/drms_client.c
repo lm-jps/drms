@@ -954,9 +954,7 @@ int drms_dmsv(DRMS_Session_t *session, int *row_count, const char *query, int n_
 }
 
 
-int drms_dms_array(DRMS_Session_t *session, int *row_count, 
-		   char *query, int n_rows, int n_args, 
-		   DB_Type_t *intype, void **argin )
+int drms_dms_array(DRMS_Session_t *session, int *row_count, const char *query, int n_rows, int n_args, DB_Type_t *intype, void **argin)
 {  
 #ifndef DRMS_CLIENT
   if (session->db_direct)
