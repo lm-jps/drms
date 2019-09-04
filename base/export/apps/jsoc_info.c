@@ -690,6 +690,7 @@ ModuleArgs_t module_args[] =
   {ARG_FLAG, "o", "0", "print additional DRMS information when op==series_struct"},
     {ARG_FLAG, "f", NULL, "print FITS keyword names, instead of DRMS keyword names"},
     {ARG_FLAG, "r", NULL, "do NOT display run time"},
+    {ARG_FLAG, "s", NULL, "suppress HTTP headers"},
   {ARG_STRING, "QUERY_STRING", "Not Specified", "AJAX query from the web"},
   {ARG_STRING, "REMOTE_ADDR", "0.0.0.0", "Remote IP address"},
   {ARG_STRING, "SERVER_NAME", "ServerName", "JSOC Server Name"},
@@ -1938,6 +1939,7 @@ int DoIt(void)
   CleanerData_t cleaner;
   int useFitsKeyNames = 0;
   int skipRunTime = 0;
+  int printHTTPHeaders = 1;
   LinkedList_t *reqSegs = NULL;
   LinkedList_t *reqKeys = NULL;
   LinkedList_t *reqLinks = NULL;
@@ -2032,7 +2034,9 @@ int DoIt(void)
             if (SetWebArg(req, "o", &webarglist, &webarglistsz)) JSONDIE("Bad QUERY_STRING");
             if (SetWebArg(req, "R", &webarglist, &webarglistsz)) JSONDIE("Bad QUERY_STRING");
             if (SetWebArg(req, "f", &webarglist, &webarglistsz)) JSONDIE("Bad QUERY_STRING");
-            if (SetWebArg(req, "r", &webarglist, &webarglistsz)) JSONDIE("Bad QUERY_STRING");
+            if (SetWebArg(req, "r", &webarglist, &webarglistsz)) JSONDIE("Bad QUERY_STRING");            
+            if (SetWebArg(req, "s", &webarglist, &webarglistsz)) JSONDIE("Bad QUERY_STRING");
+
             
             /* force json output */
             cmdparams_set (&cmdparams,"z", "1");
@@ -2070,6 +2074,7 @@ int DoIt(void)
 	
     useFitsKeyNames = cmdparams_isflagset(&cmdparams, "f");
     skipRunTime = cmdparams_isflagset(&cmdparams, "r");
+    printHTTPHeaders = !cmdparams_isflagset(&cmdparams, "s");
 
   // allow possible user kill
   if (strcmp(userhandle, "Not Specified") != 0)
@@ -2130,8 +2135,13 @@ int DoIt(void)
     json_tree_to_string(jroot, &jsonOut);
     final_json = json_format_string(jsonOut);
     free(jsonOut);
+    
+    if (printHTTPHeaders)
+    {
     /* send the output json back to client */
-    printf("Content-type: application/json\n\n");
+        printf("Content-type: application/json\n\n");
+    }
+    
     printf("%s\n",final_json);
     free(final_json);
     fflush(stdout);
@@ -2213,8 +2223,13 @@ int DoIt(void)
     json_tree_to_string(jroot, &jsonOut);
     final_json = json_format_string(jsonOut);
     free(jsonOut);
+
     /* send the output json back to client */
-    printf("Content-type: application/json\n\n");
+    if (printHTTPHeaders)
+    {
+        printf("Content-type: application/json\n\n");
+    }
+
     printf("%s\n",final_json);
     free(final_json);
     fflush(stdout);
@@ -2334,7 +2349,12 @@ int DoIt(void)
         }
       json_insert_pair_into_object(jroot, "status", json_new_number("0"));
       json_tree_to_string(jroot, &jsonOut);
-      printf("Content-type: application/json\n\n");
+      
+        if (printHTTPHeaders)
+        {
+            printf("Content-type: application/json\n\n");
+        }
+
       printf("%s\n",jsonOut);
       free(jsonOut);
       fflush(stdout);
@@ -3994,7 +4014,12 @@ int DoIt(void)
     
     drms_close_records(recordset, DRMS_FREE_RECORD);
     json_tree_to_string(jroot, &final_json);
-    printf("Content-type: application/json\n\n");
+    
+    if (printHTTPHeaders)
+    {
+        printf("Content-type: application/json\n\n");
+    }
+
     printf("%s\n",final_json);
     free(final_json);
     fflush(stdout);
