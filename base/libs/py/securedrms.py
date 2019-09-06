@@ -88,11 +88,18 @@ Password:
 import base64
 import getpass
 import importlib
+import inspect
+
 from json import loads, decoder
 import os
 import pexpect
 import re
+import shlex
 import sys
+import threading
+import types
+from typing import cast
+from urllib.parse import urlencode
 
 # third party imports
 import pandas
@@ -100,15 +107,18 @@ from six.moves.urllib import request as sixUrlRequest
 
 # local imports
 import drms
+from drms.client import Client as DRMSClient, SeriesInfo, ExportRequest
 from drms.config import ServerConfig, register_server
+from drms.error import DrmsQueryError, DrmsExportError, DrmsOperationNotSupported
 from drms.json import HttpJsonClient, HttpJsonRequest
-from drms.client import Client as DRMSClient
+from drms.utils import _split_arg
 
 
 __all__ = [ 'SecureDRMSConfigurationError', 'SecureDRMSConfigurationError', 'SecureDRMSArgumentError', 'SecureDRMSTimeOutError', 'SecureDRMSResponseError', 'SecureServerConfig', 'BasicAccessHttpJsonRequest', 'BasicAccessHttpJsonClient', 'SSHJsonRequest', 'SSHJsonClient', 'BasicAccessClient', 'SSHClient', 'SecureClientFactory' ]
 
 DEFAULT_SSH_PORT=22
 DEFAULT_SERVER_ENCODING='utf8'
+PASSWORD_TIMEOUT=60
 
 class SecureDRMSError(Exception):
     '''
@@ -179,13 +189,13 @@ class SecureServerConfig(ServerConfig):
         
     Public Instance Methods
     -----------------------
-    check_supported : op:string -> boolean
+    check_supported() : op:string -> boolean
         returns true of if the operation `op` is supported by the instance
         
     additional methods are defined in the parent class ServerConfig    
     '''
     __configs = {}
-    __validKeys = [ 'cgi_baseurl_authority', 'cgi_baseurl_authorityfile', 'ssh_base_bin', 'ssh_remote_user', 'ssh_remote_host', 'ssh_remote_port', 'ssh_show_series', 'ssh_jsoc_info', 'ssh_jsoc_fetch', 'ssh_check_address', 'ssh_show_series_wrapper' ]
+    __validKeys = [ 'cgi_baseurl_authority', 'cgi_baseurl_authorityfile', 'ssh_base_bin', 'ssh_base_script', 'ssh_check_email', 'ssh_check_email_addresstab', 'ssh_check_email_domaintab', 'ssh_parse_recset', 'ssh_remote_user', 'ssh_remote_host', 'ssh_remote_port', 'ssh_show_series', 'ssh_jsoc_info', 'ssh_jsoc_fetch', 'ssh_check_address', 'ssh_show_series_wrapper' ]
 
     def __init__(self, config=None, **kwargs):
         # add parameters for the login information
@@ -230,8 +240,25 @@ class SecureServerConfig(ServerConfig):
     def check_supported(self, op):
         """Check if an operation is supported by the server."""
         if self.use_ssh:
-            if op == 'series':
-                return self.ssh_show_series is not None or self.ssh_show_series_wrapper is not None
+            if op == 'check_email' or op == 'email':
+                return self.ssh_check_email is not None and self.ssh_check_email_addresstab is not None and self.ssh_check_email_domaintab is not None and self.ssh_base_script is not None
+            elif op == 'export':
+                return self.ssh_jsoc_info is not None and self.ssh_parse_recset is not None and self.ssh_jsoc_fetch is not None and self.ssh_base_bin is not None
+            elif op == 'export_from_id':
+                return self.ssh_jsoc_info is not None and self.ssh_parse_recset is not None and self.ssh_jsoc_fetch is not None and self.ssh_base_bin is not None                
+            elif op == 'info':
+                return self.ssh_jsoc_info is not None and self.ssh_parse_recset is not None and self.ssh_base_bin is not None
+            elif op == 'keys':
+                return self.ssh_jsoc_info is not None and self.ssh_parse_recset is not None and self.ssh_base_bin is not None
+            elif op == 'pkeys':
+                return self.ssh_jsoc_info is not None and self.ssh_parse_recset is not None and self.ssh_base_bin is not None
+            elif op == 'query':
+                return self.ssh_jsoc_info is not None and self.ssh_parse_recset is not None and self.ssh_base_bin is not None
+            elif op == 'series':
+                return self.ssh_show_series is not None or self.ssh_show_series_wrapper is not None and self.ssh_base_bin is not None
+
+            else:
+                return False
         else:
             return super(SecureServerConfig, self).check_supported(op)
         
@@ -293,7 +320,7 @@ class BasicAccessHttpJsonClient(HttpJsonClient):
         
     Private Instance Methods
     ------------------------
-    _json_request : url:string -> BasicAccessHttpJsonRequest
+    _json_request() : url:string -> BasicAccessHttpJsonRequest
         returns a JSON request appropriate for a web API (implemented as web-application URL `url`)
        
     Public Instance Methods
@@ -352,17 +379,20 @@ class SSHJsonRequest(object):
         
     Private Instance Methods
     ------------------------
+    __getPassword() : None -> str
+        interactively obtains the ssh password from the user
+    
     __runCmd : None -> bytes
         executes the ssh command on the ssh server; returns a bytes object that represents an encoded JSON string
     '''
-    def __init__(self, cmdList, encoding, remote_user, remote_host, remote_port, debug=None):
+    def __init__(self, cmdList, encoding, remote_user, remote_host, remote_port, password, debug=None):
         self._cmdList = cmdList
         self._encoding = encoding
         self._remoteUser = remote_user
         self._remoteHost = remote_host
         self._remotePort = remote_port
         self._debug = debug
-        self._pword = None
+        self._password = password
         self._data_str = None
         self._data = None
         
@@ -370,15 +400,18 @@ class SSHJsonRequest(object):
         return '<SSHJsonRequest ' + '"' + ' '.join(self._cmdList) + '">'
         
     def __getPassword(self):
-        if self._pword is None:
-            print('please enter password for ' + self._remoteUser + '@' + self._remoteHost)
-            pword = getpass.getpass()
+        if self._password is None:
+            print('please enter a password for ' + self._remoteUser + '@' + self._remoteHost)
+            self._password = getpass.getpass()
             
-        return pword
+        return self._password
 
     def __runCmd(self):
         try:
-            sshCmdList = [ '/usr/bin/ssh', '-p', str(self._remotePort), self._remoteUser + '@' + self._remoteHost, ' '.join(self._cmdList) ]
+            # quote cmdList elements so they can run on the command line
+            quoted = [ shlex.quote(elem) for elem in self._cmdList ]
+            
+            sshCmdList = [ '/usr/bin/ssh', '-p', str(self._remotePort), self._remoteUser + '@' + self._remoteHost, ' '.join(quoted) ]
             
             if self._debug:
                 print('running ssh command: ' + ' '.join(sshCmdList))
@@ -388,8 +421,8 @@ class SSHJsonRequest(object):
                 index = child.expect([ 'password:', pexpect.EOF ])
                 if index == 0:
                     # user was prompted to enter password
-                    password = self.__getPassword()
-                    child.sendline(password.encode('UTF8'))
+                    self._password = self.__getPassword()
+                    child.sendline(self._password.encode('UTF8'))
                 else:
                     # no password was required (because the SSH keys and ssh-agent were properly set up)
                     resp = child.before
@@ -403,6 +436,10 @@ class SSHJsonRequest(object):
 
         # resp contains the UTF8-encoded JSON response from the cmdList call
         return resp
+        
+    @property
+    def password(self):
+        return self._password
 
     @property
     def raw_data(self):
@@ -440,43 +477,191 @@ class SSHJsonClient(object):
         
     Private Instance Methods
     ------------------------
-    _json_request : cmdList:list -> SSHJsonRequest
+    _json_request() : cmdList:list -> SSHJsonRequest
         creates, from `cmdList` and returns a JSON request appropriate for an ssh-server API
         
     Public Instance Methods
     -----------------------
-    show_series : ds_filter:str -> object 
+    show_series() : ds_filter:str -> object 
         executes the show_series command on the server; `ds_filter` is a POSIX Extended Regular Expression that filters-in the series that are returned in the returned list object
-    show_series_wrapper : ds_filter:str, info:bool -> object 
+    show_series_wrapper() : ds_filter:str, info:bool -> object 
         executes the showintseries.py command on the server; `ds_filter` is a POSIX Extended Regular Expression that filters-in the series that are returned in the object; if `info` is True, then a description of each series is included in the returned pandas.DataFrame object
     '''
     def __init__(self, config, debug=False):
         self._server = config
         self._debug = debug
+        self._password = None
+        self._password_timer = None
         
     def __repr__(self):
         return '<SSHJsonClient ' + '"' + self._server.name + '">'
+        
+    def __clearPassword(self):
+        if self._debug:
+            print('[ SSHJsonClient.__clearPassword() ] clearing password')
+
+        self._password_timer = None
+        self._password = None
 
     def _json_request(self, cmdList):
         if self._debug:
-            print(' '.join(cmdList))
+            print('[ SSHJsonClient ] JSON request ' + ' '.join(cmdList))
 
         # runs the ssh command
-        return SSHJsonRequest(cmdList, self._server.encoding, self._server.ssh_remote_user, self._server.ssh_remote_host, self._server.ssh_remote_port, self._debug)
+        request = SSHJsonRequest(cmdList, self._server.encoding, self._server.ssh_remote_user, self._server.ssh_remote_host, self._server.ssh_remote_port, self._password, self._debug)
+            
+        return request
         
+    def __runCmd(self, cmdList):
+        request = self._json_request(cmdList)
+        response = request.data
+        
+        if self._password is None:
+            if self._debug:
+                print('[ SSHJsonClient._json_request ] storing password' )
+            
+            # we just obtained a password from the user; set a timer to clear it
+            self._password = request.password        
+            self._password_timer = threading.Timer(PASSWORD_TIMEOUT, self.__clearPassword)
+            self._password_timer.start()
+        else:
+            if self._debug:
+                print('[ SSHJsonClient._json_request ] renewing password' )
+                
+            # a stored password, that has not yet expired, was used for the ssh command; renew it (reset the timer since the user used the stored password again
+            self._password_timer.cancel()
+            self._password_timer = threading.Timer(PASSWORD_TIMEOUT, self.__clearPassword)
+            self._password_timer.start()
+
+        return response
+        
+    def check_address(self, address):
+        if address is None or not isinstance(address, str):
+            raise SecureDRMSArgumentError('[ check_address ] missing or invalid argument email')
+        
+        # this check_email script accepts a URL argument string (like QUERY_STRING)
+        argStr = urlencode({ 'address' : address, 'addresstab' : self._server.ssh_check_email_addresstab, 'checkonly' : 1, 'domaintab' : self._server.ssh_check_email_domaintab })
+        cmdList = [ os.path.join(self._server.ssh_base_script, self._server.ssh_check_email), shlex.quote(argStr) ]
+        return self.__runCmd(cmdList)
+        
+    def exp_request(self, ds, notify, method, protocol, protocol_args, filenamefmt, n, requestor):
+        method = method.lower()
+        method_list = ['url_quick', 'url', 'url-tar', 'ftp', 'ftp-tar']
+        if method not in method_list:
+            raise ValueError("Method '%s' is not supported, valid methods are: %s" % (method, ', '.join("'%s'" % s for s in method_list)))
+
+        protocol = protocol.lower()
+        img_protocol_list = ['jpg', 'mpg', 'mp4']
+        protocol_list = ['as-is', 'fits'] + img_protocol_list
+        if protocol not in protocol_list:
+            raise ValueError("Protocol '%s' is not supported, valid protocols are: %s" % (protocol, ', '.join("'%s'" % s for s in protocol_list)))
+
+        # method "url_quick" is meant to be used with "as-is", change method
+        # to "url" if protocol is not "as-is"
+        if method == 'url_quick' and protocol != 'as-is':
+            method = 'url'
+
+        if protocol in img_protocol_list:
+            d = {'ct': 'grey.sao', 'scaling': 'MINMAX', 'size': 1}
+            if protocol_args is not None:
+                for k, v in protocol_args.items():
+                    if k.lower() == 'ct':
+                        d['ct'] = v
+                    elif k == 'scaling':
+                        d[k] = v
+                    elif k == 'size':
+                        d[k] = int(v)
+                    elif k in ['min', 'max']:
+                        d[k] = float(v)
+                    else:
+                        raise ValueError("Unknown protocol argument: '%s'" % k)
+
+            protocol += ',CT={ct},scaling={scaling},size={size}'.format(**d)
+            if 'min' in d:
+                protocol += ',min=%g' % d['min']
+            if 'max' in d:
+                protocol += ',max=%g' % d['max']
+        else:
+            if protocol_args is not None:
+                raise ValueError("protocol_args not supported for protocol '%s'" % protocol)
+
+        cmdList = [ os.path.join(self._server.ssh_base_bin, self._server.ssh_jsoc_fetch), '-W', 'op=exp_request', 'format=json', shlex.quote('ds=' + ds), 'notify=' + notify, 'method=' + method, 'protocol=' + protocol ]
+
+        if filenamefmt is not None:
+            cmdList.append(shlex.quote('filenamefmt' + filenamefmt))
+
+        if n is not None:
+            cmdList.append('process=n=' + str(n))
+
+        if requestor is None:
+            cmdList.append('requestor=' + notify.split('@')[0])
+        elif requestor is not False:
+            cmdList.append('requestor=' + requestor)
+            
+        # must run the inner cmdList as DB user production
+        cmdList.append('JSOC_DBUSER=production')
+
+        return self.__runCmd(cmdList)
+        
+    def exp_status(self, requestid):
+        if requestid is None or not isinstance(requestid, str):
+            raise SecureDRMSArgumentError('[ exp_status ] missing or invalid argument requestid')
+        
+        cmdList = [ os.path.join(self._server.ssh_base_bin, self._server.ssh_jsoc_fetch), '-W', 'op=exp_status', 'requestid=' + requestid ]
+        return self.__runCmd(cmdList)
+
+    def parse_recset(self, recset):
+        if recset is None or not isinstance(recset, str):
+            raise SecureDRMSArgumentError('[ parse_recset ] missing or invalid argument recset')
+
+        cmdList = [ os.path.join(self._server.ssh_base_bin, self._server.ssh_parse_recset), shlex.quote('spec=' + recset) ]
+        return self.__runCmd(cmdList)
+        
+    def rs_list(self, ds, key=None, seg=None, link=None, recinfo=False, n=None, uid=None):
+        cmdList = [ os.path.join(self._server.ssh_base_bin, self._server.ssh_jsoc_info), '-s', 'op=rs_list', shlex.quote('ds=' + ds) ]
+        
+        if key is not None:
+            cmdList.append('key=' + ','.join(_split_arg(key)))
+            
+        if seg is not None:
+            cmdList.append('seg=' + ','.join(_split_arg(seg)))
+            
+        if link is not None:
+            cmdList.append('link=' + ','.join(_split_arg(link)))
+            
+        if recinfo:
+            cmdList.append('-R')
+
+        if n is not None:
+            cmdList.append('n=' + str(n))
+
+        if uid is not None:
+            cmdList.append('userhandle=' + uid)
+            
+        return self.__runCmd(cmdList)
+            
+    def rs_summary(self, ds):
+        cmdList = [ os.path.join(self._server.ssh_base_bin, self._server.ssh_jsoc_info), '-s', 'op=rs_summary', shlex.quote('ds=' + ds) ]
+
+        return self.__runCmd(cmdList)
+    
+    def series_struct(self, series):
+        if series is None or not isinstance(series, str):
+            raise SecureDRMSArgumentError('[ series_struct ] missing or invalid argument series')
+
+        cmdList = [ os.path.join(self._server.ssh_base_bin, self._server.ssh_jsoc_info), '-s', 'op=series_struct', 'ds=' +  series ]
+        return self.__runCmd(cmdList)
+    
     def show_series(self, ds_filter=None):
-        cmdList = [ self._server.ssh_show_series ]
+        cmdList = [ os.path.join(self._server.ssh_base_bin, self._server.ssh_show_series) ]
 
         if ds_filter is not None:
             cmdList.append('filter=' + ds_filter)
 
-        req = self._json_request(cmdList)
-        resp = req.data
-
-        return resp
+        return self.__runCmd(cmdList)
         
     def show_series_wrapper(self, ds_filter=None, info=False):
-        cmdList = [ self._server.ssh_show_series_wrapper ]
+        cmdList = [ os.path.join(self._server.ssh_base_script, self._server.ssh_show_series_wrapper) ]
 
         cmdList.append('--json')
 
@@ -486,10 +671,7 @@ class SSHJsonClient(object):
         if info:
             cmdList.append('--info' )
 
-        req = self._json_request(cmdList)
-        resp = req.data
-
-        return resp
+        return self.__runCmd(cmdList)
         
     @property
     def server(self):
@@ -595,6 +777,9 @@ class SSHClient(SecureClient):
         executes a DRMS API method `method` with arguments `args` within an exception handler context; returns the object returned by the API method
     __series() : regex:str, full:bool -> object
         returns a list of series names filtered by regex, POSIX Extended Regular Expression; if full is True, then returns a pandas data frame that contains a list of series and series descriptions
+    __info() : ds -> client.SeriesInfo
+    
+    
         
     additional methods are defined in the parent class DRMSClient
 
@@ -610,24 +795,69 @@ class SSHClient(SecureClient):
     def __repr__(self):
         return '<SSHClient ' + '"' + self._config.name + '">'
         
-    def __execute(self, method, **args):
+    def __execute(self, apimethod, **args):
         resp = None
 
         try:
-            resp = method(**args)
-        except DRMSException as exc:
+            apiName = cast(types.FrameType, inspect.currentframe()).f_back.f_code.co_name
+        
+            if not self._server.check_supported(apiName):
+                raise DrmsOperationNotSupported('Server does not support ' + apiName + ' access')        
+        
+            resp = apimethod(**args)
+        except SecureDRMSError as exc:
             print(exc.msg, file=sys.stderr)
 
             import traceback
             print(traceback.format_exc(), file=sys.stderr)
             
         return resp
+        
+    def _export(self, ds, method='url_quick', protocol='as-is', protocol_args=None, filenamefmt=None, n=None, email=None, requestor=None):
+        if email is None:
+            if self._email is None:
+                raise ValueError('The email argument is required when a default email address is not provided during client creation')
+            email = self._email
+
+        if filenamefmt is None:
+            parsed = self._json.parse_recset(ds)
+            series = parsed['subsets'][0]['seriesname'].lower()
+            lcseries = series.lower()        
+            filenamefmt = self._generate_filenamefmt(series)
+        elif filenamefmt is False:
+            filenamefmt = None
+
+        if protocol.lower() in ['jpg', 'mpg', 'mp4']:
+            self._validate_export_protocol_args(protocol_args)
+
+        d = self._json.exp_request(ds, email, method=method, protocol=protocol, protocol_args=protocol_args, filenamefmt=filenamefmt, n=n, requestor=requestor)
+        return ExportRequest(d, client=self)
+        
+        
+    def _info(self, series):
+        lcseries = series.lower()
+        if lcseries in self._info_cache:
+            return self._info_cache[lcseries]
+
+        # will raise if series is not a valid series
+        parsed = self._json.parse_recset(series)
+        series = parsed['subsets'][0]['seriesname'].lower()
+        lcseries = series.lower()
+
+        sinfo = self._json.series_struct(series)
+
+        status = sinfo['status']
+        if status != 0:
+            self._raise_query_error(sinfo)
+
+        si = SeriesInfo(sinfo, name=series)
+        if lcseries is not None:
+            self._info_cache[lcseries] = si
+
+        return si
 
         # do not call parent's __init__() since that method creates an HttpJsonClient instance, but we need to create a BasicAccessHttpJsonClient instead
-    def __series(self, regex=None, full=False):
-        if not self._server.check_supported('series'):
-            raise DrmsOperationNotSupported('Server does not support series list access')
-
+    def _series(self, regex=None, full=False):
         if self._server.ssh_show_series_wrapper is None:
             # No wrapper CGI available, use the regular version.
             resp = self._json.show_series(regex)
@@ -663,10 +893,48 @@ class SSHClient(SecureClient):
                 return pandas.DataFrame(recs, columns=keys)
             else:
                 return resp['seriesList']
+    
+    def check_email(self, address):
+        args = { 'email' : address }
+        
+        # use the top-level parent's check_email() method
+        return self.__execute(super(SSHClient, self).check_email, **args)
+        
+    def export(self, ds, method='url_quick', protocol='as-is', protocol_args=None, filenamefmt=None, n=None, email=None, requestor=None):
+        args = { 'ds' : ds, 'method' : method, 'protocol' : protocol, 'protocol_args' : protocol_args, 'filenamefmt' : filenamefmt, 'n' : n, 'email' : email, 'requestor' : requestor }
+        return self.__execute(self._export, **args)
+    
+    def export_from_id(self, requestid):
+        args = { 'requestid' : requestid }
+
+        # use the top-level parent's export_from_id() method
+        return self.__execute(super(SSHClient, self).export_from_id, **args)
+        
+    def info(self, series):
+        args = { 'series' : series }
+        return self.__execute(self._info, **args)
+        
+    def keys(self, series):
+        args = { 'ds' : series }
+        
+        # use the top-level parent's keys() method
+        return self.__execute(super(SSHClient, self).keys, **args)
+        
+    def pkeys(self, series):
+        args = { 'ds' : series }
+        
+        # use the top-level parent's pkeys() method
+        return self.__execute(super(SSHClient, self).pkeys, **args)
+        
+    def query(self, ds, key=None, seg=None, link=None, convert_numeric=True, skip_conversion=None, pkeys=False, rec_index=False, n=None):
+        args = { 'ds' : ds, 'key' : key, 'seg' : seg, 'link' : link, 'convert_numeric' : convert_numeric, 'skip_conversion' : skip_conversion, 'pkeys' : pkeys, 'rec_index' : rec_index, 'n' : n }
+        
+        # use the top-level parent's query() method
+        return self.__execute(super(SSHClient, self).query, **args)
             
     def series(self, regex=None, full=False):
         args = { 'regex' : regex, 'full' : full }
-        return self.__execute(self.__series, **args)
+        return self.__execute(self._series, **args)
 
 
 class SecureClientFactory(object):
@@ -686,7 +954,7 @@ class SecureClientFactory(object):
         
     Public Instance Methods
     -----------------------
-    create_client : use_ssh:bool -> SecureClient
+    create_client() : use_ssh:bool -> SecureClient
         returns a SSHClient if `use_ssh` is True, otherwise returns a BasicAccessClient
     '''
     def __init__(self, server='__JSOC', email=None, verbose=False, debug=False):
@@ -719,6 +987,11 @@ SecureServerConfig.register_server(SecureServerConfig(
     cgi_check_address='checkAddress.sh',
     cgi_show_series_wrapper='showintseries',
     ssh_base_bin='/home/jsoc/cvs/Development/JSOC/bin/linux_avx',
+    ssh_base_script='/home/jsoc/cvs/Development/JSOC/scripts',
+    ssh_check_email='checkAddress.py',
+    ssh_check_email_addresstab='jsoc.export_addresses',
+    ssh_check_email_domaintab='jsoc.export_addressdomains',
+    ssh_parse_recset='drms_parserecset',
     ssh_remote_user='arta',
     ssh_remote_host='solarport',
     ssh_remote_port='22',
