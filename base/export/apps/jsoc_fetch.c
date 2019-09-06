@@ -1195,7 +1195,7 @@ static int CheckEmailAddress(const char *logfile, const char *requestor, const c
     /* This is going to be Stanford-specific stuff - I'll localize this when I have time. */
     /* This script needs to connect to the database as database user apache, so the user running jsoc_fetch must have db user apache in their
      * .pgpass file. Normally it is linux user apache who runs jsoc_fetch, and this user has database user apache in their .pgpass. */
-    snprintf(caCmd, sizeof(caCmd), "unset REQUEST_METHOD; unset QUERY_STRING; %s %s/checkAddress.py address=%s'&'checkonly=1'&'addresstab=jsoc.export_addresses'&'domaintab=jsoc.export_addressdomains'&'dbuser=apache", BIN_PY, SCRIPTS_EXPORT, realAddress);
+    snprintf(caCmd, sizeof(caCmd), "unset REQUEST_METHOD; unset QUERY_STRING; %s %s/checkAddress.py address=%s'&'checkonly=1'&'addresstab=jsoc.export_addresses'&'domaintab=jsoc.export_addressdomains'&'dbuser=apache", BIN_PY3, SCRIPTS_EXPORT, realAddress);
     WriteLog(logfile, "Calling checkAddress.py: %s\n", caCmd);
     caFptr = popen(caCmd, "r");
     
