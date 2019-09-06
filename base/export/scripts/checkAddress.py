@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 # The arguments to this script are parsed by cgi.FieldStorage(), which knows how to parse
 # both HTTP GET and POST requests. A nice feature is that we can test the script as it runs in a CGI context
@@ -12,14 +12,13 @@
 #   dbuser (optional) - The database account to be used when connecting to the database. The default is the value of the WEB_DBUSER parameter in DRMSParams.
 #   checkonly (optional) - If set to 1, then no attept is made to register an unregistered email. In this case, if no error occurs then the possible return status codes are RV_REGISTEREDADDRESS, RV_REGISTRATIONPENDING, or RV_UNREGISTEREDADDRESS. The default is False (unknown addresses are registered).
 
-from __future__ import print_function
 import sys
 import os
 import pwd
 import re
 import uuid
 from datetime import datetime
-from urllib import unquote
+from urllib.parse import unquote
 import smtplib
 import cgi
 import json
