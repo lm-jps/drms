@@ -107,6 +107,7 @@ from six.moves.urllib import request as sixUrlRequest
 
 # local imports
 import drms
+from drms import utils
 from drms.client import Client as DRMSClient, SeriesInfo, ExportRequest
 from drms.config import ServerConfig, register_server
 from drms.error import DrmsQueryError, DrmsExportError, DrmsOperationNotSupported
@@ -125,7 +126,7 @@ class SecureDRMSError(Exception):
     base exception class for all Secure DRMS exceptions
     '''
     def __init__(self, msg):
-        super(SecureDRMSError, self).__init__(msg)
+        super().__init__(msg)
         self.msg = msg
 
 class SecureDRMSConfigurationError(SecureDRMSError):
@@ -133,7 +134,7 @@ class SecureDRMSConfigurationError(SecureDRMSError):
     invalid or missing Secure DRMS server configuration property
     '''
     def __init__(self, msg):
-        super(SecureDRMSConfigurationError, self).__init__(msg)
+        super().__init__(msg)
         self.msg = msg
 
 class SecureDRMSArgumentError(SecureDRMSError):
@@ -141,14 +142,14 @@ class SecureDRMSArgumentError(SecureDRMSError):
     invalid or missing method argument
     '''
     def __init__(self, msg):
-        super(SecureDRMSArgumentError, self).__init__(msg)
+        super().__init__(msg)
         self.msg = msg
         
 class SecureDRMSTimeOutError(SecureDRMSError):
     '''
     '''
     def __init__(self, msg):
-        super(SecureDRMSTimeOutError, self).__init__(msg)
+        super().__init__(msg)
         self.msg = msg
 
 class SecureDRMSResponseError(SecureDRMSError):
@@ -156,7 +157,7 @@ class SecureDRMSResponseError(SecureDRMSError):
     time-out waiting for DRMS Server to respon
     '''
     def __init__(self, msg):
-        super(SecureDRMSResponseError, self).__init__(msg)
+        super().__init__(msg)
         self.msg = msg
 
 
@@ -232,7 +233,7 @@ class SecureServerConfig(ServerConfig):
         if 'encoding' not in kwargs:
             kwargsToParent['encoding'] = DEFAULT_SERVER_ENCODING
 
-        super(SecureServerConfig, self).__init__(config, **kwargsToParent)
+        super().__init__(config, **kwargsToParent)
         
     def __repr__(self):
         return '<SecureServerConfig ' + '"' + self.name + '">'
@@ -260,7 +261,7 @@ class SecureServerConfig(ServerConfig):
             else:
                 return False
         else:
-            return super(SecureServerConfig, self).check_supported(op)
+            return super().check_supported(op)
         
     @classmethod
     def register_server(cls, config):
@@ -328,7 +329,7 @@ class BasicAccessHttpJsonClient(HttpJsonClient):
     all methods are defined in the parent class HttpJsonClient
     '''
     def __init__(self, config, debug=False):
-        super(BasicAccessHttpJsonClient, self).__init__(config.name, debug)
+        super().__init__(config.name, debug)
         
     def __repr__(self):
         return '<SSHJsonClient ' + '"' + self._server.name + '">'
@@ -393,6 +394,7 @@ class SSHJsonRequest(object):
         self._remotePort = remote_port
         self._debug = debug
         self._password = password
+        self._passwordFailed = False
         self._data_str = None
         self._data = None
         
@@ -402,6 +404,9 @@ class SSHJsonRequest(object):
     def __getPassword(self):
         if self._password is None:
             print('please enter a password for ' + self._remoteUser + '@' + self._remoteHost)
+            self._password = getpass.getpass()
+        elif self._passwordFailed:
+            print('permission denied, please re-enter a password for ' + self._remoteUser + '@' + self._remoteHost)
             self._password = getpass.getpass()
             
         return self._password
@@ -417,12 +422,18 @@ class SSHJsonRequest(object):
                 print('running ssh command: ' + ' '.join(sshCmdList))
 
             child = pexpect.spawn(' '.join(sshCmdList))
+            passwordAttempted = False
             while True:
                 index = child.expect([ 'password:', pexpect.EOF ])
                 if index == 0:
+                    if passwordAttempted:
+                        if self._debug:
+                            print('ssh password failed; requesting user re-try')
+                        self._passwordFailed = True
                     # user was prompted to enter password
-                    self._password = self.__getPassword()
+                    self.__getPassword()
                     child.sendline(self._password.encode('UTF8'))
+                    passwordAttempted = True
                 else:
                     # no password was required (because the SSH keys and ssh-agent were properly set up)
                     resp = child.before
@@ -534,6 +545,25 @@ class SSHJsonClient(object):
             self._password_timer.start()
 
         return response
+        
+    def _show_series(self, ds_filter=None, info=False):
+        # we have to intercept calls to both show_series parent methods, show_series() and show_series_wrapper(), and then do the
+        # right thing depending on configuration parameters
+        if self._server.ssh_show_series_wrapper is None:
+            cmdList = [ os.path.join(self._server.ssh_base_bin, self._server.ssh_show_series), '-z' ]
+
+            if ds_filter is not None:
+                cmdList.append(ds_filter)
+        else:
+            cmdList = [ os.path.join(self._server.ssh_base_script, self._server.ssh_show_series_wrapper), '--json' ]
+
+            if ds_filter is not None:
+                cmdList.append('--filter=' + ds_filter)
+
+            if info:
+                cmdList.append('--info' )
+
+        return self.__runCmd(cmdList)
         
     def check_address(self, address):
         if address is None or not isinstance(address, str):
@@ -653,25 +683,10 @@ class SSHJsonClient(object):
         return self.__runCmd(cmdList)
     
     def show_series(self, ds_filter=None):
-        cmdList = [ os.path.join(self._server.ssh_base_bin, self._server.ssh_show_series) ]
-
-        if ds_filter is not None:
-            cmdList.append('filter=' + ds_filter)
-
-        return self.__runCmd(cmdList)
+        return self._show_series(ds_filter)
         
     def show_series_wrapper(self, ds_filter=None, info=False):
-        cmdList = [ os.path.join(self._server.ssh_base_script, self._server.ssh_show_series_wrapper) ]
-
-        cmdList.append('--json')
-
-        if ds_filter is not None:
-            cmdList.append('--filter=' + ds_filter)
-
-        if info:
-            cmdList.append('--info' )
-
-        return self.__runCmd(cmdList)
+        return self._show_series(ds_filter, info)
         
     @property
     def server(self):
@@ -749,7 +764,7 @@ class BasicAccessClient(SecureClient):
 
     '''
     def __init__(self, server='__JSOC', email=None, verbose=False, debug=False):
-        super(BasicAccessClient, self).__init__(server, email, verbose, debug)
+        super().__init__(server, email, verbose, debug)
         self._json = BasicAccessHttpJsonClient(config=self._config, debug=debug)
         
     def __repr__(self):
@@ -775,21 +790,58 @@ class SSHClient(SecureClient):
     ------------------------
     __execute() : method:function, args:dict -> object
         executes a DRMS API method `method` with arguments `args` within an exception handler context; returns the object returned by the API method
-    __series() : regex:str, full:bool -> object
-        returns a list of series names filtered by regex, POSIX Extended Regular Expression; if full is True, then returns a pandas data frame that contains a list of series and series descriptions
-    __info() : ds -> client.SeriesInfo
-    
-    
-        
-    additional methods are defined in the parent class DRMSClient
+
 
     Public Instance Methods
     -----------------------
-    series() : regex:str, full:bool -> object
-        API method wrapper around __series()
+    check_email() : email:str -> bool
+        returns True if `email` is valid and registered for use with the export system: 
+    
+        >>> sshclient.check_email('arta@sun.stanford.edu')
+        True
+        >>>
+    
+    export() : ds:str, [ method:str ], [ protocol:str ], [ protocol_args:dict ], [ filenamefmt:str/bool/None ], [ n:int/None ], [ email:str/None ], [ requestor:str/bool/None ] -> object (ExportRequest)
+        returns an ExportRequest object
+        
+        
+
+    export_from_id() : requestid:str -> object (ExportRequest)
+ 
+    info() : series:str -> object (SeriesInfo)
+    
+    keys() : series:str -> list
+    
+    pkeys() : series:str -> list
+    
+    query() : ds:str, [ key:str/list/None ], [ seg:str/list/None ], [ link:str/list/None ], [ convert_numeric:bool ], [ skip_conversion:list/None ], [ pkeys:bool ], [ rec_index:bool ], [ n:int/None ] -> pandas.DataFrame/tuple 
+        returns keyword, segment, and link information for a record set:
+        
+        >>> response = sshclient.query('hmi.b_720s[2014.7.8/60m]', key='T_REC', seg='inclination')
+        >>> response[0]
+                             T_REC
+        0  2014.07.08_00:00:00_TAI
+        1  2014.07.08_00:12:00_TAI
+        2  2014.07.08_00:24:00_TAI
+        3  2014.07.08_00:36:00_TAI
+        4  2014.07.08_00:48:00_TAI
+        >>> response[1]
+                                         inclination
+        0   /SUM1/D586204465/S00000/inclination.fits
+        1  /SUM59/D586214018/S00000/inclination.fits
+        2  /SUM18/D586223071/S00000/inclination.fits
+        3  /SUM61/D586230553/S00000/inclination.fits
+        4  /SUM36/D586248087/S00000/inclination.fits
+        >>>
+        
+        `str` is a record-set specification, `key` is the name of a keyword, or a list of keyword names, `seg` is the name of a segment, or a list of segment names, and `link` is the name of a link, or a list of link names; with these three arguments the caller specifies a set of keywords, segments, and links for which DRMS-record-specific information is to be printed; if `convert_numeric` is True, then numeric-datatype keywords not in the list `skip_conversion` are converted from string to numbers; if `pkeys` is True, then the set of keys specified by `key` is augmented with the prime-key keywords; if `rec_index` is True, then the rows in the resulting pandas.DataFrame are no longer indexed by number 
+
+    
+    series() : [ regex:str/None ], [ full:bool ] -> list/object
+        returns a list of series names, optionally filtered by `regex`, a POSIX Extended Regular Expression; if `regex` is not None or is ommitted, then all series whose names match `regex` are included in the returned list; if `full` is True, then returns a pandas data frame that contains a list of series and series descriptions; by default a list of series without descriptions is returned
     '''
     def __init__(self, server='__JSOC', email=None, verbose=False, debug=False):
-        super(SSHClient, self).__init__(server, email, verbose, debug)
+        super().__init__(server, email, verbose, debug)
         self._json = SSHJsonClient(self._config, debug)
         
     def __repr__(self):
@@ -813,128 +865,72 @@ class SSHClient(SecureClient):
             
         return resp
         
-    def _export(self, ds, method='url_quick', protocol='as-is', protocol_args=None, filenamefmt=None, n=None, email=None, requestor=None):
-        if email is None:
-            if self._email is None:
-                raise ValueError('The email argument is required when a default email address is not provided during client creation')
-            email = self._email
+    def _extract_series_name(self, ds):
+        parsed = self._json.parse_recset(ds)
+        return parsed['subsets'][0]['seriesname'].lower()
 
-        if filenamefmt is None:
-            parsed = self._json.parse_recset(ds)
-            series = parsed['subsets'][0]['seriesname'].lower()
-            lcseries = series.lower()        
-            filenamefmt = self._generate_filenamefmt(series)
-        elif filenamefmt is False:
-            filenamefmt = None
-
-        if protocol.lower() in ['jpg', 'mpg', 'mp4']:
-            self._validate_export_protocol_args(protocol_args)
-
-        d = self._json.exp_request(ds, email, method=method, protocol=protocol, protocol_args=protocol_args, filenamefmt=filenamefmt, n=n, requestor=requestor)
-        return ExportRequest(d, client=self)
-        
-        
-    def _info(self, series):
-        lcseries = series.lower()
-        if lcseries in self._info_cache:
-            return self._info_cache[lcseries]
-
-        # will raise if series is not a valid series
-        parsed = self._json.parse_recset(series)
-        series = parsed['subsets'][0]['seriesname'].lower()
-        lcseries = series.lower()
-
-        sinfo = self._json.series_struct(series)
-
-        status = sinfo['status']
-        if status != 0:
-            self._raise_query_error(sinfo)
-
-        si = SeriesInfo(sinfo, name=series)
-        if lcseries is not None:
-            self._info_cache[lcseries] = si
-
-        return si
-
-        # do not call parent's __init__() since that method creates an HttpJsonClient instance, but we need to create a BasicAccessHttpJsonClient instead
-    def _series(self, regex=None, full=False):
-        if self._server.ssh_show_series_wrapper is None:
-            # No wrapper CGI available, use the regular version.
-            resp = self._json.show_series(regex)
-            status = resp.get('status')
-            if status != 0:
-                self._raise_query_error(resp)
-            if full:
-                keys = ('name', 'primekeys', 'note')
-
-                if not resp['names']:
-                    return pandas.DataFrame(columns=keys)
-                recs = [ (it['name'], _split_arg(it['primekeys']), it['note']) for it in resp['names'] ]
-            
-                return pandas.DataFrame(recs, columns=keys)
-            else:
-                if not resp['names']:
-                    return []
-                return [ it['name'] for it in resp['names'] ]
-        else:
-            # Use show_series_wrapper instead of the regular version.
-            resp = self._json.show_series_wrapper(regex, info=full)
-            if full:
-                keys = ('name', 'note')
-                if not resp['seriesList']:
-                    return pandas.DataFrame(columns=keys)
-
-                recs = []
-                for it in resp['seriesList']:
-                    name, info = tuple(it.items())[0]
-                    note = info.get('description', '')
-                    recs.append((name, note))
-
-                return pandas.DataFrame(recs, columns=keys)
-            else:
-                return resp['seriesList']
-    
+    # Public Interface
     def check_email(self, address):
         args = { 'email' : address }
         
-        # use the top-level parent's check_email() method
-        return self.__execute(super(SSHClient, self).check_email, **args)
+        # call the parent's check_email() method
+        return self.__execute(super().check_email, **args)
         
-    def export(self, ds, method='url_quick', protocol='as-is', protocol_args=None, filenamefmt=None, n=None, email=None, requestor=None):
+    def export(self, ds, method='url_quick', protocol='as-is', protocol_args=None, filenamefmt=None, n=None, email=None, requestor=None):        
+        if filenamefmt is None:
+            # override parent implementation
+            series = self._extract_series_name(ds)
+            filenamefmt = self._generate_filenamefmt(series)
+            
         args = { 'ds' : ds, 'method' : method, 'protocol' : protocol, 'protocol_args' : protocol_args, 'filenamefmt' : filenamefmt, 'n' : n, 'email' : email, 'requestor' : requestor }
-        return self.__execute(self._export, **args)
+
+        # call the parent's export() method
+        return self.__execute(super().export, **args)
     
     def export_from_id(self, requestid):
         args = { 'requestid' : requestid }
 
-        # use the top-level parent's export_from_id() method
-        return self.__execute(super(SSHClient, self).export_from_id, **args)
+        # call the parent's export_from_id() method
+        return self.__execute(super().export_from_id, **args)
         
     def info(self, series):
-        args = { 'series' : series }
-        return self.__execute(self._info, **args)
+        args = { 'ds' : series }
+        
+        # override utils._extract_series_name
+        saved = utils._extract_series_name
+        utils._extract_series_name = self._extract_series_name
+
+        response = self.__execute(super().info, **args)
+
+        # restore
+        utils._extract_series_name = saved
+
+        return response
         
     def keys(self, series):
         args = { 'ds' : series }
         
-        # use the top-level parent's keys() method
-        return self.__execute(super(SSHClient, self).keys, **args)
+        # call the parent's keys() method
+        return self.__execute(super().keys, **args)
         
     def pkeys(self, series):
         args = { 'ds' : series }
         
-        # use the top-level parent's pkeys() method
-        return self.__execute(super(SSHClient, self).pkeys, **args)
+        # call the parent's pkeys() method
+        return self.__execute(super().pkeys, **args)
         
     def query(self, ds, key=None, seg=None, link=None, convert_numeric=True, skip_conversion=None, pkeys=False, rec_index=False, n=None):
         args = { 'ds' : ds, 'key' : key, 'seg' : seg, 'link' : link, 'convert_numeric' : convert_numeric, 'skip_conversion' : skip_conversion, 'pkeys' : pkeys, 'rec_index' : rec_index, 'n' : n }
         
-        # use the top-level parent's query() method
-        return self.__execute(super(SSHClient, self).query, **args)
+        # call the parent's query() method
+        return self.__execute(super().query, **args)
             
     def series(self, regex=None, full=False):
         args = { 'regex' : regex, 'full' : full }
-        return self.__execute(self._series, **args)
+        
+        # call the parent's series() method [ the server configuration parameters in the parent method will be ignored; they will be used,
+        # however, in the self._json.show_series*() methods ]
+        return self.__execute(super().series, **args)
 
 
 class SecureClientFactory(object):
@@ -955,7 +951,7 @@ class SecureClientFactory(object):
     Public Instance Methods
     -----------------------
     create_client() : use_ssh:bool -> SecureClient
-        returns a SSHClient if `use_ssh` is True, otherwise returns a BasicAccessClient
+        returns an SSHClient if `use_ssh` is True, otherwise returns a BasicAccessClient
     '''
     def __init__(self, server='__JSOC', email=None, verbose=False, debug=False):
         self._config = SecureServerConfig.get(server)
@@ -981,10 +977,10 @@ SecureServerConfig.register_server(SecureServerConfig(
     cgi_baseurl='http://jsoc2.stanford.edu/cgi-bin/ajax/',
     cgi_baseurl_authority='hmiteam:hmiteam',
 #   cgi_baseurl_authorityfile='/Users/art/HEPL/drmsPy/auth.py',
-    cgi_show_series='show_series',
     cgi_jsoc_info='jsoc_info',
     cgi_jsoc_fetch='jsoc_fetch',
     cgi_check_address='checkAddress.sh',
+    cgi_show_series='show_series',
     cgi_show_series_wrapper='showintseries',
     ssh_base_bin='/home/jsoc/cvs/Development/JSOC/bin/linux_avx',
     ssh_base_script='/home/jsoc/cvs/Development/JSOC/scripts',
