@@ -85,16 +85,17 @@ Password:
 '''
 
 # standard library imports
+import atexit
 import base64
 import getpass
 import importlib
 import inspect
-
 from json import loads, decoder
 import os
 import pexpect
 import re
 import shlex
+import signal
 import sys
 import threading
 import types
@@ -115,7 +116,7 @@ from drms.json import HttpJsonClient, HttpJsonRequest
 from drms.utils import _split_arg
 
 
-__all__ = [ 'SecureDRMSConfigurationError', 'SecureDRMSConfigurationError', 'SecureDRMSArgumentError', 'SecureDRMSTimeOutError', 'SecureDRMSResponseError', 'SecureServerConfig', 'BasicAccessHttpJsonRequest', 'BasicAccessHttpJsonClient', 'SSHJsonRequest', 'SSHJsonClient', 'BasicAccessClient', 'SSHClient', 'SecureClientFactory' ]
+__all__ = [ 'SecureDRMSConfigurationError', 'SecureDRMSConfigurationError', 'SecureDRMSArgumentError', 'SecureDRMSTimeOutError', 'SecureDRMSResponseError', 'RuntimeEnvironment', 'SecureServerConfig', 'BasicAccessHttpJsonRequest', 'BasicAccessHttpJsonClient', 'SSHJsonRequest', 'SSHJsonClient', 'BasicAccessClient', 'SSHClient', 'SecureClientFactory' ]
 
 DEFAULT_SSH_PORT=22
 DEFAULT_SERVER_ENCODING='utf8'
@@ -160,6 +161,63 @@ class SecureDRMSResponseError(SecureDRMSError):
         super().__init__(msg)
         self.msg = msg
 
+class RuntimeEnvironment(object):
+    '''
+    a class to manage environment variables needed to initialize the runtime environment
+    
+    Constructor
+    -----------
+        parameters
+        ----------
+        env : dict
+            a dictionary where the key is an environment variable name, and the value is the variable's string value
+        
+        return value
+        ------------
+        None
+        
+        The constructor iterates through the dictionary, creating one object attribute for each environment variable.
+    
+    Public Instance Methods
+    -----------------------
+    setenv : [ debug:bool ] -> None
+        Sets the environment variables stored in self; if `debug` is True, then the method prints the values to which environment variables are set.
+    '''
+    def __init__(self, env):
+        for envVar in env:
+            setattr(self, envVar, env[envVar])
+        self.SECUREDRMS_ENV_SET = '0'
+        
+    def __del__(self):
+        # destructor - unset env vars
+        for envVar, val in vars(self).items():
+            if envVar in os.environ:            
+                if self.SECUREDRMS_DEBUG == '1':
+                    print('unsetting environment variable: ' + str((envVar, val)))
+            
+                del os.environ[envVar]
+        
+    def setenv(self, debug=False):
+        if self.SECUREDRMS_ENV_SET == '0':
+            if debug:
+                self.SECUREDRMS_DEBUG = '1'
+
+            self.SECUREDRMS_ENV_SET = '1'
+
+            for envVar, val in vars(self).items():
+                if debug:
+                    print('setting environment variable: ' + str((envVar, val)))
+                os.environ[envVar] = val
+                
+    def bash_cmd(self):
+        cmds = []
+
+        if len(vars(self)) > 0:
+            for envVar, val in vars(self).items():
+                cmds.append('export ' + envVar + '=' + val)
+                
+        return cmds
+
 
 class SecureServerConfig(ServerConfig):
     '''
@@ -167,36 +225,42 @@ class SecureServerConfig(ServerConfig):
     
     Class Variables
     ---------------
-    __configs : dictionary
+    __configs : dict
         a container of all registered server configurations
     __validKeys : list
         a list of all valid supplemental (to ServerConfig._valid_keys) configuration properties
     
-    Constructor Parameters
-    ----------------------
-    config : SecureServerConfig
-        an existing SecureServerConfig used to initialize the new SecureServerConfig; the new SecureServerConfig is created by copying the properties in the existing SecureServerConfig
-    kwargs : dict
-        a dictionary of SecureServerConfig properties; these properties are added to the initial SecureServerConfig (after the properties in config have been copied)
+    Constructor
+    -----------
+        parameters
+        ----------
+        [ config : SecureServerConfig ]
+            an existing SecureServerConfig used to initialize the new SecureServerConfig
+        kwargs : keyword dict
+            a dict of SecureServerConfig properties; 
+            
+        return value
+        ------------
+        None
 
-    Class Methods
-    -------------
-    register_server : config:SecureServerConfig -> None
-        add the server configuration `config` to the dictionary of SecureServerConfigs (SecureServerConfig.__configs); add `config` to the dictionary of  ServerConfigs (config._server_configs)
-    get : name:str -> SecureServerConfig
-        return the SecureServerConfig by the name of `name`
+        The new SecureServerConfig instance is optionally initialized by copying the properties in `config`. The keyword args in `kwargs` are then added to the instance. `kwargs` can refer to an emtpy dict, in which case it is ignored.
+
+    Public Class Methods
+    --------------------
+    register_server : config:object (SecureServerConfig) -> None
+        Add the server configuration `config` to the dictionary of SecureServerConfigs (SecureServerConfig.__configs); add `config` to the global dictionary of ServerConfigs (config._server_configs)
+    get : [ name:str ] -> SecureServerConfig
+        Return the SecureServerConfig by the name of `name`
     set : name:str, config:SecureServerConfig -> None
-        add the server configuration `config` to the dictionary of SecureServerConfigs (SecureServerConfig.__configs)
+        Add the server configuration `config` to the dictionary of SecureServerConfigs (SecureServerConfig.__configs)
         
     Public Instance Methods
     -----------------------
-    check_supported() : op:string -> boolean
-        returns true of if the operation `op` is supported by the instance
-        
-    additional methods are defined in the parent class ServerConfig    
+    check_supported : op:string -> bool
+        Returns true of if the operation `op` is supported by the instance
     '''
     __configs = {}
-    __validKeys = [ 'cgi_baseurl_authority', 'cgi_baseurl_authorityfile', 'ssh_base_bin', 'ssh_base_script', 'ssh_check_email', 'ssh_check_email_addresstab', 'ssh_check_email_domaintab', 'ssh_parse_recset', 'ssh_remote_user', 'ssh_remote_host', 'ssh_remote_port', 'ssh_show_series', 'ssh_jsoc_info', 'ssh_jsoc_fetch', 'ssh_check_address', 'ssh_show_series_wrapper' ]
+    __validKeys = [ 'cgi_baseurl_authority', 'cgi_baseurl_authorityfile', 'ssh_base_bin', 'ssh_base_script', 'ssh_check_email', 'ssh_check_email_addresstab', 'ssh_check_email_domaintab', 'ssh_jsoc_info', 'ssh_jsoc_fetch', 'ssh_parse_recset', 'ssh_remote_env', 'ssh_remote_host', 'ssh_remote_port', 'ssh_remote_user', 'ssh_show_series', 'ssh_show_series_wrapper' ]
 
     def __init__(self, config=None, **kwargs):
         # add parameters for the login information
@@ -269,6 +333,9 @@ class SecureServerConfig(ServerConfig):
 
     @classmethod
     def get(cls, name='__JSOC'):
+        if len(name) == 0:
+            return None
+
         try:
             return cls.__configs[name.lower()]
         except KeyError:
@@ -289,12 +356,14 @@ class BasicAccessHttpJsonRequest(HttpJsonRequest):
     '''
     a class to send web-server requests (HTTP URLs, with Basic Access authentication) to servers that return JSON to the DRMS client; for each request, the class processes the JSON response, decoding it into a dictionary which is then available to the calling JSON client
     
-    Constructor Parameters
-    ----------------------
-    request : urllib.request.Request
-        abstraction of an HTTP URL request; BasicAccessHttpJsonRequest._http is a http.client.HTTPResponse
-    encoding : str
-        the name of one of the following JSON encodings: UTF-8, UTF-16, or UTF-32
+    Constructor
+    -----------
+        parameters
+        ----------
+        request : object (urllib.request.Request)
+            abstraction of an HTTP URL request; BasicAccessHttpJsonRequest._http is a http.client.HTTPResponse
+        encoding : str
+            the name of one of the following JSON encodings: UTF-8, UTF-16, or UTF-32
     '''
     def __init__(self, request, encoding):
         self._request = request
@@ -332,7 +401,7 @@ class BasicAccessHttpJsonClient(HttpJsonClient):
         super().__init__(config.name, debug)
         
     def __repr__(self):
-        return '<SSHJsonClient ' + '"' + self._server.name + '">'
+        return '<BasicAccessHttpJsonClient ' + '"' + self._server.name + '">'
 
     def _json_request(self, url):
         if self.debug:
@@ -386,8 +455,8 @@ class SSHJsonRequest(object):
     __runCmd : None -> bytes
         executes the ssh command on the ssh server; returns a bytes object that represents an encoded JSON string
     '''
-    def __init__(self, cmdList, encoding, remote_user, remote_host, remote_port, password, debug=None):
-        self._cmdList = cmdList
+    def __init__(self, cmds, encoding, remote_user, remote_host, remote_port, password=None, debug=None):
+        self._cmds = cmds
         self._encoding = encoding
         self._remoteUser = remote_user
         self._remoteHost = remote_host
@@ -399,7 +468,7 @@ class SSHJsonRequest(object):
         self._data = None
         
     def __repr__(self):
-        return '<SSHJsonRequest ' + '"' + ' '.join(self._cmdList) + '">'
+        return '<SSHJsonRequest ' + '"' + ' '.join(self._cmds) + '">'
         
     def __getPassword(self):
         if self._password is None:
@@ -410,13 +479,12 @@ class SSHJsonRequest(object):
             self._password = getpass.getpass()
             
         return self._password
-
+        
     def __runCmd(self):
-        try:
-            # quote cmdList elements so they can run on the command line
-            quoted = [ shlex.quote(elem) for elem in self._cmdList ]
+        try:            
+            # sshCmdList = [ '/usr/bin/ssh', '-p', str(self._remotePort), self._remoteUser + '@' + self._remoteHost, shlex.quote('/bin/bash -c ' + shlex.quote(' '.join(self._cmdList))) ]
             
-            sshCmdList = [ '/usr/bin/ssh', '-p', str(self._remotePort), self._remoteUser + '@' + self._remoteHost, ' '.join(quoted) ]
+            sshCmdList = [ '/usr/bin/ssh', '-p', str(self._remotePort), self._remoteUser + '@' + self._remoteHost, shlex.quote('/bin/bash -c ' + shlex.quote(' '.join(self._cmds))) ]
             
             if self._debug:
                 print('running ssh command: ' + ' '.join(sshCmdList))
@@ -513,18 +581,33 @@ class SSHJsonClient(object):
 
         self._password_timer = None
         self._password = None
+        
+    def clearTimer(self):
+        if self._debug:
+            print('clearing timer for json client ' + repr(self))
+
+        if self._password_timer is not None:
+            self._password_timer.cancel()
+            
+        if self._debug:
+            print('cleared')
 
     def _json_request(self, cmdList):
+        # prepend the cmdList with the env var settings
+        envCmds = [ cmd + ';' for cmd in self._server.ssh_remote_env.bash_cmd() ]
+        cmds = envCmds + [ ' '.join(cmdList) ]
+        
         if self._debug:
             print('[ SSHJsonClient ] JSON request ' + ' '.join(cmdList))
 
-        # runs the ssh command
-        request = SSHJsonRequest(cmdList, self._server.encoding, self._server.ssh_remote_user, self._server.ssh_remote_host, self._server.ssh_remote_port, self._password, self._debug)
+        request = SSHJsonRequest(cmds, self._server.encoding, self._server.ssh_remote_user, self._server.ssh_remote_host, self._server.ssh_remote_port, self._password, self._debug)
             
         return request
         
     def __runCmd(self, cmdList):
         request = self._json_request(cmdList)
+
+        # runs the ssh command
         response = request.data
         
         if self._password is None:
@@ -533,16 +616,20 @@ class SSHJsonClient(object):
             
             # we just obtained a password from the user; set a timer to clear it
             self._password = request.password        
-            self._password_timer = threading.Timer(PASSWORD_TIMEOUT, self.__clearPassword)
-            self._password_timer.start()
         else:
             if self._debug:
                 print('[ SSHJsonClient._json_request ] renewing password' )
                 
             # a stored password, that has not yet expired, was used for the ssh command; renew it (reset the timer since the user used the stored password again
             self._password_timer.cancel()
-            self._password_timer = threading.Timer(PASSWORD_TIMEOUT, self.__clearPassword)
-            self._password_timer.start()
+
+        self._password_timer = threading.Timer(PASSWORD_TIMEOUT, self.__clearPassword)
+        # IMPORTANT! making the timer threads daemons allows the interpreter to terminate in response to EOF (ctrl-d); otherwise, 
+        # the main thread blocks on a join() on the timer thread until the timer 'fires' (and calls self.__clearPassword()); normally
+        # this isn't so cool, but there does not seem to be a way for this module to 'intercept' an EOF sent to the interpreter
+        # interactively
+        self._password_timer.daemon = True
+        self._password_timer.start()            
 
         return response
         
@@ -868,6 +955,9 @@ class SSHClient(SecureClient):
     def _extract_series_name(self, ds):
         parsed = self._json.parse_recset(ds)
         return parsed['subsets'][0]['seriesname'].lower()
+        
+    def clearTimer(self):
+        self._json.clearTimer()
 
     # Public Interface
     def check_email(self, address):
@@ -953,6 +1043,9 @@ class SecureClientFactory(object):
     create_client() : use_ssh:bool -> SecureClient
         returns an SSHClient if `use_ssh` is True, otherwise returns a BasicAccessClient
     '''
+
+    __clients = []
+    
     def __init__(self, server='__JSOC', email=None, verbose=False, debug=False):
         self._config = SecureServerConfig.get(server)
         self._args = { 'email' : email, 'verbose' : verbose, 'debug' : debug }
@@ -961,7 +1054,11 @@ class SecureClientFactory(object):
         self._config.use_ssh = use_ssh
 
         if self._config.use_ssh:
-            return SSHClient(self._config.name, **self._args)
+            sshClient = SSHClient(self._config.name, **self._args)
+            
+            # add to list of clients whose timers might need to be canceled upon termination
+            SecureClientFactory.__clients.append(sshClient)
+            return sshClient
         elif False:
             # if we need additional clients, like https, make a new elsif statement immediately above this one
             pass
@@ -969,6 +1066,15 @@ class SecureClientFactory(object):
             # default to basic access
             return BasicAccessClient(self._config.name, **self._args)
 
+    @classmethod
+    def terminator(cls, *args):
+        for client in cls.__clients:
+            client.clearTimer()
+
+# intercept ctrl-c and kill the child timer threads
+signal.signal(signal.SIGINT, SecureClientFactory.terminator)
+signal.signal(signal.SIGTERM, SecureClientFactory.terminator)
+signal.signal(signal.SIGHUP, SecureClientFactory.terminator)
 
 # register secure JSOC DRMS server
 SecureServerConfig.register_server(SecureServerConfig(
@@ -987,15 +1093,20 @@ SecureServerConfig.register_server(SecureServerConfig(
     ssh_check_email='checkAddress.py',
     ssh_check_email_addresstab='jsoc.export_addresses',
     ssh_check_email_domaintab='jsoc.export_addressdomains',
+    ssh_jsoc_info='jsoc_info',
+    ssh_jsoc_fetch='jsoc_fetch',
     ssh_parse_recset='drms_parserecset',
+    ssh_remote_env=RuntimeEnvironment(
+        {
+            'BOGUS_ENV' : 'bogus_value'
+            # 'LD_LIBRARY_PATH' : '/nasa/intel/Compiler/2018.3.222/compilers_and_libraries_2018.3.222/linux/compiler/lib/intel64'
+        }
+    ),
     ssh_remote_user='arta',
     ssh_remote_host='solarport',
     ssh_remote_port='22',
     ssh_show_series='show_series',
     ssh_show_series_wrapper='showintseries.py',
-    ssh_jsoc_info='jsoc_info',
-    ssh_jsoc_fetch='jsoc_fetch',
-    ssh_check_address='checkAddress.sh',
     show_series_wrapper_dbhost='hmidb',
     http_download_baseurl='http://jsoc.stanford.edu/',
     ftp_download_baseurl='ftp://pail.stanford.edu/export/'))
