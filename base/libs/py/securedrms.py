@@ -165,57 +165,35 @@ class RuntimeEnvironment(object):
     '''
     a class to manage environment variables needed to initialize the runtime environment
     
-    Constructor
+    Constructor 
     -----------
-        parameters
-        ----------
         env : dict
             a dictionary where the key is an environment variable name, and the value is the variable's string value
-        
-        return value
-        ------------
-        None
-        
+
         The constructor iterates through the dictionary, creating one object attribute for each environment variable.
+        
+    Attributes
+    ----------
+    <env var> : str
+        for each environment variable a str property exists
+
     
     Public Instance Methods
     -----------------------
-    setenv : [ debug:bool ] -> None
-        Sets the environment variables stored in self; if `debug` is True, then the method prints the values to which environment variables are set.
+    bash_cmd : [ None ] -> list
+        Returns a list containing one element per environment variable stored as a property in the instance; each element is a bash command that sets one variable (like `export VAR1=value1)
     '''
     def __init__(self, env):
         for envVar in env:
             setattr(self, envVar, env[envVar])
-        self.SECUREDRMS_ENV_SET = '0'
-        
-    def __del__(self):
-        # destructor - unset env vars
-        for envVar, val in vars(self).items():
-            if envVar in os.environ:            
-                if self.SECUREDRMS_DEBUG == '1':
-                    print('unsetting environment variable: ' + str((envVar, val)))
-            
-                del os.environ[envVar]
-        
-    def setenv(self, debug=False):
-        if self.SECUREDRMS_ENV_SET == '0':
-            if debug:
-                self.SECUREDRMS_DEBUG = '1'
-
-            self.SECUREDRMS_ENV_SET = '1'
-
-            for envVar, val in vars(self).items():
-                if debug:
-                    print('setting environment variable: ' + str((envVar, val)))
-                os.environ[envVar] = val
                 
     def bash_cmd(self):
         cmds = []
 
         if len(vars(self)) > 0:
             for envVar, val in vars(self).items():
-                cmds.append('export ' + envVar + '=' + val)
-                
+                cmds.append('export ' + envVar + '=$' + envVar + "'" + val + "'")
+
         return cmds
 
 
@@ -223,27 +201,64 @@ class SecureServerConfig(ServerConfig):
     '''
     a class to create, maintain, and store DRMS server configurations
     
+    Constructor
+    -----------
+        [ config : SecureServerConfig ]
+            an existing SecureServerConfig used to initialize the new SecureServerConfig
+        kwargs : keyword dict
+            a dict of SecureServerConfig properties; 
+
+        The new SecureServerConfig instance is optionally initialized by copying the properties in `config`. The keyword args in `kwargs` are then added to the instance. `kwargs` can refer to an emtpy dict, in which case it is ignored.
+        
+    Attributes
+    ----------
+        use_ssh : bool
+            If True, then SecureClientFactory.create_client() will create a SSHClient, otherwise it will create a BasicAccessClient
+        cgi_baseurl_authority : str
+            For BasicAccessClient clients, `cgi_baseurl_authority` contains the clear-text HTTP Basic Access authentication name:password credentials.
+        cgi_baseurl_authorityfile : str
+            For BasicAccessClient clients, `cgi_baseurl_authorityfile` contains the path to a file that contains the base64-encoded name:password credentials. The file must contain a single function named getAuthority:
+            
+            def getAuthority():
+                return 'XXXXXXXXXXXXXXXXXXXX'
+                
+        show_series_wrapper_wlfile : str
+            For SSHClient clients, `show_series_wrapper_wlfile` contains the path to the remote-server DRMS series white-list file.    
+        ssh_base_bin : str
+            For SSHClient clients, `ssh_base_bin` contains the path to the remote-server directory that contains all binary executables referenced in this module
+        ssh_base_script : str
+            For SSHClient clients, `ssh_base_script` contains the path to the remote-server directory that contains all scripts referenced in this module
+        ssh_check_email : str
+            For SSHClient clients, `ssh_check_email` contains the remote-server script file that checks the registration status of export email addresses.
+        ssh_check_email_addresstab : str
+            For SSHClient clients, `ssh_check_email_addresstab` contains name of the remote-server database table that contains the registered local names.
+        ssh_check_email_domaintab : str
+            For SSHClient clients, `ssh_check_email_domaintab` contains name of the remote-server database table that contains the domains of the registered local names.
+        ssh_jsoc_fetch : str
+            For SSHClient clients, `ssh_jsoc_fetch` contains the remote-server binary executable that initiates export requests, and reports the status on those requests.
+        ssh_jsoc_info : str
+            For SSHClient clients, `ssh_jsoc_info` contains the remote-server binary executable that provides DRMS record-set information.
+        ssh_parse_recset : str
+            For SSHClient clients, `ssh_parse_recset` contains the remote-server binary executable that parses DRMS record-set strings into parts (e.g., series name, filters, segment list, etc.).
+        ssh_remote_env : str
+            For SSHClient clients, `ssh_remote_env` contains a dict of environment variables to be passed along to the remote server.
+        ssh_remote_host : str
+            For SSHClient clients, `ssh_remote_host` contains the name of the remote host.
+        ssh_remote_port : int
+            For SSHClient clients, `ssh_remote_port` contains the port number of the remote host on which the SSH sevice listens.
+        ssh_remote_user : str
+            For SSHClient clients, `ssh_remote_user` contains the name of the user to run the remote command as.
+        ssh_show_series : str
+            For SSHClient clients, `ssh_show_series` contains the remote-server binary executable that prints the public-accessible external series served.
+        ssh_show_series_wrapper : str
+            For SSHClient clients, `ssh_show_series_wrapper` contains the remote-server script that prints the public-accessible external series served PLUS the public-accessible internal series.
+    
     Class Variables
     ---------------
     __configs : dict
         a container of all registered server configurations
     __validKeys : list
         a list of all valid supplemental (to ServerConfig._valid_keys) configuration properties
-    
-    Constructor
-    -----------
-        parameters
-        ----------
-        [ config : SecureServerConfig ]
-            an existing SecureServerConfig used to initialize the new SecureServerConfig
-        kwargs : keyword dict
-            a dict of SecureServerConfig properties; 
-            
-        return value
-        ------------
-        None
-
-        The new SecureServerConfig instance is optionally initialized by copying the properties in `config`. The keyword args in `kwargs` are then added to the instance. `kwargs` can refer to an emtpy dict, in which case it is ignored.
 
     Public Class Methods
     --------------------
@@ -260,7 +275,7 @@ class SecureServerConfig(ServerConfig):
         Returns true of if the operation `op` is supported by the instance
     '''
     __configs = {}
-    __validKeys = [ 'cgi_baseurl_authority', 'cgi_baseurl_authorityfile', 'ssh_base_bin', 'ssh_base_script', 'ssh_check_email', 'ssh_check_email_addresstab', 'ssh_check_email_domaintab', 'ssh_jsoc_info', 'ssh_jsoc_fetch', 'ssh_parse_recset', 'ssh_remote_env', 'ssh_remote_host', 'ssh_remote_port', 'ssh_remote_user', 'ssh_show_series', 'ssh_show_series_wrapper' ]
+    __validKeys = [ 'cgi_baseurl_authority', 'cgi_baseurl_authorityfile', 'show_series_wrapper_wlfile', 'ssh_base_bin', 'ssh_base_script', 'ssh_check_email', 'ssh_check_email_addresstab', 'ssh_check_email_domaintab', 'ssh_jsoc_fetch', 'ssh_jsoc_info', 'ssh_parse_recset', 'ssh_remote_env', 'ssh_remote_host', 'ssh_remote_port', 'ssh_remote_user', 'ssh_show_series', 'ssh_show_series_wrapper' ]
 
     def __init__(self, config=None, **kwargs):
         # add parameters for the login information
@@ -320,8 +335,7 @@ class SecureServerConfig(ServerConfig):
             elif op == 'query':
                 return self.ssh_jsoc_info is not None and self.ssh_parse_recset is not None and self.ssh_base_bin is not None
             elif op == 'series':
-                return self.ssh_show_series is not None or self.ssh_show_series_wrapper is not None and self.ssh_base_bin is not None
-
+                return (self.ssh_show_series is not None or (self.ssh_show_series_wrapper is not None and self.show_series_wrapper_wlfile is not None)) and self.ssh_base_bin is not None
             else:
                 return False
         else:
@@ -364,6 +378,9 @@ class BasicAccessHttpJsonRequest(HttpJsonRequest):
             abstraction of an HTTP URL request; BasicAccessHttpJsonRequest._http is a http.client.HTTPResponse
         encoding : str
             the name of one of the following JSON encodings: UTF-8, UTF-16, or UTF-32
+            
+        attributes
+        ----------
     '''
     def __init__(self, request, encoding):
         self._request = request
@@ -642,7 +659,7 @@ class SSHJsonClient(object):
             if ds_filter is not None:
                 cmdList.append(ds_filter)
         else:
-            cmdList = [ os.path.join(self._server.ssh_base_script, self._server.ssh_show_series_wrapper), '--json' ]
+            cmdList = [ os.path.join(self._server.ssh_base_script, self._server.ssh_show_series_wrapper), '--json', '--wlfile=' + self._server.show_series_wrapper_wlfile, 'dbhost=' + self._server.show_series_wrapper_dbhost ]
 
             if ds_filter is not None:
                 cmdList.append('--filter=' + ds_filter)
@@ -1080,14 +1097,16 @@ signal.signal(signal.SIGHUP, SecureClientFactory.terminator)
 SecureServerConfig.register_server(SecureServerConfig(
     name='__JSOC',
 #   use_ssh=True,
-    cgi_baseurl='http://jsoc2.stanford.edu/cgi-bin/ajax/',
+    cgi_baseurl='http://jsoc.stanford.edu/cgi-bin/ajax/',
     cgi_baseurl_authority='hmiteam:hmiteam',
 #   cgi_baseurl_authorityfile='/Users/art/HEPL/drmsPy/auth.py',
     cgi_jsoc_info='jsoc_info',
     cgi_jsoc_fetch='jsoc_fetch',
     cgi_check_address='checkAddress.sh',
     cgi_show_series='show_series',
-    cgi_show_series_wrapper='showintseries',
+    cgi_show_series_wrapper='showextseries', # use showintseries for jsoc2.stanford.edu
+    show_series_wrapper_dbhost='hmidb2', # for ssh_show_series_wrapper == 'showextseries.py'
+    show_series_wrapper_wlfile='/home/jsoc/cvs/Development/JSOC/proj/export/webapps/whitelist.txt',
     ssh_base_bin='/home/jsoc/cvs/Development/JSOC/bin/linux_avx',
     ssh_base_script='/home/jsoc/cvs/Development/JSOC/scripts',
     ssh_check_email='checkAddress.py',
@@ -1104,9 +1123,8 @@ SecureServerConfig.register_server(SecureServerConfig(
     ),
     ssh_remote_user='arta',
     ssh_remote_host='solarport',
-    ssh_remote_port='22',
+    ssh_remote_port=22,
     ssh_show_series='show_series',
-    ssh_show_series_wrapper='showintseries.py',
-    show_series_wrapper_dbhost='hmidb',
+    ssh_show_series_wrapper='showextseries.py', # use showintseries.py for internal series
     http_download_baseurl='http://jsoc.stanford.edu/',
     ftp_download_baseurl='ftp://pail.stanford.edu/export/'))
