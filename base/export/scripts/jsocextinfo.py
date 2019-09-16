@@ -214,6 +214,6 @@ if err:
 else:
     # use jsoc_info's output
     if jstdout is not None:
-        print(jstdout.decode('UTF8'))
+        print(jstdout.decode('UTF8'), end='')
 
 sys.exit(0)
