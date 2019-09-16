@@ -51,6 +51,7 @@ try:
     
     # Default to JSON output.
     optD['json'] = True
+    optD['noheader'] = False
 
     # This script may be invoked in 4 ways:
     #   1. It can be called from the jsoc_fetch CGI via an HTTP POST request. In this case, jsoc_fetch reads the arguments
@@ -86,6 +87,10 @@ try:
                     optD['requestid'] = val
                 elif key in ('format') and val.lower() == 'txt':
                     optD['json'] = False
+                elif key in ('n'):
+                    optD['noheader'] = True
+                    # do not add to jsoc_fetch command
+                    continue
 
                 allArgs.append(key + '=' + val)
                 
@@ -299,11 +304,13 @@ try:
             if jsonObj is None or int(jsonObj['status']) != 0 and int(jsonObj['status']) != 1 and int(jsonObj['status']) != 2 and int(jsonObj['status']) != 3 and int(jsonObj['status']) != 4 and int(jsonObj['status']) != 5 and int(jsonObj['status']) != 6:
                 raise Exception('jsocfetch', 'jsoc_fetch did not return a known status code (code ' + jsonObj['status']+ ').', RET_JSOCFETCH)
 
-            # Print the JSON object as returned by jsoc_fetch.
-            print('Content-type: application/json\n')
+            if not optD['noheader']:
+                # Print the JSON object as returned by jsoc_fetch.
+                print('Content-type: application/json\n')
         else:
-            # For now, the only other option for output format is text.
-            print('Content-type: text/plain\n')
+            if not optD['noheader']:
+                # For now, the only other option for output format is text.
+                print('Content-type: text/plain\n')
             
         printUTF8(output)
 
@@ -372,11 +379,13 @@ try:
             if jsonObj is None or int(jsonObj['status']) != 0 and int(jsonObj['status']) != 1 and int(jsonObj['status']) != 2 and int(jsonObj['status']) != 3 and int(jsonObj['status']) != 4 and int(jsonObj['status']) != 5 and int(jsonObj['status']) != 6:
                 raise Exception('jsocfetch', 'jsoc_fetch did not return a known status code (code ' + jsonObj['status']+ ').', RET_JSOCFETCH)
 
-            # Print the JSON object as returned by jsoc_fetch.
-            print('Content-type: application/json\n')
+            if not optD['noheader']:
+                # Print the JSON object as returned by jsoc_fetch.
+                print('Content-type: application/json\n')
         else:
-            # For now, the only other option for output format is text.
-            print('Content-type: text/plain\n')
+            if not optD['noheader']:
+                # For now, the only other option for output format is text.
+                print('Content-type: text/plain\n')
 
         printUTF8(output)
         
@@ -396,7 +405,8 @@ except Exception as exc:
 # jsoc_fetch creates webpage content, if there is no failure. But if it or this script fails, then we have to create content that contains
 # an error code and error message.
 if err:
-    print('Content-type: application/json\n')
+    if not optD['noheader']:
+        print('Content-type: application/json\n')
     rootObj = { "status" : err, "error" : errMsg}
     print(json.dumps(rootObj))
     
