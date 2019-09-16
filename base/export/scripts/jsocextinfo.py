@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 # This is a wrapper for jsoc_info.c, so it must adhere to its API:
 #   If no error has occurs, then return "status" : 0.
@@ -12,6 +12,7 @@ import io
 import os
 import cgi
 import json
+from distutils.util import strtobool
 from subprocess import check_output, Popen, SubprocessError, STDOUT, PIPE, DEVNULL
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../include'))
 from drmsparams import DRMSParams
@@ -41,6 +42,7 @@ def setOutputEncoding(encoding='UTF8', errors='strict'):
 try:
     optD = {}
     allArgs = []
+    optD['noheader'] = False
 
     # If jsocextinfo.py is processing an HTTP POST request, then cgi.FieldStorage() reads from STDIN to get the arguments. This
     # means that the jsoc_info binary will not find the arguments when it tries to get them from STDIN!!! This is assuming that it is
@@ -56,6 +58,8 @@ try:
 
             if key in ('H', 'dbhost'):
                 optD['dbhost'] = val
+            elif key in ('n'):
+                optD['noheader'] = strtobool(val) == True
             else:
                 if key in ('ds'):
                     optD['spec'] = val
@@ -151,6 +155,10 @@ try:
     ## Run jsoc_info ##
     ###################
     cmdList = [ os.path.join(binDir, arch, 'jsoc_info'), 'JSOC_DBHOST=' + server, 'DRMS_DBTIMEOUT=600000', 'DRMS_QUERY_MEM=4096', 'DRMS_DBUTF8CLIENTENCODING=1' ]
+    
+    if optD['noheader']:
+        cmdList.append('-s')
+        
     # Provide all jsoc_info arguments passed through jsocextinfo.py to jsoc_info.
     cmdList.extend(allArgs)
 
@@ -199,7 +207,9 @@ setOutputEncoding('UTF8')
 if err:
     rootObj['status'] = err
     rootObj['error'] = errMsg
-    print('Content-type: application/json\n')
+    if not optD['noheader']:
+        print('Content-type: application/json\n')
+
     print(json.dumps(rootObj))
 else:
     # use jsoc_info's output
