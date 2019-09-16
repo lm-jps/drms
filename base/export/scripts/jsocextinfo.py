@@ -163,7 +163,8 @@ try:
     cmdList.extend(allArgs)
 
     try:
-        print('running ' + ' '.join(cmdList), file=sys.stderr)
+        if not optD['noheader']:
+            print('running ' + ' '.join(cmdList), file=sys.stderr)
         proc = Popen(cmdList, stdin=None, stderr=PIPE, stdout=PIPE)
         jstdout, jstderr = proc.communicate()
 
