@@ -58,7 +58,7 @@ try:
 
             if key in ('H', 'dbhost'):
                 optD['dbhost'] = val
-            elif key in ('n'):
+            elif key in ('N'):
                 optD['noheader'] = strtobool(val) == True
             else:
                 if key in ('ds'):
