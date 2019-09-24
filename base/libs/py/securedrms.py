@@ -16,72 +16,29 @@ here is a very basic example of its usage:
 <SSHClient "__JSOC">
 >>>
 >>> # list DRMS series whose names contain the string 'su_arta'
->>> sshclient.series('su_arta')
+>>> sshclient.series('lev1')
 please enter password for arta@solarport
 Password:
-['su_arta.Lw_720s', 'su_arta.M_45s_test2', 'su_arta.M_720s', 'su_arta.V_720s', 'su_arta.aia__lev1_euv_12s', 'su_arta.aia__lev1b', 'su_arta.ambig_tst_in0', 'su_arta.awesometest', 'su_arta.b_thr0150_thr1250', 'su_arta.dark', 'su_arta.detune', 'su_arta.export', 'su_arta.export_procs', 'su_arta.fds', 'su_arta.fds_orbit_vectors', 'su_arta.gentrack', 'su_arta.globalhs_history', 'su_arta.hmi_lev1', 'su_arta.lev1', 'su_arta.lev1_12s4arc', 'su_arta.psf', 'su_arta.slonylogs', 'su_arta.testBigHDU', 'su_arta.vw_V', 'su_arta.vw_V_sht', 'su_arta.ylm_vw_V_1024_sht_8h']
+['aia.lev1', 'aia.lev1_euv_12s', 'aia.lev1_uv_24s', 'aia.lev1_vis_1h', 'aia_test.lev1_12s4arc', 'hmi.lev1_cal', 'hmi.lev1_dcon', 'iris.lev1', 'iris.lev1_nrt', 'mdi.fd_M_96m_lev182', 'mdi.fd_m_lev182']
 >>>
 >>> # create a Basic Access HTTP client
 >>> httpclient = factory.create_client()
 >>> httpclient
 <BasicAccessClient "__JSOC">
 >>> # list DRMS series whose names contain the string 'su_arta'; print a listing that contains series information
->>> httpclient.series('su_arta', True)
-                            name  \
-0                su_arta.Lw_720s
-1            su_arta.M_45s_test2
-2                 su_arta.M_720s
-3                 su_arta.V_720s
-4      su_arta.aia__lev1_euv_12s
-5             su_arta.aia__lev1b
-6          su_arta.ambig_tst_in0
-7            su_arta.awesometest
-8      su_arta.b_thr0150_thr1250
-9                   su_arta.dark
-10                su_arta.detune
-11                su_arta.export
-12          su_arta.export_procs
-13                   su_arta.fds
-14     su_arta.fds_orbit_vectors
-15              su_arta.gentrack
-16      su_arta.globalhs_history
-17              su_arta.hmi_lev1
-18                  su_arta.lev1
-19          su_arta.lev1_12s4arc
-20                   su_arta.psf
-21             su_arta.slonylogs
-22            su_arta.testBigHDU
-23                  su_arta.vw_V
-24              su_arta.vw_V_sht
-25  su_arta.ylm_vw_V_1024_sht_8h
-
-                                                 note
-0           linewidths with a cadence of 720 seconds.
-1          magnetograms with a cadence of 45 seconds.
-2         magnetograms with a cadence of 720 seconds.
-3          Dopplergrams with a cadence of 720 seconds
-4                      AIA Level 1, 12 second cadence
-5                                        AIA level 1b
-6     Test input data for vector field disambiguation
-7                                    AWESOME RAW DATA
-8                               Disambiguated ME HARP
-9                                     HMI bias / dark
-10                               MDI Calibration data
-11                                               JSOC
-12  This dataseries contains one record per availa...
-13  This series contains ingested, pre-launch and ...
-14  Helio- and Geo-centric orbit position and velo...
-15                 miscellaneous tracked mapped cubes
-16       ancillary dataseries for processing metadata
-17                                        HMI Level 1
-18                                        HMI Level 1
-19                                        AIA Level 1
-20                          HMI Point Spread Function
-21  This series contains ingested, pre-launch FDS ...
-22                 test the creation of an HDU > 4GB.
-23                    MDI Vector-Weighted Dopplergram
-24  medium-l timeseries for output of jretile and ...
-25  spherical harmonic transforms of artificial im...
+>>> httpclient.series('lev1', True)
+                     name                                       note
+0                aia.lev1                                AIA Level 1
+1        aia.lev1_euv_12s             AIA Level 1, 12 second cadence
+2         aia.lev1_uv_24s             AIA Level 1, 24 second cadence
+3         aia.lev1_vis_1h           AIA Level 1, 3600 second cadence
+4   aia_test.lev1_12s4arc                                AIA Level 1
+5            hmi.lev1_cal             HMI Level 1 Calibration Series
+6           hmi.lev1_dcon                                HMI Level 1
+7               iris.lev1                 IRIS level 1 on-orbit data
+8           iris.lev1_nrt  Near real time IRIS level 1 on-orbit data
+9     mdi.fd_M_96m_lev182              MDI Full Disk 96m Magnetogram
+10        mdi.fd_m_lev182             MDI Full Disk 01-m Magnetogram
 '''
 
 # standard library imports
@@ -122,6 +79,7 @@ DEFAULT_SSH_PORT=22
 DEFAULT_SERVER_ENCODING='utf8'
 PASSWORD_TIMEOUT=60
 
+# Exception classes
 class SecureDRMSError(Exception):
     '''
     base exception class for all Secure DRMS exceptions
@@ -163,25 +121,24 @@ class SecureDRMSResponseError(SecureDRMSError):
 
 class RuntimeEnvironment(object):
     '''
-    a class to manage environment variables needed to initialize the runtime environment
+    a class to manage environment variables needed to initialize the remote-host runtime environment
     
     Constructor 
     -----------
         env : dict
             a dictionary where the key is an environment variable name, and the value is the variable's string value
 
-        The constructor iterates through the dictionary, creating one object attribute for each environment variable.
+        The constructor iterates through `env`, creating one RuntimeEnvironment instance attribute for each element (each element is for a single environment variable).
         
     Attributes
     ----------
     <env var> : str
-        for each environment variable a str property exists
-
+        For each environment variable <env var>, a str attribute with the same name exists.
     
     Public Instance Methods
     -----------------------
     bash_cmd : [ None ] -> list
-        Returns a list containing one element per environment variable stored as a property in the instance; each element is a bash command that sets one variable (like `export VAR1=value1)
+        Returns a list containing one element per environment variable stored as an attribute in the instance; each element is a bash command that APPENDS a value to one existing variable (like [ "export VAR1=$VAR1'value1'", "export VAR2=$VAR2'value2" ]). If the environment variable does not already exist, it is created.
     '''
     def __init__(self, env):
         for envVar in env:
@@ -204,25 +161,24 @@ class SecureServerConfig(ServerConfig):
     Constructor
     -----------
         [ config : SecureServerConfig ]
-            an existing SecureServerConfig used to initialize the new SecureServerConfig
-        kwargs : keyword dict
-            a dict of SecureServerConfig properties; 
+            `config` is an existing SecureServerConfig used to initialize the new SecureServerConfig.
+        kwargs : keyword-argument dict
+            `kwargs` contains a dict of keyword-argument parameters that will act as a the SecureServerConfig attributes; the keyword argument `name` must exist.
 
-        The new SecureServerConfig instance is optionally initialized by copying the properties in `config`. The keyword args in `kwargs` are then added to the instance. `kwargs` can refer to an emtpy dict, in which case it is ignored.
+        The new SecureServerConfig instance is optionally initialized by copying the attributes in `config`. The keyword arguments in `kwargs` are then added to the instance.
         
     Attributes
     ----------
-        use_ssh : bool
-            If True, then SecureClientFactory.create_client() will create a SSHClient, otherwise it will create a BasicAccessClient
-        use_internal : bool
-            If True, then access will be to an internal server, otherwise access will be to an external server (with selectively exposed internal DRMS data series)
         cgi_baseurl_authority : str
             For BasicAccessClient clients, `cgi_baseurl_authority` contains the clear-text HTTP Basic Access authentication name:password credentials.
         cgi_baseurl_authorityfile : str
-            For BasicAccessClient clients, `cgi_baseurl_authorityfile` contains the path to a file that contains the base64-encoded name:password credentials. The file must contain a single function named getAuthority:
+            For BasicAccessClient clients, `cgi_baseurl_authorityfile` contains the path to a file that contains a function that returns the base64-encoded name:password credentials. The file must contain a single function named getAuthority:
             
             def getAuthority():
                 return 'XXXXXXXXXXXXXXXXXXXX'
+                
+        cgi_baseurl_internal : str
+            For BasicAccessClient clients, `cgi_baseurl_internal`
                 
         ssh_base_bin : str
             For SSHClient clients, `ssh_base_bin` contains the path to the remote-server directory that contains all binary executables referenced in this module
@@ -332,7 +288,7 @@ class SecureServerConfig(ServerConfig):
         super().__init__(config, **kwargsToParent)
         
     def __repr__(self):
-        return '<SecureServerConfig ' + '"' + self.name + '">'
+        return '<SecureServerConfig "{name}"'.format(name=self.name)
         
     def check_supported(self, op, use_ssh=False, use_internal=False):
         """Check if an operation is supported by the server."""
@@ -438,7 +394,7 @@ class BasicAccessHttpJsonRequest(HttpJsonRequest):
         # do not call parent's __init__() since that method calls urlopen without first making a Request; we need to make a Request so we can add the authentication header
         
     def __repr__(self):
-        return '<BasicAccessHttpJsonRequest ' + '"' + self._request.full_url + '">'
+        return '<BasicAccessHttpJsonRequest "{name}"'.format(name=self._request.full_url)
 
 
 class BasicAccessHttpJsonClient(HttpJsonClient):
@@ -467,7 +423,7 @@ class BasicAccessHttpJsonClient(HttpJsonClient):
         self._use_internal = use_internal
         
     def __repr__(self):
-        return '<BasicAccessHttpJsonClient ' + '"' + self._server.name + '">'
+        return '<BasicAccessHttpJsonClient "{name}"'.format(name=self._server.name)
 
     def _json_request(self, url):
         if self.debug:
@@ -571,7 +527,7 @@ class SSHJsonRequest(object):
         self._data = None
         
     def __repr__(self):
-        return '<SSHJsonRequest ' + '"' + ' '.join(self._cmds) + '">'
+        return '<SSHJsonRequest "{name}"'.format(name=' '.join(self._cmds))
         
     def __getPassword(self):
         if self._password is None:
@@ -654,18 +610,43 @@ class SSHJsonClient(object):
     ----------------------
     config : SecureServerConfig
         a secure server configuration
-    debug : bool
+    [ use_internal : bool ]
+        If True, then access will be to an internal server, otherwise access will be to an external server (external DRMS data series plus selectively exposed internal data series)
+    [ debug : bool ]
         if true, print debugging statements
+        
+    Private Attributes
+    ------------------
+    _server : object (SecureServerConfig)
+        The server configuration contains parameter values needed to create SSHJsonRequests.
+    _use_ssh : True
+        If True, then this instance accesses the remove server via SSH
+    _use_internal : bool
+        If True, then access will be to an internal server, otherwise access will be to an external server (external DRMS data series plus selectively exposed internal data series)
+    _debug : bool
+        If True, debug statements are printed.
+    _password : str
+        The SSH password entered by the user is cached.
+    _password_timer : object (threading.Timer)
+        The cached user password times-out after an interval of time.
+        
+    Public Attributes
+    -----------------
+    None
         
     Private Instance Methods
     ------------------------
-    _json_request() : cmdList:list -> SSHJsonRequest
-        creates, from `cmdList` and returns a JSON request appropriate for an ssh-server API
+    __clearPassword  None -> None
+    _json_request : cmdList:list -> object (SSHJsonRequest)
+        This method generates a set of bash commands to set the runtime environment. To this set of commands, the method appends the SSH-interface bash commands contained in `cmdList`. The method then creates and returns an SSHJsonRequest instance that encapsulates these commands.
+
         
     Public Instance Methods
     -----------------------
-    show_series() : ds_filter:str -> object 
-        executes the show_series command on the server; `ds_filter` is a POSIX Extended Regular Expression that filters-in the series that are returned in the returned list object
+    clearTimer : None -> None
+        If a timer is currently running, then this method clears the timer.
+    show_series : ds_filter:str -> object (json)
+        This method executes the show_series command on the server; `ds_filter` is a POSIX Extended Regular Expression that filters-in the series that are returned in the returned list object
     show_series_wrapper() : ds_filter:str, info:bool -> object 
         executes the showintseries.py command on the server; `ds_filter` is a POSIX Extended Regular Expression that filters-in the series that are returned in the object; if `info` is True, then a description of each series is included in the returned pandas.DataFrame object
     '''
@@ -678,7 +659,7 @@ class SSHJsonClient(object):
         self._password_timer = None
         
     def __repr__(self):
-        return '<SSHJsonClient ' + '"' + self._server.name + '">'
+        return '<SSHJsonClient "{name}"'.format(name=self._server.name)
         
     def __clearPassword(self):
         if self._debug:
@@ -1422,7 +1403,7 @@ SecureServerConfig.register_server(SecureServerConfig(
     ssh_jsoc_info_args=
     {
         'dbhost' : 'hmidb2',
-        'n' : 1
+        'N' : 1
     },
     ssh_jsoc_info_internal='jsoc_info',
     ssh_jsoc_info_internal_args=
