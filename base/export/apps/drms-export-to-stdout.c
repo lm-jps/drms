@@ -17,6 +17,7 @@
   */
 #include <pwd.h>
 #include <grp.h>
+#include "json.h"
 #include "jsoc_main.h"
 #include "exputil.h"
 /* enable the ability to pass in FITS structures to the fitsexport - could put this in make instead if desired */
@@ -40,8 +41,8 @@ char *module_name = "drms-export-to-stdout";
 #define ARG_DO_NOT_CREATE_TAR "s" /* if there is more than one FITS file requested in spec, error out */
 #define ARG_DUMP_FILE_NAME "d" /* if not making a tar, then dump the name of the FITS file at the beginning of the stream */
 
-#define FILE_LIST_PATH "jsoc/file_list.txt"
-#define ERROR_LIST_PATH "jsoc/error_list.txt"
+#define FILE_LIST_PATH "jsoc/file_list.json"
+#define ERROR_LIST_PATH "jsoc/error_list.json"
 #define ERROR_PATH "jsoc/error.txt"
 
 #define DEFAULT_MAX_TAR_FILE_SIZE "4294967296" /* 4 GB*/
@@ -775,7 +776,7 @@ static ExpToStdoutStatus_t DropDataOnFloor(fitsfile *fitsPtr)
 /* loop over segments */
 /* segCompression is an array of FITSIO macros, one for each segment, that specify the type of compression to perform; if NULL, then compress all segments with Rice compression
  */
-static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int dumpFileName, DRMS_Record_t *expRec, const char *ffmt, ExpToStdout_Compression_t *segCompression, int compressAllSegs, const char *classname, const char *mapfile, size_t *bytesExported, size_t maxTarFileSize, size_t *numFilesExported, char **infoBuf, size_t *szInfoBuf, char **errorBuf, size_t *szErrorBuf)
+static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int dumpFileName, DRMS_Record_t *expRec, const char *ffmt, ExpToStdout_Compression_t *segCompression, int compressAllSegs, const char *classname, const char *mapfile, size_t *bytesExported, size_t maxTarFileSize, size_t *numFilesExported, json_t *infoDataArr, json_t *errorDataArr)
 {
     ExpToStdoutStatus_t expStatus = ExpToStdoutStatus_Success;
     int drmsStatus = DRMS_SUCCESS;
@@ -791,6 +792,8 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int dumpFileName, D
     long long numBytesFitsFile; /* the actual FITSIO type is LONGLONG */
     size_t totalBytes = 0;
     size_t totalFiles = 0;
+    json_t *recobj = NULL;
+    char specbuf[1024];
     char msg[256];
     char errMsg[512];
 
@@ -806,10 +809,14 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int dumpFileName, D
                 snprintf(msg, sizeof(msg), "unable to locate linked segment file %s", segIn->info->name);
                 fprintf(stderr, msg);
                 fprintf(stderr, "\n");
-                if (makeTar && errorBuf && *errorBuf)
+                if (makeTar && errorDataArr)
                 {
-                    snprintf(errMsg, sizeof(errMsg), "record = %s, segment = %s, message = %s\n", recordSpec, segIn->info->name, msg);
-                    *errorBuf = base_strcatalloc(*errorBuf, errMsg, szErrorBuf);
+                    recobj = json_new_object();
+                    snprintf(specbuf, sizeof(specbuf), "%s{%s}", recordSpec, segIn->info->name);
+                    json_insert_pair_into_object(recobj, "record", json_new_string(specbuf));
+                    json_insert_pair_into_object(recobj, "segment", json_new_string(segIn->info->name));
+                    json_insert_pair_into_object(recobj, "message", json_new_string(msg));
+                    json_insert_child(errorDataArr, recobj);
                 }
                 
                 iSeg++;
@@ -838,10 +845,14 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int dumpFileName, D
             
             fprintf(stderr, msg);
             fprintf(stderr, "\n");
-            if (makeTar && errorBuf && *errorBuf)
+            if (makeTar && errorDataArr)
             {
-                snprintf(errMsg, sizeof(errMsg), "record = %s, segment = %s, message = %s\n", recordSpec, segIn->info->name, msg);
-                *errorBuf = base_strcatalloc(*errorBuf, errMsg, szErrorBuf);
+                recobj = json_new_object();
+                snprintf(specbuf, sizeof(specbuf), "%s{%s}", recordSpec, segIn->info->name);
+                json_insert_pair_into_object(recobj, "record", json_new_string(specbuf));
+                json_insert_pair_into_object(recobj, "segment", json_new_string(segIn->info->name));
+                json_insert_pair_into_object(recobj, "message", json_new_string(msg));
+                json_insert_child(errorDataArr, recobj);                
             }
 
             expStatus = ExpToStdoutStatus_BadFilenameTemplate;            
@@ -855,10 +866,14 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int dumpFileName, D
             snprintf(msg, sizeof(msg), "cannot create FITS file");
             fprintf(stderr, msg);
             fprintf(stderr, "\n");
-            if (makeTar && errorBuf && *errorBuf)
+            if (makeTar && errorDataArr)
             {
-                snprintf(errMsg, sizeof(errMsg), "record = %s, file = %s, message = %s\n", recordSpec, formattedFitsName, msg);
-                *errorBuf = base_strcatalloc(*errorBuf, errMsg, szErrorBuf);
+                recobj = json_new_object();
+                snprintf(specbuf, sizeof(specbuf), "%s{%s}", recordSpec, segIn->info->name);
+                json_insert_pair_into_object(recobj, "record", json_new_string(specbuf));
+                json_insert_pair_into_object(recobj, "file", json_new_string(formattedFitsName));
+                json_insert_pair_into_object(recobj, "message", json_new_string(msg));
+                json_insert_child(errorDataArr, recobj);
             }
             
             iSeg++;
@@ -892,10 +907,14 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int dumpFileName, D
             snprintf(msg, sizeof(msg), "unable to set FITS compression");
             fprintf(stderr, msg);
             fprintf(stderr, "\n");
-            if (makeTar && errorBuf && *errorBuf)
+            if (makeTar && errorDataArr)
             {
-                snprintf(errMsg, sizeof(errMsg), "record = %s, file = %s, message = %s\n", recordSpec, formattedFitsName, msg);
-                *errorBuf = base_strcatalloc(*errorBuf, errMsg, szErrorBuf);
+                recobj = json_new_object();
+                snprintf(specbuf, sizeof(specbuf), "%s{%s}", recordSpec, segIn->info->name);
+                json_insert_pair_into_object(recobj, "record", json_new_string(specbuf));
+                json_insert_pair_into_object(recobj, "file", json_new_string(formattedFitsName));
+                json_insert_pair_into_object(recobj, "message", json_new_string(msg));
+                json_insert_child(errorDataArr, recobj);
             }
             
             iSeg++;
@@ -911,10 +930,14 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int dumpFileName, D
             snprintf(msg, sizeof(msg), "no segment file (segment %s) for this record", segIn->info->name);
             fprintf(stderr, msg);
             fprintf(stderr, "\n");
-            if (makeTar && errorBuf && *errorBuf)
+            if (makeTar && errorDataArr)
             {
-                snprintf(errMsg, sizeof(errMsg), "record = %s, file = %s, message = %s\n", recordSpec, formattedFitsName, msg);
-                *errorBuf = base_strcatalloc(*errorBuf, errMsg, szErrorBuf); 
+                recobj = json_new_object();
+                snprintf(specbuf, sizeof(specbuf), "%s{%s}", recordSpec, segIn->info->name);
+                json_insert_pair_into_object(recobj, "record", json_new_string(specbuf));
+                json_insert_pair_into_object(recobj, "file", json_new_string(formattedFitsName));
+                json_insert_pair_into_object(recobj, "message", json_new_string(msg));
+                json_insert_child(errorDataArr, recobj);                
             }
         }
         else if (drmsStatus != DRMS_SUCCESS)
@@ -931,10 +954,14 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int dumpFileName, D
 
             fprintf(stderr, msg);
             fprintf(stderr, "\n");
-            if (makeTar && errorBuf && *errorBuf)
+            if (makeTar && errorDataArr)
             {
-                snprintf(errMsg, sizeof(errMsg), "record = %s, file = %s, message = %s\n", recordSpec, formattedFitsName, msg);
-                *errorBuf = base_strcatalloc(*errorBuf, errMsg, szErrorBuf); 
+                recobj = json_new_object();
+                snprintf(specbuf, sizeof(specbuf), "%s{%s}", recordSpec, segIn->info->name);
+                json_insert_pair_into_object(recobj, "record", json_new_string(specbuf));
+                json_insert_pair_into_object(recobj, "file", json_new_string(formattedFitsName));
+                json_insert_pair_into_object(recobj, "message", json_new_string(msg));
+                json_insert_child(errorDataArr, recobj);
             }
             
             /* stupid FITSIO has no way of dumping its internal buffers without writing data to stdout, but if we encountered
@@ -964,10 +991,14 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int dumpFileName, D
                     snprintf(msg, sizeof(msg), "the tar file size has exceeded the maximum size of %llu bytes; please consider requesting data for fewer records and Rice-compressing images", maxTarFileSize);
                     fprintf(stderr, msg);
                     fprintf(stderr, "\n");
-                    if (makeTar && errorBuf && *errorBuf)
+                    if (makeTar && errorDataArr)
                     {
-                        snprintf(errMsg, sizeof(errMsg), "record = %s, file = %s, message = %s\n", recordSpec, formattedFitsName, msg);
-                        *errorBuf = base_strcatalloc(*errorBuf, errMsg, szErrorBuf); 
+                        recobj = json_new_object();
+                        snprintf(specbuf, sizeof(specbuf), "%s{%s}", recordSpec, segIn->info->name);
+                        json_insert_pair_into_object(recobj, "record", json_new_string(specbuf));
+                        json_insert_pair_into_object(recobj, "file", json_new_string(formattedFitsName));
+                        json_insert_pair_into_object(recobj, "message", json_new_string(msg));
+                        json_insert_child(errorDataArr, recobj);
                     }
                     
                     /* closes fitsfile * too */
@@ -998,10 +1029,14 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int dumpFileName, D
                     snprintf(msg, sizeof(msg), "unable to close and send FITS file");
                     fprintf(stderr, msg);
                     fprintf(stderr, "\n");
-                    if (makeTar && errorBuf && *errorBuf)
-                    {
-                        snprintf(errMsg, sizeof(errMsg), "record = %s, file = %s, message = %s\n", recordSpec, formattedFitsName, msg);
-                        *errorBuf = base_strcatalloc(*errorBuf, errMsg, szErrorBuf); 
+                    if (makeTar && errorDataArr)
+                    {                        
+                        recobj = json_new_object();
+                        snprintf(specbuf, sizeof(specbuf), "%s{%s}", recordSpec, segIn->info->name);
+                        json_insert_pair_into_object(recobj, "record", json_new_string(specbuf));
+                        json_insert_pair_into_object(recobj, "file", json_new_string(formattedFitsName));
+                        json_insert_pair_into_object(recobj, "message", json_new_string(msg));
+                        json_insert_child(errorDataArr, recobj);
                     }
                 }
                 
@@ -1016,18 +1051,54 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int dumpFileName, D
                 totalBytes += numBytesFitsFile;
                 totalFiles++;
                 
-                if (infoBuf && *infoBuf)
+                if (infoDataArr)
                 {
-                    snprintf(errMsg, sizeof(errMsg), "record = %s, file = %s, message = successful export\n", recordSpec, formattedFitsName);
-                    *infoBuf = base_strcatalloc(*infoBuf, errMsg, szInfoBuf); 
+                    /* print JSON output for ease of parsing; append to the returned JSON obj's data array:
+                     * {
+                     *   "status" : 0,
+                     *   "msg" : "success",
+                     *   "data" : [
+                     *              {
+                     *                "record": "hmi.Ic_720s[2017.01.09_00:00:00_TAI][3]{continuum}",
+                     *                "filename": "/SUM95/D990052480/S00000/continuum.fits"
+                     *              },
+                     *              {
+                     *                ...
+                     *              }
+                     *            ]
+                     * }
+                     */                    
+                    recobj = json_new_object();
+                    snprintf(specbuf, sizeof(specbuf), "%s{%s}", recordSpec, segIn->info->name);
+                    json_insert_pair_into_object(recobj, "record", json_new_string(specbuf));
+                    json_insert_pair_into_object(recobj, "filename", json_new_string(formattedFitsName));
+                    json_insert_child(infoDataArr, recobj);
                 }
             }
             else
             {
-                if (makeTar && errorBuf && *errorBuf)
+                if (makeTar && errorDataArr)
                 {
-                    snprintf(errMsg, sizeof(errMsg), "record = %s, file = %s, message = no data in segment, so no FITS file was produced\n", recordSpec, formattedFitsName);
-                    *errorBuf = base_strcatalloc(*errorBuf, errMsg, szErrorBuf); 
+                    /* print JSON output for ease of parsing; append to the returned JSON obj's data array:
+                     * {
+                     *   "data" : [
+                     *              {
+                     *                "record": "hmi.Ic_720s[2017.01.09_00:00:00_TAI][3]{continuum}",
+                     *                "filename": "/SUM95/D990052480/S00000/continuum.fits",
+                     *                "message": "no data in segment, so no FITS file was produced"
+                     *              },
+                     *              {
+                     *                ...
+                     *              }
+                     *            ]
+                     * }
+                     */
+                    recobj = json_new_object();
+                    snprintf(specbuf, sizeof(specbuf), "%s{%s}", recordSpec, segIn->info->name);
+                    json_insert_pair_into_object(recobj, "record", json_new_string(specbuf));
+                    json_insert_pair_into_object(recobj, "filename", json_new_string(formattedFitsName));
+                    json_insert_pair_into_object(recobj, "message", json_new_string("no data in segment, so no FITS file was produced"));
+                    json_insert_child(errorDataArr, recobj);
                 }
             }
         }
@@ -1061,7 +1132,7 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int dumpFileName, D
 /* loop over records */
 /* segCompression is an array of FITSIO macros, one for each segment, that specify the type of compression to perform; if NULL, then compress all segments with Rice compression
  */
-static ExpToStdoutStatus_t ExportRecordSetToStdout(DRMS_Env_t *env, int makeTar, int dumpFileName, DRMS_RecordSet_t *expRS, const char *ffmt, ExpToStdout_Compression_t *segCompression, int compressAllSegs, const char *classname, const char *mapfile, size_t *bytesExported, size_t maxTarFileSize, size_t *numFilesExported, char **infoBuf, size_t *szInfoBuf, char **errorBuf, size_t *szErrorBuf)
+static ExpToStdoutStatus_t ExportRecordSetToStdout(DRMS_Env_t *env, int makeTar, int dumpFileName, DRMS_RecordSet_t *expRS, const char *ffmt, ExpToStdout_Compression_t *segCompression, int compressAllSegs, const char *classname, const char *mapfile, size_t *bytesExported, size_t maxTarFileSize, size_t *numFilesExported, json_t *infoDataArr, json_t *errorDataArr)
 {
     int drmsStatus = DRMS_SUCCESS;
     ExpToStdoutStatus_t expStatus = ExpToStdoutStatus_Success;
@@ -1099,7 +1170,7 @@ static ExpToStdoutStatus_t ExportRecordSetToStdout(DRMS_Env_t *env, int makeTar,
                 recsAttempted++;
 
                 /* export each segment file in this record */
-                expStatus = ExportRecordToStdout(makeTar, dumpFileName, expRecord, ffmt, segCompression, compressAllSegs, classname, mapfile, bytesExported, maxTarFileSize, numFilesExported, infoBuf, szInfoBuf, errorBuf, szErrorBuf);
+                expStatus = ExportRecordToStdout(makeTar, dumpFileName, expRecord, ffmt, segCompression, compressAllSegs, classname, mapfile, bytesExported, maxTarFileSize, numFilesExported, infoDataArr, errorDataArr);
                 if (expStatus == ExpToStdoutStatus_TarTooLarge)
                 {
                     break;
@@ -1168,13 +1239,18 @@ int DoIt(void)
     ExpToStdout_Compression_t *segCompression = NULL;
     int iComp;
     DRMS_RecordSet_t *expRS = NULL;
-    char *infoBuf = NULL;
-    size_t szInfoBuf = 0;
-    char *errorBuf = NULL;
-    size_t szErrorBuf = 0;
     char generalErrorBuf[TAR_BLOCK_SIZE]; /* the last file object in the tar file will be a single tar block */
     size_t bytesExported = 0;
     size_t numFilesExported = 0;
+    json_t *infoRoot = NULL;
+    json_t *infoDataArr = NULL;
+    json_t *errorRoot = NULL;
+    json_t *errorDataArr = NULL;
+    char *infoJson = NULL;
+    char *errorJson = NULL;
+    char *jsonFileContent = NULL;
+    json_t *recobj = NULL;
+    char specbuf[1024];
         
     /* read and process arguments */
     rsSpec = params_get_str(&cmdparams, ARG_RS_SPEC);
@@ -1192,21 +1268,13 @@ int DoIt(void)
     
     if (expStatus == ExpToStdoutStatus_Success)
     {
-        szInfoBuf = 512;
-        infoBuf = calloc(1, szInfoBuf);
-        if (infoBuf)
-        {
-            szErrorBuf = 512;
-            errorBuf = calloc(1, szErrorBuf);
-            if (!errorBuf)
-            {
-                expStatus == ExpToStdoutStatus_OutOfMemory;
-            }
-        }
-        else
-        {
-            expStatus == ExpToStdoutStatus_OutOfMemory;
-        }
+        infoRoot = json_new_object();
+        infoDataArr = json_new_array();
+        json_insert_pair_into_object(infoRoot, "data", infoDataArr);
+        
+        errorRoot = json_new_object();
+        errorDataArr = json_new_array();
+        json_insert_pair_into_object(errorRoot, "data", errorDataArr);
     }
 
     /* map cparms strings to an enum */
@@ -1345,7 +1413,7 @@ int DoIt(void)
          */
         
         /* create a TAR file object header block plus data blocks for each FITS file that is being exported */
-        intStatus = ExportRecordSetToStdout(drms_env, makeTar, dumpFileName, expRS, fileTemplate, segCompression, compressAllSegs, mapClass, mapFile, &bytesExported, maxTarFileSize, &numFilesExported, &infoBuf, &szInfoBuf, &errorBuf, &szErrorBuf);
+        intStatus = ExportRecordSetToStdout(drms_env, makeTar, dumpFileName, expRS, fileTemplate, segCompression, compressAllSegs, mapClass, mapFile, &bytesExported, maxTarFileSize, &numFilesExported, infoDataArr, errorDataArr);
         
         if (makeTar)
         {
@@ -1380,40 +1448,58 @@ int DoIt(void)
         }
     }
 
-    if (infoBuf)
+    if (infoRoot)
     {
-        if (makeTar && *infoBuf)
+        if (makeTar)
         {
             /* if we never got to the point of dumping the tar file, then there is no info to provide the caller; 
              * the info buffer will have content only if at least one FITS file was dumped */
+            json_tree_to_string(infoRoot, &infoJson);
+            jsonFileContent = calloc(1, strlen(infoJson) + 2);
+            strcat(jsonFileContent, infoJson);
+            jsonFileContent[strlen(jsonFileContent)] = '\n';
 
             /* 0-pads to TAR block size */
-            intStatus = WriteFileBuffer(stdout, FILE_LIST_PATH, infoBuf, strlen(infoBuf));
+            intStatus = WriteFileBuffer(stdout, FILE_LIST_PATH, jsonFileContent, strlen(jsonFileContent));
             if (tarStatus == ExpToStdoutStatus_Success)
             {
                 tarStatus = intStatus;
             }
+            
+            free(jsonFileContent);
+            jsonFileContent = NULL;
+            free(infoJson);
+            infoJson = NULL;
         }
-
-        free(infoBuf);
-        infoBuf = NULL;
+        
+        json_free_value(&infoRoot);
     }
     
     /* regardless of error, we dump all error (ASCII) messages into the TAR file */
-    if (errorBuf)
+    if (errorRoot)
     {
         if (expStatus == ExpToStdoutStatus_Success)
         {
+            json_tree_to_string(errorRoot, &errorJson);
+            jsonFileContent = calloc(1, strlen(errorJson) + 2);
+            strcat(jsonFileContent, errorJson);
+            jsonFileContent[strlen(jsonFileContent)] = '\n';
+
             /* we got to the point where started dumping FITS files */
-            if (makeTar && *errorBuf)
+            if (makeTar)
             {
                 /* 0-pads to TAR block size */
-                intStatus = WriteFileBuffer(stdout, ERROR_LIST_PATH, errorBuf, strlen(errorBuf));
+                intStatus = WriteFileBuffer(stdout, ERROR_LIST_PATH, jsonFileContent, strlen(jsonFileContent));
                 if (tarStatus == ExpToStdoutStatus_Success)
                 {
                     tarStatus = intStatus;
                 }
             }
+            
+            free(jsonFileContent);
+            jsonFileContent = NULL;
+            free(errorJson);
+            errorJson = NULL;
         }
         else
         {
@@ -1437,7 +1523,6 @@ int DoIt(void)
                 char recordSpec[DRMS_MAXQUERYLEN];
                 HIterator_t *last = NULL;
                 DRMS_Segment_t *seg = NULL;
-                char transBuf[1024];
 
                 drms_recordset_fetchnext_setcurrent(expRS, -1);
                 
@@ -1447,8 +1532,12 @@ int DoIt(void)
 
                     while ((seg = drms_record_nextseg(expRecord, &last, 0)) != NULL)
                     {
-                        snprintf(transBuf, sizeof(transBuf), "record = %s, segment = %s, message = %s\n", recordSpec, seg->info->name, errorBufMsg);
-                        errorBuf = base_strcatalloc(errorBuf, errorBufMsg, &szErrorBuf);
+                        recobj = json_new_object();
+                        snprintf(specbuf, sizeof(specbuf), "%s{%s}", recordSpec, seg->info->name);
+                        json_insert_pair_into_object(recobj, "record", json_new_string(specbuf));
+                        json_insert_pair_into_object(recobj, "segment", json_new_string(seg->info->name));
+                        json_insert_pair_into_object(recobj, "message", json_new_string(errorBufMsg));
+                        json_insert_child(errorDataArr, recobj);
                     }
                 }
                 
@@ -1457,14 +1546,25 @@ int DoIt(void)
                     hiter_destroy(&last);
                 }
             
-                if (makeTar && *errorBuf)
+                if (makeTar)
                 {
+                    json_tree_to_string(errorRoot, &errorJson);
+                    jsonFileContent = calloc(1, strlen(errorJson) + 2);
+                    strcat(jsonFileContent, errorJson);
+                    jsonFileContent[strlen(jsonFileContent)] = '\n';
+
+
                     /* 0-pads to TAR block size */
-                    intStatus = WriteFileBuffer(stdout, ERROR_LIST_PATH, errorBuf, strlen(errorBuf));
+                    intStatus = WriteFileBuffer(stdout, ERROR_LIST_PATH, jsonFileContent, strlen(jsonFileContent));
                     if (tarStatus == ExpToStdoutStatus_Success)
                     {
                         tarStatus = intStatus;
                     }
+                    
+                    free(jsonFileContent);
+                    jsonFileContent = NULL;
+                    free(errorJson);
+                    errorJson = NULL;
                 }
             }
             else
@@ -1476,9 +1576,8 @@ int DoIt(void)
                 }
             }
         }
-
-        free(errorBuf);
-        errorBuf = NULL;
+        
+        json_free_value(&errorRoot);
     }
     
     if (makeTar && ackFile && *ackFile)
