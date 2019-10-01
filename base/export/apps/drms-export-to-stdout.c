@@ -1251,6 +1251,7 @@ int DoIt(void)
     char *jsonFileContent = NULL;
     json_t *recobj = NULL;
     char specbuf[1024];
+    char numbuf[16];
         
     /* read and process arguments */
     rsSpec = params_get_str(&cmdparams, ARG_RS_SPEC);
@@ -1453,7 +1454,21 @@ int DoIt(void)
         if (makeTar)
         {
             /* if we never got to the point of dumping the tar file, then there is no info to provide the caller; 
-             * the info buffer will have content only if at least one FITS file was dumped */
+             * the info buffer will have content only if at least one FITS file was dumped 
+             */
+             
+            /* because some code that uses this program expects the properties of a jsoc_fetch response, let's add
+             * them now
+             */
+            snprintf(numbuf, sizeof(numbuf), "0");
+
+            json_insert_pair_into_object(infoRoot, "status", json_new_number(numbuf));
+            json_insert_pair_into_object(infoRoot, "requestid", json_new_null());
+            json_insert_pair_into_object(infoRoot, "method", json_new_string("url_direct"));
+            json_insert_pair_into_object(infoRoot, "protocol", json_new_string("FITS"));
+            json_insert_pair_into_object(infoRoot, "dir", json_new_null());
+            json_insert_pair_into_object(infoRoot, "wait", json_new_number(numbuf));
+
             json_tree_to_string(infoRoot, &infoJson);
             jsonFileContent = calloc(1, strlen(infoJson) + 2);
             strcat(jsonFileContent, infoJson);
