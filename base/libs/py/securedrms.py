@@ -502,14 +502,18 @@ class SSHOnTheFlyDownloader(OnTheFlyDownloader):
                 destFileUnique = self._secureExportRequest._next_available_filename(filename)
                 destPathUnique = os.path.join(out_dir, destFileUnique)
                 destPathUniqueTmp = os.path.join(out_dir, '.' + destFileUnique)
-                
+
                 if verbose:
-                    print('Extracting file {filenum} of {total}...'.format(filenum=str(i + 1), total=str(len(dlData))))
+                    print('Extracting file {filenum} of {total}...'.format(filenum=str(irec + 1), total=str(len(dlData))))
                     print('    record: ' + row.record)
                     print('  filename: ' + row.filename)
-                
+
                 try:
+                    if self._debug:
+                        print('[ download ] extracting file {file} to {dest}'.format(file=row['filename'], dest=destPathUnique))
+
                     with openArchive.extractfile(row['filename']) as fin, open(destPathUniqueTmp, 'wb') as fout:
+                            
                         while True:
                             dataBytes = fin.read(8192)
                             if dataBytes == b'':
@@ -518,7 +522,7 @@ class SSHOnTheFlyDownloader(OnTheFlyDownloader):
                             bytesWritten = 0
                             while bytesWritten < len(dataBytes):
                                 bytesWritten += fout.write(dataBytes)
-                                
+    
                     # rename the temp file back to final destination (destPathUnique)
                     os.rename(destPathUniqueTmp, destPathUnique)
                 except:
