@@ -46,7 +46,8 @@ import base64
 import getpass
 import importlib
 import inspect
-from json import loads, decoder
+import io
+from json import load, loads, dumps, decoder
 import os
 import numpy
 import pexpect
@@ -58,7 +59,9 @@ import tarfile
 import threading
 import types
 from typing import cast
+from urllib.error import URLError
 from urllib.parse import urlencode, urlparse, urlunparse, urljoin
+from urllib.request import Request, urlopen
 import uuid
 
 # third party imports
@@ -123,11 +126,20 @@ class SecureDRMSTimeOutError(SecureDRMSError):
 
 class SecureDRMSResponseError(SecureDRMSError):
     '''
-    time-out waiting for DRMS Server to respon
+    time-out waiting for DRMS Server to respond
     '''
     def __init__(self, msg):
         super().__init__(msg)
         self.msg = msg
+        
+class SecureDRMSUrlError(SecureDRMSError):
+    '''
+    unable to open URL
+    '''
+    def __init__(self, msg):
+        super().__init__(msg)
+        self.msg = msg
+
 
 class RuntimeEnvironment(object):
     '''
@@ -257,7 +269,7 @@ class SecureServerConfig(ServerConfig):
         Returns true of if the operation `op` is supported by the instance
     '''
     __configs = {}
-    __validKeys = [ 'cgi_baseurl_internal', 'cgi_baseurl_authority', 'cgi_baseurl_authorityfile', 'cgi_export_fits', 'export_fits_args', 'export_fits_internal_args', 'cgi_parse_recset', 'has_full_export_system', 'url_baseurl_internal', 'url_baseurl_authority', 'server_tmp', 'ssh_base_bin', 'ssh_base_script', 'ssh_check_email', 'ssh_check_email_addresstab', 'ssh_check_email_domaintab', 'ssh_export_fits', 'ssh_export_fits_args', 'ssh_export_fits_internal_args', 'ssh_jsoc_fetch', 'ssh_jsoc_fetch_args', 'ssh_jsoc_fetch_internal', 'ssh_jsoc_fetch_internal_args', 'ssh_jsoc_info', 'ssh_jsoc_info_args', 'ssh_jsoc_info_internal', 'ssh_jsoc_info_internal_args', 'ssh_parse_recset', 'ssh_remote_env', 'ssh_remote_host', 'ssh_remote_port', 'ssh_remote_user', 'ssh_show_series', 'ssh_show_series_args', 'ssh_show_series_internal_args', 'ssh_show_series_wrapper', 'ssh_show_series_wrapper_args' ]
+    __validKeys = [ 'cgi_baseurl_internal', 'cgi_baseurl_authority', 'cgi_baseurl_authorityfile', 'cgi_export_fits', 'qcgi_export_fits_args', 'qcgi_export_fits_internal_args', 'cgi_parse_recset', 'has_full_export_system', 'url_baseurl_internal', 'url_baseurl_authority', 'server_tmp', 'ssh_base_bin', 'ssh_base_script', 'ssh_check_email', 'ssh_check_email_addresstab', 'ssh_check_email_domaintab', 'ssh_export_fits', 'ssh_export_fits_args', 'ssh_export_fits_internal_args', 'ssh_jsoc_fetch', 'ssh_jsoc_fetch_args', 'ssh_jsoc_fetch_internal', 'ssh_jsoc_fetch_internal_args', 'ssh_jsoc_info', 'ssh_jsoc_info_args', 'ssh_jsoc_info_internal', 'ssh_jsoc_info_internal_args', 'ssh_parse_recset', 'ssh_remote_env', 'ssh_remote_host', 'ssh_remote_port', 'ssh_remote_user', 'ssh_show_series', 'ssh_show_series_args', 'ssh_show_series_internal_args', 'ssh_show_series_wrapper', 'ssh_show_series_wrapper_args' ]
 
 
     def __init__(self, config=None, **kwargs):
@@ -356,7 +368,9 @@ class SecureServerConfig(ServerConfig):
                 elif op == 'export' or op == 'export_from_id':
                     return self.cgi_jsoc_info is not None and self.cgi_jsoc_fetch is not None and self.cgi_baseurl_internal is not None
                 elif op == 'export_fits':
-                    return self.cgi_export_fits is not None and self.ssh_parse_recset is not None and self.cgi_baseurl_internal is not None
+                    return self.cgi_export_fits is not None and self.cgi_parse_recset is not None and self.cgi_baseurl_internal is not None
+                elif op == 'parse_spec':
+                    return self.cgi_parse_recset is not None and self.cgi_baseurl_internal is not None
                 else:
                     return super().check_supported(op)
             else:
@@ -368,7 +382,9 @@ class SecureServerConfig(ServerConfig):
                 elif op == 'export' or op == 'export_from_id':
                     return self.cgi_jsoc_info is not None and self.cgi_jsoc_fetch is not None and self.cgi_baseurl is not None
                 elif op == 'export_fits':
-                    return self.cgi_export_fits is not None and self.ssh_parse_recset is not None and self.cgi_baseurl is not None
+                    return self.cgi_export_fits is not None and self.cgi_parse_recset is not None and self.cgi_baseurl is not None
+                elif op == 'parse_spec':
+                    return self.cgi_parse_recset is not None and self.cgi_baseurl is not None
                 else:
                     return super().check_supported(op)
             
@@ -444,7 +460,7 @@ class SSHOnTheFlyDownloader(OnTheFlyDownloader):
         # in the parent, this creates one url per DRMS data-series record
         raise SecureDRMSMethodError('[ _generate_download_url ] cannot generate urls for an SSH configuration')
         
-    def download(self, out_dir, index, fname_from_rec=False, remove_tar=False, verbose=False):
+    def download(self, *, out_dir, index=None, fname_from_rec=False, remove_tar=False, verbose=False):
         # download tarfile to `directory`; self._tarfile is the server path to the tarfile (as seen from the server)
         localTarfile = os.path.join(out_dir, os.path.basename(self._tarfile))
         scpCmdList = [ '/usr/bin/scp', '-q', '-P', str(self._remotePort), self._remoteUser + '@' + self._remoteHost + ':' + self._tarfile, localTarfile ]
@@ -464,7 +480,7 @@ class SSHOnTheFlyDownloader(OnTheFlyDownloader):
                             print('scp password failed; requesting user re-try')
                         passwordFailed = True
                     # user was prompted to enter password
-                    password = self._secureExportRequest._client._json.getPassword(self._remoteUser + '@' + self._remoteHost, not passwordFailed)
+                    password = self._secureExportRequest._client.json_client.getPassword(user_and_host=self._remoteUser + '@' + self._remoteHost, first_try=(not passwordFailed))
                     child.sendline(password.encode('UTF8'))
                     passwordAttempted = True
                 else:
@@ -556,7 +572,7 @@ class SSHOnTheFlyDownloader(OnTheFlyDownloader):
                             print('ssh password failed; requesting user re-try')
                         passwordFailed = True
                     # user was prompted to enter password
-                    password = self._secureExportRequest._client._json.getPassword(self._remoteUser + '@' + self._remoteHost, not passwordFailed)
+                    password = self._secureExportRequest._client._json.getPassword(user_and_host=self._remoteUser + '@' + self._remoteHost, first_try=(not passwordFailed))
                     child.sendline(password.encode('UTF8'))
                     passwordAttempted = True
                 else:
@@ -584,22 +600,177 @@ class SSHOnTheFlyDownloader(OnTheFlyDownloader):
 
     
 class BasicAccessOnTheFlyDownloader(OnTheFlyDownloader):
-    def __init__(self, secure_export_request, export_data, url, filename='data.tar', debug=False):
+    '''
+    jsoc/file_list.json contents:      
+    {
+        "data" : 
+        [
+            {
+                "record" : "hmi.Ic_720s[2017.01.14_00:00:00_TAI][3]{continuum}",
+                "filename" : "hmi.ic_720s.20170114_000000_TAI.3.continuum.fits"
+            }
+        ],
+        "status" : 0,
+        "requestid" : null,
+        "method" : "url_direct",
+        "protocol" : "FITS",
+        "dir" : null,
+        "wait" : 0
+    }
+    '''
+    def __init__(self, secure_export_request, url, debug=False):
+
         self._onTheFlyURL = url
-        self._tarFileName = filename
-        
-        super().__init__(secure_export_request, export_data, debug)
+        self._content = None
+
+        # export_data is None at the moment, since we have yet to download the tar file yet (and the export data
+        # are in the jsoc/file_list.json file inside the archive); the export data are in a (record, filename) DataFrame 
+        # created from the 'data' attribute in the jsoc/file_list.json file
+        super().__init__(secure_export_request, None, debug)
         
     def generate_download_url(self):
         # should return a DataFrame with 3 columns: record, filename, URL; in this case, we have only a single
         # tar file that encapsulates data from many records, so there should be 1 row, and the record column
-        # should be None; the tar filename is generated in drms-export.py - it is hard-coded as data.tar; this 
-        # should be an argument to drms-export.py, but it is not currently
-        return pandas.DataFrame([ (None, self._tarFileName, self._onTheFlyURL) ], columns=[ 'record', 'filename', 'url' ])
+        # should be None; the tar filename is generated in drms-export.py - so we don't know that either; the url
+        # is the CGI url that causes a tar file to be streamed to stdout
+        return pandas.DataFrame([ (None, None, self._onTheFlyURL) ], columns=[ 'record', 'filename', 'url' ])
+
+    def download(self, *, out_dir, index=None, fname_from_rec=False, remove_tar=True, verbose=False):
+        '''
+        make remove_tar True by default since the idea of this kind of export is to stream data back to the 
+        user; the user opens a URL and the files inside the tar file should appear in `out_dir`; each time the 
+        user calls download() a new tar HTTP download occurs
+        '''
+        # open the URL 
+        urldf = self.urls
+        if urldf.shape[0] != 1:
+            raise SecureDRMSArgumentError('[ BasicAccessOnTheFlyDownloader.download() ] unexpected number of rows in url DataFrame')
+
+        url = urldf.at[0, 'url']
+
+        try:
+            if self._debug:
+                print('[ BasicAccessOnTheFlyDownloader.download() ] opening URL ' + url)
+                
+            request = Request(url)
+
+            if self._secureExportRequest.client._use_internal:
+                # assume that 'external' (public) websites do not require any kind of authorization
+                if self._debug:
+                    print('[ BasicAccessOnTheFlyDownloader.download() ] adding Basic Access authorization header to {url}'.format(url=url))
+
+                try:
+                    # self._server is the SecureServerConfig that has the server authority information
+                    passPhrase = self._secureExportRequest.client.json_client.server.cgi_baseurl_authority
+                    request.add_header("Authorization", "Basic " + base64.b64encode(passPhrase.encode()).decode())
+                except AttributeError:
+                    # the user did not provide a passPhrase
+                    if self._debug:
+                        print('[ BasicAccessOnTheFlyDownloader.download() ] no Basic Access authority provided')
+
+                    pass
+
+            self._response = urlopen(request)
+            
+            # get filename HTTP header; the tarfile that drms-export.sh would like to create appears in the Content-Disposition header
+            # (although at this point it is hard-coded as data.tar)
+            # with response.info() as info:
+            #   localTarfile = os.path.join(out_dir, os.path.basename(info.get_filename()))
+        except URLError as exc:
+            raise SecureDRMSUrlError('[ BasicAccessOnTheFlyDownloader.download() ] troubles opening URL ' + url)
+
+        # the tarfile is actually in memory - use self.data and stick into a fileobj
+        fileobj = io.BytesIO(self.raw_data) # must be a binary stream
+
+        outPaths = []
+
+        with tarfile.open(fileobj=fileobj, mode='r') as openArchive:
+            # we need to fetch the FITS file names from the archived file jsoc/file_list.json
+            
+            with openArchive.extractfile('jsoc/file_list.json') as fin:
+                jsonDict = load(fin)
+                
+                columns = [ 'record', 'filename' ]
+                self._exportData = pandas.DataFrame(jsonDict['data'], columns=columns)
+
+                if self._debug:
+                    print('[ BasicAccessOnTheFlyDownloader.download() ] extracted (record, filename) export data from file_list.json inside streamed archive')
+                
+                # two columns, record and filename (inside the tar file)
+                if index is not None:
+                    dlData = self._exportData.iloc[index].copy()
+                else:
+                    dlData = self._exportData.copy()
+        
+            for irec in range(len(dlData)):
+                row = dlData.iloc[irec]
+                filename = None
+                
+                if fname_from_rec:
+                    # if fname_from_rec is None or False, then use the filenames saved in the tar file; otherwise, generate names based upon the series and record prime-key values in the record name
+                    filename = self._secureExportRequest._client._filename_from_export_record(row.record, old_fname=row.filename)
+
+                if filename is None:
+                    # use the filename in the tar file
+                    filename = row.filename
+
+                destFileUnique = self._secureExportRequest._next_available_filename(filename)
+                destPathUnique = os.path.join(out_dir, destFileUnique)
+                destPathUniqueTmp = os.path.join(out_dir, '.' + destFileUnique)
+
+                if verbose:
+                    print('Extracting file {filenum} of {total}...'.format(filenum=str(irec + 1), total=str(len(dlData))))
+                    print('    record: ' + row.record)
+                    print('  filename: ' + row.filename)
+
+                try:
+                    if self._debug:
+                        print('[ download ] extracting file {file} to {dest}'.format(file=row['filename'], dest=destPathUnique))
+
+                    with openArchive.extractfile(row['filename']) as fin, open(destPathUniqueTmp, 'wb') as fout:
+                        while True:
+                            dataBytes = fin.read(8192)
+                            if dataBytes == b'':
+                                break
+
+                            bytesWritten = 0
+                            while bytesWritten < len(dataBytes):
+                                bytesWritten += fout.write(dataBytes)
+    
+                    # rename the temp file back to final destination (destPathUnique)
+                    os.rename(destPathUniqueTmp, destPathUnique)
+                except:
+                    destPathUnique = None
+                    
+                    if verbose:
+                        print('  -> Error: Could not extract file')
+                    
+                outPaths.append(destPathUnique)
+        
+        if remove_tar:
+            # the tar is in memory - release it (or remove all references to the memory buffer for async garbage-collection)
+            self._content = None
+
+        # the tar file is in memory - no filename
+        dlData['filename'] = None
+        dlData['downloads'] = outPaths
+            
+        # return (record, tar_file_on_server, local_path)
+        return dlData
+
+    @property
+    def raw_data(self):
+        # binary data
+        if self._content is None:
+            self._content = self._response.read()
+
+        return self._content
     
     @property
     def urls(self):
-        # this is the CGI URL that causes the drms-export-to-stdout code to run and produce a tar containing FITS files
+        # this is the CGI URL that causes the drms-export-to-stdout code to run and produce a tar containing FITS files;
+        # ok, ready for this; this calls the parent urls() method, which calls SecureExportRequest._generate_download_urls()
+        # which calls BasicAccessOnTheFlyDownloader.generate_download_url() which returns self._onTheFlyURL in essence
         return super(SecureExportRequest, self._secureExportRequest).urls
 
 
@@ -638,20 +809,30 @@ class SecureExportRequest(ExportRequest):
             }, 
             {
                 "record" : "hmi.M_720s[2017.12.03_01:00:00_TAI][3]{magnetogram}",
-                "filename" : "hmi.M_720s.555192.magnetogram.fits"}, 
+                "filename" : "hmi.M_720s.555192.magnetogram.fits", 
             {
                 "record" : "hmi.M_720s[2017.12.03_01:12:00_TAI][3]{magnetogram}",
                 "filename":"hmi.M_720s.555196.magnetogram.fits"
             },
             {
-                "record":"hmi.M_720s[2017.12.03_01:24:00_TAI][3]{magnetogram}",
-                "filename":"hmi.M_720s.555200.magnetogram.fits"
+                "record" : "hmi.M_720s[2017.12.03_01:24:00_TAI][3]{magnetogram}",
+                "filename" : "hmi.M_720s.555200.magnetogram.fits"
             }
         ]
     }
     
     ExportRequest._d contains this dict (which was made from the the JSON string returned by the server export script/binary)
     
+    '''
+    
+    '''
+    Constructor
+    -----------
+        server_response : dict (containing JSON key-values)
+            `server_response` is 
+        secure_client : SecureClient
+            `secure_client` 
+
     '''
     def __init__(self, server_response, secure_client, remote_user=None, remote_host=None, remote_port=None, on_the_fly=True, debug=False):
         # so jsoc_export_make_index will create a 'tarfile' property in the response JSON returned by jsoc_fetch?op=exp_status
@@ -663,7 +844,7 @@ class SecureExportRequest(ExportRequest):
         # 
         # http://jsoc.stanford.edu/cgi-bin/drms-export.sh?skiptar=true&spec=hmi.m_720s%5B2019.2.2%5D&filename=hmi.m_720s.%7BT_REC%3AA%7D.%7BCAMERA%7D.%7Bsegment%7D&compression=none&dbhost=hmidb2&webserver=jsoc.stanford.edu
         
-        # initialize parent first - needed for self.data
+        # initialize parent first - needed for self.data; `server_response` must be a json dict with a 'data' attribute
         super().__init__(server_response, secure_client)
                 
         self._onTheFly = on_the_fly
@@ -674,10 +855,12 @@ class SecureExportRequest(ExportRequest):
             self._isssh = False
 
         if self._onTheFly:
+            # self.data calls ExportRequest.data() - a (record, filename) DataFrame 
             if self._isssh:
                 self._downloader = SSHOnTheFlyDownloader(self, self.data, server_response['tarfile'], remote_user, remote_host, remote_port, debug)                
             else:
-                self._downloader = BasicAccessOnTheFlyDownloader(self, self.data, server_response['export-fits-url'], 'data.tar', debug)
+                # ugh - at this point, we have no response data attribute (we need to stream the tarfile down first)
+                self._downloader = BasicAccessOnTheFlyDownloader(self, server_response['url'], debug)
         else:
             self._downloader = None
 
@@ -717,11 +900,15 @@ class SecureExportRequest(ExportRequest):
 
         if verbose is None:
             verbose = self._client.verbose
-            
-        return self._downloader.download(outDir, index, fname_from_rec, remove_tar, verbose)
+
+        return self._downloader.download(out_dir=outDir, index=index, fname_from_rec=fname_from_rec, remove_tar=remove_tar, verbose=verbose)
         
     def filename_from_export_record(self, rs, old_fname=None):
         return super()._filename_from_export_record(rs, old_fname)
+        
+    @property
+    def client(self):
+        return self._client
 
     @property
     def request_url(self):
@@ -816,7 +1003,7 @@ class BasicAccessHttpJsonClient(HttpJsonClient):
 
         return BasicAccessHttpJsonRequest(request, self._server.encoding)
         
-    def _show_series(self, ds_filter=None, info=False):
+    def _show_series(self, *, ds_filter=None, info=False):
         # we have to intercept calls to both show_series parent methods, show_series() and show_series_wrapper(), and then do the
         # right thing depending on configuration parameters
         query = {}        
@@ -839,22 +1026,27 @@ class BasicAccessHttpJsonClient(HttpJsonClient):
         unparsed = urlunparse((parsed[0], parsed[1], parsed[2], None, urlencode(query), None))
         request = self._json_request(unparsed)
         return request.data
-        
-    def exp_fits(self, spec, ffmt):
+
+    def exp_fits(self, spec, filenamefmt=None):
         parsed = urlparse(self._server.url_export_fits)
         
-        argStrUnencoded = { 'compression' : 'none', 'skiptar' : 'false' }
+        argStrUnencoded = { 'spec' : spec, 'compression' : 'none', 'skiptar' : 'false' }
+        
+        if filenamefmt is not None and len(filenamefmt) > 0:
+            argStrUnencoded['filename'] = filenamefmt
         
         if self._use_internal:
-            if self._server.cgi_export_fits_internal_args is not None:
-                argStrUnencoded.update(self._server.cgi_export_fits_internal_args)            
+            if hasattr(self._server, 'qcgi_export_fits_internal_args') and self._server.qcgi_export_fits_internal_args is not None:
+                argStrUnencoded.update(self._server.qcgi_export_fits_internal_args)            
         else:        
-            if self._server.cgi_export_fits_args is not None:
-                argStrUnencoded.update(self._server.cgi_export_fits_args)
+            if hasattr(self._server, 'qcgi_export_fits_args') and self._server.qcgi_export_fits_args is not None:
+                argStrUnencoded.update(self._server.qcgi_export_fits_args)
 
         unparsed = urlunparse((parsed[0], parsed[1], parsed[2], None, urlencode(argStrUnencoded), None))
-        request = self._json_request(unparsed)
-        return request.data
+        
+        # do not call self._json_request() - we want to defer the actual download until the user calls download(); must
+        # return a dict
+        return { 'url' : unparsed, 'status' : 0 }
         
     def parse_recset(self, recset):
         '''
@@ -887,12 +1079,12 @@ class BasicAccessHttpJsonClient(HttpJsonClient):
         unparsed = urlunparse((parsed[0], parsed[1], parsed[2], None, urlencode(argStrUnencoded), None))
         request = self._json_request(unparsed)
         return request.data
-    
+        
     def show_series(self, ds_filter=None):
-        return self._show_series(ds_filter)
+        return self._show_series(ds_filter=ds_filter)
         
     def show_series_wrapper(self, ds_filter=None, info=False):
-        return self._show_series(ds_filter, info)
+        return self._show_series(ds_filter=ds_filter, info=info)
 
 
 class SSHJsonRequest(object):
@@ -963,7 +1155,7 @@ class SSHJsonRequest(object):
                             print('ssh password failed; requesting user re-try')
                         passwordFailed = True
                     # user was prompted to enter password
-                    password = self._jsonClient.getPassword(self._remoteUser + '@' + self._remoteHost, not passwordFailed)
+                    password = self._jsonClient.getPassword(user_and_host=self._remoteUser + '@' + self._remoteHost, first_try=(not passwordFailed))
                     child.sendline(password.encode('UTF8'))
                     passwordAttempted = True
                 else:
@@ -1051,7 +1243,7 @@ class SSHJsonClient(object):
     show_series_wrapper() : ds_filter:str, info:bool -> object 
         executes the showintseries.py command on the server; `ds_filter` is a POSIX Extended Regular Expression that filters-in the series that are returned in the object; if `info` is True, then a description of each series is included in the returned pandas.DataFrame object
     '''
-    def __init__(self, config, use_internal=False, debug=False):
+    def __init__(self, *, config, use_internal=False, debug=False):
         self._server = config
         self._use_ssh = True
         self._use_internal = use_internal
@@ -1067,8 +1259,60 @@ class SSHJsonClient(object):
             print('[ SSHJsonClient.__clearPassword() ] clearing password')
 
         self._password_timer = None
-        self._password = None
+        self._password = None           
+
+    def _json_request(self, *, cmd_list):
+        # prepend the cmd_list with the env var settings
+        envCmds = [ cmd + ';' for cmd in self._server.ssh_remote_env.bash_cmd() ]
+        cmds = envCmds + [ ' '.join(cmd_list) ]
         
+        if self._debug:
+            print('[ SSHJsonClient ] JSON request {cmd}'.format(cmd=' '.join(cmd_list)))
+
+        return SSHJsonRequest(cmds, self, self._server.encoding, self._server.ssh_remote_user, self._server.ssh_remote_host, self._server.ssh_remote_port, self._debug)
+        
+    def __runCmd(self, *, cmd_list):
+        request = self._json_request(cmd_list=cmd_list)
+
+        # runs the ssh command
+        response = request.data
+        return response
+
+    def _show_series(self, *, ds_filter=None, info=False):
+        # we have to intercept calls to both show_series parent methods, show_series() and show_series_wrapper(), and then do the
+        # right thing depending on configuration parameters
+        if self._use_internal or self._server.ssh_show_series_wrapper is None:
+            # binary executable
+            cmdList = [ os.path.join(self._server.ssh_base_bin, self._server.ssh_show_series), '-qz' ]
+            
+            if self._server.encoding.lower() == 'utf8':
+                cmdList.append('DRMS_DBUTF8CLIENTENCODING=1')
+            
+            if self._use_internal:
+                if self._server.ssh_show_series_internal_args is not None:
+                    cmdList.extend([ key + '=' + str(val) for key, val in self._server.ssh_show_series_internal_args.items() ])
+            else:
+                if self._server.ssh_show_series_args is not None:
+                    cmdList.extend([ key + '=' + str(val) for key, val in self._server.ssh_show_series_args.items() ])
+
+            if ds_filter is not None:
+                cmdList.append(ds_filter)
+        else:
+            # script
+            cmdList = [ os.path.join(self._server.ssh_base_script, self._server.ssh_show_series_wrapper), '--json' ]
+            
+            if self._server.ssh_show_series_wrapper_args is not None:
+                cmdList.extend([ key + '=' + str(val) for key, val in self._server.ssh_show_series_wrapper_args.items() ])
+            
+            if ds_filter is not None:
+                cmdList.append('--filter=' + ds_filter)
+
+            if info:
+                cmdList.append('--info' )
+
+        return self.__runCmd(cmd_list=cmdList)
+        
+    # public methods
     def clearTimer(self):
         if self._debug:
             print('clearing timer for json client {client}'.format(client=repr(self)))
@@ -1079,7 +1323,7 @@ class SSHJsonClient(object):
         if self._debug:
             print('cleared\n')
             
-    def getPassword(self, user_and_host, first_try=True):
+    def getPassword(self, *, user_and_host, first_try=True):
         if not first_try:
             # this implies the existing password is bad
             self._password = None
@@ -1112,58 +1356,7 @@ class SSHJsonClient(object):
 
         self._password_timer.start()
         
-        return self._password            
-
-    def _json_request(self, cmdList):
-        # prepend the cmdList with the env var settings
-        envCmds = [ cmd + ';' for cmd in self._server.ssh_remote_env.bash_cmd() ]
-        cmds = envCmds + [ ' '.join(cmdList) ]
-        
-        if self._debug:
-            print('[ SSHJsonClient ] JSON request {cmd}'.format(cmd=' '.join(cmdList)))
-
-        return SSHJsonRequest(cmds, self, self._server.encoding, self._server.ssh_remote_user, self._server.ssh_remote_host, self._server.ssh_remote_port, self._debug)
-        
-    def __runCmd(self, cmdList):
-        request = self._json_request(cmdList)
-
-        # runs the ssh command
-        response = request.data
-        return response
-
-    def _show_series(self, ds_filter=None, info=False):
-        # we have to intercept calls to both show_series parent methods, show_series() and show_series_wrapper(), and then do the
-        # right thing depending on configuration parameters
-        if self._use_internal or self._server.ssh_show_series_wrapper is None:
-            # binary executable
-            cmdList = [ os.path.join(self._server.ssh_base_bin, self._server.ssh_show_series), '-qz' ]
-            
-            if self._server.encoding.lower() == 'utf8':
-                cmdList.append('DRMS_DBUTF8CLIENTENCODING=1')
-            
-            if self._use_internal:
-                if self._server.ssh_show_series_internal_args is not None:
-                    cmdList.extend([ key + '=' + str(val) for key, val in self._server.ssh_show_series_internal_args.items() ])
-            else:
-                if self._server.ssh_show_series_args is not None:
-                    cmdList.extend([ key + '=' + str(val) for key, val in self._server.ssh_show_series_args.items() ])
-
-            if ds_filter is not None:
-                cmdList.append(ds_filter)
-        else:
-            # script
-            cmdList = [ os.path.join(self._server.ssh_base_script, self._server.ssh_show_series_wrapper), '--json' ]
-            
-            if self._server.ssh_show_series_wrapper_args is not None:
-                cmdList.extend([ key + '=' + str(val) for key, val in self._server.ssh_show_series_wrapper_args.items() ])
-            
-            if ds_filter is not None:
-                cmdList.append('--filter=' + ds_filter)
-
-            if info:
-                cmdList.append('--info' )
-
-        return self.__runCmd(cmdList)
+        return self._password 
         
     def check_address(self, address):
         # external calls only (checkAddress.py)
@@ -1173,13 +1366,15 @@ class SSHJsonClient(object):
         # this check_email script accepts a URL argument string (like QUERY_STRING)
         argStr = urlencode({ 'address' : address, 'addresstab' : self._server.ssh_check_email_addresstab, 'checkonly' : 1, 'domaintab' : self._server.ssh_check_email_domaintab })
         cmdList = [ os.path.join(self._server.ssh_base_script, self._server.ssh_check_email), shlex.quote(argStr) ]
-        return self.__runCmd(cmdList)
+        return self.__runCmd(cmd_list=cmdList)
         
-    def exp_fits(self, spec, filenamefmt):        
+    def exp_fits(self, spec, filenamefmt=None):        
         cmdList = [ os.path.join(self._server.ssh_base_bin, self._server.ssh_export_fits), 'a=0', 's=0' ]
 
         cmdList.append(shlex.quote('spec=' + spec))
-        cmdList.append(shlex.quote('ffmt=' + filenamefmt))
+        
+        if filenamefmt is not None and len(filenamefmt) > 0:
+            cmdList.append(shlex.quote('ffmt=' + filenamefmt))
         
         if self._server.encoding.lower() == 'utf8':
             cmdList.append('DRMS_DBUTF8CLIENTENCODING=1')
@@ -1205,7 +1400,7 @@ class SSHJsonClient(object):
         # it can put the file name into the SecureExportRequest, do SecureExportRequest.download() knows the name of the 
         # tar file to explode
         
-        response = self.__runCmd(cmdList)
+        response = self.__runCmd(cmd_list=cmdList)
         
         # add the server tar-file name; response is a dict (made from the JSON-string server response)
         response['tarfile'] = tarFile
@@ -1290,7 +1485,7 @@ class SSHJsonClient(object):
             argStr = urlencode(argStrUnencoded)
             cmdList = [ os.path.join(self._server.ssh_base_script, self._server.ssh_jsoc_fetch), shlex.quote(argStr) ]
 
-        return self.__runCmd(cmdList)
+        return self.__runCmd(cmd_list=cmdList)
         
     def exp_status(self, requestid):
         # both external (jsocextfetch.py) and internal (jsoc_fetch) calls
@@ -1315,7 +1510,7 @@ class SSHJsonClient(object):
             argStr = urlencode(argStrUnencoded)
             cmdList = [ os.path.join(self._server.ssh_base_script, self._server.ssh_jsoc_fetch), shlex.quote(argStr) ]
         
-        return self.__runCmd(cmdList)
+        return self.__runCmd(cmd_list=cmdList)
 
     def parse_recset(self, recset):
         '''
@@ -1351,7 +1546,7 @@ class SSHJsonClient(object):
         if self._server.encoding.lower() == 'utf8':
             cmdList.append('DRMS_DBUTF8CLIENTENCODING=1')
 
-        return self.__runCmd(cmdList)
+        return self.__runCmd(cmd_list=cmdList)
         
     def rs_list(self, ds, key=None, seg=None, link=None, recinfo=False, n=None, uid=None):
         # both external (jsocextinfo.py) and internal (jsoc_info) calls
@@ -1400,7 +1595,7 @@ class SSHJsonClient(object):
             argStr = urlencode(argStrUnencoded)
             cmdList = [ os.path.join(self._server.ssh_base_script, self._server.ssh_jsoc_info), shlex.quote(argStr) ]
             
-        return self.__runCmd(cmdList)
+        return self.__runCmd(cmd_list=cmdList)
             
     def rs_summary(self, ds):
         # both external (jsocextinfo.py) and internal (jsoc_info) calls
@@ -1421,7 +1616,7 @@ class SSHJsonClient(object):
             argStr = urlencode(argStrUnencoded)
             cmdList = [ os.path.join(self._server.ssh_base_script, self._server.ssh_jsoc_info), shlex.quote(argStr) ]
 
-        return self.__runCmd(cmdList)
+        return self.__runCmd(cmd_list=cmdList)
     
     def series_struct(self, series):
         # both external (jsocextinfo.py) and internal (jsoc_info) calls
@@ -1446,13 +1641,13 @@ class SSHJsonClient(object):
             cmdList = [ os.path.join(self._server.ssh_base_script, self._server.ssh_jsoc_info), shlex.quote(argStr) ]
 
         
-        return self.__runCmd(cmdList)
+        return self.__runCmd(cmd_list=cmdList)
     
     def show_series(self, ds_filter=None):
-        return self._show_series(ds_filter)
+        return self._show_series(ds_filter=ds_filter)
         
     def show_series_wrapper(self, ds_filter=None, info=False):
-        return self._show_series(ds_filter, info)
+        return self._show_series(ds_filter=ds_filter, info=info)
         
     @property
     def password(self):
@@ -1473,6 +1668,10 @@ class SSHJsonClient(object):
     @debug.setter
     def debug(self, value):
         self._debug = value
+        
+    @property
+    def config(self):
+        return self._server
     
 
 class SecureClient(DRMSClient):
@@ -1528,7 +1727,7 @@ class SecureClient(DRMSClient):
                 self._config.set_urls(self._use_internal, self.debug)
             
             if self.debug:
-                print('[ SecureClient ] Executing DRMSClient API method "{method}"'.format(method=apiName))
+                print('[ SecureClient.__execute() ] Executing DRMSClient API method "{method}"'.format(method=apiName))
             resp = apimethod(**args)
         except SecureDRMSError as exc:
             print(exc.msg, file=sys.stderr)
@@ -1539,7 +1738,7 @@ class SecureClient(DRMSClient):
         return resp
         
     def _extract_series_name(self, ds):
-        parsed = self._json.parse_recset(ds)
+        parsed = self.parse_spec(ds)
         return parsed['subsets'][0]['seriesname'].lower()
         
     def _parse_spec(self, spec):
@@ -1552,7 +1751,7 @@ class SecureClient(DRMSClient):
         # call the parent's check_email() method
         return self.__execute(super().check_email, **args)
         
-    def export(self, ds, method='url_quick', protocol='as-is', protocol_args=None, filenamefmt=None, n=None, email=None, requestor=None):
+    def export(self, ds, method='url_quick', protocol='as-is', protocol_args=None, filenamefmt=None, n=None, email=None, requestor=None, synchronous_export=True):
         # n argument is invalid (currently) for drms-export-to-stdout, and it doesn't really make any sense for jsoc_fetch either
         if filenamefmt is None:
             # override parent implementation
@@ -1566,54 +1765,58 @@ class SecureClient(DRMSClient):
         # is the implementation of this feature, but export() makes use of this feature to avoid using export system; not all
         # NetDRMS sites have a full export system, but they all have drms-export-to-stdout
 
+        if synchronous_export:
         # try running the new-feature method export_fits() - if the arguments are not suitable for export_fits(), 
         # call the parent export() instead
-        try:
-            if self._server.check_supported('export_fits', isinstance(self, SSHClient), self._use_internal):
-                # exporting online SUs as fits with the new method only works if the method is url_quick (so 
-                # there no true export request is performed), all segments have to be protocol fits
+            try:
+                if self._server.check_supported('export_fits', isinstance(self, SSHClient), self._use_internal):
+                    # exporting online SUs as fits with the new method only works if the method is url_quick (so 
+                    # there no true export request is performed), all segments have to be protocol fits
 
-                if method.lower() != 'url_direct' and method.lower() != 'url':
-                    raise SecureDRMSArgumentError('[ export ] method argument {method} not suitable for export_fits() shortcut'.format(method=method))
+                    if method.lower() != 'url_direct' and method.lower() != 'url':
+                        raise SecureDRMSArgumentError('[ SecureClient.export() ] method argument {method} not suitable for export_fits() shortcut'.format(method=method))
                 
-                # call info() and make sure all segments are of fits protocol (drms-export-to-stdout does not support
-                # non-fits segments)
-                segments = self.info(series).segments
+                    # call info() and make sure all segments are of fits protocol (drms-export-to-stdout does not support
+                    # non-fits segments)
+                    segments = self.info(series).segments
     
-                # here's how to see if any rows in the segment DataFrame contain anything other than segments of protocol fits:
-                if segments[segments.protocol != 'fits'].shape[0] > 0:
-                    raise SecureDRMSArgumentError('[ export ] at least one segment cannot be exported as fits - not suitable for export_fits() shortcut')
+                    # here's how to see if any rows in the segment DataFrame contain anything other than segments of protocol fits:
+                    if segments[segments.protocol != 'fits'].shape[0] > 0:
+                        raise SecureDRMSArgumentError('[ SecureClient.export() ] at least one segment cannot be exported as fits - not suitable for export_fits() shortcut')
 
-                if protocol.lower() != 'fits':
-                    raise SecureDRMSArgumentError('[ export ] protocol argument {protocol} not suitable for export_fits() shortcut'.format(protocol=protocol))
+                    if protocol.lower() != 'fits':
+                        raise SecureDRMSArgumentError('[ SecureClient.export() ] protocol argument {protocol} not suitable for export_fits() shortcut'.format(protocol=protocol))
                 
-                if n is not None:
-                    # drms-export-to-stdout does not support n (which is supposed by jsoc_fetch in the 'process=n' parameter)
-                    raise SecureDRMSArgumentError('[ export ] n argument {n} not suitable for export_fits() shortcut'.format(n=n))
+                    if n is not None:
+                        # drms-export-to-stdout does not support n (which is supposed by jsoc_fetch in the 'process=n' parameter)
+                        raise SecureDRMSArgumentError('[ SecureClient.export() ] n argument {n} not suitable for export_fits() shortcut'.format(n=n))
             
-            # OK to use export_fits() shortcut
-            if self.debug:
-                print('[ export] executing export_fits() shortcut')
+                # OK to use export_fits() shortcut
+                if self.debug:
+                    print('[ SecureClient.export() ] executing export_fits() shortcut')
       
-            # email is not needed for drms-export-to-stdout, so ignore it here (users will have authenticated already)
-            args = { 'api_name' : 'export_fits', 'spec' : ds, 'filenamefmt' : filenamefmt }
+                # email is not needed for drms-export-to-stdout, so ignore it here (users will have authenticated already)
+                args = { 'api_name' : 'export_fits', 'spec' : ds, 'filenamefmt' : filenamefmt }
 
-            # returns a SecureExportRequest
-            return self.__execute(self._export_fits, **args)
-        except SecureDRMSArgumentError as exc:
-            if self.debug:
-                print(exc.args[0])
-            pass
-        except:
-            # some problem calling self._export_fits, propagate to a handler
-            raise
+                # returns a SecureExportRequest
+                return self.__execute(self._export_fits, **args)
+            except SecureDRMSArgumentError as exc:
+                if self.debug:
+                    print(exc.args[0])
+                pass
+            except:
+                # some problem calling self._export_fits, propagate to a handler
+                raise
             
         args = { 'ds' : ds, 'method' : method, 'protocol' : protocol, 'protocol_args' : protocol_args, 'filenamefmt' : filenamefmt, 'n' : n, 'email' : email, 'requestor' : requestor }
 
         # call the parent's export() method
+        if self.debug:
+            print('[ SecureClient.export() ] calling parent export() with args ' + dumps(args))
+        
         return self.__execute(super().export, **args)
         
-    def export_fits(self, spec, filenamefmt):
+    def export_fits(self, spec, filenamefmt=None):
         args = { 'api_name' : 'export_fits', 'spec' : spec, 'filenamefmt' : filenamefmt }
 
         # returns a SecureExportRequest
@@ -1668,6 +1871,14 @@ class SecureClient(DRMSClient):
         # call the parent's series() method [ the server configuration parameters in the parent method will be ignored; they will be used,
         # however, in the self._json.show_series*() methods ]
         return self.__execute(self._series, **args)
+        
+    @property
+    def config(self):
+        return self._config
+        
+    @property
+    def json_client(self):
+        return self._json
 
 
 class BasicAccessClient(SecureClient):
@@ -1702,11 +1913,11 @@ class BasicAccessClient(SecureClient):
     def __repr__(self):
         return '<BasicAccessClient "{name}">'.format(name=self._config.name)
         
-    def _export_fits(self, spec, filenamefmt):
+    def _export_fits(self, spec, filenamefmt=None):
         # we are going to run drms-export-to-stdout on the server
         resp = self._json.exp_fits(spec, filenamefmt)
 
-        return SecureExportRequest(resp, self, None, None, None, None, True, self.debug)
+        return SecureExportRequest(resp, self, remote_user=None, remote_host=None, remote_port=None, on_the_fly=True, debug=self.debug)
         
     def _series(self, regex=None, full=False):
         if self._use_internal or self._server.cgi_show_series_wrapper is None:
@@ -1823,7 +2034,8 @@ class SSHClient(SecureClient):
         
     def __repr__(self):
         return '<SSHClient "{name}">'.format(name=self._config.name)
-        
+
+    # private methods
     def _export_fits(self, spec, filenamefmt):
         # we are going to run drms-export-to-stdout on the server
         resp = self._json.exp_fits(spec, filenamefmt)
@@ -1867,13 +2079,10 @@ class SSHClient(SecureClient):
                 return pandas.DataFrame(recs, columns=keys)
             else:
                 return resp['seriesList']
-        
+
+    # public methods
     def clearTimer(self):
         self._json.clearTimer()
-        
-    @property
-    def json_client(self):
-        return self._json
 
 
 class SecureClientFactory(object):
@@ -1899,11 +2108,11 @@ class SecureClientFactory(object):
 
     __clients = []
     
-    def __init__(self, server='__JSOC', email=None, verbose=False, debug=False):
+    def __init__(self, *, server='__JSOC', email=None, verbose=False, debug=False):
         self._config = SecureServerConfig.get(server)
         self._args = { 'email' : email, 'verbose' : verbose, 'debug' : debug }
         
-    def create_client(self, use_ssh=False, use_internal=False):
+    def create_client(self, *, use_ssh=False, use_internal=False):
         client = None
         args = self._args
         args['use_internal'] = use_internal
@@ -1935,7 +2144,7 @@ signal.signal(signal.SIGHUP, SecureClientFactory.terminator)
 # register secure JSOC DRMS server
 SecureServerConfig.register_server(SecureServerConfig(
     name='__JSOC',
-    cgi_baseurl='http://jsoc.fstanford.edu/cgi-bin/ajax/',
+    cgi_baseurl='http://jsoc.stanford.edu/cgi-bin/ajax/',
     cgi_baseurl_internal='http://jsoc2.stanford.edu/cgi-bin/ajax/',
     cgi_baseurl_authority='hmiteam:hmiteam',
 #   cgi_baseurl_authorityfile='/Users/art/HEPL/drmsPy/auth.py',
@@ -1946,12 +2155,12 @@ SecureServerConfig.register_server(SecureServerConfig(
     cgi_parse_recset='drms_parserecset',    
     cgi_show_series='show_series',
     cgi_show_series_wrapper='showextseries',
-    export_fits_args=
+    qcgi_export_fits_args=
     {
         'dbhost' : 'hmidb2',
         'webserver' : 'jsoc.stanford.edu'
     },
-    export_fits_internal_args=
+    qcgi_export_fits_internal_args=
     {
         'dbhost' : 'hmidb',
         'webserver' : 'jsoc2.stanford.edu'
