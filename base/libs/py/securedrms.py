@@ -312,8 +312,16 @@ class SecureServerConfig(ServerConfig):
     def __repr__(self):
         return '<SecureServerConfig "{name}"'.format(name=self.name)
         
-    def check_supported(self, op, use_ssh=False, use_internal=False):
-        """Check if an operation is supported by the server."""
+    def check_supported(self, op, use_ssh=None, use_internal=None):
+        """Check if an operation is supported by the server."""    
+        if use_ssh is None:
+            # passed by SecureClient API method call
+            use_ssh = self.use_ssh
+            
+        if use_internal is None:
+            # passed by SecureClient API method call
+            use_internal = self.use_internal
+        
         if use_ssh:
             if use_internal:
                 if op == 'check_email' or op == 'email':
@@ -1085,6 +1093,14 @@ class BasicAccessHttpJsonClient(HttpJsonClient):
         
     def show_series_wrapper(self, ds_filter=None, info=False):
         return self._show_series(ds_filter=ds_filter, info=info)
+        
+    @property
+    def use_internal(self):
+        return self._use_internal
+        
+    @property
+    def use_ssh(self):
+        return self._use_ssh
 
 
 class SSHJsonRequest(object):
@@ -1672,6 +1688,14 @@ class SSHJsonClient(object):
     @property
     def config(self):
         return self._server
+
+    @property
+    def use_internal(self):
+        return self._use_internal
+        
+    @property
+    def use_ssh(self):
+        return self._use_ssh
     
 
 class SecureClient(DRMSClient):
@@ -1726,9 +1750,23 @@ class SecureClient(DRMSClient):
             if isinstance(self, BasicAccessClient):
                 self._config.set_urls(self._use_internal, self.debug)
             
+            # pass use_ssh and use_internal to SecureServerConfig.check_supported(), which will might be called by parent 
+            # method call
+            setattr(self.config, 'use_ssh', isinstance(self, BasicAccessClient))
+            setattr(self.config, 'use_internal', self._use_internal)
+            
             if self.debug:
                 print('[ SecureClient.__execute() ] Executing DRMSClient API method "{method}"'.format(method=apiName))
+            
+            # this could call __execute() recursively, so a lower-level call could delete attributes, and then if we 
+            # try again after the api method call, we'll get an attribute error
             resp = apimethod(**args)
+            
+            if hasattr(self.config, 'use_ssh'):
+                delattr(self.config, 'use_ssh')
+                
+            if hasattr(self.config, 'use_internal'):
+                delattr(self.config, 'use_internal')
         except SecureDRMSError as exc:
             print(exc.msg, file=sys.stderr)
 
