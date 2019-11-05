@@ -1817,6 +1817,13 @@ typedef enum PatternStyle_enum PatternStyle_t;
 
 static char **ExtractPattern(const char *str, PatternStyle_t *style)
 {
+    /* there are 4 forms the 'out' column of jsoc.export can take:
+     * 1. '_XYZ' - append '_XYZ' to the end of the name of the series
+     * 2. <series> - replace the existing series with <series>
+     * 3. s/<str1>/<str2>/ - substitute <str2> for all occurrences of <str1>
+     * 4. s/$/XYZ/ - append '_XYZ' to the end of the name of the series (identical to #1, but a new way of 
+     *    specifying that a series name is to have something appended to it)
+     */
     char **pattern = NULL;
     regex_t regexp;
     regmatch_t matches[3]; /* index 0 is the entire string */
@@ -1832,7 +1839,7 @@ static char **ExtractPattern(const char *str, PatternStyle_t *style)
         {
             /* old-style suffix */
             pattern = calloc(1, sizeof(char **));
-            pattern[0] = strdup(str + 1);
+            pattern[0] = strdup(str + 1); /* exclude the '_' - the calling function will add it */
 
             if (style)
             {
@@ -1898,10 +1905,11 @@ static char **ExtractPattern(const char *str, PatternStyle_t *style)
                 }
                 else
                 {
+                    /* replace the current series name with a new series name */
                     pattern = calloc(1, sizeof(char **));
                     if (pattern)
                     {
-                        pattern[0] = strdup(str + 1);
+                        pattern[0] = strdup(str);
                     }
                     
                     if (style)
