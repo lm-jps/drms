@@ -2789,9 +2789,11 @@ class Dispatcher(threading.Thread):
 
                                 if not skip:
                                     if path is None:
-                                        # A path of None means that the SUNUM was invalid. We want to set the SU status to 'E'.
+                                        # a path of None means that the SUNUM was invalid; set to 'C' so the entire request does not fail;
+                                        # we want failures of individual SUs to not cause failure of the entire request that contains the
+                                        # failed SUs
                                         msg = 'SU ' + str(sunum) + ' is not valid at the providing site'
-                                        su.setStatus('E', msg)
+                                        su.setStatus('C', msg)
                                         self.log.writeWarning([ msg ])
                                         skip = True
                                     elif path == '':
@@ -2827,7 +2829,6 @@ class Dispatcher(threading.Thread):
                                             skip = True
 
                                 if skip:
-                                    su.setStatus('E', 'providing site cannot provide an SU path')
                                     continue
 
                                 # save series and expiration
