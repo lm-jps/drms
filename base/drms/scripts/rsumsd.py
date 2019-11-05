@@ -877,21 +877,22 @@ class StorageUnit(object):
             
         self.tapegroup = value
 
-    def getStarttime(self):
+    @property
+    def start_time(self):
         return self.starttime
     
-    def setStarttime(self, value):
+    @start_time.setter
+    def start_time(self, value):
         if not isinstance(value, (datetime)):
-            raise InvalidArgumentException('setStarttime(): argument must be a datetime')
-            
+            raise InvalidArgumentException('start_time(): argument must be a datetime')
         self.starttime = value
         
     def touch(self):
-        self.setStarttime(datetime.now(timezone.utc))
+        self.starttime = datetime.now(timezone.utc)
     
     def getStatus(self):
         return self.status
-    
+
     # Set properties that are saved to the DB.
     def setStatus(self, codeValue, msgValue):
         if not isinstance(codeValue, (str)):
@@ -1059,7 +1060,7 @@ class SuTable:
         sus, missingSunums = self.getSUs(sunums=sunums, releaseTableLock=False)
         try:
             for su in sus:
-                su.setStarttime(starttime)
+                su.start_time = starttime
         finally:
             self.releaseLock()
 
@@ -1222,7 +1223,7 @@ class SuTable:
             filteredSUs = list(filter(lambda elem: elem[1] <= priority, suAndPriority))
         
             # do a double sort (priority, start-time)
-            sortedSUs = sorted(filteredSUs, key=lambda elem: (elem[1], elem[0].starttime.strftime('%Y-%m-%d %T')))
+            sortedSUs = sorted(filteredSUs, key=lambda elem: (elem[1], elem[0].start_time.strftime('%Y-%m-%d %T')))
             
             it = iter(sortedSUs)
             try:
@@ -1257,7 +1258,8 @@ class SuTable:
 
         return (nworking, (scpUser, scpHost, scpPort))      
 
-    def getTimeout(self):
+    @property
+    def timeout(self):
         return self.timeOut
 
     def addRequestToSUMap(self, **kwargs):
@@ -1656,7 +1658,8 @@ class ReqTable:
 
         return deleteLst
 
-    def getTimeout(self):
+    @property
+    def timeout(self):
         return self.timeOut
     
     @classmethod
@@ -1949,8 +1952,8 @@ class ScpWorker(threading.Thread):
                             sus, missingSunums = self.suTable.getSUs(sunums=remainingSunums)
                             for su in sus:
                                 # check for SU download time-out; we keep doing the download, unless all SUs have timed out
-                                timeNow = datetime.now(su.starttime.tzinfo)
-                                if timeNow > su.starttime + self.suTable.getTimeout():
+                                timeNow = datetime.now(su.start_time.tzinfo)
+                                if timeNow > su.start_time + self.suTable.timeout:
                                     self.log.writeInfo([ 'download of SUNUM ' + str(su.sunum) + ' timed-out in ScpWorker' ])
                                     # communicate result to Worker - the Worker will see a D status (and no shutdown event), and know that
                                     # there was a download time-out
@@ -2173,7 +2176,12 @@ class Downloader(threading.Thread):
                     # we know a download time happens if the status is D and there was no shut down event (which we just checked above);
                     # no need to check for shutdown event here since the ScpWorker thread will respond to one, killing pending
                     # downloads and notify()ing waiting Downloader threads so that wait() will return
-                    if not self.scpComplete.wait(timeout=self.suTable.getTimeout().seconds + 120):
+                    
+                    # make this a very-long timeout (28800 --> 8 hours); if there are many pending downloads, the ScpWorker could 
+                    # take a long time to select this SU for download in which case we'd exceed a short timeout here; the ScpWorker 
+                    # will check for an scp that lasts too long and times-out, and if that happens, then the ScpWorker will notify 
+                    # self.scpComplete so we break out of the wait() and code below looks at the status to detect a timeout
+                    if not self.scpComplete.wait(timeout=28800):
                         self.log.writeWarning([ 'downloader for SU ' + str(self.sunum) + ' timed-out' ])
                         raise DownloaderException('the download of SU ' + str(self.sunum) + ' timed-out')                            
                     else:
@@ -3628,7 +3636,7 @@ if __name__ == "__main__":
                     # request is a dictionary
                     for request in reqsNew:
                         timeNow = datetime.now(request['starttime'].tzinfo)
-                        if timeNow > request['starttime'] + reqTableObj.getTimeout():
+                        if timeNow > request['starttime'] + reqTableObj.timeout:
                             ilogger.writeInfo([ 'request number ' + str(request['requestid']) + ' timed-out' ])
                             reqTableObj.setStatus([ request['requestid'] ], 'E', 'request timed-out')
                         
