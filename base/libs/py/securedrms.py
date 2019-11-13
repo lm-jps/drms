@@ -2992,7 +2992,7 @@ class SecureClient(DRMSClient):
         object (SecureExportRequest) 
             a SecureExportRequest instance which can be used to check on the status of the export, and to download exported data files
         '''
-        args = { 'api_name' : 'export_fits', 'spec' : spec, 'filenamefmt' : filename_fmt }
+        args = { 'api_name' : 'export_fits', 'spec' : spec, 'filename_fmt' : filename_fmt }
 
         # returns a SecureExportRequest
         return self._execute(self._export_fits, **args)
