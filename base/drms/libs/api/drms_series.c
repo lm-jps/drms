@@ -7165,13 +7165,12 @@ LinkedList_t *drms_series_querystring_wrap(DRMS_Env_t *env, const char *series, 
                 statementSelect = base_strcatalloc(statementSelect, " SELECT recnum FROM  ", &stsz);
                 statementSelect = base_strcatalloc(statementSelect, tempTable, &stsz);
                 statementSelect = base_strcatalloc(statementSelect, ")", &stsz);
-                
-                if (sortAsc)
-                {
-                    statementSelect = base_strcatalloc(statementSelect, "\n", &stsz);
-                    statementSelect = base_strcatalloc(statementSelect, "ORDER BY ", &stsz);
-                    statementSelect = base_strcatalloc(statementSelect, pkeylist, &stsz);
-                }
+
+                /* always sort by pkey if we are selecting series-table records by recnum */                
+                statementSelect = base_strcatalloc(statementSelect, "\n", &stsz);
+                statementSelect = base_strcatalloc(statementSelect, "ORDER BY ", &stsz);
+                statementSelect = base_strcatalloc(statementSelect, pkeylist, &stsz);
+
             }
         }
         else
