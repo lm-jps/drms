@@ -353,7 +353,7 @@ static int populateKeyList(const char *listOfKeys, LinkedList_t *reqSegs, DRMS_R
 
             if (!requisition->requireSUMinfo)
             {                    
-                requisition->requireSUMinfo = sumInfoFakeKey;
+                requisition->requireSUMinfo = sumInfoFakeKey | recdirKey | dirmtimeKey;
             }
 
             /* ugh - if **ALL** was in the key list, then we do not want to add these - they are
@@ -496,7 +496,7 @@ static int populateSegList(const char *listOfSegs, int followLinks, DRMS_Record_
     {        
         if (!requisition->requireSUMinfo)
         {
-            /* we need this for the online property of each segment */
+            /* we need this for the online property of each segment; plus we need this to get segment paths now */
             requisition->requireSUMinfo = 1;
         }
     }
@@ -2457,6 +2457,7 @@ int DoIt(void)
     int status = DRMS_SUCCESS;
     int irec, nrecs;
     int record_set_staged = 0;
+    int sum_info_called = 0;
     char *lbracket;
     int sumInfoStr = 0;
     jroot = json_new_object();
@@ -2625,7 +2626,13 @@ int DoIt(void)
                     segs[nsegs++] = strdup(thisseg);
                 }
             }
-        }        
+        }   
+        
+        if (nsegs > 0)
+        {
+            /* we need this for the online property of each segment; plus we need this to get segment paths now */
+            requisition.requireSUMinfo = 1;
+        } 
     }
 
     free (seglist);
@@ -2727,7 +2734,7 @@ int DoIt(void)
                     requisition.requireDirmtime = 1;                
                 }
 
-                if (requisition.requireSUMinfoSize || requisition.requireSUMinfoOnline || requisition.requireSUMinfoRetain || requisition.requireSUMinfoArchive )
+                if (requisition.requireSUMinfoSize || requisition.requireSUMinfoOnline || requisition.requireSUMinfoRetain || requisition.requireSUMinfoArchive || requisition.requireRecdir || requisition.requireDirmtime)
                 {
                     requisition.requireSUMinfo = 1;
                 }
@@ -2839,10 +2846,11 @@ int DoIt(void)
     }
     
     /* need to find out if we will be needing SUM info if so, call drms_record_getinfo() */
-    if (requisition.requireSUMinfo)
+    if (requisition.requireSUMinfo && !sum_info_called)
     {
         /* gets info for all linked-records' SUs too */
         drms_record_getinfo(recordset);
+        sum_info_called = 1;
     }
     
     if (requisition.requireLogdir)
@@ -2935,6 +2943,10 @@ int DoIt(void)
                 DRMS_Segment_t *segTemplate = NULL;
                 DRMS_Segment_t *seg = NULL;
                 char seg_file_name[PATH_MAX] = {0};
+
+
+                /* ensure that suinfo has been obtained */
+                XASSERT(sum_info_called);
 
                 if (segs_listed)
                 {
@@ -3042,6 +3054,9 @@ int DoIt(void)
             
             if (requisition.requireSUMinfoOnline)
             {
+                    /* ensure that suinfo has been obtained */
+                    XASSERT(sum_info_called);
+
                 if (!rec->suinfo)
                 {
                     jsonVal = createJsonStringVal("NA");
@@ -3057,6 +3072,9 @@ int DoIt(void)
             
             if (requisition.requireSUMinfoRetain)
             {
+                /* ensure that suinfo has been obtained */
+                XASSERT(sum_info_called);
+
                 if (!rec->suinfo)
                 {
                     jsonVal = createJsonStringVal("NA");
@@ -3086,6 +3104,9 @@ int DoIt(void)
             
             if (requisition.requireSUMinfoArchive)
             {
+                /* ensure that suinfo has been obtained */
+                XASSERT(sum_info_called);
+
                 if (!rec->suinfo)
                 {
                     jsonVal = createJsonStringVal("NA");
@@ -3109,6 +3130,10 @@ int DoIt(void)
             if (requisition.requireRecdir)
             {
                 char recPath[DRMS_MAXPATHLEN];
+                
+
+                /* ensure that suinfo has been obtained */
+                XASSERT(sum_info_called);
 
                 if (rec->suinfo && *rec->suinfo->online_loc != '\0' && *rec->suinfo->online_status == 'Y')
                 {
@@ -3147,6 +3172,10 @@ int DoIt(void)
                 struct stat buf;
                 char recPath[DRMS_MAXPATHLEN];
                 char timebuf[128];
+
+                
+                /* ensure that suinfo has been obtained */
+                XASSERT(sum_info_called);
 
                 if (rec->suinfo && *rec->suinfo->online_loc != '\0' && *rec->suinfo->online_status == 'Y')
                 {
@@ -3338,6 +3367,9 @@ int DoIt(void)
                     long long numBytes = -1;
                     long long numSubBytes = 0;
                     DRMS_Segment_t *seg = NULL;
+                    
+                    /* ensure that suinfo has been obtained */
+                    XASSERT(sum_info_called);
 
                     /* first, let's see if the segment-file is online; if so, use the size as returned by stat() */
                     if (segs_listed)
@@ -3382,7 +3414,13 @@ int DoIt(void)
                 }
                 else if (strcmp(keys[ikey],"*online*") == 0)
                 {
-                    SUM_info_t *sinfo = rec->suinfo;
+                    SUM_info_t *sinfo = NULL;
+
+
+                    /* ensure that suinfo has been obtained */
+                    XASSERT(sum_info_called);
+                    
+                    sinfo = rec->suinfo;
 
                     if (!sinfo)
                     {
@@ -3395,7 +3433,14 @@ int DoIt(void)
                 }
                 else if (strcmp(keys[ikey],"*retain*") == 0)
                 {
-                    SUM_info_t *sinfo = rec->suinfo;
+                    SUM_info_t *sinfo = NULL;
+
+
+                    /* ensure that suinfo has been obtained */
+                    XASSERT(sum_info_called);
+                    
+                    sinfo = rec->suinfo;
+
                 
                     if (!sinfo)
                     {
@@ -3418,7 +3463,13 @@ int DoIt(void)
                 }
                 else if (strcmp(keys[ikey],"*archive*") == 0)
                 {
-                    SUM_info_t *sinfo = rec->suinfo;
+                    SUM_info_t *sinfo = NULL;
+
+
+                    /* ensure that suinfo has been obtained */
+                    XASSERT(sum_info_called);
+                    
+                    sinfo = rec->suinfo;
                     
                     if (!sinfo)
                     {
@@ -3440,6 +3491,10 @@ int DoIt(void)
                 {
                     // get record directory
                     char path[DRMS_MAXPATHLEN];
+
+
+                    /* ensure that suinfo has been obtained */
+                    XASSERT(sum_info_called);
                 
                     if (rec->suinfo && *rec->suinfo->online_loc != '\0' && *rec->suinfo->online_status == 'Y')
                     {
@@ -3476,7 +3531,10 @@ int DoIt(void)
                     struct stat buf;
                     char path[DRMS_MAXPATHLEN];
                     char timebuf[128];
-                                
+
+                    
+                    /* ensure that suinfo has been obtained */
+                    XASSERT(sum_info_called);                                
 
                     if (rec->suinfo && *rec->suinfo->online_loc != '\0' && *rec->suinfo->online_status == 'Y')
                     {
