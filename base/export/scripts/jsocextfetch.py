@@ -78,6 +78,8 @@ try:
                 # If the caller is providing the ds argument, then dbhost is required. It is used for determining which db server
                 # provides series information.
                 optD['dbhost'] = val
+            elif key in ('n'):
+                optD['noheader'] = True
             else:
                 if key in ('ds'):
                     optD['spec'] = val
@@ -87,10 +89,6 @@ try:
                     optD['requestid'] = val
                 elif key in ('format') and val.lower() == 'txt':
                     optD['json'] = False
-                elif key in ('n'):
-                    optD['noheader'] = True
-                    # do not add to jsoc_fetch command
-                    continue
 
                 allArgs.append(key + '=' + val)
                 
