@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 
 # Use this script to start one or more instances of the Python SUMS (sumsd.py) on a host. The instances will be launched on the host on which the script is run. The first time this script is run, it creates a state file (the "instances" file). The global variable DEFAULT_INSTANCES_FILE identifies the name of the file. By default, the file is created in the directory identified by the SUMLOG_BASEDIR parameter of config.local. The caller of this script can override the name and full path to the script with the --instancesfile option.
-# 
+#
 # This script will spawn one sumsd.py per port identified in the required ports argument. The value of this argument is a comma-separated list of port numbers. The caller identifies the path to the sumsd.py script to launch with the daemon argument. By default, for each instance, this script will start call sumsd.py with a single argument: the --sockport option. The value of the --sockport option is an element of the ports argument. The caller can pass two additional and optional arguments to sumsd.py: --loglevel (specifies the amount of sumsd.py logging to perform; the value specified will be passed as the --loglevel argument to sumsd.py), and --logfile (specifies the full path to the sumsd.py log file; the value specified will be passed as the --logfile argument to sumsd.py).
-# 
+#
 # To start a sumsd.py instance that will listen to the port that DRMS modules connect to, run this script on the host identified by the SUMSERVER config local parameter, and ensure that at least one value in the ports argument is the same as the SUMSD_LISTENPORT value in config.local.
-# 
+#
 # To ensure that the state file accurately reflects the set of actively running sumsd.py processes, please do not manually start or stop sumsd.py processes. Always use start-mt-sums.py and stop-mt-sums.py to start and stop them.
 #
 # The instances file (json) contains one property for each sumsd.py script:
@@ -49,26 +49,26 @@ class SumsDrmsParams(DRMSParams):
         if val is None:
             raise ParamsException('unknown DRMS parameter: ' + name)
         return val
-        
+
 class Arguments(object):
 
     def __init__(self, parser):
         # This could raise in a few places. Let the caller handle these exceptions.
         self.parser = parser
-        
+
         # Parse the arguments.
         self.parse()
-        
+
         # Set all args.
         self.setAllArgs()
-        
+
     def parse(self):
         try:
-            self.parsedArgs = self.parser.parse_args()      
+            self.parsedArgs = self.parser.parse_args()
         except Exception as exc:
             if len(exc.args) == 2:
                 type, msg = exc.args
-                  
+
                 if type != 'CmdlParser-ArgUnrecognized' and type != 'CmdlParser-ArgBadformat':
                     raise # Re-raise
 
@@ -83,7 +83,7 @@ class Arguments(object):
             setattr(self, name, value)
         else:
             raise ArgsException('attempt to set an argument that already exists: ' + name)
-            
+
     def replArg(self, name, newValue):
         if hasattr(self, name):
             setattr(self, name, newValue)
@@ -93,7 +93,7 @@ class Arguments(object):
     def setAllArgs(self):
         for key,val in list(vars(self.parsedArgs).items()):
             self.setArg(key, val)
-        
+
     def getArg(self, name):
         try:
             return getattr(self, name)
@@ -119,11 +119,11 @@ def ShutDownInstance(path, pid):
         while psutil.pid_exists(pid) and count < 30:
             time.sleep(1)
             count += 1
-            
+
         # kill -9 it
         if psutil.pid_exists(pid):
             os.kill(pid, SIGKILL)
-            
+
             count = 0
             while psutil.pid_exists(pid) and count < 10:
                 time.sleep(1)
@@ -131,19 +131,19 @@ def ShutDownInstance(path, pid):
 
 def StartUpInstance(path, port, loglevel, logfile, quiet):
     cmdList = [ sys.executable, path, '--sockport=' + str(port) ]
-    
+
     if loglevel is not None:
         cmdList.append('--loglevel=' + loglevel)
     if logfile is not None:
         cmdList.append('--logfile=' + logfile)
-        
+
     PrintRunInfo(sys.stdout, 'running ' + ' '.join(cmdList), quiet)
     proc = Popen(cmdList, start_new_session=True, stdout=DEVNULL, stderr=DEVNULL, stdin=DEVNULL) # spawn a new process
     return proc.pid
 
 # read arguments
 sumsDrmsParams = SumsDrmsParams()
-parser = CmdlParser(usage='%(prog)s [ -h ] [ --instancesfile=<instances file path> ]')
+parser = CmdlParser(usage='%(prog)s daemon=<path to daemon> ports=<listening ports> [ --instancesfile=<instances file path> ] [ --loglevel=<critical, error, warning, info, or debug>] [ --logfile=<file name> ] [ --quiet ]')
 
 # required
 parser.add_argument('d', 'daemon', help='path of the sumsd.py daemon to launch', metavar='<path to daemon>', dest='daemon', required=True)
@@ -175,30 +175,30 @@ try:
 
             if instances is not None:
                 # ensure that each instance listed is indeed running, if not, remove it from the instance file
-                
+
                 # copy instances since we are iterating over them
                 instancesCopy = copy.deepcopy(instances)
                 for onePath in instancesCopy:
                     for portStr in instancesCopy[onePath]:
                         port = int(portStr)
                         pid = instancesCopy[onePath][portStr]
-        
+
                         if not psutil.pid_exists(pid):
-                            # an entry in the instances file that should not exist                            
+                            # an entry in the instances file that should not exist
                             PrintRunInfo(sys.stderr, 'pid ' + str(pid) + ' from instances file does not exist', quiet)
-                            
+
                             del instances[onePath][portStr]
-                        else:                
-                            if portStr in usedPorts:                                
+                        else:
+                            if portStr in usedPorts:
                                 PrintRunInfo(sys.stderr, 'port ' + portStr + ' is already being used', quiet)
-                                
+
                                 # cannot have duplicate port numbers in use
                                 pathOrig, pidOrig = usedPorts[portStr]
-                    
+
                                 # shut-down and delete duplicate instance
                                 ShutDownInstance(onePath, pid)
                                 del instances[onePath][portStr]
-                    
+
                                 # shut-down and delete original instance
                                 if portStr not in instances[pathOrig]:
                                     ShutDownInstance(pathOrig, pidOrig)
@@ -206,11 +206,11 @@ try:
                             else:
                                 # track used ports
                                 usedPorts[portStr] = [ onePath, pid ]
-          
+
                     if len(instances[onePath].keys()) == 0:
                         # we removed ALL port instances of this path
                         del instances[onePath]
-                        
+
         # leaving open block - the instances file will be closed
 except FileNotFoundError:
     # ignore a file-not-found error (this means that this is the first time sumsd.py was started)
@@ -245,11 +245,11 @@ try:
         json.dump(instances, fout)
         print('', file=fout) # add a newline to the end of the instances file
         # leaving open block - this will save file changes
-except:    
+except:
     PrintRunInfo(sys.stderr, 'ERROR: unable to write instances file ' + instancesFile, quiet)
-    
+
     raise # will cause an exit with a return code of 1
-    
+
 startedInstancesJSON = json.dumps(startedInstances, ensure_ascii=False) + '\n'
 sys.stdout.buffer.write(startedInstancesJSON.encode('UTF8'))
 

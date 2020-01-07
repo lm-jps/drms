@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 
 # Use this script to stop one or more instances of Python SUMS (sumsd.py) on a host. The instances to be stopped must be running on the host on which the script is run. The global variable DEFAULT_INSTANCES_FILE identifies the name of the instances file. The default path to the instances file is identified by the SUMLOG_BASEDIR parameter of config.local. The caller of this script can override the name and full path to the script with the --instancesfile option.
-# 
-# By default, this script will terminate all sumsd.py instances identified by the required daemon argument. To terminate a subset of these instances, the caller can provide the ports argument. The value of this argument is a comma-separated list of port numbers. If this optional ports argument is provided, then the instances identified by the daemon and ports arguments will be terminated. 
-# 
+#
+# By default, this script will terminate all sumsd.py instances identified by the required daemon argument. To terminate a subset of these instances, the caller can provide the ports argument. The value of this argument is a comma-separated list of port numbers. If this optional ports argument is provided, then the instances identified by the daemon and ports arguments will be terminated.
+#
 # To stop a sumsd.py instance that DRMS modules connect to, ensure that at least one value in the ports argument is the same as the SUMSD_LISTENPORT value in config.local.
-# 
+#
 # To ensure that the state file accurately reflects the set of actively running sumsd.py processes, please do not manually start or stop sumsd.py processes. Always use start-mt-sums.py and stop-mt-sums.py.
-# 
+#
 # The instances file (json) contains one property for each sumsd.py script:
 #   <absolute path to script> (object) - key: the port on which the instance is listening; value: the pid identifying the sumsd.py instance
 #
@@ -49,26 +49,26 @@ class SumsDrmsParams(DRMSParams):
         if val is None:
             raise ParamsException('unknown DRMS parameter: ' + name)
         return val
-        
+
 class Arguments(object):
 
     def __init__(self, parser):
         # This could raise in a few places. Let the caller handle these exceptions.
         self.parser = parser
-        
+
         # Parse the arguments.
         self.parse()
-        
+
         # Set all args.
         self.setAllArgs()
-        
+
     def parse(self):
         try:
-            self.parsedArgs = self.parser.parse_args()      
+            self.parsedArgs = self.parser.parse_args()
         except Exception as exc:
             if len(exc.args) == 2:
                 type, msg = exc.args
-                  
+
                 if type != 'CmdlParser-ArgUnrecognized' and type != 'CmdlParser-ArgBadformat':
                     raise # Re-raise
 
@@ -83,7 +83,7 @@ class Arguments(object):
             setattr(self, name, value)
         else:
             raise ArgsException('attempt to set an argument that already exists: ' + name)
-            
+
     def replArg(self, name, newValue):
         if hasattr(self, name):
             setattr(self, name, newValue)
@@ -93,7 +93,7 @@ class Arguments(object):
     def setAllArgs(self):
         for key,val in list(vars(self.parsedArgs).items()):
             self.setArg(key, val)
-        
+
     def getArg(self, name):
         try:
             return getattr(self, name)
@@ -112,7 +112,7 @@ def PrintRunInfo(outfile, msg, quiet):
 
 def ShutDownInstance(path, pid, quiet):
     if psutil.pid_exists(pid):
-        # send a SIGINT signal to the pid        
+        # send a SIGINT signal to the pid
         PrintRunInfo(sys.stdout, 'sending SIGINT to pid ' + str(pid), quiet)
         os.kill(pid, SIGINT)
 
@@ -121,12 +121,12 @@ def ShutDownInstance(path, pid, quiet):
         while psutil.pid_exists(pid) and count < 30:
             time.sleep(1)
             count += 1
-            
+
         # kill -9 it
         if psutil.pid_exists(pid):
             PrintRunInfo(sys.stdout, 'sending SIGKILL to pid ' + str(pid), quiet)
             os.kill(pid, SIGKILL)
-            
+
             count = 0
             while psutil.pid_exists(pid) and count < 10:
                 time.sleep(1)
@@ -135,7 +135,7 @@ def ShutDownInstance(path, pid, quiet):
 
 # read arguments
 sumsDrmsParams = SumsDrmsParams()
-parser = CmdlParser(usage='%(prog)s [ -h ] [ --instancesfile=<instances file path> ]')
+parser = CmdlParser(usage='%(prog)s [ -h ] daemon=<path to daemon> [ ---ports=<listening ports> ] [ --instancesfile=<instances file path> ] [ --quiet ]')
 
 # required
 parser.add_argument('d', 'daemon', help='path of the sumsd.py daemon to halt', metavar='<path to daemon>', dest='daemon', required=True)
@@ -168,7 +168,7 @@ try:
 
             if instances is not None:
                 # ensure that each instance listed is indeed running, if not, remove it from the instance file
-                
+
                 portsList = list(ports)
                 if len(portsList) > 0:
                     portsSpecified = True
@@ -181,24 +181,24 @@ try:
                     for onePortStr in instancesCopy[onePath]:
                         onePort = int(onePortStr)
                         pid = instancesCopy[onePath][onePortStr]
-        
+
                         if not psutil.pid_exists(pid):
                             # an entry in the instances file that should not exist
                             PrintRunInfo(sys.stderr, 'WARNING: pid ' + str(pid) + ' from instances file does not exist; removing', quiet)
                             del instances[onePath][onePortStr]
-                        else:                
+                        else:
                             if onePortStr in usedPorts:
                                 PrintRunInfo(sys.stderr, 'WARNING: instances file has entry for port ' + onePortStr + ' already; shutting-down and removing', quiet)
                                 # cannot have duplicate port numbers in use
                                 pathOrig, pidOrig = usedPorts[onePortStr]
-                    
+
                                 # shut-down and delete duplicate instance
                                 PrintRunInfo(sys.stdout, 'shutting down duplicate instance ' + onePath + ':' + onePortStr, quiet)
                                 ShutDownInstance(onePath, pid, quiet)
                                 del instances[onePath][onePortStr]
                                 if onePort not in terminatedInstances['terminated']:
                                     terminatedInstances['terminated'].append(onePort)
-                    
+
                                 # shut-down and delete original instance (unless the original has already been removed)
                                 if onePortStr in instances[pathOrig]:
                                     PrintRunInfo(sys.stdout, 'shutting down original instance ' + pathOrig + ':' + portStr, quiet)
@@ -216,37 +216,37 @@ try:
                                         terminatedInstances['terminated'].append(onePort)
                                         if len(ports) > 0:
                                             portsList.remove(onePort)
-                                else:                            
+                                else:
                                     # track used ports
                                     usedPorts[onePortStr] = [ onePath, pid ]
-                                    
+
                     # there should be no items in portsList - if there is, then the user supplied an invalid port number
-                    for port in portsList:                        
+                    for port in portsList:
                         PrintRunInfo(sys.stderr, 'invalid port argument ' + str(port), quiet)
-                    
+
                     if len(instances[onePath].keys()) == 0:
                         # we removed ALL port instances of this path
                         del instances[onePath]
             else:
-                # it is a warning, not an error, if the user requests the shutdown of an instance, but no instances are running                
+                # it is a warning, not an error, if the user requests the shutdown of an instance, but no instances are running
                 PrintRunInfo(sys.stderr, 'WARNING: no instances are running - there is nothing to shutdown', quiet)
-                
+
         # leaving open block - the instances file will be closed
 except FileNotFoundError:
-    # it is an error if the user requests the shutdown of an instance, but no instances are running    
+    # it is an error if the user requests the shutdown of an instance, but no instances are running
     PrintRunInfo(sys.stderr, 'WARNING: no instances are running - there is nothing to shutdown', quiet)
-    
+
     # any other exception will cause an exit with a return code of 1
 
 if instances is not None:
     # save the new version of the instances file
-    try:            
+    try:
         with open(instancesFile, mode='w', encoding='UTF8') as fout:
             json.dump(instances, fout)
             print('', file=fout) # add a newline to the end of the instances file
             # leaving open block - this will save file changes
     except:
-        PrintRunInfo(sys.stderr, 'ERROR: unable to write instances file ' + instancesFile, quiet)        
+        PrintRunInfo(sys.stderr, 'ERROR: unable to write instances file ' + instancesFile, quiet)
         raise # will cause an exit with a return code of 1
 
 terminatedInstancesJSON = json.dumps(terminatedInstances, ensure_ascii=False) + '\n'
