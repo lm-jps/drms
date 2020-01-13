@@ -15,7 +15,7 @@ http://sun.stanford.edu/web.hmi/development/SU_Development_Plan/SUM_API.html
 	the one that sum_svc was started with, e.g. sum_svc hmidb.
 	The history is a printf type logging function.
 	Returns a pointer to a SUM handle that is
-	used to identify this user for this session. 
+	used to identify this user for this session.
 	Returns NULL on failure.
 	Currently the dsix_ptr[] and wd[] arrays are malloc'd to size
 	SUMARRAYSZ (64).
@@ -92,11 +92,11 @@ static MTSums_CallType_t CallTypeFromString(const char *str)
     MTSums_CallType_t rv = kMTSums_CallType_None;
     void **node = NULL;
     int iCall = 0;
-    
+
     if (!gMTCallMap)
     {
         gMTCallMap = hcon_create(sizeof(int), 64, NULL, NULL, NULL, NULL, 0);
-        
+
         if (gMTCallMap)
         {
             for (iCall = 0; iCall < kMTSums_CallType_END; iCall++)
@@ -114,7 +114,7 @@ static MTSums_CallType_t CallTypeFromString(const char *str)
             rv = *(int *)node;
         }
     }
-    
+
     return rv;
 }
 
@@ -228,7 +228,7 @@ static SVCXPRT *transp[MAXSUMOPEN];
 static SUMID_t transpid[MAXSUMOPEN];
 #endif
 
-// clprev keeps track of the last RPC client used. I (Art) assume that this means that you cannot call an 
+// clprev keeps track of the last RPC client used. I (Art) assume that this means that you cannot call an
 // asynchronous client, like SUM_get(), and then call other clients while you wait for the asynchronous client
 // to complete.
 // If the current SUMS API function is an MT SUMS function, then clprev is NULL.
@@ -273,7 +273,7 @@ int SUM_shutdown(int query, int (*history)(const char *fmt, ...))
     (*history)("Going to retry in 1 sec\n");
     sleep(1);
     cl = clnt_create(server_name, SUMPROG, SUMVERS, "tcp");
-    if(!cl) { 
+    if(!cl) {
       clnt_pcreateerror("Can't get client handle to sum_svc");
       (*history)("sum_svc timeout or not there on %s\n", server_name);
       return(1);	//say ok to shutdown
@@ -284,7 +284,7 @@ int SUM_shutdown(int query, int (*history)(const char *fmt, ...))
   klist = newkeylist();
   setkey_str(&klist, "USER", username);
   setkey_int(&klist, "QUERY", query);
-  status = clnt_call(cl, SHUTDO, (xdrproc_t)xdr_Rkey, (char *)klist, 
+  status = clnt_call(cl, SHUTDO, (xdrproc_t)xdr_Rkey, (char *)klist,
 			(xdrproc_t)xdr_uint32_t, (char *)&response, TIMEOUT);
   /* NOTE: Must honor the timeout here as get the ans back in the ack
   */
@@ -315,38 +315,38 @@ static int sendMsg(SUM_t *sums, const char *msg, uint32_t msgLen, int (*history)
     const char *pBuf = NULL;
     int sockfd = -1;
     int err = 0;
-    
+
     if (msg && *msg && sums)
     {
         /* Make a socket to MT Sums and connect to it. */
         sockfd = (int)sums->mSumsClient;
-        
+
         if (sockfd != -1)
         {
             /* First send the length of the message, msgLen. */
             bytesSentTotal = 0;
             snprintf(numBytesMesssage, sizeof(numBytesMesssage), "%08x", msgLen);
-        
+
             while (bytesSentTotal < MSGLEN_NUMBYTES)
             {
                 pBuf = numBytesMesssage + bytesSentTotal;
                 bytesSent = send(sockfd, pBuf, strlen(pBuf), 0);
-            
+
                 if (!bytesSent)
                 {
                     (*history)("Socket to MT SUMS broken.\n");
                     err = 1;
                     break;
                 }
-            
+
                 bytesSentTotal += bytesSent;
             }
-        
+
             if (!err)
             {
                 /* Then send the message. */
                 bytesSentTotal = 0;
-            
+
                 while (bytesSentTotal < msgLen)
                 {
                     pBuf = msg + bytesSentTotal;
@@ -358,7 +358,7 @@ static int sendMsg(SUM_t *sums, const char *msg, uint32_t msgLen, int (*history)
                         err = 1;
                         break;
                     }
-            
+
                     bytesSentTotal += bytesSent;
                 }
             }
@@ -373,7 +373,7 @@ static int sendMsg(SUM_t *sums, const char *msg, uint32_t msgLen, int (*history)
     {
         (*history)("Invalid arguments to sendMsg().\n");
     }
-    
+
     return err;
 }
 
@@ -394,13 +394,13 @@ static int receiveMsg(SUM_t *sums, char **out, size_t *outLen, int (*history)(co
     fd_set readfds;
     int nReady;
     int err = 0;
-    
+
     if (!out)
     {
         err = 1;
         (*history)("'out' must not be NULL in receiveMsg().\n");
     }
-    
+
     if (!err)
     {
         if (!sums || sums->mSumsClient == -1)
@@ -413,39 +413,39 @@ static int receiveMsg(SUM_t *sums, char **out, size_t *outLen, int (*history)(co
     if (!err)
     {
         sockfd = (int)sums->mSumsClient;
-            
+
         /* First, receive length of message. */
         bytesReceivedTotal = 0;
-        
+
         /* The double guard ensures that MSGLEN_NUMBYTES <= MAX_MSG_BUFSIZE. The header is accumulated directly
          * in recvBuffer. */
         *recvBuffer = '\0';
-        
+
         FD_ZERO(&readfds);
         FD_SET(sockfd, &readfds);
-        
+
         while (bytesReceivedTotal < MSGLEN_NUMBYTES && bytesReceivedTotal < MAX_MSG_BUFSIZE)
         {
             tv.tv_sec = 10; /* timeout in 10 seconds. */
             tv.tv_usec = 0;
             nReady = select(sockfd + 1, &readfds, NULL, NULL, &tv);
-            
+
             if (nReady == 0)
             {
                 (*history)("Timeout receiving message-length data from sumsd.py.\n");
                 err = 2;
                 break;
             }
-            
+
             sizeTextRecvd = recv(sockfd, recvBuffer + bytesReceivedTotal, MIN(MSGLEN_NUMBYTES - bytesReceivedTotal, MAX_MSG_BUFSIZE - bytesReceivedTotal), 0);
-        
+
             if (sizeTextRecvd <= 0)
             {
                 (*history)("Socket to sumsd.py broken.\n");
                 err = 1;
                 break;
             }
-        
+
             bytesReceivedTotal += sizeTextRecvd;
         }
     }
@@ -456,9 +456,9 @@ static int receiveMsg(SUM_t *sums, char **out, size_t *outLen, int (*history)(co
         *numBytesMessage = '\0';
         snprintf(numBytesMessage, sizeof(numBytesMessage), "%s", recvBuffer);
         sscanf(numBytesMessage, "%08x", &sizeMessage);
-        
+
         allTextReceived = calloc(1, sizeMessage + 1);
-        
+
         if (!allTextReceived)
         {
             (*history)("Out of memory in receiveMsg().\n");
@@ -468,14 +468,14 @@ static int receiveMsg(SUM_t *sums, char **out, size_t *outLen, int (*history)(co
         {
             /* Receive the message. */
             bytesReceivedTotal = 0;
-        
+
             *recvBuffer = '\0';
             while (bytesReceivedTotal < sizeMessage)
             {
                 tv.tv_sec = 10; /* timeout in 10 seconds. */
                 tv.tv_usec = 0;
                 nReady = select(sockfd + 1, &readfds, NULL, NULL, &tv);
-                
+
                 if (nReady == 0)
                 {
                     (*history)("Timeout receiving message data from sumsd.py.\n");
@@ -484,7 +484,7 @@ static int receiveMsg(SUM_t *sums, char **out, size_t *outLen, int (*history)(co
                 }
 
                 sizeTextRecvd = recv(sockfd, recvBuffer, MIN(sizeMessage - bytesReceivedTotal, MAX_MSG_BUFSIZE), 0);
-        
+
                 if (sizeTextRecvd <= 0)
                 {
                     (*history)("Socket to sumsd.py broken.\n");
@@ -492,15 +492,15 @@ static int receiveMsg(SUM_t *sums, char **out, size_t *outLen, int (*history)(co
                     break;
                 }
 
-                /* Can't use string functions, like strncat(), since these functions 
-                 * assume the input is a null-terminated string. The input will be 
+                /* Can't use string functions, like strncat(), since these functions
+                 * assume the input is a null-terminated string. The input will be
                  * truncated at the first null character.*/
                 memcpy(allTextReceived + bytesReceivedTotal, recvBuffer, sizeTextRecvd);
                 bytesReceivedTotal += sizeTextRecvd;
             }
         }
     }
-    
+
     if (err)
     {
         if (allTextReceived)
@@ -514,7 +514,7 @@ static int receiveMsg(SUM_t *sums, char **out, size_t *outLen, int (*history)(co
         *out = allTextReceived;
         *outLen = bytesReceivedTotal;
     }
-    
+
     return err;
 }
 
@@ -522,18 +522,18 @@ static int receiveMsg(SUM_t *sums, char **out, size_t *outLen, int (*history)(co
  *
  * Send:
  * {
- *    "pid": 12345, 
+ *    "pid": 12345,
  *    "user": arta
  * }
  */
 static int jsonizeClientInfo(SUM_t *sums, pid_t pid, const char *username, char **json, int (*history)(const char *fmt, ...))
 {
     int err = 1;
-    
+
     if (json)
     {
         cJSON *root = NULL;
-        
+
         root = cJSON_CreateObject();
         if (!root)
         {
@@ -544,18 +544,18 @@ static int jsonizeClientInfo(SUM_t *sums, pid_t pid, const char *username, char 
             /* The cJSON library doesn't provide a way to check if this worked. We'll know when we print out the json string. */
             cJSON_AddNumberToObject(root, "pid", (double)pid);
             cJSON_AddStringToObject(root, "user", username);
-        
+
             *json = cJSON_Print(root);
-            
+
             if (*json)
             {
                 err = 0;
             }
-            
+
             cJSON_Delete(root);
         }
     }
-    
+
     return err;
 }
 
@@ -567,7 +567,7 @@ static MSUMSCLIENT_t ConnectToMtSums(SUM_t *sums, int (*history)(const char *fmt
     struct addrinfo *result = NULL;
     char service[16];
     struct sockaddr_in server;
-    
+
     if (sums && sums->mSumsClient == -1)
     {
         memset(&hints, 0, sizeof(struct addrinfo));
@@ -577,7 +577,7 @@ static MSUMSCLIENT_t ConnectToMtSums(SUM_t *sums, int (*history)(const char *fmt
         hints.ai_protocol = 0; /* Another field to make this as complicated as possible. */
 
         snprintf(service, sizeof(service), "%d", SUMSD_LISTENPORT);
-        
+
         // We could override SUMSERVER with the same-named env var.
         if (getaddrinfo(SUMSERVER, service, &hints, &result) != 0)
         {
@@ -586,7 +586,7 @@ static MSUMSCLIENT_t ConnectToMtSums(SUM_t *sums, int (*history)(const char *fmt
         else
         {
             struct addrinfo *address = NULL;
-            
+
             for (address = result; address != NULL; address = address->ai_next)
             {
                 if ((sockfd = socket(address->ai_family, address->ai_socktype, address->ai_protocol)) == -1)
@@ -609,24 +609,24 @@ static MSUMSCLIENT_t ConnectToMtSums(SUM_t *sums, int (*history)(const char *fmt
                         break;
                     }
                 }
-            }            
+            }
         }
-        
+
         freeaddrinfo(result);
-        
+
         /* Every time we connect to MT SUMS, we send the server client information. */
         if (msums != -1)
         {
             pid_t pid;
             struct passwd *pwd = NULL;
             char *json = NULL;
-            
+
             /* Need to set mSumsClient for the sendMsg() call. */
             sums->mSumsClient = msums;
-            
+
             pid = getpid();
             pwd = getpwuid(geteuid());
-            
+
             if (jsonizeClientInfo(sums, pid, pwd->pw_name, &json, history))
             {
                 (*history)("Unable to collect client info.\n");
@@ -646,19 +646,19 @@ static MSUMSCLIENT_t ConnectToMtSums(SUM_t *sums, int (*history)(const char *fmt
                     sums->mSumsClient = -1;
                 }
             }
-            
+
             if (json)
             {
                 free(json);
                 json = NULL;
-            } 
+            }
         }
     }
     else
     {
         (*history)("Unable to connect to MT SUMS.\n");
     }
-        
+
     return sums->mSumsClient;
 }
 
@@ -674,8 +674,8 @@ static void DisconnectFromMtSums(SUM_t *sums)
 #endif
 
 /* This must be the first thing called by DRMS to open with the SUMS.
- * Any one client may open up to MAXSUMOPEN times (TBD check) 
- * (although it's most likely that a client only needs one open session 
+ * Any one client may open up to MAXSUMOPEN times (TBD check)
+ * (although it's most likely that a client only needs one open session
  * with SUMS, but it's built this way in case a use arises.).
  * Returns 0 on error else a pointer to a SUM structure.
  * **NEW 7Oct2005 the db arg has been depricated and has no effect. The db
@@ -686,27 +686,27 @@ static void DisconnectFromMtSums(SUM_t *sums)
  * DOES NOT USE IT. IF db IS NOT DEFINED, THEN THE ENVIRONMENT VARIABLE
  * "SUMDB" IS USED (AND THEN IGNORED BY sum_svc). IT USED TO BE THE CASE THAT THE INTERNAL
  * SUMDB MACRO WAS PASSED TO sum_svc (AND THEN IGNORED) IF db == NULL AND
- * THE "SUMDB" ENVIRONMENT VARIABLE WAS NOT DEFINED, BUT I CHANGED THAT TO PASS IN THE 
+ * THE "SUMDB" ENVIRONMENT VARIABLE WAS NOT DEFINED, BUT I CHANGED THAT TO PASS IN THE
  * OFFICIAL LOCALIZED DEFINE SUMS_DB_HOST (WHICH IS THEN IGNORED BY sum_svc).
- *   ART 
+ *   ART
  */
- 
-/* If numSUM is 1, then all DRMS-SUMS API functions are handled by a single RPC server: sum_svc. 
+
+/* If numSUM is 1, then all DRMS-SUMS API functions are handled by a single RPC server: sum_svc.
  * The handle for the RPC connection
- * to sum_svc is cl. The fields representing the API function calls in sumptr all point to this cl. 
+ * to sum_svc is cl. The fields representing the API function calls in sumptr all point to this cl.
  * If instead
- * numSUM > 1, then cl (sum_svc) handles a single API function - the delete-series function. 
- * cl is assigned to 
- * sumptr->cldelser. Then each API function is handled by one or more new RPC clients. 
+ * numSUM > 1, then cl (sum_svc) handles a single API function - the delete-series function.
+ * cl is assigned to
+ * sumptr->cldelser. Then each API function is handled by one or more new RPC clients.
  *
  * If the configuration parameter SUMS_USEMTSUMS is set to 1, then the SopenX servers are all disabled
  * (and they are not launched by sum_start). Instead, a single server daemon is launched to handle
- * the Sum_info() calls - sumsd.py. 
+ * the Sum_info() calls - sumsd.py.
  */
- 
+
  // db, the database HOST, is not USED. The SUMS server does not read this argument. It uses SUMS_DB_HOST
  // in SUMLIB_PgConnect.c.
- 
+
  /* RPC and MT SUMS server SUM_open() */
 SUM_t *sumsopenOpen(const char *server, const char *db, int (*history)(const char *fmt, ...))
 {
@@ -758,19 +758,19 @@ SUM_t *sumsopenOpen(const char *server, const char *db, int (*history)(const cha
     (*history)("Going to retry in 1 sec\n");
     sleep(1);
     cl = clnt_create(server_name, SUMPROG, SUMVERS, "tcp");
-    if(!cl) { 
+    if(!cl) {
       clnt_pcreateerror("Can't get client handle to sum_svc");
       (*history)("sum_svc timeout or not there on %s\n", server_name);
       return(NULL);
     }
   }
   clprev = cl;
-    
+
   if(!(username = (char *)getenv("USER"))) username = "nouser";
   klist = newkeylist();
   setkey_str(&klist, "db_name", db);
   setkey_str(&klist, "USER", username);
-  status = clnt_call(cl, CONFIGDO, (xdrproc_t)xdr_Rkey, (char *)klist, 
+  status = clnt_call(cl, CONFIGDO, (xdrproc_t)xdr_Rkey, (char *)klist,
 			(xdrproc_t)xdr_uint32_t, (char *)&configback, TIMEOUT);
   configback = (SUMID_t)configback;
 
@@ -784,22 +784,24 @@ SUM_t *sumsopenOpen(const char *server, const char *db, int (*history)(const cha
   }
   freekeylist(&klist);
   numSUM = (int)configback;
-  if(numSUM == 0) {
-    (*history)("numSUM = 0 on call to CONFIGDO in SUM_open(). Can't config\n");
-    (*history)("(sum_svc may have been manually shutdown. No new open allowed)\n");
-    return(0);
-  }
-#else // sum_svc SUM_open() was called (branch above)
-    numSUM = SUM_NUMSUM;
-    clprev = NULL;
-#endif
-  
-    if(numSUM > SUM_MAXNUMSUM) 
+
+    if(numSUM == 0)
+    {
+        (*history)("numSUM = 0 on call to CONFIGDO in SUM_open(). Can't config\n");
+        (*history)("(sum_svc may have been manually shutdown. No new open allowed)\n");
+        return(0);
+    }
+
+    if(numSUM > SUM_MAXNUMSUM)
     {
         (*history)("**ERROR: #of sum_svc > SUM_MAXNUMSUM (%d)\n", SUM_MAXNUMSUM);
         (*history)("This is a fatal sum_svc configuration error\n");
         return(0);
     }
+#else // sum_svc SUM_open() was called (branch above)
+    numSUM = SUM_NUMSUM;
+    clprev = NULL;
+#endif
 
 #if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || (!defined(SUMS_USEMTSUMS_CONNECTION) || !SUMS_USEMTSUMS_CONNECTION)
 for(i=0; i < numSUM; i++) {
@@ -815,7 +817,7 @@ for(i=0; i < numSUM; i++) {
       (*history)("Going to retry in 1 sec\n");
       sleep(1);
       clopen = clnt_create(server_name, SUMOPEN, SUMOPENV, "tcp");
-      if(!clopen) { 
+      if(!clopen) {
         clnt_pcreateerror("Can't get client handle for OPEN to sum_svc");
         (*history)("sum_svc OPEN1 timeout or not there on %s\n", server_name);
         return(NULL);
@@ -828,7 +830,7 @@ for(i=0; i < numSUM; i++) {
       (*history)("Going to retry in 1 sec\n");
       sleep(1);
       clopen1 = clnt_create(server_name, SUMOPEN1, SUMOPENV, "tcp");
-      if(!clopen1) { 
+      if(!clopen1) {
         clnt_pcreateerror("Can't get client handle for OPEN1 to sum_svc");
         (*history)("sum_svc OPEN1 timeout or not there on %s\n", server_name);
         return(NULL);
@@ -843,7 +845,7 @@ for(i=0; i < numSUM; i++) {
       (*history)("Going to retry in 1 sec\n");
       sleep(1);
       clopen2 = clnt_create(server_name, SUMOPEN2, SUMOPENV, "tcp");
-      if(!clopen2) { 
+      if(!clopen2) {
         clnt_pcreateerror("Can't get client handle for OPEN2 to sum_svc");
         (*history)("sum_svc OPEN2 timeout or not there on %s\n", server_name);
         return(NULL);
@@ -858,7 +860,7 @@ for(i=0; i < numSUM; i++) {
       (*history)("Going to retry in 1 sec\n");
       sleep(1);
       clopen3 = clnt_create(server_name, SUMOPEN3, SUMOPENV, "tcp");
-      if(!clopen3) { 
+      if(!clopen3) {
         clnt_pcreateerror("Can't get client handle for OPEN3 to sum_svc");
         (*history)("sum_svc OPEN3 timeout or not there on %s\n", server_name);
         return(NULL);
@@ -873,7 +875,7 @@ for(i=0; i < numSUM; i++) {
       (*history)("Going to retry in 1 sec\n");
       sleep(1);
       clopen4 = clnt_create(server_name, SUMOPEN4, SUMOPENV, "tcp");
-      if(!clopen4) { 
+      if(!clopen4) {
         clnt_pcreateerror("Can't get client handle for OPEN4 to sum_svc");
         (*history)("sum_svc OPEN4 timeout or not there on %s\n", server_name);
         return(NULL);
@@ -888,7 +890,7 @@ for(i=0; i < numSUM; i++) {
       (*history)("Going to retry in 1 sec\n");
       sleep(1);
       clopen5 = clnt_create(server_name, SUMOPEN5, SUMOPENV, "tcp");
-      if(!clopen5) { 
+      if(!clopen5) {
         clnt_pcreateerror("Can't get client handle for OPEN5 to sum_svc");
         (*history)("sum_svc OPEN5 timeout or not there on %s\n", server_name);
         return(NULL);
@@ -903,7 +905,7 @@ for(i=0; i < numSUM; i++) {
       (*history)("Going to retry in 1 sec\n");
       sleep(1);
       clopen6 = clnt_create(server_name, SUMOPEN6, SUMOPENV, "tcp");
-      if(!clopen6) { 
+      if(!clopen6) {
         clnt_pcreateerror("Can't get client handle for OPEN6 to sum_svc");
         (*history)("sum_svc OPEN6 timeout or not there on %s\n", server_name);
         return(NULL);
@@ -918,7 +920,7 @@ for(i=0; i < numSUM; i++) {
       (*history)("Going to retry in 1 sec\n");
       sleep(1);
       clopen7 = clnt_create(server_name, SUMOPEN7, SUMOPENV, "tcp");
-      if(!clopen7) { 
+      if(!clopen7) {
         clnt_pcreateerror("Can't get client handle for OPEN7 to sum_svc");
         (*history)("sum_svc OPEN7 timeout or not there on %s\n", server_name);
         return(NULL);
@@ -938,15 +940,15 @@ for(i=0; i < numSUM; i++) {
             db = dbInternal;
         }
     }
-    
+
 #if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || (!defined(SUMS_USEMTSUMS_CONNECTION) || !SUMS_USEMTSUMS_CONNECTION)
     klist = newkeylist();
     setkey_str(&klist, "db_name", db);
     setkey_str(&klist, "USER", username);
     /* get a unique id from sum_svc for this open */
     rr = rr_random(0, numSUM-1);
-    
-    switch(rr) 
+
+    switch(rr)
     {
         case 0:
             clopx = clopen;
@@ -973,19 +975,19 @@ for(i=0; i < numSUM; i++) {
             clopx = clopen7;
             break;
     }
-    
+
     // This makes the SUM_close() client the same as the SUM_open() client.
     // It sets clprev to this client as well.
-    if((sumid = sumrpcopen_1(klist, clopx, history)) == 0) 
+    if((sumid = sumrpcopen_1(klist, clopx, history)) == 0)
     {
         (*history)("Failed to get SUMID from sum_svc\n");
         clnt_destroy(cl);
         freekeylist(&klist);
         return(NULL);
     }
-    
+
     sumptr = (SUM_t *)calloc(1, sizeof(SUM_t)); //NULL filled
-    
+
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
     sumptr->mSumsClient = msums;
 #endif
@@ -993,9 +995,9 @@ for(i=0; i < numSUM; i++) {
     // MT SUMS SUM_open() - returns sumid.
     SUM_t *sums = NULL;
     int err;
-    
+
     err = ((sums = (SUM_t *)calloc(1, sizeof(SUM_t))) == NULL); //NULL filled
-    
+
     if (err)
     {
         (*history)("Cannot alloc SUM_t - out of memory.\n");
@@ -1006,19 +1008,19 @@ for(i=0; i < numSUM; i++) {
 
         err = callMTSums(sums, kMTSums_CallType_Open, NULL, history);
     }
-    
+
     if (err)
     {
         (*history)("Cannot connect to MT SUMS.\n");
         return NULL;
     }
-    
+
     /* sums->uid now contains sumsid. */
     sumid = sums->uid;
     sumptr = sums;
     clprev = NULL;
 #endif
-    
+
     numopened++;
 
     /* Save the OPEN client used to open this SUMS connection. It must be used to closed the SUMS connection.
@@ -1028,7 +1030,7 @@ for(i=0; i < numSUM; i++) {
     sumptr->clclose = clopx;
 #endif
     sumptr->sinfo = NULL;
-  
+
 #if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || (!defined(SUMS_USEMTSUMS_CONNECTION) || !SUMS_USEMTSUMS_CONNECTION)
     sumptr->cl = cl; // This is the client that is connected to sum_svc.
 #endif
@@ -1098,7 +1100,7 @@ for(j=0; j < numSUM; j++) {
       (*history)("sum_svc error on handle to SUMGET on %s\n", server_name);
       sleep(1);
       clget = clnt_create(server_name, SUMGET, SUMGETV, "tcp");
-      if(!clget) { 
+      if(!clget) {
         clnt_pcreateerror("Can't get client handle to sum_svc SUMGET");
         (*history)("sum_svc error on handle to SUMGET on %s\n", server_name);
         return(NULL);
@@ -1111,7 +1113,7 @@ for(j=0; j < numSUM; j++) {
       (*history)("sum_svc error on handle to SUMGET1 on %s\n", server_name);
       sleep(1);
       clget = clnt_create(server_name, SUMGET1, SUMGETV, "tcp");
-      if(!clget) { 
+      if(!clget) {
         clnt_pcreateerror("Can't get client handle to sum_svc SUMGET1");
         (*history)("sum_svc error on handle to SUMGET1 on %s\n", server_name);
         return(NULL);
@@ -1126,7 +1128,7 @@ for(j=0; j < numSUM; j++) {
       (*history)("sum_svc error on handle to SUMPUT on %s\n", server_name);
       sleep(1);
       clput = clnt_create(server_name, SUMPUT, SUMPUTV, "tcp");
-      if(!clput) { 
+      if(!clput) {
         clnt_pcreateerror("Can't get client handle to sum_svc SUMPUT");
         (*history)("sum_svc error on handle to SUMPUT on %s\n", server_name);
         return(NULL);
@@ -1139,7 +1141,7 @@ for(j=0; j < numSUM; j++) {
       (*history)("sum_svc error on handle to SUMPUT1 on %s\n", server_name);
       sleep(1);
       clput = clnt_create(server_name, SUMPUT1, SUMPUTV, "tcp");
-      if(!clput) { 
+      if(!clput) {
         clnt_pcreateerror("Can't get client handle to sum_svc SUMPUT1");
         (*history)("sum_svc error on handle to SUMPUT1 on %s\n", server_name);
         return(NULL);
@@ -1154,7 +1156,7 @@ for(j=0; j < numSUM; j++) {
       (*history)("sum_svc error on handle to SUMINFO on %s\n", server_name);
       sleep(1);
       clinfo = clnt_create(server_name, SUMINFO, SUMINFOV, "tcp");
-      if(!clinfo) { 
+      if(!clinfo) {
         clnt_pcreateerror("Can't get client handle to sum_svc SUMINFO");
         (*history)("sum_svc error on handle to SUMINFO on %s\n", server_name);
         return(NULL);
@@ -1168,7 +1170,7 @@ for(j=0; j < numSUM; j++) {
       (*history)("sum_svc error on handle to SUMINFO1 on %s\n", server_name);
       sleep(1);
       clinfo = clnt_create(server_name, SUMINFO1, SUMINFOV, "tcp");
-      if(!clinfo) { 
+      if(!clinfo) {
         clnt_pcreateerror("Can't get client handle to sum_svc SUMINFO1");
         (*history)("sum_svc error on handle to SUMINFO1 on %s\n", server_name);
         return(NULL);
@@ -1207,7 +1209,7 @@ for(j=0; j < numSUM; j++) {
       (*history)("sum_svc error on handle to SUMGET2 on %s\n", server_name);
       sleep(1);
       clget = clnt_create(server_name, SUMGET2, SUMGETV, "tcp");
-      if(!clget) { 
+      if(!clget) {
         clnt_pcreateerror("Can't get client handle to sum_svc SUMGET2");
         (*history)("sum_svc error on handle to SUMGET2 on %s\n", server_name);
         return(NULL);
@@ -1222,7 +1224,7 @@ for(j=0; j < numSUM; j++) {
       (*history)("sum_svc error on handle to SUMPUT2 on %s\n", server_name);
       sleep(1);
       clput = clnt_create(server_name, SUMPUT2, SUMPUTV, "tcp");
-      if(!clput) { 
+      if(!clput) {
         clnt_pcreateerror("Can't get client handle to sum_svc SUMPUT2");
         (*history)("sum_svc error on handle to SUMPUT2 on %s\n", server_name);
         return(NULL);
@@ -1237,7 +1239,7 @@ for(j=0; j < numSUM; j++) {
       (*history)("sum_svc error on handle to SUMINFO2 on %s\n", server_name);
       sleep(1);
       clinfo = clnt_create(server_name, SUMINFO2, SUMINFOV, "tcp");
-      if(!clinfo) { 
+      if(!clinfo) {
         clnt_pcreateerror("Can't get client handle to sum_svc SUMINFO2");
         (*history)("sum_svc error on handle to SUMINFO2 on %s\n", server_name);
         return(NULL);
@@ -1275,7 +1277,7 @@ for(j=0; j < numSUM; j++) {
       (*history)("sum_svc error on handle to SUMGET3 on %s\n", server_name);
       sleep(1);
       clget = clnt_create(server_name, SUMGET3, SUMGETV, "tcp");
-      if(!clget) { 
+      if(!clget) {
         clnt_pcreateerror("Can't get client handle to sum_svc SUMGET3");
         (*history)("sum_svc error on handle to SUMGET3 on %s\n", server_name);
         return(NULL);
@@ -1290,7 +1292,7 @@ for(j=0; j < numSUM; j++) {
       (*history)("sum_svc error on handle to SUMPUT3 on %s\n", server_name);
       sleep(1);
       clput = clnt_create(server_name, SUMPUT3, SUMPUTV, "tcp");
-      if(!clput) { 
+      if(!clput) {
         clnt_pcreateerror("Can't get client handle to sum_svc SUMPUT3");
         (*history)("sum_svc error on handle to SUMPUT3 on %s\n", server_name);
         return(NULL);
@@ -1305,7 +1307,7 @@ for(j=0; j < numSUM; j++) {
       (*history)("sum_svc error on handle to SUMINFO3 on %s\n", server_name);
       sleep(1);
       clinfo = clnt_create(server_name, SUMINFO3, SUMINFOV, "tcp");
-      if(!clinfo) { 
+      if(!clinfo) {
         clnt_pcreateerror("Can't get client handle to sum_svc SUMINFO3");
         (*history)("sum_svc error on handle to SUMINFO3 on %s\n", server_name);
         return(NULL);
@@ -1343,7 +1345,7 @@ for(j=0; j < numSUM; j++) {
       (*history)("sum_svc error on handle to SUMGET4 on %s\n", server_name);
       sleep(1);
       clget = clnt_create(server_name, SUMGET4, SUMGETV, "tcp");
-      if(!clget) { 
+      if(!clget) {
         clnt_pcreateerror("Can't get client handle to sum_svc SUMGET4");
         (*history)("sum_svc error on handle to SUMGET4 on %s\n", server_name);
         return(NULL);
@@ -1358,7 +1360,7 @@ for(j=0; j < numSUM; j++) {
       (*history)("sum_svc error on handle to SUMPUT4 on %s\n", server_name);
       sleep(1);
       clput = clnt_create(server_name, SUMPUT4, SUMPUTV, "tcp");
-      if(!clput) { 
+      if(!clput) {
         clnt_pcreateerror("Can't get client handle to sum_svc SUMPUT4");
         (*history)("sum_svc error on handle to SUMPUT4 on %s\n", server_name);
         return(NULL);
@@ -1373,7 +1375,7 @@ for(j=0; j < numSUM; j++) {
       (*history)("sum_svc error on handle to SUMINFO4 on %s\n", server_name);
       sleep(1);
       clinfo = clnt_create(server_name, SUMINFO4, SUMINFOV, "tcp");
-      if(!clinfo) { 
+      if(!clinfo) {
         clnt_pcreateerror("Can't get client handle to sum_svc SUMINFO4");
         (*history)("sum_svc error on handle to SUMINFO4 on %s\n", server_name);
         return(NULL);
@@ -1411,7 +1413,7 @@ for(j=0; j < numSUM; j++) {
       (*history)("sum_svc error on handle to SUMGET5 on %s\n", server_name);
       sleep(1);
       clget = clnt_create(server_name, SUMGET5, SUMGETV, "tcp");
-      if(!clget) { 
+      if(!clget) {
         clnt_pcreateerror("Can't get client handle to sum_svc SUMGET5");
         (*history)("sum_svc error on handle to SUMGET5 on %s\n", server_name);
         return(NULL);
@@ -1426,7 +1428,7 @@ for(j=0; j < numSUM; j++) {
       (*history)("sum_svc error on handle to SUMPUT5 on %s\n", server_name);
       sleep(1);
       clput = clnt_create(server_name, SUMPUT5, SUMPUTV, "tcp");
-      if(!clput) { 
+      if(!clput) {
         clnt_pcreateerror("Can't get client handle to sum_svc SUMPUT5");
         (*history)("sum_svc error on handle to SUMPUT5 on %s\n", server_name);
         return(NULL);
@@ -1441,7 +1443,7 @@ for(j=0; j < numSUM; j++) {
       (*history)("sum_svc error on handle to SUMINFO5 on %s\n", server_name);
       sleep(1);
       clinfo = clnt_create(server_name, SUMINFO5, SUMINFOV, "tcp");
-      if(!clinfo) { 
+      if(!clinfo) {
         clnt_pcreateerror("Can't get client handle to sum_svc SUMINFO5");
         (*history)("sum_svc error on handle to SUMINFO5 on %s\n", server_name);
         return(NULL);
@@ -1479,7 +1481,7 @@ for(j=0; j < numSUM; j++) {
       (*history)("sum_svc error on handle to SUMGET6 on %s\n", server_name);
       sleep(1);
       clget = clnt_create(server_name, SUMGET6, SUMGETV, "tcp");
-      if(!clget) { 
+      if(!clget) {
         clnt_pcreateerror("Can't get client handle to sum_svc SUMGET6");
         (*history)("sum_svc error on handle to SUMGET6 on %s\n", server_name);
         return(NULL);
@@ -1494,7 +1496,7 @@ for(j=0; j < numSUM; j++) {
       (*history)("sum_svc error on handle to SUMPUT6 on %s\n", server_name);
       sleep(1);
       clput = clnt_create(server_name, SUMPUT6, SUMPUTV, "tcp");
-      if(!clput) { 
+      if(!clput) {
         clnt_pcreateerror("Can't get client handle to sum_svc SUMPUT6");
         (*history)("sum_svc error on handle to SUMPUT6 on %s\n", server_name);
         return(NULL);
@@ -1509,7 +1511,7 @@ for(j=0; j < numSUM; j++) {
       (*history)("sum_svc error on handle to SUMINFO6 on %s\n", server_name);
       sleep(1);
       clinfo = clnt_create(server_name, SUMINFO6, SUMINFOV, "tcp");
-      if(!clinfo) { 
+      if(!clinfo) {
         clnt_pcreateerror("Can't get client handle to sum_svc SUMINFO6");
         (*history)("sum_svc error on handle to SUMINFO6 on %s\n", server_name);
         return(NULL);
@@ -1547,7 +1549,7 @@ for(j=0; j < numSUM; j++) {
       (*history)("sum_svc error on handle to SUMGET7 on %s\n", server_name);
       sleep(1);
       clget = clnt_create(server_name, SUMGET7, SUMGETV, "tcp");
-      if(!clget) { 
+      if(!clget) {
         clnt_pcreateerror("Can't get client handle to sum_svc SUMGET7");
         (*history)("sum_svc error on handle to SUMGET7 on %s\n", server_name);
         return(NULL);
@@ -1562,7 +1564,7 @@ for(j=0; j < numSUM; j++) {
       (*history)("sum_svc error on handle to SUMPUT7 on %s\n", server_name);
       sleep(1);
       clput = clnt_create(server_name, SUMPUT7, SUMPUTV, "tcp");
-      if(!clput) { 
+      if(!clput) {
         clnt_pcreateerror("Can't get client handle to sum_svc SUMPUT7");
         (*history)("sum_svc error on handle to SUMPUT7 on %s\n", server_name);
         return(NULL);
@@ -1577,7 +1579,7 @@ for(j=0; j < numSUM; j++) {
       (*history)("sum_svc error on handle to SUMINFO7 on %s\n", server_name);
       sleep(1);
       clinfo = clnt_create(server_name, SUMINFO7, SUMINFOV, "tcp");
-      if(!clinfo) { 
+      if(!clinfo) {
         clnt_pcreateerror("Can't get client handle to sum_svc SUMINFO7");
         (*history)("sum_svc error on handle to SUMINFO7 on %s\n", server_name);
         return(NULL);
@@ -1590,21 +1592,21 @@ for(j=0; j < numSUM; j++) {
 }
 
 #if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || (!defined(SUMS_USEMTSUMS_DELETESUS) || !SUMS_USEMTSUMS_DELETESUS)
-    if(numSUM == 1) 
+    if(numSUM == 1)
     {
         cldelser = cl; // Same as client for SUM_open() and SUM_close()
     }
-    else 
+    else
     {
         cldelser = clnt_create(server_name, SUMDELSER, SUMDELSERV, "tcp");
-        if(!cldelser) 
+        if(!cldelser)
         {
             clnt_pcreateerror("Can't get client handle to sum_svc SUMDELSER");
             (*history)("sum_svc error on handle to SUMDELSER on %s\n", server_name);
             sleep(1);
             cldelser = clnt_create(server_name, SUMDELSER, SUMDELSERV, "tcp");
-            if(!cldelser) 
-            { 
+            if(!cldelser)
+            {
               clnt_pcreateerror("Can't get client handle to sum_svc SUMDELSER");
               (*history)("sum_svc error on handle to SUMDELSER on %s\n", server_name);
               return(NULL);
@@ -1664,7 +1666,7 @@ int sumsopenClose(SUM_t *sums, MTSums_CallType_t callType, int (*history)(const 
 
 #if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || (!defined(SUMS_USEMTSUMS_CONNECTION) || !SUMS_USEMTSUMS_CONNECTION)
   klist = newkeylist();
-  setkey_uint64(&klist, "uid", sums->uid); 
+  setkey_uint64(&klist, "uid", sums->uid);
   setkey_int(&klist, "DEBUGFLG", sums->debugflg);
   setkey_int(&klist, "REQCODE", CLOSEDO);
   setkey_str(&klist, "USER", sums->username);
@@ -1677,7 +1679,7 @@ int sumsopenClose(SUM_t *sums, MTSums_CallType_t callType, int (*history)(const 
   bzero((char *)&res, sizeof(res));
   //Use the same process that we opened with
   clprev = sums->clclose;
-  status = clnt_call(sums->clclose, CLOSEDO, (xdrproc_t)xdr_Rkey, (char *)klist, 
+  status = clnt_call(sums->clclose, CLOSEDO, (xdrproc_t)xdr_Rkey, (char *)klist,
 			(xdrproc_t)xdr_void, &res, TIMEOUT);
 
 /* NOTE: These rtes seem to return after the reply has been received despite
@@ -1696,17 +1698,17 @@ int sumsopenClose(SUM_t *sums, MTSums_CallType_t callType, int (*history)(const 
 
   (void)pmap_unset(RESPPROG, sums->uid); /* unreg response server */
   remsumopened(&sumopened_hdr, sums->uid); /* rem from linked list */
-  
+
     /* RPC SUM_close() */
-#else 
+#else
     /* MT SUM_close() or SUM_rollback() */
     int err;
-    
+
     /* jsonize request */
     err = callMTSums(sums, callType, (JSONIZER_DATA_t *)NULL, history);
-    
+
     errflg = (err == 1);
-    
+
     if (gMTCallMap)
     {
         hcon_destroy(&gMTCallMap);
@@ -1776,7 +1778,7 @@ int sumsopenClose(SUM_t *sums, MTSums_CallType_t callType, int (*history)(const 
   if(sums->cldelser) clnt_destroy(sums->cldelser);
 #endif
   }
-  
+
 #if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || (!defined(SUMS_USEMTSUMS_ALL) || !SUMS_USEMTSUMS_ALL)
   for(i=0; i < MAXSUMOPEN; i++) {
     if(transpid[i] == sums->uid) {
@@ -1792,13 +1794,13 @@ int sumsopenClose(SUM_t *sums, MTSums_CallType_t callType, int (*history)(const 
         free(sums->dsix_ptr);
         sums->dsix_ptr = NULL;
     }
-    
+
     if (sums->wd)
     {
         free(sums->wd);
         sums->wd = NULL;
     }
-  
+
   if(sums->sinfo) free(sums->sinfo);
   free(sums);
   if (klist)
@@ -1840,11 +1842,11 @@ static int sumsopenNopRPC(SUM_t *sum, int (*history)(const char *fmt, ...))
     (*history)("SUM_nop() call: uid = %lu\n", sum->uid);
   }
   klist = newkeylist();
-  setkey_uint64(&klist, "uid", sum->uid); 
+  setkey_uint64(&klist, "uid", sum->uid);
   setkey_int(&klist, "DEBUGFLG", sum->debugflg);
   setkey_int(&klist, "REQCODE", CLOSEDO);
   setkey_str(&klist, "USER", sum->username);
-  status = clnt_call(clprev, NOPDO, (xdrproc_t)xdr_Rkey, (char *)klist, 
+  status = clnt_call(clprev, NOPDO, (xdrproc_t)xdr_Rkey, (char *)klist,
 			(xdrproc_t)xdr_void, (char *)&ans, NOPTIMEOUT);
   ans = (int)ans;
   if(ans == 5) { //tape_svc is gone
@@ -1871,20 +1873,20 @@ static int sumsopenNopRPC(SUM_t *sum, int (*history)(const char *fmt, ...))
  * Return 0 = msg complete, the sum has been updated
  * TIMEOUTMSG = msg still pending, try again later
  * ERRMESS = fatal error (!!TBD find out what you can do if this happens)
- * NOTE: Upon msg complete return, sum->status != 0 if error anywhere in the 
+ * NOTE: Upon msg complete return, sum->status != 0 if error anywhere in the
  * path of the request that initially returned the RESULT_PEND status.
 */
 
 /* We basically check to see if sum_svc has finished our request by polling to see
  * if it, in its RPC-client capacity, has sent results to OUR RPC-client request. So, sum_svc
  * sees our request, processes it, then makes an RPC request back to us (we act as a server
- * with the RESPPROG service) to give us results. 
+ * with the RESPPROG service) to give us results.
  *
  * As far as I (Art) can tell, this means that you can never make any other requests to sum_svc
  * while you are polling with SUM_poll() for a previous request. Otherwise, the result
  * RPC-client requests from sum_svc could get mixed up. In other words, SUM_poll() is completely
- * useless for DRMS because you can't do anything else, SUMS-wise, while you are waiting for 
- * your SUMS request to complete. 
+ * useless for DRMS because you can't do anything else, SUMS-wise, while you are waiting for
+ * your SUMS request to complete.
  */
 static int sumsopenPollRPC(SUM_t *sum)
 {
@@ -1912,10 +1914,10 @@ static int sumsopenPollRPC(SUM_t *sum)
 static int sumsopenNopMT(SUM_t *sums, int (*history)(const char *fmt, ...))
 {
     int err;
-    
+
     /* callMTSums rv: 0 - successful call (SUMS running), 1 - internal error, 2 - timeout */
     err = callMTSums(sums, kMTSums_CallType_Ping, NULL, history);
-    
+
     if (err == 0)
     {
         return 0;
@@ -1943,10 +1945,10 @@ static int sumsopenNopMT(SUM_t *sums, int (*history)(const char *fmt, ...))
 static int sumsopenPollMT(SUM_t *sums)
 {
     int err;
-    
+
     /* callMTSums rv: 0 - successful call (SUMS running), 1 - internal error, 2 - timeout */
     err = callMTSums(sums, kMTSums_CallType_Poll, NULL, printkerr);
-    
+
     if (err == 0)
     {
         /* SUMS call complete (tape read complete, if a tape read happened). */
@@ -1984,10 +1986,10 @@ SUMID_t sumrpcopen_1(KEY *argp, CLIENT *clnt, int (*history)(const char *fmt, ..
   enum clnt_stat status;
   SUMID_t suidback;
   SVCXPRT *xtp;
-                                                                        
+
   clprev = clnt;
   clclose = clnt;	//use the same process for the CLOSEDO
-  status = clnt_call(clnt, OPENDO, (xdrproc_t)xdr_Rkey, (char *)argp, 
+  status = clnt_call(clnt, OPENDO, (xdrproc_t)xdr_Rkey, (char *)argp,
 			(xdrproc_t)xdr_uint32_t, (char *)&suidback, TIMEOUT);
   suidback = (SUMID_t)suidback;
 
@@ -2009,8 +2011,8 @@ SUMID_t sumrpcopen_1(KEY *argp, CLIENT *clnt, int (*history)(const char *fmt, ..
       (*history)("cannot create tcp service in sumrpcopen_1() for responses\n");
       return(0);
     }
-    
-    /* I think we are actually setting up a karfin' SVC server here! It looks like we do this to receive result messages 
+
+    /* I think we are actually setting up a karfin' SVC server here! It looks like we do this to receive result messages
      * from the SUMS SVC servers (sum_svc, Sopen, ...). The SUMS SVC servers make client calls to this RESPPROG SVC server
      * to send results back to the DRMS program. The getanymsg() function reads all RPC requests from the SUMS SVC servers
      * (who make requests with clnt_call(..., RESPDOARRAY, ...) and clnt_call(..., RESPDO, ...). getanymsg() calls
@@ -2034,12 +2036,12 @@ static cJSON *unjsonizeResponseParse(const char *msg, int (*history)(const char 
     cJSON *response = NULL;
 
     response = cJSON_Parse(msg);
-    
+
     if (!response)
     {
         (*history)("The SUMINFO response is not valid JSON.");
     }
-    
+
     return response;
 }
 
@@ -2047,13 +2049,13 @@ static int unjsonizeResponseCheckStatus(cJSON *response, int (*history)(const ch
 {
     int err = 0;
     cJSON *value = NULL;
-    
+
     err = ((value = cJSON_GetObjectItem(response, "status")) == NULL);
     if (!err)
     {
         err = (value->type != cJSON_String);
     }
-        
+
     if (err)
     {
         (*history)("Invalid 'status' attribute.\n");
@@ -2064,7 +2066,7 @@ static int unjsonizeResponseCheckStatus(cJSON *response, int (*history)(const ch
         if (err)
         {
             (*history)("The SUMS service failed with status %s.\n", value->valuestring);
-            
+
             if ((value = cJSON_GetObjectItem(response, "errmsg")) != NULL)
             {
                 if (value->type == cJSON_String)
@@ -2074,7 +2076,7 @@ static int unjsonizeResponseCheckStatus(cJSON *response, int (*history)(const ch
             }
         }
     }
-    
+
     return err;
 }
 
@@ -2086,18 +2088,18 @@ static int unjsonizeResponseCheckIsAlive(cJSON *response, int (*history)(const c
 {
     int isAlive = 0;
     cJSON *value = NULL;
-    
+
     value = cJSON_GetObjectItem(response, IS_ALIVE);
-    
+
     if (value)
     {
         if (value->type == cJSON_True)
         {
             isAlive = 2;
         }
-        else if (value->type == cJSON_False) 
+        else if (value->type == cJSON_False)
         {
-            isAlive = 0;        
+            isAlive = 0;
         }
         else
         {
@@ -2105,7 +2107,7 @@ static int unjsonizeResponseCheckIsAlive(cJSON *response, int (*history)(const c
             isAlive = 1;
         }
     }
-    
+
     return isAlive;
 }
 
@@ -2115,14 +2117,14 @@ static int unjsonizeResponseCheckIsAlive(cJSON *response, int (*history)(const c
  *    "reqtype" : "open"
  * }
  */
- 
+
  /* Ignore server and db. */
 static int jsonizeSumopenRequest(char **json, int (*history)(const char *fmt, ...))
 {
     cJSON *root = NULL;
     cJSON *jsonValue = NULL;
     int err;
-    
+
     root = NULL;
     err = 0;
 
@@ -2131,43 +2133,43 @@ static int jsonizeSumopenRequest(char **json, int (*history)(const char *fmt, ..
         (*history)("Invalid argument(s) to 'jsonizeSumopenRequest'.\n");
         err = 1;
     }
-    
+
     if (!err)
     {
         err = ((root = cJSON_CreateObject()) == NULL);
-        
+
         if (err)
         {
             (*history)("Out of memory calling cJSON_CreateObject().\n");
         }
     }
-    
+
     if (!err)
-    {   
+    {
         /* The cJSON library doesn't provide a way to check if this worked. We'll know when we print out the json string. */
         err = ((jsonValue = cJSON_CreateString("open")) == NULL);
-        
+
         if (err)
         {
             (*history)("Out of memory calling cJSON_CreateString().\n");
         }
     }
-    
+
     if (!err)
     {
         cJSON_AddItemToObjectCS(root, "reqtype", jsonValue);
     }
-    
+
     if (!err)
-    {   
+    {
         *json = cJSON_Print(root);
     }
-    
+
     if (root)
     {
         cJSON_Delete(root);
     }
-    
+
     return err;
 }
 
@@ -2179,7 +2181,7 @@ static int jsonizeSumopenRequest(char **json, int (*history)(const char *fmt, ..
  * all number strings, whether they represent integer or floating point numbers, are
  * stored in a C double variable, which has 53 bits of precision, not the needed 64 bits.
  * To cope with this, we must pass 64-bit integers as strings from SUMS to DRMS via JSON.
- * The current SUMS-DRMS implementation uses hexadecimal strings to represent all 64-bit 
+ * The current SUMS-DRMS implementation uses hexadecimal strings to represent all 64-bit
  * integers.
  *
  * Now, the data type chosen for the sumsid was an unsigned 32-bit integer (unfortunately).
@@ -2189,7 +2191,7 @@ static int jsonizeSumopenRequest(char **json, int (*history)(const char *fmt, ..
  * client.
  *
  * ART - the data type of SUMID_t should be changed.
- 
+
 
 sumsid is a 32-bit number, so it is passed as a JSON number):
  * {
@@ -2205,19 +2207,19 @@ static int unjsonizeSumopenResponse(SUM_t *sums, const char *msg, int (*history)
     cJSON *jsonValue = NULL;
     SUMID_t sumsid;
     int err;
-    
+
     err = ((response = unjsonizeResponseParse(msg, history)) == NULL);
-    
+
     if (!err)
     {
         err = unjsonizeResponseCheckStatus(response, history);
     }
-    
+
     if (!err)
     {
         err = unjsonizeResponseCheckIsAlive(response, history);
     }
-    
+
     if (!err)
     {
         err = ((jsonValue = cJSON_GetObjectItem(response, "sessionid")) == NULL);
@@ -2239,23 +2241,23 @@ static int unjsonizeSumopenResponse(SUM_t *sums, const char *msg, int (*history)
     if (!err)
     {
         /* Convert a hex string to an unsigned 32-bit integer. Again, this is not 100% correct, but
-         * it is unlikely that the server will ever return anything but a string that 
+         * it is unlikely that the server will ever return anything but a string that
          * represents an unsigned 32-bit number. */
 
         /* %llx converts a unsigned hex string to an unsigned 64-bit integer */
         uint64_t uid;
 
         err = (sscanf(jsonValue->valuestring, "%llx", &uid) != 1);
-        
+
         /* uid may not be a 32-bit number */
         sums->uid = (uint32_t)uid;
     }
-  
+
     if (response)
     {
         cJSON_Delete(response);
     }
-    
+
     return err;
 }
 
@@ -2272,7 +2274,7 @@ static int jsonizeSumcloseRequest(SUM_t *sums, SUMID_t sessionid, char **json, i
     int err;
     char numBuf[64];
 
-    root = NULL;    
+    root = NULL;
     err = (json == NULL);
 
     if (err)
@@ -2287,55 +2289,55 @@ static int jsonizeSumcloseRequest(SUM_t *sums, SUMID_t sessionid, char **json, i
             (*history)("Out of memory calling cJSON_CreateObject().\n");
         }
     }
-    
+
     if (!err)
-    {   
+    {
         /* The cJSON library doesn't provide a way to check if this worked. We'll know when we print out the json string. */
         err = ((jsonValue = cJSON_CreateString("close")) == NULL);
-        
+
         if (err)
         {
             (*history)("Out of memory calling cJSON_CreateString().\n");
         }
     }
-        
+
     if (!err)
     {
         cJSON_AddItemToObjectCS(root, "reqtype", jsonValue);
     }
-    
+
     if (!err)
     {
-        /* since SUMS is a Python 3 script, its JSON parser supports 64-bit numbers; ultimately, 
-         * sessionid will be a 64-bit number (if the SUMID_t definition is fixed and made a 
+        /* since SUMS is a Python 3 script, its JSON parser supports 64-bit numbers; ultimately,
+         * sessionid will be a 64-bit number (if the SUMID_t definition is fixed and made a
          * 64-bit number); however, the cJSON_CreateNumber() does not support 64-bit integers, since
          * a 64-bit argument is cast to a double; so, we have to send the session ID as a string
          * (and we choose a hex string) */
-         
+
         snprintf(numBuf, sizeof(numBuf), "%llx", (uint64_t)sessionid);
         err = ((jsonValue = cJSON_CreateString(numBuf)) == NULL);
-        
+
         if (err)
         {
             (*history)("Out of memory calling cJSON_CreateNumber().\n");
         }
     }
-        
+
     if (!err)
     {
         cJSON_AddItemToObjectCS(root, "sessionid", jsonValue);
     }
-    
+
     if (!err)
-    {   
+    {
         *json = cJSON_Print(root);
     }
-    
+
     if (root)
     {
         cJSON_Delete(root);
     }
-    
+
     return err;
 }
 
@@ -2347,29 +2349,29 @@ static int jsonizeSumcloseRequest(SUM_t *sums, SUMID_t sessionid, char **json, i
 
 static int unjsonizeSumcloseResponse(SUM_t *sums, const char *msg, int (*history)(const char *fmt, ...))
 {
-    /* There really isn't anything to return, but we need to know if the server succeeded, so we should return a 
+    /* There really isn't anything to return, but we need to know if the server succeeded, so we should return a
      * status value. Unlike requests that read only, SUM_close() has to write to the db, so it could fail.
      */
     int err;
     cJSON *response = NULL;
-    
+
     err = ((response = unjsonizeResponseParse(msg, history)) == NULL);
 
     if (!err)
     {
         err = unjsonizeResponseCheckStatus(response, history);
     }
-    
+
     if (!err)
     {
         err = unjsonizeResponseCheckIsAlive(response, history);
     }
-    
+
     if (response)
     {
         cJSON_Delete(response);
     }
-    
+
     return err;
 }
 
@@ -2386,7 +2388,7 @@ static int jsonizeSumrollbackRequest(SUM_t *sums, SUMID_t sessionid, char **json
     int err;
     char numBuf[64];
 
-    root = NULL;    
+    root = NULL;
     err = (json == NULL);
 
     if (err)
@@ -2401,55 +2403,55 @@ static int jsonizeSumrollbackRequest(SUM_t *sums, SUMID_t sessionid, char **json
             (*history)("Out of memory calling cJSON_CreateObject().\n");
         }
     }
-    
+
     if (!err)
-    {   
+    {
         /* The cJSON library doesn't provide a way to check if this worked. We'll know when we print out the json string. */
         err = ((jsonValue = cJSON_CreateString("rollback")) == NULL);
-        
+
         if (err)
         {
             (*history)("Out of memory calling cJSON_CreateString().\n");
         }
     }
-        
+
     if (!err)
     {
         cJSON_AddItemToObjectCS(root, "reqtype", jsonValue);
     }
-    
+
     if (!err)
     {
-        /* since SUMS is a Python 3 script, its JSON parser supports 64-bit numbers; ultimately, 
-         * sessionid will be a 64-bit number (if the SUMID_t definition is fixed and made a 
+        /* since SUMS is a Python 3 script, its JSON parser supports 64-bit numbers; ultimately,
+         * sessionid will be a 64-bit number (if the SUMID_t definition is fixed and made a
          * 64-bit number); however, the cJSON_CreateNumber() does not support 64-bit integers, since
          * a 64-bit argument is cast to a double; so, we have to send the session ID as a string
          * (and we choose a hex string) */
-         
+
         snprintf(numBuf, sizeof(numBuf), "%llx", (uint64_t)sessionid);
         err = ((jsonValue = cJSON_CreateString(numBuf)) == NULL);
-        
+
         if (err)
         {
             (*history)("Out of memory calling cJSON_CreateNumber().\n");
         }
     }
-        
+
     if (!err)
     {
         cJSON_AddItemToObjectCS(root, "sessionid", jsonValue);
     }
-    
+
     if (!err)
-    {   
+    {
         *json = cJSON_Print(root);
     }
-    
+
     if (root)
     {
         cJSON_Delete(root);
     }
-    
+
     return err;
 }
 
@@ -2460,30 +2462,30 @@ static int jsonizeSumrollbackRequest(SUM_t *sums, SUMID_t sessionid, char **json
  */
 static int unjsonizeSumrollbackResponse(SUM_t *sums, const char *msg, int (*history)(const char *fmt, ...))
 {
-    /* There really isn't anything to return, but it would be good to know if the server succeeded, so we should return a 
-     * status value. 
+    /* There really isn't anything to return, but it would be good to know if the server succeeded, so we should return a
+     * status value.
      */
     int err;
     cJSON *response = NULL;
-    
+
     err = ((response = unjsonizeResponseParse(msg, history)) == NULL);
 
     if (!err)
     {
         err = unjsonizeResponseCheckStatus(response, history);
     }
-    
+
     if (!err)
     {
         err = unjsonizeResponseCheckIsAlive(response, history);
     }
-    
+
     if (response)
     {
         cJSON_Delete(response);
     }
-    
-    return err;     
+
+    return err;
 }
 #endif
 
@@ -2504,9 +2506,9 @@ static int jsonizeSuminfoRequest(SUM_t *sums, SUMID_t sessionid, uint64_t *sunum
     cJSON *jsonValue = NULL;
     cJSON *jsonArrayElement = NULL;
     int err;
-    
+
     err = (!sums || !sunums || nSus == 0 || !json);
-    
+
     if (err)
     {
         (*history)("Invalid argument(s) to 'jsonizeRequest'.\n");
@@ -2519,12 +2521,12 @@ static int jsonizeSuminfoRequest(SUM_t *sums, SUMID_t sessionid, uint64_t *sunum
     if (err)
     {
         (*history)("Out of memory calling cJSON_CreateObject().\n");
-    }    
+    }
     else
     {
         err = ((jsonValue = cJSON_CreateString("info")) == NULL);
     }
-    
+
     if (err)
     {
         (*history)("Out of memory calling cJSON_CreateString().\n");
@@ -2533,11 +2535,11 @@ static int jsonizeSuminfoRequest(SUM_t *sums, SUMID_t sessionid, uint64_t *sunum
     {
         /* The cJSON library doesn't provide a way to check if this worked. We'll know when we print out the json string. */
         cJSON_AddItemToObjectCS(root, "reqtype", jsonValue);
-        
+
         snprintf(numBuf, sizeof(numBuf), "%llx", (uint64_t)sessionid);
-        err = ((jsonValue = cJSON_CreateString(numBuf)) == NULL);        
+        err = ((jsonValue = cJSON_CreateString(numBuf)) == NULL);
     }
-    
+
     if (err)
     {
         (*history)("Out of memory calling cJSON_CreateNumber().\n");
@@ -2557,44 +2559,44 @@ static int jsonizeSuminfoRequest(SUM_t *sums, SUMID_t sessionid, uint64_t *sunum
         for (isu = 0; isu < nSus; isu++)
         {
             sunum = sunums[isu];
-        
-            /* PyList_SET_ITEM steals the reference to the Py object provided in its third 
-             * argument. To free the memory allocated in the Py environment for the 
+
+            /* PyList_SET_ITEM steals the reference to the Py object provided in its third
+             * argument. To free the memory allocated in the Py environment for the
              * list reference and all the references in the list, you simply have to
              * decrement the reference on the list (and not the items in the list). */
             snprintf(numBuf, sizeof(numBuf), "%llx", sunum); /* No padding, no minimum string length. */
-            
+
             err = ((jsonArrayElement = cJSON_CreateString(numBuf)) == NULL);
             if (err)
             {
                 (*history)("Out of memory calling cJSON_CreateString().\n");
                 break;
             }
-            
+
             cJSON_AddItemToArray(jsonValue, jsonArrayElement);
         }
     }
-    
+
     if (!err)
-    {   
+    {
         /* Add the SUNUM array to the root object. */
         cJSON_AddItemToObjectCS(root, "sus", jsonValue);
-        
+
         *json = cJSON_Print(root);
     }
-    
+
     if (root)
     {
         cJSON_Delete(root);
     }
-    
+
     return err;
 }
 
 /* The MT SUMS daemon returns JSON in this format:
  * {
  *    "status" : "ok",
- *    "suinfo" : 
+ *    "suinfo" :
  *     [
  *        {
  *          "sunum" : "2B13493A",
@@ -2655,14 +2657,14 @@ static int unjsonizeSuminfoResponse(SUM_t *sums, const char *msg, int (*history)
     int64_t numBytes;
     int nElems;
     int iElem;
-        
+
     err = ((response = unjsonizeResponseParse(msg, history)) == NULL);
-    
+
     if (!err)
     {
         err = unjsonizeResponseCheckStatus(response, history);
     }
-    
+
     if (!err)
     {
         err = unjsonizeResponseCheckIsAlive(response, history);
@@ -2681,7 +2683,7 @@ static int unjsonizeSuminfoResponse(SUM_t *sums, const char *msg, int (*history)
     {
         nElems = cJSON_GetArraySize(jsonArray);
         sums->sinfo = (SUM_info_t *)calloc(nElems, sizeof(SUM_info_t));
-        
+
         err = (sums->sinfo == NULL);
 
         if (err)
@@ -2694,12 +2696,12 @@ static int unjsonizeSuminfoResponse(SUM_t *sums, const char *msg, int (*history)
             {
                 elem = &(sums->sinfo[iElem]);
                 jsonArrayElement = cJSON_GetArrayItem(jsonArray, iElem);
-                
+
                 if (iElem < nElems - 1)
                 {
                     elem->next = sums->sinfo + iElem + 1;
                 }
-                
+
                 /* sunum */
                 err = (((jsonValue = cJSON_GetObjectItem(jsonArrayElement, "sunum")) == NULL) || jsonValue->type != cJSON_String);
 
@@ -2707,13 +2709,13 @@ static int unjsonizeSuminfoResponse(SUM_t *sums, const char *msg, int (*history)
                 {
                     (*history)("Unable to unjsonize sunum.\n");
                     break;
-                }                
+                }
                 else
                 {
                     /* Convert hexadecimal string to 64-bit number. */
                     err = (sscanf(jsonValue->valuestring, "%llx", &(elem->sunum)) != 1);
                 }
-                
+
                 if (err)
                 {
                     (*history)("Unable to parse sunum.\n");
@@ -2724,7 +2726,7 @@ static int unjsonizeSuminfoResponse(SUM_t *sums, const char *msg, int (*history)
                     /* online_loc */
                     err = (((jsonValue = cJSON_GetObjectItem(jsonArrayElement, "onlineLoc")) == NULL) ||jsonValue->type != cJSON_String);
                 }
-                
+
                 if (err)
                 {
                     (*history)("Unable to unjsonize onlineLoc.\n");
@@ -2737,7 +2739,7 @@ static int unjsonizeSuminfoResponse(SUM_t *sums, const char *msg, int (*history)
                     /* online_status */
                     err = (((jsonValue = cJSON_GetObjectItem(jsonArrayElement, "onlineStatus")) == NULL) || jsonValue->type != cJSON_String);
                 }
-                
+
                 if (err)
                 {
                     (*history)("Unable to unjsonize onlineStatus.\n");
@@ -2749,9 +2751,9 @@ static int unjsonizeSuminfoResponse(SUM_t *sums, const char *msg, int (*history)
 
                     /* archive_status */
                     err = (((jsonValue = cJSON_GetObjectItem(jsonArrayElement, "archiveStatus")) == NULL) || jsonValue->type != cJSON_String);
-                    
+
                 }
-                
+
                 if (err)
                 {
                     (*history)("Unable to unjsonize archiveStatus.\n");
@@ -2764,7 +2766,7 @@ static int unjsonizeSuminfoResponse(SUM_t *sums, const char *msg, int (*history)
                     /* offsite_ack */
                     err = (((jsonValue = cJSON_GetObjectItem(jsonArrayElement, "offsiteAck")) == NULL) || jsonValue->type != cJSON_String);
                 }
-                
+
                 if (err)
                 {
                     (*history)("Unable to unjsonize offsiteAck.\n");
@@ -2777,7 +2779,7 @@ static int unjsonizeSuminfoResponse(SUM_t *sums, const char *msg, int (*history)
                     /* history_comment */
                     err = (((jsonValue = cJSON_GetObjectItem(jsonArrayElement, "historyComment")) == NULL) || jsonValue->type != cJSON_String);
                 }
-                
+
                 if (err)
                 {
                     (*history)("Unable to unjsonize historyComment.\n");
@@ -2786,11 +2788,11 @@ static int unjsonizeSuminfoResponse(SUM_t *sums, const char *msg, int (*history)
                 else
                 {
                     snprintf(elem->history_comment, sizeof(elem->history_comment), "%s", jsonValue->valuestring);
-            
+
                     /* owning_series */
                     err = (((jsonValue = cJSON_GetObjectItem(jsonArrayElement, "owningSeries")) == NULL) || jsonValue->type != cJSON_String);
                 }
-                
+
                 if (err)
                 {
                     (*history)("Unable to unjsonize owningSeries.\n");
@@ -2812,9 +2814,9 @@ static int unjsonizeSuminfoResponse(SUM_t *sums, const char *msg, int (*history)
                 else
                 {
                     elem->storage_group = jsonValue->valueint;
-                    
+
                     /* bytes */
-                    /* bytes is a double in SUM_info_t, but it is a 64-bit integer in sum_main (and is reported as a 64-bit integer by sumsd.py). 
+                    /* bytes is a double in SUM_info_t, but it is a 64-bit integer in sum_main (and is reported as a 64-bit integer by sumsd.py).
                      * But because JSON-parsers do not typically support 64-bit integers, convert to hexadecimal string. */
                     err = (((jsonValue = cJSON_GetObjectItem(jsonArrayElement, "bytes")) == NULL) || jsonValue->type != cJSON_String);
                 }
@@ -2829,7 +2831,7 @@ static int unjsonizeSuminfoResponse(SUM_t *sums, const char *msg, int (*history)
                     /* Convert hexadecimal string to 64-bit number. */
                     err = (sscanf(jsonValue->valuestring, "%llx", &numBytes) != 1);
                 }
-                
+
                 if (err)
                 {
                     (*history)("Unable to parse bytes string.");
@@ -2839,13 +2841,13 @@ static int unjsonizeSuminfoResponse(SUM_t *sums, const char *msg, int (*history)
                 {
                     /* WARNING: a loss of precision can result here. */
                     elem->bytes = (double)numBytes;
-                    
+
                     /* Skip createSumid. Yay! This is another 64-bit integer in sum_main. */
 
-                    /* creatDate */                    
+                    /* creatDate */
                     err = (((jsonValue = cJSON_GetObjectItem(jsonArrayElement, "creatDate")) == NULL) || jsonValue->type != cJSON_String);
                 }
-                
+
                 if (err)
                 {
                     (*history)("Unable to unjsonize creatDate.\n");
@@ -2854,11 +2856,11 @@ static int unjsonizeSuminfoResponse(SUM_t *sums, const char *msg, int (*history)
                 else
                 {
                     snprintf(elem->creat_date, sizeof(elem->creat_date), "%s", jsonValue->valuestring);
-                
+
                     /* username */
                     err = (((jsonValue = cJSON_GetObjectItem(jsonArrayElement, "username")) == NULL) || jsonValue->type != cJSON_String);
                 }
-                
+
                 if (err)
                 {
                     (*history)("Unable to unjsonize username.\n");
@@ -2879,7 +2881,7 @@ static int unjsonizeSuminfoResponse(SUM_t *sums, const char *msg, int (*history)
                 }
                 else
                 {
-                    snprintf(elem->arch_tape, sizeof(elem->arch_tape), "%s", jsonValue->valuestring);            
+                    snprintf(elem->arch_tape, sizeof(elem->arch_tape), "%s", jsonValue->valuestring);
 
                     /* arch_tape_fn */
                     err = (((jsonValue = cJSON_GetObjectItem(jsonArrayElement, "archTapeFn")) == NULL) || jsonValue->type != cJSON_Number);
@@ -2970,7 +2972,7 @@ static int unjsonizeSuminfoResponse(SUM_t *sums, const char *msg, int (*history)
                 }
                 else
                 {
-                    elem->pa_status = jsonValue->valueint;           
+                    elem->pa_status = jsonValue->valueint;
 
                     /* pa_substatus */
                     err = (((jsonValue = cJSON_GetObjectItem(jsonArrayElement, "paSubstatus")) == NULL) || jsonValue->type != cJSON_Number);
@@ -2988,12 +2990,12 @@ static int unjsonizeSuminfoResponse(SUM_t *sums, const char *msg, int (*history)
             }
         }
     }
-    
+
     if (response)
     {
         cJSON_Delete(response);
     }
-    
+
     return err;
 }
 
@@ -3014,13 +3016,13 @@ static int unjsonizeSuminfoResponse(SUM_t *sums, const char *msg, int (*history)
  * system. This is true for ANY DRMS, which is not correct. The MT SUMS code should check the SUMS_TAPE_AVAILABLE DRMS parameter and
  * if it is set to 0, and the RETRIEVE mode flag is set, then an error should be returned. If SUMS_TAPE_AVAILABLE is set to 1, then
  * the MT SUMS code should print a test message saying that the SU is being retrieved (although it is not). The MT SUMS server will
- * spawn a thread that will eventually handle an asynchronous interaction with the tape system. For now, the thread will simply log 
- * "waiting for the tape system request to complete" several times. Then it will terminate. The client, which will call SUM_poll() in 
- * a loop, will get a response code to indicate that this tape thread has terminated, and it will get some dummy path for the 
+ * spawn a thread that will eventually handle an asynchronous interaction with the tape system. For now, the thread will simply log
+ * "waiting for the tape system request to complete" several times. Then it will terminate. The client, which will call SUM_poll() in
+ * a loop, will get a response code to indicate that this tape thread has terminated, and it will get some dummy path for the
  * previously offline SUs. For all online SUs in the SUM_get() request, the client will receive real SU paths.
  *
  * If the requested SUs are all online, then this call is synchronous (the response from the MT SUMS server contains the SU paths
- * for all the requested SUs), otherwise it is asynchronous (the caller must poll the MT SUMS server, providing it a request ID). In 
+ * for all the requested SUs), otherwise it is asynchronous (the caller must poll the MT SUMS server, providing it a request ID). In
  * the latter case, until the SUs are ALL online, the server returns the request ID and a code indicating the request is being processed.
  * When ALL SUs are online, the server returns a code indicating that the request is complete, and it returns the SU paths for
  * all requested SUs.
@@ -3035,9 +3037,9 @@ static int jsonizeSumgetRequest(SUM_t *sums, SUMID_t sessionid, int touch, int r
     cJSON *jsonArrayElement = NULL;
     cJSON *jsonValue = NULL;
     int err;
-    
+
     err = (!sums || !sunums || nSus == 0 || !json);
-    
+
     if (err)
     {
         (*history)("Invalid argument(s) to 'jsonizeRequest'.\n");
@@ -3046,7 +3048,7 @@ static int jsonizeSumgetRequest(SUM_t *sums, SUMID_t sessionid, int touch, int r
     {
         err = ((root = cJSON_CreateObject()) == NULL);
     }
-    
+
     if (err)
     {
         (*history)("Out of memory calling cJSON_CreateObject().\n");
@@ -3055,7 +3057,7 @@ static int jsonizeSumgetRequest(SUM_t *sums, SUMID_t sessionid, int touch, int r
     {
         err = ((jsonValue = cJSON_CreateString("get")) == NULL);
     }
-    
+
     if (err)
     {
         (*history)("Out of memory calling cJSON_CreateString().\n");
@@ -3064,11 +3066,11 @@ static int jsonizeSumgetRequest(SUM_t *sums, SUMID_t sessionid, int touch, int r
     {
         /* The cJSON library doesn't provide a way to check if this worked. We'll know when we print out the json string. */
         cJSON_AddItemToObjectCS(root, "reqtype", jsonValue);
-        
+
         snprintf(numBuf, sizeof(numBuf), "%llx", (uint64_t)sessionid);
         err = ((jsonValue = cJSON_CreateString(numBuf)) == NULL);
     }
-    
+
     if (err)
     {
         (*history)("Out of memory calling cJSON_CreateNumber().\n");
@@ -3076,10 +3078,10 @@ static int jsonizeSumgetRequest(SUM_t *sums, SUMID_t sessionid, int touch, int r
     else
     {
         cJSON_AddItemToObjectCS(root, "sessionid", jsonValue);
-        
+
         err = ((jsonValue = cJSON_CreateBool(touch)) == NULL);
     }
-    
+
     if (err)
     {
         (*history)("Out of memory calling cJSON_CreateBool().\n");
@@ -3088,7 +3090,7 @@ static int jsonizeSumgetRequest(SUM_t *sums, SUMID_t sessionid, int touch, int r
     {
         cJSON_AddItemToObjectCS(root, "touch", jsonValue);
     }
-    
+
     if (!err)
     {
         err = ((jsonValue = cJSON_CreateBool(retrieve)) == NULL);
@@ -3102,26 +3104,26 @@ static int jsonizeSumgetRequest(SUM_t *sums, SUMID_t sessionid, int touch, int r
     {
         cJSON_AddItemToObjectCS(root, "retrieve", jsonValue);
     }
-    
+
     if (!err)
     {
         err = ((jsonValue = cJSON_CreateNumber((double)retention)) == NULL);
     }
-    
+
     if (err)
     {
         (*history)("Out of memory calling cJSON_CreateNumber().\n");
     }
     else
-    {        
+    {
         cJSON_AddItemToObjectCS(root, "retention", jsonValue);
     }
-    
+
     if (!err)
     {
         err = ((jsonArray = cJSON_CreateArray()) == NULL);
     }
-    
+
     if (err)
     {
         (*history)("Out of memory calling cJSON_CreateArray().\n");
@@ -3131,13 +3133,13 @@ static int jsonizeSumgetRequest(SUM_t *sums, SUMID_t sessionid, int touch, int r
         for (isu = 0; isu < nSus; isu++)
         {
             sunum = sunums[isu];
-        
-            /* PyList_SET_ITEM steals the reference to the Py object provided in its third 
-             * argument. To free the memory allocated in the Py environment for the 
+
+            /* PyList_SET_ITEM steals the reference to the Py object provided in its third
+             * argument. To free the memory allocated in the Py environment for the
              * list reference and all the references in the list, you simply have to
              * decrement the reference on the list (and not the items in the list). */
             snprintf(numBuf, sizeof(numBuf), "%llx", sunum); /* No padding, no minimum string length. */
-            
+
             err = ((jsonArrayElement = cJSON_CreateString(numBuf)) == NULL);
             if (err)
             {
@@ -3150,27 +3152,27 @@ static int jsonizeSumgetRequest(SUM_t *sums, SUMID_t sessionid, int touch, int r
             }
         }
     }
-    
+
     if (!err)
-    {   
+    {
         /* Add the SUNUM array to the root object. */
         cJSON_AddItemToObjectCS(root, "sus", jsonArray);
-        
+
         *json = cJSON_Print(root);
     }
-    
+
     if (root)
     {
         cJSON_Delete(root);
     }
-    
+
     return err;
 }
 
 /* The MT SUMS daemon returns JSON in this format:
  * {
  *    "status" : "ok",
- *    "supaths" : 
+ *    "supaths" :
  *     [
  *        {
  *          "sunum" : "2B13493A",
@@ -3206,19 +3208,19 @@ static int unjsonizeSumgetResponse(SUM_t *sums, const char *msg, int (*history)(
     int64_t numBytes;
     int nElems;
     int iElem;
-        
+
     err = ((response = unjsonizeResponseParse(msg, history)) == NULL);
-    
+
     if (!err)
     {
         err = unjsonizeResponseCheckStatus(response, history);
     }
-    
+
     if (!err)
     {
         err = unjsonizeResponseCheckIsAlive(response, history);
     }
-    
+
     if (!err)
     {
         jsonValue = cJSON_GetObjectItem(response, "taperead-requestid");
@@ -3232,19 +3234,19 @@ static int unjsonizeSumgetResponse(SUM_t *sums, const char *msg, int (*history)(
             }
             else
             {
-                /* Store the request ID in sums->dsname (re-purpose this field). And the call type that triggered this 
+                /* Store the request ID in sums->dsname (re-purpose this field). And the call type that triggered this
                  * in sums->reqcnt. */
-                
+
                 /* If this field was used in previous calls to this function, free the allocated string now. */
                 if (sums->dsname)
                 {
                     free(sums->dsname);
                     sums->dsname = NULL;
                 }
-        
+
                 sums->dsname = strdup(jsonValue->valuestring);
                 sums->reqcnt = kMTSums_CallType_Get;
-                
+
                 /* RESULT_PEND means pending tape read. */
                 return RESULT_PEND;
             }
@@ -3269,32 +3271,32 @@ static int unjsonizeSumgetResponse(SUM_t *sums, const char *msg, int (*history)(
             (*history)("Invalid number of paths (%d) returned from server; expecting %d paths.\n", nElems, sums->reqcnt);
             err = 1;
         }
-        
+
         if (sums->wd)
         {
             /* this may have been allocated from a previous call */
             free(sums->wd);
             sums->wd = NULL;
         }
-        
+
         sums->wd = (char **)calloc(nElems, sizeof(char *));
-        
+
         err = (sums->wd == NULL);
 
         if (err)
         {
             (*history)("Out of memory calling calloc().\n");
         }
-        
+
         if (!err)
         {
             for (iElem = 0; iElem < nElems; iElem++)
             {
                 jsonArrayElement = cJSON_GetArrayItem(jsonArray, iElem);
-                
+
                 /* If an SU is offline, or the SU is invalid, then the path could be JSON null. */
-                
-                
+
+
                 /* We can ignore sunum. The order of array items matches the order of the sunums sent in the request. */
                 err = (((jsonValue = cJSON_GetObjectItem(jsonArrayElement, "path")) == NULL));
                 if (err)
@@ -3322,7 +3324,7 @@ static int unjsonizeSumgetResponse(SUM_t *sums, const char *msg, int (*history)(
             }
         }
     }
-    
+
     if (response)
     {
         cJSON_Delete(response);
@@ -3333,7 +3335,7 @@ static int unjsonizeSumgetResponse(SUM_t *sums, const char *msg, int (*history)(
 
 #endif
 
-#if defined(SUMS_USEMTSUMS_ALLOC) && SUMS_USEMTSUMS_ALLOC 
+#if defined(SUMS_USEMTSUMS_ALLOC) && SUMS_USEMTSUMS_ALLOC
  /* The request JSON looks like this (since JSON does not support 64-bit numbers, send sunum as hexadecimal strings):
  *   {
  *      "reqtype" : "alloc",
@@ -3342,16 +3344,16 @@ static int unjsonizeSumgetResponse(SUM_t *sums, const char *msg, int (*history)(
  *      "sugroup" : 22,
  *      "numbytes" : 1024
  *   }
- */ 
+ */
 static int jsonizeSumallocSumalloc2Request(SUM_t *sums, SUMID_t sessionid, uint64_t *sunum, int sugroup, double numBytes, char **json, int (*history)(const char *fmt, ...))
 {
     char numBuf[64];
     cJSON *root = NULL;
     cJSON *jsonValue = NULL;
     int err;
-    
+
     err = (!sums || !json);
-    
+
     if (err)
     {
         (*history)("Invalid argument(s) to 'jsonizeRequest'.\n");
@@ -3368,17 +3370,17 @@ static int jsonizeSumallocSumalloc2Request(SUM_t *sums, SUMID_t sessionid, uint6
     else
     {
         /* reqtype */
-        
+
         /* The cJSON library doesn't provide a way to check if this worked. We'll know when we print out the json string. */
         cJSON_AddItemToObjectCS(root, "reqtype", cJSON_CreateString("alloc"));
-        
+
         /* uid */
         if (!err)
         {
             snprintf(numBuf, sizeof(numBuf), "%llx", (uint64_t)sessionid);
             err = ((jsonValue = cJSON_CreateString(numBuf)) == NULL);
         }
-        
+
         if (err)
         {
             (*history)("Out of memory calling cJSON_CreateNumber().\n");
@@ -3387,7 +3389,7 @@ static int jsonizeSumallocSumalloc2Request(SUM_t *sums, SUMID_t sessionid, uint6
         {
             cJSON_AddItemToObjectCS(root, "sessionid", jsonValue);
         }
-        
+
         /* sunum */
         if (sunum)
         {
@@ -3415,7 +3417,7 @@ static int jsonizeSumallocSumalloc2Request(SUM_t *sums, SUMID_t sessionid, uint6
         {
             err = ((jsonValue = cJSON_CreateNumber((double)sugroup)) == NULL);
         }
-        
+
         if (err)
         {
             (*history)("Out of memory calling cJSON_CreateNumber().\n");
@@ -3424,13 +3426,13 @@ static int jsonizeSumallocSumalloc2Request(SUM_t *sums, SUMID_t sessionid, uint6
         {
             cJSON_AddItemToObjectCS(root, "sugroup", jsonValue);
         }
-        
+
         /* bytes */
         if (!err)
         {
             err = ((jsonValue = cJSON_CreateNumber(numBytes)) == NULL);
         }
-        
+
         if (err)
         {
             (*history)("Out of memory calling cJSON_CreateNumber().\n");
@@ -3438,19 +3440,19 @@ static int jsonizeSumallocSumalloc2Request(SUM_t *sums, SUMID_t sessionid, uint6
         else
         {
             cJSON_AddItemToObjectCS(root, "numbytes", jsonValue);
-        }        
+        }
     }
-    
+
     if (!err)
-    {        
+    {
         *json = cJSON_Print(root);
     }
-    
+
     if (root)
     {
         cJSON_Delete(root);
     }
-    
+
     return err;
 }
 
@@ -3468,9 +3470,9 @@ static int unjsonizeSumallocSumalloc2Response(SUM_t *sums, const char *msg, int 
     int err = 0;
     cJSON *response = NULL;
     cJSON *value = NULL;
-        
+
     err = ((response = unjsonizeResponseParse(msg, history)) == NULL);
-    
+
     if (!err)
     {
         err = unjsonizeResponseCheckStatus(response, history);
@@ -3505,9 +3507,9 @@ static int unjsonizeSumallocSumalloc2Response(SUM_t *sums, const char *msg, int 
             free(sums->dsix_ptr);
             sums->dsix_ptr = NULL;
         }
-    
+
         err = ((sums->dsix_ptr = calloc(1, sizeof(uint64_t))) == NULL);
-        
+
         if (err)
         {
             (*history)("out of memory");
@@ -3522,7 +3524,7 @@ static int unjsonizeSumallocSumalloc2Response(SUM_t *sums, const char *msg, int 
             }
         }
     }
-    
+
     if (!err)
     {
         err = ((value = cJSON_GetObjectItem(response, "sudir")) == NULL);
@@ -3534,7 +3536,7 @@ static int unjsonizeSumallocSumalloc2Response(SUM_t *sums, const char *msg, int 
 
     if (!err)
     {
-        err = (value->type != cJSON_String);    
+        err = (value->type != cJSON_String);
         if (err)
         {
             (*history)("Unexpected data type for sudir.");
@@ -3549,23 +3551,23 @@ static int unjsonizeSumallocSumalloc2Response(SUM_t *sums, const char *msg, int 
             free(sums->wd);
             sums->wd = NULL;
         }
-        
+
         err = ((sums->wd = (char **)calloc(1, sizeof(char *))) == NULL);
-        
+
         if (err)
         {
             (*history)("Out of memory.");
         }
         else
-        {    
+        {
             err = ((sums->wd[0] = strdup(value->valuestring)) == NULL);
             if (err)
             {
                 (*history)("Out of memory.");
             }
         }
-    }    
-    
+    }
+
     if (response)
     {
         cJSON_Delete(response);
@@ -3615,9 +3617,9 @@ static int jsonizeSumputRequest(SUM_t *sums, SUMID_t sessionid, uint64_t *sunums
     cJSON *jsonValue = NULL;
     int isu;
     int err;
-    
+
     err = (!sums || !sunums || !sudirs || nSus < 1 || !series || series[0] == '\0' || !json);
-    
+
     if (err)
     {
         (*history)("Invalid argument(s) to 'jsonizeRequest'.\n");
@@ -3635,7 +3637,7 @@ static int jsonizeSumputRequest(SUM_t *sums, SUMID_t sessionid, uint64_t *sunums
     {
         err = ((jsonValue = cJSON_CreateString("put")) == NULL);
     }
-    
+
     if (err)
     {
         (*history)("Out of memory calling cJSON_CreateString().\n");
@@ -3647,7 +3649,7 @@ static int jsonizeSumputRequest(SUM_t *sums, SUMID_t sessionid, uint64_t *sunums
         snprintf(numBuf, sizeof(numBuf), "%llx", (uint64_t)sessionid);
         err = ((jsonValue = cJSON_CreateString(numBuf)) == NULL);
     }
-        
+
     if (err)
     {
         (*history)("Out of memory calling cJSON_CreateNumber().\n");
@@ -3655,10 +3657,10 @@ static int jsonizeSumputRequest(SUM_t *sums, SUMID_t sessionid, uint64_t *sunums
     else
     {
         cJSON_AddItemToObjectCS(root, "sessionid", jsonValue);
-        
+
         err = ((jsonArray = cJSON_CreateArray()) == NULL);
     }
-    
+
     if (err)
     {
         (*history)("out of memory calling cJSON_CreateArray()\n");
@@ -3669,7 +3671,7 @@ static int jsonizeSumputRequest(SUM_t *sums, SUMID_t sessionid, uint64_t *sunums
         for (isu = 0; isu < nSus; isu++)
         {
             err = ((jsonArrayElement = cJSON_CreateObject()) == NULL);
-            
+
             if (err)
             {
                 (*history)("out of memory calling cJSON_CreateObject()\n");
@@ -3678,7 +3680,7 @@ static int jsonizeSumputRequest(SUM_t *sums, SUMID_t sessionid, uint64_t *sunums
             else
             {
                 char *sunumStr = NULL;
-                
+
                 snprintf(numBuf, sizeof(numBuf), "%llx", sunums[isu]);
                 err = ((sunumStr = strdup(numBuf)) == NULL);
 
@@ -3686,7 +3688,7 @@ static int jsonizeSumputRequest(SUM_t *sums, SUMID_t sessionid, uint64_t *sunums
                 {
                     (*history)("out of memory calling strdup()\n");
                     break;
-                }                
+                }
                 else
                 {
                     err = ((jsonValue = cJSON_CreateString(sudirs[isu])) == NULL);
@@ -3705,24 +3707,24 @@ static int jsonizeSumputRequest(SUM_t *sums, SUMID_t sessionid, uint64_t *sunums
                          */
                         cJSON_AddItemToObject(jsonArrayElement, sunumStr, jsonValue);
                     }
-             
+
                     cJSON_AddItemToArray(jsonArray, jsonArrayElement);
                 }
             }
         }
     }
-    
+
     if (!err)
     {
         cJSON_AddItemToObjectCS(root, "sudirs", jsonArray);
     }
-    
+
     /* series */
     if (!err)
     {
         err = ((jsonValue = cJSON_CreateString(series)) == NULL);
     }
-    
+
     if (err)
     {
         (*history)("Out of memory calling cJSON_CreateString().\n");
@@ -3731,13 +3733,13 @@ static int jsonizeSumputRequest(SUM_t *sums, SUMID_t sessionid, uint64_t *sunums
     {
         cJSON_AddItemToObjectCS(root, "series", jsonValue);
     }
-    
+
     /* touch */
     if (!err)
     {
         err = ((jsonValue = cJSON_CreateNumber(retention)) == NULL);
     }
-    
+
     if (err)
     {
         (*history)("Out of memory calling cJSON_CreateNumber().\n");
@@ -3746,12 +3748,12 @@ static int jsonizeSumputRequest(SUM_t *sums, SUMID_t sessionid, uint64_t *sunums
     {
         cJSON_AddItemToObjectCS(root, "retention", jsonValue);
     }
-    
+
     if (!err)
     {
         err = ((jsonValue = cJSON_CreateString(archiveType)) == NULL);
     }
-    
+
     if (err)
     {
         (*history)("Out of memory calling cJSON_CreateString().\n");
@@ -3760,17 +3762,17 @@ static int jsonizeSumputRequest(SUM_t *sums, SUMID_t sessionid, uint64_t *sunums
     {
         cJSON_AddItemToObjectCS(root, "archivetype", jsonValue);
     }
-    
+
     if (!err)
-    {        
+    {
         *json = cJSON_Print(root);
     }
-    
+
     if (root)
     {
         cJSON_Delete(root);
     }
-    
+
     return err;
 }
 
@@ -3785,22 +3787,22 @@ static int unjsonizeSumputResponse(SUM_t *sums, const char *msg, int (*history)(
     cJSON *response = NULL;
 
     err = ((response = unjsonizeResponseParse(msg, history)) == NULL);
-    
+
     if (!err)
     {
         err = unjsonizeResponseCheckStatus(response, history);
     }
-    
+
     if (!err)
     {
         err = unjsonizeResponseCheckIsAlive(response, history);
     }
-    
+
     if (response)
     {
         cJSON_Delete(response);
     }
-    
+
     return err;
 }
 #endif
@@ -3819,9 +3821,9 @@ static int jsonizeSumdeleteseriesRequest(SUM_t *sums, SUMID_t sessionid, const c
     cJSON *jsonValue = NULL;
     char numBuf[64];
     int err;
-    
+
     err = (!sums || !series || series[0] == '\0');
-    
+
     if (err)
     {
         (*history)("Invalid argument(s) to 'jsonizeRequest'.\n");
@@ -3829,7 +3831,7 @@ static int jsonizeSumdeleteseriesRequest(SUM_t *sums, SUMID_t sessionid, const c
     else
     {
         err = ((root = cJSON_CreateObject()) == NULL);
-        
+
         if (err)
         {
             (*history)("Out of memory calling cJSON_CreateObject().\n");
@@ -3839,53 +3841,53 @@ static int jsonizeSumdeleteseriesRequest(SUM_t *sums, SUMID_t sessionid, const c
     if (!err)
     {
         err = ((jsonValue = cJSON_CreateString("deleteseries")) == NULL);
-        
+
         if (err)
         {
             (*history)("Out of memory calling cJSON_CreateString().\n");
         }
     }
-    
+
     if (!err)
     {
         cJSON_AddItemToObjectCS(root, "reqtype", jsonValue);
-        
+
         snprintf(numBuf, sizeof(numBuf), "%llx", (uint64_t)sessionid);
         err = ((jsonValue = cJSON_CreateString(numBuf)) == NULL);
-        
+
         if (err)
         {
             (*history)("Out of memory calling cJSON_CreateNumber().\n");
         }
     }
-            
+
     if (!err)
     {
         cJSON_AddItemToObjectCS(root, "sessionid", jsonValue);
-        
+
         err = ((jsonValue = cJSON_CreateString(series)) == NULL);
-        
+
         if (err)
         {
             (*history)("Out of memory calling cJSON_CreateString().\n");
         }
     }
-        
+
     if (!err)
     {
         cJSON_AddItemToObjectCS(root, "series", jsonValue);
     }
-    
+
     if (!err)
-    {        
+    {
         *json = cJSON_Print(root);
     }
-    
+
     if (root)
     {
         cJSON_Delete(root);
     }
-    
+
     return err;
 }
 
@@ -3900,22 +3902,22 @@ static int unjsonizeSumdeleteseriesResponse(SUM_t *sums, const char *msg, int (*
     cJSON *response = NULL;
 
     err = ((response = unjsonizeResponseParse(msg, history)) == NULL);
-    
+
     if (!err)
     {
         err = unjsonizeResponseCheckStatus(response, history);
     }
-    
+
     if (!err)
     {
         err = unjsonizeResponseCheckIsAlive(response, history);
     }
-    
+
     if (response)
     {
         cJSON_Delete(response);
     }
-    
+
     return err;
 }
 #endif
@@ -3934,9 +3936,9 @@ static int jsonizeSumnopRequest(SUM_t *sums, SUMID_t sessionid, char **json, int
     cJSON *jsonValue = NULL;
     char numBuf[64];
     int err;
-    
+
     err = (!sums || !json);
-    
+
     if (err)
     {
         (*history)("Invalid argument(s) to 'jsonizeRequest'.\n");
@@ -3954,7 +3956,7 @@ static int jsonizeSumnopRequest(SUM_t *sums, SUMID_t sessionid, char **json, int
     {
         err = ((jsonValue = cJSON_CreateString("ping")) == NULL);
     }
-    
+
     if (err)
     {
         (*history)("Out of memory calling cJSON_CreateString().\n");
@@ -3962,11 +3964,11 @@ static int jsonizeSumnopRequest(SUM_t *sums, SUMID_t sessionid, char **json, int
     else
     {
         cJSON_AddItemToObjectCS(root, "reqtype", jsonValue);
-        
+
         snprintf(numBuf, sizeof(numBuf), "%llx", (uint64_t)sessionid);
         err = ((jsonValue = cJSON_CreateString(numBuf)) == NULL);
     }
-    
+
     if (err)
     {
         (*history)("Out of memory calling cJSON_CreateNumber().\n");
@@ -3975,17 +3977,17 @@ static int jsonizeSumnopRequest(SUM_t *sums, SUMID_t sessionid, char **json, int
     {
         cJSON_AddItemToObjectCS(root, "sessionid", jsonValue);
     }
-    
+
     if (!err)
-    {        
+    {
         *json = cJSON_Print(root);
     }
-    
+
     if (root)
     {
         cJSON_Delete(root);
     }
-    
+
     return err;
 }
 
@@ -4002,22 +4004,22 @@ static int unjsonizeSumnopResponse(SUM_t *sums, const char *msg, int (*history)(
     cJSON *response = NULL;
 
     err = ((response = unjsonizeResponseParse(msg, history)) == NULL);
-    
+
     if (!err)
     {
         err = unjsonizeResponseCheckStatus(response, history);
     }
-    
+
     if (!err)
     {
         err = unjsonizeResponseCheckIsAlive(response, history);
     }
-    
+
     if (response)
     {
         cJSON_Delete(response);
     }
-    
+
     return err;
 }
 
@@ -4036,9 +4038,9 @@ static int jsonizeSumpollRequest(SUM_t *sums, SUMID_t sessionid, const char *req
     cJSON *jsonValue = NULL;
     char numBuf[64];
     int err;
-    
+
     err = (!sums || !requestID || requestID[0] == '\0');
-    
+
     if (err)
     {
         (*history)("Invalid argument(s) to 'jsonizeRequest'.\n");
@@ -4056,7 +4058,7 @@ static int jsonizeSumpollRequest(SUM_t *sums, SUMID_t sessionid, const char *req
     {
         err = ((jsonValue = cJSON_CreateString("poll")) == NULL);
     }
-    
+
     if (err)
     {
         (*history)("Out of memory calling cJSON_CreateString().\n");
@@ -4064,7 +4066,7 @@ static int jsonizeSumpollRequest(SUM_t *sums, SUMID_t sessionid, const char *req
     else
     {
         cJSON_AddItemToObjectCS(root, "reqtype", jsonValue);
-        
+
         snprintf(numBuf, sizeof(numBuf), "%llx", (uint64_t)sessionid);
         err = ((jsonValue = cJSON_CreateString(numBuf)) == NULL);
     }
@@ -4076,7 +4078,7 @@ static int jsonizeSumpollRequest(SUM_t *sums, SUMID_t sessionid, const char *req
     else
     {
         cJSON_AddItemToObjectCS(root, "sessionid", jsonValue);
-        
+
         err = ((jsonValue = cJSON_CreateString(requestID)) == NULL);
     }
 
@@ -4088,17 +4090,17 @@ static int jsonizeSumpollRequest(SUM_t *sums, SUMID_t sessionid, const char *req
     {
         cJSON_AddItemToObjectCS(root, "requestid", jsonValue);
     }
-    
+
     if (!err)
-    {        
+    {
         *json = cJSON_Print(root);
     }
-    
+
     if (root)
     {
         cJSON_Delete(root);
     }
-    
+
     return err;
 }
 
@@ -4106,7 +4108,7 @@ static int jsonizeSumpollRequest(SUM_t *sums, SUMID_t sessionid, const char *req
  * {
  *    "reqtype" : "get",
  *    "status" : "ok",
- *    "supaths" : 
+ *    "supaths" :
  *     [
  *        {
  *          "sunum" : "2B13493A",
@@ -4127,7 +4129,7 @@ static int jsonizeSumpollRequest(SUM_t *sums, SUMID_t sessionid, const char *req
  */
 static int unjsonizeSumpollResponse(SUM_t *sums, const char *msg, int (*history)(const char *fmt, ...))
 {
-    /* Ack - in theory, SUM_poll() could be used for any SUMS API call (but in practice, it is available for 
+    /* Ack - in theory, SUM_poll() could be used for any SUMS API call (but in practice, it is available for
      * SUM_get() only). */
     int err = 0;
     cJSON *response = NULL;
@@ -4135,17 +4137,17 @@ static int unjsonizeSumpollResponse(SUM_t *sums, const char *msg, int (*history)
     MTSums_CallType_t origType;
 
     err = ((response = unjsonizeResponseParse(msg, history)) == NULL);
-    
+
     if (!err)
     {
         err = unjsonizeResponseCheckStatus(response, history);
     }
-    
+
     if (!err)
     {
         err = unjsonizeResponseCheckIsAlive(response, history);
     }
-    
+
     if (!err)
     {
         err = ((value = cJSON_GetObjectItem(response, "reqtype")) == NULL);
@@ -4172,8 +4174,8 @@ static int unjsonizeSumpollResponse(SUM_t *sums, const char *msg, int (*history)
         {
             (*history)("Unknown MT SUMS call type %s.\n", value->valuestring);
         }
-    }    
-    
+    }
+
     if (response)
     {
         cJSON_Delete(response);
@@ -4183,16 +4185,16 @@ static int unjsonizeSumpollResponse(SUM_t *sums, const char *msg, int (*history)
     {
         return unjsonizeResponse(sums, origType, msg, history);
     }
-    
+
     return err;
 }
 
 int jsonizeRequest(SUM_t *sums, MTSums_CallType_t type, JSONIZER_DATA_t *data, char **json, int (*history)(const char *fmt, ...))
 {
     int err;
-    
+
     err = 0;
-    
+
     if (0)
     {
         err = 1;
@@ -4224,7 +4226,7 @@ int jsonizeRequest(SUM_t *sums, MTSums_CallType_t type, JSONIZER_DATA_t *data, c
         SUMID_t sessionid = 0;
         uint64_t *sunums = NULL;
         size_t nSus = 0;
-        
+
         infoData = (JSONIZER_DATA_INFO_t *)data;
         sessionid = sums->uid;
         sunums = infoData->sunums;
@@ -4242,7 +4244,7 @@ int jsonizeRequest(SUM_t *sums, MTSums_CallType_t type, JSONIZER_DATA_t *data, c
         int retention = 0;
         uint64_t *sunums = NULL;
         size_t nSus = 0;
-        
+
         getData = (JSONIZER_DATA_GET_t *)data;
         sessionid = sums->uid;
         touch = getData->touch;
@@ -4259,7 +4261,7 @@ int jsonizeRequest(SUM_t *sums, MTSums_CallType_t type, JSONIZER_DATA_t *data, c
         JSONIZER_DATA_ALLOC_t *allocData = NULL;
         SUMID_t sessionid = 0;
         int sugroup = -1;
-        double numBytes = 0;      
+        double numBytes = 0;
 
         allocData = (JSONIZER_DATA_ALLOC_t *)data;
         sessionid = sums->uid;
@@ -4274,12 +4276,12 @@ int jsonizeRequest(SUM_t *sums, MTSums_CallType_t type, JSONIZER_DATA_t *data, c
         uint64_t sunum = 0; /* stupid - because this is unsigned, we can't make an invalid sunum for the default value. */
         int sugroup = -1;
         double numBytes = 0;
-        
+
         alloc2Data = (JSONIZER_DATA_ALLOC2_t *)data;
         sessionid = sums->uid;
         sunum = alloc2Data->sunum;
         sugroup = alloc2Data->sugroup;
-        numBytes = alloc2Data->numBytes;        
+        numBytes = alloc2Data->numBytes;
         err = jsonizeSumalloc2Request(sums, sessionid, sunum, sugroup, numBytes, json, history);
     }
 #endif
@@ -4294,7 +4296,7 @@ int jsonizeRequest(SUM_t *sums, MTSums_CallType_t type, JSONIZER_DATA_t *data, c
         char *series;
         int retention;
         const char *archiveType;
-        
+
         putData = (JSONIZER_DATA_PUT_t *)data;
         sessionid = sums->uid;
         sunums = putData->sunums;
@@ -4312,7 +4314,7 @@ int jsonizeRequest(SUM_t *sums, MTSums_CallType_t type, JSONIZER_DATA_t *data, c
         JSONIZER_DATA_DELETESERIES_t *deleteseriesData = NULL;
         SUMID_t sessionid = 0;
         char *series = NULL;
-        
+
         deleteseriesData = (JSONIZER_DATA_DELETESERIES_t *)data;
         sessionid = sums->uid;
         series = deleteseriesData->series;
@@ -4322,7 +4324,7 @@ int jsonizeRequest(SUM_t *sums, MTSums_CallType_t type, JSONIZER_DATA_t *data, c
     else if (type == kMTSums_CallType_Ping)
     {
         SUMID_t sessionid = 0;
-        
+
         sessionid = sums->uid;
         err = jsonizeSumnopRequest(sums, sessionid, json, history);
     }
@@ -4331,7 +4333,7 @@ int jsonizeRequest(SUM_t *sums, MTSums_CallType_t type, JSONIZER_DATA_t *data, c
         JSONIZER_DATA_POLL_t *pollData = NULL;
         SUMID_t sessionid = 0;
         char *requestID = NULL;
-        
+
         pollData = (JSONIZER_DATA_POLL_t *)data;
         sessionid = sums->uid;
         requestID = pollData->requestID;
@@ -4353,9 +4355,9 @@ int jsonizeRequest(SUM_t *sums, MTSums_CallType_t type, JSONIZER_DATA_t *data, c
 int unjsonizeResponse(SUM_t *sums, MTSums_CallType_t type, const char *msg, int (*history)(const char *fmt, ...))
 {
     int err;
-    
+
     err = 0;
-    
+
     if (0)
     {
         err = 1;
@@ -4433,11 +4435,11 @@ int callMTSums(SUM_t *sums, MTSums_CallType_t callType, JSONIZER_DATA_t *data, i
     size_t rspLen = 0;
     int err;
     TIMER_t *timer = NULL;
-    
+
     clprev = NULL;
 
     err = jsonizeRequest(sums, callType, data, &request, history);
-    
+
     if (!err)
     {
 #if (defined(SUMS_USEMTSUMS_ALL) && SUMS_USEMTSUMS_ALL)
@@ -4454,7 +4456,7 @@ int callMTSums(SUM_t *sums, MTSums_CallType_t callType, JSONIZER_DATA_t *data, i
             }
         }
     }
-    
+
     if (!err)
     {
         /* send request */
@@ -4468,24 +4470,24 @@ int callMTSums(SUM_t *sums, MTSums_CallType_t callType, JSONIZER_DATA_t *data, i
     }
 
     if (!err)
-    {    
-        /* receive response - return value of 0 is success, return value of 1 is internal/client error, 
+    {
+        /* receive response - return value of 0 is success, return value of 1 is internal/client error,
          * return value of 2 is timeout. */
         timer = CreateTimer();
         while (1)
         {
             err = receiveMsg(sums, &response, &rspLen, history);
-            
+
             if (err)
             {
                 /* break out if a timeout (err == 2) or error (err == 1) occurred */
                 break;
             }
-            
+
             /* successfully received response (err == 0), but it could be an is-alive response */
-        
-            err = unjsonizeResponse(sums, callType, response, history);    
-            
+
+            err = unjsonizeResponse(sums, callType, response, history);
+
             if (err == 0 /* got final response */ || err == 1 /* error */)
             {
                 break;
@@ -4500,7 +4502,7 @@ int callMTSums(SUM_t *sums, MTSums_CallType_t callType, JSONIZER_DATA_t *data, i
                     (*history)("timeout waiting for %s response from SUMS\n", MTSums_CallType_strings[callType]);
                     break;
                 }
-                
+
                 err = 0;
                 continue;
             }
@@ -4511,9 +4513,9 @@ int callMTSums(SUM_t *sums, MTSums_CallType_t callType, JSONIZER_DATA_t *data, i
                 break;
             }
         }
-        
+
         DestroyTimer(&timer);
-    }    
+    }
 
 #if (defined(SUMS_USEMTSUMS_ALL) && SUMS_USEMTSUMS_ALL)
     /* pure MT SUMS - if SUM_open() fails, then disconnect from MT SUMS (shutdown the socket connection) */
@@ -4530,13 +4532,13 @@ int callMTSums(SUM_t *sums, MTSums_CallType_t callType, JSONIZER_DATA_t *data, i
         free(response);
         response = NULL;
     }
-    
+
     if (request)
     {
         free(request);
         request = NULL;
     }
-    
+
     return err;
 }
 
@@ -4545,7 +4547,7 @@ int callMTSums(SUM_t *sums, MTSums_CallType_t callType, JSONIZER_DATA_t *data, i
 /* Arguments to send to MT server:
  *   None
  */
- 
+
 /* The original API requires two arguments, which are no longer used:
  *   server - the machine hosting the SUMS service (NOT USED).
  *   db - the machine hosting the DB used by MT SUMS (NOT USED).
@@ -4558,10 +4560,10 @@ SUM_t *SUM_open(char *server, char *db, int (*history)(const char *fmt, ...))
     // can create an entry in the sum_open DB table and so it can return a sumid, which is then
     // used to later to delete the record in the sum_open table.
     SUM_t *sums = NULL;
-    
-    /* Must call sumsopenOpen() to create the SUM_t first. If the client is using MT SUM server exclusively, 
+
+    /* Must call sumsopenOpen() to create the SUM_t first. If the client is using MT SUM server exclusively,
      * then sumsopenOpen() is virtually a noop. Otherwise, it creates the RPC clients needed for the various services. */
-    sums = sumsopenOpen(server, db, history);    
+    sums = sumsopenOpen(server, db, history);
 
     return sums;
 }
@@ -4590,9 +4592,9 @@ int SUM_rollback(SUM_t *sums, int (*history)(const char *fmt, ...))
  */
 void SUM_infoArray_free(SUM_t *sums)
 {
-    if(sums->sinfo) 
+    if(sums->sinfo)
     {
-        free(sums->sinfo);    
+        free(sums->sinfo);
         sums->sinfo = NULL;            //must do so no double free in SUM_close()
     }
 }
@@ -4604,16 +4606,16 @@ int SUM_infoArray(SUM_t *sums, uint64_t *sunums, int reqcnt, int (*history)(cons
 {
     JSONIZER_DATA_INFO_t data;
 
-    if (reqcnt > MAX_MTSUMS_NSUS) 
+    if (reqcnt > MAX_MTSUMS_NSUS)
     {
         (*history)("Too many SUs in request (maximum of %d allowed).\n", reqcnt, MAX_MTSUMS_NSUS);
         return 1; /* means 'internal error', which isn't a great description of the error. */
     }
-    
+
     /* jsonize request */
     data.sunums = sunums;
     data.nSus = reqcnt;
-    
+
     return callMTSums(sums, kMTSums_CallType_Info, (JSONIZER_DATA_t *)(&data), history);
 }
 #else /* MT SUMS INFO family */
@@ -4622,7 +4624,7 @@ int SUM_infoArray(SUM_t *sums, uint64_t *sunums, int reqcnt, int (*history)(cons
 #endif /* RPC SUMS INFO family */
 
 #if defined(SUMS_USEMTSUMS_GET) && SUMS_USEMTSUMS_GET
-/* For some reason, in the original implementation, the SUNUMs are passed via the SUM_t argument, and not as separate 
+/* For some reason, in the original implementation, the SUNUMs are passed via the SUM_t argument, and not as separate
  * arguments. The original API functions handle the SUNUMs inconsistently, so we have to preserve that in the
  * new API functions.
  *
@@ -4632,7 +4634,7 @@ int SUM_infoArray(SUM_t *sums, uint64_t *sunums, int reqcnt, int (*history)(cons
  *   retention (numeric) - passed-in in sums->tdays argument (int)
  *   sus (array of hex strs) - passed-in in sums->dsix_ptr and sums->reqcnt arguments (uint64_t and int)
  *
- * SUM_get() is an asynchronous call IFF a tape read happens. If a tape read is happening, then 
+ * SUM_get() is an asynchronous call IFF a tape read happens. If a tape read is happening, then
  * return RESULT_PEND. Otherwise, return 0 if the path was obtained and there were no errors. Otherwise,
  * return non-zero. The client must then call SUM_nop() to determine if SUMS has crashed and if the client
  * should try again.
@@ -4641,24 +4643,24 @@ int SUM_get(SUM_t *sums, int (*history)(const char *fmt, ...))
 {
     JSONIZER_DATA_GET_t data;
     int rv = 0;
-    
-    if (sums->reqcnt > MAX_MTSUMS_NSUS) 
+
+    if (sums->reqcnt > MAX_MTSUMS_NSUS)
     {
         (*history)("Too many SUs in request (maximum of %d allowed).\n", sums->reqcnt, MAX_MTSUMS_NSUS);
         return 1; /* means 'internal error', which isn't a great description of the error. */
     }
-    
+
     /* jsonize request */
     data.touch = sums->mode & TOUCH;
     data.retrieve = sums->mode & RETRIEVE;
     data.retention = sums->tdays;
     data.sunums = sums->dsix_ptr;
     data.nSus = sums->reqcnt;
-    
+
     /* If a tape read results, then we have to save the tape-read requestID for future calls to SUM_poll(). Re-purpose
      * sums->dsname - initialize the value to NULL so when know when to clean dsname. */
      sums->dsname = NULL;
-    
+
     /* 0 - success, RESULT_PEND - pending tape read, everything else - error. */
     return callMTSums(sums, kMTSums_CallType_Get, (JSONIZER_DATA_t *)(&data), history);
 }
@@ -4671,31 +4673,31 @@ int SUM_get(SUM_t *sums, int (*history)(const char *fmt, ...))
  *   sunum (hex str) - passed-in in sunum argument (uint64_t)
  *   group (numeric) - passed-in in sums->group argument (int)
  *   sessionid (numeric) = - passed-in in sums->uid argument (uint32_t)
- *   bytes (numeric) - passed-in in sums->bytes argument (double). bytes is seriously whacked. It is a double in the SUM_t struct, and a 
- *     double in the SUMS db. But it should really be an integer. JSON uses double-precision floating-point numbers for all 
+ *   bytes (numeric) - passed-in in sums->bytes argument (double). bytes is seriously whacked. It is a double in the SUM_t struct, and a
+ *     double in the SUMS db. But it should really be an integer. JSON uses double-precision floating-point numbers for all
  *     numeric values.
  */
- 
+
 /* SUM_alloc() performs these tasks:
  *    1. It selects a partition to create an SUDIR in. It does this by mapping the group number to a partition set with the
  *       sum_arch_group table, then randomly choosing one of the suitable partitions.
  *    2. It creates the SUDIR with a mkdir/chmod combo.
  *    3. It inserts a record in sum_partn_alloc that contains mostly default values. The only values that matter are the
- *       status value, which is set to DARW (read-write SUDIR), the SUMS sessionid, the tape group, and ds_index, which 
+ *       status value, which is set to DARW (read-write SUDIR), the SUMS sessionid, the tape group, and ds_index, which
  *       is the SUNUM for the SU. With RPC SUMS, this insertion was completely obsolete. It inserted dummy values for the
  *       tape group, ds_index and all other columns, except the status and sessionid columns. The MT SUM_alloc() stores the
  *       tape group and ds_index so that SUM_put() can later use those values for selecting a tape group for the SU.
- *       SUM_put() inserts a new record in sum_partn_alloc with real column values, and then SUM_close() deletes 
+ *       SUM_put() inserts a new record in sum_partn_alloc with real column values, and then SUM_close() deletes
  *       the record inserted by SUM_alloc().
- */ 
- 
+ */
+
 int SUM_alloc(SUM_t *sums, int (*history)(const char *fmt, ...))
 {
     JSONIZER_DATA_ALLOC_t data;
 
     data.sugroup = sums->group;
     data.numBytes = sums->bytes;
-    
+
     return callMTSums(sums, kMTSums_CallType_Alloc, (JSONIZER_DATA_t *)(&data), history);
 }
 
@@ -4706,7 +4708,7 @@ int SUM_alloc2(SUM_t *sums, uint64_t sunum, int (*history)(const char *fmt, ...)
     data.sunum = sunum;
     data.sugroup = sums->group;
     data.numBytes = sums->bytes;
-    
+
     return callMTSums(sums, kMTSums_CallType_Alloc2, (JSONIZER_DATA_t *)(&data), history);
 }
 #else /* MT SUMS ALLOC family */
@@ -4721,9 +4723,9 @@ int SUM_alloc2(SUM_t *sums, uint64_t sunum, int (*history)(const char *fmt, ...)
  *   archivetype (str) - passed in in sums->mode argument (as 3 different bits: ARCH, TEMP, PERM - these all conflict with
  *                       each other, PERM takes precedence over TEMP, which takes precedence over ARCH.)
  */
- 
+
 /* SUM_put() performs these tasks:
- *    1. It inserts a record for this SU into sum_main. 
+ *    1. It inserts a record for this SU into sum_main.
  *    2. It inserts a record for this SU into sum_partn_alloc, just like SUM_alloc() does. However, SUM_alloc() inserts a status
  *       of DARW (read-write SUDIR)and SUM_put() inserts a status of DAAP (archive-pending SUDIR) or DADP (delete-pending SUDIR).
  *       SUMS select DAAP if the SUMS has a tape system. Otherwise, it selects DADP (the SU gets deleted after retention has expired).
@@ -4732,17 +4734,17 @@ int SUM_alloc2(SUM_t *sums, uint64_t sunum, int (*history)(const char *fmt, ...)
 
 /* Storage group and storage set are passed in by the client, but they should not be. They are passed-in by the client during the
  * SUM_alloc() call and used to determine a SUMS partition. But they are not saved into the SUMS DB during the SUM_alloc() call.
- * They are saved to the SUMS db during the SUM_put() call. They are saved into both sum_main and sum_partn_alloc - the values 
- * in sum_main are never used, but the ones in sum_partn_alloc are used when the SUs are archived to tape. 
+ * They are saved to the SUMS db during the SUM_put() call. They are saved into both sum_main and sum_partn_alloc - the values
+ * in sum_main are never used, but the ones in sum_partn_alloc are used when the SUs are archived to tape.
  *
- * ARGH!!! The group/storeset values used in SUM_alloc() are not saved anywhere. And there is no way to check that the group 
- * passed in to SUM_alloc() matches the group passed  in to SUM_put(). Look at it this way - the group value passed in 
- * to SUM_alloc() is used for selecting a SUMS partition. The group value passed in to SUM_put() is used by the tape system 
+ * ARGH!!! The group/storeset values used in SUM_alloc() are not saved anywhere. And there is no way to check that the group
+ * passed in to SUM_alloc() matches the group passed  in to SUM_put(). Look at it this way - the group value passed in
+ * to SUM_alloc() is used for selecting a SUMS partition. The group value passed in to SUM_put() is used by the tape system
  * to group SUs into tape files. So, the same group number is used for different purposes. Ideally, SUs that share a SUMS
  * partition also share a tape file. But because the group passed into SUM_alloc() is not saved, this cannot be enforced.
  * This is an (original) SUMS flaw.
  *
- * To remedy this, the MT SUMS SUM_alloc() stores the group number in sum_partn_alloc. The RPC SUMS stores a dummy group number 
+ * To remedy this, the MT SUMS SUM_alloc() stores the group number in sum_partn_alloc. The RPC SUMS stores a dummy group number
  * of 0, but the MT SUMS stores the actual group number. Then when the MT SUM_put() is called, it ignores sums->group and uses
  * the value in sum_partn_alloc.
  */
@@ -4758,12 +4760,12 @@ int SUM_alloc2(SUM_t *sums, uint64_t sunum, int (*history)(const char *fmt, ...)
     data.retention = sums->tdays;
     /* The original RPC SUMS has no default archivetype!! It could be some random int. */
     data.archiveType = (sums->mode & PERM) ? "permanent+archive" : ((sums->mode & TEMP) ? "temporary+noarchive" : ((sums->mode & ARCH) ? "temporary+archive" : "temporary+noarchive"));
-    
+
     err = callMTSums(sums, kMTSums_CallType_Put, (JSONIZER_DATA_t *)(&data), history);
-    
+
     return err;
  }
- 
+
 #else /* MT SUMS PUT family */
 /* RPC SUMS is used for the PUT family. */
 #endif /* RPC SUMS PUT family */
@@ -4772,21 +4774,21 @@ int SUM_alloc2(SUM_t *sums, uint64_t sunum, int (*history)(const char *fmt, ...)
 /* Arguments to send to MT server:
  *   series - passed-in in seriesname argument
  */
- 
+
 /* SUM_delete_series() performs these tasks:
  *    1. It queries sum_main to determine if any SUs belong to the series being deleted. If not, it is a no-op and returns.
- *    2. For each SU that belongs to the series (determined by querying the owning_series column in sum_main), it 
- *       changes the status in sum_partn_alloc to DADP and the substatus to DADPDELSU, and it sets the retention for the 
+ *    2. For each SU that belongs to the series (determined by querying the owning_series column in sum_main), it
+ *       changes the status in sum_partn_alloc to DADP and the substatus to DADPDELSU, and it sets the retention for the
  *       SU to 0 days. It does this change on chunks of SUs, not single SUs.
  */
-  
+
 /* The RPC version of SUM_delete_series() does some really inefficient stuff:
  *    1. It passes all SUNUMs from DRMS to SUMS, regardless of the existence of the corresponding SUs. There is
  *       actually no reason to pass the SUNUMs from DRMS to SUMS to begin with, since SUMS knows which SUs
  *       belong to which series.
  *    2. It passes these SUNUMs via text files, each of which occupies an SU.
  *    3. For each SU passed to SUMS, it does a single SQL command to change the retention to 0 (even if the SU
- *       does not exist, the query is performed). 
+ *       does not exist, the query is performed).
  *
  * For the MT version, the filename argument is no longer used. There is no reason to pass SUs to SUMS at all, and
  * if there were, using a file is a poor option.
@@ -4813,7 +4815,7 @@ int SUM_poll(SUM_t *sum)
 {
     return sumsopenPollMT(sum);
 }
-#else 
+#else
 int SUM_nop(SUM_t *sum, int (*history)(const char *fmt, ...))
 {
     if (clprev != NULL)
@@ -4841,10 +4843,10 @@ int SUM_poll(SUM_t *sum)
 #endif
 
 
-/* For SUM_nop() and SUM_poll(), we need to use the RPC SUMS server if the the SUMS request being 
- * currently processed is being handled by an RPC SUMS server. Otherwise, we need to use the MT SUMS 
+/* For SUM_nop() and SUM_poll(), we need to use the RPC SUMS server if the the SUMS request being
+ * currently processed is being handled by an RPC SUMS server. Otherwise, we need to use the MT SUMS
  * server. The clprev global is used to indicate which SUMS server is processing the current request.
- * If clprev == NULL, then the MT SUMS server is processing the current request. Otherwise, the 
+ * If clprev == NULL, then the MT SUMS server is processing the current request. Otherwise, the
  * value of clprev is the RPC client that is connected to the RPC server that is processing the
  * current request. If the MT SUMS server should handle the SUM_nop() call, then send a nop JSON request
  * to the MT SUMS server. Otherwise, call sumopenNopRPC() and let it make a SUMS request using the
@@ -4883,15 +4885,15 @@ int SUM_info(SUM_t *sum, uint64_t sunum, int (*history)(const char *fmt, ...))
   enum clnt_stat status;
 
   klist = newkeylist();
-  setkey_uint64(&klist, "SUNUM", sunum); 
+  setkey_uint64(&klist, "SUNUM", sunum);
   setkey_str(&klist, "username", sum->username);
   setkey_uint64(&klist, "uid", sum->uid);
   setkey_int(&klist, "DEBUGFLG", sum->debugflg);
   setkey_int(&klist, "REQCODE", INFODO);
   clprev = sum->clinfo;
-  //This is seldom called, so only use the first Sinfo process. 
+  //This is seldom called, so only use the first Sinfo process.
   //Superceeded by SUM_infoEx()
-  status = clnt_call(sum->clinfo, INFODO, (xdrproc_t)xdr_Rkey, (char *)klist, 
+  status = clnt_call(sum->clinfo, INFODO, (xdrproc_t)xdr_Rkey, (char *)klist,
 			(xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
 
   /* NOTE: These rtes seem to return after the reply has been received despite
@@ -4901,7 +4903,7 @@ int SUM_info(SUM_t *sum, uint64_t sunum, int (*history)(const char *fmt, ...))
   if(status != RPC_SUCCESS) {
     if(status != RPC_TIMEDOUT) {
       call_err = clnt_sperror(sum->clinfo, "Err clnt_call for INFODO");
-      if(history) 
+      if(history)
         (*history)("%s %d %s\n", datestring(), status, call_err);
       freekeylist(&klist);
       return (4);
@@ -4909,12 +4911,12 @@ int SUM_info(SUM_t *sum, uint64_t sunum, int (*history)(const char *fmt, ...))
   }
   if(retstat) {			/* error on INFODO call */
     if(retstat != SUM_SUNUM_NOT_LOCAL)
-      if(history) 
+      if(history)
         (*history)("Error in SUM_info()\n"); //be quite for show_info sake
     return(retstat);
   }
   else {
-    if(sum->sinfo == NULL) 
+    if(sum->sinfo == NULL)
       sum->sinfo = (SUM_info_t *)malloc(sizeof(SUM_info_t));
     msgstat = getanymsg(1);	//put answer to INFODO call in sum->sainfo/
     freekeylist(&klist);
@@ -4925,7 +4927,7 @@ int SUM_info(SUM_t *sum, uint64_t sunum, int (*history)(const char *fmt, ...))
   }
 }
 
-/* Free the automatic malloc of the sinfo linked list done from a 
+/* Free the automatic malloc of the sinfo linked list done from a
  * SUM_infoEx() call.
 */
 void SUM_infoEx_free(SUM_t *sum)
@@ -4942,7 +4944,7 @@ void SUM_infoEx_free(SUM_t *sum)
 }
 
 /* Return information from sum_main for the given sunums in
- * the array pointed to by sum->dsix_ptr. There can be up to 
+ * the array pointed to by sum->dsix_ptr. There can be up to
  * MAXSUMREQCNT entries given by sum->reqcnt.
  * Return non-0 on error, else sum->sinfo has the SUM_info_t pointer
  * to linked list of SUM_info_t sturctures (sum->reqcnt).
@@ -4977,7 +4979,7 @@ int SUM_infoEx(SUM_t *sum, int (*history)(const char *fmt, ...))
   }
   rr = rr_random(0, numSUM-1);
   switch(rr) {
-  case 0: 
+  case 0:
     clinfo = sum->clinfo;
     break;
   case 1:
@@ -5003,17 +5005,17 @@ int SUM_infoEx(SUM_t *sum, int (*history)(const char *fmt, ...))
     break;
   }
   clprev = clinfo;
-  status = clnt_call(clinfo, INFODOX, (xdrproc_t)xdr_Rkey, (char *)klist, 
+  status = clnt_call(clinfo, INFODOX, (xdrproc_t)xdr_Rkey, (char *)klist,
 			(xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
 
   // NOTE: These rtes seem to return after the reply has been received despite
   // the timeout value. If it did take longer than the timeout then the timeout
   // error status is set but it should be ignored.
-  // 
+  //
   if(status != RPC_SUCCESS) {
     if(status != RPC_TIMEDOUT) {
       call_err = clnt_sperror(clinfo, "Err clnt_call for INFODOX");
-      if(history) 
+      if(history)
         (*history)("%s %d %s\n", datestring(), status, call_err);
       freekeylist(&klist);
       return (4);
@@ -5021,7 +5023,7 @@ int SUM_infoEx(SUM_t *sum, int (*history)(const char *fmt, ...))
   }
   if(retstat) {			// error on INFODOX call
     if(retstat != SUM_SUNUM_NOT_LOCAL)
-      if(history) 
+      if(history)
         (*history)("Error in SUM_infoEx()\n"); //be quiet for show_info sake
     return(retstat);
   }
@@ -5049,7 +5051,7 @@ int SUM_infoEx(SUM_t *sum, int (*history)(const char *fmt, ...))
   }
 }
 
-/* Free the automatic malloc of the sinfo linked list done from a 
+/* Free the automatic malloc of the sinfo linked list done from a
  * SUM_infoArray() call.
 */
 void SUM_infoArray_free(SUM_t *sum)
@@ -5059,10 +5061,10 @@ void SUM_infoArray_free(SUM_t *sum)
 }
 
 /* Return information from sum_main for the given sunums in
- * the input uint64_t dxarray. There can be up to 
+ * the input uint64_t dxarray. There can be up to
  * MAXSUNUMARRAY entries given by reqcnt. The uid and username are picked up
- * from the *sum. 
- * The sum->sinfo will malloc (and free at close) 
+ * from the *sum.
+ * The sum->sinfo will malloc (and free at close)
  * the memory needed for the reqcnt answers returned by sum_svc.
  * The user can optionally free the memory by calling SUM_infoArray_free().
  * Return non-0 on error, else sum->sinfo has the SUM_info_t pointer
@@ -5099,7 +5101,7 @@ int SUM_infoArray(SUM_t *sum, uint64_t *dxarray, int reqcnt, int (*history)(cons
 
   rr = rr_random(0, numSUM-1);
   switch(rr) {
-  case 0: 
+  case 0:
     clinfo = sum->clinfo;
     break;
   case 1:
@@ -5125,17 +5127,17 @@ int SUM_infoArray(SUM_t *sum, uint64_t *dxarray, int reqcnt, int (*history)(cons
     break;
   }
   clprev = clinfo;
-  status = clnt_call(clinfo, INFODOARRAY, (xdrproc_t)xdr_Sunumarray, (char *)&suarray, 
+  status = clnt_call(clinfo, INFODOARRAY, (xdrproc_t)xdr_Sunumarray, (char *)&suarray,
 			(xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
 
   // NOTE: These rtes seem to return after the reply has been received despite
   // the timeout value. If it did take longer than the timeout then the timeout
   // error status is set but it should be ignored.
-  // 
+  //
   if(status != RPC_SUCCESS) {
     if(status != RPC_TIMEDOUT) {
       call_err = clnt_sperror(clinfo, "Err clnt_call for INFODOX");
-      if(history) 
+      if(history)
         (*history)("%s %d %s\n", datestring(), status, call_err);
       //freekeylist(&klist);
       return (4);
@@ -5143,7 +5145,7 @@ int SUM_infoArray(SUM_t *sum, uint64_t *dxarray, int reqcnt, int (*history)(cons
   }
   if(retstat) {			// error on INFODOARRAY call
     if(retstat != SUM_SUNUM_NOT_LOCAL)
-      if(history) 
+      if(history)
         (*history)("Error in SUM_infoArray()\n"); //be quiet for show_info sake
     return(retstat);
   }
@@ -5175,7 +5177,7 @@ int SUM_infoArray(SUM_t *sum, uint64_t *dxarray, int reqcnt, int (*history)(cons
 /* Get the wd of the storage units given in dsix_ptr of the given sum.
  * Return 0 on success w/data available, 1 on error, 4 on connection reset
  * by peer (sum_svc probably gone) or RESULT_PEND (32)
- * when data will be sent later and caller must do a sum_wait() or sum_poll() 
+ * when data will be sent later and caller must do a sum_wait() or sum_poll()
  * when he is ready for it. You can't make another SUM_get() with the
  * samd SUM_t handle while one is still pending.
 */
@@ -5206,7 +5208,7 @@ int SUM_get(SUM_t *sum, int (*history)(const char *fmt, ...))
   if(dptr) *dptr = '\0';
   pid = getpid();
   klist = newkeylist();
-  setkey_uint64(&klist, "uid", sum->uid); 
+  setkey_uint64(&klist, "uid", sum->uid);
   setkey_int(&klist, "mode", sum->mode);
   setkey_int(&klist, "tdays", sum->tdays);
   setkey_int(&klist, "reqcnt", sum->reqcnt);
@@ -5324,7 +5326,7 @@ int SUM_alloc(SUM_t *sum, int (*history)(const char *fmt, ...))
   setkey_int(&klist, "storeset", sum->storeset);
   setkey_int(&klist, "group", sum->group);
   setkey_int(&klist, "reqcnt", sum->reqcnt);
-  setkey_uint64(&klist, "uid", sum->uid); 
+  setkey_uint64(&klist, "uid", sum->uid);
   setkey_int(&klist, "DEBUGFLG", sum->debugflg);
   setkey_int(&klist, "REQCODE", ALLOCDO);
   setkey_str(&klist, "USER", sum->username);
@@ -5414,7 +5416,7 @@ int SUM_alloc2(SUM_t *sum, uint64_t sunum, int (*history)(const char *fmt, ...))
   setkey_int(&klist, "storeset", sum->storeset);
   setkey_int(&klist, "group", sum->group);
   setkey_int(&klist, "reqcnt", sum->reqcnt);
-  setkey_uint64(&klist, "uid", sum->uid); 
+  setkey_uint64(&klist, "uid", sum->uid);
   setkey_uint64(&klist, "SUNUM", sunum); //unique to the SUM_alloc2() call
   setkey_int(&klist, "DEBUGFLG", sum->debugflg);
   setkey_int(&klist, "REQCODE", ALLOCDO);
@@ -5425,7 +5427,7 @@ int SUM_alloc2(SUM_t *sum, uint64_t sunum, int (*history)(const char *fmt, ...))
   }
   clprev = sum->clalloc;
   //This is seldom called, so only use the first Salloc process
-  status = clnt_call(sum->clalloc, ALLOCDO, (xdrproc_t)xdr_Rkey, (char *)klist, 
+  status = clnt_call(sum->clalloc, ALLOCDO, (xdrproc_t)xdr_Rkey, (char *)klist,
 			(xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
 
   /* NOTE: These rtes seem to return after the reply has been received despite
@@ -5456,7 +5458,7 @@ int SUM_alloc2(SUM_t *sum, uint64_t sunum, int (*history)(const char *fmt, ...))
 /* RPC SUMS PUT family */
 #if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || (!defined(SUMS_USEMTSUMS_PUT) || !SUMS_USEMTSUMS_PUT)
 /* Puts storage units from allocated storage to the DB catalog.
- * Caller gives disposition of a previously allocated data segments. 
+ * Caller gives disposition of a previously allocated data segments.
  * Allows for a request count to put multiple segments.
  * Returns 0 on success.
  * NOTE: error 4 is Connection reset by peer, sum_svc probably gone.
@@ -5476,7 +5478,7 @@ int SUM_put(SUM_t *sum, int (*history)(const char *fmt, ...))
   cptr = sum->wd;
   dsixpt = sum->dsix_ptr;
   if(sum->debugflg) {
-    (*history)("Going to PUT reqcnt=%d with 1st wd=%s, ix=%lu\n", 
+    (*history)("Going to PUT reqcnt=%d with 1st wd=%s, ix=%lu\n",
 			sum->reqcnt, *cptr, *dsixpt);
   }
   klist = newkeylist();
@@ -5489,7 +5491,7 @@ int SUM_put(SUM_t *sum, int (*history)(const char *fmt, ...))
   setkey_str(&klist, "history_comment", sum->history_comment);
   setkey_str(&klist, "username", sum->username);
   setkey_int(&klist, "group", sum->group);
-  
+
   /* storeset got set by a previous SUM_alloc/SUM_alloc2 call! The caller of SUM_put does NOT provide
    * a storeset value. */
   setkey_int(&klist, "storage_set", sum->storeset);
@@ -5504,7 +5506,7 @@ int SUM_put(SUM_t *sum, int (*history)(const char *fmt, ...))
   }
   rr = rr_random(0, numSUM-1);
   switch(rr) {
-  case 0: 
+  case 0:
     clput = sum->clput;
     break;
   case 1:
@@ -5530,7 +5532,7 @@ int SUM_put(SUM_t *sum, int (*history)(const char *fmt, ...))
     break;
   }
   clprev = clput;
-  status = clnt_call(clput, PUTDO, (xdrproc_t)xdr_Rkey, (char *)klist, 
+  status = clnt_call(clput, PUTDO, (xdrproc_t)xdr_Rkey, (char *)klist,
 			(xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
 
   /* NOTE: These rtes seem to return after the reply has been received despite
@@ -5595,7 +5597,7 @@ int SUM_delete_series(SUM_t *sum, char *filename, char *seriesname, int (*histor
   if(cptr) *cptr = '\0';
   //handle created in SUM_open()
   clprev = sum->cldelser;
-  status = clnt_call(sum->cldelser, DELSERIESDO, (xdrproc_t)xdr_Rkey, (char *)klist, 
+  status = clnt_call(sum->cldelser, DELSERIESDO, (xdrproc_t)xdr_Rkey, (char *)klist,
 			(xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
 
   /* NOTE: These rtes seem to return after the reply has been received despite
@@ -5622,7 +5624,7 @@ int SUM_delete_series(SUM_t *sum, char *filename, char *seriesname, int (*histor
 /* Wait until the expected response is complete.
  * Return 0 = msg complete, the sum has been updated
  * ERRMESS = fatal error (!!TBD find out what you can do if this happens)
- * NOTE: Upon msg complete return, sum->status != 0 if error anywhere in the 
+ * NOTE: Upon msg complete return, sum->status != 0 if error anywhere in the
  * path of the request that initially returned the RESULT_PEND status.
 */
 int SUM_wait(SUM_t *sum)
@@ -5649,7 +5651,7 @@ int SUM_wait(SUM_t *sum)
 #endif
 
 /* If we are not using MT SUMS, then we have to define SUM_open() here and have it always
- * use the RPC server. Otherwise, if MT SUMS is not used for all calls, then we need to use 
+ * use the RPC server. Otherwise, if MT SUMS is not used for all calls, then we need to use
  * the SUM_open() definition that selects either the RPC or MT
  * version, depending on which server was used for the current SUMS request. If MT SUMS is
  * used for all calls, then we need to use the SUM_open() definition that uses the MT server
@@ -5670,7 +5672,7 @@ int SUM_poll(SUM_t *sum)
 #if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || (!defined(SUMS_USEMTSUMS_ALL) || !SUMS_USEMTSUMS_ALL)
 // Don't use any of this RPC-based interface calls if the client is solely using the MT SUMS interface.
 // There is no reason to expose the API calls. The MT SUMS server reads the partition table
-// each time it need to use it. 
+// each time it need to use it.
 
 /* Check the SUM_repartn() client calls. Returns 1 on error.
 */
@@ -5693,7 +5695,7 @@ int SUM_repartn_ck_error(int stat, uint32_t rstat, CLIENT *rcl, int (*history)(c
 
 /* Send a SUMREPARTN message to all the relevant sum processes to tell them
  * to reread the sum_partn_avail DB table. This is normally called by
- * the sumrepartn utility program after a sum_partn_avail table has 
+ * the sumrepartn utility program after a sum_partn_avail table has
  * been changed. Returns non-0 on error.
  * The relevant processes are sum_svc, Salloc*, Sget*, Sinfo*.
 */
@@ -5710,7 +5712,7 @@ int SUM_repartn(SUM_t *sum, int (*history)(const char *fmt, ...))
     (*history)("SUM_repartn() call: uid = %lu\n", sum->uid);
   }
   klist = newkeylist();
-  setkey_uint64(&klist, "uid", sum->uid); 
+  setkey_uint64(&klist, "uid", sum->uid);
   setkey_int(&klist, "DEBUGFLG", sum->debugflg);
   setkey_str(&klist, "USER", sum->username);
   if(numSUM == 1) {
@@ -5732,7 +5734,7 @@ int SUM_repartn(SUM_t *sum, int (*history)(const char *fmt, ...))
 
 #if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || (!defined(SUMS_USEMTSUMS_ALLOC) || !SUMS_USEMTSUMS_ALLOC)
     if(sum->clalloc) {
-      status = clnt_call(sum->clalloc, SUMREPARTN, (xdrproc_t)xdr_Rkey, 
+      status = clnt_call(sum->clalloc, SUMREPARTN, (xdrproc_t)xdr_Rkey,
   	(char *)klist, (xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
       if(status = SUM_repartn_ck_error(status,retstat,sum->clalloc,history)) {
         (*history)("SUM_repartn() failed on call to Salloc\n");
@@ -5740,7 +5742,7 @@ int SUM_repartn(SUM_t *sum, int (*history)(const char *fmt, ...))
       }
     }
     if(sum->clalloc1) {
-      status = clnt_call(sum->clalloc1, SUMREPARTN, (xdrproc_t)xdr_Rkey, 
+      status = clnt_call(sum->clalloc1, SUMREPARTN, (xdrproc_t)xdr_Rkey,
   	(char *)klist, (xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
       if(status = SUM_repartn_ck_error(status,retstat,sum->clalloc1,history)) {
         (*history)("SUM_repartn() failed on call to Salloc1\n");
@@ -5748,7 +5750,7 @@ int SUM_repartn(SUM_t *sum, int (*history)(const char *fmt, ...))
       }
     }
     if(sum->clalloc2) {
-      status = clnt_call(sum->clalloc2, SUMREPARTN, (xdrproc_t)xdr_Rkey, 
+      status = clnt_call(sum->clalloc2, SUMREPARTN, (xdrproc_t)xdr_Rkey,
   	(char *)klist, (xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
       if(status = SUM_repartn_ck_error(status,retstat,sum->clalloc2,history)) {
         (*history)("SUM_repartn() failed on call to Salloc2\n");
@@ -5756,7 +5758,7 @@ int SUM_repartn(SUM_t *sum, int (*history)(const char *fmt, ...))
       }
     }
     if(sum->clalloc3) {
-      status = clnt_call(sum->clalloc3, SUMREPARTN, (xdrproc_t)xdr_Rkey, 
+      status = clnt_call(sum->clalloc3, SUMREPARTN, (xdrproc_t)xdr_Rkey,
   	(char *)klist, (xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
       if(status = SUM_repartn_ck_error(status,retstat,sum->clalloc3,history)) {
         (*history)("SUM_repartn() failed on call to Salloc3\n");
@@ -5764,7 +5766,7 @@ int SUM_repartn(SUM_t *sum, int (*history)(const char *fmt, ...))
       }
     }
     if(sum->clalloc4) {
-      status = clnt_call(sum->clalloc4, SUMREPARTN, (xdrproc_t)xdr_Rkey, 
+      status = clnt_call(sum->clalloc4, SUMREPARTN, (xdrproc_t)xdr_Rkey,
   	(char *)klist, (xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
       if(status = SUM_repartn_ck_error(status,retstat,sum->clalloc4,history)) {
         (*history)("SUM_repartn() failed on call to Salloc4\n");
@@ -5772,7 +5774,7 @@ int SUM_repartn(SUM_t *sum, int (*history)(const char *fmt, ...))
       }
     }
     if(sum->clalloc5) {
-      status = clnt_call(sum->clalloc5, SUMREPARTN, (xdrproc_t)xdr_Rkey, 
+      status = clnt_call(sum->clalloc5, SUMREPARTN, (xdrproc_t)xdr_Rkey,
   	(char *)klist, (xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
       if(status = SUM_repartn_ck_error(status,retstat,sum->clalloc5,history)) {
         (*history)("SUM_repartn() failed on call to Salloc5\n");
@@ -5780,7 +5782,7 @@ int SUM_repartn(SUM_t *sum, int (*history)(const char *fmt, ...))
       }
     }
     if(sum->clalloc6) {
-      status = clnt_call(sum->clalloc6, SUMREPARTN, (xdrproc_t)xdr_Rkey, 
+      status = clnt_call(sum->clalloc6, SUMREPARTN, (xdrproc_t)xdr_Rkey,
   	(char *)klist, (xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
       if(status = SUM_repartn_ck_error(status,retstat,sum->clalloc6,history)) {
         (*history)("SUM_repartn() failed on call to Salloc6\n");
@@ -5788,7 +5790,7 @@ int SUM_repartn(SUM_t *sum, int (*history)(const char *fmt, ...))
       }
     }
     if(sum->clalloc7) {
-      status = clnt_call(sum->clalloc7, SUMREPARTN, (xdrproc_t)xdr_Rkey, 
+      status = clnt_call(sum->clalloc7, SUMREPARTN, (xdrproc_t)xdr_Rkey,
   	(char *)klist, (xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
       if(status = SUM_repartn_ck_error(status,retstat,sum->clalloc7,history)) {
         (*history)("SUM_repartn() failed on call to Salloc7\n");
@@ -5798,9 +5800,9 @@ int SUM_repartn(SUM_t *sum, int (*history)(const char *fmt, ...))
 #endif
 
 #if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || (!defined(SUMS_USEMTSUMS_GET) || !SUMS_USEMTSUMS_GET)
-    
+
     if(sum->clget) {
-      status = clnt_call(sum->clget, SUMREPARTN, (xdrproc_t)xdr_Rkey, 
+      status = clnt_call(sum->clget, SUMREPARTN, (xdrproc_t)xdr_Rkey,
   	(char *)klist, (xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
       if(status = SUM_repartn_ck_error(status,retstat,sum->clget,history)) {
         (*history)("SUM_repartn() failed on call to Sget\n");
@@ -5808,7 +5810,7 @@ int SUM_repartn(SUM_t *sum, int (*history)(const char *fmt, ...))
       }
     }
     if(sum->clget1) {
-      status = clnt_call(sum->clget1, SUMREPARTN, (xdrproc_t)xdr_Rkey, 
+      status = clnt_call(sum->clget1, SUMREPARTN, (xdrproc_t)xdr_Rkey,
   	(char *)klist, (xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
       if(status = SUM_repartn_ck_error(status,retstat,sum->clget1,history)) {
         (*history)("SUM_repartn() failed on call to Sget1\n");
@@ -5816,7 +5818,7 @@ int SUM_repartn(SUM_t *sum, int (*history)(const char *fmt, ...))
       }
     }
     if(sum->clget2) {
-      status = clnt_call(sum->clget2, SUMREPARTN, (xdrproc_t)xdr_Rkey, 
+      status = clnt_call(sum->clget2, SUMREPARTN, (xdrproc_t)xdr_Rkey,
   	(char *)klist, (xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
       if(status = SUM_repartn_ck_error(status,retstat,sum->clget2,history)) {
         (*history)("SUM_repartn() failed on call to Sget2\n");
@@ -5824,7 +5826,7 @@ int SUM_repartn(SUM_t *sum, int (*history)(const char *fmt, ...))
       }
     }
     if(sum->clget3) {
-      status = clnt_call(sum->clget3, SUMREPARTN, (xdrproc_t)xdr_Rkey, 
+      status = clnt_call(sum->clget3, SUMREPARTN, (xdrproc_t)xdr_Rkey,
   	(char *)klist, (xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
       if(status = SUM_repartn_ck_error(status,retstat,sum->clget3,history)) {
         (*history)("SUM_repartn() failed on call to Sget3\n");
@@ -5832,7 +5834,7 @@ int SUM_repartn(SUM_t *sum, int (*history)(const char *fmt, ...))
       }
     }
     if(sum->clget4) {
-      status = clnt_call(sum->clget4, SUMREPARTN, (xdrproc_t)xdr_Rkey, 
+      status = clnt_call(sum->clget4, SUMREPARTN, (xdrproc_t)xdr_Rkey,
   	(char *)klist, (xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
       if(status = SUM_repartn_ck_error(status,retstat,sum->clget4,history)) {
         (*history)("SUM_repartn() failed on call to Sget4\n");
@@ -5840,7 +5842,7 @@ int SUM_repartn(SUM_t *sum, int (*history)(const char *fmt, ...))
       }
     }
     if(sum->clget5) {
-      status = clnt_call(sum->clget5, SUMREPARTN, (xdrproc_t)xdr_Rkey, 
+      status = clnt_call(sum->clget5, SUMREPARTN, (xdrproc_t)xdr_Rkey,
   	(char *)klist, (xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
       if(status = SUM_repartn_ck_error(status,retstat,sum->clget5,history)) {
         (*history)("SUM_repartn() failed on call to Sget5\n");
@@ -5848,7 +5850,7 @@ int SUM_repartn(SUM_t *sum, int (*history)(const char *fmt, ...))
       }
     }
     if(sum->clget6) {
-      status = clnt_call(sum->clget6, SUMREPARTN, (xdrproc_t)xdr_Rkey, 
+      status = clnt_call(sum->clget6, SUMREPARTN, (xdrproc_t)xdr_Rkey,
   	(char *)klist, (xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
       if(status = SUM_repartn_ck_error(status,retstat,sum->clget6,history)) {
         (*history)("SUM_repartn() failed on call to Sget6\n");
@@ -5856,7 +5858,7 @@ int SUM_repartn(SUM_t *sum, int (*history)(const char *fmt, ...))
       }
     }
     if(sum->clget7) {
-      status = clnt_call(sum->clget7, SUMREPARTN, (xdrproc_t)xdr_Rkey, 
+      status = clnt_call(sum->clget7, SUMREPARTN, (xdrproc_t)xdr_Rkey,
   	(char *)klist, (xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
       if(status = SUM_repartn_ck_error(status,retstat,sum->clget7,history)) {
         (*history)("SUM_repartn() failed on call to Sget7\n");
@@ -5867,7 +5869,7 @@ int SUM_repartn(SUM_t *sum, int (*history)(const char *fmt, ...))
 
 #if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || (!defined(SUMS_USEMTSUMS_INFO) || !SUMS_USEMTSUMS_INFO)
     if(sum->clinfo) {
-      status = clnt_call(sum->clinfo, SUMREPARTN, (xdrproc_t)xdr_Rkey, 
+      status = clnt_call(sum->clinfo, SUMREPARTN, (xdrproc_t)xdr_Rkey,
   	(char *)klist, (xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
       if(status = SUM_repartn_ck_error(status,retstat,sum->clinfo,history)) {
         (*history)("SUM_repartn() failed on call to Sinfo\n");
@@ -5875,7 +5877,7 @@ int SUM_repartn(SUM_t *sum, int (*history)(const char *fmt, ...))
       }
     }
     if(sum->clinfo1) {
-      status = clnt_call(sum->clinfo1, SUMREPARTN, (xdrproc_t)xdr_Rkey, 
+      status = clnt_call(sum->clinfo1, SUMREPARTN, (xdrproc_t)xdr_Rkey,
   	(char *)klist, (xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
       if(status = SUM_repartn_ck_error(status,retstat,sum->clinfo1,history)) {
         (*history)("SUM_repartn() failed on call to Sinfo1\n");
@@ -5883,7 +5885,7 @@ int SUM_repartn(SUM_t *sum, int (*history)(const char *fmt, ...))
       }
     }
     if(sum->clinfo2) {
-      status = clnt_call(sum->clinfo2, SUMREPARTN, (xdrproc_t)xdr_Rkey, 
+      status = clnt_call(sum->clinfo2, SUMREPARTN, (xdrproc_t)xdr_Rkey,
   	(char *)klist, (xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
       if(status = SUM_repartn_ck_error(status,retstat,sum->clinfo2,history)) {
         (*history)("SUM_repartn() failed on call to Sinfo2\n");
@@ -5891,7 +5893,7 @@ int SUM_repartn(SUM_t *sum, int (*history)(const char *fmt, ...))
       }
     }
     if(sum->clinfo3) {
-      status = clnt_call(sum->clinfo3, SUMREPARTN, (xdrproc_t)xdr_Rkey, 
+      status = clnt_call(sum->clinfo3, SUMREPARTN, (xdrproc_t)xdr_Rkey,
   	(char *)klist, (xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
       if(status = SUM_repartn_ck_error(status,retstat,sum->clinfo3,history)) {
         (*history)("SUM_repartn() failed on call to Sinfo3\n");
@@ -5899,7 +5901,7 @@ int SUM_repartn(SUM_t *sum, int (*history)(const char *fmt, ...))
       }
     }
     if(sum->clinfo4) {
-      status = clnt_call(sum->clinfo4, SUMREPARTN, (xdrproc_t)xdr_Rkey, 
+      status = clnt_call(sum->clinfo4, SUMREPARTN, (xdrproc_t)xdr_Rkey,
   	(char *)klist, (xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
       if(status = SUM_repartn_ck_error(status,retstat,sum->clinfo4,history)) {
         (*history)("SUM_repartn() failed on call to Sinfo4\n");
@@ -5907,7 +5909,7 @@ int SUM_repartn(SUM_t *sum, int (*history)(const char *fmt, ...))
       }
     }
     if(sum->clinfo5) {
-      status = clnt_call(sum->clinfo5, SUMREPARTN, (xdrproc_t)xdr_Rkey, 
+      status = clnt_call(sum->clinfo5, SUMREPARTN, (xdrproc_t)xdr_Rkey,
   	(char *)klist, (xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
       if(status = SUM_repartn_ck_error(status,retstat,sum->clinfo5,history)) {
         (*history)("SUM_repartn() failed on call to Sinfo5\n");
@@ -5915,7 +5917,7 @@ int SUM_repartn(SUM_t *sum, int (*history)(const char *fmt, ...))
       }
     }
     if(sum->clinfo6) {
-      status = clnt_call(sum->clinfo6, SUMREPARTN, (xdrproc_t)xdr_Rkey, 
+      status = clnt_call(sum->clinfo6, SUMREPARTN, (xdrproc_t)xdr_Rkey,
   	(char *)klist, (xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
       if(status = SUM_repartn_ck_error(status,retstat,sum->clinfo6,history)) {
         (*history)("SUM_repartn() failed on call to Sinfo6\n");
@@ -5923,7 +5925,7 @@ int SUM_repartn(SUM_t *sum, int (*history)(const char *fmt, ...))
       }
     }
     if(sum->clinfo7) {
-      status = clnt_call(sum->clinfo7, SUMREPARTN, (xdrproc_t)xdr_Rkey, 
+      status = clnt_call(sum->clinfo7, SUMREPARTN, (xdrproc_t)xdr_Rkey,
   	(char *)klist, (xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
       if(status = SUM_repartn_ck_error(status,retstat,sum->clinfo7,history)) {
         (*history)("SUM_repartn() failed on call to Sinfo7\n");
@@ -5947,11 +5949,11 @@ int SUM_repartn(SUM_t *sum, int (*history)(const char *fmt, ...))
  * Returns the type of msg or timeout status.
 */
 
-/* svc_fdset is a global RPC variable. It is an array that contains a struct element for each connection from sum_svc 
+/* svc_fdset is a global RPC variable. It is an array that contains a struct element for each connection from sum_svc
  * to the DRMS module (which is acting as the SVC server). For each connection, svc_getreqset() calls the
- * RESPPROG program, which is respd(), when it receives an RPC request. resp() will then call one of two 
+ * RESPPROG program, which is respd(), when it receives an RPC request. resp() will then call one of two
  * functions, respdo_1() or respdoarray_1(), to handle these requests. Each of these functions will put
- * results in the SUM_t struct. 
+ * results in the SUM_t struct.
  */
 int getanymsg(int block)
 {
@@ -6044,7 +6046,7 @@ int getmsgimmed()
 */
 
 /* This is the function where the SUM_t::sinfo list is created. It looks like initially
- * xdr_array was used to create this list, but then the developer couldn't figure out how to do 
+ * xdr_array was used to create this list, but then the developer couldn't figure out how to do
  * it, so they used this function instead. However, they left all the xdr stuff laying about.
  */
 KEY *respdoarray_1(KEY *params)
@@ -6068,13 +6070,13 @@ KEY *respdoarray_1(KEY *params)
   file = getkey_str(params, "FILE");
   filemode = getkey_int(params, "filemode");
   //printf("mode=%d file=%s\n", filemode, file); //!!TEMP
-  if((rfp=fopen(file, "r")) == NULL) { 
+  if((rfp=fopen(file, "r")) == NULL) {
     printf("**Can't open %s from sum_svc ret from SUM_infoArray() call\n", file);
     free(file);
     return((KEY *)NULL);
   }
   free(file);
-  
+
   /* ************
    *
    * HERE IT IS!! THE PLACE WHERE THE sinfo LIST IS ALLOCATED.
@@ -6097,13 +6099,13 @@ KEY *respdoarray_1(KEY *params)
   sinfod = sum->sinfo;
   for(i = 0; i < reqcnt; i++) {  //do linked list in sinfo
     fgets(line, 128, rfp);
-    if(!strcmp(line, "\n")) { 
+    if(!strcmp(line, "\n")) {
       fgets(line, 128, rfp);
     }
     sscanf(line, "%s %lu", name, &sinfod->sunum);
     fgets(line, 128, rfp);
     sscanf(line, "%s %s", name, sinfod->online_loc);
-    
+
     /* If an invalid SUNUM was encountered, then the next record inserted into the
      * results file begins with "pa_status" instead of the normal "online_loc".  In that
      * case, we add online_loc == '\0' and send that back to DRMS.
@@ -6153,7 +6155,7 @@ KEY *respdoarray_1(KEY *params)
     fgets(line, 128, rfp);
     sscanf(line, "%s %s", name, sinfod->effective_date);
     sinfod = sinfod->next; //sinfod->next set up from the malloc
-  } 
+  }
   }
   fclose(rfp);
   return((KEY *)NULL);
@@ -6173,7 +6175,7 @@ KEY *respdo_1(KEY *params)
   uint64_t dsindex;
   int i, reqcnt, reqcode;
   char name[128];
-                                         
+
   sumopened = getsumopened(sumopened_hdr, getkey_uint64(params, "uid"));
   sum = (SUM_t *)sumopened->sum;
   if(sum == NULL) {
@@ -6188,7 +6190,7 @@ KEY *respdo_1(KEY *params)
   reqcnt = getkey_int(params, "reqcnt");
   reqcode = getkey_int(params, "REQCODE");
   sum->status = getkey_int(params, "STATUS");
-  
+
     if (reqcode == ALLOCDO || reqcode == GETDO)
     {
         /* these two calls will set the SUdirs, and we do not know exactly how many bytes were allocated to sum->wd */
@@ -6201,10 +6203,10 @@ KEY *respdo_1(KEY *params)
 
         sum->wd = (char **)calloc(reqcnt, sizeof(char *));
     }
-    
+
     if (reqcode == ALLOCDO)
     {
-        /* this call is also going to set the SUNUM */    
+        /* this call is also going to set the SUNUM */
         if (sum->dsix_ptr)
         {
             /* this may have been allocated from a previous call */
@@ -6236,7 +6238,7 @@ KEY *respdo_1(KEY *params)
       if(findkey(params, "ERRSTR")) {
         printf("%s\n", GETKEY_str(params, "ERRSTR"));
       }
-    } 
+    }
     break;
   case INFODOX:
     if(findkey(params, "ERRSTR")) {
@@ -6284,13 +6286,13 @@ KEY *respdo_1(KEY *params)
       sinfo->pa_substatus = getkey_int(params, name);
       sprintf(name, "effective_date_%d", i);
       strcpy(sinfo->effective_date, GETKEY_str(params, name));
-      if(!(sinfo = sinfo->next)) { 
+      if(!(sinfo = sinfo->next)) {
         if(i+1 != reqcnt) {
           printf("ALERT: #of info requests received differs from reqcnt\n");
           break;	//don't agree w/reqcnt !ck this out
         }
       }
-    } 
+    }
     break;
   case INFODO:
     //add_keys(infoparams, &params);
@@ -6327,8 +6329,8 @@ KEY *respdo_1(KEY *params)
 
 
 /* This is the dispatch routine for the registered RESPPROG, suidback.
- * Called when a server sends a response that it is done with the original 
- * call that we made to it. 
+ * Called when a server sends a response that it is done with the original
+ * call that we made to it.
  * This routine is called by svc_getreqset() in getanymsg().
 */
 static void respd(rqstp, transp)
@@ -6393,4 +6395,3 @@ char *datestring(void)
   str[19] = 0;
   return str+4;          /* isolate the mmm dd hh:mm:ss */
 }
-
