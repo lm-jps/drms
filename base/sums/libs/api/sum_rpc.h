@@ -65,18 +65,18 @@
 /*  clnt_create(char *host, uint32_t prog, uint32_t vers, char *proto);
 /*
 /*  extern enum clnt_stat
-/*  clnt_call(CLIENT *clnt, uint32_t procnum, xdrproc_t inproc, char *in, 
+/*  clnt_call(CLIENT *clnt, uint32_t procnum, xdrproc_t inproc, char *in,
 /*		xdrproc_t outproc, char *out, struct timeval tout);
 /*
 /*  extern CLIENT *
-/*  clnttcp_create(struct sockaddr_in *addr, unit32_t prognum,unit32_t versnum, 
+/*  clnttcp_create(struct sockaddr_in *addr, unit32_t prognum,unit32_t versnum,
 /*		int *sockp, u_int sendsz, u_int recvsz);
 /*
-/*  extern bool_t 
+/*  extern bool_t
 /*  pmap_unset(uint32_t prognum, uint32_t versnum);
 /*
 /*  extern bool_t
-/*  svc_register(SVCXPRT *xprt, unit32_t prognum, unit32_t versnum, 
+/*  svc_register(SVCXPRT *xprt, unit32_t prognum, unit32_t versnum,
 /*		void (*dispatch) (), uint32_t protocol);
 /*
 /*  void
@@ -86,7 +86,7 @@
 #endif
 
 #ifdef __APPLE__
-#define xdr_uint_t xdr_u_int_t    
+#define xdr_uint_t xdr_u_int_t
 #define xdr_uint16_t xdr_u_int16_t
 #define xdr_uint32_t xdr_u_int32_t
 #define xdr_uint64_t xdr_u_int64_t
@@ -292,7 +292,7 @@ extern KEY *clntgone_1(void);
 #define RESPVERS ((uint32_t)1)
 #define RESPDO ((uint32_t)1)
 #define RESPDOARRAY ((uint32_t)2)
-#define RESULT_PEND 32		/* returned by clnt_call GETDO request 
+#define RESULT_PEND 32		/* returned by clnt_call GETDO request
 				   when storage unit is off line */
 extern KEY *respdo_1(KEY *params);
 
@@ -409,7 +409,7 @@ extern KEY *robotdoordo_1(KEY *params);
 /*extern KEY *rmrespdo_1();*/
 
 /* This is the sum_pe_svc program registration */
-#define SUMPEPROG ((uint32_t)0x2000062a) 
+#define SUMPEPROG ((uint32_t)0x2000062a)
 #define SUMPEVERS ((uint32_t)1)
 #define SUMPEVERS2 ((uint32_t)2)
 #define SUMPEDO ((uint32_t)1)
@@ -459,7 +459,7 @@ typedef int MSUMSCLIENT_t;
 #define SUMS_USEMTSUMS_CONNECTION 1
 
 // The SUMS API family that obtains information about asynchronously running services:
-//    SUM_nop() - Check to see if the MT SUMS server is alive. Returns 0 if it is alive and responding, 1 if the client times-out attempting to 
+//    SUM_nop() - Check to see if the MT SUMS server is alive. Returns 0 if it is alive and responding, 1 if the client times-out attempting to
 // communicate with the server, 4 on error, and 5 if the tape service is not responding. THE FUNCTION OF THE ORIGINAL SUMS SEEMS WHACKED!
 // THESE RETURN VALUES ARE JUST A GUESS.
 // (For RPC SUMS, queries the server processing the in-progress request (the one being used currently and asynchronously.))
@@ -468,12 +468,12 @@ typedef int MSUMSCLIENT_t;
 // currently executing API is an MT version, then the MT version must be used. So, BOTH the RPC and MT versions must exist.
 //    SUM_poll() - If the MT SUMS server has completed processing an asynchronous request, then this service returns 0. Otherwise it returns 3
 // on timeout and 4 on error. THE FUNCTION OF THE ORIGINAL SUMS SEEMS WHACKED! THESE RETURN VALUES ARE JUST A GUESS.
-// (For RPC SUMS, uses getanymsg(), which uses select().) Like SUM_nop(), the user cannot specify whether the RPC version or the 
+// (For RPC SUMS, uses getanymsg(), which uses select().) Like SUM_nop(), the user cannot specify whether the RPC version or the
 // MT version should be used.
 //
 // Don't expose the SUM_wait() API function. It is not used.
 
-// The SUMS API family that obtains Storage Unit information: 
+// The SUMS API family that obtains Storage Unit information:
 //    SUM_infoArray() - Request SU information from the MT SUMS server.
 #undef SUMS_USEMTSUMS_INFO
 #define SUMS_USEMTSUMS_INFO 1
@@ -500,6 +500,12 @@ typedef int MSUMSCLIENT_t;
 #undef SUMS_USEMTSUMS_DELETESUS
 #define SUMS_USEMTSUMS_DELETESUS 1
 // Don't expose the REPARTITION or REPARTITIONCHECKERROR API functions. It makes no sense that they should be in the API - those are private SUMS services.
+
+// The macro SUM_NUMSUM is relevant only for sum_svc; however, no sum_svc will be used with this configuration; set this to 0 and
+// sum_open.c will do the right thing
+#undef SUM_NUMSUM
+#define SUM_NUMSUM 0
+
 #else /* SUMS_USEMTSUMS_ALL */
 
 #if (defined(SUMS_USEMTSUMS_CONNECTION) && SUMS_USEMTSUMS_CONNECTION) && (defined(SUMS_USEMTSUMS_INFO) && SUMS_USEMTSUMS_INFO) && (defined(SUMS_USEMTSUMS_GET) && SUMS_USEMTSUMS_GET) && (defined(SUMS_USEMTSUMS_ALLOC) && SUMS_USEMTSUMS_ALLOC) && (defined(SUMS_USEMTSUMS_PUT) && SUMS_USEMTSUMS_PUT) && (defined(SUMS_USEMTSUMS_DELETESUS) && SUMS_USEMTSUMS_DELETESUS)
@@ -619,7 +625,7 @@ typedef struct SUMEXP_struct
 } SUMEXP_t;
 
 /* SUMID/SUM assignment table. One of these is put onto the sum_hdr pointer
- * each time a single client registers (opens) with sum_svc, and removed when 
+ * each time a single client registers (opens) with sum_svc, and removed when
  * it deregisters (closes).
 */
 struct sumopened {
@@ -630,9 +636,9 @@ struct sumopened {
 };
 typedef struct sumopened SUMOPENED;
 
-/* SUMID/Offcnt assignment table. An entry is made by readdo_1() in 
+/* SUMID/Offcnt assignment table. An entry is made by readdo_1() in
  * tape_svc_proc.c when a SUM_get() is made by a user and one or more storge
- * units are offline. This keeps track of unique tapeids and file numbers 
+ * units are offline. This keeps track of unique tapeids and file numbers
  * to read. Also, whenever a tape read completes, the offcnt is incremented
  * until the uniqcnt is reach, at which point a response
  * is finnally sent to sum_svc that the SUM_get() is complete.
@@ -649,7 +655,7 @@ struct sumoffcnt {
   uint32_t sprog;		//added 22May2012
 };
 typedef struct sumoffcnt SUMOFFCNT;
- 
+
 
 /* Tape queue assignment table. One of these is put onto the tq_rd_hdr or
  * tq_wrt_hdr pointer each time tape_svc gets a tape read or write request.
@@ -785,10 +791,10 @@ int SUM_StatOffline(uint64_t ds_index);
 int SUMLIB_TapeClose(char *tapeid);
 int SUMLIB_TapeActive(char *tapeid);
 int SUMLIB_TapeCatalog(char *tapeid);
-int SUMLIB_MainTapeUpdate(KEY *params); 
+int SUMLIB_MainTapeUpdate(KEY *params);
 int SUMLIB_EffDateUpdate(char *tapeid, int operation);
 int SUMLIB_MD5info(char *tapeid);
-int SUMLIB_SafeTapeUpdate(char *suname, char *tapeid, int tapefn, char *tapedate); 
+int SUMLIB_SafeTapeUpdate(char *suname, char *tapeid, int tapefn, char *tapedate);
 int DS_SumMainDelete(uint64_t ds_index);
 int SUM_StatOnline(uint64_t ds_index, char *newwd);
 int DS_DataRequest_WD(KEY *params, KEY **results);
@@ -801,7 +807,7 @@ int SUMLIB_PavailGet(double bytes, int pds_set, uint64_t uid, uint64_t sunum, KE
 int SUMLIB_PavailUpdate(char *name, double bytes);
 int SUMLIB_PavailOff(char *name);
 int SUMLIB_PavailOn(char *name, int setnum);
-int SUMLIB_DelSeriesSU(char *file, char *series); 
+int SUMLIB_DelSeriesSU(char *file, char *series);
 int SUMLIB_InfoGet(uint64_t sunum , KEY **results);
 
 
@@ -829,4 +835,3 @@ CLIENT *set_client_handle(uint32_t prognum, uint32_t versnum);
 double du_dir(char *wd);
 
 #endif
-
