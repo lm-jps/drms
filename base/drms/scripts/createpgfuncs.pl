@@ -1,7 +1,10 @@
 #!/usr/bin/perl -w
 
+use File::Basename;
+
 # read in the dbname
 my($dbname);
+my($wdir) = dirname(__FILE__);
 
 if (scalar(@ARGV) != 1)
 {
@@ -11,10 +14,6 @@ if (scalar(@ARGV) != 1)
 
 $dbname = $ARGV[0];
 
-if (-d "scripts")
-{
-    chdir("scripts");
-}
 
 # If the the types or functions already exist, remove them first.
 # since functions depend on types, dropping the type will drop
@@ -29,13 +28,13 @@ if (-d "scripts")
 `psql -c "DROP TYPE drmssession CASCADE" $dbname 2>&1`;
 
 # Now create the types/functions
-`psql -f create_type_drmskw.sql $dbname`;
-`psql -f drms_keyword.sql $dbname`;
-`psql -f create_type_drmssg.sql $dbname`;
-`psql -f drms_segment.sql $dbname`;
-`psql -f create_type_rep_item.sql $dbname`;
-`psql -f drms_replicated.sql $dbname`;
-`psql -f create_type_drmsseries.sql $dbname`;
-`psql -f drms_series.sql $dbname`;
-`psql -f create_type_drmssession.sql $dbname`;
-`psql -f drms_session.sql $dbname`;
+`psql -f $wdir/create_type_drmskw.sql $dbname`;
+`psql -f $wdir/drms_keyword.sql $dbname`;
+`psql -f $wdir/create_type_drmssg.sql $dbname`;
+`psql -f $wdir/drms_segment.sql $dbname`;
+`psql -f $wdir/create_type_rep_item.sql $dbname`;
+`psql -f $wdir/drms_replicated.sql $dbname`;
+`psql -f $wdir/create_type_drmsseries.sql $dbname`;
+`psql -f $wdir/drms_series.sql $dbname`;
+`psql -f $wdir/create_type_drmssession.sql $dbname`;
+`psql -f $wdir/drms_session.sql $dbname`;
