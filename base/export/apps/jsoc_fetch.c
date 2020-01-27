@@ -11,10 +11,10 @@
 
 
 /*
- * There are two ways to emulate a POST request on the cmd-line. Both involve 
+ * There are two ways to emulate a POST request on the cmd-line. Both involve
  * forcing qDecoder, the HTTP-request parsing library, to process a GET request.
  * Since POST passes its argument via stdin to jsoc_fetch, it would be cumbersome
- * to use the POST branch of qDecoder code (which expects args to arrive via stdin, 
+ * to use the POST branch of qDecoder code (which expects args to arrive via stdin,
  * and expects additional env variables). Instead we can pass the arguments via
  * the cmd-line, or via environment variables.
  *   1. Set two shell environment variables, then run jsoc_fetch:
@@ -95,12 +95,10 @@
 #define kArgSizeRatio "sizeratio"
 #define kArgDontGenWebPage "W"
 #define kArgCgiInstance "instid"
-
 #define kOptProtocolAsIs   "as-is"	   // Protocol option value for no change to fits files
 #define kOptProtocolSuAsIs "su-as-is"  // Protocol option value for requesting as-is FITS paths for the exp_su operation
 
 #define kNotSpecified	"Not Specified"
-
 #define kNoAsyncReq     "NOASYNCREQUEST"
 
 int dojson, dotxt, dohtml, doxml;
@@ -108,7 +106,7 @@ int dojson, dotxt, dohtml, doxml;
 HContainer_t *gLogs = NULL;
 
 ModuleArgs_t module_args[] =
-{ 
+{
   {ARG_STRING, kArgOp, kNotSpecified, "<Operation>"},
   {ARG_STRING, kArgDs, kNotSpecified, "<record_set query>"},
   {ARG_STRING, kArgSeg, kNotSpecified, "<record_set segment list>"},
@@ -347,7 +345,7 @@ static void CleanUp(int64_t **psunumarr, SUM_info_t ***infostructs, char **webar
             (*series)[iarr] = NULL;
          }
       }
-      
+
       free(*series);
       *series = NULL;
    }
@@ -362,7 +360,7 @@ static void CleanUp(int64_t **psunumarr, SUM_info_t ***infostructs, char **webar
             (*paths)[iarr] = NULL;
          }
       }
-      
+
       free(*paths);
       *paths = NULL;
    }
@@ -377,18 +375,18 @@ static void CleanUp(int64_t **psunumarr, SUM_info_t ***infostructs, char **webar
             (*susize)[iarr] = 0;
          }
       }
-      
+
       free(*susize);
       *susize = NULL;
    }
-   
+
    if (userhandle && *userhandle)
      manage_userhandle(0, userhandle);
-    
+
     hcon_destroy(&gLogs);
 }
 
-/* Can't call these from sub-functions - can only be called from DoIt(). And 
+/* Can't call these from sub-functions - can only be called from DoIt(). And
  * calling these from within sub-functions is probably not the desired behavior -
  * I'm thinking that the calls from send_file and SetWebArg are mistakes. The
  * return(1) will NOT cause the DoIt() program to return because the return(1)
@@ -402,23 +400,22 @@ static void CleanUp(int64_t **psunumarr, SUM_info_t ***infostructs, char **webar
 int fileupload = 0;
 static int gGenWebPage = 1; /* For the die() function. */
 
-int die(int dojson, char *msg, char *info, char *stat, int64_t **psunumarr, SUM_info_t ***infostructs, char **webarglist,
-        char ***series, char ***paths, char ***susize, int arrsize, const char *userhandle)
+int die(int dojson, const char *msg, const char *info, const char *cgistat, int64_t **psunumarr, SUM_info_t ***infostructs, char **webarglist, char ***series, char ***paths, char ***susize, int arrsize, const char *userhandle)
   {
   char *msgjson;
   char *json;
   char message[10000];
   json_t *jroot = json_new_object();
 if (DEBUG) fprintf(stderr,"%s%s\n",msg,info);
-  strcpy(message,msg); 
-  strcat(message,info); 
+  strcpy(message,msg);
+  strcat(message,info);
   if (dojson)
     {
     msgjson = string_to_json(message);
-    json_insert_pair_into_object(jroot, "status", json_new_number(stat));
+    json_insert_pair_into_object(jroot, "status", json_new_number(cgistat));
     json_insert_pair_into_object(jroot, "error", json_new_string(msgjson));
     json_tree_to_string(jroot,&json);
-    
+
     if (gGenWebPage)
     {
         if (fileupload)  // The returned json should be in the implied <body> tag for iframe requests.
@@ -426,7 +423,7 @@ if (DEBUG) fprintf(stderr,"%s%s\n",msg,info);
         else
             printf("Content-type: application/json\n\n");
     }
-      
+
     printf("%s\n",json);
     }
   else
@@ -435,8 +432,8 @@ if (DEBUG) fprintf(stderr,"%s%s\n",msg,info);
     {
         printf("Content-type: text/plain\n\n");
     }
-    
-    printf("status=%s\nerror=%s\n", stat, message);
+
+    printf("status=%s\nerror=%s\n", cgistat, message);
     }
   fflush(stdout);
 
@@ -447,24 +444,24 @@ if (DEBUG) fprintf(stderr,"%s%s\n",msg,info);
 
 static int JsonCommitFn(DRMS_Record_t **exprec,
                         int ro,
-                        int dojson, 
-                        char *msg, 
-                        char *info, 
-                        char *stat, 
-                        int64_t **psunumarr, 
-                        SUM_info_t ***infostructs, 
+                        int dojson,
+                        char *msg,
+                        char *info,
+                        char *stat,
+                        int64_t **psunumarr,
+                        SUM_info_t ***infostructs,
                         char **webarglist,
-                        char ***series, 
-                        char ***paths, 
-                        char ***susize, 
-                        int arrsize, 
+                        char ***series,
+                        char ***paths,
+                        char ***susize,
+                        int arrsize,
                         const char *userhandle)
 {
     int rv = 1; // rollback db
-    
+
     // Return some json or plain text in response to the HTTP request
     die(dojson, msg, "", "4", psunumarr, infostructs, webarglist, series, paths, susize, arrsize, userhandle); // ignore return value
-    
+
     if (exprec && *exprec)
     {
         if (ro)
@@ -486,10 +483,10 @@ static int JsonCommitFn(DRMS_Record_t **exprec,
                 rv = 0;
             }
         }
-        
+
         *exprec = NULL;
     }
-    
+
     return rv;
 }
 
@@ -522,10 +519,10 @@ static int send_file(DRMS_Record_t *rec, int segno, char *pathret, int size)
   switch (seg->info->protocol)
     {
     case DRMS_FITS:
-        printf("Content-Type: application/fits\n\n");	
+        printf("Content-Type: application/fits\n\n");
         break;
     default:
-        printf("Content-Type: application/binary\n\n");	
+        printf("Content-Type: application/binary\n\n");
 //  Content-Type: application/fits
 //Length: 152,640 (149K) [application/fits]
 
@@ -557,43 +554,46 @@ char *illegalArg(char *arg)
   }
 
 static int SetWebArg(Q_ENTRY *req, const char *key, char **arglist, size_t *size)
-   {
-   char *value = NULL;
-   char buf[1024];
-   if (req)
-      {
-      value = (char *)qEntryGetStr(req, key);
-      if (value)
-         {
-         char *arg_bad = illegalArg(value);
-         if (arg_bad)
-         {
-            /* ART - it appears that the original intent was to exit the DoIt()
-             * function here - but it is not possible to do that from a function
-             * called by DoIt(). But I've retained the original semantics of 
-             * returning back to DoIt() from here. */
-            die(dojson, "Illegal text in arg: ", arg_bad, "4", NULL, NULL, arglist, NULL, NULL, NULL, 0, NULL);
-            return(1);
-         }
+{
+    char *value = NULL;
+    char buf[1024];
 
-         if (!cmdparams_set(&cmdparams, key, value))
-         {
-            /* ART - it appears that the original intent was to exit the DoIt()
-             * function here - but it is not possible to do that from a function
-             * called by DoIt(). But I've retained the original semantics of 
-             * returning back to DoIt() from here. */
-            die(dojson, "CommandLine Error", "", "4", NULL, NULL, arglist, NULL, NULL, NULL, 0, NULL);
-            return(1);
-         }
+    if (req)
+    {
+        value = (char *)qEntryGetStr(req, key);
 
-         /* ART - keep a copy of the web arguments provided via HTTP POST so that we can 
-          * debug issues more easily. */
-         snprintf(buf, sizeof(buf), "%s='%s' ", key, value);
-         *arglist = base_strcatalloc(*arglist, buf, size);
-         }
-      }
-   return(0);
-   }
+        if (value)
+        {
+            char *arg_bad = illegalArg(value);
+            if (arg_bad)
+            {
+                /* ART - it appears that the original intent was to exit the DoIt()
+                 * function here - but it is not possible to do that from a function
+                 * called by DoIt(). But I've retained the original semantics of
+                 * returning back to DoIt() from here. */
+                die(dojson, "Illegal text in arg: ", arg_bad, "4", NULL, NULL, arglist, NULL, NULL, NULL, 0, NULL);
+                return(1);
+            }
+
+            if (!cmdparams_set(&cmdparams, key, value))
+            {
+                /* ART - it appears that the original intent was to exit the DoIt()
+                 * function here - but it is not possible to do that from a function
+                 * called by DoIt(). But I've retained the original semantics of
+                 * returning back to DoIt() from here. */
+                die(dojson, "CommandLine Error", "", "4", NULL, NULL, arglist, NULL, NULL, NULL, 0, NULL);
+                return(1);
+            }
+
+            /* ART - keep a copy of the web arguments provided via HTTP POST so that we can
+            * debug issues more easily. */
+            snprintf(buf, sizeof(buf), "%s='%s' ", key, value);
+            *arglist = base_strcatalloc(*arglist, buf, size);
+        }
+    }
+
+    return(0);
+ }
 
 static int SetWebFileArg(Q_ENTRY *req, const char *key, char **arglist, size_t *size)
    {
@@ -635,7 +635,7 @@ static void ReleaseLock(int fd)
 static void FreeLogs(void *val)
 {
     FILE **pfptr = (FILE **)val;
-    
+
     if (pfptr && *pfptr)
     {
         fflush(*pfptr);
@@ -668,10 +668,10 @@ static void WriteLog(const char *logpath, const char *format, ...)
     struct stat stbuf;
     int mustchmodlck = 0;
     int mustchmodlog = 0;
-    
+
     if (stat(kLockFile, &stbuf) != 0)
     {
-        /* If file doesn't exist (it might not, since this code can run at non-JSOC sites, but it contains JSOC-specific things), 
+        /* If file doesn't exist (it might not, since this code can run at non-JSOC sites, but it contains JSOC-specific things),
          * then simply do not write log. */
         return;
     }
@@ -680,7 +680,7 @@ static void WriteLog(const char *logpath, const char *format, ...)
         if ((stbuf.st_mode & (S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH)) != (S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH))
         mustchmodlck = 1;
     }
-    
+
     if (stat(logpath, &stbuf) == 0)
     {
         if ((stbuf.st_mode & (S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH)) != (S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH))
@@ -718,11 +718,11 @@ static void WriteLog(const char *logpath, const char *format, ...)
           return;
        }
     }
-    
+
     if (!gLogs)
     {
         gLogs = hcon_create(sizeof(FILE *), 128, (void(*)(const void *value))FreeLogs, NULL, NULL, NULL, 0);
-        
+
         if (gLogs)
         {
             // Insert NULL fptrs, to initialize.
@@ -740,9 +740,9 @@ static void WriteLog(const char *logpath, const char *format, ...)
             return;
         }
     }
-    
+
     pfptr = hcon_lookup(gLogs, logpath);
-    
+
     if (pfptr)
     {
         // Acquire the lock
@@ -755,12 +755,12 @@ static void WriteLog(const char *logpath, const char *format, ...)
                 {
                     *pfptr = fopen(logpath, "a");
                 }
-                
+
                 if (*pfptr)
                 {
                     // Now we can do the actual writing.
                     va_list ap;
-                    
+
                     va_start(ap, format);
                     vfprintf(*pfptr, format, ap);
                     va_end(ap);
@@ -774,7 +774,7 @@ static void WriteLog(const char *logpath, const char *format, ...)
                 {
                     fprintf(stderr, "Unable to open log file for writing: %s.\n", logpath);
                 }
-                
+
                 ReleaseLock(lockfd);
             }
             else
@@ -811,13 +811,13 @@ void json_insert_runtime(json_t *jroot, double StartTime)
   }
 
 // report_summary - record  this call of the program.
-static void report_summary(const char *host, 
-                           double StartTime, 
-                           const char *remote_IP, 
-                           const char *op, 
-                           const char *ds, 
-                           int n, 
-                           int internal, 
+static void report_summary(const char *host,
+                           double StartTime,
+                           const char *remote_IP,
+                           const char *op,
+                           const char *ds,
+                           int n,
+                           int internal,
 			   int requireOnline,
                            int status)
   {
@@ -825,12 +825,12 @@ static void report_summary(const char *host,
   struct timeval thistv;
   char *logfile = NULL;
   char localnowtxt[128];
-      
+
   gettimeofday(&thistv, NULL);
   EndTime = thistv.tv_sec + thistv.tv_usec/1000000.0;
-      
+
   logfile = kLogFileSumm;
-      
+
   LocalTime(localnowtxt, sizeof(localnowtxt));
 
   WriteLog(logfile, "*****%s\n", localnowtxt);
@@ -844,18 +844,18 @@ static void report_summary(const char *host,
   WriteLog(logfile, "status=%d\n",status);
   }
 
-static void LogReqInfo(const char *fname, 
-                       long long instanceID, 
-                       int fileupload, 
-                       const char *op, 
-                       const char *dsin, 
-                       const char *requestid, 
+static void LogReqInfo(const char *fname,
+                       long long instanceID,
+                       int fileupload,
+                       const char *op,
+                       const char *dsin,
+                       const char *requestid,
                        const char *dbhost,
                        int from_web,
                        const char *webarglist,
                        TIME fetch_time)
   {
-  /* Before opening the log file, acquire a lock. Not only will this allow multiple jsoc_fetchs to 
+  /* Before opening the log file, acquire a lock. Not only will this allow multiple jsoc_fetchs to
    * write to the same log, but it will facilitate synchronization with code that manages compression
    * and clean-up of the log. */
 
@@ -874,7 +874,7 @@ static void LogReqInfo(const char *fname,
     char *filename = (char *)cmdparams_get_str (&cmdparams, kArgFile".filename", NULL);
     WriteLog(fname,"   UploadFile: size=%d, name=%s, contents=%s\n",filesize,filename,file);
     }
-    
+
     /* Now print the web arguments (if jsoc_fetch was invoked via an HTTP POST verb). */
     if (from_web && strlen(webarglist) > 0)
       {
@@ -883,7 +883,7 @@ static void LogReqInfo(const char *fname,
       memset(rlbuf, 0, rlsize);
       const char *pwa = webarglist;
       char *prl = rlbuf;
-        
+
       /* Before printing the webarglist string, escape '%' chars - otherwise fprintf(), will
        * think you want to replace things like "%lld" with a formated value - this happens
        * even though there is no arg provided after webarglist. */
@@ -894,20 +894,20 @@ static void LogReqInfo(const char *fname,
             *prl = '%';
             prl++;
           }
-            
+
         *prl = *pwa;
         pwa++;
         prl++;
         }
-        
+
       *prl = '\0';
-        
+
       WriteLog(fname, "** HTTP POST arguments:\n");
       WriteLog(fname, rlbuf);
       WriteLog(fname, "\n");
       free(rlbuf);
       }
-    
+
     WriteLog(fname, "**********************\n");
 }
 
@@ -915,7 +915,7 @@ static int sunumComp(const void *val1, const void *val2)
 {
     long long sunum1;
     long long sunum2;
-    
+
     if (val1)
     {
         sunum1 = *((long long *)val1);
@@ -924,7 +924,7 @@ static int sunumComp(const void *val1, const void *val2)
     {
         sunum1 = -1;
     }
-    
+
     if (val2)
     {
         sunum2 = *((long long *)val2);
@@ -933,7 +933,7 @@ static int sunumComp(const void *val1, const void *val2)
     {
         sunum2 = -1;
     }
-    
+
     return (sunum1 < sunum2) ? -1 : (sunum1 > sunum2 ? 1 : 0);
 }
 
@@ -957,8 +957,8 @@ int dieRoll(int range)
    srand(time(NULL));
    randVal = rand(); /* ~ [0, RAND_MAX] uniformly */
 
-   /* Convert to [1,range]. 
-    * 
+   /* Convert to [1,range].
+    *
     * randVal / RAND_MAX ~ [0, 1] uniformly
     * floor((randVal / RAND_MAX) * range) ~ [0, range - 1] uniformly, plus a 1 / RAND_MAX chance of range
     * floor((randVal / RAND_MAX) * range) + 1 ~ [1, range] uniformly, plus a 1 / RAND_MAX chance of range + 1
@@ -970,13 +970,13 @@ int dieRoll(int range)
 /* Caller owns the returned string. */
 /* If an error occurs, we treat this as if there is no duplicate record. The new request will start a full export. */
 
-/* Do not use dsquery as is. It may have wildcards, like '$', in it which make it difficult to perform future comparisons, i.e., 
+/* Do not use dsquery as is. It may have wildcards, like '$', in it which make it difficult to perform future comparisons, i.e.,
  * dsquery is not canonical. To convert dsquery to the canonical form, we have to open the records (drms_open_records()) and
- * make a list of recnums for each series described by dsquery. 
+ * make a list of recnums for each series described by dsquery.
  *
  * Saving this canonical form is not practical (it could be a very large string). Instead, we save the md5 hash of dsquery, along
  * with other identifying information (filenamefmt, process, protocol, method), in jsoc.export_md5. That db table maps
- * the md5 hash of all 5 fields of information to an existing request ID, if one exists. Records in jsoc.export_md5 expire after 
+ * the md5 hash of all 5 fields of information to an existing request ID, if one exists. Records in jsoc.export_md5 expire after
  * DUP_EXPORT_WINDOW hours. This function first removes those expired records.
  *
  * jsoc.export_md5:
@@ -996,12 +996,12 @@ static char *GetExistReqID(DRMS_Env_t *env, const char *md5, int window, TIME *t
     long long status;
     long long sunum;
     SUM_info_t *infostruct = NULL;
-    
+
     istat = DRMS_SUCCESS;
-    
+
     *timeToCompletion = DRMS_MISSING_TIME;
     *expSize = 0;
-    
+
     /* delete expired md5s from jsoc.export_md5 */
     snprintf(cmd, sizeof(cmd), "DELETE FROM jsoc.export_md5 WHERE exporttime + interval '%d hours' <= statement_timestamp()", window);
     if (drms_dms(drms_env->session, NULL, cmd))
@@ -1009,12 +1009,12 @@ static char *GetExistReqID(DRMS_Env_t *env, const char *md5, int window, TIME *t
        fprintf(stderr, "Failure deleting expired recent export md5s: %s.\n", cmd);
        istat = DRMS_ERROR_BADDBQUERY;
     }
-    
+
     /* search jsoc.export_md5 for the md5 - map md5->requestID and return the id */
     if (istat == DRMS_SUCCESS)
     {
         snprintf(cmd, sizeof(cmd), "SELECT requestid FROM jsoc.export_md5 WHERE md5 = '%s'", md5);
-        
+
         if ((tres = drms_query_txt(drms_env->session, cmd)) != NULL)
         {
             if (tres->num_rows == 1)
@@ -1022,12 +1022,12 @@ static char *GetExistReqID(DRMS_Env_t *env, const char *md5, int window, TIME *t
                 if (tres->num_cols == 1)
                 {
                     id = strdup(tres->field[0][0]);
-                    
-                    /* We now need to extract the estimated completion time (we can't actually provide an accurate estimate), 
+
+                    /* We now need to extract the estimated completion time (we can't actually provide an accurate estimate),
                      * and the SUNUM of the pending/complete original export SU. This will allow us to provide estimates to
                      * the export requestor. Account for obsolete DRMS records. */
                     snprintf(cmd, sizeof(cmd), "SELECT status, esttime, size, sunum FROM jsoc.export T2 WHERE recnum = (SELECT max(recnum) AS recnum FROM jsoc.export T1 WHERE T1.requestid = '%s')", id);
-                     
+
                     if ((tresInner = drms_query_txt(drms_env->session, cmd)) == NULL)
                     {
                        fprintf(stderr, "Failure obtaining estimated completion time and size: %s.\n", cmd);
@@ -1035,37 +1035,37 @@ static char *GetExistReqID(DRMS_Env_t *env, const char *md5, int window, TIME *t
                     }
                     else
                     {
-                        if (tresInner->num_rows == 1 && tresInner->num_cols == 4) 
+                        if (tresInner->num_rows == 1 && tresInner->num_cols == 4)
                         {
                             status = strtoll(tresInner->field[0][0], &end, 10);
-                            
+
                             if (end != tresInner->field[0][0] && (status == 0 || status == 1 || status == 2 || status == 12))
                             {
                                 /* Make sure that the SU is online. */
                                 sunum = strtoll(tresInner->field[0][3], &end, 10);
-                
+
                                 if (end != tresInner->field[0][3] && sunum >= 0 && sunum != LLONG_MAX)
                                 {
                                     /* We parsed at least some part of the sunum value, there is an associated SU, and we did not underflow or overflow. */
-                    
+
                                     /* This function runs in the op == exp_request branch of code in DoIt(). drms_getsuinfo() has never been called in that branch,
                                      * so call it here. */
                                     status = drms_getsuinfo(env, &sunum, 1, &infostruct);
-                    
+
                                     if (status == DRMS_SUCCESS && infostruct)
                                     {
                                         if (*(infostruct->online_loc) != '\0' && *(infostruct->online_status) == 'Y')
                                         {
                                             /* SUMS recognizes the SUNUM as valid, and the SU is online. */
                                             *timeToCompletion = strtod(tresInner->field[0][1], &end);
-                            
+
                                             if (end == tresInner->field[0][1] || *timeToCompletion == HUGE_VAL || *timeToCompletion == -HUGE_VAL)
                                             {
                                                 *timeToCompletion = DRMS_MISSING_TIME;
                                             }
-                            
+
                                             *expSize = strtoll(tresInner->field[0][2], &end, 10);
-                            
+
                                             if (end == tresInner->field[0][2] || *expSize < INT_MIN || *expSize > INT_MAX)
                                             {
                                                 *expSize = DRMS_MISSING_INT;
@@ -1074,10 +1074,10 @@ static char *GetExistReqID(DRMS_Env_t *env, const char *md5, int window, TIME *t
                                     }
                                     else
                                     {
-                                        /* We couldn't get estimated completion time and/or size information. There is still an existing, 
+                                        /* We couldn't get estimated completion time and/or size information. There is still an existing,
                                          * valid request, so we still want to return the request ID to the caller. */
                                     }
-                                    
+
                                     if (infostruct)
                                     {
                                         free(infostruct);
@@ -1093,18 +1093,18 @@ static char *GetExistReqID(DRMS_Env_t *env, const char *md5, int window, TIME *t
                         }
                         else
                         {
-                            /* There is a request in jsoc.export_md5 for this hash, but there is no such request in jsoc.export. Treat 
+                            /* There is a request in jsoc.export_md5 for this hash, but there is no such request in jsoc.export. Treat
                              * this as if there is no such request in jsoc.export_md5 and have the user start a new export request. */
                             istat = DRMS_ERROR_BADDBQUERY;
                         }
-                        
+
                         if (tresInner)
                         {
                             db_free_text_result(tresInner);
                             tresInner = NULL;
                         }
                     }
-                    
+
                     if (istat != DRMS_SUCCESS)
                     {
                         if (id)
@@ -1118,11 +1118,11 @@ static char *GetExistReqID(DRMS_Env_t *env, const char *md5, int window, TIME *t
                 {
                     istat = DRMS_ERROR_BADDBQUERY;
                 }
-                
+
                 if (istat != DRMS_SUCCESS)
                 {
-                    /* We may have a record in jsoc.export_md5 indicating an existing request, however we cannot find the 
-                     * valid, existing request in jsoc.export. So, we need to 86 the record in jsoc.export_md5 - it is stale, 
+                    /* We may have a record in jsoc.export_md5 indicating an existing request, however we cannot find the
+                     * valid, existing request in jsoc.export. So, we need to 86 the record in jsoc.export_md5 - it is stale,
                      * or invalid or something. */
                     snprintf(cmd, sizeof(cmd), "DELETE FROM jsoc.export_md5 WHERE md5 = '%s'", md5);
                     if (drms_dms(drms_env->session, NULL, cmd))
@@ -1138,11 +1138,11 @@ static char *GetExistReqID(DRMS_Env_t *env, const char *md5, int window, TIME *t
             }
             else
             {
-                /* There is no existing identical export whose ID we're going to re-use. Since we are going to perform a full, fresh 
-                 * export, we need to insert a row for the current MD5. However, we do not have the actual ID at this point. 
+                /* There is no existing identical export whose ID we're going to re-use. Since we are going to perform a full, fresh
+                 * export, we need to insert a row for the current MD5. However, we do not have the actual ID at this point.
                  * Do this later. */
             }
-        
+
             db_free_text_result(tres);
             tres = NULL;
         }
@@ -1150,7 +1150,7 @@ static char *GetExistReqID(DRMS_Env_t *env, const char *md5, int window, TIME *t
         {
             istat = DRMS_ERROR_BADDBQUERY;
         }
-        
+
         if (istat == DRMS_ERROR_BADDBQUERY)
         {
             fprintf(stderr, "Unexpected result returned from DB query: %s.\n", cmd);
@@ -1164,41 +1164,29 @@ static int CheckEmailAddress(const char *logfile, const char *requestor, const c
 {
     /* Check notification email address. */
     int rv = 0;
-    char realAddress[512] = {0};
-    
-    if (strcmp(requestor, kNotSpecified) != 0 && strncasecmp(notify, "solarmail", 9) == 0)
-    {
-        snprintf(realAddress, sizeof(realAddress), "%s@spd.aas.org", requestor);
-    }
-    else
-    {
-        if (strcmp(notify, kNotSpecified) != 0)
-        {
-            snprintf(realAddress, sizeof(realAddress), "%s", notify);
-        }
-    }
-    
+
+
     /* If there is no email address, then bail. */
-    if (*realAddress == '\0')
+    if (*notify == '\0')
     {
         /* Cannot call JSONDIE from functions. */
        snprintf(dieStr, sz, "Email address for notification was not specfied. It is required.");
        rv = 1;
     }
-    
+
     /* Call script to verify notification email address. If the email address is not registered, then we fail right here. */
     char caCmd[PATH_MAX];
     char caMsg[1024];
     FILE *caFptr = NULL;
     int res;
-    
+
     /* This is going to be Stanford-specific stuff - I'll localize this when I have time. */
     /* This script needs to connect to the database as database user apache, so the user running jsoc_fetch must have db user apache in their
      * .pgpass file. Normally it is linux user apache who runs jsoc_fetch, and this user has database user apache in their .pgpass. */
-    snprintf(caCmd, sizeof(caCmd), "unset REQUEST_METHOD; unset QUERY_STRING; %s %s/checkAddress.py address=%s'&'checkonly=1'&'addresstab=jsoc.export_addresses'&'domaintab=jsoc.export_addressdomains'&'dbuser=apache", BIN_PY3, SCRIPTS_EXPORT, realAddress);
+    snprintf(caCmd, sizeof(caCmd), "unset REQUEST_METHOD; unset QUERY_STRING; %s %s/checkAddress.py address=%s'&'checkonly=1'&'addresstab=jsoc.export_addresses'&'domaintab=jsoc.export_addressdomains'&'dbuser=apache", BIN_PY3, SCRIPTS_EXPORT, notify);
     WriteLog(logfile, "Calling checkAddress.py: %s\n", caCmd);
     caFptr = popen(caCmd, "r");
-    
+
     if (caFptr)
     {
         /* C has no good json parsers - use jsmn. */
@@ -1220,9 +1208,9 @@ static int CheckEmailAddress(const char *logfile, const char *requestor, const c
         long long caStatus;
         char *caMsg = NULL;
         char tChar[2];
-        
+
         json = calloc(1, szjson);
-        
+
         if (json)
         {
             while ((nbytes = fread(rbuf, sizeof(char), sizeof(rbuf) - 1, caFptr)) > 0)
@@ -1231,14 +1219,14 @@ static int CheckEmailAddress(const char *logfile, const char *requestor, const c
                 ntot += nbytes;
                 json = base_strcatalloc(json, rbuf, &szjson);
             }
-            
+
             tokens = calloc(1, sizeof(jsmntok_t) * szjstokens);
-            
+
             if (tokens)
             {
                 jsmn_init(&parser);
                 res = jsmn_parse(&parser, json, tokens, szjstokens);
-                
+
                 if (res == JSMN_ERROR_NOMEM || res == JSMN_ERROR_INVAL || res == JSMN_ERROR_PART)
                 {
                     /* Did not allocate enough tokens to hold parsing results. There shouldn't be 512 tokens in the response, only 2,
@@ -1258,20 +1246,20 @@ static int CheckEmailAddress(const char *logfile, const char *requestor, const c
                     snprintf(dieStr, sz, "Failure parsing JSON.");
                     rv = 1;
                 }
-                
+
                 /* There are 5 "tokens" in the returned json: <JSON object>, "status", <status val>, "msg", <msg val>. We
                  * want to look at status (token[2]). If it is 2, then the address is registered, and we can continue. If it is anything else, we return
                  * error code 6 (export record was not created). checkAddress.py will provide an appropriate error message in tokens[4]. tokens[0].size
                  * is the total number of tokens (aside from the root object).
                  */
-                
+
                 /* This JSON parser is pretty poor, so we need all this code to fetch the property values we want to look at. */
                 for (itok = 1; itok <= tokens[0].size; itok++)
                 {
                     szTok = 128;
-                    
+
                     tok = calloc(1, szTok);
-                    
+
                     if (!tok)
                     {
                         pclose(caFptr);
@@ -1280,14 +1268,14 @@ static int CheckEmailAddress(const char *logfile, const char *requestor, const c
                         snprintf(dieStr, sz, "Out of memory.");
                         rv = 1;
                     }
-                    
+
                     tChar[1] = '\0';
                     for (itchar = tokens[itok].start; itchar < tokens[itok].end; itchar++)
                     {
                         tChar[0] = json[itchar];
                         tok = base_strcatalloc(tok, (char *)&tChar, &szTok);
                     }
-                    
+
                     if (*tok)
                     {
                         if (statusTok != -1)
@@ -1303,17 +1291,17 @@ static int CheckEmailAddress(const char *logfile, const char *requestor, const c
                                 snprintf(dieStr, sz, "Bad status code returned from checkAddress.py.");
                                 rv = 1;
                             }
-                            
+
                             statusTok = -1;
                         }
-                        
+
                         if (msgTok != -1)
                         {
                             /* tok is the msg value. */
                             caMsg = strdup(tok);
                             msgTok = -1;
                         }
-                        
+
                         if (strcasecmp(tok, "status") == 0)
                         {
                             statusTok = itok + 1;
@@ -1323,19 +1311,19 @@ static int CheckEmailAddress(const char *logfile, const char *requestor, const c
                             msgTok = itok + 1;
                         }
                     }
-                    
+
                     free(tok);
                 }
-                
+
                 free(tokens);
                 tokens = NULL;
             }
-            
+
             free(json);
             json = NULL;
         }
 
-        WriteLog(logfile, "checkAddress.py returned status: %lld\n", caStatus);        
+        WriteLog(logfile, "checkAddress.py returned status: %lld\n", caStatus);
         if (caStatus != 2)
         {
             /* Cannot continue because the notification email address has not been registered. */
@@ -1352,13 +1340,13 @@ static int CheckEmailAddress(const char *logfile, const char *requestor, const c
                 rv = 3;
             }
         }
-        
+
         if (caMsg)
         {
             free(caMsg);
             caMsg = NULL;
         }
-        
+
         pclose(caFptr);
         caFptr = NULL;
     }
@@ -1366,6 +1354,124 @@ static int CheckEmailAddress(const char *logfile, const char *requestor, const c
     {
         /* Cannot call JSONDIE from functions. */
         snprintf(dieStr, sz, "Unable to call checkAddress.py.");
+        rv = 1;
+    }
+
+    return rv;
+}
+
+/*
+  parameters:
+    env (DRMS_Env_t *) - DRMS environment
+    address (char *)- email address registered for export
+    ipAddress (char *) - IP address of the user making the export request
+    dbTable (char *)- database table of pending export requests
+    timeOutInterval (int) - time out, in minutes; when time-out is exceeded, then it is OK to perform a new export
+
+   return values:
+     0 - no pending request
+     1 - error, cannot search for pending requests (missing address/ipAddress, db connection error, dbTable does not exist, etc.)
+     2 - pending request, blocked email address
+     3 - pending request, blocked IP address
+
+   dbTable schema:
+     address text not null (primekey)
+     ip_address text not null
+     request_id text
+     start_time timestamp
+
+  the SQL will be executed on the JSOC_DBHOST database; so each database server has the dbTable table
+ */
+static int CheckUserLoad(DRMS_Env_t *env, const char *address, const char *ipAddress, const char *dbTable, int timeOutInterval)
+{
+    char command[256] = {0};
+    DB_Binary_Result_t *bres = NULL;
+    int rv = -1;
+
+    /* look for pending request in dbTable - address is primary key, index on ipAddress exists too */
+    if (address)
+    {
+        snprintf(command, sizeof(command), "SELECT count(*) FROM %s WHERE address = '%s' AND CURRENT_TIMESTAMP - start_time < interval '%d minutes'", dbTable, address, timeOutInterval);
+
+        if ((bres = drms_query_bin(env->session, command)) == NULL)
+        {
+            fprintf(stderr, "DB query failure [%s]\n", command);
+            rv = 1;
+        }
+        else
+        {
+            if (bres->num_rows > 0)
+            {
+                /* extract response (count() returns a bigint) */
+                if (db_binary_field_getlonglong(bres, 0, 0) > 0)
+                {
+                    /* an existing request is pending for this user and it has not timed out */
+                    rv = 2;
+                }
+                else
+                {
+                    /* either no pending request, or a pending request has timed out */
+                    rv = 0;
+                }
+            }
+            else
+            {
+                /* this should never happen - count() should return a single row */
+                fprintf(stderr, "DB query failure [%s] - did not return any rows\n", command);
+                rv = 1;
+            }
+        }
+    }
+
+    if (rv == -1 || rv == 0)
+    {
+        /* we need to limit by IP address too; careful though - it is legitimate for a site to have one or more
+         * users who share the same IP address; but we do want to prevent the case where a site uses hundreds of
+         * users with the same IP address to get around the limits imposed on email addresses */
+        if (ipAddress)
+        {
+            snprintf(command, sizeof(command), "SELECT count(*) FROM %s WHERE ip_address = '%s' AND CURRENT_TIMESTAMP - start_time < interval '%d minutes'", dbTable, ipAddress, timeOutInterval);
+
+            if ((bres = drms_query_bin(env->session, command)) == NULL)
+            {
+                fprintf(stderr, "DB query failure [%s]\n", command);
+                rv = 1;
+            }
+            else
+            {
+                if (bres->num_rows > 0)
+                {
+                    /* extract response (count() returns a bigint) */
+                    if (db_binary_field_getlonglong(bres, 0, 0) > 10)
+                    {
+                        /* 10 existing requests are pending for this IP address that have not timed out */
+                        rv = 3;
+                    }
+                    else
+                    {
+                        /* either no pending request, or a pending request has timed out */
+                        rv = 0;
+                    }
+                }
+                else
+                {
+                    /* this should never happen - count() should return a single row */
+                    fprintf(stderr, "DB query failure [%s] - did not return any rows\n", command);
+                    rv = 1;
+                }
+            }
+        }
+    }
+
+    if (bres)
+    {
+        db_free_binary_result(bres);
+        bres = NULL;
+    }
+
+    if (rv == -1)
+    {
+        /* could not look up anything in dbTable, reject request */
         rv = 1;
     }
 
@@ -1410,13 +1516,13 @@ int DoIt(void)
   TIME fetch_time = timenow();
   double waittime;
   char *web_query;
-  int from_web,status;
+  int from_web = 0;
+  int status;
   int dodataobj=1, dojson=1, dotxt=0, dohtml=0, doxml=0;
   DRMS_RecordSet_t *exports;
   DRMS_Record_t *exprec = NULL;  // Why was the name changed from export_log ??
   char new_requestid[200];
   char status_query[1000];
-  char *export_series; 
   char msgbuf[128];
   SUM_info_t **infostructs = NULL;
   char *webarglist = NULL;
@@ -1425,20 +1531,23 @@ int DoIt(void)
   double StartTime;
   long long instanceID = -1;
 
-    /* Allocate the size of these arrays dynamically. Originally there were 1024, but 
+    /* Allocate the size of these arrays dynamically. Originally there were 1024, but
      * we could need bigger arrays. */
   char **paths = NULL;
   char **series = NULL;
   char *sustatus = NULL;
   char **susize = NULL;
   int arrsize = -1; /* Fill this in later, when we know how many elements we have. */
-    
+
     int postorget = 0;
     int insertexprec = 1;
-    
+
+    char *pRemoteAddress = NULL;
+    char ipAddress[16] = {0};
+
     if (getenv("REQUEST_METHOD"))
     {
-        postorget = (strcasecmp(getenv("REQUEST_METHOD"), "POST") == 0 || 
+        postorget = (strcasecmp(getenv("REQUEST_METHOD"), "POST") == 0 ||
                      strcasecmp(getenv("REQUEST_METHOD"), "GET") == 0);
     }
 
@@ -1457,9 +1566,14 @@ int DoIt(void)
         {
             WriteLog(kLogFileExpReqExt, "QUERY_STRING is %s.\n", qs);
         }
-    
+
+        if ((pRemoteAddress = getenv("REMOTE_ADDR")) != NULL)
+        {
+            snprintf(ipAddress, sizeof(ipAddress), "%s", pRemoteAddress);
+        }
+
         Q_ENTRY *req = NULL;
-        
+
         /* If we are here then one of three things is true (implied by the existence of QUERY_STRING):
          *   1. We are processing an HTTP GET. The webserver will put the arguments in the
          *      QUERY_STRING environment variable.
@@ -1469,12 +1583,12 @@ int DoIt(void)
          *      case qDecoder will ignore it.
          *   3. jsoc_fetch was invoked via the cmd-line, and the caller provided the QUERY_STRING
          *      argument. The caller is trying to emulate an HTTP request - they want to invoke
-         *      the web-processing code, most likely to develop or debug a problem. 
+         *      the web-processing code, most likely to develop or debug a problem.
          *
          *   If we are in case 3, then we need to make sure that the QUERY_STRING environment variable
          *   is set since qDecoder will be called, and to process a GET, QUERY_STRING must be set.
          */
-        
+
         if (!getenv("QUERY_STRING"))
         {
             /* Either case 2 or 3. Definitely not case 1. */
@@ -1482,17 +1596,17 @@ int DoIt(void)
             {
                 /* Case 3 - set QUERY_STRING from cmd-line arg. */
                 setenv("QUERY_STRING", web_query, 1);
-                
+
                 /* REQUEST_METHOD is not set - set it to GET. */
                 setenv("REQUEST_METHOD", "GET", 1);
             }
         }
-        
-        /* Use qDecoder to parse HTTP POST requests. qDecoder actually handles 
+
+        /* Use qDecoder to parse HTTP POST requests. qDecoder actually handles
          * HTTP GET requests as well.
          * See http://www.qdecoder.org
          */
-        
+
         webarglistsz = 2048;
         webarglist = (char *)malloc(webarglistsz);
         *webarglist = '\0';
@@ -1525,8 +1639,8 @@ int DoIt(void)
             SetWebArg(req, kArgPassthrough, &webarglist, &webarglistsz);
             SetWebArg(req, kArgOnlineOnly, &webarglist, &webarglistsz);
             SetWebArg(req, kArgDontGenWebPage, &webarglist, &webarglistsz);
-                        
-            qEntryFree(req); 
+
+            qEntryFree(req);
         }
     }
   free(web_query);
@@ -1544,8 +1658,8 @@ int DoIt(void)
   // the following lines are added.  They can be removed after a new function to replace
   // cmdparams_set as used in SetWebArgs
 
-  /* No need for the hack any more - SetWebArg(), when setting an ARG_INTS argument, 
-   * will trigger the code that parses the array elements and creates the 
+  /* No need for the hack any more - SetWebArg(), when setting an ARG_INTS argument,
+   * will trigger the code that parses the array elements and creates the
    * associated arguments. */
 
   // end hack
@@ -1553,7 +1667,7 @@ int DoIt(void)
 
   if (status != CMDPARAMS_SUCCESS)
   {
-     snprintf(msgbuf, sizeof(msgbuf), 
+     snprintf(msgbuf, sizeof(msgbuf),
               "Invalid argument on entry, '%s=%s'.\n", kArgSunum, cmdparams_get_str(&cmdparams, kArgSunum, NULL));
      JSONDIE(msgbuf);
   }
@@ -1588,6 +1702,7 @@ int DoIt(void)
   passthrough = cmdparams_isflagset(&cmdparams, kArgPassthrough);
   genWebPage = (cmdparams_isflagset(&cmdparams, kArgDontGenWebPage) == 0);
   requireOnline = cmdparams_isflagset(&cmdparams, kArgOnlineOnly);
+
   gGenWebPage = genWebPage;
 
   dodataobj = strcmp(formatvar, "dataobj") == 0;
@@ -1604,9 +1719,6 @@ int DoIt(void)
     }
 
 // SPECIAL DEBUG LOG HERE XXXXXX
-
-    /* jsoc.export */
-  export_series = kExportSeries;
 
   // long long sunums[DRMS_MAXQUERYLEN/8];  // should be enough!
   // 1024 is not enough.
@@ -1627,18 +1739,16 @@ int DoIt(void)
     int status=0;
     int sums_status = 0; //ISS
     int all_online;
-        
+
     if (internal)
     {
         lfname = kLogFileExpSuInt;
     }
     else
     {
-        lfname = kLogFileExpSuExt;            
+        lfname = kLogFileExpSuExt;
     }
 
-        /* jsoc.export_new */
-    export_series = kExportSeriesNew;
     // Do survey of sunum list
     size=0;
     all_online = 1;
@@ -1649,7 +1759,7 @@ int DoIt(void)
        /* Use the ds field - should be an array of numbers. */
        if (!cmdparams_set(&cmdparams, kArgSunum, dsin))
        {
-          snprintf(msgbuf, sizeof(msgbuf), 
+          snprintf(msgbuf, sizeof(msgbuf),
                    "Invalid argument in exp_su, '%s=%s'.\n", kArgDs, dsin);
           JSONDIE(msgbuf);
        }
@@ -1658,7 +1768,7 @@ int DoIt(void)
 
        if (status != CMDPARAMS_SUCCESS)
        {
-          snprintf(msgbuf, sizeof(msgbuf), 
+          snprintf(msgbuf, sizeof(msgbuf),
                    "Invalid argument in exp_su, '%s=%s'.\n", kArgDs, dsin);
           JSONDIE(msgbuf);
        }
@@ -1668,37 +1778,37 @@ int DoIt(void)
     {
        JSONDIE("There are no SUs in sunum or ds params");
     }
-    
+
     /* print to the log the sunum array */
     size_t bufSz = 256;
     char *sunumListStr = calloc(bufSz, sizeof(char));
     char sunumStrBuf[32];
-    
+
     if (sunumListStr)
     {
         for (isunum = 0; isunum < nsunums; isunum++)
         {
             sunum = sunumarr[isunum];
-        
+
             if (isunum < nsunums - 1)
             {
-                snprintf(sunumStrBuf, sizeof(sunumStrBuf), "%lld,", sunum);   
+                snprintf(sunumStrBuf, sizeof(sunumStrBuf), "%lld,", sunum);
             }
             else
             {
-                snprintf(sunumStrBuf, sizeof(sunumStrBuf), "%lld", sunum);        
+                snprintf(sunumStrBuf, sizeof(sunumStrBuf), "%lld", sunum);
             }
-        
+
             sunumListStr = base_strcatalloc(sunumListStr, sunumStrBuf, &bufSz);
         }
-    
+
         LogReqInfo(lfname, instanceID, fileupload, op, sunumListStr, requestid, dbhost, from_web, webarglist, fetch_time);
 
         free(sunumListStr);
-        sunumListStr = NULL;        
+        sunumListStr = NULL;
     }
     else
-    {    
+    {
         /* requestid is not provided via the command-line for kOpExpSu. */
         LogReqInfo(lfname, instanceID, fileupload, op, dsin, requestid, dbhost, from_web, webarglist, fetch_time);
     }
@@ -1709,26 +1819,26 @@ int DoIt(void)
 
     if (status != DRMS_SUCCESS)
     {
-       snprintf(msgbuf, sizeof(msgbuf), 
+       snprintf(msgbuf, sizeof(msgbuf),
                 "drms_getsuinfo(): failure calling talking with SUMS, error code %d.\n", status);
        printkerr(msgbuf);
        sums_status = 1;
     }
-        
-        /* ART FETCH BLOCK - To block certain SUs, we have to get the earliest T_REC from the SU. We want this to be 
-         * quick, so batch this into a single db request. THERE MUST BE A DB INDEX on the sunum column of every 
-         * series that we wish to partially block, otherwise the following query will take a long time to 
-         * run. 
+
+        /* ART FETCH BLOCK - To block certain SUs, we have to get the earliest T_REC from the SU. We want this to be
+         * quick, so batch this into a single db request. THERE MUST BE A DB INDEX on the sunum column of every
+         * series that we wish to partially block, otherwise the following query will take a long time to
+         * run.
          *
          * Sample SQL - SELECT sunum, min(t_obs) FROM hmi.lev1 WHERE sunum IN (227768258, 227769522) GROUP BY sunum;
-         * 
+         *
          * Complication - the sunums might be for different series - crap! Need to loop over series first. Make a container,
          * keyed by series that contains a list of sorted sunums.
          *
-         * 2014.03.10 - Added a new column 'acceptrate' to su_production.fetchblock. The value is the per-series percentage of 
+         * 2014.03.10 - Added a new column 'acceptrate' to su_production.fetchblock. The value is the per-series percentage of
          * requests to accept. For example, an acceptrate of 75 means that 75 percent of all requests for old data in the
          * seriesname series will be accepted. This feature was added so that we do not completly block access to all old
-         * data. 
+         * data.
          */
         const int NUM_ARGS = 16;
         char stmnt[256];
@@ -1764,18 +1874,18 @@ int DoIt(void)
         char *endptr = NULL;
         int doFetchBlock = 0;
         int istat = DRMS_SUCCESS;
-        
+
         seriesSunums = hcon_create(sizeof(LinkedList_t *), DRMS_MAXSERIESNAMELEN, (void (*)(const void *value))list_llfree, NULL, NULL, NULL, 0);
         seriesMinBadTimes = hcon_create(sizeof(TIME), DRMS_MAXSERIESNAMELEN, NULL, NULL, NULL, NULL, 0);
         seriesMaxBadTimes = hcon_create(sizeof(TIME), DRMS_MAXSERIESNAMELEN, NULL, NULL, NULL, NULL, 0);
         seriesAcceptRates = hcon_create(sizeof(int), DRMS_MAXSERIESNAMELEN, NULL, NULL, NULL, NULL, 0);
         filterOut = hcon_create(sizeof(int), sizeof(nbuf), NULL, NULL, NULL, NULL, 0);
-        
+
         if (!seriesSunums || !seriesMinBadTimes || !seriesMaxBadTimes || !filterOut)
         {
             istat = DRMS_ERROR_OUTOFMEMORY;
         }
-        
+
         if (istat == DRMS_SUCCESS)
         {
             /* Disable fetch block if there is no su_production.fetchblock table. */
@@ -1784,21 +1894,21 @@ int DoIt(void)
                 doFetchBlock = 1;
             }
         }
-        
+
         if (istat == DRMS_SUCCESS && doFetchBlock)
         {
             for (isunum = 0; isunum < nsunums; isunum++)
             {
                 sunum = sunumarr[isunum];
                 seriesKey = infostructs[isunum]->owning_series;
-                
+
                 dontFilter = 0;
-                
-                /* We should skip series that are not going to be blocked at all because the series does not appear in su_production.fetchblock. 
+
+                /* We should skip series that are not going to be blocked at all because the series does not appear in su_production.fetchblock.
                  * If this isn't fast, we can read the entire table into memory and then do the search via hash lookup. What I'm doing is really
                  * inefficient - I can repeatedly look for a series that insn't in this table. But there are typically not that many sunums to lookup.
                  */
-                
+
                 /* Don't query for this series if we have already. We put an empty list in seriesSunums if the series is not filtered. */
                 if (!hcon_member_lower(seriesSunums, seriesKey))
                 {
@@ -1808,11 +1918,11 @@ int DoIt(void)
                         istat = DRMS_ERROR_OUTOFMEMORY;
                         break;
                     }
-                    
+
                     strtolower(tmpDup);
                     snprintf(stmnt, sizeof(stmnt), "SELECT mindate, maxdate, acceptrate FROM su_production.fetchblock WHERE lower(seriesname) = '%s'", tmpDup);
                     free(tmpDup);
-                    
+
                     /* Don't retrieve data in binary format!! Who knows what PQexecParams() will do with a timestamp? */
                     if ((tres = drms_query_txt(drms_env->session, stmnt)) == NULL)
                     {
@@ -1851,9 +1961,9 @@ int DoIt(void)
                             }
                         }
                     }
-                    
+
                     db_free_text_result(tres);
-                    
+
                     /* create an empty list. */
                     sunumList = list_llcreate(sizeof(long long), NULL);
                     if (!sunumList)
@@ -1861,29 +1971,29 @@ int DoIt(void)
                         istat = DRMS_ERROR_OUTOFMEMORY;
                         break;
                     }
-                    
+
                     hcon_insert_lower(seriesSunums, seriesKey, &sunumList);
-                    
+
                     if (dontFilter)
                     {
                         continue;
                     }
-                    
+
                     hcon_insert_lower(seriesMinBadTimes, seriesKey, &minBadTime);
                     hcon_insert_lower(seriesMaxBadTimes, seriesKey, &maxBadTime);
                     hcon_insert_lower(seriesAcceptRates, seriesKey, &acceptRate);
                     list_llinserttail(sunumList, &sunum);
                 }
-                
+
                 hlookupGet = hcon_lookup_lower(seriesSunums, seriesKey);
                 if (!hlookupGet)
                 {
                     istat = DRMS_ERROR_DATASTRUCT;
                     break;
                 }
-                
+
                 sunumList = *(LinkedList_t **)hlookupGet;
-                
+
                 if (list_llgetnitems(sunumList) > 0)
                 {
                     /* If the series is to be filtered, then there is at least one sunum in its list. */
@@ -1895,7 +2005,7 @@ int DoIt(void)
                 }
             } /* sunum loop*/
         }
-        
+
         /* Each sunumList now contains a list of UNSORTED sunums for a single series series. Loop over series (iterate over seriesSunums). */
         if (istat == DRMS_SUCCESS && doFetchBlock)
         {
@@ -1920,21 +2030,21 @@ int DoIt(void)
                 while ((iterGet = hiter_extgetnext(hit, &seriesKey)) != NULL && istat == DRMS_SUCCESS)
                 {
                     sunumList = *(LinkedList_t **)iterGet;
-                    
+
                     /* If sunumList is empty, there are no sunums for series seriesKey. */
                     if ((nSeriesSunums = list_llgetnitems(sunumList)) == 0)
                     {
                         continue;
                     }
-                    
+
                     sunumArrSorted = calloc(nSeriesSunums, sizeof(long long));
-                    
+
                     if (!sunumArrSorted)
                     {
                         istat = DRMS_ERROR_OUTOFMEMORY;
                         break;
                     }
-                    
+
                     /* sunumList - a list of sunums for the series seriesKey. I guess we should sort the list of sunums. */
                     isunum = 0;
                     list_llreset(sunumList);
@@ -1950,14 +2060,14 @@ int DoIt(void)
                             }
                             break;
                         }
-                        
+
                         sunumArrSorted[isunum++] = *(long long *)node->data;
                     }
-                    
+
                     if (istat == DRMS_SUCCESS)
                     {
                         qsort(sunumArrSorted, nSeriesSunums, sizeof(long long), sunumComp);
-                        
+
                         /* We need the column in seriesKey that serves as the time keyword. Iterate through the
                          * prime keys and grab the first one that is a time keyword. */
                         template = drms_template_record(drms_env, seriesKey, &istat);
@@ -1971,36 +2081,36 @@ int DoIt(void)
                             }
                             break;
                         }
-                        
+
                         /* Identify the time prime-key keyword. */
                         timeCol = NULL;
                         iKey = 0;
                         nPKeys = template->seriesinfo->pidx_num;
-                        
+
                         while (iKey < nPKeys)
                         {
                             pkey = template->seriesinfo->pidx_keywords[iKey];
-                            
+
                             if (drms_keyword_isindex(pkey))
                             {
                                 /* Use slotted keyword */
                                 pkey = drms_keyword_slotfromindex(pkey);
                             }
-                            
+
                             if (drms_keyword_gettype(pkey) == DRMS_TYPE_TIME)
                             {
                                 /* Got it! */
                                 timeCol = pkey->info->name;
                                 break;
                             }
-                            
+
                             iKey++;
                         }
                     }
-                    
+
                     if (istat == DRMS_SUCCESS)
                     {
-                        /* If there is no timeCol for this series, then continue onto the next series. We cannot filter this SUNUM based on 
+                        /* If there is no timeCol for this series, then continue onto the next series. We cannot filter this SUNUM based on
                          * its series' time keyword. */
                         if (!timeCol)
                         {
@@ -2012,12 +2122,12 @@ int DoIt(void)
                             continue;
                         }
                     }
-                    
+
                     if (istat == DRMS_SUCCESS)
                     {
                         /* We have a sorted list of nSeriesSunums sunums for series seriesKey. */
                         nExe = nSeriesSunums / NUM_ARGS; /* integer division - this is the number of times we will execute the prepared insert statement. */
-                        
+
                         if (nExe > 0)
                         {
                             for (iArg = 0; iArg < NUM_ARGS; iArg++)
@@ -2025,29 +2135,29 @@ int DoIt(void)
                                 argin[iArg] = calloc(nExe, sizeof(db_int8_t));
                                 intype[iArg] = DB_INT8;
                             }
-                            
+
                             iArg = 0;
                             iExe = 0;
                             isunum = 0;
-                            
+
                             while (isunum < nExe * NUM_ARGS)
                             {
                                 sunum = sunumArrSorted[isunum];
-                                
+
                                 if (iArg == NUM_ARGS)
                                 {
                                     iArg = 0;
                                     iExe++;
                                 }
-                                
+
                                 memcpy(argin[iArg] + iExe * db_sizeof(intype[iArg]), &sunum, db_sizeof(intype[iArg]));
                                 iArg++;
                                 isunum++;
                             }
-                            
+
                             stsz = 512;
                             sql = calloc(stsz, sizeof(char));
-                            
+
                             if (sql)
                             {
                                 sql = base_strcatalloc(sql, "SELECT sunum, min(", &stsz);
@@ -2055,9 +2165,9 @@ int DoIt(void)
                                 sql = base_strcatalloc(sql, ") AS mindate FROM ", &stsz);
                                 sql = base_strcatalloc(sql, seriesKey, &stsz);
                                 sql = base_strcatalloc(sql, " WHERE sunum IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) GROUP BY sunum", &stsz);
-                                
+
                                 pBres = drms_query_bin_ntuple(drms_env->session, sql, nExe, NUM_ARGS, intype, (void **)argin);
-                                
+
                                 for (iArg = 0; iArg < NUM_ARGS; iArg++)
                                 {
                                     if (argin[iArg])
@@ -2072,7 +2182,7 @@ int DoIt(void)
                                     for (iBres = 0; iBres < nExe; iBres++)
                                     {
                                         bres = pBres[iBres];
-                                        
+
                                         if (bres)
                                         {
                                             /* Now need to iterate through returned rows to see which sunums need to be filtered out. If an sunum
@@ -2083,7 +2193,7 @@ int DoIt(void)
                                             {
                                                 sunum = db_binary_field_getlonglong(bres, irow, 0);
                                                 timeVal = db_binary_field_getdouble(bres, irow, 1);
-                                                
+
                                                 /* Check timeval. */
                                                 if ((hlookupGet = hcon_lookup_lower(seriesMinBadTimes, seriesKey)) != NULL)
                                                 {
@@ -2093,7 +2203,7 @@ int DoIt(void)
                                                 {
                                                     minBadTime = -1;
                                                 }
-                                                
+
                                                 if ((hlookupGet = hcon_lookup_lower(seriesMaxBadTimes, seriesKey)) != NULL)
                                                 {
                                                     maxBadTime = *((TIME *)hlookupGet);
@@ -2102,12 +2212,12 @@ int DoIt(void)
                                                 {
                                                     maxBadTime = -1;
                                                 }
-                                                
+
                                                 if (minBadTime >= 0 && maxBadTime < 0)
                                                 {
                                                     maxBadTime = INFINITY;
                                                 }
-                                                
+
                                                 if (timeVal > minBadTime && timeVal < maxBadTime)
                                                 {
                                                     snprintf(nbuf, sizeof(nbuf), "%lld", sunum);
@@ -2124,17 +2234,17 @@ int DoIt(void)
                                             }
                                         }
                                     }
-                                    
+
                                     db_free_binary_result_tuple(&pBres, nExe);
                                     pBres = NULL;
                                 }
-                                
+
                                 free(sql);
                                 sql = NULL;
                             }
                         }
                     }
-                    
+
                     if (istat == DRMS_SUCCESS)
                     {
                         if (nSeriesSunums % NUM_ARGS != 0)
@@ -2143,7 +2253,7 @@ int DoIt(void)
                              * using a prepared statement since it will be executed one time. */
                             stsz = 512;
                             sql = calloc(stsz, sizeof(char));
-                            
+
                             if (sql)
                             {
                                 sql = base_strcatalloc(sql, "SELECT sunum, min(", &stsz);
@@ -2151,24 +2261,24 @@ int DoIt(void)
                                 sql = base_strcatalloc(sql, ") AS mindate FROM ", &stsz);
                                 sql = base_strcatalloc(sql, seriesKey, &stsz);
                                 sql = base_strcatalloc(sql, " WHERE sunum IN (", &stsz);
-                                
+
                                 isunum = NUM_ARGS * nExe;
                                 while (isunum < nSeriesSunums)
                                 {
                                     sunum = sunumArrSorted[isunum];
-                                    
+
                                     snprintf(nbuf, sizeof(nbuf), "%lld", sunum);
                                     sql = base_strcatalloc(sql, nbuf, &stsz);
                                     if (isunum < nSeriesSunums - 1)
                                     {
                                         sql = base_strcatalloc(sql, ", ", &stsz);
                                     }
-                                    
+
                                     isunum++;
                                 }
-                                
+
                                 sql = base_strcatalloc(sql, ") GROUP BY sunum", &stsz);
-                                
+
                                 /* Blast a dookie...uh, I mean, run the query.*/
                                 if ((bres = drms_query_bin(drms_env->session, sql)) == NULL)
                                 {
@@ -2191,7 +2301,7 @@ int DoIt(void)
                                         {
                                             sunum = db_binary_field_getlonglong(bres, irow, 0);
                                             timeVal = db_binary_field_getdouble(bres, irow, 1);
-                                            
+
                                             /* Check timeval. */
                                             if ((hlookupGet = hcon_lookup_lower(seriesMinBadTimes, seriesKey)) != NULL)
                                             {
@@ -2201,7 +2311,7 @@ int DoIt(void)
                                             {
                                                 minBadTime = -1;
                                             }
-                                            
+
                                             if ((hlookupGet = hcon_lookup_lower(seriesMaxBadTimes, seriesKey)) != NULL)
                                             {
                                                 maxBadTime = *((TIME *)hlookupGet);
@@ -2210,12 +2320,12 @@ int DoIt(void)
                                             {
                                                 maxBadTime = -1;
                                             }
-                                            
+
                                             if (minBadTime >= 0 && maxBadTime < 0)
                                             {
                                                 maxBadTime = INFINITY;
                                             }
-                                            
+
                                             if (timeVal > minBadTime && timeVal < maxBadTime)
                                             {
                                                 snprintf(nbuf, sizeof(nbuf), "%lld", sunum);
@@ -2232,7 +2342,7 @@ int DoIt(void)
                                         }
                                     }
                                 }
-                                
+
                                 db_free_binary_result(bres);
                                 bres = NULL;
                                 free(sql);
@@ -2243,7 +2353,7 @@ int DoIt(void)
                                 istat = DRMS_ERROR_OUTOFMEMORY;
                             }
                         }
-                        
+
                         if (sunumArrSorted)
                         {
                             free(sunumArrSorted);
@@ -2251,25 +2361,25 @@ int DoIt(void)
                         }
                     }
                 } /* filtered series loop */
-                
+
                 hiter_destroy(&hit);
             }
         }
-        
+
         status = istat;
-        
+
         /* What am I supposed to do if status != DRMS_SUCCESS? For now, it looks like we ignore filtering. */
-        
+
         if (seriesSunums)
         {
             hcon_destroy(&seriesSunums);
         }
-        
+
         if (seriesMinBadTimes)
         {
             hcon_destroy(&seriesMinBadTimes);
         }
-        
+
         if (seriesMaxBadTimes)
         {
             hcon_destroy(&seriesMaxBadTimes);
@@ -2280,7 +2390,7 @@ int DoIt(void)
            hcon_destroy(&seriesAcceptRates);
         }
 
-        
+
     char onlinestat[128];
     long long dirsize;
     char supath[DRMS_MAXPATHLEN];
@@ -2294,26 +2404,26 @@ int DoIt(void)
     {
         JSONDIE("Not enough memory to allocate SUNUM array for exp_su request.");
     }
-    
+
     paths = calloc(nsunums, sizeof(char *));
     if (!paths)
     {
         JSONDIE("Not enough memory to allocate paths array for exp_su request.");
     }
-    
+
     series = calloc(nsunums, sizeof(char *));
     if (!series)
     {
         JSONDIE("Not enough memory to allocate series array for exp_su request.");
     }
-    
+
     /* This one is a little different, since each status code is a char, not a char *. */
     sustatus = calloc(nsunums, sizeof(char));
     if (!sustatus)
     {
         JSONDIE("Not enough memory to allocate sustatus array for exp_su request.");
     }
-    
+
     susize = calloc(nsunums, sizeof(char *));
     if (!susize)
     {
@@ -2321,7 +2431,7 @@ int DoIt(void)
     }
 
     arrsize = nsunums;
-    
+
     for (isunum = 0; isunum < nsunums; isunum++)
       {
       SUM_info_t *sinfo;
@@ -2334,11 +2444,11 @@ int DoIt(void)
       sunum = sunumarr[isunum];
 
       sinfo = infostructs[isunum];
-          
+
           /* ART FETCH BLOCK - Block requests for data of a certain T_REC. A table, su_producton.fetchblock (text seriesname,
            * timestamp mindate, timestamp maxdate), specifies a date range for each series whose records we wish to block
            * from download. Data for that series with a T_REC that falls within this range will be marked with a sustatus of 'N',
-           * and all_online will be set to 0. 
+           * and all_online will be set to 0.
            *
            * Code above has figured out if the sunum needs to be filtered. filterOut is a container keyed by sunum. The container
            * values are the acceptance rate percentages. A value of 75 means that we want to accept 75% of the requests for
@@ -2359,7 +2469,7 @@ int DoIt(void)
                   *(sinfo->online_loc) = '\0';
               }
           }
-          
+
       if (*(sinfo->online_loc) == '\0')
       {
           if (!reject)
@@ -2370,7 +2480,7 @@ int DoIt(void)
           {
               *onlinestat = 'N';
           }
-          
+
           sunums[count] = sunum; // XXXXXXXXXX
           paths[count] = strdup("NA");
           series[count] = strdup("NA");
@@ -2420,7 +2530,7 @@ int DoIt(void)
       free(sinfo);
       sinfo = NULL;
       } /* isunum */
-        
+
         if (filterOut)
         {
             hcon_destroy(&filterOut);
@@ -2434,8 +2544,8 @@ int DoIt(void)
     // Do quick export if possible
     /* Even if a quick export is NOT possible, VSO wants to see json returned with the status
      * for each sunum originally requested. Even if SUMS is down (in which case, sums_status == 1
-     * for each sunum) they want this json. Currently, the only time dodataobj == 1 is when VSO calls 
-     * jsoc_fetch. So eventually we might need to modify this a little. 
+     * for each sunum) they want this json. Currently, the only time dodataobj == 1 is when VSO calls
+     * jsoc_fetch. So eventually we might need to modify this a little.
      *
      * If SUMS is down, and the jsoc_fetch request did NOT originate from VSO, no json is generated,
      * and jsoc_fetch returns with an error, generating appropriate json.
@@ -2492,7 +2602,7 @@ int DoIt(void)
           if (sunumstr)
             free(sunumstr);
           }
-        
+
         sprintf(numval, "%d", count);
         json_insert_pair_into_object(jroot, "count", json_new_number(numval));
         sprintf(numval, "%lld", size);
@@ -2522,7 +2632,7 @@ int DoIt(void)
 
         /* I think we can free jroot */
         json_free_value(&jroot);
-        } /* dojson */  
+        } /* dojson */
       else
         {
         int i;
@@ -2547,7 +2657,7 @@ int DoIt(void)
       report_summary(Server, StartTime, Remote_Address, op, dsin, 0, internal, requireOnline, 0);
       if (!dodataobj || (sums_status == 1 || all_online))
         {
-         /* If not a VSO request, we're done. If a VSO request, done if all online, or if SUMS is down. 
+         /* If not a VSO request, we're done. If a VSO request, done if all online, or if SUMS is down.
           * Otherwise, continue below and start a new request for the items not online. */
             if (sustatus)
             {
@@ -2560,7 +2670,7 @@ int DoIt(void)
                 free(sunums);
                 sunums = NULL;
             }
-          
+
            CleanUp(&sunumarr, &infostructs, &webarglist, &series, &paths, &susize, arrsize, userhandle);
            return(0);
         }
@@ -2571,13 +2681,13 @@ int DoIt(void)
             free(sustatus);
             sustatus = NULL;
          }
-         
+
          if (sunums)
          {
             free(sunums);
             sunums = NULL;
          }
-         
+
          CleanUp(&sunumarr, &infostructs, &webarglist, &series, &paths, &susize, arrsize, userhandle);
          return 0;
          }
@@ -2595,7 +2705,7 @@ int DoIt(void)
     char jsocFetchPath[PATH_MAX];
     char reqidGenPath[PATH_MAX];
     char *binPath = NULL;
-    
+
     memset(jsocFetchPath, '\0', sizeof(jsocFetchPath));
 
     /* This call to GetJsocRequestID is in kOpExpSu. */
@@ -2608,9 +2718,9 @@ int DoIt(void)
         binPath = dirname(jsocFetchPath); // can modify jsocFetchPath
         snprintf(reqidGenPath, sizeof(reqidGenPath), "%s/GetJsocRequestID", binPath);
     }
-        
+
     FILE *fp = popen(reqidGenPath, "r");
-    
+
     if (fp)
     {
         if (fscanf(fp, "%s", new_requestid) != 1)
@@ -2618,14 +2728,14 @@ int DoIt(void)
             pclose(fp);
             JSONDIE("Cant get new RequestID");
         }
-  
+
         pclose(fp);
     }
     else
     {
         JSONDIE("Cant get new RequestID");
     }
-    
+
     strcat(new_requestid, "_SU");
     requestid = new_requestid;
 
@@ -2644,9 +2754,9 @@ int DoIt(void)
       fclose(exportlog);
       }
 
-    // Add Requestor info to jsoc.export_user series 
+    // Add Requestor info to jsoc.export_user series
     // Can not watch for new information since can not read this series.
-    //   start by looking up requestor 
+    //   start by looking up requestor
     if (strcmp(requestor, kNotSpecified) != 0)
       {
 #ifdef SHOULD_BE_HERE
@@ -2657,10 +2767,10 @@ check for requestor to be valid remote DRMS site
       }
     else
       requestorid = 0;
-        
+
     if ( !requestid || !*requestid || strcmp(requestid, "none") == 0)
         JSONDIE("Must have valid requestID - internal error.");
-        
+
     if (strcmp(dsin, kNotSpecified) == 0 && (!sunumarr || sunumarr[0] < 0))
         JSONDIE("Must have valid Recordset or SU set");
 
@@ -2669,36 +2779,36 @@ check for requestor to be valid remote DRMS site
     size_t szDataSetCol = 512;
     char numBuf[64];
     char *processingCol = "n=0|no_op";
-        
+
     dataSetCol = calloc(1, szDataSetCol);
     if (!dataSetCol)
     {
         JSONDIE("Out of memory creating Processing string.");
     }
-        
+
     dataSetCol = base_strcatalloc(dataSetCol, "sunums=", &szDataSetCol);
-        
+
     // Some SUs maybe online, but at least one is offline. Request that the export system process ALL SUs. This is slightly inefficient
     // since SUMS will have to query its db again to get paths that we already have right now. But this is only a minor inefficiency,
     // and it is much easier to send all SUs to the export system, so I think sending all SUs is justified. There should not be too many
     // SUs in this request to fit on a jsoc_export_SU_as_is command line (rs.py will break-up a large request into smaller ones).
-        
+
     for (isunum = 0; isunum < nsunums; isunum++)
     {
         if (isunum > 0)
         {
             dataSetCol = base_strcatalloc(dataSetCol, ",", &szDataSetCol);
         }
-        
+
         snprintf(numBuf, sizeof(numBuf), "%lld", ((long long signed int *)sunumarr)[isunum]);
         dataSetCol = base_strcatalloc(dataSetCol, numBuf, &szDataSetCol);
     }
-        
+
     // Create new record in export control series
     // This will be copied into the cluster-side series on first use.
     /* jsoc.export_new */
     /* We are in kOpExpSu. */
-    exprec = drms_create_record(drms_env, export_series, DRMS_PERMANENT, &status);
+    exprec = drms_create_record(drms_env, kExportSeriesNew, DRMS_PERMANENT, &status);
     if (!exprec)
       JSONDIE("Cant create new export control record");
     drms_setkey_string(exprec, "RequestID", requestid);
@@ -2713,7 +2823,7 @@ check for requestor to be valid remote DRMS site
     drms_setkey_longlong(exprec, "Size", (int)size);
     drms_setkey_int(exprec, "Status", (testmode ? 12 : 2));
     drms_setkey_int(exprec, "Requestor", requestorid);
-        
+
     if (dataSetCol)
     {
         free(dataSetCol);
@@ -2723,7 +2833,7 @@ check for requestor to be valid remote DRMS site
     } // end of exp_su
 
   /*  op == exp_request  */
-  else if (strcmp(op,kOpExpRequest) == 0) 
+  else if (strcmp(op,kOpExpRequest) == 0)
     {
     int status=0;
     int segcount = 0;
@@ -2736,9 +2846,9 @@ check for requestor to be valid remote DRMS site
     DRMS_RecordSet_t *rs;
     int compressedStorage;
     int compressedDownload;
-    export_series = kExportSeriesNew;
     char dieStr[1024];
     int caStatus = 0;
+    int clStatus = 0; /* assume passed test */
     HContainer_t *argsCont = NULL;
     HIterator_t *hIter = NULL;
     void *pCmdParamArg = NULL;
@@ -2756,7 +2866,7 @@ check for requestor to be valid remote DRMS site
 
     /* requestid was not provided on the command-line. It is created near the end of this code block. */
     LogReqInfo(lfname, instanceID, fileupload, op, dsin, requestid, dbhost, from_web, webarglist, fetch_time);
-    
+
     /* Write all command-line argument values so we can debug. */
     argsCont = cmdparams_get_argscont(&cmdparams);
     if (argsCont)
@@ -2767,21 +2877,21 @@ check for requestor to be valid remote DRMS site
             while ((pCmdParamArg = hiter_getnext(hIter)) != NULL)
             {
                 cmdParamArg = (CmdParams_Arg_t *)pCmdParamArg;
-                
+
                 if (cmdParamArg->strval)
                 {
                     snprintf(cmdParamArgBuf, sizeof(cmdParamArgBuf), "%s=%s\n", cmdParamArg->name ? cmdParamArg->name : "Unnamed", cmdParamArg->strval);
                 }
-                
+
                 WriteLog(lfname, cmdParamArgBuf);
             }
-            
+
             hiter_destroy(&hIter);
         }
     }
 
     caStatus = CheckEmailAddress(lfname, requestor, notify, dieStr, sizeof(dieStr));
-        
+
     if (caStatus == 1)
     {
         if (gLogs)
@@ -2794,11 +2904,39 @@ check for requestor to be valid remote DRMS site
     {
         if (gLogs)
         {
-            hcon_destroy(&gLogs);
-        }        
+           hcon_destroy(&gLogs);
+        }
         JSONDIE2(dieStr, "");
     }
-        
+
+    /* we know that the user is a registered export user - now reject the user if they have a pending request */
+    if (instanceID >= 0)
+    {
+        /* instanceID is the only way to be 100% sure that jsoc_fetch was invoked in a web/CGI environment;
+         * jsocextfetch.py sets instanceID directly (and then disables 'from_web' in jsoc_fetch by unsetting
+         * QUERY_STRING); the jsoc_fetch CGI sets instanceID in QUERY_STRING
+         *
+         * it is possible that we are using the internal DB to satisfy an export request from the external DB
+         * (the passthrough feature).
+         */
+        clStatus = CheckUserLoad(drms_env, notify, ipAddress, EXPORT_PENDING_REQUESTS_TABLE, EXPORT_PENDING_REQUESTS_TIME_OUT);
+    }
+
+    if (clStatus == 1)
+    {
+        JSONDIE("error checking list of pending export requests");
+    }
+    else if (clStatus == 2)
+    {
+        snprintf(dieStr, sizeof(dieStr), "User %s has a pending export request %s; please wait until that request has completed before submitting a new one.", notify, requestid);
+        JSONDIE(dieStr);
+    }
+    else if (clStatus == 3)
+    {
+        snprintf(dieStr, sizeof(dieStr), "There are too many requests from %s; please wait until one or more requests have completed before submitting a new one.", notify);
+        JSONDIE(dieStr);
+    }
+
     size=0;
     strncpy(dsquery,dsin,DRMS_MAXQUERYLEN);
     fileupload = strncmp(dsquery, "*file*", 6) == 0;
@@ -2875,7 +3013,7 @@ check for requestor to be valid remote DRMS site
       if ((p=index(dsquery,'{')) != NULL && strncmp(p+1, "**ALL**", 7) == 0)
         *p = '\0';
       } /* normal request */
-        
+
         // Check for series existence. The jsoc_fetch cgi can be used outside of the
         // exportdata.html context, in which case there is no check for series existence
         // before we reach this point in code. Let's catch bad-series errors here
@@ -2893,15 +3031,15 @@ check for requestor to be valid remote DRMS site
         int iset;
         int firstlastExists = 0;
         const char *setName = NULL;
-        
+
         if (drms_record_parserecsetspec_plussegs(dsquery, &allvers, &sets, &settypes, &snames, &filts, &segs, &nsets, &rsinfo) == DRMS_SUCCESS)
         {
-            /* Below, we need to know whether or not there was a FIRSTLAST symbol in the record-set specification. 
-             * But because record-set subsets may exist, we need to iterate through them. If any subset contains 
-             * a FIRSTLAST symbol, set a flag indicating that and check the flag below. 
+            /* Below, we need to know whether or not there was a FIRSTLAST symbol in the record-set specification.
+             * But because record-set subsets may exist, we need to iterate through them. If any subset contains
+             * a FIRSTLAST symbol, set a flag indicating that and check the flag below.
              *
              * Although drms_record_parserecsetspec() is a rec-set parser, it does not recognize the FIRSTLAST symbols, so
-             * we need to use drms_recordset_query(), the definitive parser. We actually already parsed the info we need, 
+             * we need to use drms_recordset_query(), the definitive parser. We actually already parsed the info we need,
              * but that info gets discarded and not saved into the record-set struct.
              */
             char *query = NULL;
@@ -2911,14 +3049,14 @@ check for requestor to be valid remote DRMS site
             int filter;
             int mixed;
             HContainer_t *firstlast = NULL;
-            HContainer_t *pkwhereNFL = NULL;             
+            HContainer_t *pkwhereNFL = NULL;
             int recnumq;
-            
+
             if (nsets > 0)
             {
                 setName = snames[0];
             }
-                    
+
             for (iset = 0; iset < nsets; iset++)
             {
                 if (strcmp(setName, snames[iset]) != 0)
@@ -2926,26 +3064,26 @@ check for requestor to be valid remote DRMS site
                     snprintf(mbuf, sizeof(mbuf), "Cannot specify subsets of records from different series.\n");
                     JSONDIE(mbuf);
                 }
-                
+
                 if (!drms_series_exists(drms_env, snames[iset], &status))
                 {
                     snprintf(mbuf, sizeof(mbuf), "Cannot export series '%s' - it does not exist.\n", snames[iset]);
                     JSONDIE(mbuf);
                 }
-                
+
                 status = drms_recordset_query(drms_env, sets[iset], &query, &pkwhere, &npkwhere, &seriesname, &filter, &mixed, NULL, &firstlast, &pkwhereNFL, &recnumq);
                 if (status != DRMS_SUCCESS)
                 {
                     snprintf(mbuf, sizeof(mbuf), "Bad record-set subset specification '%s'.\n", sets[iset]);
                     JSONDIE(mbuf);
                 }
-                
+
                 /* Iterate through firstlast, looking for anything that isn't 'N'. */
                 if (firstlast)
                 {
                     HIterator_t *hiter = NULL;
                     char *code = NULL;
-                    
+
                     hiter = hiter_create(firstlast);
                     if (hiter)
                     {
@@ -2957,7 +3095,7 @@ check for requestor to be valid remote DRMS site
                                 break;
                             }
                         }
-                        
+
                         hiter_destroy(&hiter);
                     }
                     else
@@ -2965,27 +3103,27 @@ check for requestor to be valid remote DRMS site
                         JSONDIE("Out of memory.\n");
                     }
                 }
-                
+
                 if (query)
                 {
                     free(query);
                 }
-    
+
                 if (pkwhere)
                 {
                     free(pkwhere);
                 }
-    
+
                 if (npkwhere)
                 {
                     free(npkwhere);
                 }
-                
+
                 if (seriesname)
                 {
                     free(seriesname);
                 }
-                
+
                 if (firstlast)
                 {
                     hcon_destroy(&firstlast);
@@ -3021,7 +3159,7 @@ check for requestor to be valid remote DRMS site
         {
             // open_records failed but query is OK so probably too many records for memory limit.
             char errmsg[100];
-            
+
             sprintf(errmsg, "%d is too many records in one request.", rcount);
             drms_record_freerecsetspecarr_plussegs(&allvers, &sets, &settypes, &snames, &filts, &segs, nsets);
             JSONDIE2("Can not open RecordSet ",errmsg);
@@ -3030,31 +3168,31 @@ check for requestor to be valid remote DRMS site
         drms_record_freerecsetspecarr_plussegs(&allvers, &sets, &settypes, &snames, &filts, &segs, nsets);
         JSONDIE2("Can not open RecordSet, bad query or too many records: ", dsquery);
     }
-    
-    /* We've got the records to be exported open already - if the user has used a FIRSTLAST symbol, like '$' or '^', 
-     * then convert the record-set specification to one that contains a list of recnums. There are some bugs in 
-     * jsoc_export_manage having to do with characters like '$' gumming up DB queries and shell command-lines. Let's 
-     * get rid of these characters as much as possible as upstream as possible. 
+
+    /* We've got the records to be exported open already - if the user has used a FIRSTLAST symbol, like '$' or '^',
+     * then convert the record-set specification to one that contains a list of recnums. There are some bugs in
+     * jsoc_export_manage having to do with characters like '$' gumming up DB queries and shell command-lines. Let's
+     * get rid of these characters as much as possible as upstream as possible.
      *
      * Even if there is no first-last symbol, we still want to convert to a record list so that we can create
      * a hash of the record-set query so that we can effectively compare export requests for identity.
-     * Do not use dsquery as is for this purpose. It may have wildcards, like '$', in it which make it difficult to perform 
-     * future comparisons, i.e., dsquery is not canonical. To convert dsquery to the canonical form, we have to open the 
-     * records (drms_open_records()) and make a list of recnums for each series described by dsquery. 
+     * Do not use dsquery as is for this purpose. It may have wildcards, like '$', in it which make it difficult to perform
+     * future comparisons, i.e., dsquery is not canonical. To convert dsquery to the canonical form, we have to open the
+     * records (drms_open_records()) and make a list of recnums for each series described by dsquery.
      */
     char *newSpec = NULL;
     size_t szNewSpec = DRMS_MAXQUERYLEN;
     char recnumStr[64];
-    
+
     newSpec = calloc(1, szNewSpec);
-    
+
     if (newSpec) newSpec = base_strcatalloc(newSpec, setName, &szNewSpec);
     if (newSpec) newSpec = base_strcatalloc(newSpec, "[", &szNewSpec);
 
     for (irec = 0; irec < rs->n && newSpec; irec++)
     {
         snprintf(recnumStr, sizeof(recnumStr), "%lld", rs->records[irec]->recnum);
-        
+
         if (irec == 0)
         {
             newSpec = base_strcatalloc(newSpec, ":#" , &szNewSpec);
@@ -3063,17 +3201,17 @@ check for requestor to be valid remote DRMS site
         {
             newSpec = base_strcatalloc(newSpec, ",#" , &szNewSpec);
         }
-        
+
         if (newSpec) newSpec = base_strcatalloc(newSpec, recnumStr, &szNewSpec);
     }
-    
+
     if (newSpec) newSpec = base_strcatalloc(newSpec, "]", &szNewSpec);
-    
+
     if (segs && segs[0])
     {
         if (newSpec) newSpec = base_strcatalloc(newSpec, segs[0], &szNewSpec);
     }
-    
+
     if (!newSpec)
     {
         JSONDIE("Out of memory.\n");
@@ -3083,59 +3221,59 @@ check for requestor to be valid remote DRMS site
     {
         snprintf(dsquery, sizeof(dsquery), "%s", newSpec);
     }
-     
+
     rcount = rs->n;
-        
+
         /* Check for duplicate exports within the last DUP_EXPORT_WINDOW hours. If a duplicate is found, then simply return the
          * request ID to the caller. Use the most recent duplicate. */
-        
+
         /* As far as I can tell, the format parameter is not used by jsoc_fetch all at. And formatvar is used to to set dodataobj
          * only. And dodataobj isn't something used to identify the set of data being exported. To be a duplicate
          * export, this new export request's record-set, export-file-name format, protocol, and method have to match
          * the same parameters of an existing export. The SU for the existing export also must still be on disk. */
-        
+
         /* existRec is in jsoc.export, not jsoc.export_new! */
         char *existReqID = NULL;
         TIME timeToCompletion;
         int expSize;
-        size_t szInput = 64;        
+        size_t szInput = 64;
         char *md5Input = NULL;
         unsigned char md5[MD5_DIGEST_LENGTH]; // A byte string.
         char md5Str[2 * MD5_DIGEST_LENGTH + 1]; // A null-terminated hex string representation of the md5.
-    
+
         /* create md5 from canonicalQuery, filenamefmt, process, protocol, and method */
         memset(md5, '\0', sizeof(md5));
         md5Input = calloc(szInput, sizeof(char));
-    
+
         if (md5Input) md5Input = base_strcatalloc(md5Input, newSpec, &szInput);
-        
+
         if (filenamefmt && *filenamefmt)
         {
             if (md5Input) md5Input = base_strcatalloc(md5Input, filenamefmt, &szInput);
         }
-        
+
         if (process && *process)
         {
             if (md5Input) md5Input = base_strcatalloc(md5Input, process, &szInput);
         }
-        
+
         if (protocol && *protocol)
         {
             if (md5Input) md5Input = base_strcatalloc(md5Input, protocol, &szInput);
         }
-        
+
         if (method && *method)
         {
             if (md5Input) md5Input = base_strcatalloc(md5Input, method, &szInput);
         }
-    
-        if (md5Input) 
+
+        if (md5Input)
         {
             MD5((const unsigned char *)md5Input, strlen(md5Input), md5);
-            
+
             // Ack C!!
             int ibyte;
-            
+
             for (ibyte = 0; ibyte < MD5_DIGEST_LENGTH; ibyte++)
             {
                 snprintf(md5Str + ibyte * 2, sizeof(md5Str) - ibyte * 2, "%02x", md5[ibyte]);
@@ -3145,11 +3283,11 @@ check for requestor to be valid remote DRMS site
         {
             JSONDIE("Out of memory.\n");
         }
-        
+
         existReqID = GetExistReqID(drms_env, md5Str, DUP_EXPORT_WINDOW, &timeToCompletion, &expSize);
-        
+
         free(newSpec);
-        
+
 
 	/* We need rcount before we can return duplicate-export information back to the caller. */
         if (existReqID)
@@ -3159,50 +3297,50 @@ check for requestor to be valid remote DRMS site
             char *jsonText = NULL;
             json_t *jroot = NULL;
             TIME waitTime = 0;
-            
+
             if (dojson)
             {
                 jroot = json_new_object();
-                
+
                 if (!jroot)
                 {
                     JSONDIE("Out of memory.");
                 }
-                
+
                 sprintf(numBuf, "%d", testmode ? 12 : 2);
                 json_insert_pair_into_object(jroot, "status", json_new_number(numBuf));
-                
+
                 jsonStr = string_to_json((char *)existReqID);
                 json_insert_pair_into_object(jroot, kArgRequestid, json_new_string(jsonStr));
                 free(jsonStr);
-                
+
                 jsonStr = string_to_json((char *)method);
                 json_insert_pair_into_object(jroot, kArgMethod, json_new_string(jsonStr));
                 free(jsonStr);
-                
+
                 jsonStr = string_to_json((char *)protocol);
                 json_insert_pair_into_object(jroot, kArgProtocol, json_new_string(jsonStr));
                 free(jsonStr);
-                
+
                 waitTime = timeToCompletion - timenow();
                 if (waitTime < 0)
                 {
                     waitTime = 0;
                 }
-                
+
                 sprintf(numBuf, "%1.0lf",  waitTime);
                 json_insert_pair_into_object(jroot, "wait", json_new_number(numBuf));
-                
+
                 sprintf(numBuf, "%d", rcount);
                 json_insert_pair_into_object(jroot, "rcount", json_new_number(numBuf));
-                
+
                 sprintf(numBuf, "%d", expSize);
                 json_insert_pair_into_object(jroot, "size", json_new_number(numBuf));
-                
+
                 json_tree_to_string(jroot, &jsonText);
-                
+
                 json_free_value(&jroot);
-                
+
                 if (genWebPage)
                 {
                     if (fileupload)
@@ -3215,7 +3353,7 @@ check for requestor to be valid remote DRMS site
                         printf("Content-type: application/json\n\n");
                     }
                 }
-                
+
                 if (jsonText)
                 {
                     printf("%s\n", jsonText);
@@ -3236,9 +3374,9 @@ check for requestor to be valid remote DRMS site
                 printf("wait=%f\n", timeToCompletion);
                 printf("size=%d\n", expSize);
             }
-            
+
             fflush(stdout);
-            
+
             CleanUp(&sunumarr, &infostructs, &webarglist, &series, &paths, &susize, arrsize, userhandle);
             free(existReqID);
             existReqID = NULL;
@@ -3246,16 +3384,16 @@ check for requestor to be valid remote DRMS site
             drms_close_records(rs, DRMS_FREE_RECORD);
             return(0);
         }
-        
+
         drms_record_freerecsetspecarr_plussegs(&allvers, &sets, &settypes, &snames, &filts, &segs, nsets);
-        
+
     drms_stage_records(rs, 0, 0);
-        
+
         /* drms_record_getinfo() will now fill-in the rec->suinfo for all recs in rs, PLUS all
          * linked records (so if rs is an aia.lev1_euv_12s rs, then records in aia.lev1 will
          * get their rec->suinfo structs initialized). */
     drms_record_getinfo(rs);
-  
+
     // Do survey of recordset
 // this section should be rewritten to first check in each recordset chunk to see if any
 // segments are linked, if not, then just use the sunums from stage reocrds.
@@ -3263,7 +3401,7 @@ check for requestor to be valid remote DRMS site
 // then only check each seg if needed.
     all_online = 1;
     compressedStorage = -1;
-    for (irec=0; irec < rcount; irec++) 
+    for (irec=0; irec < rcount; irec++)
       {
       // Must check each segment since some may be linked and/or offline.
       DRMS_Record_t *rec = drms_recordset_fetchnext(drms_env, rs, &status, NULL, NULL);
@@ -3279,46 +3417,46 @@ check for requestor to be valid remote DRMS site
       // Disallow exporting jsoc.export* series
       if (strncmp(rec->seriesinfo->seriesname, "jsoc.export", 11)== 0)
         JSONDIE("Export of jsoc_export series not allowed.");
-          
+
           DRMS_Record_t *tRec = NULL;
           DRMS_Record_t *segrec = NULL;
           SUM_info_t *sinfo = NULL;
           DRMS_Segment_t *tSeg = NULL;
 
-          /* Don't follow links when obtaining the segments. 
-           * If you do that, and there is a problem following the 
-           * link (e.g., the link is not set), then the 
-           * function returns NULL, which would terminate the 
+          /* Don't follow links when obtaining the segments.
+           * If you do that, and there is a problem following the
+           * link (e.g., the link is not set), then the
+           * function returns NULL, which would terminate the
            * while loop. But in this case, we want to continue
            * with the next segment. It is as if the segment
            * file does not exist, which shouldn't cause this
            * loop to terminate.
            */
-        
+
       while (seg = drms_record_nextseg(rec, &segp, 0))
       {
             /* If this is a linked segment, then follow the link. */
             if (seg->info->islink)
             {
-                /* Do not use drms_link_follow(). That API function does not recursively follow links. And it 
+                /* Do not use drms_link_follow(). That API function does not recursively follow links. And it
                  * does not fetch the target segment in the linked record. drms_segment_lookup() does
                  * both of these tasks. */
                 tSeg = drms_segment_lookup(rec, seg->info->name);
-                
+
                 if (!tSeg)
                 {
                     /* No link set for this record, or segment struct is missing from target record. */
 
                     /* The whole point of this section of code is to:
                     * 1. Determine if all segment files are online,
-                    * 2. See if there is at least one segment file to export, and 
-                    * 3. Count the number of bytes in all the segment files being exported. 
+                    * 2. See if there is at least one segment file to export, and
+                    * 3. Count the number of bytes in all the segment files being exported.
                     *
                     * So, if there is no link, this is the same as saying there is no segment file. */
                     status = DRMS_SUCCESS;
                     continue;
                 }
-                
+
                 tRec = tSeg->record;
 
                 /* We have a single segment linked to a segment in another record. */
@@ -3343,12 +3481,12 @@ check for requestor to be valid remote DRMS site
           }
 
           sinfo = segrec->suinfo;
-          
+
           if (!sinfo)
           {
               /* There was a request for an sunum of -1. */
               all_online = 0;
-              
+
               /* There is no SU. Break out of segment loop. */
               break;
           }
@@ -3364,10 +3502,10 @@ check for requestor to be valid remote DRMS site
           else if (strcmp(sinfo->online_status,"N") == 0)
           {
               /* Good SUNUM, but data are offline. We should estimate the segment size by using the entire SU size. There is nothing else we can
-               * do since we cannot bring the SU online in jsoc_fetch (it is a CGI program that needs to return quickly) and SUMS does 
+               * do since we cannot bring the SU online in jsoc_fetch (it is a CGI program that needs to return quickly) and SUMS does
                * not store file-size info within the SU. We should break out of the segment loop here anyway - there is no SU. */
               all_online = 0;
-              
+
               /* Use sinfo to get SU size info. Must cast double to 64-bit integer - SUMS design problem. */
               size += (long long)sinfo->bytes;
               if ((long long)sinfo->bytes > 0)
@@ -3375,12 +3513,12 @@ check for requestor to be valid remote DRMS site
                   /* Assume the user wants a least one segment file in the SU. */
                   segcount += 1;
               }
-              
+
               /* Good SUNUM, but offline. Break out of segment loop. */
               break;
           }
           else
-          { 
+          {
               /* The SU is online. */
               struct stat buf;
               char path[DRMS_MAXPATHLEN];
@@ -3418,6 +3556,7 @@ check for requestor to be valid remote DRMS site
                           }
                           pclose(du);
                       }
+
                       //fprintf(stderr,"dir size=%lld\n",dirsize);
                   }
                   else
@@ -3444,7 +3583,7 @@ check for requestor to be valid remote DRMS site
       } // record loop
     if (size > 0 && size < 1024*1024) size = 1024*1024;
     size /= 1024*1024;
-  
+
     // Exit if no records found
     if ((strcmp(method,"url_quick")==0 && (strcmp(protocol,kOptProtocolAsIs)==0 || strcmp(protocol,kOptProtocolSuAsIs)==0) || strcmp(protocol,"su")==0) && segcount == 0)
       JSONDIE("There are no files in this RecordSet");
@@ -3455,7 +3594,7 @@ check for requestor to be valid remote DRMS site
      * the stored file is 100 GB. But if a compressed file is going to be uncompressed, then downloaded, the maximum size of the
      * stored file is 10 GB (we assume a 10:1 compression ratio). If an uncompressed file is going to be compressed, then downloaded,
      * the maximum size of the stored file is 1000 GB (we assume a 10:1 compression ratio).
-     * 
+     *
      *             downloaded
      *           C            U
      *  s
@@ -3476,10 +3615,10 @@ check for requestor to be valid remote DRMS site
      *  -ART
      */
     long long sizeLimit; // Maximum size of STORED file.
-        
+
     compressedDownload = (strstr(protocol, "**NONE**") == NULL);
 
-        
+
     if (compressedStorage && !compressedDownload)
     {
         sizeLimit = MAX_UNCOMPRESSING_EXPORT_SIZE / sizeRatio;
@@ -3492,12 +3631,12 @@ check for requestor to be valid remote DRMS site
     {
         sizeLimit = MAX_STRAIGHT_EXPORT_SIZE / sizeRatio;
     }
-    
+
     /* Can't figure out how sizeLimit can be -2^63, but it is here. Print out a lot of stuff. */
     WriteLog(lfname, "size is %lld.\n", size);
     WriteLog(lfname, "sizeRatio is %lf.\n", sizeRatio);
     WriteLog(lfname, "sizeLimit is %lld.\n", sizeLimit);
-        
+
     if (size > sizeLimit)
       {
       if (dojson)
@@ -3535,7 +3674,7 @@ check for requestor to be valid remote DRMS site
         printf("%s\n",json);
         fflush(stdout);
         free(json);
-        }  
+        }
       else
         {
         if (genWebPage)
@@ -3599,7 +3738,7 @@ check for requestor to be valid remote DRMS site
         printf("%s\n",json);
         fflush(stdout);
         free(json);
-        }  
+        }
       else
         {
         if (genWebPage)
@@ -3632,7 +3771,7 @@ check for requestor to be valid remote DRMS site
     char jsocFetchPath[PATH_MAX];
     char reqidGenPath[PATH_MAX];
     char *binPath = NULL;
-    
+
     memset(jsocFetchPath, '\0', sizeof(jsocFetchPath));
 
     /* This call to GetJsocRequestID is in kOpExpRequest. */
@@ -3647,7 +3786,7 @@ check for requestor to be valid remote DRMS site
     }
 
     FILE *fp = popen(reqidGenPath, "r");
-     
+
     if (fp)
     {
         if (fscanf(fp, "%s", new_requestid) != 1)
@@ -3667,7 +3806,7 @@ check for requestor to be valid remote DRMS site
      {
         if (passthrough)
         {
-           /* Denote a pass-through export by inserting an X in the request ID. We need to distinguish this type of export 
+           /* Denote a pass-through export by inserting an X in the request ID. We need to distinguish this type of export
             * from an internal export (even though use the internal database) because the export web page needs to distinguish
             * them. */
            strcat(new_requestid, "_X");
@@ -3677,18 +3816,18 @@ check for requestor to be valid remote DRMS site
      }
 
      requestid = new_requestid;
-     
-    /* Insert a row into jsoc.export_md5 for this new request. If there is a failure in jsoc_export_manage, we'll have to 
+
+    /* Insert a row into jsoc.export_md5 for this new request. If there is a failure in jsoc_export_manage, we'll have to
      * delete this row. */
     char cmd[DRMS_MAXQUERYLEN];
     char timeStrBuf[64];
-        
+
     time_t secs;
     struct tm *currentUT;
 
     secs = time(NULL);
     currentUT = gmtime(&secs);
-    
+
     strftime(timeStrBuf, sizeof(timeStrBuf), "%Y-%m-%d %H:%M:%S UTC", currentUT);
     snprintf(cmd, sizeof(cmd), "INSERT INTO jsoc.export_md5 (md5, requestid, exporttime) VALUES('%s', '%s', '%s')", md5Str, requestid, timeStrBuf);
     if (drms_dms(drms_env->session, NULL, cmd))
@@ -3696,7 +3835,7 @@ check for requestor to be valid remote DRMS site
        fprintf(stderr, "Failure obtaining estimated completion time and size: %s.\n", cmd);
        JSONDIE("Cant save new export-request hash.");
     }
-    
+
     // Log this export request
     if (1)
       {
@@ -3713,9 +3852,9 @@ check for requestor to be valid remote DRMS site
       }
 
 
-     // Add Requestor info to jsoc.export_user series 
+     // Add Requestor info to jsoc.export_user series
      // Can not watch for new information since can not read this series.
-     //   start by looking up requestor 
+     //   start by looking up requestor
      if (strcmp(requestor, kNotSpecified) != 0)
       {
       DRMS_Record_t *requestor_rec;
@@ -3735,7 +3874,7 @@ check for requestor to be valid remote DRMS site
                 requestor_rec = drms_create_record(drms_env, kExportUser, DRMS_PERMANENT, &status);
                 if (!requestor_rec)
                     JSONDIE("Cant create new user info record");
-                
+
                 requestorid = requestor_rec->recnum;
                 drms_setkey_int(requestor_rec, "RequestorID", requestorid);
                 drms_setkey_string(requestor_rec, "Requestor", requestor);
@@ -3751,7 +3890,7 @@ check for requestor to be valid remote DRMS site
                 drms_setkey_time(requestor_rec, "FirstTime", fetch_time);
                 drms_setkey_time(requestor_rec, "UpdateTime", fetch_time);
                 drms_close_record(requestor_rec, DRMS_INSERT_RECORD);
-            
+
 #ifdef IN_MY_DREAMS
         }
       else
@@ -3774,10 +3913,10 @@ check for requestor to be valid remote DRMS site
       JSONDIE("Must have Recordset specified");
         /* jsoc.export_new */
         /* We are in kOpExpRequest. */
-     exprec = drms_create_record(drms_env, export_series, DRMS_PERMANENT, &status);
+     exprec = drms_create_record(drms_env, kExportSeriesNew, DRMS_PERMANENT, &status);
      if (!exprec)
       JSONDIE("Cant create new export control record");
-     drms_setkey_string(exprec, "RequestID", requestid);     
+     drms_setkey_string(exprec, "RequestID", requestid);
      drms_setkey_string(exprec, "DataSet", dsquery);
      drms_setkey_string(exprec, "Processing", process);
      drms_setkey_string(exprec, "Protocol", protocol);
@@ -3790,13 +3929,22 @@ check for requestor to be valid remote DRMS site
      drms_setkey_int(exprec, "Status", (testmode ? 12 : 2));
      drms_setkey_int(exprec, "Requestor", requestorid);
      // drms_close_record(exprec, DRMS_INSERT_RECORD);
+
+     /* insert new row into the pending-requests table (if a row already exists, it has timed out - remove it) */
+     snprintf(cmd, sizeof(cmd), "DELETE FROM %s WHERE address = '%s'; INSERT INTO %s(address, ip_address, request_id, start_time) VALUES('%s', '%s', '%s', CURRENT_TIMESTAMP)", EXPORT_PENDING_REQUESTS_TABLE, notify, EXPORT_PENDING_REQUESTS_TABLE, notify, ipAddress, requestid);
+     if (drms_dms(drms_env->session, NULL, cmd))
+     {
+        fprintf(stderr, "WARNING: Failure inserting row into %s [%s]\n", EXPORT_PENDING_REQUESTS_TABLE, cmd);
+        /* don't kill the whole export if we can't insert into the pending list; the worst that happens is that
+         * we won't protect against users submitting too many export requests */
+     }
      } // End of kOpExpRequest setup
-    
+
   /*  op == exp_repeat  */
-  else if (strcmp(op,kOpExpRepeat) == 0) 
+  else if (strcmp(op,kOpExpRepeat) == 0)
     {
     char logpath[DRMS_MAXPATHLEN];
-        
+
         /* requestid must be provided on the command-line. It is not created by jsoc_fetch. */
     if (strcmp(requestid, kNotSpecified) == 0)
       JSONDIE("RequestID must be provided");
@@ -3818,9 +3966,8 @@ check for requestor to be valid remote DRMS site
 
 JSONDIE("Re-Export requests temporarily disabled.");
 
-    // First check status in jsoc.export 
-    export_series = kExportSeries;
-    sprintf(status_query, "%s[%s]", export_series, requestid);
+    // First check status in jsoc.export
+    sprintf(status_query, "%s[%s]", kExportSeries, requestid);
     exports = drms_open_records(drms_env, status_query, &status);
     if (!exports)
       JSONDIE3("Cant locate export series: ", status_query);
@@ -3831,14 +3978,14 @@ JSONDIE("Re-Export requests temporarily disabled.");
       JSONDIE("Can't re-request a failed or incomplete prior request");
     // if sunum and su exist, then just want the retention updated.  This will
     // be accomplished by checking the record_directory.
-        
+
         // *** export_log == NULL here - not sure what it should equal, exp_repeat must not be implemented yet.
         // YES it is!! and it at least used to work. In version 1.36 export_log was changed to exprec in almost all places by Art.
 
     if (drms_record_directory(exprec, logpath, 0) != DRMS_SUCCESS || *logpath == '\0')
       {  // really is no SU so go ahead and resubmit the request
       drms_close_records(exports, DRMS_FREE_RECORD);
-  
+
       // new email provided, update with new requestorid
       if (strcmp(notify, kNotSpecified) != 0)
         {
@@ -3859,9 +4006,8 @@ JSONDIE("Re-Export requests temporarily disabled.");
         requestorid = 0;
 
       // Now switch to jsoc.export_new
-      export_series = kExportSeriesNew;
-      sprintf(status_query, "%s[%s]", export_series, requestid);
-          
+      sprintf(status_query, "%s[%s]", kExportSeriesNew, requestid);
+
           // For exp_repeat, the exprec will not have been opened yet.
       exports = drms_open_records(drms_env, status_query, &status);
       if (!exports)
@@ -3871,7 +4017,7 @@ JSONDIE("Re-Export requests temporarily disabled.");
       exprec = drms_clone_record(exports->records[0], DRMS_PERMANENT, DRMS_SHARE_SEGMENTS, &status);
       if (!exprec)
         JSONDIE("Cant create new export control record");
-      
+
           drms_setkey_int(exprec, "Status", 2);
           if (requestorid)
               drms_setkey_int(exprec, "Requestor", requestorid);
@@ -3895,10 +4041,10 @@ JSONDIE("Re-Export requests temporarily disabled.");
     if (strcmp(op,kOpExpStatus) == 0)
     {
         char mybuf[128];
-        
+
         // There is no case statement for kOpExpStatus above. We need to read in exprec
         // here.
-        
+
         /* requestid must be provided on the command-line. It is not created by jsoc_fetch. */
         if (!requestid || !*requestid || strcmp(requestid, kNotSpecified) == 0)
         {
@@ -3907,9 +4053,9 @@ JSONDIE("Re-Export requests temporarily disabled.");
         else
         {
             regex_t regexp;
-            
+
             if (regcomp(&regexp, kDefRegexp, REG_EXTENDED) != 0)
-            {                
+            {
                 snprintf(mybuf, sizeof(mybuf), "Bad regular expression '%s'.", kDefRegexp);
                 JSONDIE(mybuf);
             }
@@ -3922,35 +4068,35 @@ JSONDIE("Re-Export requests temporarily disabled.");
                     snprintf(mybuf, sizeof(mybuf), "Bad RequestID '%s' provided.", requestid);
                     JSONDIE(mybuf);
                 }
-                
+
                 regfree(&regexp);
             }
         }
-        
+
         if (internal)
         {
             lfname = kLogFileExpStatInt;
         }
         else
         {
-            lfname = kLogFileExpStatExt;            
+            lfname = kLogFileExpStatExt;
         }
-        
+
         LogReqInfo(lfname, instanceID, fileupload, op, dsin, requestid, dbhost, from_web, webarglist, fetch_time);
-        
+
         // Must check jsoc.export, NOT jsoc.export_new.
         sprintf(status_query, "%s[%s]", kExportSeries, requestid);
         exports = drms_open_records(drms_env, status_query, &status);
-        if (!exports)	 
-            JSONDIE3("Cant locate export series: ", status_query);	 
-        if (exports->n < 1)	 
-            JSONDIE3("Cant locate export request: ", status_query);	 
+        if (!exports)
+            JSONDIE3("Cant locate export series: ", status_query);
+        if (exports->n < 1)
+            JSONDIE3("Cant locate export request: ", status_query);
         exprec = exports->records[0];
         exports->records[0] = NULL; // Detach this record from the record-set so we can free record-set, but not exprec.
         drms_close_records(exports, DRMS_FREE_RECORD);
         insertexprec = 0;
     }
-    
+
     // ******************************************** //
     // A jsoc.export_new record was created in      //
     // memory, but not saved to the db. If we're    //
@@ -3960,8 +4106,8 @@ JSONDIE("Re-Export requests temporarily disabled.");
     // created record in jsoc.export_new. The       //
     // handle to this record is exprec.             //
     // ******************************************** //
-    
-    
+
+
   if (strcmp(requestid, kNotSpecified) == 0)
   {
       // ART - must save exprec first (it was created in one of the case blocks above).
@@ -3981,7 +4127,7 @@ JSONDIE("Re-Export requests temporarily disabled.");
   size       = drms_getkey_longlong(exprec, "Size", NULL);
   requestorid = drms_getkey_int(exprec, "Requestor", NULL);
   char *export_errmsg = drms_getkey_string(exprec, "errmsg", NULL);
-    
+
   // Do special actions on status
   switch (status)
     {
@@ -4043,7 +4189,7 @@ JSONDIE("Re-Export requests temporarily disabled.");
         waittime = 999999;
         errorreply = "Request was completed but is now deleted, 7 day limit exceeded";
         }
-      else  
+      else
         {
         strncat(logpath, "/", DRMS_MAXPATHLEN);
         strncat(logpath, indexfile, DRMS_MAXPATHLEN);
@@ -4052,19 +4198,19 @@ JSONDIE("Re-Export requests temporarily disabled.");
         {
             // ART - must save exprec first
             char dbuf[1024];
-            
+
             snprintf(dbuf, sizeof(dbuf), "Export should be complete but return %s file not found", indexfile);
             JSONCOMMIT(dbuf, &exprec, !insertexprec);
         }
 
         if (genWebPage)
-        {  
+        {
             if (dojson)
                 printf("Content-type: application/json\n\n");
             else
                 printf("Content-type: text/plain\n\n");
         }
-        
+
         while ((c = fgetc(fp)) != EOF)
           putchar(c);
         fclose(fp);
@@ -4127,7 +4273,7 @@ JSONDIE("Re-Export requests temporarily disabled.");
         json_insert_pair_into_object(jroot, "size", json_new_number(numval));
         if (strcmp(op, kOpExpSu) == 0)
            json_insert_pair_into_object(jroot, "data", data);
-        if (errorreply) 
+        if (errorreply)
           {
           strval = string_to_json(errorreply);
           json_insert_pair_into_object(jroot, "error", json_new_string(strval));
@@ -4141,7 +4287,7 @@ JSONDIE("Re-Export requests temporarily disabled.");
           }
         json_tree_to_string(jroot,&json);
         json_free_value(&jroot);
-        
+
         if (genWebPage)
         {
             if (fileupload)  // The returned json should be in the implied <body> tag for iframe requests.
@@ -4186,13 +4332,13 @@ JSONDIE("Re-Export requests temporarily disabled.");
       fflush(stdout);
       }
     }
-    
+
     if (sustatus)
     {
         free(sustatus);
         sustatus = NULL;
     }
-    
+
     if (sunums)
     {
         free(sunums);
@@ -4201,11 +4347,11 @@ JSONDIE("Re-Export requests temporarily disabled.");
 
   report_summary(Server, StartTime, Remote_Address, op, dsin, rcountlimit, internal, requireOnline, status);
   CleanUp(&sunumarr, &infostructs, &webarglist, &series, &paths, &susize, arrsize, userhandle);
-    
+
     if (exprec)
     {
         insertexprec ? drms_close_record(exprec, DRMS_INSERT_RECORD) : drms_close_record(exprec, DRMS_FREE_RECORD);
     }
-    
+
   return(0);
   }

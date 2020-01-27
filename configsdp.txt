@@ -1,19 +1,19 @@
-# This file contains JSOC_SDP-specific configuration information. It is used only if the '-sdp' flag is used 
+# This file contains JSOC_SDP-specific configuration information. It is used only if the '-sdp' flag is used
 # as an argument to the check-out script (checkoutDRMS.pl). To change the configuration at Stanford, edit
 # this file directly, and commit those changes to the source-tree repository.
 
-# The lines in the __PROJ_MK_RULES__ section define JSOC_SDP-specific make variables, targets, and rules. When 
+# The lines in the __PROJ_MK_RULES__ section define JSOC_SDP-specific make variables, targets, and rules. When
 # localize.py is run, it will process this section and create JSOC/localization/make_basic.mk. These are
 # available to all JSOC_SDP projects.
 
-# The lines in the __PROJ__ section define JSOC_SDP projects. When localize.py runs, file content will be 
+# The lines in the __PROJ__ section define JSOC_SDP projects. When localize.py runs, file content will be
 # added to JSOC/localization/Rules.mk and JSOC/localization/target.mk.
 
 # The lines in the __PROJCFG__ section define additional project-specific configuration. The code in this
 # section must be in a shell-scripting language, and will be executed as is.
 
-# The lines in the __MAKE__ section define global make variables to configure the make process. A subset of 
-# these variables defines the locations of JSOC_SDP-specific third-party libraries. These values apply to all code 
+# The lines in the __MAKE__ section define global make variables to configure the make process. A subset of
+# these variables defines the locations of JSOC_SDP-specific third-party libraries. These values apply to all code
 # in both JSOC/base and JSOC/proj directories.
 
 __DEFS__
@@ -95,6 +95,8 @@ q:SCRIPTS_EXPORT                        /home/jsoc/cvs/Development/JSOC/scripts
 q:EXPORT_LOG_DIR                        /home/jsoc/exports/logs
 q:EXPORT_LOCK_DIR                       /home/jsoc/exports/tmp
 q:EXPORT_HANDLE_DIR                     /home/jsoc/exports
+q:EXPORT_PENDING_REQUESTS_TABLE         jsoc.export_pending_reqs
+a:EXPORT_PENDING_REQUESTS_TIME_OUT      60
 q:BIN_PY                                /home/jsoc/bin/linux_x86_64/activepython27
 q:BIN_PY3                               /home/jsoc/anaconda3/bin/python3
 a:SUMS_USEMTSUMS                        1
@@ -110,12 +112,12 @@ q:POLCAL_PARAMS                         /home/jsoc/hmi/tables/lev15/polcal-param
 
 __MAKE__
 # JSOC_SDP third-party libraries used by base
-# The parameters in this section are used to create make variables. For example, the line 
+# The parameters in this section are used to create make variables. For example, the line
 # 'POSTGRES_LIB = pq' will cause a make variable named POSTGRES_LIB to be created and to
 # be assigned the value 'pq'.
 
 # If the name in the left column contains a colon, then the name on the LHS is the parameter name. The RHS is
-# a description of which platforms or specific machines the parameter applies to. For example, 
+# a description of which platforms or specific machines the parameter applies to. For example,
 # the name POSTGRES_INCS:X86_64 implies that the value of the parameter named POSTGRES_INCS is /usr/include
 # when make is run on a linux_x86_64 machine. The RHS string can contain either a platform identifier
 # (X86_64, IA32, AVX, or IA64) or it can be a string that identifies a particular machine, like d02.
@@ -124,17 +126,17 @@ __MAKE__
 # all machines whose names contain the string 'hmidb'. So, for machines hmidb, hmidb2, and hmidb3, the
 # value of the POSTGRES_INCS parameter is /usr/local/pgsql/include.
 #
-# If the RHS is a platform identifier, then make compares the value of $JSOC_MACHINE (which is in 
+# If the RHS is a platform identifier, then make compares the value of $JSOC_MACHINE (which is in
 # reality a misnomer, since it truly specifies the name of the machine platform, not the name
-# of the machine) to the platform name specified by the RHS string. For example, 
+# of the machine) to the platform name specified by the RHS string. For example,
 # if the RHS string is 'avx', then make compares $JSOC_MACHINE to
 # 'linux_avx', and if there is a match, then the parameter's value specified in the second column is assigned
 # to the make variable. If the RHS is a machine identifier, then make compares the value of $MACHTYPE
 # (another misnormer, since it is the name of the machine, not the name of some type of machine ) to
-# the machine names specified by the RHS. For example, if the RHS string is 'hmidb' then make 
-# compares $MACHTYPE to 'hmidb', and if 'hmidb' is a substring of $MACHTYPE, then the parameter's 
+# the machine names specified by the RHS. For example, if the RHS string is 'hmidb' then make
+# compares $MACHTYPE to 'hmidb', and if 'hmidb' is a substring of $MACHTYPE, then the parameter's
 # value specified in the second column is assigned to the make variable
-# 
+#
 # Blocks defined by the _CUST_/_ENDCUST_ tags are copied ver batim into the output make file.
 
 POSTGRES_LIB            pq
@@ -201,9 +203,9 @@ GSL_LIBS:AVX            /home/jsoc/avx/lib
 GSL_LIBS:IA64           /home/jsoc/lib/linux-x86_64
 
 MPI_INCS:X86_64         /home/jsoc/mpich2/include
-MPI_INCS:IA32           
+MPI_INCS:IA32
 MPI_INCS:AVX            /home/jsoc/avx/include
-MPI_INCS:IA64           
+MPI_INCS:IA64
 
 MPI_LIBS:X86_64         /home/jsoc/mpich2/lib
 MPI_LIBS:AVX            /home/jsoc/avx/lib
@@ -267,7 +269,7 @@ __PROJ__
    <proj>
         <name>datacapture</name>
         <subdirs>
-             <subdir>apps</subdir>     
+             <subdir>apps</subdir>
         </subdirs>
    </proj>
    <proj>
@@ -286,7 +288,7 @@ __PROJ__
    <proj>
         <name>maps_avgs</name>
         <subdirs>
-             <subdir>apps</subdir>     
+             <subdir>apps</subdir>
         </subdirs>
         <filters>
              <filter>
@@ -310,37 +312,37 @@ __PROJ__
    <proj>
         <name>util</name>
         <subdirs>
-             <subdir>apps</subdir>     
+             <subdir>apps</subdir>
         </subdirs>
    </proj>
    <proj>
         <name>lev0</name>
         <subdirs>
-             <subdir>apps</subdir>     
+             <subdir>apps</subdir>
         </subdirs>
    </proj>
    <proj>
         <name>lev1</name>
         <subdirs>
-             <subdir>apps</subdir>     
+             <subdir>apps</subdir>
         </subdirs>
    </proj>
    <proj>
         <name>jpe</name>
         <subdirs>
-             <subdir>apps</subdir>     
+             <subdir>apps</subdir>
         </subdirs>
    </proj>
    <proj>
         <name>lev1_aia</name>
         <subdirs>
-             <subdir>apps</subdir>     
+             <subdir>apps</subdir>
         </subdirs>
    </proj>
    <proj>
         <name>lev1_hmi</name>
         <subdirs>
-             <subdir>apps</subdir>     
+             <subdir>apps</subdir>
         </subdirs>
    </proj>
    <proj>

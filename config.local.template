@@ -4,9 +4,9 @@ __DEFS__
 #
 # This file contains configurable parameters that allow NetDRMS sites to customize their DRMS installation. By editing this file, you can specify which resources to use, such as the PostgreSQL database host, you can specify arguments to certain programs, like arguments that control how often SUMS purges expired Storage Units, and you can enable/disable certain features, like remoteSUMS. Each line that is not a comment contains two columns of information. The first column contains the name of a parameter and the second contains its value. To customize your installation, you would edit the value in the second column.
 #
-# Once you have edited this file, you must run the configure script, which parses this file to create macros and constants and such that are used by the various DRMS components. These data are stored in files which are then either compiled into binaries or loaded by scripts. The configure script accomplishes much of this work by calling localize.py. The resulting files are stored in the localization directory. 
+# Once you have edited this file, you must run the configure script, which parses this file to create macros and constants and such that are used by the various DRMS components. These data are stored in files which are then either compiled into binaries or loaded by scripts. The configure script accomplishes much of this work by calling localize.py. The resulting files are stored in the localization directory.
 
-# The name of the NetDRMS database (e.g., sdac_drms, nso_drms); this is also the prefix of the SUMS database, 
+# The name of the NetDRMS database (e.g., sdac_drms, nso_drms); this is also the prefix of the SUMS database,
 #   which is constructed by appending "_sums" to the prefix.
 DRMS_DATABASE	mydb
 
@@ -15,7 +15,7 @@ WEB_DBUSER      apache
 
 # The host machine of the database server you will be accessing; if
 #   the DRMS server and client reside on different subnets, then the host
-#   name should be a fully qualified domain name (FQDN). 
+#   name should be a fully qualified domain name (FQDN).
 # A value of 'localhost' can be used, but it is only appropriate if you
 #   are running in a single-user environment, such as on a laptop. In
 #   this case, the client and the server are the same machine, so
@@ -49,7 +49,7 @@ POSTGRES_ADMIN	postgres
 SUMS_MANAGER	production
 
 # The DRMS database user account that has row-deletion permissions for ALL DRMS data-series DB record tables (the record
-# table for a data-series has the same name, albeit lower-case-folded, as the name of the data-series, i.e., 
+# table for a data-series has the same name, albeit lower-case-folded, as the name of the data-series, i.e.,
 # the record table for the data-series hmi.M_45s is hmi.m_45s). sum_rm connects to the DRMS database as this user
 # when it deletes DRMS records (for the archive == -1 feature).
 DRMS_ADMIN_DB_USER       sumsadmin
@@ -74,7 +74,7 @@ SUMS_DB_HOST            localhost
 #   unless it is in use already.
 SUMS_DBPORT	5434
 
-# The number of sum_svc processes, per sum service (e.g., SUM_get, SUM_alloc) to start, 
+# The number of sum_svc processes, per sum service (e.g., SUM_get, SUM_alloc) to start,
 # by default, when multi-SUMS starts up.
 SUM_NUMSUM    1
 
@@ -222,7 +222,7 @@ RS_SCP_MAXSUS                         48
 # If the cumulative payload exceeds this many MB, then an ScpWorker will initiate a download.
 RS_SCP_MAXPAYLOAD                     512
 
-# If an ScpWorker is idle for at least this many seconds, and there are SUs pending a download, 
+# If an ScpWorker is idle for at least this many seconds, and there are SUs pending a download,
 # then an ScpWorker will initiate a download.
 RS_SCP_TIMEOUT                        2
 
@@ -235,7 +235,7 @@ RS_SU_LIFESPAN                        28
 # The default value of the archive flag for newly ingested SUs. If the SU being ingested is part of a data series, then Remote SUMS obtains the archive flag from the data series' definition instead. The truth value can be one of several character strings that implies TRUE or FALSE.
 RS_SU_ARCHIVE                         no
 
-# The default value of the tapegroup for newly ingested SUs. If the SU being ingested is part of a data series, then Remote SUMS obtains the tapegroup from the data series' definition instead. 
+# The default value of the tapegroup for newly ingested SUs. If the SU being ingested is part of a data series, then Remote SUMS obtains the tapegroup from the data series' definition instead.
 RS_SU_TAPEGROUP                       0
 
 ##### Storage Unit Steward #####
@@ -274,6 +274,12 @@ SCRIPTS_EXPORT                        /opt/drms/scripts
 EXPORT_LOG_DIR                        /opt/exports/logs
 EXPORT_LOCK_DIR                       /opt/exports/tmp
 EXPORT_HANDLE_DIR                     /opt/exports
+
+# The database table that contains the set of export requests currently being processed
+EXPORT_PENDING_REQUESTS_TABLE         jsoc.export_pending
+
+# The interval of time, after which a pending export is considered complete (errored-out).
+EXPORT_PENDING_REQUESTS_TIME_OUT      60
 
 # The Python binary must be at least version 2.7. 3.x binaries will work.
 BIN_PY                                /usr/bin/python
