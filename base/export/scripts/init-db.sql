@@ -12,3 +12,8 @@ CREATE TABLE jsoc.export_pending_reqs
 
 -- the export-system code will search on both address and ip_address
 CREATE INDEX export_pending_reqs_ip_address ON jsoc.export_pending_reqs (ip_address);
+
+-- since any user can run jsoc_fetch, all users need SELECT, INSERT, and DELETE privileges
+GRANT SELECT ON jsoc.export_pending_reqs TO public;
+GRANT INSERT ON jsoc.export_pending_reqs TO public;
+GRANT DELETE ON jsoc.export_pending_reqs TO public;
