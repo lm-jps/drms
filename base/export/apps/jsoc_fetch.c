@@ -396,6 +396,7 @@ static void CleanUp(int64_t **psunumarr, SUM_info_t ***infostructs, char **webar
 #define JSONDIE(msg) {die(dojson,msg,"","4",&sunumarr,&infostructs,&webarglist,&series,&paths,&susize,arrsize,userhandle);return(1);}
 #define JSONDIE2(msg,info) {die(dojson,msg,info,"4",&sunumarr,&infostructs,&webarglist,&series,&paths,&susize,arrsize,userhandle);return(1);}
 #define JSONDIE3(msg,info) {die(dojson,msg,info,"6",&sunumarr,&infostructs,&webarglist,&series,&paths,&susize,arrsize,userhandle);return(1);}
+#define JSONDIE7(msg) {die(dojson,msg,"","7",&sunumarr,&infostructs,&webarglist,&series,&paths,&susize,arrsize,userhandle);return(1);}
 
 int fileupload = 0;
 static int gGenWebPage = 1; /* For the die() function. */
@@ -1367,6 +1368,8 @@ static int CheckEmailAddress(const char *logfile, const char *requestor, const c
     ipAddress (char *) - IP address of the user making the export request
     dbTable (char *)- database table of pending export requests
     timeOutInterval (int) - time out, in minutes; when time-out is exceeded, then it is OK to perform a new export
+    pendingRequestID (char *) - [OUT] the request ID of the located pending request
+    size (int) - buffer size of pendingRequestID
 
    return values:
      0 - no pending request
@@ -1382,7 +1385,7 @@ static int CheckEmailAddress(const char *logfile, const char *requestor, const c
 
   the SQL will be executed on the JSOC_DBHOST database; so each database server has the dbTable table
  */
-static int CheckUserLoad(DRMS_Env_t *env, const char *address, const char *ipAddress, const char *dbTable, int timeOutInterval)
+static int CheckUserLoad(DRMS_Env_t *env, const char *address, const char *ipAddress, const char *dbTable, int timeOutInterval, char *pendingRequestID, int size)
 {
     char command[256] = {0};
     DB_Binary_Result_t *bres = NULL;
@@ -1391,7 +1394,7 @@ static int CheckUserLoad(DRMS_Env_t *env, const char *address, const char *ipAdd
     /* look for pending request in dbTable - address is primary key, index on ipAddress exists too */
     if (address)
     {
-        snprintf(command, sizeof(command), "SELECT count(*) FROM %s WHERE address = '%s' AND CURRENT_TIMESTAMP - start_time < interval '%d minutes'", dbTable, address, timeOutInterval);
+        snprintf(command, sizeof(command), "SELECT request_id FROM %s WHERE address = '%s' AND CURRENT_TIMESTAMP - start_time < interval '%d minutes'", dbTable, address, timeOutInterval);
 
         if ((bres = drms_query_bin(env->session, command)) == NULL)
         {
@@ -1402,23 +1405,18 @@ static int CheckUserLoad(DRMS_Env_t *env, const char *address, const char *ipAdd
         {
             if (bres->num_rows > 0)
             {
-                /* extract response (count() returns a bigint) */
-                if (db_binary_field_getlonglong(bres, 0, 0) > 0)
-                {
-                    /* an existing request is pending for this user and it has not timed out */
-                    rv = 2;
-                }
-                else
-                {
-                    /* either no pending request, or a pending request has timed out */
-                    rv = 0;
-                }
+                /* address is the prime key, so there can only be either 0 or 1 row returned */
+
+                /* extract response (request_id returns a string) */
+                db_binary_field_getstr(bres, 0, 0, size, pendingRequestID);
+
+                /* an existing request is pending for this user and it has not timed out */
+                rv = 2;
             }
             else
             {
-                /* this should never happen - count() should return a single row */
-                fprintf(stderr, "DB query failure [%s] - did not return any rows\n", command);
-                rv = 1;
+                /* either no pending request, or a pending request has timed out */
+                rv = 0;
             }
         }
     }
@@ -2854,6 +2852,7 @@ check for requestor to be valid remote DRMS site
     void *pCmdParamArg = NULL;
     CmdParams_Arg_t *cmdParamArg = NULL;
     char cmdParamArgBuf[512] = {0};
+    char pendingRequestID[32] = {0};
 
     if (internal)
     {
@@ -2919,7 +2918,7 @@ check for requestor to be valid remote DRMS site
          * it is possible that we are using the internal DB to satisfy an export request from the external DB
          * (the passthrough feature).
          */
-        clStatus = CheckUserLoad(drms_env, notify, ipAddress, EXPORT_PENDING_REQUESTS_TABLE, EXPORT_PENDING_REQUESTS_TIME_OUT);
+        clStatus = CheckUserLoad(drms_env, notify, ipAddress, EXPORT_PENDING_REQUESTS_TABLE, EXPORT_PENDING_REQUESTS_TIME_OUT, pendingRequestID, sizeof(pendingRequestID));
     }
 
     if (clStatus == 1)
@@ -2928,13 +2927,17 @@ check for requestor to be valid remote DRMS site
     }
     else if (clStatus == 2)
     {
-        snprintf(dieStr, sizeof(dieStr), "User %s has a pending export request %s; please wait until that request has completed before submitting a new one.", notify, requestid);
-        JSONDIE(dieStr);
+        if (*pendingRequestID == '\0')
+        {
+            snprintf(pendingRequestID, sizeof(pendingRequestID), "[ UNKNOWN ]");
+        }
+        snprintf(dieStr, sizeof(dieStr), "User %s has a pending export request %s; please wait until that request has completed before submitting a new one.", notify, pendingRequestID);
+        JSONDIE7(dieStr);
     }
     else if (clStatus == 3)
     {
         snprintf(dieStr, sizeof(dieStr), "There are too many requests from %s; please wait until one or more requests have completed before submitting a new one.", notify);
-        JSONDIE(dieStr);
+        JSONDIE7(dieStr);
     }
 
     size=0;
