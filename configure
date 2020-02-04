@@ -2,7 +2,7 @@
 
 # The system configuration for configure script
 set PERLBIN = ""
-set PYBIN = ""
+set PYBIN = "python3"
 
 if ($PERLBIN == "") then
     if (-x /home/jsoc/bin/linux_x86_64/activeperl) then
@@ -16,7 +16,7 @@ if ($PYBIN == "") then
     if (-x /home/jsoc/bin/linux_x86_64/activepython) then
         set PYBIN = "/home/jsoc/bin/linux_x86_64/activepython"
     else
-        set PYBIN = "python"
+        set PYBIN = "python3"
     endif
 endif
 
@@ -45,7 +45,7 @@ foreach THEARG ($argv)
         echo "Unable to parse command-line arguments."
         exit 1
     endif
-    
+
     if ($FLAG == $CLEANCMD) then
         set CLEAN = "no"
     else if ($FLAG == $CFGSERVERARG) then
@@ -59,21 +59,21 @@ end
 #   configure [ -d ] [ -s ] [ <project config file> ]
 
 # Backward compatibility - remove the links to the old make files in projconf
-if (-d proj) then	 
-    cd proj	 
-    if (-e configure) then	 
-        rm configure	 
-    endif	 
-    if (-e make_basic.mk) then	 
-        rm make_basic.mk	 
-    endif	 
-    if (-e Rules.mk) then	 
-        rm Rules.mk	 
-    endif	 
-    if (-e target.mk) then	 
-        rm target.mk	 
-    endif	 
-    cd ..	 
+if (-d proj) then
+    cd proj
+    if (-e configure) then
+        rm configure
+    endif
+    if (-e make_basic.mk) then
+        rm make_basic.mk
+    endif
+    if (-e Rules.mk) then
+        rm Rules.mk
+    endif
+    if (-e target.mk) then
+        rm target.mk
+    endif
+    cd ..
 endif
 
     # Always clean up links to man pages and re-create them.
@@ -151,19 +151,19 @@ endif
     if (!(-d base/include)) then
         mkdir -p base/include
         if ($? != 0) then
-            echo "Unable to make base/include directory."            
-            exit 1        
+            echo "Unable to make base/include directory."
+            exit 1
         endif
     endif
 
     if (!(-d include)) then
         mkdir -p include
         if ($? != 0) then
-            echo "Unable to make include directory."            
-            exit 1        
+            echo "Unable to make include directory."
+            exit 1
         endif
 
-        
+
     endif
 
     echo "Setting links to man pages..."
@@ -174,7 +174,7 @@ endif
     endif
     echo "done"
     echo
-	
+
     echo "Setting links to jsds..."
     if (!(-d jsds)) then
         mkdir jsds
@@ -185,7 +185,7 @@ endif
     echo "done"
     echo
 
-    # generate links for DSDS/SOI dynamic libraries - only do this if 
+    # generate links for DSDS/SOI dynamic libraries - only do this if
     # user's environment has access to /home/soi/CM
     if (-d /home/soi/CM/include && -d /home/soi/CM/src) then
         if (-x base/local/libs/dsds/scripts/genlinks.csh) then
@@ -203,7 +203,7 @@ endif
     #######################
     ## Site Localization ##
     #######################
-    
+
     # Path to the configuration file - at some point, make this an argument to the configure script
     set LOCALIZATIONDIR = ""
     set RELLOCALIZATIONDIR = ""
@@ -222,7 +222,7 @@ endif
 
     # Reset localization.
     if ($CLEAN == "yes") then
-        # This script will need to read the config.local file to get the 
+        # This script will need to read the config.local file to get the
         # localization directory. Otherwise, just use JSOC/localization as the default.
         if (!(-d ${LOCALIZATIONDIR})) then
             mkdir ${LOCALIZATIONDIR}
@@ -256,7 +256,7 @@ endif
                 echo "       this directory and rerun configure. Otherwise, copy the file"
                 echo "       config.local.template to config.local and edit the config.local"
                 echo "       file to contain site-appropriate values."
-                echo 
+                echo
                 echo "*** IMPORTANT *** The edited config.local will contain site-specific"
                 echo "    values that should not be modified during subsequent updates to"
                 echo "    NetDRMS. Keep a safe copy of it somewhere outside of the DRMS"
@@ -265,18 +265,18 @@ endif
                 exit 1;
             endif
         endif
-        
+
         # We now call localize.py for both Stanford and NetDRMS builds.
         if ($CFGSERVER == "yes") then
             set cmd = "$PYBIN ./localize.py -d ${LOCALIZATIONDIR} -b drmsparams -s"
         else
             set cmd = "$PYBIN ./localize.py -d ${LOCALIZATIONDIR} -b drmsparams"
         endif
-        
+
         $cmd
         if ($? != 0) then
-            echo "Failure running localize.py."            
-            exit 1        
+            echo "Failure running localize.py."
+            exit 1
         endif
 
     endif # End reset localization
@@ -286,11 +286,11 @@ endif
         mkdir scripts
         if ($? != 0) then
             echo "Unable to create scripts directory."
-            exit 1        
+            exit 1
         endif
     endif
-    
-    if ($CLEAN == "yes") then 
+
+    if ($CLEAN == "yes") then
         cd scripts
 
         # Sums scripts
@@ -321,7 +321,7 @@ endif
     # To support legacy code, we need to make a link from serverdefs.h to ${LOCALIZATIONDIR}/drmsparams.h (the replacement for serverdefs.h
     # at Stanford) and from JSOC/base/include/localization.h to ${LOCALIZATIONDIR}/drmsparams.h (the replacement for localization.h
     # for NetDRMs builds). However, some files are looking for JSOC/base/drms/apps/serverdefs.h (instead of JSOC/base/include, the correct path).
-    # If we make a link from JSOC/base/drms/apps/serverdefs.h to ${LOCALIZATIONDIR}/drmsparams.h, then the script below will make links from 
+    # If we make a link from JSOC/base/drms/apps/serverdefs.h to ${LOCALIZATIONDIR}/drmsparams.h, then the script below will make links from
     # JSOC/base/include/serverdefs.h and JSOC/include/serverdefs.h to JSOC/base/drms/apps/serverdefs.h, which then links to ${LOCALIZATIONDIR}/drmsparams.h.
     if (!(-l base/drms/apps/serverdefs.h)) then
         cd base/drms/apps
@@ -339,7 +339,7 @@ endif
         cd ../..
     endif
 
-    if ($CLEAN == "yes") then 
+    if ($CLEAN == "yes") then
         cd base/include
         find .. -path '../include' -prune -o -name \*.h -print | ${PERLBIN} -MFile::Basename -n -e 'my($bn) = basename($_); chomp($bn); my($path) = $_; chomp($path); if (!(-e $bn)) { `ln -s $_`; if ($? >> 8 == 0) { print "   " . $path . " OK\n"; } else { print "   " . $path . " ERROR - could not create link\n"; } }'
         cd ../..
