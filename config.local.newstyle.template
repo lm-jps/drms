@@ -1,0 +1,228 @@
+# NetDRMS local site configuration info.
+#
+# This file contains configurable parameters that allow NetDRMS-site administrators to customize their DRMS installation. By editing this file, you can specify which resources to use, such as the PostgreSQL database host, you can specify arguments to certain programs, like arguments that control how often SUMS purges expired Storage Units, and you can enable/disable certain features, like Remote SUMS. Each line that is not a comment contains two columns of information. The first column contains the name of a parameter and the second contains its value. To customize your installation, you would edit the value in the second column.
+#
+# Once you have edited this file, you must run the configure script, which parses this file to create macros and constants and such that are used by the various DRMS components. These data are stored in files which are then either compiled into binaries or loaded by scripts. The configure script accomplishes much of this work by calling localize.py. The resulting files are stored in the localization directory.
+
+__DEFS__
+
+# the path to the Python 3 python executable.
+q:BIN_PY3                                      /usr/bin/python3
+
+# the name of the DRMS database: this parameter exists in case you want to select a different name, but we don't recommend changing it.
+q:DBNAME                                       netdrms
+
+# a 15-bit hexadecimal string that globally and uniquely identifies the NetDRMS. Each NetDRMS requires a unique code for each installation. Values greater than or equal to 0x4000 denote a development installation and need not be unique. If you plan on generating data that will be distributed outside of your site, please obtain a unique value from the JSOC.
+a:DRMS_LOCAL_SITE_CODE                         0x4000
+
+# the directory to which the DRMS library writes various lock files.
+q:DRMS_LOCK_DIR                                /home/netdrms_production/lock
+
+# the directory to which the DRMS library writes various log files.
+q:DRMS_LOG_DIR                                /home/netdrms_production/log/DRMS
+
+# the port that the DRMS database cluster instance is listening on.
+q:DRMSPGPORT                                   5432
+
+# the directory to which export programs save handles.
+q:EXPORT_HANDLE_DIR                           /home/netdrms_production/lock
+
+# the directory to which export programs write lock files.
+q:EXPORT_LOCK_DIR                             /home/netdrms_production/lock
+
+# the directory to which export programs write logs.
+q:EXPORT_LOG_DIR                              /home/netdrms_production/log/DRMS
+
+# if set to 1, then the Java Mirroring Daemon alternative to Remote SUMS is used: this should be 0.
+a:JMD_IS_INSTALLED                            0
+
+# the Linux user that owns the PostgreSQL installation and processes.
+q:POSTGRES_ADMIN                              postgres
+
+# the NetDRMS binary path that contains the external programs needed by the Remote SUMS (e.g., jsoc_fetch, vso_sum_alloc, vso_sum_put).
+q:RS_BINPATH                                  /opt/netdrms/bin/linux_avx
+
+# the name of the Remote SUMS database cluster host.
+q:RS_DBHOST                                   drms
+
+# the Remote SUMS database.
+q:RS_DBNAME                                   netdrms_sums
+
+# the port that the Remote SUMS database cluster instance is listening on.
+a:RS_DBPORT                                   5432
+
+# the Linux user that runs Remote SUMS; this is also the database user who owns the Remote SUMS database objects.
+q:RS_DBUSER                                   netdrms_production
+
+# the timeout, in seconds, for an SU to download. If the download time exceeds this value, then all requests waiting for the SU to download will fail.
+a:RS_DLTIMEOUT                                300
+
+# the (advisory) lockfile used by Remote SUMS to prevent multiple instances from running.
+q:RS_LOCKFILE                                 /home/netdrms_production/lock/remotesums.lck
+
+# the directory in which remote-sums log files are written.
+q:RS_LOGDIR                                   /home/netdrms_production/log/rsums
+
+# the maximum number of SUs that Remote SUMS can process simultaneously.
+a:RS_MAXTHREADS                               32
+
+# the number of scp worker threads - at most, this many scp processes will run simultaneously
+a:RS_N_WORKERS                                8
+
+# the timeout, in seconds, for a new SU request to be accepted for processing by the daemon. If the daemon encounters a request older than this value, it will reject the new request.
+a:RS_REQTIMEOUT                               7200
+
+# the Remote SUMS database relation that contains Remote SUMS requests; DRMS modules insert request rows in this table, and Remote SUMS locates the requests and manages rows in this table.
+q:RS_REQUEST_TABLE                            drms.rs_requests
+
+# the maximum total payload, in MB, per download. As soon as the combined payload of SUs ready for download exceeds this value, then the SUs are downloaded with a single scp process.
+a:RS_SCP_MAXPAYLOAD                           512
+
+# the maximum size of the SU download queue. As soon as this many SUs are ready for download, they are downloaded with a single scp process.
+a:RS_SCP_MAXSUS                               48
+
+# if there are SUs ready for download, and no scp has fired off within this many seconds, then the SUs that are ready to download are downloaded with a single scp process.
+a:RS_SCP_TIMEOUT                              2
+
+# the service at JSOC that is used by Remote SUMS to locate the NetDRMS site that owns SUMS storage units; this is Remote SUMS site URL.
+q:RS_SITE_INFO_URL                            http://jsoc.stanford.edu/cgi-bin/rssites.sh
+
+# the default value of the archive flag for newly ingested SUs; if the SU being ingested is part of a data series, then Remote SUMS obtains the archive flag from the data series' definition instead; the truth value can be one of several character strings that implies TRUE or FALSE.
+q:RS_SU_ARCHIVE                              no
+
+# the default expiration date for all SUs ingested by Remote SUMS; if the SU being ingested is part of a data series, then Remote SUMS obtains the expiration for the SU from the data series' definition instead; as an alternative to RS_SU_EXPIRATION, RS_SU_LIFESPAN can be used to specify the expiration date of newly ingested SUs; RS_SU_EXPIRATION takes predent over RS_SU_LIFESPAN.
+# q:RS_SU_EXPIRATION                         2022-10-25
+
+# the default lifespan ("retention time"), in days, of a newly ingested SU; if the SU being ingested is part of a data series, then Remote SUMS obtains the lifespan for the SU from the data series' definition instead; as an alternative to RS_SU_LIFESPAN, RS_SU_EXPIRATION can be used to specify the lifespan of newly ingested SUs; RS_SU_EXPIRATION takes predent over RS_SU_LIFESPAN.
+a:RS_SU_LIFESPAN                             60
+
+# the default value of the tapegroup for newly ingested SUs; if the SU being ingested is part of a data series, then Remote SUMS obtains the tapegroup from the data series' definition instead.
+a:RS_SU_TAPEGROUP                            0
+
+# the temporary directory into which SUs are downloaded. This should be on the same file system on which the SUMS partitions reside.
+q:RS_TMPDIR                                  /tmp
+
+# the path to the directory in the NetDRMS installation that contains the export scripts.
+q:SCRIPTS_EXPORT                             /opt/netdrms/scripts
+
+# the name of the DRMS database cluster host.
+q:SERVER                                     drms
+
+# partition scrubbing is initiated only after partition percent usage rises above the high-water mark.
+a:SS_HIGH_WATER                              95
+
+# the (advisory) lockfile used by the SU steward to prevent multiple instances of the steward from running.
+q:SS_LOCKFILE                                /usr/share/drms/locks/sustewie.lck
+
+# each SUMS partition is scrubbed until its percent usage falls below the low-water mark.
+a:SS_LOW_WATER                               90
+
+# the time interval, in seconds, between updates to the per-partition cache of expired SUs; this value applies to all partitions that are scrubbed; for each partition, a steward thread queries its cache to select the next SUs to delete (which are sorted by increasing expiration date).
+a:SS_REHYDRATE_INTERVAL                      3600
+
+# the interval, in seconds, between flushing/caching expired SU lists (use a smaller number if the system experience a high rate of SU expiration).
+a:SS_SLEEP_INTERVAL                          300
+
+# the number of SUs in a partition that are deleted at one time; SUs are deleted one chunk at a time until the partition usage falls below the low-water mark.
+a:SS_SU_CHUNK                                4096
+
+# the path to the directory that contains various SUMS log files.
+q:SUMLOG_BASEDIR                             /home/netdrms_production/log/SUMS
+
+# the port that the SUMS database cluster host is listening on; same as DRMSPGPORT unless DRMS and SUMS reside in different clusters on the same host (something that is not recommended since a single PostgreSQL cluster requires a substantial amount of system resources).
+q:SUMPGPORT                                  5432
+
+# the name of the SUMS database cluster host; NetDRMS allows for creating a second cluster for SUMS, but in general this will not be necessary unless extremely heavy usage requires separating the two clusters.
+q:SUMS_DB_HOST                               drms
+
+# the name of the Linux group to which all SUMS Linux users belong.
+q:SUMS_GROUP                                 sums_users
+
+# the SUMS database user who owns the SUMS database objects which are manipulated by Remote SUMS and SUMS itself; it should be the Linux user that runs SUMS and owns the SUMS storage directories
+q:SUMS_MANAGER                               netdrms_production
+
+# the SUMS database user who has read-only access to the SUMS database objects; it is used by the Remote SUMS client (rsums-clientd.py) to check for the presence of SUs before requesting they be downloaded.
+q:SUMS_READONLY_DB_USER                      readonlyuser
+
+# SUMS has a tape-archive system.
+p:SUMS_TAPE_AVAILABLE                        0
+
+# use the multi-threaded Python SUMS.
+a:SUMS_USEMTSUMS                             1
+
+# use the multi-threaded Python SUMS for all SUMS API methods; SUMS_USEMTSUMS_ALLOC, SUMS_USEMTSUMS_CONNECTION, SUMS_USEMTSUMS_DELETESUS, SUMS_USEMTSUMS_GET, SUMS_USEMTSUMS_INFO, and SUMS_USEMTSUMS_PUT are ignored.
+a:SUMS_USEMTSUMS_ALL                         1
+
+# use the MT SUMS daemon for the SUM_alloc() and SUM_alloc2() API function.
+# a:SUMS_USEMTSUMS_ALLOC                       0
+
+# use the MT SUMS daemon for the SUM_open() and SUM_close() API functions.
+# a:SUMS_USEMTSUMS_CONNECTION                  0
+
+# use the MT SUMS daemon for the SUM_delete_series() API function.
+# a:SUMS_USEMTSUMS_DELETESUS                   0
+
+# use the MT SUMS daemon for the SUM_get() API function.
+# a:SUMS_USEMTSUMS_GET                         0
+
+# use the MT SUMS daemon for the SUM_infoArray() API function.
+# a:SUMS_USEMTSUMS_INFO                        0
+
+# use the MT SUMS daemon for the SUM_put() API function.
+# a:SUMS_USEMTSUMS_PUT                         0
+
+# the port that SUMS listens to for incoming requests.
+a:SUMSD_LISTENPORT                           6002
+
+# the maximum number of SUs that SUMS can process simultaneously.
+a:SUMSD_MAX_THREADS                          32
+
+# the SUMS host machine.
+q:SUMSERVER                                  drms
+
+# the DRMS database user account that cgi programs access when they need to read from or write to database relations.
+q:WEB_DBUSER                                 apache
+
+__MAKE__
+# The parameters in this section are used to create make variables. For example, the line
+# 'POSTGRES_LIB  pq' will cause a make variable named POSTGRES_LIB to be created and to
+# be assigned the value 'pq'.
+
+# If the name in the left column contains a colon, then the name on the LHS is the parameter name. The RHS is
+# a description of which platforms or specific machines the parameter applies to. For example,
+# the name POSTGRES_INCS:X86_64 implies that the value of the parameter named POSTGRES_INCS is /usr/include
+# when make is run on a linux_x86_64 machine. The RHS string can contain either a platform identifier
+# (X86_64, IA32, AVX, or IA64) or it can be a string that identifies a particular machine, like d02.
+# If the string is not one of the defined platform identifiers, then it is considered a machine identifier.
+# A machine identifier can specify more than one machine. The name POSTGRES_INCS:hmidb specifies
+# all machines whose names contain the string 'hmidb'. So, for machines hmidb, hmidb2, and hmidb3, the
+# value of the POSTGRES_INCS parameter is /usr/local/pgsql/include.
+#
+# If the RHS is a platform identifier, then make compares the value of $JSOC_MACHINE (which is in
+# reality a misnomer, since it truly specifies the name of the machine platform, not the name
+# of the machine) to the platform name specified by the RHS string. For example,
+# if the RHS string is 'avx', then make compares $JSOC_MACHINE to
+# 'linux_avx', and if there is a match, then the parameter's value specified in the second column is assigned
+# to the make variable. If the RHS is a machine identifier, then make compares the value of $MACHTYPE
+# (another misnormer, since it is the name of the machine, not the name of some type of machine ) to
+# the machine names specified by the RHS. For example, if the RHS string is 'hmidb' then make
+# compares $MACHTYPE to 'hmidb', and if 'hmidb' is a substring of $MACHTYPE, then the parameter's
+# value specified in the second column is assigned to the make variable
+# the path to the installed CFITSIO header files.
+
+CFITSIO_INCS                                 /opt/cfitsio/include
+
+# the name of the CFITSIO library.
+CFITSIO_LIB                                  cfitsio
+
+# the path to the installed CFITSIO library files.
+CFITSIO_LIBS                                 /opt/cfitsio/lib
+
+# the path to the installed PostgreSQL header files.
+POSTGRES_INCS                                /usr/pgsql-12/include
+
+# the name of the PostgreSQL C API library (AKA libpq): this is always pq.
+POSTGRES_LIB                                 pq
+
+# the path to the installed PostgreSQL library files.
+POSTGRES_LIBS                                /usr/pgsql-12/lib
