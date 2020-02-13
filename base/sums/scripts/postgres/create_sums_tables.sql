@@ -15,7 +15,7 @@ create table SUM_MAIN (
  CREATE_SUMID           bigint NOT NULL,
  CREAT_DATE             timestamp(0),
  ACCESS_DATE            timestamp(0),
- USERNAME               VARCHAR(10),
+ USERNAME               VARCHAR(32),
  ARCH_TAPE              VARCHAR(20),
  ARCH_TAPE_POS          VARCHAR(15),
  ARCH_TAPE_FN           integer,
@@ -113,22 +113,24 @@ create index sum_tape_tapeid_idx on SUM_TAPE (tapeid);
 GRANT ALL ON sum_tape TO CURRENT_USER;
 /* ===============================================================*/
 
+-- The sequence for the sumid column of public.sum_open
 create sequence SUM_SEQ
   increment 1
   start 2
   no maxvalue
   no cycle
   cache 50;
-  
+
 GRANT ALL ON sum_seq TO CURRENT_USER;
 
+-- The sequence for the ds_index column of public.sum_main
 create sequence SUM_DS_INDEX_SEQ
   increment 1
   start 1
   no maxvalue
   no cycle
   cache 50;
-  
+
 GRANT ALL ON sum_ds_index_seq TO CURRENT_USER;
 
 /* This is the file checksum table. For each file written to tape */
@@ -140,7 +142,7 @@ create table SUM_FILE (
 	md5cksum	varchar(36) not null,
 	constraint pk_file primary key (tapeid, filenum)
        );
-       
+
 GRANT ALL ON sum_file TO CURRENT_USER;
 
 create table SUM_ARCH_GROUP (
