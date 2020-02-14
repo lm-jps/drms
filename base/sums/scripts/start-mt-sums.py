@@ -147,9 +147,9 @@ parser = CmdlParser(usage='%(prog)s daemon=<path to daemon> ports=<listening por
 
 # required
 parser.add_argument('d', 'daemon', help='path of the sumsd.py daemon to launch', metavar='<path to daemon>', dest='daemon', required=True)
-parser.add_argument('p', 'ports', help='a comma-separated list of listening-port numbers, one for each instance to be spawned', metavar='<listening ports>', dest='ports', action=ListAction, required=True)
 
 # optional
+parser.add_argument('-p', '--ports', help='a comma-separated list of listening-port numbers, one for each instance to be spawned', metavar='<listening ports>', dest='ports', default=sumsDrmsParams.get('SUMSD_LISTENPORT').split(), action=ListAction)
 parser.add_argument('-i', '--instancesfile', help='the json file which contains a list of all the sumsd.py instances running', metavar='<instances file path>', dest='instancesfile', default=os.path.join(sumsDrmsParams.get('SUMLOG_BASEDIR'), DEFAULT_INSTANCES_FILE))
 parser.add_argument('-l', '--loglevel', help='specifies the amount of logging to perform; in order of increasing verbosity: critical, error, warning, info, debug', dest='loglevel', default='info')
 parser.add_argument('-L', '--logfile', help='the file to which sumsd logging is written', metavar='<file name>', dest='logfile')
