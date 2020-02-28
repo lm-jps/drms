@@ -58,7 +58,7 @@ def getArgs():
     optD['cfg'] = drmsParams
 
     # Override defaults.
-    optD['check'] = getOption(args.check, None)    
+    optD['check'] = getOption(args.check, None)
     optD['op'] = getOption(args.op, None)
     optD['tabs'] = getOption(args.tabs, None)
     optD['reqtable'] = getOption(args.reqtable, drmsParams.get('RS_REQUEST_TABLE'))
@@ -74,7 +74,7 @@ def getArgs():
     tabsMsg = "Invalid 'tabs' argument. Must be a comma-separated list of any set of 'req', 'site', and 'su'."
     if not optD['tabs']:
         raise Exception('badTabsarg', tabsMsg)
-        
+
     tabsLst = optD['tabs'].split(',')
     optD['tabs'] = []
     for tab in tabsLst:
@@ -111,14 +111,14 @@ if __name__ == "__main__":
     status = RET_SUCCESS
     optD = {}
     rootObj = {}
-    
+
     try:
         optD = getArgs()
-    
+
     except Exception as exc:
         if len(exc.args) != 2:
             raise # Re-raise
-        
+
         etype = exc.args[0]
         msg = exc.args[1]
 
@@ -133,7 +133,7 @@ if __name__ == "__main__":
             rv = RET_INVALIDARGS
         else:
             raise # Re-raise
-                
+
     if rv == RET_SUCCESS:
         # Connect to the database.
         try:
@@ -146,9 +146,9 @@ if __name__ == "__main__":
                         for tab in optD['tabs']:
                             pieces = tab.split('.')
                             if len(pieces) != 2:
-                                raise Exception('badArgs', 'The site-table name must be a fully qualified database table name (<namespace>.<table name>)')                            
+                                raise Exception('badArgs', 'The site-table name must be a fully qualified database table name (<namespace>.<table name>)')
                             tabName = pieces[1]
-                            
+
                             # Fail if the table already exists.
                             if tabExists(cursor, pieces):
                                 raise Exception('tabExists', 'The database table ' + tab + ' already exists.')
@@ -163,7 +163,7 @@ if __name__ == "__main__":
 
                                 # All users must be able to insert new records into this table. That is how users request storage-unit downloads. They must
                                 # also be able to read the results of their requests.
-                                sql += 'GRANT INSERT, SELECT ON ' + tab + ' TO public; '
+                                sql += 'GRANT INSERT, SELECT, DELETE ON ' + tab + ' TO public; '
 
                                 # We must also make a sequence that will be used to populate the requestid column.
                                 sql += 'CREATE SEQUENCE ' + tab + '_seq; '
@@ -175,7 +175,7 @@ if __name__ == "__main__":
                             elif tab == optD['sutable']:
                                 sql = 'CREATE TABLE ' + tab + ' (sunum bigint NOT NULL, series text NOT NULL, retention integer NOT NULL, starttime timestamp with time zone NOT NULL, refcount integer NOT NULL, status character(1) NOT NULL, errmsg text); '
                                 sql += 'ALTER TABLE ' + tab + ' ADD CONSTRAINT ' + tabName + '_pkey PRIMARY KEY (sunum)'
-                    
+
                             if optD['check']:
                                 print(sql)
                             else:
@@ -189,7 +189,7 @@ if __name__ == "__main__":
                             pieces = tab.split('.')
                             if len(pieces) != 2:
                                 raise Exception('badArgs', 'The site-table name must be a fully qualified database table name (<namespace>.<table name>)')
-                            
+
                             # Fail if the table doesn't exist.
                             if not tabExists(cursor, pieces):
                                 raise Exception('tabExists', 'The database table ' + tab + ' does not exist.')
@@ -197,13 +197,13 @@ if __name__ == "__main__":
                             if tab == optD['reqtable']:
                                 if not tabExists(cursor, (pieces[0], pieces[1] + '_seq')):
                                     raise Exception('tabExists', 'The database sequence ' + tab + '_seq does not exist.')
-                        
+
                             sql = 'DROP TABLE ' + tab + ' CASCADE'
 
                             if tab == optD['reqtable']:
                                 # Drop the sequence too.
                                 sql += '; DROP SEQUENCE ' + tab + '_seq'
-                        
+
                             if optD['check']:
                                 print(sql)
                             else:
@@ -216,14 +216,14 @@ if __name__ == "__main__":
 
         except psycopg2.DatabaseError as exc:
             print('Unable to connect to the database (no, I do not know why).', file=sys.stderr)
-            
+
             # No need to close cursor - leaving the with block does that.
             rv = RET_DBCONNECT
 
         except Exception as exc:
             if len(exc.args) != 2:
                 raise # Re-raise
-                    
+
             etype = exc.args[0]
             msg = exc.args[1]
 
