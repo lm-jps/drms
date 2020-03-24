@@ -105,6 +105,13 @@ q:RS_TMPDIR                                  /tmp
 # the path to the directory in the NetDRMS installation that contains the export scripts.
 q:SCRIPTS_EXPORT                             /opt/netdrms/scripts
 
+# The DRMS database table that contains the pending export requests. Unless you have a fully functional export system 
+# (you don't), set this to the empty string
+a:EXPORT_PENDING_REQUESTS_TABLE              ""
+
+# The number of minutes, after which a pending export request expires
+a:EXPORT_PENDING_REQUESTS_TIME_OUT           60
+
 # the name of the DRMS database cluster host.
 q:SERVER                                     drms
 

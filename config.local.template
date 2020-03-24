@@ -277,10 +277,10 @@ EXPORT_HANDLE_DIR                     /opt/exports
 
 # The DRMS database table that contains the pending export requests. Unless you have a fully functional export system 
 # (you don't), set this to the empty string
-a:EXPORT_PENDING_REQUESTS_TABLE       ""
+EXPORT_PENDING_REQUESTS_TABLE         ""
 
 # The number of minutes, after which a pending export request expires
-a:EXPORT_PENDING_REQUESTS_TIME_OUT    30
+EXPORT_PENDING_REQUESTS_TIME_OUT      60
 
 # The Python binary must be at least version 2.7. 3.x binaries will work.
 BIN_PY                                /usr/bin/python
