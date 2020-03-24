@@ -1110,7 +1110,7 @@ if __name__ == "__main__":
                                         os.remove(dest)
                                     log.writeInfo([ 'Downloading ' + dest + '.' ])
                                     print('Downloading dump file (to ' + dest + ').')
-                                    dl = SmartDL(xferURL, dest=dest, timeout=60)
+                                    dl = SmartDL(xferURL, dest=dest, timeout=60, threads=2)
                                     dl.start()
                                     log.writeInfo([ 'Successfully downloaded ' + dest + '.' ])
                                     print('  ...download complete.')
