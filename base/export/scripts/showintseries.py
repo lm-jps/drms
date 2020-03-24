@@ -124,6 +124,8 @@ def getArgs(drmsParams):
         optD['dbuser'] = args.dbuser
         optD['filter'] = args.filter
         optD['json'] = args.json
+        
+
 
     # Get configuration information.
     optD['cfg'] = drmsParams
