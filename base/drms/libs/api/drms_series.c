@@ -5529,13 +5529,13 @@ LinkedList_t *drms_series_querystringA(DRMS_Env_t *env, const char *series, cons
 
                         query = base_strcatalloc(query, "CREATE INDEX ", &stsz);
                         query = base_strcatalloc(query, tempTable, &stsz);
-                        query = base_strcatalloc(query, "_row ON ", &stsz);
+                        query = base_strcatalloc(query, "_recnum ON ", &stsz);
                         query = base_strcatalloc(query, tempTable, &stsz);
-                        query = base_strcatalloc(query, "(row);\n", &stsz);
+                        query = base_strcatalloc(query, "(recnum);\n", &stsz);
                     }
                     else
                     {
-                        query = base_strcatalloc(query, "(recnum bigint) ", &stsz);
+                        query = base_strcatalloc(query, "(recnum bigint PRIMARY KEY) ", &stsz);
                         query = base_strcatalloc(query, "ON COMMIT DROP;\n", &stsz);
                     }
 
@@ -5947,13 +5947,13 @@ LinkedList_t *drms_series_querystringC(DRMS_Env_t *env, const char *series, cons
 
                         query = base_strcatalloc(query, "CREATE INDEX ", &stsz);
                         query = base_strcatalloc(query, tempTable, &stsz);
-                        query = base_strcatalloc(query, "_row ON ", &stsz);
+                        query = base_strcatalloc(query, "_recnum ON ", &stsz);
                         query = base_strcatalloc(query, tempTable, &stsz);
-                        query = base_strcatalloc(query, "(row);\n", &stsz);
+                        query = base_strcatalloc(query, "(recnum);\n", &stsz);
                     }
                     else
                     {
-                        query = base_strcatalloc(query, "(recnum bigint) ", &stsz);
+                        query = base_strcatalloc(query, "(recnum bigint PRIMARY KEY) ", &stsz);
                         query = base_strcatalloc(query, "ON COMMIT DROP;\n", &stsz);
                     }
 
@@ -6012,6 +6012,8 @@ LinkedList_t *drms_series_querystringC(DRMS_Env_t *env, const char *series, cons
                 {
                     statement.type = RECORDSET_SQLSTATEMENT_LANGTYPE_DDL;
                     statement.statement = query; /* yoink! */
+                    query = NULL;
+                    stsz = 512;
                     statement.parent = NULL;
                     statement.dmlSeries = NULL;
                     statement.columns = NULL;
@@ -6032,12 +6034,10 @@ LinkedList_t *drms_series_querystringC(DRMS_Env_t *env, const char *series, cons
 
                     list_llinserttail(statementList, &statement);
 
-                    query = NULL;
-                    stsz = 512;
-                    query = calloc(1, stsz);
-
                     if (!cursor)
                     {
+                        query = calloc(1, stsz);
+
                         /* SELECT rows from the temp table for the parent table statement */
                         query = base_strcatalloc(query, "SELECT ", &stsz);
                         query = base_strcatalloc(query, fields, &stsz);
@@ -6066,6 +6066,7 @@ LinkedList_t *drms_series_querystringC(DRMS_Env_t *env, const char *series, cons
                 else
                 {
                     statement.statement = query; /* yoink! */
+                    query = NULL;
                 }
 
                 statement.parent = NULL;
@@ -6091,7 +6092,6 @@ LinkedList_t *drms_series_querystringC(DRMS_Env_t *env, const char *series, cons
                 }
 
                 list_llinserttail(statementList, &statement);
-                query = NULL;
             }
 
             if (pkeylistTB)
@@ -6313,13 +6313,13 @@ LinkedList_t *drms_series_querystringD(DRMS_Env_t *env, const char *series, cons
 
                         query = base_strcatalloc(query, "CREATE INDEX ", &stsz);
                         query = base_strcatalloc(query, tempTable, &stsz);
-                        query = base_strcatalloc(query, "_row ON ", &stsz);
+                        query = base_strcatalloc(query, "_recnum ON ", &stsz);
                         query = base_strcatalloc(query, tempTable, &stsz);
-                        query = base_strcatalloc(query, "(row);\n", &stsz);
+                        query = base_strcatalloc(query, "(recnum);\n", &stsz);
                     }
                     else
                     {
-                        query = base_strcatalloc(query, "(recnum bigint) ", &stsz);
+                        query = base_strcatalloc(query, "(recnum bigint PRIMARY KEY) ", &stsz);
                         query = base_strcatalloc(query, "ON COMMIT DROP;\n", &stsz);
                     }
 
@@ -6728,13 +6728,13 @@ LinkedList_t *drms_series_querystringFL(DRMS_Env_t *env, const char *series, con
 
                             query = base_strcatalloc(query, "CREATE INDEX ", &stsz);
                             query = base_strcatalloc(query, tempTable, &stsz);
-                            query = base_strcatalloc(query, "_row ON ", &stsz);
+                            query = base_strcatalloc(query, "_recnum ON ", &stsz);
                             query = base_strcatalloc(query, tempTable, &stsz);
-                            query = base_strcatalloc(query, "(row);\n", &stsz);
+                            query = base_strcatalloc(query, "(recnum);\n", &stsz);
                         }
                         else
                         {
-                            query = base_strcatalloc(query, "(recnum bigint) ", &stsz);
+                            query = base_strcatalloc(query, "(recnum bigint PRIMARY KEY) ", &stsz);
                             query = base_strcatalloc(query, "ON COMMIT DROP;\n", &stsz);
                         }
 
@@ -7105,13 +7105,13 @@ LinkedList_t *drms_series_querystring_wrap(DRMS_Env_t *env, const char *series, 
 
                     queryTemp = base_strcatalloc(queryTemp, "CREATE INDEX ", &stsz);
                     queryTemp = base_strcatalloc(queryTemp, tempTable, &stsz);
-                    queryTemp = base_strcatalloc(queryTemp, "_row ON ", &stsz);
+                    queryTemp = base_strcatalloc(queryTemp, "_recnum ON ", &stsz);
                     queryTemp = base_strcatalloc(queryTemp, tempTable, &stsz);
-                    queryTemp = base_strcatalloc(queryTemp, "(row);\n", &stsz);
+                    queryTemp = base_strcatalloc(queryTemp, "(recnum);\n", &stsz);
                 }
                 else
                 {
-                    queryTemp = base_strcatalloc(queryTemp, "(recnum bigint) ", &stsz);
+                    queryTemp = base_strcatalloc(queryTemp, "(recnum bigint PRIMARY KEY) ", &stsz);
                     queryTemp = base_strcatalloc(queryTemp, "ON COMMIT DROP;\n", &stsz);
                 }
 
@@ -7553,7 +7553,6 @@ LinkedList_t *drms_series_links_statements(DRMS_Env_t *env, const char *linkInfo
     char *recnumMapSQL = NULL;
     size_t recnumMapSQLSz = 128;
     char *lcParentSeries = NULL;
-    char *parentPkeys = NULL;
     int iRow = 0;
     const char *link = NULL;
     char *lcLink = NULL;
@@ -7587,15 +7586,6 @@ LinkedList_t *drms_series_links_statements(DRMS_Env_t *env, const char *linkInfo
         fprintf(stderr, "drms_series_links_statements(): out of memory creating statementList\n");
         err = 1;
     }
-
-    parentPkeys = CreatePKeyList(env, parentSeries, NULL, NULL, NULL, NULL, 0, &istat);
-
-    if (!parentPkeys || istat != DRMS_SUCCESS)
-    {
-        fprintf(stderr, " [drms_series_links_statements() ] unable to create prime-key list for '%s'\n", parentSeries);
-        err = 1;
-    }
-
 
     if (!err)
     {
@@ -7716,7 +7706,7 @@ LinkedList_t *drms_series_links_statements(DRMS_Env_t *env, const char *linkInfo
                    break;
                 }
 
-                suffixList = list_llcreate(sizeof(char *), (ListFreeFn_t)FreeDataSetKw);
+                suffixList = list_llcreate(sizeof(char *), NULL);
                 if (!suffixList)
                 {
                     fprintf(stderr, "drms_series_links_statements(): out of memory creating suffixList\n");
@@ -7730,8 +7720,8 @@ LinkedList_t *drms_series_links_statements(DRMS_Env_t *env, const char *linkInfo
                 }
 
                 linkCols = CreateFieldList(childPkeys, linkColPrefix, NULL, " AS ", suffixList, &istat);
-                free(suffixList);
-                suffixList = NULL;
+
+                list_llfree(&suffixList);
 
                 if (!linkCols)
                 {
@@ -7741,7 +7731,7 @@ LinkedList_t *drms_series_links_statements(DRMS_Env_t *env, const char *linkInfo
                 }
 
                 /* the existence of a shadow table matters */
-                hasShadow = (childTemplateRec->seriesinfo->hasshadow == 1);
+                hasShadow = ShadowExists(env, childSeries, &istat);
 
                 /**** GENERATE THE SQL FOR THE CHILD SERIES ****/
                 if (hasShadow)
@@ -7795,7 +7785,7 @@ LinkedList_t *drms_series_links_statements(DRMS_Env_t *env, const char *linkInfo
                     recnumMapSQL = base_strcatalloc(recnumMapSQL, "  USING (", &recnumMapSQLSz);
                     recnumMapSQL = base_strcatalloc(recnumMapSQL, childPkeys, &recnumMapSQLSz);
 
-                    statementRecInfoSuffix = base_strcatalloc(statementRecInfoSuffix, ") AS RECNUMMAP\n", &statementRecInfoSuffixSz);
+                    statementRecInfoSuffix = base_strcatalloc(statementRecInfoSuffix, ")) AS RECNUMMAP\n", &statementRecInfoSuffixSz);
                     statementRecInfoSuffix = base_strcatalloc(statementRecInfoSuffix, "JOIN\n", &statementRecInfoSuffixSz);
                     statementRecInfoSuffix = base_strcatalloc(statementRecInfoSuffix, lcChildSeries, &statementRecInfoSuffixSz);
                     statementRecInfoSuffix = base_strcatalloc(statementRecInfoSuffix, "\n", &statementRecInfoSuffixSz);
@@ -8013,10 +8003,6 @@ LinkedList_t *drms_series_links_statements(DRMS_Env_t *env, const char *linkInfo
                     chunkRecnumsSQL = base_strcatalloc(chunkRecnumsSQL, ") AS LINKINFO", &chunkRecnumsSQLSz);
                 }
 
-                free(recnumMapSQL);
-                recnumMapSQL = NULL;
-                recnumMapSQLSz = 128;
-
                 subStatementList = drms_series_querystring_recordchunk(env, childSeries, chunkRecnumsSQL, childFields, 1, 0, &drmsStat);
 
                 if (chunkRecnumsSQL)
@@ -8047,9 +8033,6 @@ LinkedList_t *drms_series_links_statements(DRMS_Env_t *env, const char *linkInfo
                     err = 1;
                     break;
                 }
-
-                db_free_text_result(linkDbResult);
-                linkDbResult = NULL;
 
                 if (childTempTableDDL)
                 {
@@ -8132,6 +8115,29 @@ LinkedList_t *drms_series_links_statements(DRMS_Env_t *env, const char *linkInfo
                 statement.link = strdup(lcLink);
                 statement.temp = NULL; /* no temp tables were created for the child table */
                 statement.linkInfoSQL = 'f';
+            }
+
+            db_free_text_result(linkDbResult);
+            linkDbResult = NULL;
+
+            if (statementRecInfoSuffix)
+            {
+                /* set only in dynamic-link case */
+                free(statementRecInfoSuffix);
+                statementRecInfoSuffix = NULL;
+            }
+
+            if (statementRecInfoPrefix)
+            {
+              /* set only in dynamic-link case */
+              free(statementRecInfoPrefix);
+              statementRecInfoPrefix = NULL;
+            }
+
+            if (recnumMapSQL)
+            {
+                free(recnumMapSQL);
+                recnumMapSQL = NULL;
             }
 
             if (env->verbose)
