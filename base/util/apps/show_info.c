@@ -2714,6 +2714,7 @@ int DoIt(void)
                               {
                                   apart.filter = NULL;
                               }
+
                               list_llinserttail(parsedrs, &apart);
                           }
 
@@ -2768,6 +2769,7 @@ int DoIt(void)
                               {
                                   apart.filter = NULL;
                               }
+
                               list_llinserttail(parsedrs, &apart);
                           }
 
@@ -2809,7 +2811,6 @@ int DoIt(void)
           }
 
           list_llfree(&parsedrs);
-
           show_info_return(0);
       }
   /*  if -j, -l or -s is set, just do the short function and exit */
@@ -2960,7 +2961,6 @@ int DoIt(void)
     /* ART - This fflush is not reachable. */
     fflush(stdout);
   }
-
       /* I think recordset == NULL at this point. */
 
   /* get count if -c flag set */
@@ -3000,7 +3000,7 @@ int DoIt(void)
             /* set chunk size to something bigger than that of the SUM_infoEx() call; code
              * in drms_storageunit.c will subchunk this into the chunk size used by SUM_infoEx()
              */
-            if (drms_recordset_setchunksize(16384) != DRMS_SUCCESS)
+            if (drms_recordset_setchunksize(4096) != DRMS_SUCCESS)
             {
                 show_info_return(99);
             }
@@ -3400,6 +3400,12 @@ int DoIt(void)
          */
         recordset = drms_open_records2(drms_env, in, validKeysSpecified, max_recs == 0, max_recs, retrieveLinks, &status);
 
+        if (validKeysSpecified)
+        {
+            hash_free(&validKeysHT);
+            list_llfree(&validKeysSpecified);
+        }
+
         if (status == DRMS_ERROR_QUERYFAILED)
         {
             /* Check for error message. */
@@ -3422,6 +3428,11 @@ int DoIt(void)
 
             show_info_return(1);
         }
+    }
+
+    if (parsedrs)
+    {
+        list_llfree(&parsedrs);
     }
 
 /* recordset now points to a struct with  count of records found ("n"), and a pointer to an
@@ -3594,7 +3605,7 @@ int DoIt(void)
 
     if (validKeysSpecified)
     {
-        hash_free(&keysHT);
+        hash_free(&validKeysHT);
         list_llfree(&validKeysSpecified);
     }
 
