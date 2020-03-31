@@ -1762,13 +1762,6 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const c
         DRMS_RecordSet_Sql_Statement_t statementDML;
         DRMS_RecordSet_Sql_Statement_t *statementRecordChunk = NULL;
         ListNode_t *node = NULL;
-        char *statementTempTable = NULL;
-        size_t statementTempTableSz = 128;
-        char *statementSelect = NULL;
-        size_t statementSelectSz = 128;
-
-        statementTempTable = calloc(1, statementTempTableSz);
-        statementSelect = calloc(1, statementSelectSz);
 
         /* this is the chunked record-set case; drms_query_string() was already called, so all temp tables were created; qoverride
          * contains SQL that fetches from the temp tables; if we are fetching linked records, we need to put the results
@@ -1779,9 +1772,6 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const c
             /* iterating through parent-table statements */
             statementRecordChunk = (DRMS_RecordSet_Sql_Statement_t *)node->data;
             query = statementRecordChunk->statement;
-
-            *statementTempTable = '\0';
-            *statementSelect = '\0';
 
             if (!statementList)
             {
@@ -2188,8 +2178,17 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const c
                      * from the cache; when drms_free_records() is called on the PARENT, there is a
                      * block that will follow links to the child records, deleting them as well
                      * (but only if they were opened because the parent records were opened). */
-                    free(rs);
-                    rs = NULL;
+                    if (rs)
+                    {
+                        if (rs->records)
+                        {
+                            free(rs->records);
+                            rs->records = NULL;
+                        }
+                        
+                        free(rs);
+                        rs = NULL;
+                    }
                 }
             }
 
@@ -2208,6 +2207,7 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const c
          * !!!! MUST FREE tempTablesHT FIRST, THEN statementList - tempTablesHT has pointers into statementList !!!
          */
         hash_map_data(&tempTablesHT, DeleteTempTable, env);
+        hash_free(&tempTablesHT);
         list_llfree(&statementList);
     }
 
@@ -4663,6 +4663,8 @@ int drms_close_records(DRMS_RecordSet_t *rs, int action)
                     drms_fitsrw_close(rec->env->verbose, filename);
                 }
             }
+
+            hiter_free(&hit);
         }
 
       /* If this record was temporarily created by this session then
@@ -4784,6 +4786,8 @@ int drms_close_records(DRMS_RecordSet_t *rs, int action)
                     drms_fitsrw_close(rec->env->verbose, filename);
                 }
             }
+
+            hiter_free(&hit);
         }
 
       if (rs->records[i]->readonly)
@@ -12951,9 +12955,9 @@ void drms_free_cursor(DRMS_RecSetCursor_t **cursor)
     {
         if (*cursor)
         {
-            if ((*cursor)->names)
+            for (iname = 0; iname < (*cursor)->parent->ss_n; iname++)
             {
-                for (iname = 0; iname < (*cursor)->parent->ss_n; iname++)
+                if ((*cursor)->names)
                 {
                     if ((*cursor)->names[iname])
                     {
@@ -12982,6 +12986,24 @@ void drms_free_cursor(DRMS_RecSetCursor_t **cursor)
                     }
                 }
 
+                if ((*cursor)->columns)
+                {
+                    if ((*cursor)->columns[iname])
+                    {
+                        free((*cursor)->columns[iname]);
+                    }
+
+                }
+            }
+
+            if ((*cursor)->columns)
+            {
+                free((*cursor)->columns);
+                (*cursor)->columns = NULL;
+            }
+
+            if ((*cursor)->names)
+            {
                 free((*cursor)->names);
                 (*cursor)->names = NULL;
             }
@@ -12995,11 +13017,6 @@ void drms_free_cursor(DRMS_RecSetCursor_t **cursor)
             if ((*cursor)->suinfo)
             {
                 hcon_destroy(&((*cursor)->suinfo));
-            }
-
-            if ((*cursor)->columns)
-            {
-                free((*cursor)->columns);
             }
 
             free(*cursor);
