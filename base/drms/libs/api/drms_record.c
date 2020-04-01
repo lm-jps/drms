@@ -2185,7 +2185,7 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const c
                             free(rs->records);
                             rs->records = NULL;
                         }
-                        
+
                         free(rs);
                         rs = NULL;
                     }
@@ -3333,6 +3333,7 @@ DRMS_RecordSet_t *drms_open_recordset_internal(DRMS_Env_t *env, const char *rsqu
             rs->cursor->infoneeded = 0;
             rs->cursor->suinfo = NULL;
             rs->cursor->openLinks = openLinks;
+            rs->cursor->openCursor = 0;
 
             iset = 0;
             list_llreset(statementList);
@@ -12457,19 +12458,17 @@ static int drms_open_recordchunk(DRMS_Env_t *env, DRMS_RecordSet_t *rs, DRMS_Rec
 
                     /* extract series name from ss_queries */
 
-
                     /* rs->cursor->names[iset] is the name of the temp table that holds all records for a subset of
-                     * records; rs->*/
+                     * records; there is a PG cursor associated with this temp table, named <temp table>_cursor */
 
-                    /* the PG row_number() function is 1-based, so we need to adjust rowStart and rowEnd to a 0-based system
-                     */
-
-                    /* the temp table has (row, recnum) tuples; statementList will contain a DML statement to select all fields from
+                    /* the cursor returns (row, recnum) tuples; statementList will contain a DML statement to select all fields from
                      * the parent table; if we are following links, then statementList will contain a second statement to
                      * select the link-info columns from the parent table;
                      */
-                    snprintf(sqlquery, sizeof(sqlquery), "SELECT row, recnum FROM %s WHERE row >= %d AND row <= %d", rs->cursor->names[iset], rowStart + 1, rowEnd + 1);
-                    statementList = drms_series_querystring_recordchunk(env, seriesname, sqlquery, rs->cursor->columns[iset], rs->cursor->openLinks, 1, &stat);
+                    snprintf(sqlquery, sizeof(sqlquery), "SELECT row, recnum from drms_fetch_chunk('%s_cursor', %d)", rs->cursor->names[iset], rs->cursor->chunksize);
+                    //snprintf(sqlquery, sizeof(sqlquery), "SELECT row, recnum FROM %s WHERE row >= %d AND row <= %d", rs->cursor->names[iset], rowStart + 1, rowEnd + 1);
+
+                    statementList = drms_series_querystring_recordchunk(env, seriesname, sqlquery, rs->cursor->columns[iset], rs->cursor->openLinks, 1, rowStart == 0 ? rs->cursor->names[iset] : NULL, &stat);
 
                     /* Extract segment list from subset query. */
                     psl = strchr(rs->ss_queries[iset], '{');
@@ -12520,6 +12519,12 @@ static int drms_open_recordchunk(DRMS_Env_t *env, DRMS_RecordSet_t *rs, DRMS_Rec
                     else
                     {
                         fetchedrecs = drms_retrieve_records_internal(env, seriesname, NULL, NULL, NULL, 0, 0, goodsegcont, statementList, rs->cursor->allvers[iset], 0, NULL, NULL, 0, 1, NULL, NULL, NULL, openLinkedRecords, &stat);
+                    }
+
+                    if (rowStart == 0)
+                    {
+                        /* we must have created the actual PG cursor; set flag to indicate it needs to be closed in drms_free_cursor() */
+                        rs->cursor->openCursor = 1;
                     }
 
                     if (statementList)
@@ -12961,11 +12966,19 @@ void drms_free_cursor(DRMS_RecSetCursor_t **cursor)
                 {
                     if ((*cursor)->names[iname])
                     {
-                        /* ART - we no longer use cursors for the drms_openrecordset() case - so do not CLOSE a cursor; these
-                         * cursor names are actually the names of the temp tables that hold all parent records from which
-                         * chunks are downloaded; drop them now
+                        /* ART - we use a cursor for the drms_openrecordset() case to iterate over the temp table holding
+                         * record chunks (row, recnum); CLOSE the cursor here, before dropping the temp table;
+                         * (*cursor)->names[iname] is actually the name of the temp table that holds all parent records from which
+                         * chunks are downloaded
                          */
-                        snprintf(sqlquery, sizeof(sqlquery), "DROP TABLE %s CASCADE", (*cursor)->names[iname]);
+                        if ((*cursor)->openCursor)
+                        {
+                            snprintf(sqlquery, sizeof(sqlquery), "CLOSE %s_cursor;\nDROP TABLE %s CASCADE", (*cursor)->names[iname], (*cursor)->names[iname]);
+                        }
+                        else
+                        {
+                            snprintf(sqlquery, sizeof(sqlquery), "DROP TABLE %s CASCADE", (*cursor)->names[iname]);
+                        }
 
                         if ((*cursor)->env->verbose)
                         {

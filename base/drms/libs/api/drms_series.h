@@ -7,9 +7,9 @@ about a series' primary keywords, and check series compatibility.
 hcontainer.h
 
 \example drms_series_ex1.c
-\example drms_series_ex2.c 
-\example drms_series_ex3.c 
-\example drms_series_ex4.c 
+\example drms_series_ex2.c
+\example drms_series_ex3.c
+\example drms_series_ex4.c
 \example drms_series_ex5.c
 */
 #ifndef _DRMS_SERIES_H
@@ -17,7 +17,7 @@ hcontainer.h
 
 #include "drms_types.h"
 
-/* This is the current version. If a jsd (or a prototype record) used to create 
+/* This is the current version. If a jsd (or a prototype record) used to create
  * a series does not specify a version, then the current version is assumed.
  */
 #define kSERIESVERSION  "2.1"
@@ -26,7 +26,7 @@ int get_namespace(const char *seriesname, char **namespace, char **shortname);
 
 /**
 queries the DRMS database to determine if the series specified by
-\a sname exists. 
+\a sname exists.
 
 \return If a null value for \a sname, or an empty string, is
 provided, the function returns 0. Otherwise, if \a sname is a valid
@@ -53,20 +53,20 @@ parameter the number of primary keywords that belong to the series \a
 seriesName.
 
 \return a primary key array upon success.\n
-\a *status is set to DRMS_SUCCESS upon success. 
-Otherwise \a *status is set to a diagostic status code (see drms_statuscodes.h), 
+\a *status is set to DRMS_SUCCESS upon success.
+Otherwise \a *status is set to a diagostic status code (see drms_statuscodes.h),
 which includes the following:
 - ::DRMS_ERROR_UNKNOWNSERIES
 - ::DRMS_ERROR_OUTOFMEMORY
-- ::DRMS_ERROR_INVALIDDATA 
+- ::DRMS_ERROR_INVALIDDATA
 */
-char **drms_series_createrealpkeyarray(DRMS_Env_t *env, 
-				       const char *seriesName, 
+char **drms_series_createrealpkeyarray(DRMS_Env_t *env,
+				       const char *seriesName,
 				       int *nPKeys,
 				       int *status);
 
-char **drms_series_createpkeyarray(DRMS_Env_t *env, 
-				   const char *seriesName, 
+char **drms_series_createpkeyarray(DRMS_Env_t *env,
+				   const char *seriesName,
 				   int *nPKeys,
 				   int *status);
 /**
@@ -79,7 +79,7 @@ Upon success, this function sets \a *pkeys to NULL.
 */
 void drms_series_destroypkeyarray(char ***pkeys, int nElements);
 
-/* Checks if two series have compatible data segments.  Compares records, keywords, and 
+/* Checks if two series have compatible data segments.  Compares records, keywords, and
  * segments and returns any compatible segments (in terms of data dimensions and type) in
  * matchSegs. */
 
@@ -98,18 +98,18 @@ matchSegs container to the function. It is the caller's responsibility
 to deallocate memory associated with the allocation of ::HContainer_t
 elements.
 
-\return 1 if compatible. Upon success, this function sets \a *status 
-to ::DRMS_SUCCESS. Otherwise \a *status is set to a 
+\return 1 if compatible. Upon success, this function sets \a *status
+to ::DRMS_SUCCESS. Otherwise \a *status is set to a
 diagostic status code (see drms_statuscodes.h).
 */
 int drms_series_checkseriescompat(DRMS_Env_t *drmsEnv,
-				  const char *series1, 
-				  const char *series2, 
+				  const char *series1,
+				  const char *series2,
 				  HContainer_t *matchSegs,
 				  int *status);
 
-/* Checks if series can accept new data identified by recTempl.  Compares the keywords 
- * and segments contained within recTempl and returns any compatible segments 
+/* Checks if series can accept new data identified by recTempl.  Compares the keywords
+ * and segments contained within recTempl and returns any compatible segments
  * (in terms of data dimensions and type) in matchSegs. */
 /**
 queries the DRMS database to determine if \a recTempl is compatible
@@ -117,12 +117,12 @@ with the series named \a series in terms of their primary-keyword
 and segment definitions. The two are compatible if an attempt to
 insert \a recTempl into the series named \a series would
 succeed. This function should be used whenever a record is created
-by a means other than drms_create_records or 
+by a means other than drms_create_records or
 drms_clone_records, and the user will attempt to insert that newly
 created record into series \a series.
 
-\return 1 if compatible. Upon success, this function sets \a *status 
-to ::DRMS_SUCCESS. Otherwise \a *status is set to a 
+\return 1 if compatible. Upon success, this function sets \a *status
+to ::DRMS_SUCCESS. Otherwise \a *status is set to a
 diagostic status code (see drms_statuscodes.h).
 
 */
@@ -132,7 +132,7 @@ int drms_series_checkrecordcompat(DRMS_Env_t *drmsEnv,
 				  HContainer_t *matchSegs,
 				  int *status);
 
-/* Checks if series can accept new data identified by keys.  Compares the series 
+/* Checks if series can accept new data identified by keys.  Compares the series
  * keywords to the keys passed in (int terms of keyword types, etc.).  Does not
  * check for segment compatiblility. */
 /**
@@ -142,8 +142,8 @@ series \a series. drms_keyword_keysmatch is used to determined if
 the two ::DRMS_Keyword_t match. The caller must provide, in the
 \a nKeys parameter, the number of keywords contained in \a keys.
 
-\return 1 if compatible.  Upon success, this function sets \a *status 
-to ::DRMS_SUCCESS. Otherwise \a *status is set to a 
+\return 1 if compatible.  Upon success, this function sets \a *status
+to ::DRMS_SUCCESS. Otherwise \a *status is set to a
 diagostic status code (see drms_statuscodes.h).
 */
 int drms_series_checkkeycompat(DRMS_Env_t *drmsEnv,
@@ -158,8 +158,8 @@ series \a series. drms_segment_segsmatch is used to determine if
 two segment definitions match. The caller must provide, in the
 \a nSegs parameter, the number of segments contained in \a segs.
 
-\return 1 if compatible. Upon success, this function sets \a *status 
-to ::DRMS_SUCCESS. Otherwise \a *status is set to a 
+\return 1 if compatible. Upon success, this function sets \a *status
+to ::DRMS_SUCCESS. Otherwise \a *status is set to a
 diagostic status code (see drms_statuscodes.h).
 
 */
@@ -189,7 +189,7 @@ int drms_series_remove_link(DRMS_Record_t *series_template,
 			  const char *name);
 int drms_series_destroy(DRMS_Env_t *env, const char *seriesname);
 int drms_series_commit(DRMS_Env_t *env, DRMS_Record_t *series_template);
-int drms_series_describe_data(DRMS_Record_t *series_template, int depth, 
+int drms_series_describe_data(DRMS_Record_t *series_template, int depth,
 			    DRMS_Simple_t *types, int rank, int *dims,
 			    DRMS_Storage_Protocol_t protocol);
 */
@@ -240,7 +240,7 @@ LinkedList_t *drms_series_querystringFL(DRMS_Env_t *env, const char *series, con
 LinkedList_t *drms_series_querystring_wrap(DRMS_Env_t *env, const char *series, const char *statementString, const char *fields, int cursor, const char *tempTable, int sortAsc, int *status);
 LinkedList_t *drms_series_links_statements(DRMS_Env_t *env, const char *parentTempTable, const char *parentSeries, DB_Text_Result_t *dbResult);
 char *drms_series_querystring_linkcols(DRMS_Record_t *templateRec, const char *recnumSQL);
-LinkedList_t *drms_series_querystring_recordchunk(DRMS_Env_t *env, const char *series, const char *chunkRecnumsSQL, const char *fields, int followLinks, int returnParentSQL, int *status);
+LinkedList_t *drms_series_querystring_recordchunk(DRMS_Env_t *env, const char *series, const char *chunkRecnumsSQL, const char *fields, int followLinks, int returnParentSQL, const char *cursorTable, int *status);
 
 int drms_series_summaryexists(DRMS_Env_t *env, const char *series, int *status);
 int drms_series_canupdatesummaries(DRMS_Env_t *env, const char *series, int *status);

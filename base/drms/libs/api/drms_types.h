@@ -44,15 +44,15 @@
 /** \brief Maximum byte length of a segment's compression-parameter string */
 #define DRMS_MAXCPARMS         (256)
 /** \brief Max number of keywords in the primary index. */
-#define DRMS_MAXPRIMIDX        (15) 
+#define DRMS_MAXPRIMIDX        (15)
 /** \brief Max number of keywords to make db index. */
-#define DRMS_MAXDBIDX          (10) 
+#define DRMS_MAXDBIDX          (10)
 /** \brief Max length of the string holding a keyword default value. */
-#define DRMS_DEFVAL_MAXLEN     (1000) 
+#define DRMS_DEFVAL_MAXLEN     (1000)
 /** \brief The maximal length we allow of a chain of links. If a chain
 longer than this is encountered we assume that there is a cyclic
 link. */
-#define DRMS_MAXLINKDEPTH  (20) 
+#define DRMS_MAXLINKDEPTH  (20)
 #define DRMS_MAXHOSTNAME (128)
 
 /** \brief Maximum number of in-memory records - 16MB for now */
@@ -65,7 +65,7 @@ link. */
 
 /************************ Simple data types **********************/
 
-/* Values of keywords belong to one of the following simple classes. 
+/* Values of keywords belong to one of the following simple classes.
  * RAW is not really a type, but is used when reading segment data
    to indicate that the data should be read in without and type
    conversino or scaling. */
@@ -74,21 +74,21 @@ link. */
  */
 typedef enum {
    /** \brief DRMS char type */
-   DRMS_TYPE_CHAR, 
+   DRMS_TYPE_CHAR,
    /** \brief DRMS short type */
-   DRMS_TYPE_SHORT, 
+   DRMS_TYPE_SHORT,
    /** \brief DRMS int type */
-   DRMS_TYPE_INT, 
+   DRMS_TYPE_INT,
    /** \brief DRMS longlong type */
-   DRMS_TYPE_LONGLONG, 
+   DRMS_TYPE_LONGLONG,
    /** \brief DRMS float type */
-   DRMS_TYPE_FLOAT, 
+   DRMS_TYPE_FLOAT,
    /** \brief DRMS double type */
-   DRMS_TYPE_DOUBLE, 
+   DRMS_TYPE_DOUBLE,
    /** \brief DRMS time type */
-   DRMS_TYPE_TIME, 
+   DRMS_TYPE_TIME,
    /** \brief DRMS string type */
-   DRMS_TYPE_STRING, 
+   DRMS_TYPE_STRING,
    /** \brief DRMS raw type */
    DRMS_TYPE_RAW
 } DRMS_Type_t;
@@ -100,7 +100,7 @@ extern char *drms_type_names[];
    \brief Strings describing the supported DRMS types
    \sa ::DRMS_Type_t
 */
-char *drms_type_names[] = {"char", "short", "int", "longlong", 
+char *drms_type_names[] = {"char", "short", "int", "longlong",
 			   "float", "double", "time", "string", "raw"};
 #endif
 
@@ -120,8 +120,8 @@ union DRMS_Type_Value
 /** \brief DRMS type value reference */
 typedef union DRMS_Type_Value DRMS_Type_Value_t;
 
-/* DRMS_Type_Value_t is fine as long as you know the type.  But we also need a construct 
- * that is useful in generic code (type-unaware), for example, using the results of 
+/* DRMS_Type_Value_t is fine as long as you know the type.  But we also need a construct
+ * that is useful in generic code (type-unaware), for example, using the results of
  * drms_getkey() in a call to drms_setkey().
  */
 typedef struct DRMS_Value
@@ -148,10 +148,10 @@ typedef struct DRMS_Value
 /** \brief DRMS C string missing value */
 #define DRMS_MISSING_STRING   ("")
 /** \brief DRMS time missing value */
-#define DRMS_MISSING_TIME     (-211087684832.184) 
+#define DRMS_MISSING_TIME     (-211087684832.184)
 /* equal to '-4712.01.01_12:00:00.000_TDT' which is the time value used
    missing in the MDI/SDS system. */
-/* Truncate the fractional seconds during comparison because .jsds that have time keywords whose 
+/* Truncate the fractional seconds during comparison because .jsds that have time keywords whose
  * format fields are '0' will yield time strings that are integral */
 #define _DRMS_IS_T_MISSING(v) (isnan(v) || ((long long)v < (long long)DRMS_MISSING_TIME + 10.0e-5 && (long long)v > (long long)DRMS_MISSING_TIME - 10.0e-5))
 
@@ -212,7 +212,7 @@ static inline int drms_ismissing_string(char *value)
 static inline int drms_ismissing(DRMS_Value_t *val)
 {
     int ans = -1;
-    
+
     switch(val->type)
     {
         case DRMS_TYPE_CHAR:
@@ -242,7 +242,7 @@ static inline int drms_ismissing(DRMS_Value_t *val)
         default:
             fprintf(stderr, "Unsupported data type %d.\n", (int)val->type);
     }
-    
+
     return ans;
 }
 
@@ -259,16 +259,16 @@ static inline int drms_ismissing(DRMS_Value_t *val)
 /* Database or DRMS client connection info. */
 /** \brief DRMS Session struct */
 struct DRMS_Session_struct
-{ 
+{
   int db_direct;    /* If db_direct == 1 then go directly to the DB
 		       without passing calls through a DRMS server. */
 
   /******** server database connection for db_direct==1 ***********/
-  DB_Handle_t *db_handle; /* Main database connection used for DRMS data. 
-			     This connection runs a single serializable 
+  DB_Handle_t *db_handle; /* Main database connection used for DRMS data.
+			     This connection runs a single serializable
 			     transaction for the entire session. */
-  DB_Handle_t *stat_conn; /* Extra database connection. Only used by the 
-			     DRMS server to update its status info 
+  DB_Handle_t *stat_conn; /* Extra database connection. Only used by the
+			     DRMS server to update its status info
 			     in drms_session_table. */
 
   /* Unique session id. */
@@ -276,12 +276,12 @@ struct DRMS_Session_struct
   /* Session namespace */
   char *sessionns;
 
-  /* sunum and directory of the storage unit holding the session 
-     log files.  */  
+  /* sunum and directory of the storage unit holding the session
+     log files.  */
   long long sunum;   /*  = sunum for the storage unit. */
   char *sudir; /* = storage unit directory for log files etc. */
 
-  /* Client id. Used by clients to uniqely identify themselves within 
+  /* Client id. Used by clients to uniqely identify themselves within
      a session. */
   int clientid;
 
@@ -289,11 +289,11 @@ struct DRMS_Session_struct
   char hostname[DRMS_MAXHOSTNAME]; /* host on which drms_server is running. */
   unsigned short port;             /* port on drms_server host to which client is connected. */
   int sockfd;
-  int readonly; /* When a session starts, it will be readonly (readonly == 1). If a user wants to write to the db, 
+  int readonly; /* When a session starts, it will be readonly (readonly == 1). If a user wants to write to the db,
                  * then readonly is set to 0. */
-  char startTime[32]; /* A time string that indicates when the session was opened. Needed for the session-log record, should one 
+  char startTime[32]; /* A time string that indicates when the session was opened. Needed for the session-log record, should one
                        * get written. */
-    
+
     /* DB-connection information (from drms_server to the database). */
     char dbhost[DRMS_MAXHOSTNAME];
     int dbport;
@@ -304,7 +304,7 @@ struct DRMS_Session_struct
 /** DRMS session struct reference */
 typedef struct DRMS_Session_struct DRMS_Session_t;
 
-/* Link list node for keeping track of temporary records in the server. 
+/* Link list node for keeping track of temporary records in the server.
    quick UGLY  hack. */
 typedef struct DS_node_struct
 {
@@ -344,11 +344,11 @@ struct DRMS_Env_struct
   HContainer_t series_cache;   /* Series cache data structures. */
   HContainer_t record_cache;   /* Record cache data structures. */
   HContainer_t storageunit_cache; /* Storage unit cache. */
-  DS_node_t *templist; /* List of temporary records created for each series 
+  DS_node_t *templist; /* List of temporary records created for each series
 			by this session. */
 
   int16_t retention; /* retention in days. If not -1 then this value overrides
-		   the retention time for storage units accessed during this 
+		   the retention time for storage units accessed during this
 		   session. Server only. */
   int query_mem; /* Maximum amount of memory (in MB) used by a single record
 		    query. */
@@ -356,13 +356,13 @@ struct DRMS_Env_struct
   int archive;     /* If archive=1, then archive all SU (including log SU) */
   int server_wait; /* If server_wait=1 then sleep DRMS_ABORT_SLEEP
 		      seconds before freeing env. This suposely gives
-    		      threads a small window to finish cleanly. 
-		      If server_wait=0, then free env immediately. 
+    		      threads a small window to finish cleanly.
+		      If server_wait=0, then free env immediately.
 		      This is primarily used by drms_run script and
 		      drms_server that starts from within a module */
 
   /* if verbose != 0, then print out many diagnostic messages */
-  int verbose; 
+  int verbose;
 
   char *dbpasswd;
   char *user;
@@ -375,8 +375,8 @@ struct DRMS_Env_struct
 
   pthread_mutex_t *drms_lock; /* To synchronize the environment (which can be accessed/
                                * modified by signal thread, sums thread, and main thread during shutdown) */
-  pthread_mutex_t *clientlock; /* To synchronize between server threads (one per client connected to 
-                                * drms_server). The policy is to allow only one client at a time 
+  pthread_mutex_t *clientlock; /* To synchronize between server threads (one per client connected to
+                                * drms_server). The policy is to allow only one client at a time
                                 * inside drms_server's DRMS library. */
 
   /* SUM service thread. */
@@ -385,7 +385,7 @@ struct DRMS_Env_struct
   tqueue_t *sum_inbox;
   tqueue_t *sum_outbox;
   long sum_tag; // tag of the request currently being served.
- 
+
   /* Signal catching thread: */
   pthread_t signal_thread;
   sigset_t signal_mask;
@@ -397,10 +397,10 @@ struct DRMS_Env_struct
   int transinit; /* First call to drms_server_begin_transaction() sets this to 1 after the env has been initialized
                   * drms_free_env() sets this to 0 after the env has been destroyed. */
   LinkedList_t *cleaners; /* A list of CleanerData_ts. Each node will invoke one function that
-                           * takes one data struct as an argument. These functions will be 
-                           * called when the signal thread is about to terminate the DRMS 
+                           * takes one data struct as an argument. These functions will be
+                           * called when the signal thread is about to terminate the DRMS
                            * module. */
-  int transrunning; /* 1 if a transaction has been started by db_start_transaction() (set by 
+  int transrunning; /* 1 if a transaction has been started by db_start_transaction() (set by
                      * drms_server_begin_transaction()); 0 otherwise (set by drms_server_end_transaction()) */
   int sessionrunning; /* 1 if a DRMS session has been started by drms_server_open_session() (set by
                        * drms_server_begin_transaction()); 0 otherwise (set by drms_server_end_transaction()) */
@@ -410,7 +410,7 @@ struct DRMS_Env_struct
   int16_t newsuretention; /* The retention time from the JSD, possibly overridden with the DRMS_NEWSURETENTION command-line argument. */
   int sumssafe; /* If 0, then don't call sums because DRMS timed-out waiting for SUMS. */
   int createshadows;  /* 1 if it is okay for module code to attempt to create shadow tables. */
-  int dbutf8clientencoding; 
+  int dbutf8clientencoding;
 };
 
 /** \brief DRMS environment struct reference */
@@ -420,9 +420,9 @@ typedef struct DRMS_ThreadInfo_struct
 {
   DRMS_Env_t *env;
   int noshare; /* If 1: Commit (rollback) and start new transaction
-		  every time a client disconnects successfully 
+		  every time a client disconnects successfully
 		  (unsuccessfully). This way we will release locks on tables
-		  after every disconnect, and other database clients can get 
+		  after every disconnect, and other database clients can get
 		  through. */
   int threadnum;
   int sockfd;
@@ -444,12 +444,12 @@ typedef struct DRMS_ThreadInfo_struct
 #define DRMS_MAX_REQCNT MAXSUMREQCNT
 
 /* Struct used for communication between service threads and
- * the SUMS communication thread. 
+ * the SUMS communication thread.
  *
- * Note: When this structure is used as a request to SUMS, the 
+ * Note: When this structure is used as a request to SUMS, the
  * request is only shallow-freed from within the sums thread
- * main loop. It is the requestor's responsiblity 
- * to free any memory allocated for the dsname, comment, and sudir fields. 
+ * main loop. It is the requestor's responsiblity
+ * to free any memory allocated for the dsname, comment, and sudir fields.
  * When used as a reply, it is the requestor's responsibility
  * to free all memory associated with the reply, including
  * the structure itself.
@@ -468,7 +468,7 @@ typedef struct DRMS_SumRequest_struct
 
   char *sudir[DRMS_MAX_REQCNT];
   uint64_t sunum[DRMS_MAX_REQCNT];
-  
+
   int dontwait;
 } DRMS_SumRequest_t;
 
@@ -489,7 +489,7 @@ typedef struct DRMS_MtSumsRequest_struct
 
   char **sudir;
   uint64_t *sunum;
-  
+
   int dontwait;
 } DRMS_MtSumsRequest_t;
 #endif
@@ -498,11 +498,11 @@ typedef struct DRMS_MtSumsRequest_struct
 /*************************** Data records and Series ************************/
 
 
-/* Constants used to indicate lifetime of records created with 
-   drms_create_record(s) and drms_clone_record(s). 
+/* Constants used to indicate lifetime of records created with
+   drms_create_record(s) and drms_clone_record(s).
    DRMS_TEMPORARY means that the records will only exist in the
    database until the end of the DRMS session in which they
-   were created. 
+   were created.
 */
 typedef enum {DRMS_PERMANENT, DRMS_TRANSIENT} DRMS_RecLifetime_t;
 
@@ -521,36 +521,37 @@ typedef enum DRMS_RecSetCursorSeek_enum DRMS_RecSetCursorSeek_t;
 /** \brief DRMS cursor struct */
 struct DRMS_RecSetCursor_struct
 {
-  /** \brief Parent recordset */
-  struct DRMS_RecordSet_struct *parent;
-  /** \brief Array of temp DB tables - each table holds all selected records for each subset of records */
-  char **names;
-  /** \brief DRMS session environment - needed for querying db for next chunk */
-  DRMS_Env_t *env; 
-  /** \brief Chunk size */
-  int chunksize;
-  /** \brief The index of the chunk currently loaded in the record-set */
-  /* If this is -1, then there are no chunks in memory */
-  int currentchunk;
-  /** \brief If -1, then there are more PG records to fetch, if >= 0, then the value
-   * is the index of the last record-set record in the current chunk. */
-  int lastrec; 
-  /** \brief The relative index of the current record in the downloaded chunk 0 <= currentrec <= chunksize */
-  int currentrec;
-  /** \brief For each record-set query, 1 means there was a [! ... !] query */
-  int *allvers;
-  /** \brief For each record-set 1 means drms_stage_records has been called. */
-  int staging_needed;
-  /** \brief For needed staging, use this retrieve. */
-  int retrieve;
-  /** \brief For needed staging, use this dontwait. */
-  int dontwait;
+    /** \brief Parent recordset */
+    struct DRMS_RecordSet_struct *parent;
+    /** \brief Array of temp DB tables - each table holds all selected records for each subset of records */
+    char **names;
+    /** \brief DRMS session environment - needed for querying db for next chunk */
+    DRMS_Env_t *env;
+    /** \brief Chunk size */
+    int chunksize;
+    /** \brief The index of the chunk currently loaded in the record-set */
+    /* If this is -1, then there are no chunks in memory */
+    int currentchunk;
+    /** \brief If -1, then there are more PG records to fetch, if >= 0, then the value
+    * is the index of the last record-set record in the current chunk. */
+    int lastrec;
+    /** \brief The relative index of the current record in the downloaded chunk 0 <= currentrec <= chunksize */
+    int currentrec;
+    /** \brief For each record-set query, 1 means there was a [! ... !] query */
+    int *allvers;
+    /** \brief For each record-set 1 means drms_stage_records has been called. */
+    int staging_needed;
+    /** \brief For needed staging, use this retrieve. */
+    int retrieve;
+    /** \brief For needed staging, use this dontwait. */
+    int dontwait;
 
-  int infoneeded;
-  /** \brief The SUM_info_t *, keyed by sunum, needed when opening record chunks. */
-  HContainer_t *suinfo;
-    int openLinks; /* set in drms_open_recordset_internal(), passed into drms_open_recordset_internal() by client (e.g., show_info) */
-    char **columns; /* set in drms_open_recordset_internal(), these are the columns of the series being SELECTed from */
+    int infoneeded;
+    /** \brief The SUM_info_t *, keyed by sunum, needed when opening record chunks. */
+    HContainer_t *suinfo;
+    int openLinks; /* set in drms_open_recordset_internal(); passed into drms_open_recordset_internal() by client (e.g., show_info) */
+    char **columns; /* set in drms_open_recordset_internal(); these are the columns of the series being SELECTed from */
+    int openCursor; /*set in drms_open_recordset_internal(); set to 1 when DECLARE CURSOR executed */
 };
 
 /** \brief DRMS cursor struct reference */
@@ -616,13 +617,13 @@ typedef struct DRMS_SeriesVersion_struct DRMS_SeriesVersion_t;
 /* Series-wide attributes. */
 typedef struct DRMS_SeriesInfo_struct
 {
-  char seriesname[DRMS_MAXSERIESNAMELEN];      
+  char seriesname[DRMS_MAXSERIESNAMELEN];
   char description[DRMS_MAXCOMMENTLEN];
   char author[DRMS_MAXCOMMENTLEN];
-  char owner[DRMS_MAXOWNERLEN];  /* Who is allowed to modify the series 
-				  definition. FIXME: WE PROBABLY NEED 
+  char owner[DRMS_MAXOWNERLEN];  /* Who is allowed to modify the series
+				  definition. FIXME: WE PROBABLY NEED
 				  PERMISSIONS TO INSERT NEW RECORDS. WE DON;T
-				  WANT CASUAL USERS ACCIDENTALLY INSERTING 
+				  WANT CASUAL USERS ACCIDENTALLY INSERTING
 				  BOGUS DATA IN THE WRONG SERIES. */
   int unitsize;   /* How many records to a storage unit. */
   int archive;    /* Should this series be archived? */
@@ -632,14 +633,14 @@ typedef struct DRMS_SeriesInfo_struct
 
   /* Prime key information. */
   int pidx_num;   /* Number of keywords in primary index. */
-  struct DRMS_Keyword_struct *pidx_keywords[DRMS_MAXPRIMIDX]; 
+  struct DRMS_Keyword_struct *pidx_keywords[DRMS_MAXPRIMIDX];
                 /* Pointers to keyword structs for keywords that
 		   make up the primary key.*/
   /* DB index information. */
   int dbidx_num;   /* Number of keywords to make db index. */
-  struct DRMS_Keyword_struct *dbidx_keywords[DRMS_MAXDBIDX]; 
+  struct DRMS_Keyword_struct *dbidx_keywords[DRMS_MAXDBIDX];
   char version[DRMS_MAXSERIESVERSION];
-    int createshadow; /* The jsd contained a line requesting that the shadow be created. 
+    int createshadow; /* The jsd contained a line requesting that the shadow be created.
                        * Used only when running create_series on a jsd. */
     int hasshadow; /* -1: don't know, 0: no, 1: yes. */
 }  DRMS_SeriesInfo_t;
@@ -653,16 +654,16 @@ struct DRMS_Record_struct
   struct DRMS_Env_struct *env;  /* Pointer to global DRMS environment. */
 
   long long recnum;                  /*** Unique record identifier. ***/
-  long long sunum;                   /* Unique index of the storage unit associated 
+  long long sunum;                   /* Unique index of the storage unit associated
 	        		   with this record. */
 
   int init;                    /* Flag used internally by the series cache. */
   int readonly;                /* Flag indicating if record is read-only. */
-  DRMS_RecLifetime_t lifetime; /* Flag indicating if record is session- 
+  DRMS_RecLifetime_t lifetime; /* Flag indicating if record is session-
 				  temporary or permanent. */
   struct DRMS_StorageUnit_struct *su; /* Holds sudir (Storage unit directory).
-				  	 Until the storage unit has been 
-				 	 requested from SUMS this pointer is 
+				  	 Until the storage unit has been
+				 	 requested from SUMS this pointer is
 					 NULL. */
   int slotnum;          /* Number of the slot assigned within storage unit. */
 
@@ -673,11 +674,11 @@ struct DRMS_Record_struct
   HContainer_t keywords;        /* Container of named keywords. */
   HContainer_t links;           /* Container of named links. */
   HContainer_t segments;        /* Container of named data segments. */
-  SUM_info_t *suinfo; /* The structure returned by the SUM_infoEx() call. 
+  SUM_info_t *suinfo; /* The structure returned by the SUM_infoEx() call.
                          Contains lots of storage-unit information. Can't
-                         combine with su since su gets filled in by the SUM_get() 
+                         combine with su since su gets filled in by the SUM_get()
                          call. */
-  int refcount; /* Track all references to the record struct in the 
+  int refcount; /* Track all references to the record struct in the
                        * record_cache. */
 };
 
@@ -769,12 +770,12 @@ enum DRMS_RecScopeType_enum
    /** \brief Keyword is constant across records. */
    kRecScopeType_Constant = 1,
    /** \brief This value is reserved for 'Index' keywords.  An index keyword
-    *  is one whose per-record values are the integers 'nearest' to the real 
+    *  is one whose per-record values are the integers 'nearest' to the real
     *  number values of the corresponding non-index keyword.  If an index keyword
     *  is named TOBS_index, then the corresponding non-index keyword is TOBS. */
    kRecScopeType_Index = kRecScopeIndex_B,
-   /** \brief A real-number keyword whose values are 'slotted'. 
-    *  If TOBS_index is an index keyword, and if TOBS is the corresponding 
+   /** \brief A real-number keyword whose values are 'slotted'.
+    *  If TOBS_index is an index keyword, and if TOBS is the corresponding
     *  TS_EQ-slotted keyword, TOBS has this slottype. */
    kRecScopeType_TS_EQ = kRecScopeSlotted_B,
    kRecScopeType_SLOT = kRecScopeSlotted_B + 1,
@@ -786,8 +787,8 @@ enum DRMS_RecScopeType_enum
 
 typedef enum DRMS_RecScopeType_enum DRMS_RecScopeType_t;
 
-/* \brief DRMS Primary key type 
-   From the DRMS module perspective (external to DRMS), 
+/* \brief DRMS Primary key type
+   From the DRMS module perspective (external to DRMS),
    slotted keywords are DRMS prime.
    However, within DRMS, they are not. Each one is a non-prime key
    linked to an associated index keyword that IS DRMS prime. These
@@ -812,33 +813,33 @@ typedef enum DRMS_PrimeKeyType_enum DRMS_PrimeKeyType_t;
 
 enum DRMS_KeywordFlag_enum
 {
-   /* If per_segment == 1 then this keyword is one 
-      of a set of keywords and pertains to a single 
-      segment in the record. If the keyword name is 
+   /* If per_segment == 1 then this keyword is one
+      of a set of keywords and pertains to a single
+      segment in the record. If the keyword name is
       "blah" then keywords in this set are
       "blah[0]", "blah[1]", etc. */
    kKeywordFlag_PerSegment      = 0x00000001,
 
    /* Certain keywords are not specified in the .jsd, but instead are created
-    * as a consequence of the presence of other keywords/segments/links in the 
+    * as a consequence of the presence of other keywords/segments/links in the
     * .jsd.  These keywords are known as "implicit" keywords as they are implicitly
     * created.  They are part of a record's "keywords" container, but they shouldn't
-    * be part of any .jsd 
+    * be part of any .jsd
     */
    kKeywordFlag_Implicit        = 0x00000002,
    /* There are 3 kinds of primary indices:
-    * 1. The psql primary index 
-    * 2. The DRMS-internal primary index 
-    * 3. The DRMS-external primary index 
-    * 
+    * 1. The psql primary index
+    * 2. The DRMS-internal primary index
+    * 3. The DRMS-external primary index
+    *
     * The first is what psql uses in the series tables to determine row uniqueness.
     * The second is what DRMS uses in its psql queries to uniquely find a DRMS record.
-    * The third is what a module calling into DRMS uses as the primary key.  An 
+    * The third is what a module calling into DRMS uses as the primary key.  An
     * example with slotted keys will make this clear.  Suppose there are two keywords
-    * in a series, TOBS and TOBS_index, where TOBS is slotted, and TOBS_index is the 
+    * in a series, TOBS and TOBS_index, where TOBS is slotted, and TOBS_index is the
     * associated index keyword.  The DRMS-external primary index is (TOBS).  The user
-    * simply provides a time string to uniquely find a record.  The DRMS-internal primary 
-    * index is (TOBS_index).  DRMS will query psql by specifying an index value in 
+    * simply provides a time string to uniquely find a record.  The DRMS-internal primary
+    * index is (TOBS_index).  DRMS will query psql by specifying an index value in
     * the psql query (psql may return more than one record, but DRMS will then take
     * the one with maximum recnum).  The psql primary index is (recnum, TOBS_index).
     *
@@ -884,7 +885,7 @@ typedef struct  DRMS_KeywordInfo_struct
 
   /************ Regular keywords ********/
   DRMS_Type_t type;               /* Keyword type. */
-  char format[DRMS_MAXFORMATLEN]; /* Format string for formatted input 
+  char format[DRMS_MAXFORMATLEN]; /* Format string for formatted input
                                      and output. */
   char unit[DRMS_MAXUNITLEN];     /* Physical unit. */
   char description[DRMS_MAXCOMMENTLEN];
@@ -892,11 +893,11 @@ typedef struct  DRMS_KeywordInfo_struct
 				   * has values that vary across records.
 				   * If recscope == 1, then this keyword
 				   * is constant across all records.
-				   * If recscope is not 0 or 1, then 
+				   * If recscope is not 0 or 1, then
 				   * the keyword is 'slotted'.  This means
 				   * that the value of the keyword is
 				   * placed into a slot (eg, rounded down)
-				   * before being placed into the database. 
+				   * before being placed into the database.
                                    * rescope is stored in the "isconstant"
                                    * field of the drms_keyword table in the
                                    * database. */
@@ -932,7 +933,7 @@ typedef struct DRMS_Keyword_struct DRMS_Keyword_t;
 
 /**************************** Links ***************************/
 
-/* Links to other objects from which keyword values can be inherited. 
+/* Links to other objects from which keyword values can be inherited.
    A link often indicates that the present object was computed using the
    data in the object pointed to. */
 
@@ -942,8 +943,8 @@ typedef enum { STATIC_LINK, DYNAMIC_LINK } DRMS_Link_Type_t;
 typedef struct DRMS_LinkInfo_struct
 {
   char name[DRMS_MAXLINKNAMELEN];          /* Link name. */
-  char target_series[DRMS_MAXSERIESNAMELEN]; /* Series pointed to. */  
-  char description[DRMS_MAXCOMMENTLEN]; 
+  char target_series[DRMS_MAXSERIESNAMELEN]; /* Series pointed to. */
+  char description[DRMS_MAXCOMMENTLEN];
   DRMS_Link_Type_t type;               /* Static or dynamic. */
 
   /*** Dynamic link info ***/
@@ -988,10 +989,10 @@ typedef struct DRMS_Link_struct DRMS_Link_t;
 
 /********************************** Data Segments ***************************/
 
-/* An n-dimensional array (e.g. part or all of a segment array) 
+/* An n-dimensional array (e.g. part or all of a segment array)
    stored consecutively in memory. */
-/** 
-    \brief DRMS array struct 
+/**
+    \brief DRMS array struct
 
     The ::DRMS_Array_t data stucture represents an n-dimensional array of scalar
     data.  It is used for internal memory access to data structures read
@@ -1005,7 +1006,7 @@ typedef struct DRMS_Link_struct DRMS_Link_t;
     In the most frequently used case, @ref israw=0,
     the data stored in memory represent the "true" values of the array,
     and @ref bzero and @ref bscale contain
-    the shift and scaling (if any) applied to the data when they were 
+    the shift and scaling (if any) applied to the data when they were
     read in from external storage. If @ref israw=1, then
     the data stored in memory represent the unscaled "raw" values of
     the array, and the true values may be obtained by applying the
@@ -1018,15 +1019,15 @@ typedef struct DRMS_Link_struct DRMS_Link_t;
 
     If the array struct contains data from a DRMS data segment, as returned
     by the functions
-    ::drms_segment_readslice or ::drms_segment_read, then the 
+    ::drms_segment_readslice or ::drms_segment_read, then the
     @ref parent_segment  field points to the data segment from which the
     array data originate.
 
     If the array contains a slice of the parent then the  @ref start field
     contains the starting indices of the slice in the parent array.
-    For example: If an array contains the lower 2x2 elements of a 4x3 data 
+    For example: If an array contains the lower 2x2 elements of a 4x3 data
     segment then the struct would contain
-    
+
     \code
     array.naxis = 2
     array.axis = [2,2]
@@ -1035,31 +1036,31 @@ typedef struct DRMS_Link_struct DRMS_Link_t;
 */
 struct DRMS_Array_struct
 {
-  /* Array info: */ 
+  /* Array info: */
   /** \brief Datatype of the data elements. */
-  DRMS_Type_t type;            
+  DRMS_Type_t type;
   /** \brief Number of dimensions. */
   int naxis;
   /** \brief Size of each dimension. */
   int axis[DRMS_MAXRANK];
   /** \brief Data stored in column major order. */
-  void *data;                    
+  void *data;
 
   /* Fields relating to scaling and slicing. */
   /** \brief Parent segment. */
-  struct DRMS_Segment_struct *parent_segment; 
+  struct DRMS_Segment_struct *parent_segment;
   /** \brief Zero point for parent->child mapping. */
   double bzero;
   /**
      \brief Do the values represent true values?
-     Is this read in with type=DRMS_TYPE_RAW? 
-     If israw==0 then shift and scaling have been 
-     applied to the data and they represent the 
+     Is this read in with type=DRMS_TYPE_RAW?
+     If israw==0 then shift and scaling have been
+     applied to the data and they represent the
      "true" values. If israw==1 then no shift
-     and scaling have been applied to the data. 
+     and scaling have been applied to the data.
   */
-  int israw;    
-  /** \brief Slope for parent->child. */             
+  int israw;
+  /** \brief Slope for parent->child. */
   double bscale;
   /** \brief Start offset of slice in parent. */
   int start[DRMS_MAXRANK];
@@ -1073,7 +1074,7 @@ struct DRMS_Array_struct
   char *strbuf;
   /** \brief Size of string buffer. */
   long long buflen;
-}; 
+};
 
 /** \brief DRMS array struct reference*/
 typedef struct DRMS_Array_struct DRMS_Array_t;
@@ -1081,11 +1082,11 @@ typedef struct DRMS_Array_struct DRMS_Array_t;
 
 
 /*
-     For an array-slice the parent_xxx variables describe how the array 
-     maps into the parent array. parent_naxis is the number of dimensions 
-     in the parent array. naxis is the number of dimensions of the slice, 
-     i.e. parent_naxis minus the number of singleton dimensions where 
-     parent_start[i] = parent_end[i]. The cutout is stored in "squeezed" 
+     For an array-slice the parent_xxx variables describe how the array
+     maps into the parent array. parent_naxis is the number of dimensions
+     in the parent array. naxis is the number of dimensions of the slice,
+     i.e. parent_naxis minus the number of singleton dimensions where
+     parent_start[i] = parent_end[i]. The cutout is stored in "squeezed"
      form with the singleton dimensions removed.
      Example: If the (integer) parent array is
 
@@ -1096,37 +1097,37 @@ typedef struct DRMS_Array_struct DRMS_Array_t;
      with the Array_t struct
 
 	  type = DRMS_TYPE_INT
-          naxis = 2, 
+          naxis = 2,
           axis = {3,3}
           (int *) data = {1,2,3,4,5,6,7,8,9}
-	  
-     and we wanted to represent the last two elements [ 6 9 ] of the
-     bottom row as a slice. The resulting Array_Slice_t structure would have 
 
-     
+     and we wanted to represent the last two elements [ 6 9 ] of the
+     bottom row as a slice. The resulting Array_Slice_t structure would have
+
+
 	  array.type = DRMS_TYPE_INT
-          array.naxis = 1, 
-          array.axis = {2} , 
-          array.data = {6, 9}           
+          array.naxis = 1,
+          array.axis = {2} ,
+          array.data = {6, 9}
           parent_naxis = 2
           parent_axis = {3,3}
 	  parent_type = DRMS_TYPE_INT
 	  parent_start = {2, 1}
           parent_end = {2, 2}
           bscale = 1.0
-          bzero  = 0.0 
+          bzero  = 0.0
 
      data points to an array holding the data of the cutout stored
-     in column major order.     
- 
+     in column major order.
+
      In general, the mapping from parent to child can be described as
 
-      child(0:axis[i]-1,...,0:axis[naxis-1]) = 
+      child(0:axis[i]-1,...,0:axis[naxis-1]) =
           squeeze(bzero+bscale*parent(s0:e0,s1:e1,...,sn:en)) ,
 
-     where si = parent_start[i], ei = parent_end[i], 
-     n+1 = parent_naxis >= naxis, and squeeze(*) is the operator 
-     that compacts the array by removing singleton dimensions 
+     where si = parent_start[i], ei = parent_end[i],
+     n+1 = parent_naxis >= naxis, and squeeze(*) is the operator
+     that compacts the array by removing singleton dimensions
      where si=ei.
   */
 
@@ -1140,7 +1141,7 @@ typedef enum  {
    /** \brief Indicates data is constant across records */
    DRMS_CONSTANT,
    /** \brief Indicates data dimension structure is constant across records */
-   DRMS_VARIABLE, 
+   DRMS_VARIABLE,
    /** \brief Indicates data dimension structure varies across records */
    DRMS_VARDIM
 } DRMS_Segment_Scope_t;
@@ -1160,7 +1161,7 @@ char *drms_segmentscope_names[] = {"constant", "variable", "vardim"};
  ***********************************************************/
 
 /* A data segment is typically an n-dimensional array of a simple type.
-   It can also be a "generic" segment which is just a file 
+   It can also be a "generic" segment which is just a file
    (structure-less as far as DRMS is concerned). */
 
 /** \brief DRMS segment dimension info struct */
@@ -1212,14 +1213,14 @@ struct DRMS_SegmentInfo_struct {
 /** \brief DRMS segment info struct reference */
 typedef struct DRMS_SegmentInfo_struct DRMS_SegmentInfo_t;
 
-/** 
-    \brief DRMS segment struct 
+/**
+    \brief DRMS segment struct
 
     A DRMS data segment corresponds to a named file, typically containing an
     n-dimensional scalar array. (It can also be a "generic" segment, which is
     just an unstructured file as far as DRMS is concerned.) One or more segments
     constitute the external data part(s) of the DRMS record pointed to by the
-    @ref record field. The 
+    @ref record field. The
     @ref info field points to a structure containing attributes common to all
     records in a series, while the segment structure itself contains the fields
     @ref axis and @ref blocksize that can vary from record to record if
@@ -1227,14 +1228,14 @@ typedef struct DRMS_SegmentInfo_struct DRMS_SegmentInfo_t;
 
     The @ref protocol field determines the external storage format used for
     storing segment data. Only protocols ::DRMS_BINARY, ::DRMS_BINZIP, ::DRMS_FITS,
-    ::DRMS_FITZ, ::DRMS_GENERIC, and ::DRMS_TAS are fully supported in the base 
+    ::DRMS_FITZ, ::DRMS_GENERIC, and ::DRMS_TAS are fully supported in the base
     DRMS system (NetDRMS). Protocol ::DRMS_DSDS is a
     special protocol for dealing with the format of the Stanford SOI-MDI
     Data Sorage and Distribution System (DSDS) and requires support outside
     the DRMS library. Protocol ::DRMS_LOCAL likewise supports the DSDS file-format
     and requires a non-NetDRMS library. It differs from ::DRMS_DSDS in that
     it does not depend on the presence of DSDS - it merely allows the user
-    to operate on files external to DSDS (eg., files that may reside on a LOCAL 
+    to operate on files external to DSDS (eg., files that may reside on a LOCAL
     hard disk) that happen to have the file format that DSDS uses.
     ::DRMS_GENERIC and ::DRMS_MSI are also reserved for unsupported
     data formats. In particular, the DRMS_GENERIC protocol is used to refer
@@ -1295,7 +1296,7 @@ typedef struct DRMS_SegmentInfo_struct DRMS_SegmentInfo_t;
 */
 struct DRMS_Segment_struct {
   /** \brief  The record this segment belongs to */
-  struct DRMS_Record_struct *record; 
+  struct DRMS_Record_struct *record;
   /** \brief Contains attributes common to all records in a series */
   DRMS_SegmentInfo_t *info;
   /* For TAS, filename will be constant across records. */
@@ -1322,19 +1323,19 @@ typedef struct DRMS_StorageUnit_struct {
   struct DRMS_SeriesInfo_struct *seriesinfo; /* global series info. */
   int mode;  /* Indicates if SU is open for DRMS_READONLY or DRMS_READWRITE */
   long long sunum; /* Unique index of this storage unit. */
-  char sudir[DRMS_MAXPATHLEN];  /* Directory of this storage unit. */  
+  char sudir[DRMS_MAXPATHLEN];  /* Directory of this storage unit. */
   int refcount; /* Number of Records pointing to this storage unit struct. */
-  int nfree;     /* Number of free record slots in this storage unit. 
+  int nfree;     /* Number of free record slots in this storage unit.
 		    Total number of slots is in seriesinfo.unitsize. */
   char *state; /* Bytemap of slot states. Valid states are DRMS_SLOT_FREE,
                   DRMS_SLOT_FULL, and DRMS_SLOT_TEMP. The latter means that
-		  the record should be committed to SUMS as temporary 
-		  regardless of the archive method in the series definition. 
-		  A storage unit will be archived as temporary of it is 
-		  defined thus in the series definition or if all non-empty 
+		  the record should be committed to SUMS as temporary
+		  regardless of the archive method in the series definition.
+		  A storage unit will be archived as temporary of it is
+		  defined thus in the series definition or if all non-empty
 		  slots have state DRMS_SLOT_TEMP. */
-  long long *recnum; /* Record numbers of records occupying the slots of this 
-		   storage unit. Only used on the server side to delete 
+  long long *recnum; /* Record numbers of records occupying the slots of this
+		   storage unit. Only used on the server side to delete
 		   temporary records at the end of a session. */
 } DRMS_StorageUnit_t;
 
@@ -1346,8 +1347,8 @@ typedef struct DRMS_SuAndSeries_struct
 } DRMS_SuAndSeries_t;
 
 
-/* When the record-set parser runs, it fills in a bit mask that describes the various elements of 
- * the record-set query just parsed. 
+/* When the record-set parser runs, it fills in a bit mask that describes the various elements of
+ * the record-set query just parsed.
  *
  * bits:
  * 0x00000001 - has >= 1 filter
@@ -1379,16 +1380,16 @@ DRMS_Type_t drms_str2type(const char *);
 const char *drms_type2str(DRMS_Type_t type);
 void drms_missing(DRMS_Type_t type, DRMS_Type_Value_t *val);
 void drms_missing_vp(DRMS_Type_t type, void *val);
-int drms_copy_db2drms(DRMS_Type_t drms_type, DRMS_Type_Value_t *drms_dst, 
+int drms_copy_db2drms(DRMS_Type_t drms_type, DRMS_Type_Value_t *drms_dst,
 		      DB_Type_t db_type, char *db_src);
-void drms_copy_drms2drms(DRMS_Type_t type, DRMS_Type_Value_t *dst, 
+void drms_copy_drms2drms(DRMS_Type_t type, DRMS_Type_Value_t *dst,
 			 DRMS_Type_Value_t *src);
 DB_Type_t drms2dbtype(DRMS_Type_t type);
 int drms_sizeof(DRMS_Type_t type);
 void *drms_addr(DRMS_Type_t type, DRMS_Type_Value_t *val);
 int drms_strval(DRMS_Type_t type, DRMS_Type_Value_t *val, char *str);
 int drms_sprintfval(char *dst, DRMS_Type_t type, DRMS_Type_Value_t *val, int internal);
-int drms_sprintfval_format(char *dst, DRMS_Type_t type, DRMS_Type_Value_t *val, 
+int drms_sprintfval_format(char *dst, DRMS_Type_t type, DRMS_Type_Value_t *val,
 			   char *format, int internal);
 int drms_printfval (DRMS_Type_t type, DRMS_Type_Value_t *val);
 int drms_fprintfval(FILE *keyfile, DRMS_Type_t type, DRMS_Type_Value_t *val);
@@ -1396,9 +1397,9 @@ int drms_sscanf_str(const char *str, const char *delim, DRMS_Type_Value_t *dst);
 int drms_sscanf2(const char *str, const char *delim, int silent, DRMS_Type_t dsttype, DRMS_Value_t *dst);
 
 /* Scalar conversion functions. */
-int drms_convert(DRMS_Type_t dsttype, DRMS_Type_Value_t *dst, 
+int drms_convert(DRMS_Type_t dsttype, DRMS_Type_Value_t *dst,
 		 DRMS_Type_t srctype, DRMS_Type_Value_t *src);
-int drms_convert_array(DRMS_Type_t dsttype, char *dst, 
+int drms_convert_array(DRMS_Type_t dsttype, char *dst,
 		       DRMS_Type_t srctype, char *src);
 char drms2char(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status);
 short drms2short(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status);
@@ -1416,7 +1417,7 @@ int drms_fprintfval_raw(FILE *keyfile, DRMS_Type_t type, void *val);
 long long drms_types_strtoll(const char *str, DRMS_Type_t inttype, int *consumed, int *status);
 void drms_byteswap(DRMS_Type_t type, int n, char *val);
 void drms_memset(DRMS_Type_t type, int n, void *array, DRMS_Type_Value_t val);
-int drms_daxpy(DRMS_Type_t type, const double alpha, DRMS_Type_Value_t *x, 
+int drms_daxpy(DRMS_Type_t type, const double alpha, DRMS_Type_Value_t *x,
 	       DRMS_Type_Value_t *y );
 int drms_equal(DRMS_Type_t type, DRMS_Type_Value_t *x, DRMS_Type_Value_t *y);
 
@@ -1424,8 +1425,8 @@ int drms_equal(DRMS_Type_t type, DRMS_Type_Value_t *x, DRMS_Type_Value_t *y);
 const TIME *drms_time_getepoch(const char *str, DRMS_TimeEpoch_t *epochenum, int *status);
 void drms_time_term();
 
-/* sdo_s is number of whole seconds since the SDO EPOCH 
- * sdo_ss is number of subseconds since SDO_EPOCH + sdo_s 
+/* sdo_s is number of whole seconds since the SDO EPOCH
+ * sdo_ss is number of subseconds since SDO_EPOCH + sdo_s
  *   where a subsecond is 1/(2^16) of a second */
 static inline TIME _SDO_to_DRMS_time(int sdo_s, int sdo_ss)
 {
@@ -1486,8 +1487,8 @@ static inline void drms_value_free(DRMS_Value_t *val)
 }
 
 /* Arithmetic operations */
-/* XXX - need to flesh these out, or else this DRMS_Type_Value concept doesn't 
- * seem to be that useful. 
+/* XXX - need to flesh these out, or else this DRMS_Type_Value concept doesn't
+ * seem to be that useful.
  */
 
 /* need to check for overflow */
@@ -1646,10 +1647,8 @@ static inline DRMS_Value_t drms_val_div(DRMS_Value_t *a, DRMS_Value_t *b)
 
 /* lame doxygen - don't put @brief in here; it doesn't work (some kind of doxygen bug) */
 
-/** @typedef typedef enum DRMS_KeywordClass_enum DRMS_KeywordClass_t 
+/** @typedef typedef enum DRMS_KeywordClass_enum DRMS_KeywordClass_t
     DRMS Keyword Classes Reference (see ::DRMS_KeywordClass_enum)
 */
 
 #endif
-
-

@@ -7348,7 +7348,7 @@ char *drms_series_querystring_linkcols(DRMS_Record_t *templateRec, const char *r
  * followLinks - create a statement that contains link-column information (used to JOIN child rows)
  * returnParentSQL - create a statement that SELECTs parent rows
  */
-LinkedList_t *drms_series_querystring_recordchunk(DRMS_Env_t *env, const char *series, const char *chunkRecnumsSQL, const char *fields, int followLinks, int returnParentSQL, int *status)
+LinkedList_t *drms_series_querystring_recordchunk(DRMS_Env_t *env, const char *series, const char *chunkRecnumsSQL, const char *fields, int followLinks, int returnParentSQL, const char *cursorTable, int *status)
 {
     /* the SQL in chunkRecnumsSQL is for selecting records from the parent table; we use that SQL as a subquery so that we
      * can select rows from the parent table (all output columns); for child tables, we need to select link-info columns
@@ -7365,9 +7365,12 @@ LinkedList_t *drms_series_querystring_recordchunk(DRMS_Env_t *env, const char *s
     ListNode_t *node = NULL;
     LinkedList_t *statementList = NULL;
     char *linkInfoColsSQL = NULL;
+    char *statementCursor = NULL;
+    size_t scSize = 128;
     char *statementSelect = NULL;
     size_t ssSize = 128;
     char *lcSeries = NULL;
+    int createCursor = (cursorTable != NULL && *cursorTable != '\0');
     char *pkeyList = NULL;
     DRMS_RecordSet_Sql_Statement_t statement;
 
@@ -7383,6 +7386,30 @@ LinkedList_t *drms_series_querystring_recordchunk(DRMS_Env_t *env, const char *s
     }
     else
     {
+        if (createCursor)
+        {
+              /* create sequential, server-side cursor if this is the first chunk to be opened; drop the cursor in  */
+              statementCursor = calloc(1, scSize);
+
+              statementCursor = base_strcatalloc(statementCursor, "DECLARE ", &scSize);
+              statementCursor = base_strcatalloc(statementCursor, cursorTable, &scSize);
+              statementCursor = base_strcatalloc(statementCursor, "_cursor NO SCROLL CURSOR FOR ", &scSize);
+              statementCursor = base_strcatalloc(statementCursor, "(SELECT row, recnum FROM ", &scSize);
+              statementCursor = base_strcatalloc(statementCursor, cursorTable, &scSize);
+              statementCursor = base_strcatalloc(statementCursor, ")", &scSize);
+
+              statement.type = RECORDSET_SQLSTATEMENT_LANGTYPE_DDL;
+              statement.statement = statementCursor; /* yoink! */
+              statement.parent = NULL;
+              statement.dmlSeries = NULL;
+              statement.columns = NULL;
+              statement.link = NULL;
+              statement.temp = NULL; /* we are not making a temp table to hold the parent chunk */
+              statement.linkInfoSQL = 'f';
+
+              list_llinserttail(statementList, &statement);
+        }
+
         if (returnParentSQL)
         {
             pkeyList = CreatePKeyList(env, series, "", " ASC", NULL, NULL, 0, &localStatus);
@@ -7784,8 +7811,9 @@ LinkedList_t *drms_series_links_statements(DRMS_Env_t *env, const char *linkInfo
                     recnumMapSQL = base_strcatalloc(recnumMapSQL, ") AS PARENT_RECORD_CHUNK\n", &recnumMapSQLSz);
                     recnumMapSQL = base_strcatalloc(recnumMapSQL, "  USING (", &recnumMapSQLSz);
                     recnumMapSQL = base_strcatalloc(recnumMapSQL, childPkeys, &recnumMapSQLSz);
+                    recnumMapSQL = base_strcatalloc(recnumMapSQL, ")", &recnumMapSQLSz);
 
-                    statementRecInfoSuffix = base_strcatalloc(statementRecInfoSuffix, ")) AS RECNUMMAP\n", &statementRecInfoSuffixSz);
+                    statementRecInfoSuffix = base_strcatalloc(statementRecInfoSuffix, ") AS RECNUMMAP\n", &statementRecInfoSuffixSz);
                     statementRecInfoSuffix = base_strcatalloc(statementRecInfoSuffix, "JOIN\n", &statementRecInfoSuffixSz);
                     statementRecInfoSuffix = base_strcatalloc(statementRecInfoSuffix, lcChildSeries, &statementRecInfoSuffixSz);
                     statementRecInfoSuffix = base_strcatalloc(statementRecInfoSuffix, "\n", &statementRecInfoSuffixSz);
@@ -8003,7 +8031,7 @@ LinkedList_t *drms_series_links_statements(DRMS_Env_t *env, const char *linkInfo
                     chunkRecnumsSQL = base_strcatalloc(chunkRecnumsSQL, ") AS LINKINFO", &chunkRecnumsSQLSz);
                 }
 
-                subStatementList = drms_series_querystring_recordchunk(env, childSeries, chunkRecnumsSQL, childFields, 1, 0, &drmsStat);
+                subStatementList = drms_series_querystring_recordchunk(env, childSeries, chunkRecnumsSQL, childFields, 1, 0, NULL, &drmsStat);
 
                 if (chunkRecnumsSQL)
                 {
