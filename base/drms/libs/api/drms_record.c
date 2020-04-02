@@ -173,9 +173,15 @@ static int Silent_drms_dms(DRMS_Session_t *session, int *row_count, const char *
         if (saved_stderr != -1)
         {
             /* redirect stderr to devnull; this could fail, but then this function is a noop, and we don't really care */
-            dup2(devnull, STDERR_FILENO);
-
-            rv = drms_dms(session, row_count, query);
+            if (dup2(devnull, STDERR_FILENO) != -1)
+            {
+                rv = drms_dms(session, row_count, query);
+                fflush(stderr);
+            }
+            else
+            {
+                fprintf(stderr, "[ Silent_drms_dms() ] unable to call drms_dms()\n");
+            }
 
             /* restore stderr */
             dup2(saved_stderr, STDERR_FILENO);
@@ -13121,7 +13127,6 @@ int drms_count_records(DRMS_Env_t *env, const char *recordsetname, int *status)
     ListNode_t *node = NULL;
 
 
-    memset(&statement, 0, sizeof(DRMS_RecordSet_Sql_Statement_t));
     /* You cannot call drms_recordset_query() on recordsetname. recordsetname has not been parsed at all.
      * It might be an @file, or a comma-separated list of record-set specifications. */
     stat = ParseRecSetDesc(recordsetname, &allversA, &sets, &settypes, &snames, &filts, &nsets, &rsinfo);
