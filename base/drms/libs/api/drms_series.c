@@ -6319,7 +6319,7 @@ LinkedList_t *drms_series_querystringD(DRMS_Env_t *env, const char *series, cons
             {
                 if (pkwhere && *pkwhere)
                 {
-                    qualpkwhereSeries = PrependWhere(env, pkwhere, series, "SERIES.", &istat);
+                    qualpkwhereSeries = PrependWhere(env, pkwhere, series, "SHADOW.", &istat);
                 }
             }
 
