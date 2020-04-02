@@ -5023,6 +5023,8 @@ LinkedList_t *drms_series_nrecords_querystringA(const char *series, int *status)
 
             statementList = list_llcreate(sizeof(DRMS_RecordSet_Sql_Statement_t), (ListFreeFn_t)FreeSqlStatement);
             DRMS_RecordSet_Sql_Statement_t statement;
+
+            memset(&statement, 0, sizeof(DRMS_RecordSet_Sql_Statement_t));
             statement.type = RECORDSET_SQLSTATEMENT_LANGTYPE_DML;
             statement.statement = query; /* yoink! */
             statement.parent = NULL;
@@ -5031,6 +5033,9 @@ LinkedList_t *drms_series_nrecords_querystringA(const char *series, int *status)
             statement.link = NULL;
             statement.temp = NULL;
             statement.linkInfoSQL = 'f';
+            statement.ephemeralTemp = NULL;
+            statement.env = NULL;
+
             list_llinserttail(statementList, &statement);
             query = NULL;
         }
@@ -5074,6 +5079,9 @@ LinkedList_t *drms_series_nrecords_querystringB(DRMS_Env_t *env, const char *ser
     DRMS_RecordSet_Sql_Statement_t statement;
     int istat = DRMS_SUCCESS;
 
+
+    memset(&statement, 0, sizeof(DRMS_RecordSet_Sql_Statement_t));
+
     lcseries = strdup(series);
 
     if (lcseries)
@@ -5105,6 +5113,9 @@ LinkedList_t *drms_series_nrecords_querystringB(DRMS_Env_t *env, const char *ser
                 statement.link = NULL;
                 statement.temp = NULL;
                 statement.linkInfoSQL = 'f';
+                statement.ephemeralTemp = NULL;
+                statement.env = NULL;
+
                 statementList = list_llcreate(sizeof(DRMS_RecordSet_Sql_Statement_t), (ListFreeFn_t)FreeSqlStatement);
                 list_llinserttail(statementList, &statement);
                 query = NULL;
@@ -5146,6 +5157,8 @@ LinkedList_t *drms_series_nrecords_querystringC(const char *series, const char *
     LinkedList_t *statementList = NULL;
     DRMS_RecordSet_Sql_Statement_t statement;
 
+
+    memset(&statement, 0, sizeof(DRMS_RecordSet_Sql_Statement_t));
     lcseries = strdup(series);
 
     if (lcseries)
@@ -5168,6 +5181,9 @@ LinkedList_t *drms_series_nrecords_querystringC(const char *series, const char *
             statement.link = NULL;
             statement.temp = NULL;
             statement.linkInfoSQL = 'f';
+            statement.ephemeralTemp = NULL;
+            statement.env = NULL;
+
             statementList = list_llcreate(sizeof(DRMS_RecordSet_Sql_Statement_t), (ListFreeFn_t)FreeSqlStatement);
             list_llinserttail(statementList, &statement);
             query = NULL;
@@ -5219,6 +5235,8 @@ LinkedList_t *drms_series_nrecords_querystringD(const char *series, const char *
     LinkedList_t *statementList = NULL;
     int istat = DRMS_SUCCESS;
 
+
+    memset(&statement, 0, sizeof(DRMS_RecordSet_Sql_Statement_t));
     lcseries = strdup(series);
 
     if (lcseries)
@@ -5256,6 +5274,9 @@ LinkedList_t *drms_series_nrecords_querystringD(const char *series, const char *
             statement.link = NULL;
             statement.temp = NULL;
             statement.linkInfoSQL = 'f';
+            statement.ephemeralTemp = NULL;
+            statement.env = NULL;
+
             list_llinserttail(statementList, &statement);
             query = NULL;
 
@@ -5472,6 +5493,9 @@ LinkedList_t *drms_series_querystringA(DRMS_Env_t *env, const char *series, cons
     DRMS_RecordSet_Sql_Statement_t statement;
     char *tempTableDupe = NULL;
 
+
+    memset(&statement, 0, sizeof(DRMS_RecordSet_Sql_Statement_t));
+
     /* there must be a tempTable if we are chunking records */
     XASSERT(tempTable || !cursor);
 
@@ -5610,6 +5634,8 @@ LinkedList_t *drms_series_querystringA(DRMS_Env_t *env, const char *series, cons
                     }
 
                     statement.linkInfoSQL = 'f';
+                    statement.ephemeralTemp = NULL;
+                    statement.env = NULL;
 
                     if (!statementList)
                     {
@@ -5669,6 +5695,8 @@ LinkedList_t *drms_series_querystringA(DRMS_Env_t *env, const char *series, cons
                 }
 
                 statement.linkInfoSQL = 'f';
+                statement.ephemeralTemp = NULL;
+                statement.env = NULL;
 
                 if (!statementList)
                 {
@@ -5898,6 +5926,8 @@ LinkedList_t *drms_series_querystringC(DRMS_Env_t *env, const char *series, cons
     LinkedList_t *statementList = NULL;
     char *tempTableDupe = NULL;
 
+
+    memset(&statement, 0, sizeof(DRMS_RecordSet_Sql_Statement_t));
     lcseries = strdup(series);
 
     if (lcseries)
@@ -6086,6 +6116,9 @@ LinkedList_t *drms_series_querystringC(DRMS_Env_t *env, const char *series, cons
                     statement.temp = NULL;
                 }
 
+                statement.ephemeralTemp = NULL;
+                statement.env = NULL;
+
                 if (!statementList)
                 {
                     statementList = list_llcreate(sizeof(DRMS_RecordSet_Sql_Statement_t), (ListFreeFn_t)FreeSqlStatement);
@@ -6238,6 +6271,8 @@ LinkedList_t *drms_series_querystringD(DRMS_Env_t *env, const char *series, cons
     LinkedList_t *statementList = NULL;
     char *tempTableDupe = NULL;
 
+
+    memset(&statement, 0, sizeof(DRMS_RecordSet_Sql_Statement_t));
     lcseries = strdup(series);
 
     if (lcseries)
@@ -6470,6 +6505,8 @@ LinkedList_t *drms_series_querystringD(DRMS_Env_t *env, const char *series, cons
                 }
 
                 statement.linkInfoSQL = 'f';
+                statement.ephemeralTemp = NULL;
+                statement.env = NULL;
 
                 if (!statementList)
                 {
@@ -6563,6 +6600,8 @@ LinkedList_t *drms_series_querystringFL(DRMS_Env_t *env, const char *series, con
     char *tempTableDupe = NULL;
     int isLast = 0;
 
+
+    memset(&statement, 0, sizeof(DRMS_RecordSet_Sql_Statement_t));
     lcseries = strdup(series);
 
     if (lcseries)
@@ -7009,6 +7048,8 @@ LinkedList_t *drms_series_querystringFL(DRMS_Env_t *env, const char *series, con
                 }
 
                 statement.linkInfoSQL = 'f';
+                statement.ephemeralTemp = NULL;
+                statement.env = NULL;
 
                 if (!statementList)
                 {
@@ -7071,6 +7112,8 @@ LinkedList_t *drms_series_querystring_wrap(DRMS_Env_t *env, const char *series, 
     int istat = DRMS_SUCCESS;
     char *tempTableDupe = NULL;
 
+
+    memset(&statement, 0, sizeof(DRMS_RecordSet_Sql_Statement_t));
     if (series)
     {
         pkeylist = CreatePKeyList(env, series, NULL, NULL, NULL, NULL, 0, &istat);
@@ -7222,6 +7265,8 @@ LinkedList_t *drms_series_querystring_wrap(DRMS_Env_t *env, const char *series, 
             }
 
             statement.linkInfoSQL = 'f';
+            statement.ephemeralTemp = NULL;
+            statement.env = NULL;
 
             if (!statementList)
             {
@@ -7369,12 +7414,17 @@ LinkedList_t *drms_series_querystring_recordchunk(DRMS_Env_t *env, const char *s
     size_t scSize = 128;
     char *statementSelect = NULL;
     size_t ssSize = 128;
+    char *statementTempTable = NULL;
+    size_t stSize = 128;
+    char tempTable[256];
     char *lcSeries = NULL;
     int createCursor = (cursorTable != NULL && *cursorTable != '\0');
     char *pkeyList = NULL;
     DRMS_RecordSet_Sql_Statement_t statement;
+    int useTempSQL = 0;
 
 
+    memset(&statement, 0, sizeof(DRMS_RecordSet_Sql_Statement_t));
     lcSeries = strdup(series);
     strtolower(lcSeries);
 
@@ -7406,8 +7456,57 @@ LinkedList_t *drms_series_querystring_recordchunk(DRMS_Env_t *env, const char *s
               statement.link = NULL;
               statement.temp = NULL; /* we are not making a temp table to hold the parent chunk */
               statement.linkInfoSQL = 'f';
+              statement.ephemeralTemp = NULL;
+              statement.env = NULL;
 
               list_llinserttail(statementList, &statement);
+        }
+
+        if (returnParentSQL == 1 && followLinks == 1)
+        {
+            /* if returnParentSQL == 1 && followLinks == 1, then we need to use the results of a cursor fetch for
+             * two different queries - we do not want to call drms_fetch_chunk() twice since this would
+             * advance cursor and fetch two chunks, when in fact we need just one chunk; so, create a temp
+             * table and use that in both queries. */
+            useTempSQL = 1;
+
+            if (GetTempTable(tempTable, sizeof(tempTable)))
+            {
+                /* somehow need to propagate error back*/
+            }
+            else
+            {
+                statementTempTable = calloc(1, stSize);
+
+                statementTempTable = base_strcatalloc(statementTempTable, "CREATE TEMPORARY TABLE ", &stSize);
+                statementTempTable = base_strcatalloc(statementTempTable, tempTable, &stSize);
+                statementTempTable = base_strcatalloc(statementTempTable, "(row bigint PRIMARY KEY, recnum bigint) ", &stSize);
+                statementTempTable = base_strcatalloc(statementTempTable, "ON COMMIT DROP;\n", &stSize);
+
+                statementTempTable = base_strcatalloc(statementTempTable, "CREATE INDEX ", &stSize);
+                statementTempTable = base_strcatalloc(statementTempTable, tempTable, &stSize);
+                statementTempTable = base_strcatalloc(statementTempTable, "_recnum ON ", &stSize);
+                statementTempTable = base_strcatalloc(statementTempTable, tempTable, &stSize);
+                statementTempTable = base_strcatalloc(statementTempTable, "(recnum);\n", &stSize);
+
+                statementTempTable = base_strcatalloc(statementTempTable, "INSERT INTO ", &stSize);
+                statementTempTable = base_strcatalloc(statementTempTable, tempTable, &stSize);
+                statementTempTable = base_strcatalloc(statementTempTable, "\n", &stSize);
+
+                statementTempTable = base_strcatalloc(statementTempTable, chunkRecnumsSQL, &stSize);
+
+                statement.type = RECORDSET_SQLSTATEMENT_LANGTYPE_DDL;
+                statement.statement = statementTempTable; /* yoink! */
+                statement.parent = NULL;
+                statement.dmlSeries = NULL;
+                statement.columns = NULL;
+                statement.link = NULL;
+                statement.temp = NULL;
+                statement.ephemeralTemp = strdup(tempTable); /* this temp table can be freed when the statement list in which it is contained is freed */
+                statement.env = env;
+
+                list_llinserttail(statementList, &statement);
+            }
         }
 
         if (returnParentSQL)
@@ -7424,9 +7523,19 @@ LinkedList_t *drms_series_querystring_recordchunk(DRMS_Env_t *env, const char *s
             statementSelect = base_strcatalloc(statementSelect, lcSeries, &ssSize);
             statementSelect = base_strcatalloc(statementSelect, "\n", &ssSize);
             statementSelect = base_strcatalloc(statementSelect, "JOIN\n", &ssSize);
-            statementSelect = base_strcatalloc(statementSelect, "(", &ssSize);
-            statementSelect = base_strcatalloc(statementSelect, chunkRecnumsSQL, &ssSize);
-            statementSelect = base_strcatalloc(statementSelect, ") AS CHUNKTABLE\n", &ssSize);
+
+            if (useTempSQL)
+            {
+                statementSelect = base_strcatalloc(statementSelect, tempTable, &ssSize);
+                statementSelect = base_strcatalloc(statementSelect, " AS CHUNKTABLE\n", &ssSize);
+            }
+            else
+            {
+                statementSelect = base_strcatalloc(statementSelect, "(", &ssSize);
+                statementSelect = base_strcatalloc(statementSelect, chunkRecnumsSQL, &ssSize);
+                statementSelect = base_strcatalloc(statementSelect, ") AS CHUNKTABLE\n", &ssSize);
+            }
+
             statementSelect = base_strcatalloc(statementSelect, "USING (recnum)", &ssSize);
             statementSelect = base_strcatalloc(statementSelect, "\n", &ssSize);
             statementSelect = base_strcatalloc(statementSelect, "ORDER BY ", &ssSize);
@@ -7440,6 +7549,9 @@ LinkedList_t *drms_series_querystring_recordchunk(DRMS_Env_t *env, const char *s
             statement.link = NULL;
             statement.temp = NULL; /* we are not making a temp table to hold the parent chunk */
             statement.linkInfoSQL = 'f';
+            statement.ephemeralTemp = NULL;
+            statement.env = NULL;
+
 
             statementSelect = NULL;
             ssSize = 128;
@@ -7459,9 +7571,20 @@ LinkedList_t *drms_series_querystring_recordchunk(DRMS_Env_t *env, const char *s
 
 
             recnumColSQL = calloc(1, subQSz);
-            recnumColSQL = base_strcatalloc(recnumColSQL, "SELECT recnum FROM (", &subQSz);
-            recnumColSQL = base_strcatalloc(recnumColSQL, chunkRecnumsSQL, &subQSz);
-            recnumColSQL = base_strcatalloc(recnumColSQL, ") AS CHUNKRECNUMS", &subQSz);
+            recnumColSQL = base_strcatalloc(recnumColSQL, "SELECT recnum FROM ", &subQSz);
+
+            if (useTempSQL)
+            {
+                recnumColSQL = base_strcatalloc(recnumColSQL, tempTable, &subQSz);
+                recnumColSQL = base_strcatalloc(recnumColSQL, " AS CHUNKRECNUMS\n", &subQSz);
+            }
+            else
+            {
+                recnumColSQL = base_strcatalloc(recnumColSQL, "(", &subQSz);
+                recnumColSQL = base_strcatalloc(recnumColSQL, chunkRecnumsSQL, &subQSz);
+                recnumColSQL = base_strcatalloc(recnumColSQL, ") AS CHUNKRECNUMS", &subQSz);
+            }
+
             linkInfoColsSQL = drms_series_querystring_linkcols(templ, recnumColSQL);
             free(recnumColSQL);
 
@@ -7473,6 +7596,8 @@ LinkedList_t *drms_series_querystring_recordchunk(DRMS_Env_t *env, const char *s
             statement.link = NULL; /* not used for link-info SQL statement */
             statement.temp = NULL; /* we are not making a temp table to hold the parent chunk;  */
             statement.linkInfoSQL = 't';
+            statement.ephemeralTemp = NULL;
+            statement.env = NULL;
 
             statementSelect = NULL;
 
@@ -7606,6 +7731,7 @@ LinkedList_t *drms_series_links_statements(DRMS_Env_t *env, const char *linkInfo
     char *tempTableDupe = NULL;
 
 
+    memset(&statement, 0, sizeof(DRMS_RecordSet_Sql_Statement_t));
     statementList = list_llcreate(sizeof(DRMS_RecordSet_Sql_Statement_t), (ListFreeFn_t)FreeSqlStatement);
 
     if (!statementList)
@@ -8087,6 +8213,8 @@ LinkedList_t *drms_series_links_statements(DRMS_Env_t *env, const char *linkInfo
                     }
 
                     statement.linkInfoSQL = 'f';
+                    statement.ephemeralTemp = NULL;
+                    statement.env = NULL;
 
                     list_llinserttail(statementList, &statement);
 
@@ -8118,6 +8246,8 @@ LinkedList_t *drms_series_links_statements(DRMS_Env_t *env, const char *linkInfo
                 statement.columns = strdup(childFields);
                 statement.link = strdup(lcLink); /* so that the parent link can be found when opening record chunks */
                 statement.linkInfoSQL = 'f';
+                statement.ephemeralTemp = NULL;
+                statement.env = NULL;
             }
             else
             {
@@ -8143,6 +8273,8 @@ LinkedList_t *drms_series_links_statements(DRMS_Env_t *env, const char *linkInfo
                 statement.link = strdup(lcLink);
                 statement.temp = NULL; /* no temp tables were created for the child table */
                 statement.linkInfoSQL = 'f';
+                statement.ephemeralTemp = NULL;
+                statement.env = NULL;
             }
 
             db_free_text_result(linkDbResult);
@@ -8168,12 +8300,6 @@ LinkedList_t *drms_series_links_statements(DRMS_Env_t *env, const char *linkInfo
                 recnumMapSQL = NULL;
             }
 
-            if (env->verbose)
-            {
-                fprintf(stdout, "SELECT statement for child series %s:\n", childSeries);
-                fprintf(stdout, "%s\n", statement.statement);
-            }
-
             list_llinserttail(statementList, &statement);
 
             if (subStatementList)
@@ -8191,6 +8317,8 @@ LinkedList_t *drms_series_links_statements(DRMS_Env_t *env, const char *linkInfo
                     subStatement->link = NULL;
                     subStatement->temp = NULL;
                     subStatement->linkInfoSQL = 'f';
+                    subStatement->ephemeralTemp = NULL;
+                    subStatement->env = NULL;
                 }
 
                 list_llfree(&subStatementList);
