@@ -7587,21 +7587,24 @@ LinkedList_t *drms_series_querystring_recordchunk(DRMS_Env_t *env, const char *s
 
             linkInfoColsSQL = drms_series_querystring_linkcols(templ, recnumColSQL);
             free(recnumColSQL);
+            recnumColSQL = NULL;
 
-            statement.type = RECORDSET_SQLSTATEMENT_LANGTYPE_DML;
-            statement.statement = linkInfoColsSQL; /* yoink! this statement results in rows that contain link info for all links */
-            statement.parent = NULL; /* not used for link-info SQL statement */
-            statement.dmlSeries = NULL; /* not used for link-info SQL statement */
-            statement.columns = NULL; /* not used for link-info SQL statement */
-            statement.link = NULL; /* not used for link-info SQL statement */
-            statement.temp = NULL; /* we are not making a temp table to hold the parent chunk;  */
-            statement.linkInfoSQL = 't';
-            statement.ephemeralTemp = NULL;
-            statement.env = NULL;
+            /* this series might in fact have no links; if so then do not create a statement to fetch linked records */
+            if (linkInfoColsSQL != NULL)
+            {
+                statement.type = RECORDSET_SQLSTATEMENT_LANGTYPE_DML;
+                statement.statement = linkInfoColsSQL; /* yoink! this statement results in rows that contain link info for all links */
+                statement.parent = NULL; /* not used for link-info SQL statement */
+                statement.dmlSeries = NULL; /* not used for link-info SQL statement */
+                statement.columns = NULL; /* not used for link-info SQL statement */
+                statement.link = NULL; /* not used for link-info SQL statement */
+                statement.temp = NULL; /* we are not making a temp table to hold the parent chunk;  */
+                statement.linkInfoSQL = 't';
+                statement.ephemeralTemp = NULL;
+                statement.env = NULL;
 
-            statementSelect = NULL;
-
-            list_llinserttail(statementList, &statement);
+                list_llinserttail(statementList, &statement);
+            }
         }
     }
 

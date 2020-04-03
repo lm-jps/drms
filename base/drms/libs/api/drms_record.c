@@ -17,7 +17,7 @@
 
 static void *ghDSDS = NULL;
 static int gAttemptedDSDS = 0;
-static unsigned int gRSChunkSize = 128;
+static unsigned int gRSChunkSize = 4096;
 
 /* Cache the summary-table check */
 static HContainer_t *gSummcon = NULL;
