@@ -2145,7 +2145,7 @@ class Message(object):
                 raise ReceiveMsgException('timeout waiting for response from client')
 
             try:
-                bytes_received = self.sock.recv(min(self.MSGLEN_NUMBYTES - num_bytes_received_total, Worker.MAX_MSG_BUFSIZE))
+                bytes_received = self.sock.recv(min(self.MSGLEN_NUMBYTES - num_bytes_received_total, self.MAX_MSG_BUFSIZE))
                 if bytes_received == b'':
                     raise ReceiveMsgException('socket broken - cannot receive message-length data from client')
                 all_bytes_received += bytes_received
@@ -2166,7 +2166,7 @@ class Message(object):
                 raise ReceiveMsgException('timeout waiting for response from client')
 
             try:
-                bytes_received = self.sock.recv(min(num_bytes_message - num_bytes_received_total, Worker.MAX_MSG_BUFSIZE))
+                bytes_received = self.sock.recv(min(num_bytes_message - num_bytes_received_total, self.MAX_MSG_BUFSIZE))
                 if bytes_received == b'':
                     raise ReceiveMsgException('socket broken - cannot receive message data from client')
                 all_bytes_received += bytes_received
@@ -2376,7 +2376,7 @@ class Worker(threading.Thread):
                 #
                 # the peer that calls close() first is the one whose socket CAN get into the TIMED_WAIT state; we
                 # do not want that to happen to the server
-                bytes_received = self.sock.recv(Worker.MAX_MSG_BUFSIZE)
+                bytes_received = self.sock.recv(Message.MAX_MSG_BUFSIZE)
                 # self.sock can be dead if the client broke the socket - getpeername() will raise; avoid using
                 # it here
                 if bytes_received == b'':
