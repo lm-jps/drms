@@ -110,6 +110,9 @@ q:SLONY_CONFIG                          /home/jsoc/cvs/Development/JSOC/proj/rep
 # lev1.5_hmi
 q:POLCAL_PARAMS                         /home/jsoc/hmi/tables/lev15/polcal-param-fit.bin
 
+# time-distance
+q:JPL_EPHEM_TABLEDIR                    /home/rick/src/ephem/tables
+
 __MAKE__
 # JSOC_SDP third-party libraries used by base
 # The parameters in this section are used to create make variables. For example, the line
