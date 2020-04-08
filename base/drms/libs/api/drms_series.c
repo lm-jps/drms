@@ -6254,9 +6254,11 @@ LinkedList_t *drms_series_querystringC(DRMS_Env_t *env, const char *series, cons
  */
 LinkedList_t *drms_series_querystringD(DRMS_Env_t *env, const char *series, const char *pkwhere, const char *npkwhere, const char *fields, int nrecs, int limit, int cursor, const char *tempTable, int *status)
 {
-    char *query = NULL;
     int istat = DRMS_SUCCESS;
+    char *query = NULL;
+    char *statementTempTable = NULL;
     size_t stsz = 512;
+    size_t sttSz = 512;
     char *lcseries = NULL;
     char *pkeylist = NULL;
     char *pkeylistTB = NULL;
@@ -6264,12 +6266,16 @@ LinkedList_t *drms_series_querystringD(DRMS_Env_t *env, const char *series, cons
     char *shadowPkeylistTB = NULL;
     char *qualpkwhereSeries = NULL;
     char *qualnpkwhereSeries = NULL;
+    char *pkeyTypeList = NULL;
     char limitstr[32] = {0};
     char tabname[256];
+    char ephemeralTempSeries[256];
+    char ephemeralTempShadow[256];
     char shadow[DRMS_MAXSERIESNAMELEN];
     DRMS_RecordSet_Sql_Statement_t statement;
     LinkedList_t *statementList = NULL;
     char *tempTableDupe = NULL;
+    int useTempTables = 0;
 
 
     memset(&statement, 0, sizeof(DRMS_RecordSet_Sql_Statement_t));
@@ -6278,12 +6284,10 @@ LinkedList_t *drms_series_querystringD(DRMS_Env_t *env, const char *series, cons
     if (lcseries)
     {
         strtolower(lcseries);
-        query = malloc(stsz);
+        query = calloc(1, stsz);
 
         if (query)
         {
-            *query = '\0';
-
             snprintf(shadow, sizeof(shadow), "%s%s", lcseries, kShadowSuffix);
 
             if (!cursor && (nrecs == 0 || abs(nrecs) > limit))
@@ -6333,10 +6337,132 @@ LinkedList_t *drms_series_querystringD(DRMS_Env_t *env, const char *series, cons
 
             if (istat == DRMS_SUCCESS)
             {
+                pkeyTypeList = drms_series_createPkeyColList(env, series, NULL, NULL, NULL, NULL, &istat);
+            }
+
+            if (istat == DRMS_SUCCESS)
+            {
+                if (pkwhere && *pkwhere)
+                {
+                    /* if there is a pkwhere clause, then we cannot use a CTE table (too slow) */
+                    useTempTables = 1;
+
+                    /* create temp tables to hold the records filtered by npkwhere and pkwhere clauses */
+                    if (npkwhere && *npkwhere)
+                    {
+                        /* because qualnpkwhereSeries might contain a prime-key column, we need to do things a
+                         * little differently; we need to filter out the series table first */
+                        if (GetTempTable(ephemeralTempSeries, sizeof(ephemeralTempSeries)))
+                        {
+                            istat = DRMS_ERROR_OVERFLOW;
+                        }
+                        else
+                        {
+                            statementTempTable = calloc(1, sttSz);
+
+                            statementTempTable = base_strcatalloc(statementTempTable, "CREATE TEMPORARY TABLE ", &sttSz);
+                            statementTempTable = base_strcatalloc(statementTempTable, ephemeralTempSeries, &sttSz);
+                            statementTempTable = base_strcatalloc(statementTempTable, "(recnum bigint PRIMARY KEY);\n", &sttSz);
+
+                            statementTempTable = base_strcatalloc(statementTempTable, "INSERT INTO ", &sttSz);
+                            statementTempTable = base_strcatalloc(statementTempTable, ephemeralTempSeries, &sttSz);
+                            statementTempTable = base_strcatalloc(statementTempTable, "\n  SELECT recnum FROM ", &sttSz);
+                            statementTempTable = base_strcatalloc(statementTempTable, lcseries, &sttSz);
+                            statementTempTable = base_strcatalloc(statementTempTable, "\n  WHERE ", &sttSz);
+                            statementTempTable = base_strcatalloc(statementTempTable, npkwhere, &sttSz);
+                            statementTempTable = base_strcatalloc(statementTempTable, "\n", &sttSz);
+
+                            statement.type = RECORDSET_SQLSTATEMENT_LANGTYPE_DDL;
+                            statement.statement = statementTempTable; /* yoink! */
+                            statement.parent = NULL;
+                            statement.dmlSeries = NULL;
+                            statement.columns = NULL;
+                            statement.link = NULL;
+                            statement.temp = NULL;
+                            statement.ephemeralTemp = strdup(ephemeralTempSeries); /* this temp table can be freed when the statement list in which it is contained is freed */
+                            statement.env = env;
+
+                            statementTempTable = NULL;
+
+                            if (!statementList)
+                            {
+                                statementList = list_llcreate(sizeof(DRMS_RecordSet_Sql_Statement_t), (ListFreeFn_t)FreeSqlStatement);
+                            }
+
+                            list_llinserttail(statementList, &statement);
+                        }
+                    }
+
+                    /* we always SELECT from the shadow table since that is the means by which non-obsolete
+                     * records are retrieved */
+                    if (GetTempTable(ephemeralTempShadow, sizeof(ephemeralTempShadow)))
+                    {
+                        istat = DRMS_ERROR_OVERFLOW;
+                    }
+                    else
+                    {
+                        sttSz = 512;
+                        statementTempTable = calloc(1, sttSz);
+
+                        statementTempTable = base_strcatalloc(statementTempTable, "CREATE TEMPORARY TABLE ", &sttSz);
+                        statementTempTable = base_strcatalloc(statementTempTable, ephemeralTempShadow, &sttSz);
+                        statementTempTable = base_strcatalloc(statementTempTable, "(recnum bigint PRIMARY KEY, ", &sttSz);
+                        statementTempTable = base_strcatalloc(statementTempTable, pkeyTypeList, &sttSz);
+                        statementTempTable = base_strcatalloc(statementTempTable, ");\n", &sttSz);
+
+                        statementTempTable = base_strcatalloc(statementTempTable, "CREATE INDEX ", &sttSz);
+                        statementTempTable = base_strcatalloc(statementTempTable, ephemeralTempShadow, &sttSz);
+                        statementTempTable = base_strcatalloc(statementTempTable, "_prime_idx ON ", &sttSz);
+                        statementTempTable = base_strcatalloc(statementTempTable, ephemeralTempShadow, &sttSz);
+                        statementTempTable = base_strcatalloc(statementTempTable, "(", &sttSz);
+                        statementTempTable = base_strcatalloc(statementTempTable, pkeylist, &sttSz);
+                        statementTempTable = base_strcatalloc(statementTempTable, ");\n", &sttSz);
+
+                        statementTempTable = base_strcatalloc(statementTempTable, "INSERT INTO ", &sttSz);
+                        statementTempTable = base_strcatalloc(statementTempTable, ephemeralTempShadow, &sttSz);
+                        statementTempTable = base_strcatalloc(statementTempTable, "\n  SELECT recnum, ", &sttSz);
+                        statementTempTable = base_strcatalloc(statementTempTable, pkeylist, &sttSz);
+                        statementTempTable = base_strcatalloc(statementTempTable, " FROM ", &sttSz);
+                        statementTempTable = base_strcatalloc(statementTempTable, shadow, &sttSz);
+
+                        if (pkwhere && *pkwhere)
+                        {
+                            statementTempTable = base_strcatalloc(statementTempTable, "\n  WHERE ", &sttSz);
+                            statementTempTable = base_strcatalloc(statementTempTable, pkwhere, &sttSz);
+                        }
+
+                        query = base_strcatalloc(query, "\n", &stsz);
+
+                        statement.type = RECORDSET_SQLSTATEMENT_LANGTYPE_DDL;
+                        statement.statement = statementTempTable; /* yoink! */
+                        statement.parent = NULL;
+                        statement.dmlSeries = NULL;
+                        statement.columns = NULL;
+                        statement.link = NULL;
+                        statement.temp = NULL;
+                        statement.ephemeralTemp = strdup(ephemeralTempShadow); /* this temp table can be freed when the statement list in which it is contained is freed */
+                        statement.env = env;
+
+                        statementTempTable = NULL;
+
+                        if (!statementList)
+                        {
+                            statementList = list_llcreate(sizeof(DRMS_RecordSet_Sql_Statement_t), (ListFreeFn_t)FreeSqlStatement);
+                        }
+
+                        list_llinserttail(statementList, &statement);
+                    }
+                }
+                else
+                {
+                    /* if there is no pkwhere clause, then we cannot use temporary tables (too slow) */
+                    useTempTables = 0;
+                }
+
                 if ((tempTable && *tempTable != '\0'))
                 {
                     /* the output of this query will be used later to resolve record links, so save it in
-                     * a temp table
+                     * a temp table (this temp table should not be freed until we have completely traversed all series rows)
                      */
                     query = base_strcatalloc(query, "CREATE TEMPORARY TABLE ", &stsz);
                     query = base_strcatalloc(query, tempTable, &stsz);
@@ -6363,48 +6489,109 @@ LinkedList_t *drms_series_querystringD(DRMS_Env_t *env, const char *series, cons
                     query = base_strcatalloc(query, "\n", &stsz);
                 }
 
-                /* the WITH clause is the same, regardless of temp table presence or value or nrecs */
-                query = base_strcatalloc(query, "WITH FILTERED_RECNUMS AS\n", &stsz);
-                query = base_strcatalloc(query, "(\n", &stsz);
-                query = base_strcatalloc(query, "  SELECT ", &stsz);
-
-                if (cursor)
+                if (useTempTables)
                 {
-                    query = base_strcatalloc(query, "row_number() OVER (ORDER BY ", &stsz);
-                    query = base_strcatalloc(query, shadowPkeylist , &stsz);
-                    query = base_strcatalloc(query, ") AS row, ", &stsz);
+                    /* the WITH clause is the same, regardless of temp table presence or value or nrecs */
+                    query = base_strcatalloc(query, "WITH FILTERED_RECNUMS AS\n", &stsz);
+                    query = base_strcatalloc(query, "(\n", &stsz);
+                    query = base_strcatalloc(query, "  SELECT ", &stsz);
+
+                    if (cursor)
+                    {
+                        query = base_strcatalloc(query, "row_number() OVER (ORDER BY ", &stsz);
+                        query = base_strcatalloc(query, shadowPkeylist, &stsz);
+                        query = base_strcatalloc(query, ") AS row, ", &stsz);
+                    }
+
+                    query = base_strcatalloc(query, "recnum FROM ", &stsz);
+                    query = base_strcatalloc(query, ephemeralTempShadow, &stsz);
+                    query = base_strcatalloc(query, " AS SHADOW\n", &stsz);
+
+                    if (npkwhere && *npkwhere)
+                    {
+                        query = base_strcatalloc(query, "  JOIN ", &stsz);
+                        query = base_strcatalloc(query, ephemeralTempSeries, &stsz);
+                        query = base_strcatalloc(query, "\n  USING(recnum)\n", &stsz);
+                    }
+
+                    if (*limitstr != '\0')
+                    {
+                        query = base_strcatalloc(query, "  ORDER BY ", &stsz);
+                        query = base_strcatalloc(query, nrecs == 0 ? shadowPkeylist : shadowPkeylistTB, &stsz);
+                        query = base_strcatalloc(query, "\n  LIMIT ", &stsz);
+                        query = base_strcatalloc(query, limitstr, &stsz);
+                    }
+
+                    query = base_strcatalloc(query, ")\n", &stsz); /* end FILTERED_RECNUMS */
                 }
-
-                query = base_strcatalloc(query, "recnum FROM ", &stsz);
-                query = base_strcatalloc(query, shadow, &stsz);
-                query = base_strcatalloc(query, " AS SHADOW\n  JOIN ", &stsz);
-                query = base_strcatalloc(query, lcseries, &stsz);
-                query = base_strcatalloc(query, " AS SERIES USING(recnum)\n  WHERE ", &stsz);
-
-                if (qualnpkwhereSeries && *qualnpkwhereSeries)
+                else
                 {
-                    query = base_strcatalloc(query, qualnpkwhereSeries, &stsz);
-                }
+                    /* no temp tables */
+                    if (npkwhere && *npkwhere)
+                    {
+                        query = base_strcatalloc(query, "WITH SERIES_FILTERED_RECNUMS AS\n", &stsz);
+                        query = base_strcatalloc(query, "(\n", &stsz);
+                        query = base_strcatalloc(query, "  SELECT recnum FROM ", &stsz);
+                        query = base_strcatalloc(query, lcseries, &stsz);
+                        query = base_strcatalloc(query, "\n  WHERE ", &stsz);
+                        query = base_strcatalloc(query, npkwhere, &stsz);
+                        query = base_strcatalloc(query, "\n),\n", &stsz);
 
-                if (qualnpkwhereSeries && *qualnpkwhereSeries && qualpkwhereSeries && *qualpkwhereSeries)
-                {
-                    query = base_strcatalloc(query, " AND ", &stsz);
-                }
+                        query = base_strcatalloc(query, "FILTERED_RECNUMS AS\n", &stsz);
+                        query = base_strcatalloc(query, "(\n", &stsz);
+                        query = base_strcatalloc(query, "  SELECT ", &stsz);
 
-                if (qualpkwhereSeries && *qualpkwhereSeries)
-                {
-                    query = base_strcatalloc(query, qualpkwhereSeries, &stsz);
-                }
+                        if (cursor)
+                        {
+                            query = base_strcatalloc(query, "row_number() OVER (ORDER BY ", &stsz);
+                            query = base_strcatalloc(query, shadowPkeylist, &stsz);
+                            query = base_strcatalloc(query, ") AS row, ", &stsz);
+                        }
 
-                if (*limitstr != '\0')
-                {
-                    query = base_strcatalloc(query, "\n  ORDER BY ", &stsz);
-                    query = base_strcatalloc(query, nrecs == 0 ? shadowPkeylist : shadowPkeylistTB, &stsz);
-                    query = base_strcatalloc(query, "\n  LIMIT ", &stsz);
-                    query = base_strcatalloc(query, limitstr, &stsz);
-                }
+                        query = base_strcatalloc(query, "recnum FROM ", &stsz);
+                        query = base_strcatalloc(query, shadow, &stsz);
+                        query = base_strcatalloc(query, " AS SHADOW\n", &stsz);
+                        query = base_strcatalloc(query, "  JOIN SERIES_FILTERED_RECNUMS\n", &stsz);
+                        query = base_strcatalloc(query, "  USING(recnum)\n", &stsz);
 
-                query = base_strcatalloc(query, ")\n", &stsz);
+                        if (*limitstr != '\0')
+                        {
+                            query = base_strcatalloc(query, "  ORDER BY ", &stsz);
+                            query = base_strcatalloc(query, nrecs == 0 ? shadowPkeylist : shadowPkeylistTB, &stsz);
+                            query = base_strcatalloc(query, "\n  LIMIT ", &stsz);
+                            query = base_strcatalloc(query, limitstr, &stsz);
+                        }
+
+                        query = base_strcatalloc(query, ")\n", &stsz); /* end FILTERED_RECNUMS */
+                    }
+                    else
+                    {
+                        query = base_strcatalloc(query, "WITH FILTERED_RECNUMS AS\n", &stsz);
+                        query = base_strcatalloc(query, "(\n", &stsz);
+                        query = base_strcatalloc(query, "  SELECT ", &stsz);
+
+                        if (cursor)
+                        {
+                            query = base_strcatalloc(query, "row_number() OVER (ORDER BY ", &stsz);
+                            query = base_strcatalloc(query, shadowPkeylist, &stsz);
+                            query = base_strcatalloc(query, ") AS row, ", &stsz);
+                        }
+
+                        query = base_strcatalloc(query, "recnum FROM ", &stsz);
+                        query = base_strcatalloc(query, shadow, &stsz);
+                        query = base_strcatalloc(query, "\n", &stsz);
+
+                        if (*limitstr != '\0')
+                        {
+                            query = base_strcatalloc(query, "  ORDER BY ", &stsz);
+                            query = base_strcatalloc(query, nrecs == 0 ? shadowPkeylist : shadowPkeylistTB, &stsz);
+                            query = base_strcatalloc(query, "\n  LIMIT ", &stsz);
+                            query = base_strcatalloc(query, limitstr, &stsz);
+                        }
+
+                        query = base_strcatalloc(query, ")\n", &stsz); /* end FILTERED_RECNUMS */
+                    }
+                }
 
                 query = base_strcatalloc(query, "SELECT ", &stsz);
 
@@ -6416,7 +6603,7 @@ LinkedList_t *drms_series_querystringD(DRMS_Env_t *env, const char *series, cons
                 {
                     if (cursor)
                     {
-                        query = base_strcatalloc(query, " row,", &stsz);
+                        query = base_strcatalloc(query, "row, ", &stsz);
                     }
 
                     query = base_strcatalloc(query, "recnum", &stsz);
@@ -6457,6 +6644,8 @@ LinkedList_t *drms_series_querystringD(DRMS_Env_t *env, const char *series, cons
                     list_llinserttail(statement.temp, &tempTableDupe);
 
                     statement.linkInfoSQL = 'f';
+                    statement.ephemeralTemp = NULL;
+                    statement.env = NULL;
 
                     if (!statementList)
                     {
