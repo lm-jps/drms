@@ -158,39 +158,6 @@ static char *columnList(DRMS_Record_t *rec, HContainer_t *links, HContainer_t *k
 
 static size_t partialRecordMemsize(DRMS_Record_t *rec, HContainer_t *links, HContainer_t *keys, HContainer_t *segs);
 
-static int Silent_drms_dms(DRMS_Session_t *session, int *row_count, const char *query)
-{
-    int saved_stderr = -1;
-    int devnull = -1;
-    int rv = 0;
-
-    devnull = open("/dev/null", O_WRONLY);
-
-    if (devnull)
-    {
-        saved_stderr = dup(STDERR_FILENO);
-
-        if (saved_stderr != -1)
-        {
-            /* redirect stderr to devnull; this could fail, but then this function is a noop, and we don't really care */
-            if (dup2(devnull, STDERR_FILENO) != -1)
-            {
-                rv = drms_dms(session, row_count, query);
-                fflush(stderr);
-            }
-            else
-            {
-                fprintf(stderr, "[ Silent_drms_dms() ] unable to call drms_dms()\n");
-            }
-
-            /* restore stderr */
-            dup2(saved_stderr, STDERR_FILENO);
-        }
-    }
-
-    return rv;
-}
-
 /* A valid local spec is:
  *   ( <file> | <directory> ) { '[' <keyword1>, <keyword2>, <...> ']' }
  *
@@ -1733,6 +1700,7 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const c
     char *linkInfoColsSQL = NULL;
     char recnumColSQL[256];
 
+
     CHECKNULL_STAT(env, status);
 
     if ((template = drms_template_record(env, seriesname, status)) == NULL)
@@ -2047,11 +2015,11 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const c
                 if (env->verbose)
                 {
                     fprintf(stdout, "[ drms_retrieve_records_internal() ] running DDL query: %s\n", query);
-                    TIME(err = Silent_drms_dms(env->session, NULL, query));
+                    TIME(err = drms_dms(env->session, NULL, query));
                 }
                 else
                 {
-                    err = Silent_drms_dms(env->session, NULL, query);
+                    err = drms_dms(env->session, NULL, query);
                 }
 
                 if (err)
@@ -2882,12 +2850,12 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *record
                                 if (env->verbose)
                                 {
                                     fprintf(stdout, "[ drms_open_records_internal() ] running DDL query: %s\n", statement->statement);
-                                    TIME(qstat = Silent_drms_dms(env->session, NULL, statement->statement));
+                                    TIME(qstat = drms_dms(env->session, NULL, statement->statement));
                                 }
                                 else
                                 {
                                     /* create the cursor's temporary parent table; this hold all records for all chunks */
-                                    qstat = Silent_drms_dms(env->session, NULL, statement->statement);
+                                    qstat = drms_dms(env->session, NULL, statement->statement);
                                 }
 
                                 if (qstat)
