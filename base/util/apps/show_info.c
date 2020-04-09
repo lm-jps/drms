@@ -2178,8 +2178,6 @@ int DoIt(void)
   const char *in;
     char **keysArrIn = NULL;
     char **segsArrIn = NULL;
-    char xferKeyName[DRMS_MAXKEYNAMELEN] = {0};
-    char xferSegName[DRMS_MAXSEGNAMELEN] = {0};
     int lenKeysArrIn = -1;
     int lenSegsArrIn = -1;
     LinkedList_t *validKeysSpecified = NULL; /* to pass to drms_open_records() to populate a subset of all keyword structs */
@@ -3202,12 +3200,10 @@ int DoIt(void)
                                     hash_init(&keysHT, 89, 0, (int (*)(const void *, const void *))strcmp, hash_universal_hash);
                                 }
 
-                                snprintf(xferKeyName, sizeof(xferKeyName), "%s", keysArrIn[iKey]);
-
-                                if (!hash_member(&keysHT, xferKeyName))
+                                if (!hash_member(&keysHT, keysArrIn[iKey]))
                                 {
-                                    list_llinserttail(keysSpecified, xferKeyName);
-                                    hash_insert(&keysHT, xferKeyName, "T");
+                                    list_llinserttail(keysSpecified, keysArrIn[iKey]);
+                                    hash_insert(&keysHT, keysArrIn[iKey], "T");
                                 }
 
                                 if (validKey)
@@ -3336,13 +3332,11 @@ int DoIt(void)
                                     hash_init(&segsHT, 13, 0, (int (*)(const void *, const void *))strcmp, hash_universal_hash);
                                 }
 
-                                snprintf(xferSegName, sizeof(xferSegName), "%s", segsArrIn[iSeg]);
-
                                 /* work with ALL keys specified on command line */
-                                if (!hash_member(&segsHT, xferSegName))
+                                if (!hash_member(&segsHT, segsArrIn[iSeg]))
                                 {
-                                    list_llinserttail(segsSpecified, xferSegName);
-                                    hash_insert(&segsHT, xferSegName, "T");
+                                    list_llinserttail(segsSpecified, segsArrIn[iSeg]);
+                                    hash_insert(&segsHT, segsArrIn[iSeg], "T");
                                 }
                             }
 

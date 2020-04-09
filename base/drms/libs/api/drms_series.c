@@ -7016,7 +7016,7 @@ LinkedList_t *drms_series_querystringFL(DRMS_Env_t *env, const char *series, con
 
                 if (!countingStatement && (!tempTable || *tempTable == '\0') && nrecs != 0)
                 {
-                    query = base_strcatalloc(query, "\n)\n", &stsz);
+                    query = base_strcatalloc(query, "\n) AS FILTERED_SERIES\n", &stsz);
                     query = base_strcatalloc(query, "ORDER BY ", &stsz);
                     query = base_strcatalloc(query, pkeylist, &stsz);
                 }
