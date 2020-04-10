@@ -1599,7 +1599,7 @@ static int GenProgArgs(ProcStepInfo_t *pinfo,
                     }
 
                     /* Look for intname first in args, then in gIntVars, then in gShVars. */
-                    if ((pval = (const char **)hcon_lookup(args, intname)) != NULL ||
+                    if (args && (pval = (const char **)hcon_lookup(args, intname)) != NULL ||
                         (pval = (const char **)hcon_lookup(gIntVars, intname)) != NULL ||
                         (pval = (const char **)hcon_lookup(gShVars, intname)) != NULL
                         )
@@ -2588,7 +2588,7 @@ static LinkedList_t *ParseFields(DRMS_Env_t *env, /* dbhost of jsoc.export_new. 
                      * associated with these steps. Start collecting chars in the input val as
                      * potential argument chars. */
                     data.name = strdup(onecmd);
-                    args = pc + 1;
+
                     if (bar)
                     {
                         /* Done with this proc-step. There may or may not be proc-steps that follow. */
@@ -2596,6 +2596,7 @@ static LinkedList_t *ParseFields(DRMS_Env_t *env, /* dbhost of jsoc.export_new. 
                     }
                     else
                     {
+                        args = pc + 1;
                         gettingargs = 1;
                     }
                 }
@@ -2644,19 +2645,23 @@ static LinkedList_t *ParseFields(DRMS_Env_t *env, /* dbhost of jsoc.export_new. 
                 /* If there is no program path for this processing step, then it is not
                  * possible for this processing step to modify the series' data, and there
                  * will not be the need for any program cmd-line in the drms run script. */
-                if (!varsargs)
+                if (args)
                 {
-                    if (InitVarConts(args, &varsargs))
+                    /* the processing step could have no args */
+                    if (!varsargs)
+                    {
+                        if (InitVarConts(args, &varsargs))
+                        {
+                            state = kPPStError;
+                            continue;
+                        }
+                    }
+
+                    if (!varsargs)
                     {
                         state = kPPStError;
                         continue;
                     }
-                }
-
-                if (!varsargs)
-                {
-                    state = kPPStError;
-                    continue;
                 }
 
                 data.parent = parentData;
@@ -2678,7 +2683,7 @@ static LinkedList_t *ParseFields(DRMS_Env_t *env, /* dbhost of jsoc.export_new. 
                     continue;
                 }
 
-                /* Done with varsargs, free it. */
+                /* done with varsargs, free it (a noop if varsargs is NULL) */
                 DestroyVarConts(&varsargs);
 
                 data.path = strdup(cpinfo->path);
