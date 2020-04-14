@@ -1476,6 +1476,12 @@ static int CheckUserLoad(DRMS_Env_t *env, const char *address, const char *ipAdd
     return rv;
 }
 
+static int IsNearlineSeries(const char *series)
+{
+    return (strncmp(series, "iris.lev1", 9) == 0);
+}
+
+
 /* Module main function. */
 int DoIt(void)
 {
@@ -2837,6 +2843,7 @@ check for requestor to be valid remote DRMS site
     int segcount = 0;
     int irec;
     int all_online = 1;
+    int all_nearline = 0;
     char dsquery[DRMS_MAXQUERYLEN];
     char *p;
     char *file, *filename;
@@ -2853,6 +2860,7 @@ check for requestor to be valid remote DRMS site
     CmdParams_Arg_t *cmdParamArg = NULL;
     char cmdParamArgBuf[512] = {0};
     char pendingRequestID[32] = {0};
+    char series_lower[DRMS_MAXSERIESNAMELEN];
 
     if (internal)
     {
@@ -3403,6 +3411,8 @@ check for requestor to be valid remote DRMS site
 // when stage_records follows links, this will be quicker...
 // then only check each seg if needed.
     all_online = 1;
+    all_nearline = 1;
+
     compressedStorage = -1;
     for (irec=0; irec < rcount; irec++)
       {
@@ -3417,9 +3427,25 @@ check for requestor to be valid remote DRMS site
 
       DRMS_Segment_t *seg;
       HIterator_t *segp = NULL;
+
+
+      if (*rec->seriesinfo->seriesname != '\0')
+      {
+          snprintf(series_lower, sizeof(series_lower), "%s", rec->seriesinfo->seriesname);
+          strtolower(series_lower);
+      }
+
       // Disallow exporting jsoc.export* series
       if (strncmp(rec->seriesinfo->seriesname, "jsoc.export", 11)== 0)
-        JSONDIE("Export of jsoc_export series not allowed.");
+      {
+          JSONDIE("Export of jsoc_export series not allowed.");
+      }
+      // ART - hack: force all_nearline true if the series is iris.lev1 for all records; eventually
+      // we will need to talk to SUMS to figure out if
+      else if (!series_lower || !IsNearlineSeries(series_lower))
+      {
+          all_nearline = 0;
+      }
 
           DRMS_Record_t *tRec = NULL;
           DRMS_Record_t *segrec = NULL;
@@ -3489,6 +3515,7 @@ check for requestor to be valid remote DRMS site
           {
               /* There was a request for an sunum of -1. */
               all_online = 0;
+              all_nearline = 0;
 
               /* There is no SU. Break out of segment loop. */
               break;
@@ -3499,6 +3526,7 @@ check for requestor to be valid remote DRMS site
               fprintf(stderr, "JSOC_FETCH Bad sunum %lld for recnum %s:%lld in RecordSet: %s\n", segrec->sunum, segrec->seriesinfo->seriesname, segrec->recnum, dsquery);
               // no longer die here, leave it to the export process to deal with missing segments
               all_online = 0;
+              all_nearline = 0;
               /* Bad SUNUM. Break out of segment loop. */
               break;
           }
@@ -3508,7 +3536,7 @@ check for requestor to be valid remote DRMS site
                * do since we cannot bring the SU online in jsoc_fetch (it is a CGI program that needs to return quickly) and SUMS does
                * not store file-size info within the SU. We should break out of the segment loop here anyway - there is no SU. */
               all_online = 0;
-
+              // all_nearline = ?; we need a new SUMS table to provide this informaton
               /* Use sinfo to get SU size info. Must cast double to 64-bit integer - SUMS design problem. */
               size += (long long)sinfo->bytes;
               if ((long long)sinfo->bytes > 0)
@@ -3763,7 +3791,7 @@ check for requestor to be valid remote DRMS site
      // Check for offline data, if only_online flag is set then return an error
      // to the user.
 
-    if (requireOnline &&  !all_online)
+    if (requireOnline && !all_online && !all_nearline)
       {
       JSONDIE2("Some requested records are offline, try again later: ", dsquery);
       }
