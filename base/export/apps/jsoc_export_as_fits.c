@@ -370,15 +370,10 @@ static unsigned long long MapexportRecordToDir(DRMS_Record_t *recin,
       }
 
       /* Must pass source segment if the segment is a linked segment. */
-       // snprintf(buf, sizeof(buf), "Calling fitsexport_mapexport_tofile() from MapexportRecordToDir() on file %s", fullfname);
-       //       JEAFPrintLocalTime(stdout, buf);
-      drmsstat = fitsexport_mapexport_tofile(segin, 
-                                             !lastcparms ? cparms[iseg] : NULL, 
-                                             classname, 
-                                             mapfile, 
-                                             fullfname, 
-                                             &actualfname,
-                                             &expsize);
+      /* if we end up not having to perform an export, because the file to be exported has an up-to-date header, then
+       * actualfname will be a link to the original up-to-date internal FITS file
+       */
+      drmsstat = fitsexport_mapexport_tofile(segin, !lastcparms ? cparms[iseg] : NULL, classname, mapfile, fullfname, &actualfname, &expsize);
       //       JEAFPrintLocalTime(stdout, "Done calling fitsexport_mapexport_tofile() from MapexportRecordToDir().");
       if (drmsstat == DRMS_ERROR_INVALIDFILE)
       {
