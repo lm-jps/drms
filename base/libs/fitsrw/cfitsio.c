@@ -246,108 +246,269 @@ static void Cf_drop_data_and_close_fits_file(fitsfile *fitsPtr)
     }
 }
 
+static void Cf_close_file(fitsfile **fptr, int drop_content)
+{
+    CFITSIO_IMAGE_INFO fpinfo;
+    int cfiostat = 0;
+    char cfiostat_msg[FLEN_STATUS];
+
+
+    if (fptr && *fptr)
+    {
+        /* if fitsfile is cached, remove from cache and close file; cannot currently drop data if the file is cached */
+        if (!fitsrw_getfpinfo_ext(*fptr, &fpinfo))
+        {
+            fitsrw_closefptr(0, *fptr);
+        }
+        else
+        {
+            if (drop_content)
+            {
+                Cf_drop_data_and_close_fits_file(*fptr);
+            }
+            else
+            {
+                fits_close_file(*fptr, &cfiostat);
+
+                if (cfiostat)
+                {
+                    fits_get_errstatus(cfiostat, cfiostat_msg);
+                    fprintf(stderr, "[ Cf_close_file() ] %s\n", cfiostat_msg);
+                }
+            }
+        }
+
+        *fptr = NULL;
+    }
+}
+
+static int Cf_write_key(fitsfile *fptr, CFITSIO_KEYWORD *key)
+{
+    int cfiostat = 0;
+    char comment[FLEN_COMMENT];
+    char cfiostat_msg[FLEN_STATUS];
+    int err = CFITSIO_SUCCESS;
+
+
+    /* the keyword comment has this format:
+     *   [<unit>] commentary {<corresponding DRMS keyword name>}
+    */
+    if (key->is_missing)
+    {
+        if (*key->key_comment != '\0')
+        {
+            snprintf(comment, sizeof(comment), "(MISSING) %s", key->key_comment);
+        }
+        else
+        {
+            snprintf(comment, sizeof(comment), "(MISSING)");
+        }
+
+        fits_write_key_null(fptr, key->key_name, comment, &cfiostat);
+    }
+    else
+    {
+        if (key->key_type == CFITSIO_KEYWORD_DATATYPE_STRING)
+        {
+            /* any string could be a long string (> 68 chars) so use fits_read_key_longstr() */
+            if (strcmp(key->key_name, CFITSIO_KEYWORD_HISTORY) == 0)
+            {
+                fits_write_history(fptr, key->key_value.vs, &cfiostat);
+            }
+            else if (strcmp(key->key_name, CFITSIO_KEYWORD_COMMENT) == 0)
+            {
+                fits_write_comment(fptr, key->key_value.vs, &cfiostat);
+            }
+            else if (strcmp(key->key_name, CFITSIO_KEYWORD_CONTINUE) == 0)
+            {
+                /* error - fits_write_key_longstr() will be used to generate CONTINUE keywords */
+            }
+            else
+            {
+                fits_write_key_longstr(fptr, key->key_name, key->key_value.vs, key->key_comment ? key->key_comment : NULL, &cfiostat);
+            }
+        }
+        else if (key->key_type == CFITSIO_KEYWORD_DATATYPE_LOGICAL)
+        {
+            fits_write_key_log(fptr, key->key_name, key->key_value.vl, key->key_comment ? key->key_comment : NULL, &cfiostat);
+        }
+        else if (key->key_type == CFITSIO_KEYWORD_DATATYPE_INTEGER)
+        {
+            fits_write_key_lng(fptr, key->key_name, key->key_value.vi, key->key_comment ? key->key_comment : NULL, &cfiostat);
+        }
+        else if (key->key_type == CFITSIO_KEYWORD_DATATYPE_FLOAT)
+        {
+            /* prints 15 decimal places, if needed */
+            // fits_write_key(fptr, TDOUBLE, key->key_name, &key->key_value.vf, key->key_comment ? key->key_comment : NULL, &cfiostat);
+
+            /* a NaN value implies a missing value; write a keyword with no value (null) */
+
+
+
+            /* prints 17 decimal places, if needed */
+            fits_write_key_dbl(fptr, key->key_name, key->key_value.vf, -17, key->key_comment ? key->key_comment : NULL, &cfiostat);
+        }
+        else
+        {
+            err = CFITSIO_ERROR_INVALID_DATA_TYPE;
+        }
+    }
+
+    if (cfiostat)
+    {
+        fits_get_errstatus(cfiostat, cfiostat_msg);
+        fprintf(stderr, "[ Cf_write_key() ] error writing key %s: %s\n",  key->key_name, cfiostat_msg);
+        err = CFITSIO_ERROR_LIBRARY;
+    }
+
+    if (!err)
+    {
+        if (key->key_unit)
+        {
+            fits_write_key_unit(fptr, key->key_name, key->key_unit, &cfiostat);
+
+            if (cfiostat)
+            {
+                fits_get_errstatus(cfiostat, cfiostat_msg);
+                fprintf(stderr, "[ Cf_write_key() ] error writing key %s: %s\n",  key->key_name, cfiostat_msg);
+            }
+        }
+    }
+
+    return err;
+}
 
 /* RE-DO all of this to use FITSIO keyword-writing functions
  *
- * fptr is the FITS file (on disk or in memory) keys are being written to (can be NULL)
- * header is the buffer that the FITSIO header is being written to (if fptr is NULL)
- * keylist is the linked-list of CFITSIO_KEYWORD structs containing the keyword names/values
- * fits_header is alternate way of providing keywords to write to fptr */
-static int CfWriteKeys(fitsfile *fptr, char **header, CFITSIO_KEYWORD *keylist, fitsfile *fits_header)
+ * `fptr_out` is the FITS file (on disk or in memory) keys are being written to (can be NULL)
+ * `header` is the buffer that the FITSIO header is being written to (if fptr is NULL)
+ * `key_list` is the linked-list of CFITSIO_KEYWORD structs containing the keyword names/values
+ * `fits_header` is alternate way of providing keywords to write to fptr */
+static int CfWriteKeys(fitsfile *fptr_out, char **header, CFITSIO_KEYWORD *key_list, fitsfile *fits_header)
 {
+    fitsfile *temp_file = NULL;
+    fitsfile *fptr = NULL;
+    int key_class = -1;
     char card[FLEN_CARD];
     char *pCard = NULL;
     LinkedList_t *cards = NULL;
     ListNode_t *node = NULL;
-    CFITSIO_KEYWORD* kptr = NULL;
-    size_t headerSize = 2880;
+    CFITSIO_KEYWORD* key_node = NULL;
+    size_t header_sz = 2880;
+    int num_keys = 0;
+    int key_num = 0;
     int err = CFITSIO_SUCCESS;
     int cfiostat = CFITSIO_SUCCESS;
-    char cfiostatErrmsg[FLEN_STATUS];
+    char cfiostat_msg[FLEN_STATUS];
 
     /* since we are going to calculate a checksum of the entire header, create an in-memory
      * FITS file and write the header to that file, then generate the checksum on that
      * in-memory file; then copy the header from the in-memory FITS file to the
      * FITS file destined for disk (fptr); then close the in-memory FITS file, first
      * dropping all content so that it does not get flushed to stdout */
-    if (keylist)
+
+    if (!fptr_out)
     {
-        kptr = keylist;
+        XASSERT(header);
 
-        while (kptr)
+        if (fits_create_file(&temp_file, "-", &cfiostat))
         {
-            pCard = NULL;
-            *card = '\0';
-            cards = NULL;
-
-            if (cfitsio_key_to_card(kptr, card, &cards) != CFITSIO_SUCCESS)
-            {
-                fprintf(stderr, "unable to created FITSIO card from FITS keyword\n");
-                err = CFITSIO_ERROR_ARGS;
-                break;
-            }
-
-            if (*card != '\0')
-            {
-                pCard = card;
-            }
-
-            while ((cards && (node = list_llnext(cards)) != NULL) || pCard != NULL)
-            {
-                if (pCard == NULL)
-                {
-                    pCard = (char *)node;
-                }
-
-                if (fits_get_keyclass(pCard) > TYP_CMPRS_KEY)
-                {
-                    if (fptr)
-                    {
-                        if(fits_write_record(fptr, pCard, &cfiostat))
-                        {
-                            fits_get_errstatus(cfiostat, cfiostatErrmsg);
-                            fprintf(stderr, "CFITSIO error '%s'\n", cfiostatErrmsg);
-                            err = CFITSIO_ERROR_LIBRARY;
-                            break;
-                        }
-                    }
-                    else
-                    {
-                        /* if we are not writing to a fitsfile, then write to a buffer (header) */
-                        XASSERT(header);
-
-                        *header = calloc(1, headerSize);
-                        if (!*header)
-                        {
-                            err = CFITSIO_ERROR_OUT_OF_MEMORY;
-                            break;
-                        }
-
-                        *header = base_strcatalloc(*header, pCard, &headerSize);
-                    }
-                }
-
-                pCard = NULL;
-            }
-
-            if (cards)
-            {
-                list_llfree(&cards);
-            }
-
-            if (err)
-            {
-                break;
-            }
-
-            if (cfiostat != CFITSIO_SUCCESS)
-            {
-                err = CFITSIO_ERROR_LIBRARY;
-                break;
-            }
-
-            kptr = kptr->next;
+            fprintf(stderr, "[ CfWriteKeys() ] unable to create FITS file\n");
+            err = CFITSIO_ERROR_LIBRARY;
         }
+    }
+
+    if (!err)
+    {
+        fptr = fptr_out ? fptr_out : temp_file;
+
+        if (key_list)
+        {
+            /* header keywords exist in a CFITSIO_KEYWORD list */
+            key_node = key_list;
+
+            while (key_node)
+            {
+                key_class = fits_get_keyclass(key_node->key_name);
+                if (key_class != TYP_STRUC_KEY  && key_class != TYP_CMPRS_KEY && key_class != TYP_CONT_KEY)
+                {
+                    /* properly handles HISTORY and COMMENT and long strings */
+                    if (Cf_write_key(fptr, key_node))
+                    {
+                        fprintf(stderr, "[ CfWriteKeys() ] unable to write FITS keyword '%s'\n", key_node->key_name);
+                    }
+                }
+
+                key_node = key_node->next;
+            }
+        }
+        else if (fits_header)
+        {
+            /* header keywords exist in an actual fitsfile header */
+            *card = '\0';
+
+            fits_get_hdrspace(fits_header, &num_keys, NULL, &cfiostat);
+
+            if (!cfiostat)
+            {
+                for (key_num = 1; key_num < num_keys; key_num++)
+                {
+                    fits_read_record(fits_header, key_num, card, &cfiostat);
+
+                    if (!cfiostat)
+                    {
+                        key_class = fits_get_keyclass(card);
+
+                        if (key_class == TYP_STRUC_KEY  || key_class == TYP_CMPRS_KEY || key_class == TYP_CONT_KEY)
+                        {
+                            continue;
+                        }
+
+                        if (fits_write_record(fptr, card, &cfiostat))
+                        {
+                            fits_get_errstatus(cfiostat, cfiostat_msg);
+                            fprintf(stderr, "CFITSIO error writing card '%s': %s\n", card, cfiostat_msg);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /* if dumping to *header, read cards from temp_file, dumping into *header */
+    if (!fptr_out)
+    {
+        *card = '\0';
+        fits_get_hdrspace(temp_file, &num_keys, NULL, &cfiostat);
+
+        if (!cfiostat)
+        {
+            for (key_num = 1; key_num < num_keys; key_num++)
+            {
+                fits_read_record(temp_file, key_num, card, &cfiostat);
+
+                if (!cfiostat)
+                {
+                    if (!*header)
+                    {
+                        *header = calloc(1, header_sz);
+                    }
+
+                    if (!*header)
+                    {
+                        err = CFITSIO_ERROR_OUT_OF_MEMORY;
+                        break;
+                    }
+
+                    *header = base_strcatalloc(*header, card, &header_sz);
+                }
+            }
+        }
+    }
+
+    if (temp_file)
+    {
+        Cf_close_file(&temp_file, 1);
     }
 
     return err;
@@ -533,12 +694,32 @@ static int CfSetImageInfo(CFITSIO_IMAGE_INFO *info, fitsfile *fptr)
 /****************************************************************************/
 /*********************   Using CFITSIO_KEYWORD  *****************************/
 /****************************************************************************/
-
-int cfitsio_free_keys(CFITSIO_KEYWORD** keylist)
+int cfitsio_free_key(CFITSIO_KEYWORD **key)
 {
-   if (keylist)
+    int err = CFITSIO_SUCCESS;
+
+
+    if (*key)
+    {
+        if ((*key)->key_type == kFITSRW_Type_String && (*key)->key_value.vs)
+        {
+           free((*key)->key_value.vs);
+           (*key)->key_value.vs = NULL;
+        }
+
+        free(*key);
+        *key = NULL;
+    }
+
+    return err;
+}
+
+int cfitsio_free_keys(CFITSIO_KEYWORD** key_list)
+
+{
+   if (key_list)
    {
-      CFITSIO_KEYWORD *kptr = *keylist;
+      CFITSIO_KEYWORD *kptr = *key_list;
       CFITSIO_KEYWORD *del = NULL;
 
       while (kptr)
@@ -555,17 +736,18 @@ int cfitsio_free_keys(CFITSIO_KEYWORD** keylist)
 	 free(del);
       }
 
-      *keylist = NULL;
+      *key_list = NULL;
    }
    return CFITSIO_SUCCESS;
 }
 
-int cfitsio_create_key(const char *name, const char type, const char *comment, const void *value, const char *format, CFITSIO_KEYWORD **keyOut)
+/* value == NULL -> missing key*/
+int cfitsio_create_key(const char *name, cfitsio_keyword_datatype_t type, const void *value, const char *format, const char *comment, const char *unit, CFITSIO_KEYWORD **keyOut)
 {
     CFITSIO_KEYWORD *rv = NULL;
     int err = CFITSIO_SUCCESS;
 
-    if (name && value && keyOut)
+    if (name && keyOut)
     {
         rv = (CFITSIO_KEYWORD *)calloc(1, sizeof(CFITSIO_KEYWORD));
 
@@ -579,39 +761,52 @@ int cfitsio_create_key(const char *name, const char type, const char *comment, c
             snprintf(rv->key_name, FLEN_KEYWORD, "%s", name);
             rv->key_type = type;
 
-            switch (type)
+            if (value)
             {
-                case( 'X'):
-                case (kFITSRW_Type_String):
-                    /* 68 is the max chars in FITS string keyword, but the HISTORY and COMMENT keywords
-                     * can contain values with more than this number of characters, in which case
-                     * the fits API key-writing function will split the string across multiple
-                     * instances of these special keywords. */
-                    rv->key_value.vs = strdup((char *)value);
-                    break;
-                case (kFITSRW_Type_Logical):
-                    rv->key_value.vl = *((int *)value);
-                    break;
-                case (kFITSRW_Type_Integer):
-                    rv->key_value.vi = *((long long *)value);
-                    break;
-                case (kFITSRW_Type_Float):
-                    rv->key_value.vf = *((double *)value);
-                    break;
-                default:
-                    fprintf(stderr, "Invalid FITSRW keyword type '%c'.\n", (char)type);
-                    err = CFITSIO_ERROR_ARGS;
-                    break;
+                switch (type)
+                {
+                    case( 'X'):
+                    case (CFITSIO_KEYWORD_DATATYPE_STRING):
+                        /* 68 is the max chars in FITS string keyword, but the HISTORY and COMMENT keywords
+                         * can contain values with more than this number of characters, in which case
+                         * the fits API key-writing function will split the string across multiple
+                         * instances of these special keywords. */
+                        rv->key_value.vs = strdup((char *)value);
+                        break;
+                    case (CFITSIO_KEYWORD_DATATYPE_LOGICAL):
+                        rv->key_value.vl = *((int *)value);
+                        break;
+                    case (CFITSIO_KEYWORD_DATATYPE_INTEGER):
+                        rv->key_value.vi = *((long long *)value);
+                        break;
+                    case (CFITSIO_KEYWORD_DATATYPE_FLOAT):
+                        rv->key_value.vf = *((double *)value);
+                        break;
+                    default:
+                        fprintf(stderr, "invalid cfitsio keyword type '%c'\n", (char)type);
+                        err = CFITSIO_ERROR_ARGS;
+                        break;
+                }
             }
-
-            if (comment)
+            else
             {
-                snprintf(rv->key_comment, FLEN_COMMENT, "%s", comment);
+                /* missing value */
+                rv->is_missing = 1;
             }
 
             if (format)
             {
-                snprintf(rv->key_format, CFITSIO_MAX_FORMAT, "%s", format);
+                snprintf(rv->key_format, sizeof(rv->key_format), "%s", format);
+            }
+
+            if (comment)
+            {
+                snprintf(rv->key_comment, sizeof(rv->key_comment), "%s", comment);
+            }
+
+            if (unit)
+            {
+                snprintf(rv->key_unit, sizeof(rv->key_unit), "%s", unit);
             }
         }
     }
@@ -635,7 +830,7 @@ int cfitsio_create_key(const char *name, const char type, const char *comment, c
 int cfitsio_create_file(CFITSIO_FILE **out_file, const char *file_name, int initialize_fitsfile)
 {
     int cfiostat = 0; /* MUST start with no-error status, else CFITSIO will fail */
-    char cfiostatErrmsg[FLEN_STATUS];
+    char cfiostat_msg[FLEN_STATUS];
     int err = CFITSIO_SUCCESS;
 
 
@@ -662,7 +857,9 @@ int cfitsio_create_file(CFITSIO_FILE **out_file, const char *file_name, int init
 #if 1
             if (fits_create_file(&((*out_file)->fptr), file_name, &cfiostat))
             {
+                fits_get_errstatus(cfiostat, cfiostat_msg);
                 fprintf(stderr, "[ cfitsio_create_file() ] unable to create FITS file\n");
+                fprintf(stderr, "CFITSIO error: %s\n", cfiostat_msg);
                 err = CFITSIO_ERROR_LIBRARY;
             }
 #else
@@ -670,7 +867,9 @@ int cfitsio_create_file(CFITSIO_FILE **out_file, const char *file_name, int init
             {
                 if (fits_create_file(&((*out_file)->fptr), file_name, &cfiostat))
                 {
+                    fits_get_errstatus(cfiostat, cfiostat_msg);
                     fprintf(stderr, "[ cfitsio_create_file() ] unable to create FITS file\n");
+                    fprintf(stderr, "CFITSIO error: %s\n", cfiostat_msg);
                     err = CFITSIO_ERROR_LIBRARY;
                 }
                 else
@@ -711,45 +910,15 @@ void cfitsio_close_file(CFITSIO_FILE **fitsFile)
 {
     CFITSIO_IMAGE_INFO fpinfo;
     int cfiostat = 0; /* MUST start with no-error status, else CFITSIO will fail */
-    char cfiostatErrmsg[FLEN_STATUS];
 
 
     if (fitsFile && *fitsFile)
     {
         if ((*fitsFile)->fptr)
         {
-            if (!fitsrw_getfpinfo_ext((*fitsFile)->fptr, &fpinfo))
-            {
-                fitsrw_closefptr(0, (*fitsFile)->fptr);
-            }
-            else
-            {
-                /* this FITS file is not globally cached - simply call fits_close_file();
-                 * we don't cache in-memory FITS files, so we should be executing
-                 * this branch of code for those kinds of FITS file
-                 */
-                if ((*fitsFile)->in_memory)
-                {
-                    /* redirect stdout to devnull so we do not print FITS-file data to stdout */
-                    Cf_drop_data_and_close_fits_file((*fitsFile)->fptr);
-                }
-                else
-                {
-#if 1
-                    if (fits_close_file((*fitsFile)->fptr, &cfiostat))
-                    {
-                        fits_get_errstatus(cfiostat, cfiostatErrmsg);
-                        fprintf(stderr, "[ cfitsio_close_file() ] %s\n", cfiostatErrmsg);
-                    }
-#else
-                    if (fitsrw_closefptr(verbose, fptr))
-                    {
-                        fits_get_errstatus(cfiostat, cfiostatErrmsg);
-                        fprintf(stderr, "[ cfitsio_close_file() ] %s\n", cfiostatErrmsg);
-                    }
-#endif
-                }
-            }
+            /* if the FITS file is not cached, then we should call fits_close_file(), dropping
+             * data if the file was in-memory-only */
+            Cf_close_file(&(*fitsFile)->fptr, (*fitsFile)->in_memory);
         }
 
         free(*fitsFile);
@@ -800,159 +969,6 @@ int cfitsio_copy_file(CFITSIO_FILE *source_in, CFITSIO_FILE *dest_in, int copy_h
 
     return err;
 }
-
-#if 0
-int cfitsio_copy_file(CFITSIO_FILE *dest_in, CFITSIO_FILE *source_in, int copyHeaderOnly)
-{
-    int cfiostat = 0; /* MUST start with no-error status, else CFITSIO will fail */
-    char cfiostatErrmsg[FLEN_STATUS];
-    int pipefd[2] = {-1, -1};
-    int saved_stdin = -1;
-    int saved_stdout = -1;
-    fitsfile *in_mem_fptr = NULL;
-    fitsfile *dest = NULL;
-    fitsfile *source = NULL;
-    int err = CFITSIO_SUCCESS;
-
-
-    XASSERT(dest_in);
-    XASSERT(source_in);
-
-    if (dest_in != source_in)
-    {
-        source = source_in->fptr;
-
-        /* if dest is in memory, then we have to close the in-memory file in order for the
-         * copy functions to flush the copy (fits_flush_file() does not work) */
-        if (dest_in->in_memory)
-        {
-            cfiostat = 0;
-
-            fits_create_file(&in_mem_fptr, "-", &cfiostat);
-            if (!cfiostat)
-            {
-                dest = in_mem_fptr;
-
-                /* pipe stdout to stdin */
-                if (pipe(pipefd) != -1)
-                {
-                    saved_stdout = dup(STDOUT_FILENO);
-                    if (saved_stdout != -1)
-                    {
-                        saved_stdin = dup(STDIN_FILENO);
-
-                        if (saved_stdin != -1)
-                        {
-                            /* redirect stdout to write end of pipe */
-                            if (dup2(pipefd[1], STDOUT_FILENO) != -1)
-                            {
-                                /* redirect stdint to read end of pipe */
-                                if (dup2(pipefd[0], STDIN_FILENO) == -1)
-                                {
-                                    err = CFITSIO_ERROR_FILE_IO;
-                                }
-                            }
-                            else
-                            {
-                                err = CFITSIO_ERROR_FILE_IO;
-                            }
-                        }
-                        else
-                        {
-                            err = CFITSIO_ERROR_FILE_IO;
-                        }
-                    }
-                    else
-                    {
-                        err = CFITSIO_ERROR_FILE_IO;
-                    }
-                }
-                else
-                {
-                    err = CFITSIO_ERROR_FILE_IO;
-                }
-            }
-            else
-            {
-                err = CFITSIO_ERROR_FILE_IO;
-            }
-        }
-        else
-        {
-            dest = dest_in->fptr;
-        }
-
-        if (err == CFITSIO_SUCCESS)
-        {
-            if (copyHeaderOnly)
-            {
-                /* ART - TEST */
-                //CFITSIO_FILE *blah = NULL;
-
-                //cfitsio_create_file(&blah, "/tmp/arta/junk.fits");
-                // fits_copy_header(source, blah->fptr, &cfiostat);
-                //fits_copy_file(source, blah->fptr, 1, 1, 1, &cfiostat);
-                //fits_close_file(blah->fptr, &cfiostat);
-
-                //fits_flush_file(dest, &cfiostat);
-                fits_copy_header(source, dest, &cfiostat); /* if dest_in->in_memory, writes header into memory */
-
-                // fits_write_hdu(dest->fptr, stdout, &cfiostat);
-                // fits_flush_file(dest->fptr, &cfiostat);
-
-                fits_close_file(dest, &cfiostat); /* if dest_in->in_memory, flushes to stdout; dest_in->fptr will then read from stdin via pipe */
-            }
-            else
-            {
-                fits_copy_file(source, dest, 0, 1, 0, &cfiostat);
-            }
-
-
-            if (cfiostat)
-            {
-                fprintf(stderr, "[ cfitsio_copy_file() ] unable to copy FITS file\n");
-                err = CFITSIO_ERROR_LIBRARY;
-            }
-            else
-            {
-                if (in_mem_fptr)
-                {
-                    /* restore stdin */
-                    if (saved_stdin != -1)
-                    {
-                        dup2(saved_stdin, STDIN_FILENO);
-                        close(saved_stdin);
-                        saved_stdin = -1;
-                    }
-
-                    /* restore stdout */
-                    if (saved_stdout != -1)
-                    {
-                        dup2(saved_stdout, STDOUT_FILENO);
-                        close(saved_stdout);
-                        saved_stdout = -1;
-                    }
-
-                    /* close pipe */
-                    if (pipefd[0] != -1)
-                    {
-                        close(pipefd[0]);
-                        pipefd[0] = -1;
-                    }
-
-                    if (pipefd[1] != -1)
-                    {
-                        close(pipefd[1]);
-                        pipefd[1] = -1;
-                    }
-                }
-            }
-        }
-    }
-
-    return err;
-}
-#endif
 
 static int Cf_make_hcon(CFITSIO_KEYWORD *key_list, HContainer_t **hcon)
 {
@@ -1074,7 +1090,9 @@ int cfitsio_copy_keywords(CFITSIO_FILE *in_file, CFITSIO_FILE *out_file, int sim
 int cfitsio_read_key(CFITSIO_FILE *file, CFITSIO_KEYWORD *key)
 {
     char comment[CFITSIO_MAX_STR] = {0};
+    char unit[FLEN_COMMENT] = {0};
     int cfiostat = 0;
+    char cfiostat_msg[FLEN_STATUS];
     int err = CFITSIO_SUCCESS;
 
 
@@ -1104,13 +1122,55 @@ int cfitsio_read_key(CFITSIO_FILE *file, CFITSIO_KEYWORD *key)
 
     if (!err)
     {
-        if (!comment)
+        if (cfiostat == VALUE_UNDEFINED)
         {
-            snprintf(key->key_comment, sizeof(key->key_comment), "%s", comment);
+            /* value field of keyword is blank (a missing value) */
+            key->is_missing = 1;
+            cfiostat = 0;
+        }
+        else if (cfiostat != 0)
+        {
+            /* an error, set err */
+            err = CFITSIO_ERROR_LIBRARY;
         }
     }
 
+    if (!err)
+    {
+        if (*comment != '\0')
+        {
+            snprintf(key->key_comment, sizeof(key->key_comment), "%s", comment);
+            fits_read_key_unit(file->fptr, key->key_name, unit, &cfiostat);
+        }
+
+        if (cfiostat)
+        {
+            err = CFITSIO_ERROR_LIBRARY;
+        }
+        else
+        {
+            if (*unit != '\0')
+            {
+                snprintf(key->key_unit, sizeof(key->key_unit), "%s", unit);
+            }
+        }
+    }
+
+    if (cfiostat != 0)
+    {
+        fits_get_errstatus(cfiostat, cfiostat_msg);
+        fprintf(stderr, "[ cfitsio_read_key() ] unable to read keyword '%s'\n", key->key_name);
+        fprintf(stderr, "CFITSIO error: %s\n", cfiostat_msg);
+
+        /* err will be set (if cfiostat != 0 ==> err)*/
+    }
+
     return err;
+}
+
+int cfitsio_write_key(CFITSIO_FILE *file, CFITSIO_KEYWORD *key)
+{
+    return Cf_write_key(file->fptr, key);
 }
 
 /* use `key` to update a keyword in `file` */
@@ -1131,47 +1191,68 @@ int cfitsio_update_key(CFITSIO_FILE *file, CFITSIO_KEYWORD *key)
         comment = NULL;
     }
 
-    /* use fits_update_key_*() which will update an existing key, or append a new one */
-    if (strcmp(key->key_name,"HISTORY") == 0)
+    if (key->is_missing)
     {
-        if (key->key_value.vs)
-        {
-            fits_write_history(file->fptr, key->key_value.vs, &cfiostat);
-        }
-    }
-    else if (!strcmp(key->key_name,"COMMENT"))
-    {
-        if (key->key_value.vs)
-        {
-            fits_write_comment(file->fptr, key->key_value.vs, &cfiostat);
-        }
-    }
-    else if (key->key_type == CFITSIO_KEYWORD_DATATYPE_STRING)
-    {
-        /* any string could be a long string (> 68 chars) */
-        fits_update_key_longstr(file->fptr, key->key_name, key->key_value.vs, comment, &cfiostat);
-    }
-    else if (key->key_type == CFITSIO_KEYWORD_DATATYPE_LOGICAL)
-    {
-        fits_update_key_log(file->fptr, key->key_name, key->key_value.vl, comment, &cfiostat);
-    }
-    else if (key->key_type == CFITSIO_KEYWORD_DATATYPE_INTEGER)
-    {
-        fits_update_key_lng(file->fptr, key->key_name, key->key_value.vi, comment, &cfiostat);
-    }
-    else if (key->key_type == CFITSIO_KEYWORD_DATATYPE_FLOAT)
-    {
-        /* prints 15 decimal places, if needed */
-        fits_update_key(file->fptr, TDOUBLE, key->key_name, (void *)&key->key_value.vf, comment, &cfiostat);
+        fits_update_key_null(file->fptr, key->key_name, comment, &cfiostat);
     }
     else
     {
-        err = CFITSIO_ERROR_INVALID_DATA_TYPE;
+        /* use fits_update_key_*() which will update an existing key, or append a new one */
+        if (strcmp(key->key_name,"HISTORY") == 0)
+        {
+            if (key->key_value.vs)
+            {
+                fits_write_history(file->fptr, key->key_value.vs, &cfiostat);
+            }
+        }
+        else if (!strcmp(key->key_name,"COMMENT"))
+        {
+            if (key->key_value.vs)
+            {
+                fits_write_comment(file->fptr, key->key_value.vs, &cfiostat);
+            }
+        }
+        else if (key->key_type == CFITSIO_KEYWORD_DATATYPE_STRING)
+        {
+            /* any string could be a long string (> 68 chars) */
+            fits_update_key_longstr(file->fptr, key->key_name, key->key_value.vs, comment, &cfiostat);
+        }
+        else if (key->key_type == CFITSIO_KEYWORD_DATATYPE_LOGICAL)
+        {
+            fits_update_key_log(file->fptr, key->key_name, key->key_value.vl, comment, &cfiostat);
+        }
+        else if (key->key_type == CFITSIO_KEYWORD_DATATYPE_INTEGER)
+        {
+            fits_update_key_lng(file->fptr, key->key_name, key->key_value.vi, comment, &cfiostat);
+        }
+        else if (key->key_type == CFITSIO_KEYWORD_DATATYPE_FLOAT)
+        {
+            /* prints 15 decimal places, if needed */
+            fits_update_key(file->fptr, TDOUBLE, key->key_name, (void *)&key->key_value.vf, comment, &cfiostat);
+        }
+        else
+        {
+            err = CFITSIO_ERROR_INVALID_DATA_TYPE;
+        }
     }
 
     if (cfiostat)
     {
         err = CFITSIO_ERROR_LIBRARY;
+    }
+
+    if (!err)
+    {
+        if (*key->key_unit != '\0')
+        {
+            fits_write_key_unit(file->fptr, key->key_name, key->key_unit, &cfiostat);
+
+            if (cfiostat)
+            {
+                err = CFITSIO_ERROR_LIBRARY;
+            }
+
+        }
     }
 
     return err;
@@ -1228,52 +1309,45 @@ int cfitsio_update_keywords(CFITSIO_FILE *file, CFITSIO_HEADER *header, CFITSIO_
                 if (!cfitsio_key_ptr)
                 {
                     fprintf(stderr, "key %s not in key_hcon\n", key_node->key_name);
-                    continue;
-                }
-
-                cfitsio_key = *cfitsio_key_ptr;
-
-                memset(&one_key, '\0', sizeof(one_key));
-
-                snprintf(one_key.key_name, sizeof(one_key.key_name), "%s", cfitsio_key->key_name);
-                one_key.key_type = cfitsio_key->key_type;
-
-                /* fits_update_key_*() will update the keyword if it exists, otherise it will
-                 * append the key to the end of the HDU */
-
-                if (one_key.key_type == CFITSIO_KEYWORD_DATATYPE_STRING)
-                {
-                    /* any string could be a long string (> 68 chars) */
-                    if (cfitsio_read_key(header, &one_key))
-                    {
-                        fprintf(stderr, "cannot read key %s\n", key_node->key_name);
-                        continue;
-                    }
-
-                    if (cfitsio_update_key(file, &one_key))
-                    {
-                        fprintf(stderr, "cannot update key %s\n", key_node->key_name);
-                        continue;
-                    }
-
-                    if (one_key.key_value.vs)
-                    {
-                        fits_free_memory(one_key.key_value.vs, &cfiostat);
-                        one_key.key_value.vs = NULL;
-                    }
                 }
                 else
                 {
-                    if (cfitsio_read_key(header, &one_key))
-                    {
-                        fprintf(stderr, "cannot read key %s\n", key_node->key_name);
-                        continue;
-                    }
+                    cfitsio_key = *cfitsio_key_ptr;
 
-                    if (cfitsio_update_key(file, &one_key))
+                    memset(&one_key, '\0', sizeof(one_key));
+
+                    snprintf(one_key.key_name, sizeof(one_key.key_name), "%s", cfitsio_key->key_name);
+                    one_key.key_type = cfitsio_key->key_type;
+
+                    /* fits_update_key_*() will update the keyword if it exists, otherise it will
+                     * append the key to the end of the HDU */
+
+                    if (one_key.key_type == CFITSIO_KEYWORD_DATATYPE_STRING)
                     {
-                        fprintf(stderr, "cannot update key %s\n", key_node->key_name);
-                        continue;
+                        /* any string could be a long string (> 68 chars) */
+                        if (cfitsio_read_key(header, &one_key) == CFITSIO_SUCCESS)
+                        {
+                            if (cfitsio_update_key(file, &one_key))
+                            {
+                                fprintf(stderr, "cannot update key %s\n", key_node->key_name);
+                            }
+                        }
+
+                        if (one_key.key_value.vs)
+                        {
+                            fits_free_memory(one_key.key_value.vs, &cfiostat);
+                            one_key.key_value.vs = NULL;
+                        }
+                    }
+                    else
+                    {
+                        if (cfitsio_read_key(header, &one_key) == CFITSIO_SUCCESS)
+                        {
+                            if (cfitsio_update_key(file, &one_key))
+                            {
+                                fprintf(stderr, "cannot update key %s\n", key_node->key_name);
+                            }
+                        }
                     }
                 }
 
@@ -1367,14 +1441,14 @@ int cfitsio_delete_headsum(CFITSIO_FILE *fitsFile)
 }
 
 /*
- * fitsFile - the CFITSIO_FILE file that contains keyword values from which a checksum is to be generated; if NULL, then
- *            create a new CFITSIO_FILE that contains a header formed from keyList, and also
- *            create the checksum from the values passed in via the keyList argument; otherwise use the fitsFile
- *            values of the keywords specified in keyList
- * keyList - the list of keywords from which a FITS header and checksum will be generated
+ * file - the CFITSIO_FILE file that contains keyword values from which a checksum is to be generated; if NULL, then
+ *            create a new CFITSIO_FILE that contains a header formed from `key_list`, and also
+ *            create the checksum from the values passed in via `key_list`; otherwise use the fitsFile
+ *            values of the keywords specified in `key_list`
+ * key_list - the list of keywords from which a FITS header and checksum will be generated
  * checksum - the checksum returned by reference
  */
-int cfitsio_generate_checksum(CFITSIO_FILE **fitsFile, CFITSIO_KEYWORD *keyList, char **checksum)
+int cfitsio_generate_checksum(CFITSIO_FILE **file, CFITSIO_KEYWORD *key_list, char **checksum)
 {
     // Hash_Table_t inclKeysHT;
     CFITSIO_KEYWORD *kptr = NULL;
@@ -1389,61 +1463,15 @@ int cfitsio_generate_checksum(CFITSIO_FILE **fitsFile, CFITSIO_KEYWORD *keyList,
     int err = CFITSIO_SUCCESS;
 
 
-    // XASSERT(keyList);
+    // XASSERT(key_list);
     XASSERT(checksum);
 
     if (checksum)
     {
-#if 0
-        if (fitsFile)
+        if (!*file)
         {
-            /* read values from fitsFile specified in keyList; CRAP! don't use the inclist argument of FITSIO fits_find_nextkey();
-             * it is implemented as an N^2 algorithm; instead, make my own hash and then read each key in the fitsFile header
-             * and search for the key in the hash */
-            hash_init(&inclKeysHT, 13, 0, (int (*)(const void *, const void *))strcmp, hash_universal_hash);
-
-            /* iterate through keyList and add all keys to hash */
-            kptr = keylist;
-
-            while (kptr)
-            {
-                if (!hash_member(&inclKeysHT, kptr->key_name))
-                {
-                    hash_insert(&inclKeysHT, kptr->key_name, "T");
-                }
-
-                kptr = kptr->next;
-            }
-
-            /* now iterate through each fitsFile key and collect cards if the key is in the hash; if we are at the end of the
-             * header, then FITSIO will throw some kind of error, although it isn't documented */
-            memset(card, '\0', sizeof(card));
-            while (!fits_read_card(fitsFile->fptr, "*", card, &cfiostat))
-            {
-                if (hash_member(&inclKeysHT, /* keyname */))
-                {
-                    md5Input = base_strcatalloc(md5Input, card, &szInput);
-                }
-            }
-        }
-        else
-        {
-            /* make the md5Input string from the keylist; the md5Input string will be N cards, all concatenated */
-            err = CfWriteKeys(NULL, &md5Input, keylist, NULL);
-        }
-
-        if (!err)
-        {
-            /* write header checksum into checksum - it contains a checksum of the entire keyList (minus
-             * the HEADSUM keyword itself) */
-            err = CfGenerateChecksum(md5Input, checksum);
-        }
-#endif
-
-        if (!*fitsFile)
-        {
-            /* need to create a CFITSIO_FILE from keylist */
-            if (cfitsio_create_file(fitsFile, "-", 1))
+            /* need to create a CFITSIO_FILE from key_list */
+            if (cfitsio_create_file(file, "-", 1))
             {
                 fprintf(stderr, "[ cfitsio_generate_checksum() ] unable to create empty FITS file\n");
                 err = CFITSIO_ERROR_OUT_OF_MEMORY;
@@ -1452,18 +1480,19 @@ int cfitsio_generate_checksum(CFITSIO_FILE **fitsFile, CFITSIO_KEYWORD *keyList,
             if (!err)
             {
                 /* gotta write SIMPLE first */
-                fits_write_key_log((*fitsFile)->fptr, "SIMPLE", 1, NULL, &cfiostat);
+                fits_write_key_log((*file)->fptr, "SIMPLE", 1, NULL, &cfiostat);
 
                 /* and BITPIX */
-                fits_write_key_lng((*fitsFile)->fptr, "BITPIX", 8, NULL, &cfiostat);
+                fits_write_key_lng((*file)->fptr, "BITPIX", 8, NULL, &cfiostat);
 
                 /* and NAXIS */
-                fits_write_key_lng((*fitsFile)->fptr, "NAXIS", 0, NULL, &cfiostat);
+                fits_write_key_lng((*file)->fptr, "NAXIS", 0, NULL, &cfiostat);
 
                 if (!cfiostat)
                 {
-                    /* will NOT create and write HEADSUM keyword */
-                    err = CfWriteKeys((*fitsFile)->fptr, NULL, keyList, NULL);
+                    /* iterate over `key_list`, writing FITS keywords to `fptr`;
+                     * will NOT create and write HEADSUM keyword */
+                    err = CfWriteKeys((*file)->fptr, NULL, key_list, NULL);
                 }
                 else
                 {
@@ -1475,14 +1504,14 @@ int cfitsio_generate_checksum(CFITSIO_FILE **fitsFile, CFITSIO_KEYWORD *keyList,
 
         if (!err)
         {
-            err = CfGenerateChecksum((*fitsFile)->fptr, checksum);
+            err = CfGenerateChecksum((*file)->fptr, checksum);
         }
     }
 
     return err;
 }
 
-int cfitsio_open_file(const char *path, CFITSIO_FILE **fitsFile, int writeable)
+int cfitsio_open_file(const char *path, CFITSIO_FILE **file, int writeable)
 {
     struct stat stbuf;
     fitsfile *fptr = NULL;
@@ -1497,16 +1526,16 @@ int cfitsio_open_file(const char *path, CFITSIO_FILE **fitsFile, int writeable)
 
     if (!err)
     {
-        XASSERT(fitsFile);
+        XASSERT(file);
 
-        if (fitsFile)
+        if (file)
         {
-            if (!*fitsFile)
+            if (!*file)
             {
-                *fitsFile = calloc(1, sizeof(CFITSIO_FILE *));
+                *file = calloc(1, sizeof(CFITSIO_FILE *));
             }
 
-            if (!*fitsFile)
+            if (!*file)
             {
                 fprintf(stderr, "[ cfitsio_open_file() ] unable to allocate fitsfile structure\n");
                 err = CFITSIO_ERROR_OUT_OF_MEMORY;
@@ -1525,7 +1554,7 @@ int cfitsio_open_file(const char *path, CFITSIO_FILE **fitsFile, int writeable)
 
             if (!err)
             {
-                (*fitsFile)->fptr = fptr;
+                (*file)->fptr = fptr;
             }
         }
     }
@@ -1533,7 +1562,7 @@ int cfitsio_open_file(const char *path, CFITSIO_FILE **fitsFile, int writeable)
     return err;
 }
 
-int cfitsio_read_headsum(CFITSIO_FILE *fitsFile, char **headsum)
+int cfitsio_read_headsum(CFITSIO_FILE *file, char **headsum)
 {
     char strVal[FLEN_VALUE];
     int cfiostat = 0;
@@ -1545,12 +1574,12 @@ int cfitsio_read_headsum(CFITSIO_FILE *fitsFile, char **headsum)
     {
         *headsum = NULL;
 
-        if (fits_read_key(fitsFile->fptr, TSTRING, HEADSUM, strVal, NULL, &cfiostat))
+        if (fits_read_key(file->fptr, TSTRING, HEADSUM, strVal, NULL, &cfiostat))
         {
             if (cfiostat == KEY_NO_EXIST)
             {
                 /* this is OK; not all files will have a HEADSUM yet */
-                fprintf(stderr, "[ cfitsio_read_headsum() ] NOTE: FITS file %s does not contain a HEADSUM keyword\n", fitsFile->fptr->Fptr->filename);
+                fprintf(stderr, "[ cfitsio_read_headsum() ] NOTE: FITS file %s does not contain a HEADSUM keyword\n", file->fptr->Fptr->filename);
                 cfiostat = 0;
             }
             else
@@ -1595,22 +1624,20 @@ int cfitsio_write_headsum(CFITSIO_FILE *file, const char *headsum)
 /****************************************************************************/
 // TH: Append to the end of list to keep COMMENT in the right sequence.
 
-int cfitsio_append_key(CFITSIO_KEYWORD** keylist,
-		       char *name,
-		       char type,
-		       char *comment,
-		       void * value,
-                       const char *format)
+int cfitsio_append_key(CFITSIO_KEYWORD** keylist, const char *name, cfitsio_keyword_datatype_t type, void *value, const char *format, const char *comment, const char *unit)
 {
     CFITSIO_KEYWORD *node, *last;
     int error_code = CFITSIO_SUCCESS;
 
 
-    if (name && value)
+    if (name)
     {
-        node = (CFITSIO_KEYWORD *) malloc(sizeof(CFITSIO_KEYWORD));
+        node = (CFITSIO_KEYWORD *)calloc(1, sizeof(CFITSIO_KEYWORD));
 
-        if (!node) return CFITSIO_ERROR_OUT_OF_MEMORY;
+        if (!node)
+        {
+            return CFITSIO_ERROR_OUT_OF_MEMORY;
+        }
         else
         {
             memset(node, 0, sizeof(CFITSIO_KEYWORD));
@@ -1628,43 +1655,55 @@ int cfitsio_append_key(CFITSIO_KEYWORD** keylist,
                 *keylist = node;
             }
 
-            snprintf(node->key_name, FLEN_KEYWORD, "%s", name);
+            snprintf(node->key_name, sizeof(node->key_name), "%s", name);
             node->key_type = type;
 
-            // save value into union
-            switch (type)
+            if (value)
             {
-                case( 'X'):
-                case (kFITSRW_Type_String):
-                    /* 68 is the max chars in FITS string keyword, but the HISTORY and COMMENT keywords
-                     * can contain values with more than this number of characters, in which case
-                     * the fits API key-writing function will split the string across multiple
-                     * instances of these special keywords. */
-                    node->key_value.vs = strdup((char *)value);
-                    break;
-                case (kFITSRW_Type_Logical):
-                    node->key_value.vl = *((int *)value);
-                    break;
-                case (kFITSRW_Type_Integer):
-                    node->key_value.vi = *((long long *)value);
-                    break;
-                case (kFITSRW_Type_Float):
-                    node->key_value.vf = *((double *)value);
-                    break;
-                default:
-                    fprintf(stderr, "Invalid FITSRW keyword type '%c'.\n", (char)type);
-                    error_code = CFITSIO_ERROR_ARGS;
-                    break;
+                // save value into union
+                switch (type)
+                {
+                    case( 'X'):
+                    case (CFITSIO_KEYWORD_DATATYPE_STRING):
+                        /* 68 is the max chars in FITS string keyword, but the HISTORY and COMMENT keywords
+                         * can contain values with more than this number of characters, in which case
+                         * the fits API key-writing function will split the string across multiple
+                         * instances of these special keywords. */
+                        node->key_value.vs = strdup((char *)value);
+                        break;
+                    case (CFITSIO_KEYWORD_DATATYPE_LOGICAL):
+                        node->key_value.vl = *((int *)value);
+                        break;
+                    case (CFITSIO_KEYWORD_DATATYPE_INTEGER):
+                        node->key_value.vi = *((long long *)value);
+                        break;
+                    case (CFITSIO_KEYWORD_DATATYPE_FLOAT):
+                        node->key_value.vf = *((double *)value);
+                        break;
+                    default:
+                        fprintf(stderr, "invalid cfitsio keyword type '%c'\n", (char)type);
+                        error_code = CFITSIO_ERROR_ARGS;
+                        break;
+                }
             }
-
-            if (comment)
+            else
             {
-                snprintf(node->key_comment, FLEN_COMMENT, "%s", comment);
+                node->is_missing = 1;
             }
 
             if (format)
             {
-                snprintf(node->key_format, CFITSIO_MAX_FORMAT, "%s", format);
+                snprintf(node->key_format, sizeof(node->key_format), "%s", format);
+            }
+
+            if (comment)
+            {
+                snprintf(node->key_comment, sizeof(node->key_comment), "%s", comment);
+            }
+
+            if (unit)
+            {
+                snprintf(node->key_unit, sizeof(node->key_unit), "%s", unit);
             }
         }
     }
@@ -1674,9 +1713,7 @@ int cfitsio_append_key(CFITSIO_KEYWORD** keylist,
     }
 
     return error_code;
-
 }
-
 
 /****************************************************************************/
 // Row ranges from 1 to NAXIS1
@@ -1731,314 +1768,360 @@ int cfitsio_free_image_info(CFITSIO_IMAGE_INFO** image_info)
 // We keep geting keylist and image dimensions together here in one function (atomic process)
 
 /* If can return both keylistout and image_info, and there are conflicting values, then
- * must remove conflicting values from keylistout. */
+ * must remove conflicting values from keylistout; `keylistout` is used ONLY when reading non-internal, non-SUMS FITS files */
+
+/* ART - keyword parsing will not work for long-string FITS keywords (ones that use CONTINUE); but not used for internal, SUMS FITS files  */
 static int cfitsio_read_keylist_and_image_info(fitsfile* fptr, CFITSIO_KEYWORD** keylistout, CFITSIO_IMAGE_INFO** image_info)
 {
-
-   char card[FLEN_CARD];
-   int status = 0;
-   int nkeys;
-   int error_code = CFITSIO_FAIL;
-
-
-   CFITSIO_KEYWORD* node, *last, *kptr;
-
-   char key_name[FLEN_KEYWORD];
-   char key_value[FLEN_VALUE];
-
-   int len, i;
-
-   CFITSIO_KEYWORD *keylist = NULL;
-
-   int currHDU = 0;
-   int val = 0;
-
-   //-----------------------------  Keylist ------------------------------------------
-
-   if(keylistout && *keylistout)
-   {
-      cfitsio_free_keys(keylistout);
-      *keylistout = NULL;
-   }
-
-   if(fits_get_hdrspace(fptr, &nkeys, NULL, &status))
-   {
-      error_code = CFITSIO_ERROR_LIBRARY;
-      goto error_exit;
-   }
-
-   for(i=1; i<=nkeys; i++)
-   {
-      if(fits_read_record(fptr, i, card, &status))
-      {
-	 error_code = CFITSIO_ERROR_LIBRARY;
-	 goto error_exit;
-      }
-
-      if (fits_get_keyclass(card) == TYP_CMPRS_KEY)
-      {
-	 continue;
-      }
-
-      if(fits_get_keyname(card, key_name, &len, &status))
-      {
-	 error_code = CFITSIO_ERROR_LIBRARY;
-	 goto error_exit;
-      }
-
-      node = (CFITSIO_KEYWORD *) malloc(sizeof(CFITSIO_KEYWORD));
-
-      if(node == NULL)
-      {
-	 error_code = CFITSIO_ERROR_OUT_OF_MEMORY;
-	 goto error_exit;
-      }
-
-      memset(node, 0, sizeof(CFITSIO_KEYWORD));
-
-      if(keylist==NULL) //first item
-      {
-	 keylist = node;
-	 node->next = NULL;
-	 last = node;
-      }
-      else
-      {
-	 node->next = NULL;
-	 last->next = node;
-	 last = node;
-      }
-
-      // special key
-      if((!strcmp(key_name,"COMMENT")) || (!strcmp(key_name,"HISTORY")))
-      {
-	 strcpy(node->key_name, key_name);
-	 node->key_type=kFITSRW_Type_String;
-
-         if(fits_parse_value(card, key_value, node->key_comment, &status))
-	 {
-	    error_code = CFITSIO_ERROR_LIBRARY;
-	    goto error_exit;
-	 }
-
-         // The actual comment (excluding the COMMENT key name) was placed
-         // into node->key_comment - copy that into value.vs
-	 node->key_value.vs = strdup(node->key_comment);
-      }
-      else //regular key=value
-      {
-
-	 strcpy(node->key_name, key_name);
-	 if(fits_parse_value(card, key_value, node->key_comment, &status))
-	 {
-	    error_code = CFITSIO_ERROR_LIBRARY;
-	    goto error_exit;
-	 }
-
-	 if(strlen(key_value)) fits_get_keytype(key_value, &node->key_type, &status);
-	 else	node->key_type = ' ';
-
-	 switch(node->key_type)
-	 {
-	    case ('X'): //complex number is stored as string, for now.
-	    case (kFITSRW_Type_String): //Trip off ' ' around cstring?
-               node->key_value.vs = strdup(key_value);
-	       break;
-	    case (kFITSRW_Type_Logical): if (key_value[0]=='0') node->key_value.vl = 0;
-	    else node->key_value.vl = 1;
-	       break;
-
-	    case (kFITSRW_Type_Integer): sscanf(key_value,"%lld", &node->key_value.vi);
-	       break;
-
-	    case (kFITSRW_Type_Float): sscanf(key_value,"%lf", &node->key_value.vf);
-	       break;
-
-	    case (' '): //type not found, set it to NULL string
-	       node->key_type = kFITSRW_Type_String;
-	       node->key_value.vs = strdup("");
-	    default :
-	       DEBUGMSG((stderr,"Key of unknown type detected [%s][%c]?\n",
-			 key_value,node->key_type));
-	       break;
-	 }
-      }
-   }
+    char card[FLEN_CARD];
+    int status = 0;
+    int nkeys;
+    int error_code = CFITSIO_FAIL;
 
 
-   if (status == END_OF_FILE)  status = 0; // Reset after normal error
-   if(status)
-   {
-      error_code = CFITSIO_FAIL;
-      goto error_exit;
-   }
+    CFITSIO_KEYWORD* node, *last, *kptr;
+
+    char key_name[FLEN_KEYWORD];
+    char key_value[FLEN_VALUE];
+
+    int len, i;
+
+    CFITSIO_KEYWORD *keylist = NULL;
+
+    int currHDU = 0;
+    int val = 0;
+
+    //-----------------------------  Keylist ------------------------------------------
+
+    if(keylistout && *keylistout)
+    {
+        cfitsio_free_keys(keylistout);
+        *keylistout = NULL;
+    }
+
+    if(fits_get_hdrspace(fptr, &nkeys, NULL, &status))
+    {
+        error_code = CFITSIO_ERROR_LIBRARY;
+        goto error_exit;
+    }
+
+    for(i=1; i<=nkeys; i++)
+    {
+        if(fits_read_record(fptr, i, card, &status))
+        {
+            error_code = CFITSIO_ERROR_LIBRARY;
+            goto error_exit;
+        }
+
+        if (fits_get_keyclass(card) == TYP_CMPRS_KEY)
+        {
+            continue;
+        }
+
+        if(fits_get_keyname(card, key_name, &len, &status))
+        {
+            error_code = CFITSIO_ERROR_LIBRARY;
+            goto error_exit;
+        }
+
+        node = (CFITSIO_KEYWORD *) malloc(sizeof(CFITSIO_KEYWORD));
+
+        if(node == NULL)
+        {
+            error_code = CFITSIO_ERROR_OUT_OF_MEMORY;
+            goto error_exit;
+        }
+
+        memset(node, 0, sizeof(CFITSIO_KEYWORD));
+
+        if(keylist==NULL) //first item
+        {
+            keylist = node;
+            node->next = NULL;
+            last = node;
+        }
+        else
+        {
+            node->next = NULL;
+            last->next = node;
+            last = node;
+        }
+
+        // special key
+        if((!strcmp(key_name,"COMMENT")) || (!strcmp(key_name,"HISTORY")))
+        {
+            strcpy(node->key_name, key_name);
+            node->key_type=kFITSRW_Type_String;
+
+            if(fits_parse_value(card, key_value, node->key_comment, &status))
+            {
+                error_code = CFITSIO_ERROR_LIBRARY;
+                goto error_exit;
+            }
+
+            // The actual comment (excluding the COMMENT key name) was placed
+            // into node->key_comment - copy that into value.vs
+            node->key_value.vs = strdup(node->key_comment);
+        }
+        else //regular key=value
+        {
+            strcpy(node->key_name, key_name);
+
+            if(fits_parse_value(card, key_value, node->key_comment, &status))
+            {
+                error_code = CFITSIO_ERROR_LIBRARY;
+                goto error_exit;
+            }
+
+            if(strlen(key_value))
+            {
+                fits_get_keytype(key_value, &node->key_type, &status);
+            }
+            else
+            {
+                node->key_type = ' ';
+            }
+
+            switch(node->key_type)
+            {
+                case ('X'): //complex number is stored as string, for now.
+                case (kFITSRW_Type_String): //Trip off ' ' around cstring?
+                    node->key_value.vs = strdup(key_value);
+                    break;
+
+                case (kFITSRW_Type_Logical):
+                    if (key_value[0]=='0')
+                    {
+                        node->key_value.vl = 0;
+                    }
+                    else
+                    {
+                        node->key_value.vl = 1;
+                    }
+                    break;
+
+                case (kFITSRW_Type_Integer):
+                    /* ART - FITSIO uses something much more complex (it will convert a string value to a long long, for example) -
+                     * uses strtoll() on integer strings */
+                    sscanf(key_value,"%lld", &node->key_value.vi);
+                    break;
+
+                case (kFITSRW_Type_Float):
+                    /* ART - FITSIO uses something much more complex (it will convert a string value to a double, for example) -
+                     * uses strtod() on float strings */
+                    sscanf(key_value,"%lf", &node->key_value.vf);
+                    break;
+
+                case (' '): // blank keyword value, set it to NULL string
+                    node->key_type = kFITSRW_Type_String;
+                    node->key_value.vs = NULL;
+                    node->is_missing = 1;
+                    break;
+                default :
+                    DEBUGMSG((stderr,"Key of unknown type detected [%s][%c]?\n", key_value, node->key_type));
+                    break;
+            }
+
+            fits_read_key_unit(fptr, node->key_name, node->key_unit, &status);
+            if (status)
+            {
+                error_code = CFITSIO_ERROR_LIBRARY;
+                fprintf(stderr, "unable to read FITS keyword '%s' unit value\n", node->key_name);
+                goto error_exit;
+            }
+        }
+    }
+
+    if (status == END_OF_FILE)
+    {
+        status = 0; // Reset after normal error
+    }
+
+    if(status)
+    {
+        error_code = CFITSIO_FAIL;
+        goto error_exit;
+    }
 
 
-   //---------------------------  Image Info  -------------------------
+    //---------------------------  Image Info  -------------------------
 
-   // Extract SIMPLE, EXTEND, BLANK, BZERO, BSCALE from keylist
+    // Extract SIMPLE, EXTEND, BLANK, BZERO, BSCALE from keylist
 
-   if(image_info && *image_info) cfitsio_free_image_info(image_info);
+    if(image_info && *image_info)
+    {
+        cfitsio_free_image_info(image_info);
+    }
 
-   *image_info = (CFITSIO_IMAGE_INFO*) malloc(sizeof(CFITSIO_IMAGE_INFO));
-   if(*image_info == NULL)
-   {
-      error_code = CFITSIO_ERROR_OUT_OF_MEMORY;
-      goto error_exit;
-   }
+    *image_info = (CFITSIO_IMAGE_INFO*) malloc(sizeof(CFITSIO_IMAGE_INFO));
 
-   memset((void*) *image_info,0, sizeof(CFITSIO_IMAGE_INFO));
+    if(*image_info == NULL)
+    {
+        error_code = CFITSIO_ERROR_OUT_OF_MEMORY;
+        goto error_exit;
+    }
 
-   //Set to defaults
-   (*image_info)->blank =0;
-   (*image_info)->bscale =1.0;
-   (*image_info)->bzero =0.0;
+    memset((void*) *image_info,0, sizeof(CFITSIO_IMAGE_INFO));
 
-   /* You can't just assume the types of the keywords are the exact types
+    //Set to defaults
+    (*image_info)->blank =0;
+    (*image_info)->bscale =1.0;
+    (*image_info)->bzero =0.0;
+
+    /* You can't just assume the types of the keywords are the exact types
     * required by image_info; you need to convert them. */
 
-   kptr = keylist;
-   while (kptr && !status)
-   {
-      if(!strcmp(kptr->key_name,"SIMPLE"))
-      {
-	 (*image_info)->simple = cfitsio_keyval2int(kptr, &status);
-         if (!status)
-         {
-            (*image_info)->bitfield |= kInfoPresent_SIMPLE;
-         }
-         else
-         {
-            fprintf(stderr, "Invalid value for keyword 'SIMPLE'.\n");
-         }
-      }
-      else if(!strcmp(kptr->key_name,"EXTEND"))
-      {
-	 (*image_info)->extend = cfitsio_keyval2int(kptr, &status);
-         if (!status)
-         {
-            (*image_info)->bitfield |= kInfoPresent_EXTEND;
-         }
-         else
-         {
-            fprintf(stderr, "Invalid value for keyword 'EXTEND'.\n");
-         }
-      }
-      else if(!strcmp(kptr->key_name,"BLANK"))
-      {
-	 (*image_info)->blank = cfitsio_keyval2longlong(kptr, &status);
-         if (!status)
-         {
-            (*image_info)->bitfield |= kInfoPresent_BLANK;
-         }
-         else
-         {
-            fprintf(stderr, "Invalid value for keyword 'BLANK'.\n");
-         }
-      }
-      else if(!strcmp(kptr->key_name,"BSCALE"))
-      {
-	 (*image_info)->bscale = cfitsio_keyval2double(kptr, &status);
-         if (!status)
-         {
-            (*image_info)->bitfield |= kInfoPresent_BSCALE;
-         }
-         else
-         {
-            fprintf(stderr, "Invalid value for keyword 'BSCALE'.\n");
-         }
-      }
-      else if(!strcmp(kptr->key_name,"BZERO"))
-      {
-	 (*image_info)->bzero = cfitsio_keyval2double(kptr, &status);
-         if (!status)
-         {
-            (*image_info)->bitfield |= kInfoPresent_BZERO;
-         }
-         else
-         {
-            fprintf(stderr, "Invalid value for keyword 'BZERO'.\n");
-         }
-      }
+    kptr = keylist;
+    while (kptr && !status)
+    {
+        if(!strcmp(kptr->key_name,"SIMPLE"))
+        {
+            // ART - should check to see if keyword value is missing first
+            (*image_info)->simple = cfitsio_keyval2int(kptr, &status);
+            if (!status)
+            {
+                (*image_info)->bitfield |= kInfoPresent_SIMPLE;
+            }
+            else
+            {
+                fprintf(stderr, "Invalid value for keyword 'SIMPLE'.\n");
+            }
+        }
+        else if(!strcmp(kptr->key_name,"EXTEND"))
+        {
+            // ART - should check to see if keyword value is missing first
+            (*image_info)->extend = cfitsio_keyval2int(kptr, &status);
+            if (!status)
+            {
+                (*image_info)->bitfield |= kInfoPresent_EXTEND;
+            }
+            else
+            {
+                fprintf(stderr, "Invalid value for keyword 'EXTEND'.\n");
+            }
+        }
+        else if(!strcmp(kptr->key_name,"BLANK"))
+        {
+            // ART - should check to see if keyword value is missing first
+            (*image_info)->blank = cfitsio_keyval2longlong(kptr, &status);
+            if (!status)
+            {
+                (*image_info)->bitfield |= kInfoPresent_BLANK;
+            }
+            else
+            {
+                fprintf(stderr, "Invalid value for keyword 'BLANK'.\n");
+            }
+        }
+        else if(!strcmp(kptr->key_name,"BSCALE"))
+        {
+            // ART - should check to see if keyword value is missing first
+            (*image_info)->bscale = cfitsio_keyval2double(kptr, &status);
+            if (!status)
+            {
+                (*image_info)->bitfield |= kInfoPresent_BSCALE;
+            }
+            else
+            {
+                fprintf(stderr, "Invalid value for keyword 'BSCALE'.\n");
+            }
+        }
+        else if(!strcmp(kptr->key_name,"BZERO"))
+        {
+            // ART - should check to see if keyword value is missing first
+            (*image_info)->bzero = cfitsio_keyval2double(kptr, &status);
+            if (!status)
+            {
+                (*image_info)->bitfield |= kInfoPresent_BZERO;
+            }
+            else
+            {
+                fprintf(stderr, "Invalid value for keyword 'BZERO'.\n");
+            }
+        }
 
-      kptr = kptr->next;
-   }
+        kptr = kptr->next;
+    }
 
-   if (status)
-   {
-      goto error_exit;
-   }
+    if (status)
+    {
+        goto error_exit;
+    }
 
    /* Never use the fits keywords to determine NAXIS, NAXISi, BITPIX - if the image is compressed
     * these will be relevant to the compressed image.  But we need the values for the uncompressed
     * image.
     */
 
-   // Check if this HDU has image
-   fits_get_img_dim(fptr, &((*image_info)->naxis), &status);
-   if((*image_info)->naxis == 0)
-   {
-     //"No image in this HDU.";
-      error_code = CFITSIO_ERROR_DATA_EMPTY;
-      goto error_exit;
-   }
+    // Check if this HDU has image
+    fits_get_img_dim(fptr, &((*image_info)->naxis), &status);
+    if((*image_info)->naxis == 0)
+    {
+        //"No image in this HDU.";
+        error_code = CFITSIO_ERROR_DATA_EMPTY;
+        goto error_exit;
+    }
 
-   // Always extract NAXIS, NAXES[], BITPIX from actual image
-   fits_get_img_param(fptr, CFITSIO_MAX_DIM, &((*image_info)->bitpix), &((*image_info)->naxis),
-		      &((*image_info)->naxes[0]), &status);
+    // Always extract NAXIS, NAXES[], BITPIX from actual image
+    fits_get_img_param(fptr, CFITSIO_MAX_DIM, &((*image_info)->bitpix), &((*image_info)->naxis), &((*image_info)->naxes[0]), &status);
 
-   /* If this is a compressed image the default HDU is the one containing the compressed image, which
-    * doesn't have SIMPLE or EXTEND keywords. So, fetch them from the primary HDU. */
-   fits_get_hdu_num(fptr, &currHDU);
-   if (currHDU != 1)
-   {
-      /* current HDU was not primary HDU */
-      fits_movabs_hdu(fptr, 1, NULL, &status);
+    /* If this is a compressed image the default HDU is the one containing the compressed image, which
+     * doesn't have SIMPLE or EXTEND keywords. So, fetch them from the primary HDU. */
+    fits_get_hdu_num(fptr, &currHDU);
+    if (currHDU != 1)
+    {
+        /* current HDU was not primary HDU */
+        fits_movabs_hdu(fptr, 1, NULL, &status);
 
-      /* Now get SIMPLE and EXTEND keywords */
-      fits_read_key(fptr, TLOGICAL, "SIMPLE", &val, NULL, &status);
-      if (!status)
-      {
-	 (*image_info)->simple = val;
-	 (*image_info)->bitfield |= kInfoPresent_SIMPLE;
-      }
+        /* Now get SIMPLE and EXTEND keywords */
+        fits_read_key(fptr, TLOGICAL, "SIMPLE", &val, NULL, &status);
+        if (!status)
+        {
+            (*image_info)->simple = val;
+            (*image_info)->bitfield |= kInfoPresent_SIMPLE;
+        }
 
-      fits_read_key(fptr, TLOGICAL, "EXTEND", &val, NULL, &status);
-      if (!status)
-      {
-	 (*image_info)->extend = val;
-	 (*image_info)->bitfield |= kInfoPresent_EXTEND;
-      }
+        fits_read_key(fptr, TLOGICAL, "EXTEND", &val, NULL, &status);
+        if (!status)
+        {
+            (*image_info)->extend = val;
+            (*image_info)->bitfield |= kInfoPresent_EXTEND;
+        }
 
-      fits_movabs_hdu(fptr, currHDU, NULL, &status);
-   }
+        fits_movabs_hdu(fptr, currHDU, NULL, &status);
+    }
 
-   for(i=(*image_info)->naxis;i<(int) CFITSIO_MAX_DIM ;i++) (*image_info)->naxes[i]=0;
+    for(i=(*image_info)->naxis;i<(int) CFITSIO_MAX_DIM ;i++)
+    {
+        (*image_info)->naxes[i]=0;
+    }
 
-   if (keylistout)
-   {
-      *keylistout = keylist;
-   }
-   else
-   {
-      cfitsio_free_keys(&keylist);
-   }
+    if (keylistout)
+    {
+        *keylistout = keylist;
+    }
+    else
+    {
+        cfitsio_free_keys(&keylist);
+    }
 
-   return CFITSIO_SUCCESS;
+    return CFITSIO_SUCCESS;
 
 
 error_exit:
 
-   if(keylist) cfitsio_free_keys(&keylist);
+    if(keylist)
+    {
+        cfitsio_free_keys(&keylist);
+    }
 
-   if(image_info && *image_info)
-   {
-      free(*image_info);
-      *image_info = NULL;
-   }
+    if(image_info && *image_info)
+    {
+        free(*image_info);
+        *image_info = NULL;
+    }
 
-   return error_code;
-
+    return error_code;
 }
 
 int fitsrw_read_keylist_and_image_info(FITSRW_fhandle fhandle,
@@ -2050,6 +2133,7 @@ int fitsrw_read_keylist_and_image_info(FITSRW_fhandle fhandle,
 
 /****************************************************************************/
 
+/* `keylist` is never used by any caller (since the up-to-date keyword data is in the DRMS DB for all SUMS files) */
 int fitsrw_readintfile(int verbose,
                        char* fits_filename,
                        CFITSIO_IMAGE_INFO** image_info,
@@ -2082,6 +2166,8 @@ int fitsrw_readintfile(int verbose,
    }
 
    // Get keylist and image info (a separate function to reduce the function size)
+   /* `keylist` is not used when reading a file in SUMS; they fits keys exist as DRMS keys
+    * in the DRMS DB. */
    error_code = cfitsio_read_keylist_and_image_info(fptr, keylist, image_info);
    if(error_code != CFITSIO_SUCCESS) goto error_exit;
 
@@ -2701,129 +2787,160 @@ int cfitsio_write_special_to_cards(const char *specialKeyName, const char *speci
     return err;
 }
 
-int cfitsio_key_to_card(CFITSIO_KEYWORD *kptr, char card[FLEN_CARD], LinkedList_t **cards)
+/* ART - rewrite this so it uses fits_write_record()*/
+/* a card always constains a string representation of the keyword value */
+int cfitsio_key_value_to_string_internal(CFITSIO_KEYWORD *key, CFITSIO_FILE *cards, char **string_value)
 {
-    char temp[FLEN_CARD];
-    char buf[128];
+    char key_value[FLEN_CARD];
+    char key_name[FLEN_KEYWORD];
+    char *str_out = NULL;
+    size_t sz_str_out = FLEN_CARD;
+    CFITSIO_FILE *file = NULL;
+    int num_keys = 0;
+    int key_num = 0;
+    int cfiostat = 0;
     int err = CFITSIO_SUCCESS;
 
-    memset(card, 0, sizeof(FLEN_CARD));
-    if(!kptr) return CFITSIO_FAIL;
 
-    //TH:  add check for upper case, length limits
-    switch(kptr->key_type)
+    /* make temporary in-memory-only FITS file so we can write the CFITSIO_KEYWORD to the header of this file,
+     * and then read the keyword back with fits_read_card(); the net effect is to convert a CFITSIO_KEYWORD
+     * to a FITSIO card, which is then parsed so that the value and comment are extracted */
+
+    /* to deal with HISTORY and COMMENT keywords (which can span multiple cards), use fits_write_history()/
+     * fits_write_comment() to the temporary fits file, and then use multiple fits_read_record() calls
+     * to read all cards */
+
+    /* to deal with long-string keywords (which can span multiple CONTINUE cards), use fits_write_key_longstr()
+     * to write the keyword to the temporary fits file, and then use multiple fits_read_record() calls
+     * to read all cards */
+    if (key)
     {
-        case(kFITSRW_Type_String):
-        case('X'):
+        XASSERT(cards || string_value);
+
+        if (cards)
         {
-            /* 68 is the maximum number of characters allowed in a FITS string keyword,
-             * provided the opening single quote string starts on byte 11. We need
-             * to truncate strings that are longer than this. However, the HISTORY and COMMENT keywords,
-             * which are strings, should not be truncated. They are written to the FITS file
-             * with special API function calls, and if the length of the values of these keywords
-             * is greater than 68 characters, FITSIO will split these strings over multiple
-             * instances of the keyword. */
-            char format[128] = {0};
-            int isspecial = (strcasecmp(kptr->key_name, "history") == 0 || strcasecmp(kptr->key_name, "comment") == 0);
-
-            if (isspecial)
-            {
-                err = cfitsio_write_special_to_cards(kptr->key_name, kptr->key_value.vs, cards);
-            }
-            else
-            {
-                if (strlen(kptr->key_comment) > 0)
-                {
-                    snprintf(format, sizeof(format), "%s / %s", "%-8s= '%.68s'", kptr->key_comment);
-                }
-                else
-                {
-                    snprintf(format, sizeof(format), "%s", "%-8s= '%.68s'");
-                }
-
-                snprintf(temp, sizeof(temp), format, kptr->key_name, kptr->key_value.vs);
-            }
+            file = cards;
         }
-            break;
-
-        case(kFITSRW_Type_Logical):
-            if(strlen(kptr->key_comment) >0)
-            {
-                if(kptr->key_value.vl)
-                    sprintf(temp,"%-8s=                    T / %s", kptr->key_name, kptr->key_comment);
-                else
-                    sprintf(temp,"%-8s=                    F / %s", kptr->key_name, kptr->key_comment);
-            }
-            else
-            {
-                if(kptr->key_value.vl)
-                    sprintf(temp,"%-8s=                    T", kptr->key_name);
-                else
-                    sprintf(temp,"%-8s=                    F", kptr->key_name);
-            }
-
-            break;
-
-        case(kFITSRW_Type_Integer):
-            if(strlen(kptr->key_comment) >0)
-            {
-                sprintf(temp,"%-8s= %20lld / %s", kptr->key_name, kptr->key_value.vi, kptr->key_comment);
-            }
-            else
-            {
-                sprintf(temp,"%-8s= %20lld", kptr->key_name, kptr->key_value.vi);
-            }
-            break;
-
-        case(kFITSRW_Type_Float):
+        else
         {
-            int usedef = 1;
+            err = cfitsio_create_file(&file, "-", 1);
+        }
 
-            if (*kptr->key_format != '\0')
+        if (!err)
+        {
+            err = Cf_write_key(file->fptr, key);
+
+            if (!err)
             {
-                double tester = 0;
-                snprintf(buf, sizeof(buf), kptr->key_format, kptr->key_value.vf);
-                if (sscanf(buf, "%lf", &tester) == 1)
+                if (!cards)
                 {
-                    snprintf(temp, sizeof(temp), "%-8s= %s", kptr->key_name, buf);
-                    usedef = 0;
-                }
-            }
+                    /* creating an output string */
+                    if (strncasecmp(key->key_name, CFITSIO_KEYWORD_HISTORY, strlen(CFITSIO_KEYWORD_HISTORY)) == 0 || strncasecmp(key->key_name, CFITSIO_KEYWORD_COMMENT, strlen(CFITSIO_KEYWORD_COMMENT)) == 0)
+                    {
+                        fits_get_hdrspace(file->fptr, &num_keys, NULL, &cfiostat);
 
-            /* Use default scheme %20.15e */
-            if (usedef)
-            {
-                snprintf(temp, sizeof(temp), "%-8s= %20.15e", kptr->key_name, kptr->key_value.vf);
-            }
+                        if (!cfiostat)
+                        {
+                            str_out = calloc(1, sz_str_out);
 
-            if(strlen(kptr->key_comment) > 0)
-            {
-                char *pref = strdup(temp);
+                            for (key_num = 1; key_num <= num_keys; key_num++)
+                            {
+                                fits_read_keyn(file->fptr, key_num, key_name, key_value, NULL, &cfiostat);
 
-                if (pref)
-                {
-                    snprintf(temp, sizeof(temp), "%s / %s", pref, kptr->key_comment);
-                    free(pref);
-                }
-                else
-                {
-                    return CFITSIO_ERROR_OUT_OF_MEMORY;
+                                if (!cfiostat)
+                                {
+                                    if (strcasecmp(key_name, key->key_name) == 0)
+                                    {
+                                        str_out = base_strcatalloc(str_out, key_value, &sz_str_out);
+                                    }
+                                }
+                                else
+                                {
+                                    err = CFITSIO_ERROR_LIBRARY;
+                                }
+                            }
+
+                            if (!err)
+                            {
+                                *string_value = str_out; // yoink!
+                            }
+                        }
+                        else
+                        {
+                            err = CFITSIO_ERROR_LIBRARY;
+                        }
+                    }
+                    else if (key->key_type == CFITSIO_KEYWORD_DATATYPE_STRING)
+                    {
+                        fits_read_key_longstr(file->fptr, key->key_name, &str_out, NULL, &cfiostat);
+
+                        if (cfiostat)
+                        {
+                            err = CFITSIO_ERROR_LIBRARY;
+                        }
+
+                        if (!err)
+                        {
+                            *string_value = str_out; // yoink!
+                        }
+                    }
+                    else
+                    {
+                        /* converts value to string */
+                        fits_read_keyword(file->fptr, key->key_name, key_value, NULL, &cfiostat);
+
+                        if (cfiostat)
+                        {
+                            err = CFITSIO_ERROR_LIBRARY;
+                        }
+
+                        if (!err)
+                        {
+                            *string_value = strdup(key_value); // yoink!
+                        }
+                    }
                 }
             }
         }
-            break;
+
+        if (!cards && file)
+        {
+            /* will drop data on floor */
+            cfitsio_close_file(&file);
+        }
     }
 
-    sprintf(card,"%-80s",temp); // append space to the end to 80 chars
+    return err;
+}
 
-    //DEBUGMSG((stderr,"[01234567890123456789012345678901234567890123456789012345678901234567890123456789]\n"));
-    //DEBUGMSG((stderr,"[%s]\n",card));
+int cfitsio_key_value_to_cards(CFITSIO_KEYWORD *key, CFITSIO_FILE **cards)
+{
+    int err = CFITSIO_SUCCESS;
 
-    return CFITSIO_SUCCESS;
+
+    if (cards)
+    {
+        if (!*cards)
+        {
+            err = cfitsio_create_file(cards, "-", 1);
+        }
+    }
+
+    if (!err)
+    {
+        err = cfitsio_key_value_to_string_internal(key, *cards, NULL);
+    }
+
+    return err;
+}
+
+int cfitsio_key_value_to_string(CFITSIO_KEYWORD *key, char **string_value)
+{
+    return cfitsio_key_value_to_string_internal(key, NULL, string_value);
 }
 
 /****************************************************************************/
-
+/* `keylist` is used by drms_fitsrw_read(), which is used by ingest_from_fits; this is not an internal SUMS file */
 int fitsrw_read(int verbose,
                 const char *filename,
                 CFITSIO_IMAGE_INFO** image_info,
@@ -2878,6 +2995,7 @@ int fitsrw_read(int verbose,
 
       if (!error_code)
       {
+          /* `keylist` is used by drms_fitsrw_read(), which is used by ingest_from_fits */
          error_code = cfitsio_read_keylist_and_image_info(fptr, keylist, image_info);
       }
 

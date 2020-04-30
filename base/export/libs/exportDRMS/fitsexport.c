@@ -3,11 +3,17 @@
 #include "fitsexport.h"
 #include "util.h"
 #include "tasrw.h"
+#include "atoinc.h"
 #include <sys/mman.h>
 #include <openssl/md5.h>
 
 #define kFERecnum "RECNUM"
 #define kFERecnumFormat "%lld"
+#define kFERecnumComment "The DRMS-series record number (unique within series)"
+
+#define kFE_DRMS_ID "DRMS_ID"
+#define kFE_DRMS_ID_COMMENT "globally unique image ID - <SERIES>:<RECNUM>:<SEGMENT>"
+#define kFE_DRMS_ID_FORMAT "%s"
 
 /* keyword that can never be placed in a FITS file via DRMS */
 
@@ -99,6 +105,52 @@ typedef enum
      kFeKwCharError
 } FeKwCharState_t;
 
+static int FE_print_time_keyword(DRMS_Keyword_t *key, char *time_string, int sz_time_string, char *unit, int sz_unit)
+{
+    char buf[1024];
+    char *endptr = NULL;
+    TIME interval = 0; /* the number of seconds in the time interval implied by key->info->unit; e.g., if unit == 'mins' ==> 60 */
+    int err = 0;
+
+    interval = atoinc(key->info->unit);
+    if (interval > 0)
+    {
+        /* ART - in general, time intervals in DRMS are double keywords, not TIME keywords; as such, this code will not be
+         * used for printing time intervals, and instead interval values will appear as double FITS keywords; but if this code is
+         * used, then the time interval needs to be printed as a string */
+
+        /* the key value is a time interval where the interval given in seconds is key->value.time_val; must
+         * convert the value in seconds to the value in the keyword unit of the time interval (e.g., if unit is 'mins', then
+         * divide by 60); use a format that FITS would normally use for doubles */
+        snprintf(buf, sizeof(buf), "%.*G", 17, key->value.time_val / interval);
+    }
+    else
+    {
+        /* force ISO for consistency, and use three decimal places for seconds - this is more precision than will ever
+         * be needed (the max is 2 in production series) */
+        sprint_time(buf, key->value.time_val, "ISO", 3);
+
+        /* sprint_time tacks on a 'Z', which is not FITS-standard-compliant; remove it */
+        if (buf[strlen(buf) - 1] == 'Z')
+        {
+            buf[strlen(buf) - 1] = '\0';
+        }
+
+        /* we just changed the time unit */
+        if (unit)
+        {
+            snprintf(unit, sz_unit, "ISO");
+        }
+    }
+
+    if (time_string)
+    {
+        snprintf(time_string, sz_time_string, "%s", buf);
+    }
+
+    return err;
+}
+
 int DateHndlr(void *keyin, void **fitskeys, void *nameout)
 {
    DRMS_Keyword_t *key = (DRMS_Keyword_t *)keyin;
@@ -121,21 +173,15 @@ int DateHndlr(void *keyin, void **fitskeys, void *nameout)
          if (strcmp(unitbuf, "ISO") == 0)
          {
             char tbuf[1024];
-            drms_keyword_snprintfval(key, tbuf, sizeof(tbuf));
+            FE_print_time_keyword(key, tbuf, sizeof(tbuf), NULL, 0);
 
-            /* The time string returned should end with the char 'Z' - remove it since
-             * the FITS standard doesn't like it. */
+            /* the time string returned ends with the char 'Z' - remove it since it is not FITS-standard-compliant */
             if (tbuf[strlen(tbuf) - 1] == 'Z')
             {
                tbuf[strlen(tbuf) - 1] = '\0';
             }
 
-            if (CFITSIO_SUCCESS != (fitsrwRet = cfitsio_append_key((CFITSIO_KEYWORD**)fitskeys,
-                                                                   (char *)nameout,
-                                                                   kFITSRW_Type_String,
-                                                                   NULL,
-                                                                   (void *)tbuf,
-                                                                   NULL)))
+            if (CFITSIO_SUCCESS != (fitsrwRet = cfitsio_append_key((CFITSIO_KEYWORD**)fitskeys, (char *)nameout, kFITSRW_Type_String, (void *)tbuf, key->info->format ?  key->info->format : NULL, key->info->description ?  key->info->description : NULL, unitbuf)))
             {
                fprintf(stderr, "FITSRW returned '%d'.\n", fitsrwRet);
                err = 2;
@@ -192,12 +238,7 @@ int CommHndlr(void *keyin, void **fitskeys, void *nameout)
 
                if (*sbuf)
                {
-                  if (CFITSIO_SUCCESS != (fitsrwRet = cfitsio_append_key((CFITSIO_KEYWORD**)fitskeys,
-                                                                         (char *)nameout,
-                                                                         kFITSRW_Type_String,
-                                                                         NULL,
-                                                                         (void *)sbuf,
-                                                                         NULL)))
+                  if (CFITSIO_SUCCESS != (fitsrwRet = cfitsio_append_key((CFITSIO_KEYWORD**)fitskeys, (char *)nameout, kFITSRW_Type_String, (void *)sbuf, key->info->format, key->info->description, key->info->unit)))
                   {
                      fprintf(stderr, "FITSRW returned '%d'.\n", fitsrwRet);
                      err = 2;
@@ -228,12 +269,7 @@ int CommHndlr(void *keyin, void **fitskeys, void *nameout)
             *pout = '\0';
             if (*sbuf)
             {
-               if (CFITSIO_SUCCESS != (fitsrwRet = cfitsio_append_key((CFITSIO_KEYWORD**)fitskeys,
-                                                                      (char *)nameout,
-                                                                      kFITSRW_Type_String,
-                                                                      NULL,
-                                                                      (void *)sbuf,
-                                                                      NULL)))
+               if (CFITSIO_SUCCESS != (fitsrwRet = cfitsio_append_key((CFITSIO_KEYWORD**)fitskeys, (char *)nameout, kFITSRW_Type_String, (void *)sbuf, key->info->format, key->info->description, key->info->unit)))
                {
                   fprintf(stderr, "FITSRW returned '%d'.\n", fitsrwRet);
                   err = 2;
@@ -603,140 +639,242 @@ int ExportFITS3(DRMS_Env_t *env, DRMS_Array_t *arrout, CFITSIO_DATA *fitsData, c
 
     return stat;
 }
-static int DRMSKeyValToFITSKeyVal(DRMS_Keyword_t *key,
-                                  char *fitstype,
-                                  char **format,
-                                  void **fitsval)
+
+static int DRMSKeyTypeToFITSKeyType(DRMS_Type_t drms_type, cfitsio_keyword_datatype_t *fits_type)
+{
+    int err = 0;
+
+    switch (drms_type)
+    {
+        case DRMS_TYPE_CHAR:
+        case DRMS_TYPE_SHORT:
+        case DRMS_TYPE_INT:
+        case DRMS_TYPE_LONGLONG:
+            *fits_type = 'I';
+            break;
+        case DRMS_TYPE_FLOAT:
+        case DRMS_TYPE_DOUBLE:
+            *fits_type = 'F';
+            break;
+        case DRMS_TYPE_TIME:
+        case DRMS_TYPE_STRING:
+            *fits_type = 'C';
+            break;
+        default:
+            fprintf(stderr, "unsupported DRMS type '%d'.\n", drms_type);
+            err = 1;
+            break;
+    }
+
+    return err;
+}
+
+static int FE_cast_type_to_fits_key_type(FE_Keyword_ExtType_t cast_type, cfitsio_keyword_datatype_t *fits_type)
+{
+    int err = 0;
+
+    switch (cast_type)
+    {
+        case kFE_Keyword_ExtType_Integer:
+            *fits_type = CFITSIO_KEYWORD_DATATYPE_INTEGER;
+            break;
+        case kFE_Keyword_ExtType_Float:
+            *fits_type = CFITSIO_KEYWORD_DATATYPE_FLOAT;
+            break;
+        case kFE_Keyword_ExtType_String:
+            *fits_type = CFITSIO_KEYWORD_DATATYPE_STRING;
+            break;
+        case kFE_Keyword_ExtType_Logical:
+            *fits_type = CFITSIO_KEYWORD_DATATYPE_LOGICAL;
+            break;
+        default:
+            fprintf(stderr, "unsupported fits-export cast type '%d'.\n", cast_type);
+            err = 1;
+            break;
+    }
+
+    return err;
+}
+
+static int DRMSKeyValToFITSKeyVal(DRMS_Keyword_t *key, cfitsio_keyword_datatype_t *fitstype, void **fitsval, char **format, char **comment, char **unit)
 {
    int err = 0;
    DRMS_Type_Value_t *valin = &key->value;
+   DRMS_Value_t type_and_value;
+   char unit_new[CFITSIO_MAX_COMMENT] = {0};
    void *res = NULL;
    int status = DRMS_SUCCESS;
    FE_Keyword_ExtType_t casttype = fitsexport_keyword_getcast(key);
 
-   if (valin && fitstype && format)
-   {
-      *format = strdup(key->info->format);
+    if (valin && fitstype && format)
+    {
+        if (format)
+        {
+            *format = strdup(key->info->format);
+        }
 
-      /* If the keyword being exported to FITS is a reserved keyword, then
-       * drop into specialized code to handle that reserved keyword. */
-      if (casttype != kFE_Keyword_ExtType_None)
-      {
-         /* cast specified in key's description field */
-         if (key->info->type != DRMS_TYPE_RAW)
-         {
-            switch (casttype)
+        if (comment)
+        {
+            if (*key->info->description != '\0')
             {
-               case kFE_Keyword_ExtType_Integer:
-                 res = malloc(sizeof(long long));
-                 *(long long *)res = drms2int(key->info->type, valin, &status);
-                 *fitstype = kFITSRW_Type_Integer;
-                 break;
-               case kFE_Keyword_ExtType_Float:
-                 res = malloc(sizeof(double));
-                 *(double *)res = drms2double(key->info->type, valin, &status);
-                 *fitstype = kFITSRW_Type_Float;
-                 break;
-               case kFE_Keyword_ExtType_String:
-               {
-                  char tbuf[1024];
-                  drms_keyword_snprintfval(key, tbuf, sizeof(tbuf));
-                  res = (void *)strdup(tbuf);
-                  *fitstype = kFITSRW_Type_String;
-               }
-               break;
-               case kFE_Keyword_ExtType_Logical:
-                 res = malloc(sizeof(long long));
-
-                 if (drms2longlong(key->info->type, valin, &status))
-                 {
-                    *(long long *)res = 0;
-                 }
-                 else
-                 {
-                    *(long long *)res = 1;
-                 }
-                 *fitstype = kFITSRW_Type_Logical;
-                 break;
-               default:
-                 fprintf(stderr, "Unsupported FITS type '%d'.\n", (int)casttype);
-                 err = 1;
-                 break;
+                *comment = strdup(key->info->description);
             }
-         }
-         else
-         {
-            /* This shouldn't happen, unless somebody mucked with key->info->description. */
-            fprintf(stderr, "DRMS_TYPE_RAW is not supported.\n");
-            err = 1;
-         }
-      }
-      else
-      {
-         /* default conversion */
-         switch (key->info->type)
-         {
-            case DRMS_TYPE_CHAR:
-              res = malloc(sizeof(long long));
-              *(long long *)res = (long long)(valin->char_val);
-              *fitstype = 'I';
-              break;
-            case DRMS_TYPE_SHORT:
-              res = malloc(sizeof(long long));
-              *(long long *)res = (long long)(valin->short_val);
-              *fitstype = 'I';
-              break;
-            case DRMS_TYPE_INT:
-              res = malloc(sizeof(long long));
-              *(long long *)res = (long long)(valin->int_val);
-              *fitstype = 'I';
-              break;
-            case DRMS_TYPE_LONGLONG:
-              res = malloc(sizeof(long long));
-              *(long long *)res = valin->longlong_val;
-              *fitstype = 'I';
-              break;
-            case DRMS_TYPE_FLOAT:
-              res = malloc(sizeof(double));
-              *(double *)res = (double)(valin->float_val);
-              *fitstype = 'F';
-              break;
-            case DRMS_TYPE_DOUBLE:
-              res = malloc(sizeof(double));
-              *(double *)res = valin->double_val;
-              *fitstype = 'F';
-              break;
-            case DRMS_TYPE_TIME:
+            else
             {
-               char tbuf[1024];
-               drms_keyword_snprintfval(key, tbuf, sizeof(tbuf));
-               res = (void *)strdup(tbuf);
-               *fitstype = 'C';
+                *comment = NULL;
             }
-            break;
-            case DRMS_TYPE_STRING:
-              res = (void *)strdup(valin->string_val);
-              *fitstype = 'C';
-              break;
-            default:
-              fprintf(stderr, "Unsupported DRMS type '%d'.\n", (int)key->info->type);
-              err = 1;
-              break;
-         }
-      }
-   }
-   else
-   {
-      fprintf(stderr, "DRMSKeyValToFITSKeyVal() - Invalid argument.\n");
-      err = 1;
-   }
+        }
 
-   if (!err)
-   {
-      *fitsval = res;
-   }
+        if (fitstype)
+        {
+            if (casttype == kFE_Keyword_ExtType_None)
+            {
+                err = DRMSKeyTypeToFITSKeyType(key->info->type, fitstype);
+            }
+            else
+            {
+                err = FE_cast_type_to_fits_key_type(casttype, fitstype);
+            }
+        }
 
-   return err;
+        if (!err)
+        {
+            /* if valin is the missing value, then the output value should be NULL */
+            type_and_value.type = key->info->type;
+            type_and_value.value = *valin;
+
+            if (valin && drms_ismissing(&type_and_value))
+            {
+                res = NULL;
+            }
+            else
+            {
+                /* If the keyword being exported to FITS is a reserved keyword, then
+                 * drop into specialized code to handle that reserved keyword. */
+                if (casttype != kFE_Keyword_ExtType_None)
+                {
+                    /* cast specified in key's description field */
+                    if (key->info->type != DRMS_TYPE_RAW)
+                    {
+                        switch (casttype)
+                        {
+                           case kFE_Keyword_ExtType_Integer:
+                             res = malloc(sizeof(long long));
+                             *(long long *)res = drms2int(key->info->type, valin, &status);
+                             break;
+                           case kFE_Keyword_ExtType_Float:
+                             res = malloc(sizeof(double));
+                             *(double *)res = drms2double(key->info->type, valin, &status);
+                             break;
+                           case kFE_Keyword_ExtType_String:
+                           {
+                              char tbuf[1024];
+                              drms_keyword_snprintfval(key, tbuf, sizeof(tbuf));
+                              res = (void *)strdup(tbuf);
+                           }
+                           break;
+                           case kFE_Keyword_ExtType_Logical:
+                             res = malloc(sizeof(long long));
+
+                             if (drms2longlong(key->info->type, valin, &status))
+                             {
+                                *(long long *)res = 0;
+                             }
+                             else
+                             {
+                                *(long long *)res = 1;
+                             }
+                             break;
+                           default:
+                             fprintf(stderr, "Unsupported FITS type '%d'.\n", (int)casttype);
+                             err = 1;
+                             break;
+                        }
+                    }
+                    else
+                    {
+                        /* This shouldn't happen, unless somebody mucked with key->info->description. */
+                        fprintf(stderr, "DRMS_TYPE_RAW is not supported.\n");
+                        err = 1;
+                    }
+                }
+                else
+                {
+                    /* default conversion */
+                    switch (key->info->type)
+                    {
+                      case DRMS_TYPE_CHAR:
+                        res = malloc(sizeof(long long));
+                        *(long long *)res = (long long)(valin->char_val);
+                        break;
+                      case DRMS_TYPE_SHORT:
+                        res = malloc(sizeof(long long));
+                        *(long long *)res = (long long)(valin->short_val);
+                        break;
+                      case DRMS_TYPE_INT:
+                        res = malloc(sizeof(long long));
+                        *(long long *)res = (long long)(valin->int_val);
+                        break;
+                      case DRMS_TYPE_LONGLONG:
+                        res = malloc(sizeof(long long));
+                        *(long long *)res = valin->longlong_val;
+                        break;
+                      case DRMS_TYPE_FLOAT:
+                        res = malloc(sizeof(double));
+                        *(double *)res = (double)(valin->float_val);
+                        break;
+                      case DRMS_TYPE_DOUBLE:
+                        res = malloc(sizeof(double));
+                        *(double *)res = valin->double_val;
+                        break;
+                      case DRMS_TYPE_TIME:
+                      {
+                         char tbuf[1024];
+                         FE_print_time_keyword(key, tbuf, sizeof(tbuf), unit_new, sizeof(unit_new));
+                         res = (void *)strdup(tbuf);
+                      }
+                      break;
+                      case DRMS_TYPE_STRING:
+                        res = (void *)strdup(valin->string_val);
+                        break;
+                      default:
+                        fprintf(stderr, "unsupported DRMS type '%d'\n", (int)key->info->type);
+                        err = 1;
+                        break;
+                    }
+                }
+            }
+
+            if (unit)
+            {
+                if (*unit_new != '\0')
+                {
+                    *unit = strdup(unit_new);
+                }
+                else
+                {
+                    *unit = strdup(key->info->unit);
+                }
+            }
+        }
+        else
+        {
+            fprintf(stderr, "[ DRMSKeyValToFITSKeyVal() ] cannot convert DRMS keyword type '%c' to a FITS keyword type\n", key->info->type);
+        }
+    }
+    else
+    {
+        fprintf(stderr, "[ DRMSKeyValToFITSKeyVal() ] invalid argument\n");
+        err = 1;
+    }
+
+
+    if (!err)
+    {
+        *fitsval = res;
+    }
+
+    return err;
 }
 
 /* These two function export to FITS files only. */
@@ -895,15 +1033,14 @@ int fitsexport_mapexport_tofile2(DRMS_Segment_t *seg,
                      *
                      * Try to use the libfitsrw routines which automatically cache open
                      * fitsfile pointers and calculate checksums, etc. */
-                    int fileIsUpToDate = 0;
-                    char internalFITSFile[PATH_MAX];
-                    int fdIntFITSFile;
-                    char *oldHeaderCheckSum = NULL;
-                    char *newHeaderCheckSum = NULL;
+                    int file_is_up_to_date = 0;
+                    char sums_file[PATH_MAX];
+                    int fd_sums_file;
+                    char *old_headsum = NULL;
+                    char *new_headsum = NULL;
                     void *addr = NULL;
                     DRMS_Segment_t *actualSeg = NULL;
-                    CFITSIO_FILE *fitsFile = NULL; /* in-memory-only fitsile of existing file on disk that has been modified to
-                                                    * have the updated keywords */
+                    CFITSIO_FILE *fitsFile = NULL; /* in-memory-only fitsile of existing file on disk */
                     CFITSIO_HEADER *oldFitsHeader = NULL; /* in-memory-only fitsfile header of existing file on disk (no image) */
                     CFITSIO_HEADER *newFitsHeader = NULL; /* in-memory-only fitsfile header of file formed from fitskeys (no image) */
                     CFITSIO_FILE *updated_file = NULL; /* in-memory-only fitsfile to which fitsFile content has been copied and updated */
@@ -913,29 +1050,29 @@ int fitsexport_mapexport_tofile2(DRMS_Segment_t *seg,
                     int close_out_file = 0; /* if we are streaming or using the callback method, then do not close out_file */
 
 
-                    snprintf(internalFITSFile, sizeof(internalFITSFile), "%s", filename);
+                    snprintf(sums_file, sizeof(sums_file), "%s", filename);
 
                     /* this must be open read-only since it is in SUMS*/
-                    if (cfitsio_open_file(internalFITSFile, &fitsFile, 0))
+                    if (cfitsio_open_file(sums_file, &fitsFile, 0))
                     {
                         /* if we can't open the file for some reason, do not error out, just pretend the existing file
                          * does not exist */
-                        fprintf(stderr, "[ fitsexport_mapexport_tofile2() ] WARNING: unable to open internal FITS file '%s'\n", internalFITSFile);
+                        fprintf(stderr, "[ fitsexport_mapexport_tofile2() ] WARNING: unable to open internal FITS file '%s'\n", sums_file);
                     }
                     else
                     {
                         /* XXX test some shit out
                          * this works, but creating a FITS file with "-" does not, even if I flush everything as much as possible
                          */
-                        // cfitsio_generate_checksum(NULL, &oldHeaderCheckSum, (CFITSIO_HEADER **)&fitsFile);
+                        // cfitsio_generate_checksum(NULL, &old_headsum, (CFITSIO_HEADER **)&fitsFile);
                         /* XXX */
                         /* returns NULL if the file does not exist */
-                        if (cfitsio_read_headsum(fitsFile, &oldHeaderCheckSum))
+                        if (cfitsio_read_headsum(fitsFile, &old_headsum))
                         {
-                            fprintf(stderr, "[ fitsexport_mapexport_tofile2() ] WARNING: unable to read HEADSUM from internal FITS file '%s'\n", internalFITSFile);
+                            fprintf(stderr, "[ fitsexport_mapexport_tofile2() ] WARNING: unable to read HEADSUM from internal FITS file '%s'\n", sums_file);
                         }
 
-                        if (!oldHeaderCheckSum)
+                        if (!old_headsum)
                         {
                             /* there was no HEADSUM keyword in the internal FITS file, which is OK since files were not
                              * initially created with HEADSUM keywords; it is not clear if the fitsFile header has
@@ -967,9 +1104,9 @@ int fitsexport_mapexport_tofile2(DRMS_Segment_t *seg,
                             if (status == DRMS_SUCCESS)
                             {
                                 /* oldFitsHeader has the header of the fits file wew are exporting; fitskeys is a list
-                                 * of fits keywords that we expect to be in fits file we are exporting; oldHeaderCheckSum
+                                 * of fits keywords that we expect to be in fits file we are exporting; old_headsum
                                  * will contain the checksum of the keys listed in fitskeys that exist in oldFitsHeader */
-                                if (cfitsio_generate_checksum(&oldFitsHeader, NULL, &oldHeaderCheckSum))
+                                if (cfitsio_generate_checksum(&oldFitsHeader, NULL, &old_headsum))
                                 {
                                     fprintf(stderr, "[ fitsexport_mapexport_tofile2() ] unable to calculate header checksum\n");
                                     status = DRMS_ERROR_EXPORT;
@@ -983,17 +1120,17 @@ int fitsexport_mapexport_tofile2(DRMS_Segment_t *seg,
                         cfitsio_close_header(&oldFitsHeader);
                     }
 
-                    /* creates CFITSIO_HEADER and writes FITSIO header into it; must free newFitsHeader; newFitsHeader has only the
-                     * keys listed in fitskeys */
-                    if (cfitsio_generate_checksum(&newFitsHeader, fitskeys, &newHeaderCheckSum))
+                    /* makes `newFitsHeader` CFITSIO_HEADER that contains metadata contained in `fitskeys`; must free newFitsHeader;
+                     * generates checksum from CFITSIO_HEADER, placing it in `new_headsum` */
+                    if (cfitsio_generate_checksum(&newFitsHeader, fitskeys, &new_headsum))
                     {
                         fprintf(stderr, "[ fitsexport_mapexport_tofile2() ] unable to calculate header checksum\n");
                         status = DRMS_ERROR_EXPORT;
                     }
 
-                    fileIsUpToDate = oldHeaderCheckSum && newHeaderCheckSum && strcmp(oldHeaderCheckSum, newHeaderCheckSum) == 0;
+                    file_is_up_to_date = old_headsum && new_headsum && strcmp(old_headsum, new_headsum) == 0;
 
-                    if (fileIsUpToDate)
+                    if (file_is_up_to_date)
                     {
                         /* no need to export - existing header is up-to-date; if we are not streaming to stdout,
                          * make a link from filenameout to the internal FITS file; if we are streaming to stdout,
@@ -1001,28 +1138,28 @@ int fitsexport_mapexport_tofile2(DRMS_Segment_t *seg,
                         if (streaming)
                         {
                             /* dump existing internal file to stdout */
-                            fdIntFITSFile = open(internalFITSFile, O_RDONLY);
-                            if (fdIntFITSFile == -1)
+                            fd_sums_file = open(sums_file, O_RDONLY);
+                            if (fd_sums_file == -1)
                             {
-                                fprintf(stderr, "[ fitsexport_mapexport_tofile2() ] unable to open internal SUMS file '%s'\n", internalFITSFile);
+                                fprintf(stderr, "[ fitsexport_mapexport_tofile2() ] unable to open internal SUMS file '%s'\n", sums_file);
                                 status = DRMS_ERROR_INVALIDFILE;
                             }
 
                             if (!status)
                             {
                                 /* get file size */
-                                if (fstat(fdIntFITSFile, &stbuf) == -1)
+                                if (fstat(fd_sums_file, &stbuf) == -1)
                                 {
-                                    fprintf(stderr, "[ fitsexport_mapexport_tofile2() ] unable to obtain file size of internal SUMS file '%s'\n", internalFITSFile);
+                                    fprintf(stderr, "[ fitsexport_mapexport_tofile2() ] unable to obtain file size of internal SUMS file '%s'\n", sums_file);
                                     status = DRMS_ERROR_INVALIDFILE;
                                 }
                             }
 
                             if (!status)
                             {
-                                if ((addr = mmap(NULL, stbuf.st_size, PROT_READ, MAP_PRIVATE, fdIntFITSFile, 0)) == MAP_FAILED);
+                                if ((addr = mmap(NULL, stbuf.st_size, PROT_READ, MAP_PRIVATE, fd_sums_file, 0)) == MAP_FAILED);
                                 {
-                                    fprintf(stderr, "[ fitsexport_mapexport_tofile2() ] unable to memory-map internal SUMS file '%s'\n", internalFITSFile);
+                                    fprintf(stderr, "[ fitsexport_mapexport_tofile2() ] unable to memory-map internal SUMS file '%s'\n", sums_file);
                                     status = DRMS_ERROR_INVALIDFILE;
                                 }
                             }
@@ -1031,16 +1168,16 @@ int fitsexport_mapexport_tofile2(DRMS_Segment_t *seg,
                             {
                                 if (write(STDOUT_FILENO, addr, stbuf.st_size) == -1)
                                 {
-                                    fprintf(stderr, "[ fitsexport_mapexport_tofile2() ] unable to write memory-mapped internal SUMS file '%s' to stdout\n", internalFITSFile);
+                                    fprintf(stderr, "[ fitsexport_mapexport_tofile2() ] unable to write memory-mapped internal SUMS file '%s' to stdout\n", sums_file);
                                     status = DRMS_ERROR_INVALIDFILE;
                                 }
                             }
 
-                            close(fdIntFITSFile);
+                            close(fd_sums_file);
                         }
                         else
                         {
-                            if (symlink(internalFITSFile, realfileout) == -1)
+                            if (symlink(sums_file, realfileout) == -1)
                             {
                                 status = DRMS_ERROR_INVALIDFILE;
                             }
@@ -1105,17 +1242,9 @@ int fitsexport_mapexport_tofile2(DRMS_Segment_t *seg,
                          * the DRMS keywords for this image */
                         if (status == DRMS_SUCCESS)
                         {
-                            if (cfitsio_write_headsum(updated_file, newHeaderCheckSum))
+                            if (cfitsio_write_headsum(updated_file, new_headsum))
                             {
                                 status = DRMS_ERROR_FITSRW;
-                            }
-                        }
-
-                        if (status == DRMS_SUCCESS)
-                        {
-                            if (cfitsio_update_key(updated_file, &headsum_key))
-                            {
-
                             }
                         }
 
@@ -1283,6 +1412,7 @@ CFITSIO_KEYWORD *fitsexport_mapkeys(DRMS_Segment_t *seg,
    DRMS_Record_t *recin = seg->record;
    Exputl_KeyMap_t *map = NULL;
    FILE *fptr = NULL;
+   char drms_id[CFITSIO_MAX_COMMENT];
    int fitsrwRet = 0;
 
    while ((key = drms_record_nextkey(recin, &last, 0)) != NULL)
@@ -1336,16 +1466,20 @@ CFITSIO_KEYWORD *fitsexport_mapkeys(DRMS_Segment_t *seg,
 
    /* Export recnum to facilitate the association between an exported FITS file and its record of origin. */
    long long recnum = seg->record->recnum;
-   if (CFITSIO_SUCCESS != (fitsrwRet = cfitsio_append_key(&fitskeys,
-                                                          kFERecnum,
-                                                          kFITSRW_Type_Integer,
-                                                          NULL,
-                                                          (void *)&recnum,
-                                                          kFERecnumFormat)))
+   if (CFITSIO_SUCCESS != (fitsrwRet = cfitsio_append_key(&fitskeys, kFERecnum, kFITSRW_Type_Integer, (void *)&recnum, kFERecnumFormat, kFERecnumComment, NULL)))
    {
       fprintf(stderr, "FITSRW returned '%d'.\n", fitsrwRet);
       statint = DRMS_ERROR_FITSRW;
    }
+
+    /* recnum is nice, but to uniquely ID every image, we need series/recnum/segment*/
+    snprintf(drms_id, sizeof(drms_id), "%s:%lld:%s", seg->record->seriesinfo->seriesname, recnum, seg->info->name);
+
+    if (CFITSIO_SUCCESS != (fitsrwRet = cfitsio_append_key(&fitskeys, kFE_DRMS_ID, kFITSRW_Type_String, (void *)drms_id, kFE_DRMS_ID_FORMAT, kFE_DRMS_ID_COMMENT, NULL)))
+    {
+        fprintf(stderr, "FITSRW returned '%d'\n", fitsrwRet);
+        statint = DRMS_ERROR_FITSRW;
+    }
 
    if (map)
    {
@@ -1386,9 +1520,11 @@ int fitsexport_mapexportkey(DRMS_Keyword_t *key,
         if (fitsexport_getmappedextkeyname(key, clname, map, nameout, sizeof(nameout)))
         {
             int fitsrwRet = 0;
-            char fitskwtype = '\0';
+            cfitsio_keyword_datatype_t fitskwtype = CFITSIO_KEYWORD_DATATYPE_NONE;
             void *fitskwval = NULL;
             char *format = NULL;
+            char *fitskw_comment = NULL;
+            char *fitskw_unit = NULL;
             DRMS_Keyword_t *keywval = NULL;
             int rv = 0;
 
@@ -1425,14 +1561,9 @@ int fitsexport_mapexportkey(DRMS_Keyword_t *key,
                 }
                 else
                 {
-                    if ((rv = DRMSKeyValToFITSKeyVal(keywval, &fitskwtype, &format, &fitskwval)) == 0)
+                    if ((rv = DRMSKeyValToFITSKeyVal(keywval, &fitskwtype, &fitskwval, &format, &fitskw_comment, &fitskw_unit)) == 0)
                     {
-                        if (CFITSIO_SUCCESS != (fitsrwRet = cfitsio_append_key(fitskeys,
-                                                                               nameout,
-                                                                               fitskwtype,
-                                                                               NULL,
-                                                                               fitskwval,
-                                                                               format)))
+                        if (CFITSIO_SUCCESS != (fitsrwRet = cfitsio_append_key(fitskeys, nameout, fitskwtype, fitskwval, format, fitskw_comment, fitskw_unit)))
                         {
                             fprintf(stderr, "FITSRW returned '%d'.\n", fitsrwRet);
                             stat = DRMS_ERROR_FITSRW;
@@ -1452,6 +1583,18 @@ int fitsexport_mapexportkey(DRMS_Keyword_t *key,
                 /* linked keyword structure not found */
                 fprintf(stderr, "Broken link - unable to locate target for linked keyword '%s'.\n", key->info->name);
                 stat = DRMS_ERROR_BADLINK;
+            }
+
+            if (fitskw_unit)
+            {
+                free(fitskw_unit);
+                fitskw_unit = NULL;
+            }
+
+            if (fitskw_comment)
+            {
+                free(fitskw_comment);
+                fitskw_comment = NULL;
             }
 
             if (fitskwval)
@@ -1924,7 +2067,10 @@ int fitsexport_importkey(CFITSIO_KEYWORD *fitskey, HContainer_t *keys, int verbo
    return fitsexport_mapimportkey(fitskey, NULL, NULL, keys, verbose);
 }
 
-/* If verbose, then warn about duplicate keywords discovered upon import. */
+/* If verbose, then warn about duplicate keywords discovered upon import;
+ * deals with COMMENT and HISTORY FITS keywords by appending to the
+ * existing COMMENT or HISTORY entry in the HContainer_t returned
+ */
 int fitsexport_mapimportkey(CFITSIO_KEYWORD *fitskey,
                             const char *clname,
                             const char *mapfile,
@@ -2268,69 +2414,35 @@ int fitsexport_getextname(const char *strin, char **extname, char **cast)
 int fitsexport_getmappedextkeyvalue(DRMS_Keyword_t *key, char **fitsKwString)
 {
     DRMS_Keyword_t *keyWithVal = NULL;
-    char fitsioCard[FLEN_CARD];
     CFITSIO_KEYWORD *cfitsioKey = NULL;
-    char fitsKwType = '\0';
-    char *fitsKwFormat = NULL; /* binary FITS keyword value */
-    void *fitsKwVal = NULL;
     char dummy[] = "EXTVAL25";
-
+    cfitsio_keyword_datatype_t fitsKwType = CFITSIO_KEYWORD_DATATYPE_NONE;
+    void *fitsKwVal = NULL;
+    char *fitsKwFormat = NULL; /* binary FITS keyword value */
+    char *fitskw_comment = NULL;
+    char *fitskw_unit = NULL;
+    char *key_value = NULL;
     int err = 0;
 
     /* if key is a linked-keyword, then resolve link */
     keyWithVal = drms_keyword_lookup(key->record, key->info->name, 1);
 
-    if ((DRMSKeyValToFITSKeyVal(keyWithVal, &fitsKwType, &fitsKwFormat, &fitsKwVal)) == 0)
+    if ((DRMSKeyValToFITSKeyVal(keyWithVal, &fitsKwType, &fitsKwVal, &fitsKwFormat, &fitskw_comment, &fitskw_unit)) == 0)
     {
-        if (cfitsio_create_key(dummy, fitsKwType, NULL, fitsKwVal, fitsKwFormat, &cfitsioKey) == 0)
+        if (cfitsio_create_key(dummy, fitsKwType, fitsKwVal, fitsKwFormat, fitskw_comment, fitskw_unit, &cfitsioKey) == 0)
         {
-            /* cfitsiokey is the dummy key name (not HISTORY or COMMENT, so set cards LinkedList_t * to NULL) */
-            if (cfitsio_key_to_card(cfitsioKey, fitsioCard, NULL) == 0)
+            if (cfitsio_key_value_to_string(cfitsioKey, &key_value) != CFITSIO_SUCCESS)
             {
-                /* strip whitespace and '='; the value starts at byte 11 */
-                if (*fitsioCard != '\0')
-                {
-                    char stripped[128];
-                    char *end = NULL;
-
-                    snprintf(stripped, sizeof(stripped), "%s", &(fitsioCard[10]));
-                    end = stripped + strlen(stripped) - 1;
-                    while (end > stripped && isspace((unsigned char)*end))
-                    {
-                        end--;
-                    }
-
-                    end++;
-                    *end = '\0';
-
-                    *fitsKwString = strdup(stripped);
-                }
-                else
-                {
-                    /* error */
-                    err = 1;
-                    fprintf(stderr, "Invalid FITS keyword card.\n");
-                }
+                err = 1;
+                fprintf(stderr, "unable to print FITS value keyword\n");
             }
             else
             {
-                /* error */
-                err = 1;
-                fprintf(stderr, "Unable to print FITS keyword.\n");
+                *fitsKwString = key_value; // yoink!
             }
 
             /* free cfitsioKey */
-            if (cfitsioKey)
-            {
-                if (cfitsioKey->key_type == kFITSRW_Type_String && cfitsioKey->key_value.vs)
-                {
-                    free(cfitsioKey->key_value.vs);
-                    cfitsioKey->key_value.vs = NULL;
-                }
-
-                free(cfitsioKey);
-                cfitsioKey = NULL;
-            }
+            cfitsio_free_key(&cfitsioKey);
         }
         else
         {
@@ -2343,6 +2455,12 @@ int fitsexport_getmappedextkeyvalue(DRMS_Keyword_t *key, char **fitsKwString)
         {
             free(fitsKwFormat);
             fitsKwFormat = NULL;
+        }
+
+        if (fitskw_comment)
+        {
+            free(fitskw_comment);
+            fitskw_comment = NULL;
         }
 
         if (fitsKwVal)

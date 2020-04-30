@@ -25,6 +25,7 @@
 					       * fitsio.h, otherwise all files
 					       * that include this file will
 					       * be dependent on fitsio.h */
+#define CFITSIO_MAX_COMMENT               73
 #define CFITSIO_MAX_FORMAT                32
 
 #define CFITSIO_SUCCESS                   0
@@ -42,12 +43,17 @@
 #define CFITSIO_ERROR_CANT_COMPRESS     -11
 #define CFITSIO_ERROR_INVALID_DATA_TYPE -12
 
-/* define keyword-value data types (which are not defined in fitsio for some reason)*/
+/* define keyword-value data types (which are not defined in fitsio for some reason) */
+#define CFITSIO_KEYWORD_DATATYPE_NONE    '\0'
 #define CFITSIO_KEYWORD_DATATYPE_STRING  'C'
 #define CFITSIO_KEYWORD_DATATYPE_LOGICAL 'L'
 #define CFITSIO_KEYWORD_DATATYPE_INTEGER 'I'
 #define CFITSIO_KEYWORD_DATATYPE_FLOAT   'F'
 typedef char cfitsio_keyword_datatype_t;
+
+#define CFITSIO_KEYWORD_HISTORY          "HISTORY"
+#define CFITSIO_KEYWORD_COMMENT          "COMMENT"
+#define CFITSIO_KEYWORD_CONTINUE         "CONTINUE"
 
 //****************************************************************************
 // External contants defined in DRMS
@@ -79,22 +85,24 @@ extern const unsigned int kInfoPresent_Dirt;
 
 typedef union cfitsio_value
 {
-  char      *vs;
-  int       vl;		//logical 1: true 0: false
-  long long vi;
-  double    vf;
+  char     *vs;  // string type
+  int       vl;	 // logical type 1: true 0: false
+  long long vi;  // long long integer type
+  double    vf;  // double type
   // complex number also stored as char string (vs)
 } CFITSIO_KEY_VALUE;
 
 typedef struct cfitsio_keyword
 {
-      char	key_name[CFITSIO_MAX_STR];
-      char	key_type; // C: string, L: logical, I: integer, F: float, X: complex
-      CFITSIO_KEY_VALUE	key_value;
-      char      key_format[CFITSIO_MAX_FORMAT]; /* Used when writing to FITS file only,
+      char key_name[CFITSIO_MAX_STR];
+      char key_type; // C: string, L: logical, I: integer, F: float, X: complex
+      CFITSIO_KEY_VALUE key_value;
+      char key_format[CFITSIO_MAX_FORMAT]; /* Used when writing to FITS file only,
                                                  * not used when reading from file. */
-      char	key_comment[CFITSIO_MAX_STR];
-      struct cfitsio_keyword*	next;
+      char key_comment[CFITSIO_MAX_STR];
+			char key_unit[CFITSIO_MAX_COMMENT];
+			int is_missing; /* set to 1 if there is no key_value */
+      struct cfitsio_keyword *next;
 
 } CFITSIO_KEYWORD;
 
@@ -157,7 +165,7 @@ void cfitsio_free_these(CFITSIO_IMAGE_INFO** image_info,
 			void** image,
 			CFITSIO_KEYWORD** keylist);
 
-int cfitsio_create_key(const char *name, const char type, const char *comment, const void *value, const char *format, CFITSIO_KEYWORD **keyOut);
+int cfitsio_create_key(const char *name, cfitsio_keyword_datatype_t type, const void *value, const char *format, const char *comment, const char *unit, CFITSIO_KEYWORD **keyOut);
 
 int cfitsio_delete_key(CFITSIO_FILE *fitsFile, const char *key);
 
@@ -185,15 +193,21 @@ int cfitsio_update_key(CFITSIO_FILE *file, CFITSIO_KEYWORD *key);
 
 int cfitsio_update_keywords(CFITSIO_FILE *file, CFITSIO_HEADER *header, CFITSIO_KEYWORD *key_list);
 
+int cfitsio_write_key(CFITSIO_FILE *file, CFITSIO_KEYWORD *key);
+
 int cfitsio_flush_buffer(CFITSIO_FILE *fitsFile);
 
 int cfitsio_write_headsum(CFITSIO_FILE *file, const char *headsum);
 
-int cfitsio_append_key(CFITSIO_KEYWORD **keylist, char *name, char type, char *comment, void *value, const char *format);
+int cfitsio_append_key(CFITSIO_KEYWORD** keylist, const char *name, cfitsio_keyword_datatype_t type, void *value, const char *format, const char *comment, const char *unit);
 
 int cfitsio_generate_checksum(CFITSIO_FILE **fitsFile, CFITSIO_KEYWORD *keyList, char **checksum);
 
 int cfitsio_read_headsum(CFITSIO_FILE *fitsFile, char **headsum);
+
+int cfitsio_key_value_to_cards(CFITSIO_KEYWORD *key, CFITSIO_FILE **cards);
+
+int cfitsio_key_value_to_string(CFITSIO_KEYWORD *key, char **string_value);
 
 int fitsrw_read(int verbose,
                 const char *filename,
@@ -223,6 +237,8 @@ int fitsrw_write2(int verbose,
 int fitsrw_write3(int verbose, const char *filein, CFITSIO_IMAGE_INFO *info, void *image, CFITSIO_DATA *fitsData, const char *cparms, CFITSIO_KEYWORD *keylist, CFITSIO_HEADER *fitsHeader, export_callback_func_t callback);
 //ISS fly-tar END
 
+int cfitsio_free_key(CFITSIO_KEYWORD **key);
+
 int cfitsio_free_keys(CFITSIO_KEYWORD** keylist);
 
 int cfitsio_free_image_info(CFITSIO_IMAGE_INFO** image_info);
@@ -230,7 +246,7 @@ int cfitsio_free_image_info(CFITSIO_IMAGE_INFO** image_info);
 int cfitsio_dump_image(void* image, CFITSIO_IMAGE_INFO* info,
 		       long from_row, long to_row, long from_col, long to_col);
 
-int cfitsio_key_to_card(CFITSIO_KEYWORD *kptr, char *card, LinkedList_t **cards);
+int cfitsio_key_to_cards(CFITSIO_KEYWORD *key, LinkedList_t **cards);
 
 //****************************************************************************
 
