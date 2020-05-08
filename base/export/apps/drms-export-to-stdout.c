@@ -1270,6 +1270,7 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int dumpFileName, i
                 {
                     /* pad last TAR data block */
                     expStatus = FillBlock(stdout, TAR_BLOCK_SIZE, numBytesFitsFile);
+                    fflush(stdout);
                 }
 
                 totalBytes += numBytesFitsFile;
