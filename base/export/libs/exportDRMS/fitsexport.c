@@ -9,10 +9,12 @@
 
 #define kFERecnum "RECNUM"
 #define kFERecnumFormat "%lld"
-#define kFERecnumComment "The DRMS-series record number (unique within series)"
+#define kFERecnumComment "Recnum - the DRMS data series record number (unique within the series)"
+#define kFERecnumCommentShort "Recnum"
 
 #define kFE_DRMS_ID "DRMS_ID"
-#define kFE_DRMS_ID_COMMENT "globally unique image ID - <SERIES>:<RECNUM>:<SEGMENT>"
+#define kFE_DRMS_ID_COMMENT "DRMS ID - the globally unique image ID (<SERIES>:<RECNUM>:<SEGMENT>)"
+#define kFE_DRMS_ID_COMMENT_SHORT "DRMS ID"
 #define kFE_DRMS_ID_FORMAT "%s"
 
 /* keyword that can never be placed in a FITS file via DRMS */
@@ -40,15 +42,15 @@ enum FE_ReservedKeys_enum
 #undef B
 
 typedef enum FE_ReservedKeys_enum FE_ReservedKeys_t;
-typedef int (*pFn_ExportHandler)(void *key, void **fitskeys, void *nameout);
+typedef int (*pFn_ExportHandler)(void *key, void **fitskeys, void *nameout, void *extra);
 
 static int ExportFITS(DRMS_Env_t *env, DRMS_Array_t *arrout, const char *fileout, const char *cparms, CFITSIO_KEYWORD *fitskeys); //ISS fly-tar
 static int ExportFITS2(DRMS_Env_t *env, DRMS_Array_t *arrout, const char *fileout, const char *cparms, CFITSIO_KEYWORD *fitskeys, export_callback_func_t callback); //ISS fly-tar
 static int ExportFITS3(DRMS_Env_t *env, DRMS_Array_t *arrout,  CFITSIO_DATA *fitsData, const char *fileout, const char *cparms, CFITSIO_KEYWORD *fitskeys, CFITSIO_HEADER *header, export_callback_func_t callback);
 
 /* Available keyword handlers */
-int DateHndlr(void *keyin, void **fitskeys, void *nameout);
-int CommHndlr(void *keyin, void **fitskeys, void *nameout);
+int DateHndlr(void *keyin, void **fitskeys, void *nameout, void *comment_out);
+int CommHndlr(void *keyin, void **fitskeys, void *nameout, void *extra);
 
 /* A reserved keyword with no export handler is one that is prohibited from being exported. */
 #define A(X,Y,Z) Z,
@@ -128,18 +130,12 @@ static int FE_print_time_keyword(DRMS_Keyword_t *key, char *time_string, int sz_
     {
         /* force ISO for consistency, and use three decimal places for seconds - this is more precision than will ever
          * be needed (the max is 2 in production series) */
-        sprint_time(buf, key->value.time_val, "ISO", 3);
+        sprint_time(buf, key->value.time_val, key->info->unit, 3);
 
         /* sprint_time tacks on a 'Z', which is not FITS-standard-compliant; remove it */
         if (buf[strlen(buf) - 1] == 'Z')
         {
             buf[strlen(buf) - 1] = '\0';
-        }
-
-        /* we just changed the time unit */
-        if (unit)
-        {
-            snprintf(unit, sz_unit, "ISO");
         }
     }
 
@@ -151,7 +147,7 @@ static int FE_print_time_keyword(DRMS_Keyword_t *key, char *time_string, int sz_
     return err;
 }
 
-int DateHndlr(void *keyin, void **fitskeys, void *nameout)
+int DateHndlr(void *keyin, void **fitskeys, void *nameout, void *comment_out)
 {
    DRMS_Keyword_t *key = (DRMS_Keyword_t *)keyin;
    int err = 0;
@@ -162,6 +158,8 @@ int DateHndlr(void *keyin, void **fitskeys, void *nameout)
    {
       /* unit (time zone) must be ISO - if not, don't export it */
       char unitbuf[DRMS_MAXUNITLEN];
+      char *comment = NULL;
+      char *separator = NULL;
       int fitsrwRet = 0;
 
       snprintf(unitbuf, sizeof(unitbuf), "%s", key->info->unit);
@@ -181,10 +179,41 @@ int DateHndlr(void *keyin, void **fitskeys, void *nameout)
                tbuf[strlen(tbuf) - 1] = '\0';
             }
 
-            if (CFITSIO_SUCCESS != (fitsrwRet = cfitsio_append_key((CFITSIO_KEYWORD**)fitskeys, (char *)nameout, kFITSRW_Type_String, (void *)tbuf, key->info->format ?  key->info->format : NULL, key->info->description ?  key->info->description : NULL, unitbuf)))
+            if (comment_out)
+            {
+                comment = strdup((char *)comment_out);
+            }
+            else if (*key->info->description != '\0')
+            {
+                comment = strdup(key->info->description);
+            }
+
+            /* strip off full description from short description */
+            if (comment)
+            {
+                separator = index(comment, '-');
+                if (separator)
+                {
+                    *separator-- = '\0';
+
+                    /* strip off trailing white space */
+                    while (separator >= comment && isspace(*separator))
+                    {
+                        *separator-- = '\0';
+                    }
+                }
+            }
+
+            if (CFITSIO_SUCCESS != (fitsrwRet = cfitsio_append_key((CFITSIO_KEYWORD**)fitskeys, (char *)nameout, kFITSRW_Type_String, (void *)tbuf, *key->info->format != '\0' ?  key->info->format : NULL, comment, unitbuf)))
             {
                fprintf(stderr, "FITSRW returned '%d'.\n", fitsrwRet);
                err = 2;
+            }
+
+            if (comment)
+            {
+                free(comment);
+                comment = NULL;
             }
          }
          else
@@ -207,7 +236,7 @@ int DateHndlr(void *keyin, void **fitskeys, void *nameout)
 /* Process a COMMENT or HISTORY FITS keyword. The source DRMS keyword may contain a multi-line string,
  * which must be split into new strings at newlines. And each resulting string must be at most 70 characters
  * in length. */
-int CommHndlr(void *keyin, void **fitskeys, void *nameout)
+int CommHndlr(void *keyin, void **fitskeys, void *nameout, void *extra)
 {
    int err = 0;
    char *sbuf = NULL;
@@ -699,6 +728,7 @@ static int FE_cast_type_to_fits_key_type(FE_Keyword_ExtType_t cast_type, cfitsio
 static int DRMSKeyValToFITSKeyVal(DRMS_Keyword_t *key, cfitsio_keyword_datatype_t *fitstype, void **fitsval, char **format, char **comment, char **unit)
 {
    int err = 0;
+   char *separator = NULL;
    DRMS_Type_Value_t *valin = &key->value;
    DRMS_Value_t type_and_value;
    char unit_new[CFITSIO_MAX_COMMENT] = {0};
@@ -718,6 +748,19 @@ static int DRMSKeyValToFITSKeyVal(DRMS_Keyword_t *key, cfitsio_keyword_datatype_
             if (*key->info->description != '\0')
             {
                 *comment = strdup(key->info->description);
+
+                /* strip off full description from short description */
+                separator = index(*comment, '-');
+                if (separator)
+                {
+                    *separator-- = '\0';
+
+                    /* strip off trailing white space */
+                    while (separator >= *comment && isspace(*separator))
+                    {
+                        *separator-- = '\0';
+                    }
+                }
             }
             else
             {
@@ -1061,12 +1104,6 @@ int fitsexport_mapexport_tofile2(DRMS_Segment_t *seg,
                     }
                     else
                     {
-                        /* XXX test some shit out
-                         * this works, but creating a FITS file with "-" does not, even if I flush everything as much as possible
-                         */
-                        // cfitsio_generate_checksum(NULL, &old_headsum, (CFITSIO_HEADER **)&fitsFile);
-                        /* XXX */
-                        /* returns NULL if the file does not exist */
                         if (cfitsio_read_headsum(fitsFile, &old_headsum))
                         {
                             fprintf(stderr, "[ fitsexport_mapexport_tofile2() ] WARNING: unable to read HEADSUM from internal FITS file '%s'\n", sums_file);
@@ -1085,7 +1122,7 @@ int fitsexport_mapexport_tofile2(DRMS_Segment_t *seg,
                              * 2. redirect stdout to the pipe write end
                              * 3. redirect stdin to the read end of the pipe
                              */
-                            if (cfitsio_create_file((CFITSIO_FILE **)&oldFitsHeader, "-", 1))
+                            if (cfitsio_create_file((CFITSIO_FILE **)&oldFitsHeader, "-", CFITSIO_FILE_TYPE_HEADER, NULL))
                             {
                                 fprintf(stderr, "[ fitsexport_mapexport_tofile2() ] unable to create empty FITS file\n");
                                 status = DRMS_ERROR_EXPORT;
@@ -1094,7 +1131,7 @@ int fitsexport_mapexport_tofile2(DRMS_Segment_t *seg,
                             if (status == DRMS_SUCCESS)
                             {
                                 /* copy keywords in fitskeys from fitsFile to oldFitsHeader */
-                                if (cfitsio_copy_keywords(fitsFile, (CFITSIO_FILE *)oldFitsHeader, 1, fitskeys))
+                                if (cfitsio_copy_keywords(fitsFile, (CFITSIO_FILE *)oldFitsHeader, fitskeys))
                                 {
                                     fprintf(stderr, "[ fitsexport_mapexport_tofile2() ] unable to copy internal header to empty FITS file\n");
                                     status = DRMS_ERROR_EXPORT;
@@ -1117,6 +1154,7 @@ int fitsexport_mapexport_tofile2(DRMS_Segment_t *seg,
 
                     if (oldFitsHeader)
                     {
+                        /* ART - need to NOT flush to stdout, but oldFitsHeader is an in-memory file */
                         cfitsio_close_header(&oldFitsHeader);
                     }
 
@@ -1213,13 +1251,14 @@ int fitsexport_mapexport_tofile2(DRMS_Segment_t *seg,
                          * values for those keywords exists in the fitsFile; we need to grab the values for fitsKeys from newFitsHeader and
                          * union them with the keywords in fitsFile that has been stripped of the fitsKeys values; we can accomplish this
                          * by starting with fitsFile and then copying/updating the keys in fitsKeys that exist in newFitsHeader */
-                         if (status == DRMS_SUCCESS)
-                         {
-                             if (cfitsio_create_file(&updated_file, "-", 1))
-                             {
-                                 status = DRMS_ERROR_FITSRW;
-                             }
-                         }
+                        if (status == DRMS_SUCCESS)
+                        {
+                            /* create the fptr, but do not write any keywords (no bitpipx, naxis, naxes) */
+                            if (cfitsio_create_file(&updated_file, "-", CFITSIO_FILE_TYPE_IMAGE, NULL))
+                            {
+                                status = DRMS_ERROR_FITSRW;
+                            }
+                        }
 
                          if (status == DRMS_SUCCESS)
                          {
@@ -1254,7 +1293,7 @@ int fitsexport_mapexport_tofile2(DRMS_Segment_t *seg,
                             {
                                 /* we are not initializing fptr since we will be using a fitsfile generated by a different
                                  * block of code (streaming --> callback is the fptr; !streaming --> callback will create the fptr) */
-                                if (cfitsio_create_file(&out_file, NULL, 0))
+                                if (cfitsio_create_file(&out_file, NULL, CFITSIO_FILE_TYPE_EMPTY, NULL))
                                 {
                                     status = DRMS_ERROR_FITSRW;
                                 }
@@ -1265,7 +1304,7 @@ int fitsexport_mapexport_tofile2(DRMS_Segment_t *seg,
                                 if (streaming)
                                 {
                                     /* callback IS the in-memory-only fitsfile that will be eventually streamed */
-                                    cfitsio_set_fitsfile(out_file, (CFITSIO_FITSFILE)callback);
+                                    cfitsio_set_fitsfile(out_file, (CFITSIO_FITSFILE)callback, 1);
                                     /* DO NOT CLOSE THIS FILE */
                                 }
                                 else
@@ -1280,12 +1319,15 @@ int fitsexport_mapexport_tofile2(DRMS_Segment_t *seg,
                                      * used by drms_export_cgi.c; cfitsio_copy_file() will copy the image into out_file->fptr, which is then
                                      * used by drms_export_cgi.c */
                                     /* DO NOT CLOSE THIS FILE */
-                                    cfitsio_get_fitsfile(out_file, &fptr);
 
                                     (*callback)("create", &fptr, realfileout, cparms, &cfiostat, &retVal);
                                     if (cfiostat || retVal != CFITSIO_SUCCESS)
                                     {
                                         status = CFITSIO_ERROR_FILE_IO;
+                                    }
+                                    else
+                                    {
+                                        cfitsio_set_fitsfile(out_file, (CFITSIO_FITSFILE)fptr, 1);
                                     }
                                 }
                             }
@@ -1293,7 +1335,9 @@ int fitsexport_mapexport_tofile2(DRMS_Segment_t *seg,
                             {
                                 /* create a new file - realfileout is the file to export onto disk (not streaming); the fitsfile
                                  * will be cached */
-                                if (cfitsio_create_file(&out_file, realfileout, 1))
+
+                                /* create the fptr, but do not write any keywords (no bitpipx, naxis, naxes) */
+                                if (cfitsio_create_file(&out_file, realfileout, CFITSIO_FILE_TYPE_IMAGE, NULL))
                                 {
                                     status = DRMS_ERROR_FITSRW;
                                 }
@@ -1312,20 +1356,21 @@ int fitsexport_mapexport_tofile2(DRMS_Segment_t *seg,
                                 }
 
                                 /* updated_file was an in-memory-only file */
+                                /* ART - need to NOT flush to stdout, but updated_file is an in-memory file */
                                 cfitsio_close_file(&updated_file);
                             }
 
                             if (close_out_file)
                             {
-                                /* flush to disk or stdout */
+                                /* flush to disk or stdout (if streaming, do not flush to stdout) */
                                 cfitsio_close_file(&out_file);
                             }
                         }
-                        // status = ExportFITS3(seg->record->env, NULL, fitsData, fileout, NULL, NULL, fitsFile, callback);
                     }
 
                     if (newFitsHeader)
                     {
+                        /* ART - need to NOT flush to stdout, but newFitsHeader is an in-memory file */
                         cfitsio_close_header(&newFitsHeader);
                     }
                 }
@@ -1466,7 +1511,7 @@ CFITSIO_KEYWORD *fitsexport_mapkeys(DRMS_Segment_t *seg,
 
    /* Export recnum to facilitate the association between an exported FITS file and its record of origin. */
    long long recnum = seg->record->recnum;
-   if (CFITSIO_SUCCESS != (fitsrwRet = cfitsio_append_key(&fitskeys, kFERecnum, kFITSRW_Type_Integer, (void *)&recnum, kFERecnumFormat, kFERecnumComment, NULL)))
+   if (CFITSIO_SUCCESS != (fitsrwRet = cfitsio_append_key(&fitskeys, kFERecnum, kFITSRW_Type_Integer, (void *)&recnum, kFERecnumFormat, kFERecnumCommentShort, NULL)))
    {
       fprintf(stderr, "FITSRW returned '%d'.\n", fitsrwRet);
       statint = DRMS_ERROR_FITSRW;
@@ -1475,7 +1520,7 @@ CFITSIO_KEYWORD *fitsexport_mapkeys(DRMS_Segment_t *seg,
     /* recnum is nice, but to uniquely ID every image, we need series/recnum/segment*/
     snprintf(drms_id, sizeof(drms_id), "%s:%lld:%s", seg->record->seriesinfo->seriesname, recnum, seg->info->name);
 
-    if (CFITSIO_SUCCESS != (fitsrwRet = cfitsio_append_key(&fitskeys, kFE_DRMS_ID, kFITSRW_Type_String, (void *)drms_id, kFE_DRMS_ID_FORMAT, kFE_DRMS_ID_COMMENT, NULL)))
+    if (CFITSIO_SUCCESS != (fitsrwRet = cfitsio_append_key(&fitskeys, kFE_DRMS_ID, kFITSRW_Type_String, (void *)drms_id, kFE_DRMS_ID_FORMAT, kFE_DRMS_ID_COMMENT_SHORT, NULL)))
     {
         fprintf(stderr, "FITSRW returned '%d'\n", fitsrwRet);
         statint = DRMS_ERROR_FITSRW;
@@ -1516,8 +1561,9 @@ int fitsexport_mapexportkey(DRMS_Keyword_t *key,
     if (key && fitskeys)
     {
         char nameout[16];
+        char comment_out[DRMS_MAXCOMMENTLEN] = {0};
 
-        if (fitsexport_getmappedextkeyname(key, clname, map, nameout, sizeof(nameout)))
+        if (fitsexport_getmappedextkeyname(key, clname, map, nameout, sizeof(nameout), comment_out, sizeof(comment_out)))
         {
             int fitsrwRet = 0;
             cfitsio_keyword_datatype_t fitskwtype = CFITSIO_KEYWORD_DATATYPE_NONE;
@@ -1543,7 +1589,7 @@ int fitsexport_mapexportkey(DRMS_Keyword_t *key,
                     if (ExportHandlers[*ikey])
                     {
                         /* A handler exists for this reserved keyword - okay to export it. */
-                        rv = (*(ExportHandlers[*ikey]))(keywval, (void **)fitskeys, (void *)nameout);
+                        rv = (*(ExportHandlers[*ikey]))(keywval, (void **)fitskeys, (void *)nameout, *comment_out != '\0' ? (void *)comment_out : NULL);
                         if (rv == 2)
                         {
                             stat = DRMS_ERROR_FITSRW;
@@ -1621,15 +1667,11 @@ int fitsexport_mapexportkey(DRMS_Keyword_t *key,
 
 int fitsexport_getextkeyname(DRMS_Keyword_t *key, char *nameOut, int size)
 {
-   return fitsexport_getmappedextkeyname(key, NULL, NULL, nameOut, size);
+   return fitsexport_getmappedextkeyname(key, NULL, NULL, nameOut, size, NULL, 0);
 }
 
 /* Same as above, but try a KeyMap first, then a KeyMapClass */
-int fitsexport_getmappedextkeyname(DRMS_Keyword_t *key,
-                                   const char *class,
-                                   Exputl_KeyMap_t *map,
-                                   char *nameOut,
-                                   int size)
+int fitsexport_getmappedextkeyname(DRMS_Keyword_t *key, const char *class, Exputl_KeyMap_t *map, char *nameOut, int size, char *comment_out, int comment_out_sz)
 {
    int success = 0;
    const char *potential = NULL;
@@ -1679,22 +1721,27 @@ int fitsexport_getmappedextkeyname(DRMS_Keyword_t *key,
       /* 1 - Try keyword name in description field. */
       if (desc)
       {
-	 pFitsName = strtok(desc, " ");
-	 if (pFitsName)
-	 {
-	    int len = strlen(pFitsName);
+          pFitsName = strtok(desc, " ");
 
-	    if (len > 2 &&
-		pFitsName[0] == '[' &&
-		pFitsName[len - 1] == ']')
-	    {
-	       if (len - 2 < size)
-	       {
-		  pot = (char *)malloc(sizeof(char) * size);
-		  if (pot)
-		  {
-		     memcpy(pot, pFitsName + 1, len - 2);
-		     pot[len - 2] = '\0';
+    if (pFitsName)
+    {
+        int len = strlen(pFitsName);
+
+        if (len > 2 && pFitsName[0] == '[' && pFitsName[len - 1] == ']')
+        {
+            if (len - 2 < size)
+            {
+                pot = (char *)malloc(sizeof(char) * size);
+                if (pot)
+          		  {
+            		     memcpy(pot, pFitsName + 1, len - 2);
+            		     pot[len - 2] = '\0';
+
+                     if (comment_out)
+                     {
+                         /* save the part of the comment that does not have the cast */
+                         snprintf(comment_out, comment_out_sz, "%s {%s}", &desc[len + 1], pot);
+                     }
 
                      /* The description might contain [X:Y], where
                       * X is the external keyword name, and Y is the
@@ -1713,9 +1760,9 @@ int fitsexport_getmappedextkeyname(DRMS_Keyword_t *key,
                         success = 1;
                      }
 
-		     free(pot);
-		  }
-	       }
+                    free(pot);
+          		  }
+            }
 	    }
 	 }
 

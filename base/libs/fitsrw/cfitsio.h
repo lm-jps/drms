@@ -55,6 +55,13 @@ typedef char cfitsio_keyword_datatype_t;
 #define CFITSIO_KEYWORD_COMMENT          "COMMENT"
 #define CFITSIO_KEYWORD_CONTINUE         "CONTINUE"
 
+typedef enum
+{
+     CFITSIO_FILE_TYPE_EMPTY = 0,
+     CFITSIO_FILE_TYPE_HEADER,
+     CFITSIO_FILE_TYPE_IMAGE
+} cfitsio_file_type_t;
+
 //****************************************************************************
 // External contants defined in DRMS
 
@@ -171,7 +178,7 @@ int cfitsio_delete_key(CFITSIO_FILE *fitsFile, const char *key);
 
 int cfitsio_delete_headsum(CFITSIO_FILE *fitsFile);
 
-int cfitsio_create_file(CFITSIO_FILE **out_file, const char *file_name, int initialize_fitsfile);
+int cfitsio_create_file(CFITSIO_FILE **out_file, const char *file_name, cfitsio_file_type_t file_type, CFITSIO_IMAGE_INFO *info);
 
 int cfitsio_open_file(const char *path, CFITSIO_FILE **fitsFile, int writeable);
 
@@ -179,13 +186,13 @@ void cfitsio_close_file(CFITSIO_FILE **fitsFile);
 
 void cfitsio_get_fitsfile(CFITSIO_FILE *file, CFITSIO_FITSFILE *fptr);
 
-void cfitsio_set_fitsfile(CFITSIO_FILE *file, CFITSIO_FITSFILE fptr);
+void cfitsio_set_fitsfile(CFITSIO_FILE *file, CFITSIO_FITSFILE fptr, int in_memory);
 
 void cfitsio_close_header(CFITSIO_HEADER **header);
 
 int cfitsio_copy_file(CFITSIO_FILE *source_in, CFITSIO_FILE *dest_in, int copy_header_only);
 
-int cfitsio_copy_keywords(CFITSIO_FILE *in_file, CFITSIO_FILE *out_file, int simple, CFITSIO_KEYWORD *key_list);
+int cfitsio_copy_keywords(CFITSIO_FILE *in_file, CFITSIO_FILE *out_file, CFITSIO_KEYWORD *key_list);
 
 int cfitsio_read_key(CFITSIO_FILE *file, CFITSIO_KEYWORD *key);
 

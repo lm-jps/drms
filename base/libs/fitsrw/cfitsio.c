@@ -827,15 +827,18 @@ int cfitsio_create_key(const char *name, cfitsio_keyword_datatype_t type, const 
 /* create a new CFITSIO_FILE struct; if `initialize_fitsfile`, then allocate a fitsfile and assign to CFITSIO_FILE::fptr
  * by calling  fits_create_file(..., `file_name`, ...) */
  /* file is writeable since we are creating an empty file */
-int cfitsio_create_file(CFITSIO_FILE **out_file, const char *file_name, int initialize_fitsfile)
+int cfitsio_create_file(CFITSIO_FILE **out_file, const char *file_name, cfitsio_file_type_t file_type, CFITSIO_IMAGE_INFO *image_info)
 {
+    int file_created = 0;
+    int dim = 0;
+    long long num_pixels = 0;
     int cfiostat = 0; /* MUST start with no-error status, else CFITSIO will fail */
     char cfiostat_msg[FLEN_STATUS];
     int err = CFITSIO_SUCCESS;
 
 
     XASSERT(out_file);
-    if (initialize_fitsfile)
+    if (file_type != CFITSIO_FILE_TYPE_EMPTY)
     {
         XASSERT(file_name);
     }
@@ -850,16 +853,12 @@ int cfitsio_create_file(CFITSIO_FILE **out_file, const char *file_name, int init
 
     if (!err)
     {
-        (*out_file)->in_memory = (strncmp(file_name, "-", 1) == 0);
-
-        if (initialize_fitsfile)
+        if (file_type != CFITSIO_FILE_TYPE_EMPTY)
         {
-#if 1
+            (*out_file)->in_memory = (strncmp(file_name, "-", 1) == 0);
+#if 0
             if (fits_create_file(&((*out_file)->fptr), file_name, &cfiostat))
             {
-                fits_get_errstatus(cfiostat, cfiostat_msg);
-                fprintf(stderr, "[ cfitsio_create_file() ] unable to create FITS file\n");
-                fprintf(stderr, "CFITSIO error: %s\n", cfiostat_msg);
                 err = CFITSIO_ERROR_LIBRARY;
             }
 #else
@@ -867,9 +866,6 @@ int cfitsio_create_file(CFITSIO_FILE **out_file, const char *file_name, int init
             {
                 if (fits_create_file(&((*out_file)->fptr), file_name, &cfiostat))
                 {
-                    fits_get_errstatus(cfiostat, cfiostat_msg);
-                    fprintf(stderr, "[ cfitsio_create_file() ] unable to create FITS file\n");
-                    fprintf(stderr, "CFITSIO error: %s\n", cfiostat_msg);
                     err = CFITSIO_ERROR_LIBRARY;
                 }
                 else
@@ -879,28 +875,67 @@ int cfitsio_create_file(CFITSIO_FILE **out_file, const char *file_name, int init
             }
             else
             {
-                (*out_file)->fptr = fitsrw_getfptr(verbose, file_name, 1, &err, &file_created);
+                (*out_file)->fptr = fitsrw_getfptr(0, file_name, 1, &err, &file_created);
 
-                if (!(*out_file)->fptr)
+                if (!err)
                 {
-                    err = CFITSIO_ERROR_FILE_IO;
+                    if (!(*out_file)->fptr)
+                    {
+                        err = CFITSIO_ERROR_FILE_IO;
+                    }
                 }
             }
-#if CFITSIO_MAJOR >= 4 || (CFITSIO_MAJOR == 3 && CFITSIO_MINOR >= 35)
+
             if (!err)
             {
-                if (img_size > HUGE_HDU_THRESHOLD && file_created)
+                if (file_created)
                 {
-                    // support 64-bit HDUs
-                    if (fits_set_huge_hdu((*out_file)->fptr, 1, &cfiostat))
+#if CFITSIO_MAJOR >= 4 || (CFITSIO_MAJOR == 3 && CFITSIO_MINOR >= 35)
+                    if (image_info)
+                    {
+                        for (dim = 0, num_pixels = 1; dim < image_info->naxis; dim++)
+                        {
+                             num_pixels *= image_info->naxes[dim];
+                        }
+
+                        if ((abs(image_info->bitpix) / 8) * num_pixels > HUGE_HDU_THRESHOLD)
+                        {
+                            // support 64-bit HDUs
+                            if (fits_set_huge_hdu((*out_file)->fptr, 1, &cfiostat))
+                            {
+                                err = CFITSIO_ERROR_FILE_IO;
+                            }
+                        }
+                    }
+#endif
+                    if (file_type == CFITSIO_FILE_TYPE_HEADER)
+                    {
+                        /* BITPIX = 8, NAXIS = 0, NAXES = NULL - even though there is no image, BITPIX cannot be 0 */
+                        fits_write_imghdr((*out_file)->fptr, 8, 0, NULL, &cfiostat);
+                    }
+                    else if (file_type == CFITSIO_FILE_TYPE_IMAGE)
+                    {
+                        if (image_info)
+                        {
+                            fits_create_img((*out_file)->fptr, image_info->bitpix, image_info->naxis, image_info->naxes, &cfiostat);
+                        }
+                    }
+
+                    if (cfiostat)
                     {
                         err = CFITSIO_ERROR_FILE_IO;
                     }
                 }
             }
 #endif
-#endif
         }
+    }
+
+    if (cfiostat)
+    {
+        fits_get_errstatus(cfiostat, cfiostat_msg);
+        fprintf(stderr, "[ cfitsio_create_file() ] unable to create FITS file\n");
+        fprintf(stderr, "CFITSIO error: %s\n", cfiostat_msg);
     }
 
     return err;
@@ -934,12 +969,14 @@ void cfitsio_get_fitsfile(CFITSIO_FILE *file, CFITSIO_FITSFILE *fptr)
     }
 }
 
-void cfitsio_set_fitsfile(CFITSIO_FILE *file, CFITSIO_FITSFILE fptr)
+void cfitsio_set_fitsfile(CFITSIO_FILE *file, CFITSIO_FITSFILE fptr, int in_memory)
 {
     if (file)
     {
         file->fptr = (fitsfile *)fptr;
     }
+
+    file->in_memory = in_memory;
 }
 
 void cfitsio_close_header(CFITSIO_HEADER **header)
@@ -959,7 +996,8 @@ int cfitsio_copy_file(CFITSIO_FILE *source_in, CFITSIO_FILE *dest_in, int copy_h
     }
     else
     {
-        fits_copy_file(source_in->fptr, dest_in->fptr, 0, 1, 0, &cfiostat);
+        /* ART - not sure about these 3 flags; at first I tried 0, 1, 0, and that seemed to work; but so does 1, 1, 1 */
+        fits_copy_file(source_in->fptr, dest_in->fptr, 1, 1, 1, &cfiostat);
     }
 
     if (cfiostat)
@@ -1003,7 +1041,7 @@ static int Cf_make_hcon(CFITSIO_KEYWORD *key_list, HContainer_t **hcon)
     return err;
 }
 
-int cfitsio_copy_keywords(CFITSIO_FILE *in_file, CFITSIO_FILE *out_file, int simple, CFITSIO_KEYWORD *key_list)
+int cfitsio_copy_keywords(CFITSIO_FILE *in_file, CFITSIO_FILE *out_file, CFITSIO_KEYWORD *key_list)
 {
     int nkeys = 0;
     int nrec = 0;
@@ -1020,18 +1058,6 @@ int cfitsio_copy_keywords(CFITSIO_FILE *in_file, CFITSIO_FILE *out_file, int sim
 
     if (!cfiostat)
     {
-        if (simple)
-        {
-            /* gotta write SIMPLE first */
-            fits_write_key_log(out_file->fptr, "SIMPLE", 1, NULL, &cfiostat);
-
-            /* and BITPIX */
-            fits_write_key_lng(out_file->fptr, "BITPIX", 8, NULL, &cfiostat);
-
-            /* and NAXIS */
-            fits_write_key_lng(out_file->fptr, "NAXIS", 0, NULL, &cfiostat);
-        }
-
         if (key_list)
         {
             /* make a hash table of the 'acceptable' FITS keyword names */
@@ -1448,7 +1474,7 @@ int cfitsio_delete_headsum(CFITSIO_FILE *fitsFile)
  * key_list - the list of keywords from which a FITS header and checksum will be generated
  * checksum - the checksum returned by reference
  */
-int cfitsio_generate_checksum(CFITSIO_FILE **file, CFITSIO_KEYWORD *key_list, char **checksum)
+int cfitsio_generate_checksum(CFITSIO_HEADER **file, CFITSIO_KEYWORD *key_list, char **checksum)
 {
     // Hash_Table_t inclKeysHT;
     CFITSIO_KEYWORD *kptr = NULL;
@@ -1471,7 +1497,7 @@ int cfitsio_generate_checksum(CFITSIO_FILE **file, CFITSIO_KEYWORD *key_list, ch
         if (!*file)
         {
             /* need to create a CFITSIO_FILE from key_list */
-            if (cfitsio_create_file(file, "-", 1))
+            if (cfitsio_create_file(file, "-", CFITSIO_FILE_TYPE_HEADER, NULL))
             {
                 fprintf(stderr, "[ cfitsio_generate_checksum() ] unable to create empty FITS file\n");
                 err = CFITSIO_ERROR_OUT_OF_MEMORY;
@@ -1479,6 +1505,8 @@ int cfitsio_generate_checksum(CFITSIO_FILE **file, CFITSIO_KEYWORD *key_list, ch
 
             if (!err)
             {
+#if 0
+/* now written in cfitsio_create_file() */
                 /* gotta write SIMPLE first */
                 fits_write_key_log((*file)->fptr, "SIMPLE", 1, NULL, &cfiostat);
 
@@ -1487,6 +1515,7 @@ int cfitsio_generate_checksum(CFITSIO_FILE **file, CFITSIO_KEYWORD *key_list, ch
 
                 /* and NAXIS */
                 fits_write_key_lng((*file)->fptr, "NAXIS", 0, NULL, &cfiostat);
+#endif
 
                 if (!cfiostat)
                 {
@@ -1609,7 +1638,7 @@ int cfitsio_write_headsum(CFITSIO_FILE *file, const char *headsum)
     int err = CFITSIO_SUCCESS;
 
 
-    fits_write_key_str(file->fptr, HEADSUM, headsum, "checksum of the header part of the primary HDU", &cfiostat);
+    fits_write_key_str(file->fptr, HEADSUM, headsum, "Keyword checksum", &cfiostat);
 
     if (cfiostat)
     {
@@ -2787,7 +2816,6 @@ int cfitsio_write_special_to_cards(const char *specialKeyName, const char *speci
     return err;
 }
 
-/* ART - rewrite this so it uses fits_write_record()*/
 /* a card always constains a string representation of the keyword value */
 int cfitsio_key_value_to_string_internal(CFITSIO_KEYWORD *key, CFITSIO_FILE *cards, char **string_value)
 {
@@ -2795,7 +2823,7 @@ int cfitsio_key_value_to_string_internal(CFITSIO_KEYWORD *key, CFITSIO_FILE *car
     char key_name[FLEN_KEYWORD];
     char *str_out = NULL;
     size_t sz_str_out = FLEN_CARD;
-    CFITSIO_FILE *file = NULL;
+    CFITSIO_HEADER *file = NULL;
     int num_keys = 0;
     int key_num = 0;
     int cfiostat = 0;
@@ -2823,7 +2851,7 @@ int cfitsio_key_value_to_string_internal(CFITSIO_KEYWORD *key, CFITSIO_FILE *car
         }
         else
         {
-            err = cfitsio_create_file(&file, "-", 1);
+            err = cfitsio_create_file(&file, "-", CFITSIO_FILE_TYPE_HEADER, NULL);
         }
 
         if (!err)
@@ -2913,7 +2941,7 @@ int cfitsio_key_value_to_string_internal(CFITSIO_KEYWORD *key, CFITSIO_FILE *car
     return err;
 }
 
-int cfitsio_key_value_to_cards(CFITSIO_KEYWORD *key, CFITSIO_FILE **cards)
+int cfitsio_key_value_to_cards(CFITSIO_KEYWORD *key, CFITSIO_HEADER **cards)
 {
     int err = CFITSIO_SUCCESS;
 
@@ -2922,7 +2950,7 @@ int cfitsio_key_value_to_cards(CFITSIO_KEYWORD *key, CFITSIO_FILE **cards)
     {
         if (!*cards)
         {
-            err = cfitsio_create_file(cards, "-", 1);
+            err = cfitsio_create_file(cards, "-", CFITSIO_FILE_TYPE_HEADER, NULL);
         }
     }
 
