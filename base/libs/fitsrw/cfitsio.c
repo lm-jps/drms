@@ -258,6 +258,7 @@ static void Cf_close_file(fitsfile **fptr, int drop_content)
         /* if fitsfile is cached, remove from cache and close file; cannot currently drop data if the file is cached */
         if (!fitsrw_getfpinfo_ext(*fptr, &fpinfo))
         {
+            /* writes FITS keyword data and image checksums */
             fitsrw_closefptr(0, *fptr);
         }
         else
@@ -342,8 +343,6 @@ static int Cf_write_key(fitsfile *fptr, CFITSIO_KEYWORD *key)
             // fits_write_key(fptr, TDOUBLE, key->key_name, &key->key_value.vf, key->key_comment ? key->key_comment : NULL, &cfiostat);
 
             /* a NaN value implies a missing value; write a keyword with no value (null) */
-
-
 
             /* prints 17 decimal places, if needed */
             fits_write_key_dbl(fptr, key->key_name, key->key_value.vf, -17, key->key_comment ? key->key_comment : NULL, &cfiostat);
@@ -517,7 +516,6 @@ static int CfWriteKeys(fitsfile *fptr_out, char **header, CFITSIO_KEYWORD *key_l
 /*
  * keyHeader - a fitsfile containing only image metadata
  * checksum - return the checksum by reference
- * header - return the
  */
 static int CfGenerateChecksum(fitsfile *keyHeader, char **checksum)
 {
@@ -586,7 +584,7 @@ static int CfWriteHeader(fitsfile *fptr, fitsfile *header)
         else
         {
              /* write string as HEADSUM FITS keyword into internal file on disk */
-            fits_write_key_str(fptr, HEADSUM, checksum, "checksum of the header part of the primary HDU", &cfiostat);
+            fits_update_key_str(fptr, HEADSUM, checksum, "checksum of the header part of the primary HDU", &cfiostat);
 
             if (cfiostat)
             {
@@ -1253,8 +1251,8 @@ int cfitsio_update_key(CFITSIO_FILE *file, CFITSIO_KEYWORD *key)
         }
         else if (key->key_type == CFITSIO_KEYWORD_DATATYPE_FLOAT)
         {
-            /* prints 15 decimal places, if needed */
-            fits_update_key(file->fptr, TDOUBLE, key->key_name, (void *)&key->key_value.vf, comment, &cfiostat);
+            /* prints 17 decimal places, if needed */
+            fits_update_key_dbl(file->fptr, key->key_name, key->key_value.vf, -17, comment, &cfiostat);
         }
         else
         {
@@ -1481,6 +1479,14 @@ int cfitsio_generate_checksum(CFITSIO_HEADER **file, CFITSIO_KEYWORD *key_list, 
     char card[FLEN_CARD];
     char *md5Input = NULL;
 
+    CFITSIO_HEADER *file_to_checksum = NULL;
+    CFITSIO_HEADER *filtered_keys_file = NULL;
+    HContainer_t *key_hcon = NULL;
+    int nkeys = 0;
+    int nrec = 0;
+    char key_name[FLEN_KEYWORD];
+    char key_value[FLEN_VALUE];
+    int key_name_len = 0;
     unsigned long datasum;
     unsigned long hdusum;
     char sumString[32]; /* always 16 characters */
@@ -1494,10 +1500,12 @@ int cfitsio_generate_checksum(CFITSIO_HEADER **file, CFITSIO_KEYWORD *key_list, 
 
     if (checksum)
     {
-        if (!*file)
+        if (key_list)
         {
+            /* use the keyword values in `key_list` for checksum calculation */
+
             /* need to create a CFITSIO_FILE from key_list */
-            if (cfitsio_create_file(file, "-", CFITSIO_FILE_TYPE_HEADER, NULL))
+            if (cfitsio_create_file(&filtered_keys_file, "-", CFITSIO_FILE_TYPE_HEADER, NULL))
             {
                 fprintf(stderr, "[ cfitsio_generate_checksum() ] unable to create empty FITS file\n");
                 err = CFITSIO_ERROR_OUT_OF_MEMORY;
@@ -1505,35 +1513,99 @@ int cfitsio_generate_checksum(CFITSIO_HEADER **file, CFITSIO_KEYWORD *key_list, 
 
             if (!err)
             {
-#if 0
-/* now written in cfitsio_create_file() */
-                /* gotta write SIMPLE first */
-                fits_write_key_log((*file)->fptr, "SIMPLE", 1, NULL, &cfiostat);
-
-                /* and BITPIX */
-                fits_write_key_lng((*file)->fptr, "BITPIX", 8, NULL, &cfiostat);
-
-                /* and NAXIS */
-                fits_write_key_lng((*file)->fptr, "NAXIS", 0, NULL, &cfiostat);
-#endif
-
-                if (!cfiostat)
+                if (*file)
                 {
-                    /* iterate over `key_list`, writing FITS keywords to `fptr`;
-                     * will NOT create and write HEADSUM keyword */
-                    err = CfWriteKeys((*file)->fptr, NULL, key_list, NULL);
+                    /* use the keyword values in `*file` for checksum calculation, filtering-in the keys used
+                     * with the list in `key_list`; store resulting keyword values in `filtered_keys_file`;
+                     * do not return `filtered_keys_file` to caller */
+
+                    /* make a hash table of the 'acceptable' FITS keyword names */
+                    err = Cf_make_hcon(key_list, &key_hcon);
+
+                    if (!err)
+                    {
+                        fits_get_hdrspace((*file)->fptr, &nkeys, NULL, &cfiostat);
+
+                        if (!cfiostat)
+                        {
+                            /* iterate through `*file` cards, accepting keys that are in key_hcon */
+                            for (nrec = 1; nrec <= nkeys; nrec++)
+                            {
+                                memset(card, '\0', sizeof(card));
+                                fits_read_record((*file)->fptr, nrec, card, &cfiostat);
+
+                                if (cfiostat)
+                                {
+                                    fprintf(stderr, "unable to read record %d; skipping\n", nrec);
+                                    cfiostat = 0;
+                                    continue;
+                                }
+
+                                if (fits_get_keyclass(card) > TYP_CMPRS_KEY)
+                                {
+                                    /* extract keyword name from card */
+                                    fits_read_keyn((*file)->fptr, nrec, key_name, key_value, NULL, &cfiostat);
+
+                                    if (cfiostat)
+                                    {
+                                        fprintf(stderr, "unable to read record %d; skipping\n", nrec);
+                                        cfiostat = 0;
+                                        continue;
+                                    }
+                                    else if (!hcon_member_lower(key_hcon, key_name))
+                                    {
+                                        continue;
+                                    }
+
+                                    fits_write_record(filtered_keys_file->fptr, card, &cfiostat);
+                                }
+                            }
+                        }
+                    }
+
+                    hcon_destroy(&key_hcon);
                 }
                 else
                 {
-                    err = CFITSIO_ERROR_LIBRARY;
-                    fprintf(stderr, "[ cfitsio_generate_checksum() ] Unable to write SIMPLE/BITPIX/NAXIS keywords\n");
+                    /* use `file` (in_memory == true) to return to caller filtered keywords that were written to
+                     * in-memory `filtered_keys_file` */
+                    if (!cfiostat)
+                    {
+                        /* iterate over `key_list`, writing FITS keywords to `fptr`;
+                         * will NOT create and write HEADSUM keyword */
+                        err = CfWriteKeys(filtered_keys_file->fptr, NULL, key_list, NULL);
+                    }
+                    else
+                    {
+                        err = CFITSIO_ERROR_LIBRARY;
+                        fprintf(stderr, "[ cfitsio_generate_checksum() ] Unable to write SIMPLE/BITPIX/NAXIS keywords\n");
+                    }
                 }
             }
+
+            file_to_checksum = filtered_keys_file;
+        }
+        else
+        {
+            /* no `key_list` so use all keywords in `file` to calculate checksum */
+            XASSERT(*file);
+
+            /* use the keyword values in `*file` for checksum calculation */
+            file_to_checksum = *file;
         }
 
         if (!err)
         {
-            err = CfGenerateChecksum((*file)->fptr, checksum);
+            err = CfGenerateChecksum(file_to_checksum->fptr, checksum);
+        }
+
+        if (!err)
+        {
+            if (!*file)
+            {
+                /* return file_to_checksum if *file == NULL */
+                *file = filtered_keys_file;
+            }
         }
     }
 
@@ -1631,23 +1703,28 @@ int cfitsio_read_headsum(CFITSIO_FILE *file, char **headsum)
     return err;
 }
 
-int cfitsio_write_headsum(CFITSIO_FILE *file, const char *headsum)
+static int Cf_write_headsum(fitsfile *fptr, const char *headsum)
 {
     int cfiostat = 0;
     char cfiostat_msg[FLEN_STATUS];
     int err = CFITSIO_SUCCESS;
 
 
-    fits_write_key_str(file->fptr, HEADSUM, headsum, "Keyword checksum", &cfiostat);
+    fits_update_key_str(fptr, HEADSUM, headsum, "Keyword checksum", &cfiostat);
 
     if (cfiostat)
     {
         fits_get_errstatus(cfiostat, cfiostat_msg);
-        fprintf(stderr, "[ cfitsio_write_headsum() ] CFITSIO error '%s'\n", cfiostat_msg);
+        fprintf(stderr, "[ Cf_write_headsum() ] CFITSIO error '%s'\n", cfiostat_msg);
         err = CFITSIO_ERROR_LIBRARY;
     }
 
     return err;
+}
+
+int cfitsio_write_headsum(CFITSIO_FILE *file, const char *headsum)
+{
+    return Cf_write_headsum(file->fptr, headsum);
 }
 
 /****************************************************************************/
@@ -2404,6 +2481,9 @@ int fitsrw_writeintfile(int verbose,
    char cfitsiostat[FLEN_STATUS];
    long long oblank = 0;
 
+   CFITSIO_HEADER *header_for_checksum = NULL;
+   char *checksum = NULL;
+
    long	long npixels;
 
    int i = 0;
@@ -2500,17 +2580,37 @@ int fitsrw_writeintfile(int verbose,
        goto error_exit;
    }
 
-   // keylist is optional; it is currently used for export and for drms_segment_writewithkeys()
-   error_code = CfWriteKeys(fptr, NULL, keylist, NULL);
-   if (error_code != CFITSIO_SUCCESS)
-   {
-      goto error_exit;
-   }
+    // keylist is optional; it is currently used for export and for drms_segment_writewithkeys()
+    error_code = CfWriteKeys(fptr, NULL, keylist, NULL);
+    if (error_code != CFITSIO_SUCCESS)
+    {
+        goto error_exit;
+    }
 
-   /* override keylist special keywords (these may have come from
-    * the keylist to begin with - they should have been removed from
-    * the keylist if this is the case, but I don't think they were removed).
-    */
+    // calculate checksum in a new temp in-memory file header_for_checksum
+    error_code = cfitsio_generate_checksum(&header_for_checksum, keylist, &checksum);
+    if (error_code != CFITSIO_SUCCESS)
+    {
+        goto error_exit;
+    }
+
+    error_code = Cf_write_headsum(fptr, checksum);
+    if (error_code != CFITSIO_SUCCESS)
+    {
+        goto error_exit;
+    }
+
+    if (checksum)
+    {
+        free(checksum);
+        checksum = NULL;
+    }
+
+    if (header_for_checksum)
+    {
+        cfitsio_close_file(&header_for_checksum);
+    }
+
    if (image_info->bitfield & kInfoPresent_BLANK)
    {
       oblank = (long long)image_info->blank;
