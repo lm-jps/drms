@@ -1140,6 +1140,11 @@ int fitsexport_mapexport_tofile2(DRMS_Segment_t *seg,
 
                             if (status == DRMS_SUCCESS)
                             {
+                                /* remove DATE keyword since */
+                            }
+
+                            if (status == DRMS_SUCCESS)
+                            {
                                 /* oldFitsHeader has the header of the fits file wew are exporting; fitskeys is a list
                                  * of fits keywords that we expect to be in fits file we are exporting; old_headsum
                                  * will contain the checksum of the keys listed in fitskeys that exist in oldFitsHeader */
