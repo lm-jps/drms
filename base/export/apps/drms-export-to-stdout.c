@@ -937,6 +937,7 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int dumpFileName, i
     char specbuf[1024];
     char msg[256];
     char errMsg[512];
+    char cfiostat_msg[FLEN_STATUS];
 
     drms_sprint_rec_query(recordSpec, expRec);
 
@@ -1242,10 +1243,22 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int dumpFileName, i
 
                 /* dump FITS-file data */
                 fiostat = 0;
-                fits_close_file(fitsPtr, &fiostat);
+
+                /* since fitsPtr was an in-memory FITS file, it was not globally cached in fitsexport.c; we need
+                 * to write the FITS checksums now since normally this is performed by the global caching code */
+                fits_write_chksum(fitsPtr, &fiostat);
+
+                if (!fiostat)
+                {
+                    fits_close_file(fitsPtr, &fiostat);
+                }
+
                 if (fiostat)
                 {
-                    snprintf(msg, sizeof(msg), "unable to close and send FITS file");
+                    /* get FITS error message since we could have failed for two different reasons: 1. checksum, 2.
+                     * closing the FITS file */
+                    fits_get_errstatus(fiostat, cfiostat_msg);
+                    snprintf(msg, sizeof(msg), "unable to close and send FITS file: %s", cfiostat_msg);
 
                     if (!suppress_stderr)
                     {
