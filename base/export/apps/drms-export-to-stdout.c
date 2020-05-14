@@ -975,6 +975,31 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int dumpFileName, i
             segTgt = segIn;
         }
 
+        /* ART - for now, skip non-FITS segments */
+        if (segTgt->info->protocol != DRMS_FITS)
+        {
+            snprintf(msg, sizeof(msg), "%s has protocol %s, but currently only FITS-protocol supported", segIn->info->name, drms_prot2str(segTgt->info->protocol));
+
+            if (!suppress_stderr)
+            {
+                fprintf(stderr, msg);
+                fprintf(stderr, "\n");
+            }
+
+            if (makeTar && errorDataArr)
+            {
+                recobj = json_new_object();
+                snprintf(specbuf, sizeof(specbuf), "%s{%s}", recordSpec, segIn->info->name);
+                json_insert_pair_into_object(recobj, "record", json_new_string(specbuf));
+                json_insert_pair_into_object(recobj, "segment", json_new_string(segIn->info->name));
+                json_insert_pair_into_object(recobj, "message", json_new_string(msg));
+                json_insert_child(errorDataArr, recobj);
+            }
+
+            iSeg++;
+            continue;
+        }
+
         if ((expUStat = exputl_mk_expfilename(segIn, segTgt, ffmt, formattedFitsName)) != kExpUtlStat_Success)
         {
             if (expUStat == kExpUtlStat_InvalidFmt)
