@@ -2166,7 +2166,7 @@ class SSHJsonClient(object):
                 ]
             }
         '''
-        cmd_list = [ os.path.join(self._server.ssh_base_bin, self._server.ssh_export_fits), 'a=0', 's=0' ]
+        cmd_list = [ os.path.join(self._server.ssh_base_bin, self._server.ssh_export_fits), 'a=0', 's=0', 'e=1' ]
 
         cmd_list.append(shlex.quote('spec=' + spec))
         
