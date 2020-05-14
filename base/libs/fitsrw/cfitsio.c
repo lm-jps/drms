@@ -1465,12 +1465,12 @@ int cfitsio_delete_headsum(CFITSIO_FILE *fitsFile)
 }
 
 /*
- * file - the CFITSIO_FILE file that contains keyword values from which a checksum is to be generated; if NULL, then
+ * file     - the CFITSIO_FILE file that contains keyword values from which a checksum is to be generated; if NULL, then
  *            create a new CFITSIO_FILE that contains a header formed from `key_list`, and also
- *            create the checksum from the values passed in via `key_list`; otherwise use the fitsFile
- *            values of the keywords specified in `key_list`
+ *            create the checksum from the values passed in via `key_list`; otherwise use the keyword values in `file`
+ *            of the keywords specified in `key_list` to generate the checksum
  * key_list - the list of keywords from which a FITS header and checksum will be generated
- * checksum - the checksum returned by reference
+ * checksum - the checksum returned by reference; must be freed by caller
  */
 int cfitsio_generate_checksum(CFITSIO_HEADER **file, CFITSIO_KEYWORD *key_list, char **checksum)
 {
@@ -1495,7 +1495,6 @@ int cfitsio_generate_checksum(CFITSIO_HEADER **file, CFITSIO_KEYWORD *key_list, 
     int err = CFITSIO_SUCCESS;
 
 
-    // XASSERT(key_list);
     XASSERT(checksum);
 
     if (checksum)
@@ -1585,10 +1584,9 @@ int cfitsio_generate_checksum(CFITSIO_HEADER **file, CFITSIO_KEYWORD *key_list, 
 
             file_to_checksum = filtered_keys_file;
         }
-        else
+        else if (*file)
         {
             /* no `key_list` so use all keywords in `file` to calculate checksum */
-            XASSERT(*file);
 
             /* use the keyword values in `*file` for checksum calculation */
             file_to_checksum = *file;
@@ -1596,15 +1594,25 @@ int cfitsio_generate_checksum(CFITSIO_HEADER **file, CFITSIO_KEYWORD *key_list, 
 
         if (!err)
         {
-            err = CfGenerateChecksum(file_to_checksum->fptr, checksum);
+            if (file_to_checksum)
+            {
+                err = CfGenerateChecksum(file_to_checksum->fptr, checksum);
+            }
         }
 
         if (!err)
         {
-            if (!*file)
+            if (filtered_keys_file)
             {
-                /* return file_to_checksum if *file == NULL */
-                *file = filtered_keys_file;
+                if (!*file)
+                {
+                    /* return filtered_keys_file if *file == NULL */
+                    *file = filtered_keys_file;
+                }
+                else
+                {
+                    cfitsio_close_file(&filtered_keys_file);
+                }
             }
         }
     }
@@ -1710,7 +1718,33 @@ static int Cf_write_headsum(fitsfile *fptr, const char *headsum)
     int err = CFITSIO_SUCCESS;
 
 
-    fits_update_key_str(fptr, HEADSUM, headsum, "Keyword checksum", &cfiostat);
+    if (headsum)
+    {
+        fits_update_key_str(fptr, HEADSUM, headsum, "Keyword checksum", &cfiostat);
+
+        if (cfiostat)
+        {
+            fits_get_errstatus(cfiostat, cfiostat_msg);
+            fprintf(stderr, "[ Cf_write_headsum() ] CFITSIO error '%s'\n", cfiostat_msg);
+            err = CFITSIO_ERROR_LIBRARY;
+        }
+    }
+
+    return err;
+}
+
+int cfitsio_write_headsum(CFITSIO_FILE *file, const char *headsum)
+{
+    return Cf_write_headsum(file->fptr, headsum);
+}
+
+static int Cf_write_longwarn(fitsfile *fptr)
+{
+    int cfiostat = 0;
+    char cfiostat_msg[FLEN_STATUS];
+    int err = CFITSIO_SUCCESS;
+
+    fits_write_key_longwarn(fptr, &cfiostat);
 
     if (cfiostat)
     {
@@ -1722,9 +1756,9 @@ static int Cf_write_headsum(fitsfile *fptr, const char *headsum)
     return err;
 }
 
-int cfitsio_write_headsum(CFITSIO_FILE *file, const char *headsum)
+int cfitsio_write_longwarn(CFITSIO_FILE *file)
 {
-    return Cf_write_headsum(file->fptr, headsum);
+    return Cf_write_longwarn(file->fptr);
 }
 
 /****************************************************************************/
@@ -2581,23 +2615,32 @@ int fitsrw_writeintfile(int verbose,
    }
 
     // keylist is optional; it is currently used for export and for drms_segment_writewithkeys()
-    error_code = CfWriteKeys(fptr, NULL, keylist, NULL);
-    if (error_code != CFITSIO_SUCCESS)
+    if (keylist)
     {
-        goto error_exit;
-    }
+        error_code = CfWriteKeys(fptr, NULL, keylist, NULL);
+        if (error_code != CFITSIO_SUCCESS)
+        {
+            goto error_exit;
+        }
 
-    // calculate checksum in a new temp in-memory file header_for_checksum
-    error_code = cfitsio_generate_checksum(&header_for_checksum, keylist, &checksum);
-    if (error_code != CFITSIO_SUCCESS)
-    {
-        goto error_exit;
-    }
+        // calculate checksum in a new temp in-memory file header_for_checksum
+        error_code = cfitsio_generate_checksum(&header_for_checksum, keylist, &checksum);
+        if (error_code != CFITSIO_SUCCESS)
+        {
+            goto error_exit;
+        }
 
-    error_code = Cf_write_headsum(fptr, checksum);
-    if (error_code != CFITSIO_SUCCESS)
-    {
-        goto error_exit;
+        error_code = Cf_write_longwarn(fptr);
+        if (error_code != CFITSIO_SUCCESS)
+        {
+            goto error_exit;
+        }
+
+        error_code = Cf_write_headsum(fptr, checksum);
+        if (error_code != CFITSIO_SUCCESS)
+        {
+            goto error_exit;
+        }
     }
 
     if (checksum)
@@ -2828,25 +2871,37 @@ int fitsrw_writeintfile(int verbose,
       }
    }
 
-   if(status == 0) return CFITSIO_SUCCESS;
+    if (status == 0)
+    {
+        return CFITSIO_SUCCESS;
+    }
 
+error_exit:
+    if (checksum)
+    {
+        free(checksum);
+        checksum = NULL;
+    }
 
-  error_exit:
+    if (header_for_checksum)
+    {
+        cfitsio_close_file(&header_for_checksum);
+    }
 
-   if (status)
-   {
-      fits_get_errstatus(status, cfitsiostat);
-   }
+    if (status)
+    {
+        fits_get_errstatus(status, cfitsiostat);
+    }
 
-   fprintf(stderr, "cfitsio error '%s'.\n", cfitsiostat);
+    fprintf(stderr, "cfitsio error '%s'.\n", cfitsiostat);
 
-   if (fptr)
-   {
-       /* There was some other error, so dont' worry about any errors having to do with closing the file. */
-       fitsrw_closefptr(verbose, fptr);
-   }
+    if (fptr)
+    {
+        /* There was some other error, so dont' worry about any errors having to do with closing the file. */
+        fitsrw_closefptr(verbose, fptr);
+    }
 
-   return error_code;
+    return error_code;
 }
 
 /****************************************************************************/

@@ -206,6 +206,8 @@ int cfitsio_flush_buffer(CFITSIO_FILE *fitsFile);
 
 int cfitsio_write_headsum(CFITSIO_FILE *file, const char *headsum);
 
+int cfitsio_write_longwarn(CFITSIO_FILE *file);
+
 int cfitsio_append_key(CFITSIO_KEYWORD** keylist, const char *name, cfitsio_keyword_datatype_t type, void *value, const char *format, const char *comment, const char *unit);
 
 int cfitsio_generate_checksum(CFITSIO_FILE **fitsFile, CFITSIO_KEYWORD *keyList, char **checksum);

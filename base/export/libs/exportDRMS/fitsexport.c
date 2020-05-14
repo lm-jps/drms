@@ -17,6 +17,11 @@
 #define kFE_DRMS_ID_COMMENT_SHORT "DRMS ID"
 #define kFE_DRMS_ID_FORMAT "%s"
 
+#define kFE_PRIMARY_KEY "PRIMARYK"
+#define kFE_PRIMARY_KEY_COMMENT "DRMS primary key - the set of DRMS keywords that uniquely identify a DRMS record"
+#define kFE_PRIMARY_KEY_SHORT "DRMS primary key"
+#define kFE_PRIMARY_KEY_FORMAT "%s"
+
 /* keyword that can never be placed in a FITS file via DRMS */
 
 #undef A
@@ -1140,12 +1145,7 @@ int fitsexport_mapexport_tofile2(DRMS_Segment_t *seg,
 
                             if (status == DRMS_SUCCESS)
                             {
-                                /* remove DATE keyword since */
-                            }
-
-                            if (status == DRMS_SUCCESS)
-                            {
-                                /* oldFitsHeader has the header of the fits file wew are exporting; fitskeys is a list
+                                /* oldFitsHeader has the header of the fits file we are exporting; fitskeys is a list
                                  * of fits keywords that we expect to be in fits file we are exporting; old_headsum
                                  * will contain the checksum of the keys listed in fitskeys that exist in oldFitsHeader */
                                 if (cfitsio_generate_checksum(&oldFitsHeader, NULL, &old_headsum))
@@ -1277,6 +1277,15 @@ int fitsexport_mapexport_tofile2(DRMS_Segment_t *seg,
                         if (status == DRMS_SUCCESS)
                         {
                             if (cfitsio_update_keywords(updated_file, newFitsHeader, fitskeys))
+                            {
+                                status = DRMS_ERROR_FITSRW;
+                            }
+                        }
+
+                        if (status == DRMS_SUCCESS)
+                        {
+                            /* write the LONGSTRN keyword to inform FITS readers that the long string convention may be used */
+                            if (cfitsio_write_longwarn(updated_file))
                             {
                                 status = DRMS_ERROR_FITSRW;
                             }
@@ -1448,10 +1457,7 @@ int fitsexport_mapexport_tostdout(fitsfile *fitsPtr, DRMS_Segment_t *seg, const 
  * to this seg's keywords. */
 
 /* Input seg must be the src seg, not the target seg, if the input seg is a linked segment. */
-CFITSIO_KEYWORD *fitsexport_mapkeys(DRMS_Segment_t *seg,
-                                    const char *clname,
-                                    const char *mapfile,
-                                    int *status)
+CFITSIO_KEYWORD *fitsexport_mapkeys(DRMS_Segment_t *seg, const char *clname, const char *mapfile, int *status)
 {
    CFITSIO_KEYWORD *fitskeys = NULL;
    HIterator_t *last = NULL;
@@ -1463,6 +1469,10 @@ CFITSIO_KEYWORD *fitsexport_mapkeys(DRMS_Segment_t *seg,
    Exputl_KeyMap_t *map = NULL;
    FILE *fptr = NULL;
    char drms_id[CFITSIO_MAX_COMMENT];
+   char primary_key[DRMS_MAXKEYNAMELEN * DRMS_MAXPRIMIDX + 16];
+   int npkeys = 0;
+   int pkey = -1;
+   char **ext_pkeys = NULL;
    int fitsrwRet = 0;
 
    while ((key = drms_record_nextkey(recin, &last, 0)) != NULL)
@@ -1524,29 +1534,50 @@ CFITSIO_KEYWORD *fitsexport_mapkeys(DRMS_Segment_t *seg,
 
     /* recnum is nice, but to uniquely ID every image, we need series/recnum/segment*/
     snprintf(drms_id, sizeof(drms_id), "%s:%lld:%s", seg->record->seriesinfo->seriesname, recnum, seg->info->name);
-
     if (CFITSIO_SUCCESS != (fitsrwRet = cfitsio_append_key(&fitskeys, kFE_DRMS_ID, kFITSRW_Type_String, (void *)drms_id, kFE_DRMS_ID_FORMAT, kFE_DRMS_ID_COMMENT_SHORT, NULL)))
     {
         fprintf(stderr, "FITSRW returned '%d'\n", fitsrwRet);
         statint = DRMS_ERROR_FITSRW;
     }
 
-   if (map)
-   {
-      exputl_keymap_destroy(&map);
-   }
+    /* add series prime-key keywords */
+    ext_pkeys = drms_series_createpkeyarray(seg->record->env, seg->record->seriesinfo->seriesname, &npkeys, NULL);
+    if (ext_pkeys)
+    {
+        if (npkeys > 0)
+        {
+            snprintf(primary_key, sizeof(primary_key), "%s", ext_pkeys[0]);
+            for (pkey = 1; pkey < npkeys; pkey++)
+            {
+                snprintf(primary_key, sizeof(primary_key), ", %s", ext_pkeys[pkey]);
+            }
+        }
 
-   if (last)
-   {
-      hiter_destroy(&last);
-   }
+        drms_series_destroypkeyarray(&ext_pkeys, npkeys);
+    }
 
-   if (status)
-   {
-      *status = statint;
-   }
+    if (CFITSIO_SUCCESS != (fitsrwRet = cfitsio_append_key(&fitskeys, kFE_PRIMARY_KEY, kFITSRW_Type_String, (void *)primary_key, kFE_PRIMARY_KEY_FORMAT, kFE_PRIMARY_KEY_SHORT, NULL)))
+    {
+        fprintf(stderr, "FITSRW returned '%d'\n", fitsrwRet);
+        statint = DRMS_ERROR_FITSRW;
+    }
 
-   return fitskeys;
+    if (map)
+    {
+        exputl_keymap_destroy(&map);
+    }
+
+    if (last)
+    {
+        hiter_destroy(&last);
+    }
+
+    if (status)
+    {
+        *status = statint;
+    }
+
+    return fitskeys;
 }
 
 /* Keyword mapping during export */
