@@ -3507,8 +3507,8 @@ SecureServerConfig.register_server(SecureServerConfig(
     },
     has_full_export_system=False,
     server_tmp='/tmp',
-    ssh_base_bin='/home/jsoc/cvs/Development/JSOC/bin/linux_avx',
-    ssh_base_script='/home/jsoc/cvs/Development/JSOC/scripts',
+    ssh_base_bin='/home/jsoc/cvs/Development/waystation/netdrms-9.3-plus-fits-headers/bin/linux_avx',
+    ssh_base_script='/home/jsoc/cvs/Development/waystation/netdrms-9.3-plus-fits-headers/scripts',
     ssh_check_email='checkAddress.py',
     ssh_check_email_addresstab='jsoc.export_addresses',
     ssh_check_email_domaintab='jsoc.export_addressdomains',
@@ -3528,18 +3528,19 @@ SecureServerConfig.register_server(SecureServerConfig(
     ssh_jsoc_info='jsocextinfo.py',
     ssh_jsoc_info_args=
     {
-        'dbhost' : 'hmidb2',
+        'dbhost' : 'hmidb2'
     },
     ssh_jsoc_info_internal='jsoc_info',
     ssh_jsoc_info_internal_args=
     {
-        'JSOC_DBHOST' : 'hmidb'
+        'JSOC_DBHOST' : 'hmidb',
+        'JSOC_DBUSER' : 'production'
     },
     ssh_jsoc_fetch='jsocextfetch.py',
     ssh_jsoc_fetch_args=
     {
         'dbhost' : 'hmidb2',
-        'JSOC_DBUSER' : 'production',
+        'JSOC_DBUSER' : 'production'
     },
     ssh_jsoc_fetch_internal='jsoc_fetch',
     ssh_jsoc_fetch_internal_args=
@@ -3564,7 +3565,8 @@ SecureServerConfig.register_server(SecureServerConfig(
     },
     ssh_show_series_internal_args=
     {
-        'JSOC_DBHOST' : 'hmidb'
+        'JSOC_DBHOST' : 'hmidb',
+        'JSOC_DBUSER' : 'production'
     },
     ssh_show_series_wrapper='showextseries.py',
     ssh_show_series_wrapper_args=
