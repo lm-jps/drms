@@ -1,23 +1,23 @@
 #!/usr/bin/env python
 
-# subscribe.py is the subscription-service client. With subscribe.py, the client can subscribe to data series
+# subscribe.py is the subscription-service client. With subscribe.py, the client can subscribe to data series 
 # published at the providing site (the server). To do this, the client sends HTTP requests to the server via the
 # subscription-service CGI, whose URL is identified by the kSubService parameter in repclient.cfg. There are three
-# different services provided by the subscription server: series subscription, series subscription cancellation,
+# different services provided by the subscription server: series subscription, series subscription cancellation, 
 # and series re-subscription. The workflow for each is as follows:
 #
 # subscription:
-#   The client sends a 'subscribe' request to the server. The server inserts a record into a requests database table,
-#   and returns to the client a 'requestQueued' response, along with a request ID number. The subscription manager
+#   The client sends a 'subscribe' request to the server. The server inserts a record into a requests database table, 
+#   and returns to the client a 'requestQueued' response, along with a request ID number. The subscription manager 
 #   daemon then processes the subscription request.
 #
 #   Subscription proceeds asynchronously, creating one or more 'dump files' (sql files that contain statements
 #   to set-up the subscription on the client) that the client must ingest. The client must poll the server
 #   so that the client knows when the dump file(s) are ready for ingestion. The client polls by repeatedly
 #   making a 'polldump' request to the server, sending the request ID of the original subscription request.
-#   The server then responds to this polldump request with either a 'requestQueued' or 'requestProcessing' or
+#   The server then responds to this polldump request with either a 'requestQueued' or 'requestProcessing' or 
 #   a 'dumpReady' status. The first status means that the server has not yet started processing the subscription
-#   request. If it has started processing the request, but has not yet finished creating the first dump file,
+#   request. If it has started processing the request, but has not yet finished creating the first dump file, 
 #   then the status returned by the server is requestProcessing. In both cases, the client must continue to poll
 #   awaiting the third response status - dumpReady.
 #
@@ -28,40 +28,40 @@
 #   (which happens if the total payload to be downloaded to the client is large - the payload is broken-up into multiple
 #   additional dump files) or it may start finalizing the subscription if the entire payload has been transfered to the client.
 #   In either case, the client must poll the server with additional pollcomplete requests. If there are no more dump files
-#   to be ingested by the client, and the server is finalizing the subscription request, the server responds with a
+#   to be ingested by the client, and the server is finalizing the subscription request, the server responds with a 
 #   'requestFinalizing' status. As soon as the server has finished finalizing the request, it will send a 'requestComplete'
-#   status in response to the client's pollcomplete request. However, if an additional dump file is forthcoming, then
-#   the server will continue to send the requestFinalizing status to the client. When the next dump file is ready at
-#   the server, it will send a dumpReady response to the client. And then the client ingests this dump file and
+#   status in response to the client's pollcomplete request. However, if an additional dump file is forthcoming, then 
+#   the server will continue to send the requestFinalizing status to the client. When the next dump file is ready at 
+#   the server, it will send a dumpReady response to the client. And then the client ingests this dump file and 
 #   sends a pollcomplete request to the server when it has completed ingesting this next dump file. The interaction continues
 #   as described above until the last dump file has been ingested. After that happens, the server sends the 'requestComplete'
 #   response to the client in response to the client's pollcomplete request. At this point, the client is successfully
 #   subscribed to the series.
-#
+#   
 # subscription cancellation:
-#   The client sends an 'unsubscribe' request to the server. The server inserts a record into a requests database table,
-#   and returns to the client a 'requestQueued' response, along with a request ID number. The subscription manager
+#   The client sends an 'unsubscribe' request to the server. The server inserts a record into a requests database table, 
+#   and returns to the client a 'requestQueued' response, along with a request ID number. The subscription manager 
 #   daemon then processes the subscription-cancellation request.
 #
-#   subscription cancellation proceeds asynchronously at the server. The server services this request by
-#   removing the series from the list of subscribed-to series maintained for the client. The client polls the server
-#   for completion with a pollcomplete request. The server then responds to this pollcomplete request with either a
-#   requestQueued or a requestProcessing or a requestComplete status. As with the subscription request, until the client
+#   subscription cancellation proceeds asynchronously at the server. The server services this request by 
+#   removing the series from the list of subscribed-to series maintained for the client. The client polls the server 
+#   for completion with a pollcomplete request. The server then responds to this pollcomplete request with either a 
+#   requestQueued or a requestProcessing or a requestComplete status. As with the subscription request, until the client 
 #   receives a requestComplete response, it continues to poll with a pollcomplete request. After the client receives this
 #   requestComplete response, the client is no longer subscribed to the series, but it must clean-up on the client side
-#   (it must fetch all pending Slony logs, ingest them all, and then delete the series). The client cleans-up independently
+#   (it must fetch all pending Slony logs, ingest them all, and then delete the series). The client cleans-up independently 
 #   of the server - there is no need to communicate clean-up completion status to the server.
 #
 # re-subscription:
 #   Due to the complexities and potential for race conditions to occur on the server, the safest way to implement this
-#   this feature is for the server to first process a subscription-cancellation request, followed by a
+#   this feature is for the server to first process a subscription-cancellation request, followed by a 
 #   subscription request for the same series. However, a modification to each of these processes is required.
 #   First, during the subscription-cancellation phase, after the server has stopped the subscription and during the
 #   client clean-up, the client does not delete the DRMS data series. Instead, it deletes the rows from the data-
-#   series database table. Second, during the subscription-phase, the server does include in any dump file any SQL
+#   series database table. Second, during the subscription-phase, the server does include in any dump file any SQL 
 #   that would otherwise cause any data series database objects to be created or modified.
 #
-#   The client, therefore, first sends an unsubscribe request to the server, with the workflow proceeding as described
+#   The client, therefore, first sends an unsubscribe request to the server, with the workflow proceeding as described 
 #   in the subscription section above. When the client receives the requestComplete status in response to the
 #   pollcomplete request, it fetches and ingest all pending Slony logs. However, as mentioned above, it does not
 #   delete the series. Instead it deletes all rows from the data series database table. To do this, the client
@@ -147,26 +147,26 @@ class TerminationHandler(DrmsLock):
         self.log = log
         log.writeInfo([ 'Lock file is ' + lockFile + '.', 'Die file is ' + dieFile + '.' ])
         super(TerminationHandler, self).__init__(lockFile, strPid)
-
+        
     def __enter__(self):
         signal.signal(signal.SIGINT, terminator)
         signal.signal(signal.SIGTERM, terminator)
         signal.signal(signal.SIGHUP, terminator)
 
     # Normally, __exit__ is called if an exception occurs inside the with block. And since SIGINT is converted
-    # into a KeyboardInterrupt exception, it will be handled by __exit__(). However, SIGTERM will not -
+    # into a KeyboardInterrupt exception, it will be handled by __exit__(). However, SIGTERM will not - 
     # __exit__() will be bypassed if a SIGTERM signal is received. Use the signal handler installed in the
     # __enter__() call to handle SIGTERM.
     def __exit__(self, etype, value, traceback):
         if etype == SystemExit:
             self.log.writeInfo(['Termination signal handler called.'])
-
+        
         self.hastaLaVistaBaby()
-
+        
         # Remove subscription lock file by calling parent __exit__().
         super(TerminationHandler, self).__exit__(etype, value, traceback)
 
-    def hastaLaVistaBaby(self):
+    def hastaLaVistaBaby(self):        
         # Do not do this! The call of Log::__del__ is deferred until after the program exits. If you end your program by
         # calling sys.exit(), then sys.exit() gets called BEFORE Log::__del__ is called, and this causes a race condition.
         # del self.log
@@ -175,7 +175,7 @@ class TerminationHandler(DrmsLock):
         self.log.flush()
         if os.path.exists(self.dieFile):
             os.remove(self.dieFile)
-
+    
 class SubscribeParams(DRMSParams):
     def __init__(self):
         super(SubscribeParams, self).__init__()
@@ -193,29 +193,29 @@ class Arguments(object):
         # This could raise in a few places. Let the caller handle these exceptions.
         if parser:
             self.parser = parser
-
+        
         if parser:
             # Parse the arguments.
             self.parse()
-
+        
             # Set all parsed args.
             self.setAllArgs()
-
+        
     def parse(self):
         try:
             if self.parser:
-                self.parsedArgs = self.parser.parse_args()
+                self.parsedArgs = self.parser.parse_args()      
         except Exception as exc:
             if len(exc.args) == 2:
                 type, msg = exc.args
-
+                  
                 if type != 'CmdlParser-ArgUnrecognized' and type != 'CmdlParser-ArgBadformat':
                     raise # Re-raise
 
                 raise Exception('args', msg)
             else:
                 raise # Re-raise
-
+                
     def setParser(self, parser):
         if parser:
             self.parser = parser
@@ -229,7 +229,7 @@ class Arguments(object):
             setattr(self, name, value)
         else:
             raise Exception('args', 'Attempt to set an argument that already exists: ' + name + ':' + str(value) + '.')
-
+            
     def set(self, name, value):
         # Sets attribute, even if it exists already.
         setattr(self, name, value)
@@ -237,13 +237,13 @@ class Arguments(object):
     def setAllArgs(self):
         for key,val in list(vars(self.parsedArgs).items()):
             self.setArg(key, val)
-
+        
     def getArg(self, name):
         try:
             return getattr(self, name)
         except AttributeError as exc:
             raise Exception('args', 'Unknown argument: ' + name + '.')
-
+            
     def addFileArgs(self, file):
         cfileDict = {}
         rv = getCfg(file, cfileDict)
@@ -251,7 +251,7 @@ class Arguments(object):
             raise Exception('argFile', 'Unable to open or parse client-side argument file ' + file + '.')
         for key, val in cfileDict.items():
             self.setArg(key, val)
-
+            
     def dump(self, log):
         attrList = []
         for attr in sorted(vars(self)):
@@ -269,7 +269,7 @@ class Log(object):
         self.fileHandler.setLevel(level)
         self.fileHandler.setFormatter(formatter)
         self.log.addHandler(self.fileHandler)
-
+        
     def close(self):
         if self.log:
             if self.fileHandler:
@@ -278,11 +278,11 @@ class Log(object):
                 self.fileHandler.close()
                 self.fileHandler = None
             self.log = None
-
+            
     def flush(self):
         if self.log and self.fileHandler:
             self.fileHandler.flush()
-
+            
     def getLevel(self):
         # Hacky way to get the level - make a dummy LogRecord
         logRecord = self.log.makeRecord(self.log.name, self.log.getEffectiveLevel(), None, '', '', None, None)
@@ -291,37 +291,37 @@ class Log(object):
     def writeDebug(self, text):
         for line in text:
             self.log.debug(line)
-
+            
     def writeInfo(self, text):
         for line in text:
             self.log.info(line)
-
+    
     def writeWarning(self, text):
         for line in text:
             self.log.warning(line)
-
+    
     def writeError(self, text):
         for line in text:
             self.log.error(line)
-
+            
     def writeCritical(self, text):
         for line in text:
             self.log.critical(line)
-
+        
 class CfgAction(argparse.Action):
     def __init__(self, option_strings, dest, arguments, *args, **kwargs):
         self.arguments = arguments
         super(CfgAction, self).__init__(option_strings, dest, *args, **kwargs)
-
+        
     def __call__(self, parser, namespace, values, option_string=None):
         setattr(namespace, self.dest, values)
         # Put all arguments inside the Slony configuration file into self.arguments
         self.arguments.addFileArgs(values)
-
+        
 class ListAction(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
         setattr(namespace, self.dest, values.split(','))
-
+        
 class OverrideAction(argparse.Action):
     '''
     This class sets the arguments directly in the Arguments object passed in
@@ -329,7 +329,7 @@ class OverrideAction(argparse.Action):
     will get set in the arguments::parsedArgs property, which then get copied
     as properties into arguments, the Arguments object. If the user were to not
     provide a value for an argument on the command line, then the parser would
-    set the argument's value to None (the default) in arguments::parsedArgs,
+    set the argument's value to None (the default) in arguments::parsedArgs, 
     which would then overwrite the value set in arguments, the Arguments
     object, by the CfgAction class. To allow a default to be set by the
     CfgAction and not have it overwritten by the default value of None set by the
@@ -339,7 +339,7 @@ class OverrideAction(argparse.Action):
     def __init__(self, option_strings, dest, arguments, *args, **kwargs):
         self.arguments = arguments
         super(OverrideAction, self).__init__(option_strings, dest, *args, **kwargs)
-
+        
     def __call__(self, parser, namespace, values, option_string=None):
         self.arguments.set(self.dest, values)
 
@@ -358,7 +358,7 @@ class LogLevelAction(argparse.Action):
             level = logging.DEBUG
         else:
             level = logging.ERROR
-
+            
         setattr(namespace, self.dest, level)
 
 class SqlCopy(threading.Thread):
@@ -369,7 +369,7 @@ class SqlCopy(threading.Thread):
         self.columns = columns
         self.log = log
         self.sdEvent = threading.Event()
-
+        
     # Executes in a child thread.
     def run(self):
         if not self.sdEvent.isSet():
@@ -389,7 +389,7 @@ class SqlCopy(threading.Thread):
 
 def dbSchemaExists(conn, schema):
     cmd = "SELECT nspname FROM pg_catalog.pg_namespace WHERE nspname = '" + schema + "'"
-
+    
     try:
         with conn.cursor() as cursor:
             cursor.execute(cmd)
@@ -400,7 +400,7 @@ def dbSchemaExists(conn, schema):
         raise Exception('dbCmd', exc.diag.message_primary)
     finally:
         conn.rollback()
-
+        
     if len(records) == 1:
         return True
     else:
@@ -419,15 +419,15 @@ def dbTableExists(conn, schema, table):
         raise Exception('dbCmd', exc.diag.message_primary)
     finally:
         conn.rollback()
-
+        
     if len(records) == 1:
         return True
     else:
         return False
-
+        
 def dbFunctionExists(conn, schema, function):
     cmd = "SELECT n.nspname, c.proname FROM pg_proc c JOIN pg_namespace n ON n.oid = c.pronamespace WHERE n.nspname = '" + schema + "' AND c.proname = '" + function + "'"
-
+    
     try:
         with conn.cursor() as cursor:
             cursor.execute(cmd)
@@ -438,7 +438,7 @@ def dbFunctionExists(conn, schema, function):
         raise Exception('dbCmd', exc.diag.message_primary)
     finally:
         conn.rollback()
-
+        
     if len(records) == 1:
         return True
     else:
@@ -447,7 +447,7 @@ def dbFunctionExists(conn, schema, function):
 def seriesExists(conn, series):
     # Well, this is a complicated question. A remote site can subscribe to a series only if it is on the external website (i.e., jsoc.stanford.edu).
     # However, certain programs that provide lists of series put whitelisted series in these list too. However, remote sites cannot
-    # subscribe to white-listed series. The best way to get the list of subscribe-able series is to query the DB directly, looking at
+    # subscribe to white-listed series. The best way to get the list of subscribe-able series is to query the DB directly, looking at 
     # the <ns>.drms_series table.
     regExp = re.compile(r'\s*(\S+)\.(\S+)\s*')
     matchObj = regExp.match(series)
@@ -456,10 +456,10 @@ def seriesExists(conn, series):
         table = matchObj.group(2)
     else:
         raise Exception('invalidArgument', 'Not a valid DRMS series name: ' + series + '.')
-
+        
     if dbSchemaExists(conn, ns):
         cmd = 'SELECT seriesname FROM ' + ns + ".drms_series WHERE lower(seriesname) = '" + series.lower() + "'"
-
+ 
         try:
             with conn.cursor() as cursor:
                 cursor.execute(cmd)
@@ -470,18 +470,18 @@ def seriesExists(conn, series):
             raise Exception('dbCmd', exc.diag.message_primary)
         finally:
             conn.rollback()
-
+    
         if len(records) == 1:
             return True
         else:
             return False
     else:
         return False
-
+        
 def truncateDBTable(conn, table):
     cmd = 'TRUNCATE TABLE ONLY ' + table
     commit = False
-
+    
     try:
         with conn.cursor() as cursor:
             cursor.execute(cmd)
@@ -493,56 +493,56 @@ def truncateDBTable(conn, table):
             conn.commit()
         else:
             conn.rollback()
-
+        
 def seriesIsPublished(serviceURL, series):
     cgiArgs = { 'qseries' : series }
     arguments = urllib.parse.urlencode(cgiArgs) # For use with HTTP GET requests (not POST).
     ans = False
-
+    
     with urllib.request.urlopen(serviceURL + '?' + arguments) as response:
         # siteInfoStr is a string, that happens to be json.
         info = json.loads(response.read().decode('UTF-8'))
         ans = info[series]
-
+        
     return ans
-
+    
 def clientIsSubscribed(client, serviceURL, series):
     cgiArgs = { 'series' : series }
     arguments = urllib.parse.urlencode(cgiArgs) # For use with HTTP GET requests (not POST).
     ans = False
-
+    
     with urllib.request.urlopen(serviceURL + '?' + arguments) as response:
         # siteInfoStr is a string, that happens to be json.
         info = json.loads(response.read().decode('UTF-8'))
         if client in info['nodelist'][series]: # A list of all clients subscribed to this series.
             ans = True
-
+            
     return ans
 
 def ingestSQLFile(sqlIn, psqlBin, dbhost, dbport, dbname, dbuser, log):
     # The SQL file has a UTF8 encoding, but the DRMS databse has a Latin-1 encoding. However,
-    # the SQL file has a SET CLIENT_ENCODING TO 'UTF8'; statement, yay! So, we can run psql,
-    # which starts the underlying transaction with the server encoding (Latin-1), but when the
-    # sql file is ingested, the client encoding will be changed to UTF8, and then when the text data
+    # the SQL file has a SET CLIENT_ENCODING TO 'UTF8'; statement, yay! So, we can run psql, 
+    # which starts the underlying transaction with the server encoding (Latin-1), but when the 
+    # sql file is ingested, the client encoding will be changed to UTF8, and then when the text data 
     # are sent to the server, they are converted to Latin-1 automagically.
-
+    
     # sqlIn is actually a io.TextIOWrapper, a file object which I believe is incompatible with
     # Popen(). Filter this through a stdin PIPE to Popen().
-
+    
     # Make a pipe for capturing psql stderr as well.
     pipeReadEndFDErr, pipeWriteEndFDErr = os.pipe()
 
     pipeReadEndErr = os.fdopen(pipeReadEndFDErr, 'rb')
     pipeWriteEndErr = os.fdopen(pipeWriteEndFDErr, 'wb')
-
+    
     try:
         cmdList = [ psqlBin, '-h', dbhost, '-p', dbport, '-d', dbname, '-vON_ERROR_STOP=1', '-U', dbuser, '-f', '-']
-        # specify stdout so that
+        # specify stdout so that 
         proc = Popen(cmdList, stdin=PIPE, stderr=pipeWriteEndErr, stdout=PIPE)
     except OSError as exc:
         raise Exception('sqlDump', "Cannot run command '" + ' '.join(cmdList) + "' ")
     except ValueError as exc:
-        raise Exception('sqlDump', "psql command '" + ' '.join(cmdList) + "' called with invalid arguments.")
+        raise Exception('sqlDump', "psql command '" + ' '.join(cmdList) + "' called with invalid arguments.")            
 
     # It turns out the psql will NOT close any of the pipes or files opened in this script. So, before we write
     # to any pipe in a loop, we need to check if psql has died, and if so, bail out of the loop.
@@ -560,7 +560,7 @@ def ingestSQLFile(sqlIn, psqlBin, dbhost, dbport, dbname, dbuser, log):
                     # The only exception to handle is BrokenPipeError. proc.stdin is a blocking pipe.
                     # proc.stdin.write() needs a bytes object, not a str.
                     bytesWritten = proc.stdin.write(sqlInBytes)
-                    proc.stdin.flush()
+                    proc.stdin.flush() 
                     log.writeDebug([ 'wrote ' + str(bytesWritten) + ' bytes to psql pipe' ])
                     sqlInBytes = None
                 except BrokenPipeError as exc:
@@ -576,10 +576,10 @@ def ingestSQLFile(sqlIn, psqlBin, dbhost, dbport, dbname, dbuser, log):
         proc.poll()
         if proc.returncode is not None:
             log.writeDebug([ 'psql finished' ])
-
+            
             pipeWriteEndErr.close()
 
-            # When the write end of this pipe is closed, the read end closes too.
+            # When the write end of this pipe is closed, the read end closes too.            
             if not pipeReadEndErr.closed:
                 while True:
                     pipeBytes = pipeReadEndErr.read(4096)
@@ -589,7 +589,7 @@ def ingestSQLFile(sqlIn, psqlBin, dbhost, dbport, dbname, dbuser, log):
                         break
 
             pipeReadEndErr.close()
-
+        
             if proc.returncode != 0:
                 # Log error.
                 msg = 'command "' + ' '.join(cmdList) + '" returned non-zero status code ' + str(proc.returncode)
@@ -600,7 +600,7 @@ def ingestSQLFile(sqlIn, psqlBin, dbhost, dbport, dbname, dbuser, log):
         elif doneWriting:
             # ok to sleep here, after we've sent psql all bytes, while we wait for psql to terminate
             time.sleep(0.5)
-
+        
         # do not sleep! we want to pipe the dump-file data bytes to psql as quickly as possible; we don't want
         # to sleep 1 second every N bytes
 
@@ -612,7 +612,7 @@ def extractSchema(series):
         table = matchObj.group(2)
     else:
         raise Exception('invalidArgument', 'Not a valid DRMS series name: ' + series + '.')
-
+        
     return schema
 
 # Main Program
@@ -622,7 +622,7 @@ if __name__ == "__main__":
     client = None
     reqId = None
     serviceURL = None
-
+    
     try:
         subscribeParams = SubscribeParams()
         if subscribeParams is None:
@@ -641,34 +641,34 @@ if __name__ == "__main__":
         parser.add_argument('pg_user', '--pg_user', help='The DB account the subscription client uses.', metavar='<series SU tape group>', dest='pg_user', action=OverrideAction, arguments=arguments, default=argparse.SUPPRESS)
         parser.add_argument('-p', '--pause', help='Pause and ask for user confirmation before applying the downloaded SQL dump file.', dest='pause', action='store_true', default=False)
         parser.add_argument('--loglevel', help='Specifies the amount of logging to perform. In increasing order: critical, error, warning, info, debug', dest='loglevel', action=LogLevelAction, default=logging.ERROR)
-        parser.add_argument('--logfile', help='The file to which logging is written.', metavar='<file name>', dest='logfile', default=os.path.join('.', 'subscribe_' + datetime.now().strftime('%Y%m%d') + '.log'))
+        parser.add_argument('--logfile', help='The file to which logging is written.', metavar='<file name>', dest='logfile', default=os.path.join('.', 'subscribe_' + datetime.now().strftime('%Y%m%d') + '.log'))        
         parser.add_argument('--filtersus', help='Specifies a series keyword K and a number of days D, comma separated; a remote-SUMS request for an SU will occur only if the keyword K of the record containing the SU has a value that lies within the time interval determined by the days D.', metavar='<SU filter>', dest='sufilter', action=ListAction, default=[ None, None ])
-
+        
         arguments.setParser(parser)
 
         # Create/Initialize the log file.
         formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
         log = Log(arguments.getArg('logfile'), arguments.getArg('loglevel'), formatter)
-
+        
         log.writeCritical(['Logging threshold level is ' + log.getLevel() + '.']) # Critical - always write the log level to the log.
 
         arguments.dump(log)
-
+        
         client = arguments.getArg('node')
         lockFile = os.path.join(arguments.getArg('kLocalLogDir'), LOCKFILE)
         dieFile = os.path.join(arguments.getArg('ingestion_path'), 'get_slony_logs.' + client + '.die')
         suFilterKeyword, suFilterValue = arguments.getArg('sufilter')
         if suFilterKeyword is not None:
             suFilterValue = timedelta(days=int(suFilterValue))
-
+        
         strPid = str(os.getpid())
-
+        
         log.writeCritical([ 'Client is ' + client + '.' ])
 
         # In addition to handling termination signals, TerminationHandler also prevents multiple, simultaneous runs of this script.
         with TerminationHandler(lockFile, dieFile, strPid, log) as lock:
             cluster = arguments.getArg('slony_cluster')
-
+        
             # Connect to database.
             try:
                 with psycopg2.connect(database=arguments.getArg('pg_dbname'), user=arguments.getArg('pg_user'), host=arguments.getArg('pg_host'), port=str(arguments.getArg('pg_port'))) as conn:
@@ -691,40 +691,40 @@ if __name__ == "__main__":
                             raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database function: _' + cluster + '.finishtableaftercopy.')
                         if not dbFunctionExists(conn, '_' + cluster, 'archivetracking_offline'):
                             raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database function: _' + cluster + '.archivetracking_offline.')
-
+    
                         newSite = False
                         log.writeInfo([ 'Client ' + client + ' is NOT a first-time subscriber.' ])
                     else:
                         newSite = True
                         log.writeInfo([ 'Client ' + client + ' is a first-time subscriber.' ])
-
+                        
                     # Create the 'die file', if it does not already exist, which prevents get_slony_logs.pl from running.
                     with open(dieFile, 'a') as fout:
                         pass
-
+    
                     serviceURL = arguments.getArg('kSubService')
                     pubServiceURL = arguments.getArg('kPubListService')
-
-                    # Check for pending request. Fetch any existing request from the server for this client. Then fill-in the
+                    
+                    # Check for pending request. Fetch any existing request from the server for this client. Then fill-in the 
                     # various arguments to this script with the values from that request. The client can get into this state if
-                    # they kill this script before it completes. If they re-run this script, we want their existing request to
+                    # they kill this script before it completes. If they re-run this script, we want their existing request to 
                     # complete. To be really safe about this, I could save a UUID on both the server and client, and make sure they
                     # are equal before proceeding, but maybe some other time.
                     cgiArgs = { 'action' : 'continue', 'client' : client }
-
+                    
                     msg = 'Checking for existing request at server.'
                     print(msg)
                     log.writeInfo([ msg ])
                     log.writeInfo([ 'Calling cgi with URL: ' + serviceURL ])
                     log.writeInfo([ 'cgi args: ' + json.dumps(cgiArgs) ])
                     urlArgs = urllib.parse.urlencode(cgiArgs) # For use with HTTP GET requests (not POST).
-
+                
                     with urllib.request.urlopen(serviceURL + '?' + urlArgs) as response:
                         info = json.loads(response.read().decode('UTF-8'))
 
                     if 'status' not in info or 'msg' not in info:
                         raise Exception('subService', 'Request failure: ' + STATUS_ERR_INTERNAL + '.')
-
+                        
                     if info['status'] == STATUS_REQUEST_RESUMING:
                         # The request is 'pending'. Set the arguments to the proper values.
                         reqId = info['reqid']
@@ -750,9 +750,9 @@ if __name__ == "__main__":
                         resuming = False
                         log.writeInfo([ 'No existing request at server.' ])
 
-                    series = None
+                    series = None 
                     schema = None
-
+                    
                     if reqType != 'subscribe' and reqType != 'unsubscribe' and reqType != 'resubscribe':
                         raise Exception('invalidArgument', 'Unknown subscription request type: ' + reqType + '.')
 
@@ -761,26 +761,26 @@ if __name__ == "__main__":
                             # Make sure that newSite is False.
                             if newSite:
                                 raise Exception('invalidArgument', 'Cannot cancel subscription to series. Client ' + client + ' has never subscribed to any series')
-
-                            # Make sure there is at least one series and make sure that the series exist locally and
+                                
+                            # Make sure there is at least one series and make sure that the series exist locally and 
                             # make sure that the client is currently subscribed to these series.
                             if len(seriesList) < 1:
                                 raise Exception('invalidArgument', 'Please provide one or more series whose subscriptions are to be cancelled.')
-
+                                
                             for series in seriesList:
                                 if not seriesExists(conn, series):
                                     raise Exception('invalidArgument', series + ' does not exist locally. Please select a different series whose subscription is to be cancelled.')
-
+    
                                 if not clientIsSubscribed(client, pubServiceURL, series):
                                     raise Exception('invalidArgument', 'You are not subscribed to ' + series + '. Please select a different series whose subscription is to be cancelled.')
-
+                                    
                             print('Cancelling subscription to series ' + ','.join(seriesList) + '.')
                         else:
                             # Make sure that newSite is False.
                             if newSite:
                                 raise Exception('invalidArgument', 'Cannot re-subscribe to series. Client ' + client + ' has never subscribed to any series')
-
-                            # Make sure there is exactly one series and make sure that the series exist locally and
+                                
+                            # Make sure there is exactly one series and make sure that the series exist locally and 
                             # make sure that the client is currently subscribed to it.
                             if len(seriesList) != 1:
                                 raise Exception('invalidArgument', 'Please provide one series whose subscription is to be reset.')
@@ -794,7 +794,7 @@ if __name__ == "__main__":
                                 raise Exception('invalidArgument', 'You are not subscribed to ' + series + '. Please select a different series whose subscription is to be reset.')
 
                             print('Resetting subscription to series ' + series + '.')
-
+    
                         # To un-subscribe from one or more series, provide client, series.
                         cgiArgs = { 'action' : 'unsubscribe', 'client' : client, 'newsite' : False, 'series' : ','.join(seriesList) }
 
@@ -802,7 +802,7 @@ if __name__ == "__main__":
                         log.writeInfo([ 'Calling cgi with URL: ' + serviceURL ])
                         log.writeInfo([ 'cgi args: ' + json.dumps(cgiArgs) ])
                         urlArgs = urllib.parse.urlencode(cgiArgs) # For use with HTTP GET requests (not POST).
-
+            
                         with urllib.request.urlopen(serviceURL + '?' + urlArgs) as response:
                             info = json.loads(response.read().decode('UTF-8'))
 
@@ -819,15 +819,15 @@ if __name__ == "__main__":
                         reqId = info['reqid']
                         log.writeInfo([ 'cgi response: ' + info['msg'] + ' Response status: ' + info['status'] + '.'])
                         time.sleep(1)
-
+                        
                         # poll for completion
                         cgiArgs = { 'action' : 'pollcomplete', 'client' : client, 'reqid' : reqId}
                         urlArgs = urllib.parse.urlencode(cgiArgs) # For use with HTTP GET requests (not POST).
 
                         natt = 0
                         while info['status'] == STATUS_REQUEST_QUEUED or info['status'] == STATUS_REQUEST_PROCESSING:
-                            # Send pollcomplete requests. These tells the server to clean up and finalize, so
-                            # the request is in the STATUS_REQUEST_PROCESSING state.
+                            # Send pollcomplete requests. These tells the server to clean up and finalize, so 
+                            # the request is in the STATUS_REQUEST_PROCESSING state.                        
                             try:
                                 with urllib.request.urlopen(serviceURL + '?' + urlArgs) as response:
                                     info = json.loads(response.read().decode('UTF-8'))
@@ -844,15 +844,15 @@ if __name__ == "__main__":
                                     msg = ''
                                 log.writeWarning([ 'Unable to send subscription server pollcomplete status (' + msg + '). Trying again.' ])
                                 time.sleep(1)
-
+                                
                         if info['status'] != STATUS_REQUEST_COMPLETE:
                             raise Exception('subService', info['status'], 'Unexpected response from subscription service: ' + info['status'])
-
+                            
                         # Remove get_slony_logs die file.
                         if os.path.exists(dieFile):
                             os.remove(dieFile)
                             log.writeInfo([ 'Deleted die file ' + dieFile + '.' ])
-
+                        
                         # Run get_slony_logs.pl
                         cmdList = [ arguments.getArg('kRSPerl'), arguments.getArg('kSQLIngestionProgram'), arguments.getArg('slonyCfg') ]
                         log.writeInfo([ 'Running ' + ' '.join(cmdList) + '.' ])
@@ -862,7 +862,7 @@ if __name__ == "__main__":
                             check_call(cmdList)
                         except CalledProcessError as exc:
                             raise Exception('getLogs', 'Unable to run ' + arguments.getArg('kSQLIngestionProgram') + ' properly.')
-
+                            
                         log.writeInfo([ 'Successfully downloaded and ingested Slony log files (' + ' '.join(cmdList) + ' ran successfully).' ])
 
                         if reqType == 'unsubscribe':
@@ -888,17 +888,17 @@ if __name__ == "__main__":
                                     ans = sys.stdin.read(1)
                                 finally:
                                     termios.tcsetattr(stdinFD, termios.TCSADRAIN, oldAttr)
-
+                            
                                 if ans.lower() != 'y':
                                     cmdList = [ deleteSeriesBin, series, 'JSOC_DBUSER=' + subuser ]
                                     print('  ...deleting SUs of series ' + series + '.')
                                 else:
                                     cmdList = [ deleteSeriesBin, '-k', series, 'JSOC_DBUSER=' + subuser ]
                                     print('  ...NOT deleting SUs of series ' + series + '.')
-
+                                
                                 log.writeInfo([ 'Running ' + ' '.join(cmdList) + '.' ])
-
-                                # Pipe stdout and stderr, but do not print or log their content (which is akin to
+                            
+                                # Pipe stdout and stderr, but do not print or log their content (which is akin to 
                                 # You are about to permanently erase all metadata for the series 'mdi.fdv_avg120').
                                 proc = Popen(cmdList, stdin=PIPE, stdout=PIPE, stderr=PIPE)
                                 proc.communicate(input=b'yes\nyes\n')
@@ -907,7 +907,7 @@ if __name__ == "__main__":
                                 msg = 'Successfully deleted series ' + series + '.'
                                 print(msg)
                                 log.writeInfo([ msg ])
-
+                            
                             for series in seriesList:
                                 msg = 'Successfully cancelled subscription to ' + series + '.'
                                 print(msg)
@@ -916,7 +916,7 @@ if __name__ == "__main__":
                             # resubscribe
                             # delete rows in series database table
                             truncateDBTable(conn, series.lower())
-
+                            
                             msg = 'Successfully cancelled subscription to ' + series + ' (first part of a re-subscription request).'
                             log.writeInfo([ msg ])
 
@@ -933,36 +933,36 @@ if __name__ == "__main__":
                                 raise Exception('invalidArgument', 'Please ' + reqType + ' to a single series at a time.')
                             elif len(seriesList) == 0:
                                 raise Exception('invalidArgument', 'Please provide a series to which you would like to ' + reqType + '.')
-
+        
                             series = seriesList[0]
                             schema = extractSchema(series)
-
+    
                             if reqType == 'subscribe':
                                 if seriesExists(conn, series):
                                     raise Exception('invalidArgument', series + ' already exists locally. Please select a series that does not exist.')
-
+                                
                                 if clientIsSubscribed(client, pubServiceURL, series):
                                     raise Exception('invalidArgument', 'You are already subscribed to ' + series + '. Please select a series to which you are not subscribed.')
-
+                                
                                 if not seriesIsPublished(pubServiceURL, series):
                                     raise Exception('invalidArgument', 'Series ' + series + ' is not published and not available for subscription.')
-
+                                
                                 if newSite:
                                     # Make sure the admin.ns table exists, because we are going to insert into it. And if it is missing,
                                     # then the NetDRMS is bad.
                                     if not dbTableExists(conn, 'admin', 'ns'):
                                         raise Exception('drms', 'Your DRMS is missing a required database relation (or the containing schema): admin.ns.')
-
+                                        
                                 # to subscribe to any series, the client DRMS has to have the 'drms' namespace (this is a required component
                                 # created by the NetDRMS.sql script), and it has to have the capturesunum() function in the drms namespace,
                                 # and it has to have the drms.ingested_sunums database table
                                 if not dbSchemaExists(conn, 'drms'):
-                                    raise Exception('drms', 'Your DRMS is missing a required namespace: drms.')
+                                    raise Exception('drms', 'Your DRMS is missing a required namespace: drms.')                                    
                             else:
                                 # resubscribe
                                 if not seriesExists(conn, series):
                                     raise Exception('invalidArgument', series + ' does not exist locally. Please select a an existing series.')
-
+                                
                                 if clientIsSubscribed(client, pubServiceURL, series):
                                     raise Exception('subService', 'Failure cancelling subscription to ' + series + '.')
 
@@ -971,7 +971,7 @@ if __name__ == "__main__":
 
                                 if newSite:
                                     raise Exception('invalidArgument', 'Cannot reset subscription to series. Client ' + client + ' has never subscribed to any series')
-
+                                
                             if dbSchemaExists(conn, schema):
                                 # We are going to insert into several database tables in this schema. Make sure they exist.
                                 if not dbTableExists(conn, schema, 'drms_series'):
@@ -986,15 +986,15 @@ if __name__ == "__main__":
                                     raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database table: ' + schema + '.drms_session')
                                 if not dbTableExists(conn, schema, 'drms_sessionid_seq'):
                                     raise Exception('drms', 'Invalid DRMS subscription set-up. Missing database table: ' + schema + '.drms_sessionid_seq')
-
-                            # if the user has provided the sufilter argument, they want to filter the set of SUs that will be sent to
-                            # remote SUMS as part of the subscription process; the filter criteria is saved in drms.capturesunum_series;
+                                    
+                            # if the user has provided the sufilter argument, they want to filter the set of SUs that will be sent to 
+                            # remote SUMS as part of the subscription process; the filter criteria is saved in drms.capturesunum_series; 
                             # some NetDRMS sites will not have this table (since the initial subscribe.py did not have this feature)
                             if dbTableExists(conn, 'drms', 'capturesunum_series'):
                                 if suFilterKeyword is not None:
                                     # if the filter does not already exist, add it, otherwise update it
                                     cmd = "SELECT timecol, timewindow FROM drms.capturesunum_series WHERE lower(series) = '" + series.lower() + "'"
-
+ 
                                     try:
                                         with conn.cursor() as cursor:
                                             cursor.execute(cmd)
@@ -1005,14 +1005,14 @@ if __name__ == "__main__":
                                             elif len(records) == 1:
                                                 timeColumn = records[0][0]
                                                 timeWindow = records[0][1] # timedelta
-
+                                                
                                                 if timeColumn.lower() != suFilterKeyword.lower() or timeWindow != suFilterValue:
                                                     # update drms.capturesunum_series
                                                     cmd = 'UPDATE drms.capturesunum_series SET timecol=' + timeColumn.lower() + ', timewindow=' + str(suFilterValue) + " WHERE lower(series)='" + series.lower() + "'"
                                             else:
                                                 # add a row to drms.capturesunum_series
                                                 cmd = "INSERT INTO drms.capturesunum_series(series, timecol, timewindow) VALUES ('" + series.lower() + "', '" + suFilterKeyword.lower() + "', '" + str(suFilterValue) + "')"
-
+                                                
                                             if cmd is not None:
                                                 cursor.execute(cmd)
                                                 conn.commit()
@@ -1033,28 +1033,28 @@ if __name__ == "__main__":
                             log.writeInfo([ 'Calling cgi with URL: ' + serviceURL ])
                             log.writeInfo([ 'cgi args: ' + json.dumps(cgiArgs) ])
                             urlArgs = urllib.parse.urlencode(cgiArgs) # For use with HTTP GET requests (not POST).
-
+            
                             with urllib.request.urlopen(serviceURL + '?' + urlArgs) as response:
                                 info = json.loads(response.read().decode('UTF-8'))
 
                             # Should receive a STATUS_REQUEST_QUEUED response.
                             if 'status' not in info or 'msg' not in info:
                                 raise Exception('subService', 'Request failure: ' + STATUS_ERR_INTERNAL + '.')
-
+                
                             if info['status'] != STATUS_REQUEST_QUEUED:
                                 raise Exception('subService', 'Request failure: ' + info['msg'] + ' (status ' + info['status'] + ').')
-
+    
                             if 'reqid' not in info:
                                 raise Exception('subService', 'Request failure: ' + STATUS_ERR_INTERNAL + '.')
-
+                        
                             reqId = info['reqid']
-
+                    
                             log.writeInfo([ 'cgi response: ' + info['msg'] + ' Response status: ' + info['status'] + '.'])
-
+    
                             time.sleep(1)
 
                         # poll server for dump files
-                        if not resuming or resumeAction.lower() == 'polldump':
+                        if not resuming or resumeAction.lower() == 'polldump':                            
                             # poll for dump file.
                             log.writeInfo([ 'Polling for dump file.' ])
                             cgiArgs = { 'action' : 'polldump', 'client' : client, 'reqid' : reqId}
@@ -1087,14 +1087,14 @@ if __name__ == "__main__":
                                         msg = ''
                                     log.writeWarning([ 'Unable to send subscription server pollcomplete status (' + msg + '). Trying again.' ])
                                     time.sleep(1)
-
+                                    
                             # Print a newline.
                             print('dump file is ready.')
 
                             if info['status'] != STATUS_REQUEST_DUMP_READY:
                                 raise Exception('subService', 'Unexpected response from subscription service: ' + info['status'] + '.')
 
-                        if not resuming or resumeStatus == 'A':
+                        if not resuming or resumeStatus == 'A':                            
                             # Download and apply create-ns file.
                             if reqType == 'subscribe' and not dbSchemaExists(conn, schema):
                                 scheme, netloc, path, query, frag = urllib.parse.urlsplit(arguments.getArg('kSubXfer'))
@@ -1110,18 +1110,18 @@ if __name__ == "__main__":
                                         os.remove(dest)
                                     log.writeInfo([ 'Downloading ' + dest + '.' ])
                                     print('Downloading dump file (to ' + dest + ').')
-                                    dl = SmartDL(xferURL, dest=dest, timeout=60, threads=2)
+                                    dl = SmartDL(xferURL, dest)
                                     dl.start()
                                     log.writeInfo([ 'Successfully downloaded ' + dest + '.' ])
                                     print('  ...download complete.')
-
+                                    
                                 with gzip.open(dest, mode='rb') as fin:
                                     # Ingest createns.sql. Will raise if a problem occurs. When that happens, the cursor is rolled back.
                                     # The sql in fin is piped to a psql process.
                                     print('Ingesting dump file (' + dest + ').')
                                     ingestSQLFile(fin, arguments.getArg('PSQL').strip(" '" + '"'), arguments.getArg('pg_host'), str(arguments.getArg('pg_port')), arguments.getArg('pg_dbname'), subuser, log)
                                     print('  ...ingestion complete.')
-
+                                    
                                 # Remove the create-ns file.
                                 os.remove(dest)
                                 log.writeInfo([ 'Successfully ingested createNs file: ' + dest + '.' ])
@@ -1152,14 +1152,14 @@ if __name__ == "__main__":
                                 with gzip.open(dest, mode='rb') as fin:
                                     # Will raise if a problem occurs. When that happens, the cursor is rolled back.
 
-                                    # If reqType == 'subscribe', then the sql will create a new series and populate it.
+                                    # If reqType == 'subscribe', then the sql will create a new series and populate it. 
                                     # If reqType == 'resubscribe', then the sql will truncate the 'series table' and reset the series-table sequence
                                     # only.
                                     print('ingesting dump file (' + dest + ')')
                                     ingestSQLFile(fin, arguments.getArg('PSQL').strip(" '" + '"'), arguments.getArg('pg_host'), str(arguments.getArg('pg_port')), arguments.getArg('pg_dbname'), subuser, log)
                                     log.writeInfo([ 'successfully ingested dump file: ' + dest + ' (number ' +  str(fileNo) + ')' ])
                                     print('  ...ingestion complete')
-
+                                    
                                 # Remove the dump file.
                                 os.remove(dest)
 
@@ -1173,7 +1173,7 @@ if __name__ == "__main__":
                                 urlArgs = urllib.parse.urlencode(cgiArgs) # For use with HTTP GET requests (not POST).
                                 print('Waiting for server to finalize request.')
 
-                                # We just sent the first pollcomplete request. This tells the server to clean up and finalize, so
+                                # We just sent the first pollcomplete request. This tells the server to clean up and finalize, so 
                                 # the request is in the STATUS_REQUEST_FINALIZING state.
                                 info = {}
                                 info['status'] = STATUS_REQUEST_FINALIZING
@@ -1206,7 +1206,7 @@ if __name__ == "__main__":
 
                                 if info['status'] != STATUS_REQUEST_COMPLETE:
                                     # The only other acceptable status is STATUS_REQUEST_DUMP_READY. This happens when there is
-                                    # more than one dump file to ingest. The server will see a request status of 'I', and then
+                                    # more than one dump file to ingest. The server will see a request status of 'I', and then 
                                     # it will set status to either 'D' (if there is another dump file to ingest) or it
                                     # will set status to 'C' (if there are no more dump files.)
                                     if info['status'] != STATUS_REQUEST_DUMP_READY:
@@ -1218,12 +1218,12 @@ if __name__ == "__main__":
                                 else:
                                     # Yay, we are done ingesting dump files. Break out of dump-file loop.
                                     break
-
+                                
                         if reqType == 'subscribe':
                             msg = 'Successfully subscribed to series ' + series + '.'
                         else:
                             msg = 'Successfully re-subscribed to series ' + series + '.'
-
+                            
                         print(msg)
                         log.writeInfo([ msg ])
             except (psycopg2.DatabaseError, psycopg2.OperationalError) as exc:
@@ -1232,7 +1232,7 @@ if __name__ == "__main__":
                     msg = exc.diag.message_primary
                 else:
                     import traceback
-
+                
                     msg = traceback.format_exc(0)
                 raise Exception('dbConnection', msg)
 
@@ -1241,7 +1241,7 @@ if __name__ == "__main__":
         if len(exc.args) == 2:
             type = exc.args[0]
             msg = exc.args[1]
-
+            
             if type == 'drms':
                 rv = RV_DRMS
             elif type == 'dbConnection':
@@ -1275,13 +1275,13 @@ if __name__ == "__main__":
                 log.writeError([ traceback.format_exc(5) ])
 
             print(traceback.format_exc(5))
-
+                
         # Send a request to tell the server that an error occurred. The server will rollback in response.
         if client and reqId and serviceURL:
             cgiArgs = { 'action' : 'error', 'client' : client, 'reqid' : reqId}
             urlArgs = urllib.parse.urlencode(cgiArgs) # For use with HTTP GET requests (not POST).
             urllib.request.urlopen(serviceURL + '?' + urlArgs)
-
+            
     log.close()
     logging.shutdown()
 

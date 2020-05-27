@@ -2,8 +2,8 @@
 @file drms_record.h
 @brief Functions that retrieve, close, populate, copy, allocate, and free DRMS_Record_t structures.
 @sa drms_keymap.h drms_keyword.h drms_segment.h drms_series.h drms_env.h
-@example drms_record_ex1.c
-@example drms_record_ex2.c
+@example drms_record_ex1.c 
+@example drms_record_ex2.c 
 @example drms_record_ex3.c
 @example drms_record_ex4.c
 @example drms_record_ex5.c
@@ -17,8 +17,8 @@
 #include "db.h"
 #include "list.h"
 
-#define kLocalSegName "local_data" /* Name of segment created when reading
-				    * fits files from local disk (outside
+#define kLocalSegName "local_data" /* Name of segment created when reading 
+				    * fits files from local disk (outside 
 				    * of any database). */
 #define kLocalPrimekey "primekey"
 #define kLocalPrimekeyType DRMS_TYPE_LONGLONG
@@ -46,34 +46,6 @@ enum DRMS_RecChunking_enum
 
 typedef enum DRMS_RecChunking_enum DRMS_RecChunking_t;
 
-
-enum DRMS_RecordSet_Sql_Statement_Type_enum
-{
-    RECORDSET_SQLSTATEMENT_LANGTYPE_UKNOWN = 0,
-    RECORDSET_SQLSTATEMENT_LANGTYPE_DDL = 1,
-    RECORDSET_SQLSTATEMENT_LANGTYPE_DML = 2
-};
-
-typedef enum DRMS_RecordSet_Sql_Statement_Type_enum DRMS_RecordSet_Sql_Statement_Type_t;
-
-struct DRMS_RecordSet_Sql_Statement_struct
-{
-    DRMS_RecordSet_Sql_Statement_Type_t type;
-    char *statement;
-    char *dmlSeries; /* if this is a DML statement, then this is the series from which we are selecting records */
-    char *columns; /* if this is a DML SELECT statement (but not a count statement), these are the columns being 'SELECTed' */
-    char *parent; /* the parent series, if this is a DML statement for a child series */
-    char *link; /* the name of the DRMS link from the parent to the child, if this is a DML statement for a child series */
-    LinkedList_t *temp; /* temporary DB table DDL statement is creating, or DML statement is selecting from */
-    char linkInfoSQL; /* if this is a link-info DML statement, then this is 't', else 'f' */
-		char *ephemeralTemp; /* name of temp table that can be dropped as soon when the containing statement list is deleted */
-		DRMS_Env_t *env; /* to run SQL to drop ephemeralTemp */
-};
-
-typedef struct DRMS_RecordSet_Sql_Statement_struct DRMS_RecordSet_Sql_Statement_t;
-
-void FreeSqlStatement(void *data);
-
 /************** User level record functions ************/
 
 /**** For record sets. ****/
@@ -81,25 +53,22 @@ void FreeSqlStatement(void *data);
    given in the argument "datasetname". The records are inserted into
    the record cache and marked read-only. */
 
-DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, const char *recordsetname,
+DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, const char *recordsetname, 
 				    int *status);
-DRMS_RecordSet_t *drms_open_nrecords(DRMS_Env_t *env,
-                                     const char *recordsetname,
+DRMS_RecordSet_t *drms_open_nrecords(DRMS_Env_t *env, 
+                                     const char *recordsetname, 
                                      int n,
                                      int *status);
 DRMS_RecordSet_t *drms_open_recordswithkeys(DRMS_Env_t *env, const char *specification, const char *keylist, int *status);
 
-/* swiss-army-knife open-records function that has all possible options */
-DRMS_RecordSet_t *drms_open_records2(DRMS_Env_t *env, const char *specification, LinkedList_t *keys, int chunkrecs, int nrecs, int openlinks, int *status);
-
-DRMS_RecordSet_t *drms_clone_records(DRMS_RecordSet_t *recset,
-				     DRMS_RecLifetime_t lifetime,
+DRMS_RecordSet_t *drms_clone_records(DRMS_RecordSet_t *recset,  
+				     DRMS_RecLifetime_t lifetime, 
 				     DRMS_CloneAction_t mode, int *status);
-DRMS_RecordSet_t *drms_clone_records_nosums(DRMS_RecordSet_t *recset,
-                                            DRMS_RecLifetime_t lifetime,
+DRMS_RecordSet_t *drms_clone_records_nosums(DRMS_RecordSet_t *recset,  
+                                            DRMS_RecLifetime_t lifetime, 
                                             DRMS_CloneAction_t mode, int *status);
 
-DRMS_RecordSet_t *drms_create_records(DRMS_Env_t *env, int n,
+DRMS_RecordSet_t *drms_create_records(DRMS_Env_t *env, int n, 
 				      const char *seriesname, DRMS_RecLifetime_t lifetime,
 				      int *status);
 
@@ -108,7 +77,7 @@ void drms_destroy_recprotos(DRMS_RecordSet_t **protos);
 DRMS_Record_t *drms_create_recproto(DRMS_Record_t *recSource, int *status);
 void drms_destroy_recproto(DRMS_Record_t **proto);
 
-/* Close a set of records.
+/* Close a set of records. 
    1. a) If action=DRMS_INSERT_RECORD the record meta-data (keywords
       and links) will be inserted into the database and the data
       segments will be left in the storage unit directory for later
@@ -128,10 +97,10 @@ int drms_sortandstage_records_dontretrievelinks(DRMS_RecordSet_t *rs, int retrie
 int drms_record_getinfo(DRMS_RecordSet_t *rs);
 
 /**** For a single record. ****/
-DRMS_Record_t *drms_clone_record(DRMS_Record_t *record,
-				 DRMS_RecLifetime_t lifetime,
+DRMS_Record_t *drms_clone_record(DRMS_Record_t *record, 
+				 DRMS_RecLifetime_t lifetime, 
 				 DRMS_CloneAction_t mode, int *status);
-DRMS_Record_t *drms_create_record(DRMS_Env_t *env, char *seriesname,
+DRMS_Record_t *drms_create_record(DRMS_Env_t *env, char *seriesname, 
 				  DRMS_RecLifetime_t lifetime, int *status);
 int drms_close_record(DRMS_Record_t *rec, int action);
 /** \brief Print the contents of a record data structure to stdout. */
@@ -164,8 +133,8 @@ int drms_record_directory_nosums(DRMS_Record_t *rec, char *dirout, int size);
 
 /**** Can modify seriesinfo only if the record is a record prototype  ****/
 int drms_recproto_setseriesinfo(DRMS_Record_t *rec,
-				int *unitSize,
-				int *bArchive,
+				int *unitSize, 
+				int *bArchive, 
 				int *nDaysRetention,
 				int *tapeGroup,
 				const char *description);
@@ -199,8 +168,8 @@ static inline int drms_recordset_getnumss(DRMS_RecordSet_t *rs)
 const char *drms_recordset_getqueryss(DRMS_RecordSet_t *rs, unsigned int setnum, int *status);
 
 /** @brief Return a DRMS record-set subset query type */
-DRMS_RecordSetType_t *drms_recordset_gettypess(DRMS_RecordSet_t *rs,
-					       unsigned int setnum,
+DRMS_RecordSetType_t *drms_recordset_gettypess(DRMS_RecordSet_t *rs, 
+					       unsigned int setnum, 
 					       int *status);
 
 /** @brief Return a DRMS record-set subset */
@@ -225,12 +194,12 @@ static inline DRMS_Record_t *drms_recordset_getrec(DRMS_RecordSet_t *rs, long lo
 int drms_recordset_setchunksize(unsigned int size);
 unsigned int drms_recordset_getchunksize();
 
-DRMS_RecordSet_t *drms_open_recordset(DRMS_Env_t *env,
-				      const char *rsquery,
+DRMS_RecordSet_t *drms_open_recordset(DRMS_Env_t *env, 
+				      const char *rsquery, 
 				      int *status);
-DRMS_Record_t *drms_recordset_fetchnext(DRMS_Env_t *env,
-                                        DRMS_RecordSet_t *rs,
-                                        int *drmsstatus,
+DRMS_Record_t *drms_recordset_fetchnext(DRMS_Env_t *env, 
+                                        DRMS_RecordSet_t *rs, 
+                                        int *drmsstatus, 
                                         DRMS_RecChunking_t *chunkstat,
                                         int *newchunk);
 int drms_recordset_fetchnext_getcurrent(DRMS_RecordSet_t *rset);
@@ -240,10 +209,10 @@ void drms_free_cursor(DRMS_RecSetCursor_t **cursor);
 
 int drms_count_records(DRMS_Env_t *env, const char *recordsetname, int *status);
 
-DRMS_Array_t *drms_record_getvector(DRMS_Env_t *env,
-                                    const char *recordsetname,
-                                    const char *keylist,
-                                    DRMS_Type_t type,
+DRMS_Array_t *drms_record_getvector(DRMS_Env_t *env, 
+                                    const char *recordsetname, 
+                                    const char *keylist, 
+                                    DRMS_Type_t type, 
                                     int unique,
                                     int *status);
 
@@ -252,10 +221,10 @@ DRMS_Segment_t *drms_record_nextseg2(DRMS_Record_t *rec, HIterator_t **last, int
 DRMS_Keyword_t *drms_record_nextkey(DRMS_Record_t *rec, HIterator_t **last, int followlink);
 DRMS_Link_t *drms_record_nextlink(DRMS_Record_t *rec, HIterator_t **last);
 
-int drms_record_parserecsetspec(const char *recsetsStr,
-                                char **allvers,
-                                char ***sets,
-                                DRMS_RecordSetType_t **types,
+int drms_record_parserecsetspec(const char *recsetsStr, 
+                                char **allvers, 
+                                char ***sets, 
+                                DRMS_RecordSetType_t **types, 
                                 char ***snames,
                                 char ***filts,
                                 int *nsets,
@@ -263,11 +232,11 @@ int drms_record_parserecsetspec(const char *recsetsStr,
 
 int drms_record_parserecsetspec_plussegs(const char *recsetsStr, char **allvers, char ***sets, DRMS_RecordSetType_t **types, char ***snames, char ***filts, char ***segs, int *nsets, DRMS_RecQueryInfo_t *info);
 
-int drms_record_freerecsetspecarr(char **allvers,
-                                  char ***sets,
-                                  DRMS_RecordSetType_t **types,
-                                  char ***snames,
-                                  char ***filts,
+int drms_record_freerecsetspecarr(char **allvers, 
+                                  char ***sets, 
+                                  DRMS_RecordSetType_t **types, 
+                                  char ***snames, 
+                                  char ***filts, 
                                   int nsets);
 
 int drms_record_freerecsetspecarr_plussegs(char **allvers, char ***sets, DRMS_RecordSetType_t **types, char ***snames, char ***filts, char ***segs, int nsets);
@@ -311,9 +280,9 @@ int drms_record_islocal(DRMS_Record_t *rec);
    record set and must release it by calling ::drms_close_records.
 
    @param env DRMS session information.
-   @param recordsetname A string that specifies a database query. It
+   @param recordsetname A string that specifies a database query. It 
    includes a series name and clauses to extract a subset of records from that series.
-   Please see http://jsoc.stanford.edu/jsocwiki/DrmsNames for more
+   Please see http://jsoc.stanford.edu/jsocwiki/DrmsNames for more 
    information about database queries.
    @param status Pointer to DRMS status (see drms_statuscodes.h) returned
    by reference. 0 if successful, non-0 otherwise.
@@ -329,7 +298,7 @@ int drms_record_islocal(DRMS_Record_t *rec);
    each  record  in  \a recset,  a new ::DRMS_Record_t structure is created and
    assigned a unique record number from the DRMS database.  The values  of
    the  keywords, links, and segments of the original record in recset are
-   used to populate the newly created record.  If \a mode == ::DRMS_SHARE_SEGMENTS,
+   used to populate the newly created record.  If \a mode == ::DRMS_SHARE_SEGMENTS, 
    the newly created segments will share the segment files with the
    original record, i.e. the new record will have the  same  storage  unit
    number  (DSINDEX)  as  the  original record.  However, keyword and link
@@ -356,7 +325,7 @@ int drms_record_islocal(DRMS_Record_t *rec);
 
    @param recset The original set of records that get cloned.
    @param lifetime Either ::DRMS_PERMANENT (at the end of the
-   DRMS session, the cloned records should be saved to the database)
+   DRMS session, the cloned records should be saved to the database) 
    or ::DRMS_TRANSIENT (at the end of the DRMS session, the cloned records should be
    discarded).
    @param mode Either DRMS_COPY_SEGMENTS (copy original data
@@ -368,24 +337,24 @@ int drms_record_islocal(DRMS_Record_t *rec);
 
 /**
    @fn DRMS_RecordSet_t *drms_create_records(DRMS_Env_t *env, int n, char *seriesname, DRMS_RecLifetime_t lifetime, int *status)
-   Create a new set of \a n records for series \a seriesname.
-   Within the current DRMS session, this function creates a
+   Create a new set of \a n records for series \a seriesname. 
+   Within the current DRMS session, this function creates a 
    record-set structure (::DRMS_RecordSet_t) that
-   contains \a n newly created record structures (::DRMS_Record_t). Each created record
+   contains \a n newly created record structures (::DRMS_Record_t). Each created record 
    is assigned a unique record number from the DRMS database. The values of
-   the keywords, links, and segments from the series' template record (stored
+   the keywords, links, and segments from the series' template record (stored 
    in the series cache (::DRMS_Env_t->record_cache) are used to populate
    the corresponding values of each of the \a n created records.
 
    The newly  created  records are placed   in   the   record   cache
    (::DRMS_Env_t->record_cache)  and  are made writeable and assigned a lifetime of
    \a lifetime (please see ::drms_reclifetime for details on lifetime).
-
+   
    Upon successful completion, the  function  returns  a  ::DRMS_RecordSet_t
    pointer,  and  sets  \a *status  to  0.   If an error occurs, the function
    returns NULL and sets \a *status to an appropriate error code  defined  in
-   drms_statuscodes.h.  Typical errors are as follows. If there was an error
-   receiving one or more
+   drms_statuscodes.h.  Typical errors are as follows. If there was an error 
+   receiving one or more 
    proper record numbers from the database server, then \a *status is set  to
    ::DRMS_ERROR_BADSEQUENCE.   If an error occurs while creating a SUMS slot
    directory, then *status is set to ::DRMS_ERROR_MKDIRFAILED.
@@ -393,12 +362,12 @@ int drms_record_islocal(DRMS_Record_t *rec);
    The caller owns the  allocated  memory  associated  with  the  returned
    record set and must release it by calling ::drms_close_records.
 
-   @param env Contains information about the DRMS session in which the
+   @param env Contains information about the DRMS session in which the 
    records should be created.
    @param n Number of records to create.
    @param seriesname Name of the series into which records should be inserted.
    @param lifetime Either ::DRMS_PERMANENT (at the end of the
-   DRMS session, the created records should be saved to the database)
+   DRMS session, the created records should be saved to the database) 
    or ::DRMS_TRANSIENT (at the end of the DRMS session, the created records should be
    discarded).
    @param status Pointer to DRMS status (see drms_statuscodes.h) returned
@@ -408,7 +377,7 @@ int drms_record_islocal(DRMS_Record_t *rec);
 
 /**
    @fn int drms_close_records(DRMS_RecordSet_t *rs, int action)
-   Close a set of records and free allocated memory, optionally inserting
+   Close a set of records and free allocated memory, optionally inserting 
    new records into the database.
    If \a action == ::DRMS_FREE_RECORD, then if a record  being  closed  is  the
    only  reference  to  a  SUMS  storage unit slot, that slot is freed and
@@ -483,33 +452,33 @@ int drms_record_islocal(DRMS_Record_t *rec);
    function returns NULL and sets @a *status to  an  appropriate  error  code
    defined  in  drms_statuscodes.h.   Typical errors are as follows.  If a
    problem occurs during communication with the database  server,  @a *status
-   is  set  to  ::DRMS_ERROR_QUERYFAILED.
+   is  set  to  ::DRMS_ERROR_QUERYFAILED.  
 
    The  caller  owns  the  allocated  memory  associated with the returned
    record set and must release it by calling ::drms_close_records.
 
    The main difference between this function and ::drms_open_records is that the former
    creates a ::DRMS_RecordSet_t structure for each record specified by the record-set query.
-   But the current function creates a ::DRMS_RecordSet_t structure for each member of
+   But the current function creates a ::DRMS_RecordSet_t structure for each member of 
    the current subset (or 'chunk') of the records specified by the record-set query. Only
    one chunk of records resides in memory at any time.  When a record in a non-resident chunk
    is needed, the current chunk of ::DRMS_RecordSet_t structures is freed, and the next
    chunk is loaded into memory.  The purpose
    of this function is to conserve memory by facilitating the processing of chunks of
-   records instead of processing the entire set of records.  To override the
-   default chunk size, the user calls ::drms_recordset_setchunksize.
+   records instead of processing the entire set of records.  To override the 
+   default chunk size, the user calls ::drms_recordset_setchunksize.  
 
    Operating on chunks of records is transparent to the caller who can continue
-   to interate through records without being cognizant of 'chunking'.
+   to interate through records without being cognizant of 'chunking'.  
    To iterate through all records in the set, after calling this function, the caller
-   would call ::drms_recordset_fetchnext in a loop to obtain a pointer to each
+   would call ::drms_recordset_fetchnext in a loop to obtain a pointer to each 
    record in the sequence.  When ::drms_recordset_fetchnext returns NULL, no more
    records remain in the record-set.
 
    @param env DRMS session information.
-   @param rsquery A string that specifies a database query. It
+   @param rsquery A string that specifies a database query. It 
    includes a series name and clauses to extract a subset of records from that series.
-   Please see http://jsoc.stanford.edu/jsocwiki/DrmsNames for more
+   Please see http://jsoc.stanford.edu/jsocwiki/DrmsNames for more 
    information about database queries.
    @param status Pointer to DRMS status (see drms_statuscodes.h) returned
    by reference. 0 if successful, non-0 otherwise.
@@ -520,16 +489,16 @@ int drms_record_islocal(DRMS_Record_t *rec);
    @fn DRMS_Record_t *drms_create_recproto(DRMS_Record_t *recSource, int *status)
    Create a stand-alone record prototype that is essentially a duplicate of @a recSource. 'Stand-alone'
    means the returned record is not subject to DRMS caching and freeing. It also implies
-   that there is no @e connection between the prototype record and any database entities that the
+   that there is no @e connection between the prototype record and any database entities that the 
    record represents. In particular, modification to the prototype record cannot cause any
-   changes to the underlying database entities. This is not true for non-stand-alone records -
+   changes to the underlying database entities. This is not true for non-stand-alone records - 
    changes to keyword values of those types of records @e can cause changes to database column values.
 
    The term @e prototype suggests that the returned record is a template. In fact, the returned
-   record is very much like a jsd file that has been parsed into DRMS structures, and it can be used to
+   record is very much like a jsd file that has been parsed into DRMS structures, and it can be used to 
    create a series. However, the prototype contains the series name of the series that @a recSource
    belongs to. If the prototype is used directly as is to create a series, the series creation will
-   fail as the series named in the prototype already exists. To avoid this, the
+   fail as the series named in the prototype already exists. To avoid this, the 
    ::drms_create_series_fromprototype function can be used (one argument to this function is
    the name of the new output series).
 
@@ -551,7 +520,7 @@ int drms_record_islocal(DRMS_Record_t *rec);
    The first time this function is called, it returns the record's first segment.
    Each subsequent call yields the record's next segment. This continues until
    there are no more segments, in which case, the function returns NULL.
-   It is the caller's
+   It is the caller's 
    responsiblity to assign NULL to an ::HIterator_t * variable, and then to provide
    the address of the variable as the @a last parameter on the first
    call to this function. On subsequent calls, the address of the same ::HIterator_t *
@@ -571,7 +540,7 @@ int drms_record_islocal(DRMS_Record_t *rec);
    The first time this function is called, it returns the record's first keyword.
    Each subsequent call yields the record's next keyword. This continues until
    there are no more keywords, in which case, the function returns NULL.
-   It is the caller's
+   It is the caller's 
    responsiblity to assign NULL to an ::HIterator_t * variable, and then to provide
    the address of the variable as the @a last parameter on the first
    call to this function. On subsequent calls, the address of the same ::HIterator_t *
@@ -589,22 +558,22 @@ int drms_record_islocal(DRMS_Record_t *rec);
 /**
    @fn DRMS_Array_t *drms_record_getvector(DRMS_Env_t *env, const char *recordsetname, const char *keylist, DRMS_Type_t type, int unique, int *status)
    Returns a newly created ::DRMS_Array_t structure that represents a table of per-record keyword values.
-   @a recordsetname is a query that selects a set of rows from a DRMS dataseries, and @a keylist
+   @a recordsetname is a query that selects a set of rows from a DRMS dataseries, and @a keylist 
    selects a subset of keywords from those rows. The result is a table that contains one column
-   for each item in @a keylist, and one row for each record that results from evaluation of
-   @a recordsetname. The column data are stored in ::DRMS_Array_t:axis0 and the row data are stored in
+   for each item in @a keylist, and one row for each record that results from evaluation of 
+   @a recordsetname. The column data are stored in ::DRMS_Array_t:axis0 and the row data are stored in 
    ::DRMS_Array_t:axis1. @a keylist contains a comma-separated list of DRMS keyword names and/or
    'hidden' database column names (one of recnum, sunum, slotnum, sessionid, sessionns). Data will be
    converted to the data type @a type. If @a unique is set, then resulting duplicate rows
    (rows where all keyword values are duplicates of another row's keyword values) are discarded
-   before the ::DRMS_Array_t structure is created. It is the caller's responsibility to
+   before the ::DRMS_Array_t structure is created. It is the caller's responsibility to 
    free, with ::drms_free_array, the memory allocated in the creation of the returned ::DRMS_Array_t
    structure.
-
+   
    @param env DRMS session information.
-   @param recordsetname A string that specifies a database query. It
+   @param recordsetname A string that specifies a database query. It 
    includes a series name and clauses to extract a subset of records from that series.
-   Please see http://jsoc.stanford.edu/jsocwiki/DrmsNames for more
+   Please see http://jsoc.stanford.edu/jsocwiki/DrmsNames for more 
    information about database queries.
    @param keylist A comma-separated list of DRMS keyword names and/or
    'hidden' database column names (one of recnum, sunum, slotnum, sessionid, sessionns).

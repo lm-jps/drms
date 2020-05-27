@@ -1,4 +1,4 @@
-//#define DEBUG
+//#define DEBUG 
 #include "drms.h"
 #include "drms_priv.h"
 #include "xmem.h"
@@ -84,7 +84,7 @@ void drms_keyword_term()
 }
 
 /* Prototypes for static functions. */
-static DRMS_Keyword_t * __drms_keyword_lookup(DRMS_Record_t *rec,
+static DRMS_Keyword_t * __drms_keyword_lookup(DRMS_Record_t *rec, 
 					      const char *key, int depth);
 
 
@@ -94,7 +94,7 @@ void drms_free_template_keyword_struct(DRMS_Keyword_t *key)
     {
         if (key->info->type==DRMS_TYPE_STRING)
             free(key->value.string_val);
-
+        
         free(key->info);
     }
 }
@@ -112,7 +112,7 @@ void drms_free_keyword_struct(DRMS_Keyword_t *key)
 void drms_copy_keyword_struct(DRMS_Keyword_t *dst, DRMS_Keyword_t *src)
 {
 
-  /* If the new value is a variable length string, allocate space
+  /* If the new value is a variable length string, allocate space 
      for and copy it. */
   if (dst->info==NULL)
     dst->info = src->info;
@@ -134,22 +134,22 @@ void drms_copy_keyword_struct(DRMS_Keyword_t *dst, DRMS_Keyword_t *src)
 }
 
 /* target must have no existing links, since this function fills in the link container */
-HContainer_t *drms_create_keyword_prototypes(DRMS_Record_t *target,
-					     DRMS_Record_t *source,
+HContainer_t *drms_create_keyword_prototypes(DRMS_Record_t *target, 
+					     DRMS_Record_t *source, 
 					     int *status)
 {
     HContainer_t *ret = NULL;
     DRMS_Keyword_t *tKey = NULL;
     DRMS_Keyword_t *sKey = NULL;
-
+    
     XASSERT(target != NULL && target->keywords.num_total == 0 && source != NULL);
-
+    
     if (target != NULL && target->keywords.num_total == 0 && source != NULL)
     {
         *status = DRMS_SUCCESS;
         HIterator_t hit;
         hiter_new_sort(&hit, &(source->keywords), drms_keyword_ranksort);
-
+        
         while ((sKey = hiter_getnext(&hit)) != NULL)
         {
             if (sKey->info && strlen(sKey->info->name) > 0)
@@ -160,15 +160,15 @@ HContainer_t *drms_create_keyword_prototypes(DRMS_Record_t *target,
                 tKey->info = malloc(sizeof(DRMS_KeywordInfo_t));
                 XASSERT(tKey->info);
                 memset(tKey->info, 0, sizeof(DRMS_KeywordInfo_t));
-
+                
                 if (tKey && tKey->info)
                 {
                     /* record */
                     tKey->record = target;
-
+                    
                     /* keyword info */
                     memcpy(tKey->info, sKey->info, sizeof(DRMS_KeywordInfo_t));
-
+                    
                     if (tKey->info->type == DRMS_TYPE_STRING &&
                         sKey->value.string_val != NULL)
                     {
@@ -177,7 +177,7 @@ HContainer_t *drms_create_keyword_prototypes(DRMS_Record_t *target,
                     else
                     {
                         tKey->value = sKey->value;
-                    }
+                    }	       
                 }
                 else
                 {
@@ -189,9 +189,9 @@ HContainer_t *drms_create_keyword_prototypes(DRMS_Record_t *target,
                 *status = DRMS_ERROR_INVALIDKEYWORD;
             }
         }
-
+        
         hiter_free(&hit);
-
+        
         if (*status == DRMS_SUCCESS)
         {
             ret = &(target->keywords);
@@ -201,12 +201,12 @@ HContainer_t *drms_create_keyword_prototypes(DRMS_Record_t *target,
     {
         *status = DRMS_ERROR_INVALIDRECORD;
     }
-
+    
     return ret;
 }
 /*Print the fields of a keyword struct to stdout.*/
 void drms_keyword_print(DRMS_Keyword_t *key)
-{
+{ 
 	drms_keyword_fprint(stdout, key);
 }
 
@@ -234,10 +234,10 @@ void drms_keyword_fprint(FILE *keyfile, DRMS_Keyword_t *key)
     fprintf(keyfile, "\t%-*s:\t%d\n", fieldwidth, "intprime", drms_keyword_getintprime(key));
     fprintf(keyfile, "\t%-*s:\t%d\n", fieldwidth, "extprime", drms_keyword_getextprime(key));
     fprintf(keyfile, "\t%-*s:\t",fieldwidth,"value");
-
+  
     drms_keyword_fprintval(keyfile, key);
   }
-
+  
   fprintf(keyfile, "\n");
 }
 
@@ -257,7 +257,7 @@ static void PrintTimeVal(DRMS_Keyword_t *key, char *outbuf, int size)
    interval = atoinc(key->info->unit);
    if (interval > 0)
    {
-      /* This is a time interval. Must convert the value to the unit of the time interval.
+      /* This is a time interval. Must convert the value to the unit of the time interval. 
        * format is a printf format, not the precision. */
       snprintf(buf, sizeof(buf), key->info->format, key->value.time_val / interval);
    }
@@ -377,11 +377,11 @@ const char *fmt = NULL;
    }
 }
 
-/*
+/* 
    Build the keyword part of a dataset template by
-   using the query result holding a list of
-     (keywordname, linkname, targetkeyw, type,
-      defaultval, format, unit,
+   using the query result holding a list of 
+     (keywordname, linkname, targetkeyw, type, 
+      defaultval, format, unit, 
       isconstant, persegment, description)
    tuples to initialize the array of keyword descriptors.
 */
@@ -401,14 +401,14 @@ int drms_template_keywords_int(DRMS_Record_t *template, int expandperseg, const 
 
   env = template->env;
   /* Initialize container structure. */
-  hcon_init(&template->keywords, sizeof(DRMS_Keyword_t), DRMS_MAXHASHKEYLEN,
-	    (void (*)(const void *)) drms_free_keyword_struct,
+  hcon_init(&template->keywords, sizeof(DRMS_Keyword_t), DRMS_MAXHASHKEYLEN, 
+	    (void (*)(const void *)) drms_free_keyword_struct, 
 	    (void (*)(const void *, const void *)) drms_copy_keyword_struct);
 
   num_segments = hcon_size(&template->segments);
 
   /* Get the list of keywords from the 'record-series' (eg, su_arta.fd_M_96m_lev18). Then
-   * iterate through each of those keywords and find the corresponding record in the
+   * iterate through each of those keywords and find the corresponding record in the 
    * <ns>.drms_keyword table.  */
 
   int rank;
@@ -491,17 +491,17 @@ int drms_template_keywords_int(DRMS_Record_t *template, int expandperseg, const 
       /* Construct name, possibly by appending segment selector. */
       db_binary_field_getstr(qres, irow, 0, sizeof(name0), name0);
 
-      /* key->info->per_segment overload: <= drms_keyword.c:1.44 will fail here if the the value in
-       * the persegment column of the drms_keyword table has been overloaded to contain
+      /* key->info->per_segment overload: <= drms_keyword.c:1.44 will fail here if the the value in 
+       * the persegment column of the drms_keyword table has been overloaded to contain 
        * all the keyword bit-flags. */
       if (per_segment)
 	sprintf(name,"%s_%03d",name0,seg);
       else
 	strcpy(name,name0);
-
+      
       /* Allocate space for new structure in hashed container. */
       key = hcon_allocslot_lower(&template->keywords, name);
-      memset(key,0,sizeof(DRMS_Keyword_t));
+      memset(key,0,sizeof(DRMS_Keyword_t));      
       /* Set parent pointer. */
       key->record = template;
       key->info = malloc(sizeof(DRMS_KeywordInfo_t));
@@ -524,11 +524,11 @@ int drms_template_keywords_int(DRMS_Record_t *template, int expandperseg, const 
 	db_binary_field_getstr(qres, irow, 7, sizeof(key->info->unit), key->info->unit);
 	key->info->recscope = (DRMS_RecScopeType_t)db_binary_field_getint(qres, irow, 8);
 
-
+       
         if (key->info->type == DRMS_TYPE_TIME)
         {
-           /* If unit is an interval unit (eg, day), then key->value is incorrect
-            * (the assumption was that defval was a time string). This is only
+           /* If unit is an interval unit (eg, day), then key->value is incorrect 
+            * (the assumption was that defval was a time string). This is only 
             * true for time keywords that are being used as time intervals. */
            TIME interval = atoinc(key->info->unit);
            if (interval > 0)
@@ -538,7 +538,7 @@ int drms_template_keywords_int(DRMS_Record_t *template, int expandperseg, const 
         }
 
         /* The persegment column used to be either 0 or 1 and it said whether the keyword
-         * was a segment-specific column or not.  But starting with series version 2.1,
+         * was a segment-specific column or not.  But starting with series version 2.1, 
          * the persegment column was overloaded to hold all the keyword flags (including
          * per_seg).  So, the following code works on both < 2.1 series and >= 2.1 series.
          */
@@ -546,14 +546,14 @@ int drms_template_keywords_int(DRMS_Record_t *template, int expandperseg, const 
         key->info->kwflags = db_binary_field_getint(qres, irow, 9);
 
         /* Examine top 16 bits of kwflags.  If a keyword has 0x0000, then this is an old
-         * series in which the keyword rankings are not completely determined; set a
+         * series in which the keyword rankings are not completely determined; set a 
          * flag and handle below. */
         rank = (key->info->kwflags & 0xFFFF0000) >> 16; /* 1-based rank */
 
         if (rank == 0)
         {
            rankindeterminate = 1;
-           /* This is (or will be) a constant keyword. If this is actually a
+           /* This is (or will be) a constant keyword. If this is actually a 
             * variable keyword, then this value will be replaced below. We
             * might end up with some holes in the rank, because
             * there might be a variable keyword here that gets replaced
@@ -567,8 +567,8 @@ int drms_template_keywords_int(DRMS_Record_t *template, int expandperseg, const 
            key->info->rank = rank - 1; /* 0-based rank in DRMS */
         }
 
-        /* For vers 2.1 and greater, the persegment column contains the intprime and extprime
-         * information.  But for older versions, you can figure this out by looking
+        /* For vers 2.1 and greater, the persegment column contains the intprime and extprime 
+         * information.  But for older versions, you can figure this out by looking 
          * at the series' primary index keywords (in drms_template_record()) and knowing
          * whether a primary index keyword is an index keyword (in the time-slotting sense). */
         if (!drms_series_isvers(template->seriesinfo, &vers2_1))
@@ -604,8 +604,8 @@ int drms_template_keywords_int(DRMS_Record_t *template, int expandperseg, const 
         drms_keyword_unsetextprime(key);
       }
 
-      /* perform an amazing switcheroo - per Phil, existing series
-       * have not been using the format and unit fields for TIME
+      /* perform an amazing switcheroo - per Phil, existing series 
+       * have not been using the format and unit fields for TIME 
        * keywords consistently.
        * -format is supposed to specify precision when printing out
        * a time string.  0 means whole seconds, 1 means nearest tenth
@@ -624,7 +624,6 @@ int drms_template_keywords_int(DRMS_Record_t *template, int expandperseg, const 
 	 char *format = key->info->format;
 	 char *unit = key->info->unit;
 	 char *unittmp = strdup(unit);
-   char *lasts = NULL;
 	 char *endptr = NULL;
 	 int64_t val = strtod(format, &endptr);
          char tmpout[64];
@@ -634,17 +633,17 @@ int drms_template_keywords_int(DRMS_Record_t *template, int expandperseg, const 
 
          if (interval <= 0)
          {
-            /* If unit is a recognizable time-interval unit, like "sec", then this time
-             * keyword is actually a time-interval keyword. In this case, preserve the
-             * format (to be used for formatting a double for output), and preserve
+            /* If unit is a recognizable time-interval unit, like "sec", then this time 
+             * keyword is actually a time-interval keyword. In this case, preserve the 
+             * format (to be used for formatting a double for output), and preserve 
              * the unit (keep "sec"). Parsing code will need to interpret the numerical
              * value according to this unit so that the actual value saved is in seconds
-             * (so if the unit is "day", and the numerical value is "1", then the value
+             * (so if the unit is "day", and the numerical value is "1", then the value 
              * saved should be 86400. Code that prints the jsd will have to do the reverse
-             * conversion. The stored value of 86400 will need to be converted to
+             * conversion. The stored value of 86400 will need to be converted to 
              * 1. For now, getkey and setkey should just use seconds.
              */
-
+            
             if (val != 0 || endptr != format)
             {
                /* a recognizable number */
@@ -661,10 +660,10 @@ int drms_template_keywords_int(DRMS_Record_t *template, int expandperseg, const 
 
             snprintf(format, DRMS_MAXFORMATLEN, "%d", formatn);
 
-            if (*unit == '\0' ||
-                !strcasecmp(unit, "none") ||
+            if (*unit == '\0' || 
+                !strcasecmp(unit, "none") || 
                 !strcasecmp(unit, "time") ||
-                !strtok_r(unittmp, " \t\b", &lasts))
+                !strtok(unittmp, " \t\b"))
             {
                snprintf(unit, DRMS_MAXUNITLEN, "%s", "UTC");
             }
@@ -675,7 +674,7 @@ int drms_template_keywords_int(DRMS_Record_t *template, int expandperseg, const 
 	    free(unittmp);
 	 }
       }
-
+	
 #ifdef DEBUG
       printf("Keyword[%4d] name    = '%s'\n",i,key->info->name);
       printf("Keyword[%4d] type    = '%d'\n",i,key->info->type);
@@ -686,11 +685,11 @@ int drms_template_keywords_int(DRMS_Record_t *template, int expandperseg, const 
     }
   }
 
-   /* If the ranking wasn't completely specified in the "persegment" column,
-    * then this is an old series for which libdrms did not save the
+   /* If the ranking wasn't completely specified in the "persegment" column, 
+    * then this is an old series for which libdrms did not save the 
     * order in the "persegment" column. Enact Plan B: use the order of the
-    * columns in the "record" table (eg., <ns>.series) to determine
-    * the order of the variable keywords, and use the order of rows of the
+    * columns in the "record" table (eg., <ns>.series) to determine 
+    * the order of the variable keywords, and use the order of rows of the 
     * constant keywords in the <ns>.drms_keywords as the order of the
     * constant keywords. */
    if (rankindeterminate)
@@ -711,7 +710,7 @@ int drms_template_keywords_int(DRMS_Record_t *template, int expandperseg, const 
          {
             pch = pdel ? pdel + 1 : NULL;
             continue;
-            /* There may be some other columns, like sg_000_file, that aren't
+            /* There may be some other columns, like sg_000_file, that aren't 
              * in the drms_keywords table, but that is okay. If a column isn't
              * found in the drms_keywords table, */
          }
@@ -724,7 +723,7 @@ int drms_template_keywords_int(DRMS_Record_t *template, int expandperseg, const 
          }
 
          pch = pdel ? pdel + 1 : NULL;
-      }
+      }      
    }
 
   if (colnames)
@@ -846,25 +845,25 @@ DRMS_Keyword_t *drms_keyword_lookup(DRMS_Record_t *rec, const char *key, int fol
 #endif
     if (strlen(tmp) >= DRMS_MAXKEYNAMELEN)
       fprintf(stderr,"WARNING keyword name too long, %s\n",tmp);
-  }
-  if (!followlink)
+  }    
+  if (!followlink) 
     return hcon_lookup_lower(&rec->keywords, tmp);
   return __drms_keyword_lookup(rec, tmp, 0);
-}
+}  
 
-/*
-   Recursive keyword lookup that follows linked keywords to
-   their destination until a non-link keyword is reached. If the
-   recursion depth exceeds DRMS_MAXLINKDEPTH it is assumed that there
+/* 
+   Recursive keyword lookup that follows linked keywords to 
+   their destination until a non-link keyword is reached. If the 
+   recursion depth exceeds DRMS_MAXLINKDEPTH it is assumed that there 
    is an erroneous link cycle, an error message is written to stderr,
    and a NULL pointer is returned.
 */
-static DRMS_Keyword_t * __drms_keyword_lookup(DRMS_Record_t *rec,
+static DRMS_Keyword_t * __drms_keyword_lookup(DRMS_Record_t *rec, 
 					      const char *key, int depth)
 {
     int stat;
     DRMS_Keyword_t *keyword;
-
+    
     keyword = hcon_lookup_lower(&rec->keywords, key);
     if (keyword!=NULL && depth<DRMS_MAXLINKDEPTH )
     {
@@ -893,9 +892,9 @@ static DRMS_Keyword_t * __drms_keyword_lookup(DRMS_Record_t *rec,
     }
     if (depth>=DRMS_MAXLINKDEPTH)
         fprintf(stderr, "WARNING: Max link depth exceeded for keyword '%s' in "
-                "record %lld from series '%s'\n",keyword->info->name, rec->recnum,
+                "record %lld from series '%s'\n",keyword->info->name, rec->recnum, 
                 rec->seriesinfo->seriesname);
-
+    
     return NULL;
 }
 
@@ -904,21 +903,21 @@ DRMS_Type_t drms_keyword_type(DRMS_Keyword_t *key)
      return key->info->type;
 }
 
-HContainer_t *drms_keyword_createinfocon(DRMS_Env_t *drmsEnv,
-					  const char *seriesName,
+HContainer_t *drms_keyword_createinfocon(DRMS_Env_t *drmsEnv, 
+					  const char *seriesName, 
 					  int *status)
 {
      HContainer_t *ret = NULL;
 
      DRMS_Record_t *template = drms_template_record(drmsEnv, seriesName, status);
-
+     
      if (*status == DRMS_SUCCESS)
      {
 	  int size = hcon_size(&(template->keywords));
 	  if (size > 0)
 	  {
 	       char **nameArr = (char **)malloc(sizeof(char *) * size);
-	       DRMS_KeywordInfo_t **valArr =
+	       DRMS_KeywordInfo_t **valArr = 
 		 (DRMS_KeywordInfo_t **)malloc(sizeof(DRMS_KeywordInfo_t *) * size);
 
 	       if (nameArr != NULL && valArr != NULL)
@@ -936,7 +935,7 @@ HContainer_t *drms_keyword_createinfocon(DRMS_Env_t *drmsEnv,
 			 iKW++;
 		    }
 
-		    ret = hcon_create(sizeof(DRMS_KeywordInfo_t),
+		    ret = hcon_create(sizeof(DRMS_KeywordInfo_t), 
 				      DRMS_MAXKEYNAMELEN,
 				      NULL,
 				      NULL,
@@ -997,7 +996,7 @@ int drms_keyword_keysmatch(DRMS_Keyword_t *k1, DRMS_Keyword_t *k2)
              drms_keyword_getperseg(k1) == drms_keyword_getperseg(k2) &&
              drms_keyword_getintprime(k1) == drms_keyword_getintprime(k2) &&
              drms_keyword_getextprime(k1) == drms_keyword_getextprime(k2));
-
+  
       ret = (ret && (strcmp(exp1, exp2) == 0));
    }
 
@@ -1016,17 +1015,17 @@ char drms_getkey_char(DRMS_Record_t *rec, const char *key, int *status)
 
   keyword = drms_keyword_lookup(rec, key, 1);
   if (keyword != NULL )
-  {
+  {  
     result = drms2char(keyword->info->type, &keyword->value, &stat);
   }
   else
   {
     result = DRMS_MISSING_CHAR;
-    stat = DRMS_ERROR_UNKNOWNKEYWORD;
+    stat = DRMS_ERROR_UNKNOWNKEYWORD;  
   }
   if (status)
     *status = stat;
-  return result;
+  return result;  
 }
 
 
@@ -1044,11 +1043,11 @@ short drms_getkey_short(DRMS_Record_t *rec, const char *key, int *status)
   else
   {
     result =  DRMS_MISSING_SHORT;
-    stat = DRMS_ERROR_UNKNOWNKEYWORD;
+    stat = DRMS_ERROR_UNKNOWNKEYWORD;  
   }
   if (status)
     *status = stat;
-  return result;
+  return result;  
 }
 
 
@@ -1060,17 +1059,17 @@ int drms_getkey_int(DRMS_Record_t *rec, const char *key, int *status)
 
   keyword = drms_keyword_lookup(rec, key, 1);
   if (keyword!=NULL )
-  {
+  {  
     result = drms2int(keyword->info->type, &keyword->value, &stat);
   }
   else
   {
     result =  DRMS_MISSING_INT;
-    stat = DRMS_ERROR_UNKNOWNKEYWORD;
+    stat = DRMS_ERROR_UNKNOWNKEYWORD;  
   }
   if (status)
     *status = stat;
-  return result;
+  return result;  
 }
 
 
@@ -1082,17 +1081,17 @@ long long drms_getkey_longlong(DRMS_Record_t *rec, const char *key, int *status)
 
   keyword = drms_keyword_lookup(rec, key, 1);
   if (keyword!=NULL )
-  {
+  {  
     result = drms2longlong(keyword->info->type, &keyword->value, &stat);
   }
   else
   {
     result = DRMS_MISSING_LONGLONG;
-    stat = DRMS_ERROR_UNKNOWNKEYWORD;
+    stat = DRMS_ERROR_UNKNOWNKEYWORD;  
   }
   if (status)
     *status = stat;
-  return result;
+  return result;  
 }
 
 
@@ -1104,40 +1103,40 @@ float drms_getkey_float(DRMS_Record_t *rec, const char *key, int *status)
 
   keyword = drms_keyword_lookup(rec, key, 1);
   if (keyword != NULL )
-  {
+  {  
     result = drms2float(keyword->info->type, &keyword->value, &stat);
   }
   else
   {
     result = DRMS_MISSING_FLOAT;
-    stat = DRMS_ERROR_UNKNOWNKEYWORD;
+    stat = DRMS_ERROR_UNKNOWNKEYWORD;  
   }
   if (status)
     *status = stat;
-  return result;
+  return result;  
 }
 
 double drms_getkey_double(DRMS_Record_t *rec, const char *key, int *status)
 {
   DRMS_Keyword_t *keyword;
-  int stat;
+  int stat;  
   double result;
 
   keyword = drms_keyword_lookup(rec, key, 1);
 
   if (keyword != NULL)
-  {
+  {  
      result = drms_keyword_getdouble(keyword, &stat);
   }
-  else
+  else 
   {
      result = DRMS_MISSING_DOUBLE;
-     stat = DRMS_ERROR_UNKNOWNKEYWORD;
+     stat = DRMS_ERROR_UNKNOWNKEYWORD;  
   }
 
   if (status)
     *status = stat;
-  return result;
+  return result;  
 }
 
 double drms_keyword_getdouble(DRMS_Keyword_t *keyword, int *status)
@@ -1145,7 +1144,7 @@ double drms_keyword_getdouble(DRMS_Keyword_t *keyword, int *status)
    double result;
    int stat = DRMS_SUCCESS;
 
-   result = drms2double(keyword->info->type, &keyword->value, &stat);
+   result = drms2double(keyword->info->type, &keyword->value, &stat);  
 
    if (status)
      *status = stat;
@@ -1168,7 +1167,7 @@ char *drms_keyword_getstring(DRMS_Keyword_t *keyword, int *status)
   {
      result = drms2string(keyword->info->type, &keyword->value, &stat);
   }
-
+ 
   if (status)
     *status = stat;
   return result;
@@ -1182,7 +1181,7 @@ char *drms_getkey_string(DRMS_Record_t *rec, const char *key, int *status)
 
   keyword = drms_keyword_lookup(rec, key, 1);
   if (keyword!=NULL )
-  {
+  {   
      result = drms_keyword_getstring(keyword, &stat);
   }
   else
@@ -1192,7 +1191,7 @@ char *drms_getkey_string(DRMS_Record_t *rec, const char *key, int *status)
   }
   if (status)
     *status = stat;
-  return result;
+  return result;  
 }
 
 TIME drms_getkey_time(DRMS_Record_t *rec, const char *key, int *status)
@@ -1203,7 +1202,7 @@ TIME drms_getkey_time(DRMS_Record_t *rec, const char *key, int *status)
 
   keyword = drms_keyword_lookup(rec, key, 1);
   if (keyword!=NULL )
-  {
+  {   
      result = drms_keyword_gettime(keyword, &stat);
   }
   else
@@ -1212,7 +1211,7 @@ TIME drms_getkey_time(DRMS_Record_t *rec, const char *key, int *status)
   }
   if (status)
     *status = stat;
-  return result;
+  return result;  
 }
 
 TIME drms_keyword_gettime(DRMS_Keyword_t *keyword, int *status)
@@ -1220,14 +1219,14 @@ TIME drms_keyword_gettime(DRMS_Keyword_t *keyword, int *status)
    double result;
    int stat = DRMS_SUCCESS;
 
-   result = drms2time(keyword->info->type, &keyword->value, &stat);
+   result = drms2time(keyword->info->type, &keyword->value, &stat);  
 
    if (status)
      *status = stat;
    return (TIME)result;
 }
 
-DRMS_Type_Value_t drms_getkey(DRMS_Record_t *rec, const char *key,
+DRMS_Type_Value_t drms_getkey(DRMS_Record_t *rec, const char *key, 
 			      DRMS_Type_t *type, int *status)
 {
   DRMS_Type_Value_t value;
@@ -1247,13 +1246,13 @@ DRMS_Type_Value_t drms_getkey(DRMS_Record_t *rec, const char *key,
     *type = DRMS_TYPE_DOUBLE; /* return a double NAN - kind of arbitrary,
 				 but we have to return something... */
     value.double_val = DRMS_MISSING_DOUBLE;
-    stat = DRMS_ERROR_UNKNOWNKEYWORD;
+    stat = DRMS_ERROR_UNKNOWNKEYWORD;  
   }
   if (status)
     *status = stat;
 
   return value;
-}
+}  
 
 /* returned DRMS_Value_t owns any string it may contain */
 DRMS_Value_t drms_getkey_p(DRMS_Record_t *rec, const char *key, int *status)
@@ -1276,7 +1275,7 @@ DRMS_Value_t drms_getkey_p(DRMS_Record_t *rec, const char *key, int *status)
     retval.type = DRMS_TYPE_DOUBLE; /* return a double NAN - kind of arbitrary,
 				       but we have to return something... */
     value.double_val = DRMS_MISSING_DOUBLE;
-    stat = DRMS_ERROR_UNKNOWNKEYWORD;
+    stat = DRMS_ERROR_UNKNOWNKEYWORD;  
   }
   if (status)
     *status = stat;
@@ -1284,7 +1283,7 @@ DRMS_Value_t drms_getkey_p(DRMS_Record_t *rec, const char *key, int *status)
   retval.value = value;
 
   return retval;
-}
+}  
 
 /***************** setkey_<type> family of functions **************/
 static int SetKeyInternal(DRMS_Record_t *rec, const char *key, DRMS_Value_t *value)
@@ -1292,12 +1291,12 @@ static int SetKeyInternal(DRMS_Record_t *rec, const char *key, DRMS_Value_t *val
     DRMS_Keyword_t *keyword = NULL;
     DRMS_Keyword_t *indexkw = NULL;
     int retstat = DRMS_MISSING_INT; /* Use the minimum value as a flag to track whether retstat was set. */
-
+    
     if (rec ->readonly)
     {
         return DRMS_ERROR_RECORDREADONLY;
     }
-
+    
     keyword = drms_keyword_lookup(rec, key, 0);
     if (keyword != NULL )
     {
@@ -1307,27 +1306,27 @@ static int SetKeyInternal(DRMS_Record_t *rec, const char *key, DRMS_Value_t *val
         }
         else
         {
-            /* The input value could be a time-interval string. If so, then append the
+            /* The input value could be a time-interval string. If so, then append the 
              * keyword unit (like 'minutes') to the time-interval. */
             if (value->type == DRMS_TYPE_STRING && keyword->info->unit && *keyword->info->unit)
             {
                 TIME interval = atoinc(keyword->info->unit);
                 char *dupe = NULL;
                 size_t sz;
-
+                
                 if (interval > 0)
                 {
                     DRMS_Type_Value_t bs;
-
+                    
                     dupe = strdup(value->value.string_val);
                     sz = strlen(dupe) + 1;
                     dupe = base_strcatalloc(dupe, keyword->info->unit, &sz);
                     if (dupe)
                     {
                         bs.string_val = dupe;
-                        retstat = drms_convert(keyword->info->type,
-                                               &keyword->value,
-                                               value->type,
+                        retstat = drms_convert(keyword->info->type, 
+                                               &keyword->value, 
+                                               value->type, 
                                                &bs);
                         free(dupe);
                     }
@@ -1337,15 +1336,15 @@ static int SetKeyInternal(DRMS_Record_t *rec, const char *key, DRMS_Value_t *val
                     }
                 }
             }
-
+            
             if (drms_ismissing_int(retstat))
             {
-                retstat = drms_convert(keyword->info->type,
-                                       &keyword->value,
-                                       value->type,
+                retstat = drms_convert(keyword->info->type, 
+                                       &keyword->value, 
+                                       value->type, 
                                        &(value->value));
             }
-
+            
             /* Catch conversion WARNINGS. drms_convert() can return
              * non-zero statuses which are warnings, not errors.. */
             /* retstat == DRMS_BADSTRING, DRMS_RANGE are really errors. */
@@ -1353,21 +1352,21 @@ static int SetKeyInternal(DRMS_Record_t *rec, const char *key, DRMS_Value_t *val
             {
                 retstat = DRMS_SUCCESS;
             }
-
+            
             if (!retstat && drms_keyword_isslotted(keyword))
             {
                 /* Must also set index keyword */
                 DRMS_Value_t indexval;
                 DRMS_Value_t inval;
-
+                
                 inval.value = keyword->value;
                 inval.type = keyword->info->type;
-
-                retstat = drms_keyword_slotval2indexval(keyword,
+                
+                retstat = drms_keyword_slotval2indexval(keyword, 
                                                         &inval,
                                                         &indexval,
                                                         NULL);
-
+                
                 if (!retstat)
                 {
                     indexkw = drms_keyword_indexfromslot(keyword);
@@ -1377,13 +1376,13 @@ static int SetKeyInternal(DRMS_Record_t *rec, const char *key, DRMS_Value_t *val
                                            &(indexval.value));
                 }
             }
-
+            
             return retstat;
         }
     }
     else
     {
-        return DRMS_ERROR_UNKNOWNKEYWORD;
+        return DRMS_ERROR_UNKNOWNKEYWORD; 
     }
 }
 
@@ -1391,7 +1390,7 @@ static int AppendStrKeyInternal(DRMS_Record_t *rec, const char *key, const char 
 {
     DRMS_Keyword_t *keyword = NULL;
     int rv = DRMS_SUCCESS;
-
+    
     if (rec && val && *val)
     {
         keyword = drms_keyword_lookup(rec, key, 0);
@@ -1411,12 +1410,12 @@ static int AppendStrKeyInternal(DRMS_Record_t *rec, const char *key, const char 
                 if (keyword->value.string_val)
                 {
                     char *tmp = NULL;
-
+                    
                     if (*keyword->value.string_val)
-                    {
+                    {    
                         size_t strsz = strlen(keyword->value.string_val) + strlen(val) + 2;
                         tmp = malloc(strsz);
-
+                        
                         if (newline)
                         {
                             snprintf(tmp, strsz, "%s\n%s", keyword->value.string_val, val);
@@ -1430,7 +1429,7 @@ static int AppendStrKeyInternal(DRMS_Record_t *rec, const char *key, const char 
                     {
                         tmp = strdup(val);
                     }
-
+                    
                     free(keyword->value.string_val);
                     keyword->value.string_val = tmp;
                 }
@@ -1449,7 +1448,7 @@ static int AppendStrKeyInternal(DRMS_Record_t *rec, const char *key, const char 
     {
         rv = DRMS_ERROR_INVALIDDATA;
     }
-
+    
     return rv;
 }
 
@@ -1463,19 +1462,19 @@ int drms_appendcomment(DRMS_Record_t *rec, const char *str, int newline)
     return AppendStrKeyInternal(rec, "COMMENT", str, newline);
 }
 
-int drms_setkey(DRMS_Record_t *rec, const char *key, DRMS_Type_t type,
+int drms_setkey(DRMS_Record_t *rec, const char *key, DRMS_Type_t type, 
 		DRMS_Type_Value_t *value)
 {
   DRMS_Value_t val = {type, *value};
   return SetKeyInternal(rec, key, &val);
-}
+}  
 
 /* This is a more generic version of drms_setkey() - it assumes that the source type
  * is equal to the target type. */
 int drms_setkey_p(DRMS_Record_t *rec, const char *key, DRMS_Value_t *value)
 {
   return SetKeyInternal(rec, key, value);
-}
+}  
 
 /* Slightly less ugly pieces of crap that should be used instead: */
 int drms_setkey_char(DRMS_Record_t *rec, const char *key, char value)
@@ -1582,7 +1581,7 @@ int drms_copykey(DRMS_Record_t *target, DRMS_Record_t *source, const char *key)
 
    /* follows links */
    srcval = drms_getkey_p(source, key, &status);
-
+   
    if (status == DRMS_SUCCESS)
    {
       /* does not follow links */
@@ -1599,8 +1598,8 @@ int drms_copykeyB(DRMS_Keyword_t *tgtkey, DRMS_Keyword_t *srckey)
    return drms_copykey(tgtkey->record, srckey->record, srckey->info->name);
 }
 
-int drms_copykeys(DRMS_Record_t *target,
-                  DRMS_Record_t *source,
+int drms_copykeys(DRMS_Record_t *target, 
+                  DRMS_Record_t *source, 
                   int usesrcset,
                   DRMS_KeywordClass_t class)
 {
@@ -1689,8 +1688,8 @@ const char *drms_keyword_getrecscopestr(DRMS_Keyword_t *key, int *status)
 
    if (!gRecScopeStrHC)
    {
-      gRecScopeStrHC = hcon_create(sizeof(const char *),
-			       kMaxRecScopeTypeKey,
+      gRecScopeStrHC = hcon_create(sizeof(const char *), 
+			       kMaxRecScopeTypeKey, 
 			       NULL,
 			       NULL,
 			       NULL,
@@ -1746,8 +1745,8 @@ DRMS_RecScopeType_t drms_keyword_str2recscope(const char *str, int *status)
 
    if (!gRecScopeHC)
    {
-      gRecScopeHC = hcon_create(sizeof(int),
-				kMaxRecScopeTypeKey,
+      gRecScopeHC = hcon_create(sizeof(int), 
+				kMaxRecScopeTypeKey, 
 				NULL,
 				NULL,
 				NULL,
@@ -1848,7 +1847,7 @@ DRMS_SlotKeyUnit_t drms_keyword_getslotunit(DRMS_Keyword_t *slotkey, int *status
    }
    else
    {
-      fprintf(stderr,
+      fprintf(stderr, 
 	      "Keyword '%s' is not associated with a unit ancillary keyword.\n",
 	      slotkey->info->name);
    }
@@ -1856,7 +1855,7 @@ DRMS_SlotKeyUnit_t drms_keyword_getslotunit(DRMS_Keyword_t *slotkey, int *status
    if (unitKey)
    {
       ret = drms_keyword_getunit(unitKey, &stat);
-   }
+   }   
 
    if (ret == kSlotKeyUnit_Invalid)
    {
@@ -1882,8 +1881,8 @@ DRMS_SlotKeyUnit_t drms_keyword_getunit(DRMS_Keyword_t *key, int *status)
    {
       if (!gSlotUnitHC)
       {
-	 gSlotUnitHC = hcon_create(sizeof(int),
-				   kMaxSlotUnitKey,
+	 gSlotUnitHC = hcon_create(sizeof(int), 
+				   kMaxSlotUnitKey, 
 				   NULL,
 				   NULL,
 				   NULL,
@@ -1916,7 +1915,7 @@ DRMS_SlotKeyUnit_t drms_keyword_getunit(DRMS_Keyword_t *key, int *status)
    }
    else
    {
-      fprintf(stderr,
+      fprintf(stderr, 
 	      "Keyword '%s' does not contain slotted keyword unit information.\n",
 	      key->info->name);
    }
@@ -1944,10 +1943,10 @@ TIME drms_keyword_getslotepoch(DRMS_Keyword_t *slotkey, int *status)
       if (epochKey)
       {
 	 ret = drms_keyword_getepoch(epochKey, &stat);
-      }
+      }   
       else
       {
-	 fprintf(stderr,
+	 fprintf(stderr, 
 		 "Keyword '%s' is not associated with an epoch ancillary keyword.\n",
 		 slotkey->info->name);
       }
@@ -1965,7 +1964,7 @@ TIME drms_keyword_getslotepoch(DRMS_Keyword_t *slotkey, int *status)
 
    return ret;
 }
-
+   
 /* Operates on a XXX_epoch key. */
 TIME drms_keyword_getepoch(DRMS_Keyword_t *key, int *status)
 {
@@ -1991,7 +1990,7 @@ TIME drms_keyword_getepoch(DRMS_Keyword_t *key, int *status)
    }
    else
    {
-      fprintf(stderr,
+      fprintf(stderr, 
 	      "Keyword '%s' does not contain slotted keyword epoch information.\n",
 	      key->info->name);
    }
@@ -2029,10 +2028,10 @@ double drms_keyword_getslotbase(DRMS_Keyword_t *slotkey, int *status)
 	      if (baseKey)
 	      {
 		 ret = drms2double(baseKey->info->type, &baseKey->value, &stat);
-	      }
+	      }   
 	      else
 	      {
-		 fprintf(stderr,
+		 fprintf(stderr, 
 			 "Keyword '%s' is not associated with a base ancillary keyword.\n",
 			 slotkey->info->name);
 	      }
@@ -2049,8 +2048,8 @@ double drms_keyword_getslotbase(DRMS_Keyword_t *slotkey, int *status)
 	   ret = drms_keyword_getslotcarr0();
 	   break;
 	 default:
-	   fprintf(stderr,
-		   "Invalid recscope type '%d'.\n",
+	   fprintf(stderr, 
+		   "Invalid recscope type '%d'.\n", 
 		   (int)slotkey->info->recscope);
       }
    }
@@ -2058,12 +2057,12 @@ double drms_keyword_getslotbase(DRMS_Keyword_t *slotkey, int *status)
    {
       stat = DRMS_ERROR_INVALIDDATA;
    }
-
+   
    if (status)
    {
       *status = stat;
    }
-
+   
    return ret;
 }
 
@@ -2078,14 +2077,14 @@ double drms_keyword_getvalkeybase(DRMS_Keyword_t *valkey, int *status)
    }
    else
    {
-      /* Any integer-type value keyword could have auxilliary keywords, like
+      /* Any integer-type value keyword could have auxilliary keywords, like 
        * _base, _step, etc. */
       DRMS_Keyword_t *baseKey = drms_keyword_basefromvalkey(valkey);
 
       if (baseKey)
       {
          ret = drms2double(baseKey->info->type, &baseKey->value, &statint);
-      }
+      }   
       else
       {
          statint = DRMS_ERROR_UNKNOWNKEYWORD;
@@ -2095,7 +2094,7 @@ double drms_keyword_getvalkeybase(DRMS_Keyword_t *valkey, int *status)
       {
          *status = statint;
       }
-
+      
       return ret;
    }
 }
@@ -2113,7 +2112,7 @@ double drms_keyword_getslotstep(DRMS_Keyword_t *slotkey, DRMS_SlotKeyUnit_t *uni
    }
    else
    {
-      fprintf(stderr,
+      fprintf(stderr, 
 	      "Keyword '%s' is not associated with a step ancillary keyword.\n",
 	      slotkey->info->name);
    }
@@ -2121,7 +2120,7 @@ double drms_keyword_getslotstep(DRMS_Keyword_t *slotkey, DRMS_SlotKeyUnit_t *uni
    if (stepKey)
    {
       ret = drms_keyword_getstep(stepKey, slotkey->info->recscope, unit, &stat);
-   }
+   }   
 
    if (stat == DRMS_SUCCESS)
    {
@@ -2140,9 +2139,9 @@ double drms_keyword_getslotstep(DRMS_Keyword_t *slotkey, DRMS_SlotKeyUnit_t *uni
 }
 
 /*  Operates on a XXX_step key. */
-double drms_keyword_getstep(DRMS_Keyword_t *key,
-			    DRMS_RecScopeType_t recscope,
-			    DRMS_SlotKeyUnit_t *unit,
+double drms_keyword_getstep(DRMS_Keyword_t *key, 
+			    DRMS_RecScopeType_t recscope, 
+			    DRMS_SlotKeyUnit_t *unit, 
 			    int *status)
 {
    double step = DRMS_MISSING_DOUBLE;
@@ -2166,7 +2165,7 @@ double drms_keyword_getstep(DRMS_Keyword_t *key,
 	      if (durstr)
 	      {
 		 /* Always returns in units of seconds */
-
+                
                  /* Can't use the 'u' notation for durations here. This durstr
                   * must define a physical time unit. */
 		 if (drms_names_parseduration(&durstr, &step, 0))
@@ -2206,11 +2205,11 @@ double drms_keyword_getstep(DRMS_Keyword_t *key,
 	   }
 	   break;
 	 default:
-	   /* kRecScopeType_SLOT isn't necessarily a time or degrees, so
-	    * it can't really be a string because we wouldn't know how to
+	   /* kRecScopeType_SLOT isn't necessarily a time or degrees, so 
+	    * it can't really be a string because we wouldn't know how to 
 	    * parse and interpret that string.  The string could be anything. */
-	   fprintf(stderr,
-		   "Invalid recscope type '%d'.\n",
+	   fprintf(stderr, 
+		   "Invalid recscope type '%d'.\n", 
 		   (int)recscope);
 
       }
@@ -2238,14 +2237,14 @@ double drms_keyword_getvalkeystep(DRMS_Keyword_t *valkey, int *status)
    }
    else
    {
-      /* Any integer-type value keyword could have auxilliary keywords, like
+      /* Any integer-type value keyword could have auxilliary keywords, like 
        * _base, _step, etc. */
       DRMS_Keyword_t *stepKey = drms_keyword_stepfromvalkey(valkey);
 
       if (stepKey)
       {
          ret = drms2double(stepKey->info->type, &stepKey->value, &statint);
-      }
+      }   
       else
       {
          statint = DRMS_ERROR_UNKNOWNKEYWORD;
@@ -2255,7 +2254,7 @@ double drms_keyword_getvalkeystep(DRMS_Keyword_t *valkey, int *status)
       {
          *status = statint;
       }
-
+      
       return ret;
    }
 }
@@ -2302,7 +2301,7 @@ DRMS_Keyword_t *drms_keyword_epochfromslot(DRMS_Keyword_t *slot)
  * "_base" or it might be "_epoch". */
 DRMS_Keyword_t *drms_keyword_basefromslot(DRMS_Keyword_t *slotkey)
 {
-   if (slotkey->info->recscope == kRecScopeType_TS_EQ ||
+   if (slotkey->info->recscope == kRecScopeType_TS_EQ || 
        slotkey->info->recscope == kRecScopeType_TS_SLOT)
    {
       return GetAncillaryKey(slotkey, kSlotAncKey_Epoch);
@@ -2363,8 +2362,8 @@ DRMS_Keyword_t *drms_keyword_slotfromindex(DRMS_Keyword_t *indx)
 
       if (underscore && drms_keyword_isindex(indx))
       {
-	 DRMS_Record_t *template =
-	   drms_template_record(indx->record->env,
+	 DRMS_Record_t *template = 
+	   drms_template_record(indx->record->env, 
 				indx->record->seriesinfo->seriesname,
 				NULL);
 	 *underscore = '\0';
@@ -2377,16 +2376,16 @@ DRMS_Keyword_t *drms_keyword_slotfromindex(DRMS_Keyword_t *indx)
    return ret;
 }
 
-/* Maps the floating-point value of the slotted keyword, into
+/* Maps the floating-point value of the slotted keyword, into 
  * the index value of the corresponding index keyword.
  *
  * A floating-point value exactly (within precision) on the boundary
  * between slots maps to the slot number with a smaller value.  So, if the
- * slot boundaries are 122305305.0 for slot 0, 122305315.0 for slot 1,
- * 122305325.0 for slot 2, ..., then a value of 122305315.0 falls into
+ * slot boundaries are 122305305.0 for slot 0, 122305315.0 for slot 1, 
+ * 122305325.0 for slot 2, ..., then a value of 122305315.0 falls into 
  * slot 0.
  */
-int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey,
+int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey, 
 				  DRMS_Value_t *valin,
 				  DRMS_Value_t *valout,
 				  DRMS_Value_t *startdur)
@@ -2420,7 +2419,7 @@ int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey,
       }
 
       step = drms_keyword_getslotstep(slotkey, &unit, &stat);
-
+      
       /* Check for invalid step size of 0. */
       if (base_doubleIsEqual(step, 0.0))
       {
@@ -2572,7 +2571,7 @@ int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey,
       {
          if (startdur)
          {
-            /* valind is actually a duration, in seconds. */
+            /* valind is actually a duration, in seconds. */  
             exact = valind / stepsecs;
             inexact = (int)exact;
 
@@ -2580,12 +2579,12 @@ int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey,
             {
                toosmall = 1;
                fprintf(stderr, "Invalid slotted-keyword duration '%f seconds' specified.  Should be at least the step size of '%f seconds'.  Duration was rounded up to step size.\n", valind, stepsecs);
-               /* ensures that at least one slot is returned */
+               /* ensures that at least one slot is returned */ 
                valout->value.longlong_val = CalcSlot(stepsecs, 0.0, stepsecs, stepsecs);
             }
             else
             {
-               valout->value.longlong_val = CalcSlot(inexact * stepsecs, 0.0, stepsecs, stepsecs);
+               valout->value.longlong_val = CalcSlot(inexact * stepsecs, 0.0, stepsecs, stepsecs);               
             }
          }
          else
@@ -2661,10 +2660,10 @@ static DRMS_Keyword_t *TemplateKeyFollowLink(DRMS_Keyword_t *srckey, int depth, 
                    }
                    else
                    {
-                      fprintf(stderr,
-                              "WARNING: Max link depth exceeded for keyword '%s' in series '%s'.\n",
-                              srckey->info->name,
-                              link->info->target_series);
+                      fprintf(stderr, 
+                              "WARNING: Max link depth exceeded for keyword '%s' in series '%s'.\n", 
+                              srckey->info->name, 
+                              link->info->target_series);  
                    }
                 }
             }
@@ -2675,7 +2674,7 @@ static DRMS_Keyword_t *TemplateKeyFollowLink(DRMS_Keyword_t *srckey, int depth, 
                    *statret = DRMS_ERROR_UNKNOWNKEYWORD;
                 }
             }
-
+            
             if (jsd)
             {
                 drms_destroy_jsdtemplate_record(&linktempl);
@@ -2709,3 +2708,5 @@ DRMS_Keyword_t *drms_jsd_template_keyword_followlink(DRMS_Keyword_t *srckey, int
 {
    return TemplateKeyFollowLink(srckey, 0, 1, statret);
 }
+
+

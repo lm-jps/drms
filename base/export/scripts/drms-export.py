@@ -102,13 +102,11 @@ class WebappRequest(object):
         self.url = url
 
     def get(self):
-        jsonString = ''
-        with urlopen(self.url) as response:
-            jsonString = response.read().decode('UTF-8')
-            self.info = json.loads(jsonString)
+        with urllib.request.urlopen(self.url) as response:
+            self.info = json.loads(response.read().decode('UTF-8'))
             
         if debug:
-            print('web response ' + jsonString)
+            print('web response ' + self.info)
             
         return self.info
 
@@ -159,7 +157,7 @@ def CollectArguments():
     # will call SkiptarAction.__call__() again if skiptar is on the command line 
     return parser.parse_args(arglist, ns)
 
-# for now, form a URL, and invoke as a CGI program; when I convert things to Flask, the URL will instead
+# for now, form a URL, then call the program with subprocess; when I convert things to Flask, the URL will instead
 # be used with a requests object to send a request to the webapp's dedicated daemon:
 #   @app.route('/some-url')
 #   def get_data()
@@ -167,7 +165,7 @@ def CollectArguments():
 #     arg2 = request.args.get('age')
 #     return requests.get('http://example.com/app?' + 'name=' + arg1 + '&' + 'age=' + arg2).content
 def MakeAppRequest(domain, service, **args):
-    argStr = '&'.join([ key + '=' + str(val) for key, val in args.items() ])
+    argStr = ','.join([ key + '=' + str(val) for key, val in args.items() ])
 
     urlParts = SplitResult(scheme='http', netloc=domain, path='/cgi-bin/' + service, query=argStr, fragment='')
     url = urlunsplit(urlParts)
@@ -205,14 +203,13 @@ try:
         ################################
         ## Determine Series DB Server ##
         ################################
-        response = MakeAppRequest(domain=args.webserver, service='ajax/checkexpdbserver', dbhost=args.dbhost, series=','.join(series))
+        response = MakeAppRequest(domain=WEBAPP_DOMAIN, service='checkexpdbserver', dbhost=args.dbhost, series=','.join(series))
         dbserver = response['server'] # the server use when making the export request (possibly the internal server if whitelisted series are present)
         
     exportArgs = []
     exportArgs.extend([ arg + '=' + getattr(args, arg) for arg in vars(args) ])
     exportArgs.extend([ 'JSOC_DBHOST=' + dbserver, 'JSOC_DBNAME=' + drmsParams.get('DBNAME'), 'JSOC_DBUSER=' + drmsParams.get('WEB_DBUSER') ])
-    if debug:
-        print('export args ' + str(exportArgs), file=sys.stderr)
+    print('export args ' + str(exportArgs), file=sys.stderr)
     
     binPy3 = drmsParams.get('BIN_PY3')
     scriptsDir = drmsParams.get('SCRIPTS_EXPORT')
@@ -299,7 +296,7 @@ try:
     arch = outputList[0];
     
     if debug:
-        print('jsoc_machine.csh returned arch ' + arch, file=sys.stderr)
+        print('ljsoc_machine.csh returned arch ' + arch, file=sys.stderr)
 
     ###############################
     ## Run drms-export-to-stdout ##
@@ -339,13 +336,9 @@ try:
                     filename = DUMMY_FITS_FILE_NAME
                     
             if not htmlHeaderPrinted:
-                # force alphanumeric (plus '_'), preserving the file extension
-                matches = re.search(r'(^.+)[.]([^.]+$)', filename)
-                if matches is not None:
-                    base = matches.group(1)
-                    extension = matches.group(2)
-                    filename = re.sub(r'[^a-zA-Z0-9_]', '_', base) + '.' + extension
-
+                # force alphanumeric (plus '_')
+                filename = re.sub(r'[^a-zA-Z0-9_]', '_', filename)
+                
                 if debug:
                     print('file dumped ' + filename, file=sys.stderr)
 
@@ -354,7 +347,7 @@ try:
                 sys.stdout.buffer.write(b'Content-Disposition: attachment; filename="' + filename.encode() + b'"\n')
                 sys.stdout.buffer.write(b'Content-transfer-encoding: binary\n\n')
                 htmlHeaderPrinted = True;
-
+                
             pipeBytes = proc.stdout.read(4096)
             if len(pipeBytes) > 0:
                 # binary data (could be a FITS file for a tar file)                    

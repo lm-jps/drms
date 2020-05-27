@@ -98,12 +98,11 @@ def getArgs(drmsParams):
             parser = CmdlParser(usage='%(prog)s [ -dhin ] [ --dbuser=<db user> ] [ --filter=<DRMS regular expression> ]')
             
             # Optional
-            parser.add_argument('-d', '--debug', help='Run in CGI mode, and print helpful diagnostics.', dest='debug', action='store_true', default=False)
+            parser.add_argument('-d', '--debug', help='Run in CGI mode, and print helpful diagnostics.).', dest='debug', action='store_true', default=False)
             parser.add_argument('-i', '--info', help='Print additional series information (such as series description)', dest='info', action='store_true', default=False)
             parser.add_argument('-n', '--noheader', help='Supress the HTML header (cgi runs only).', dest='noheader', action='store_true', default=False)
             parser.add_argument('-U', '--dbuser', help='The user to log-in to the serving database as.', metavar='<db user>', dest='dbuser', default=pwd.getpwuid(os.getuid())[0])
             parser.add_argument('-f', '--filter', help='The DRMS-style regular expression to filter series.', metavar='<regexp>', dest='filter', default=None)
-            parser.add_argument('-j', '--json', help='Print JSON output.', dest='json', action='store_true', default=False)            
             
             args = parser.parse_args()
         except Exception as exc:
@@ -123,9 +122,6 @@ def getArgs(drmsParams):
         optD['info'] = args.info
         optD['dbuser'] = args.dbuser
         optD['filter'] = args.filter
-        optD['json'] = args.json
-        
-
 
     # Get configuration information.
     optD['cfg'] = drmsParams
@@ -294,32 +290,22 @@ if __name__ == "__main__":
         sys.exit(0)
     else:
         if rv == RET_SUCCESS:
-            if optD['json']:
-                rootObj['errMsg'] = errMsg # A string
-                rootObj['seriesList'] = internalSeries # a dict or list
-                print(json.dumps(rootObj))
+            if optD['info']:
+                if not optD['noheader']:
+                    print('series\tdescription')
+                for series in internalSeries:
+                    # series is a dictionary.
+                    # Python 3 keys() returns a view object, not a list.
+                    print(list(series.keys())[0] + '\t', end='')
+                    print(list(series.values())[0]['description'])
             else:
-                if optD['info']:
-                    if not optD['noheader']:
-                        print('series\tdescription')
-                    for series in internalSeries:
-                        # series is a dictionary.
-                        # Python 3 keys() returns a view object, not a list.
-                        print(list(series.keys())[0] + '\t', end='')
-                        print(list(series.values())[0]['description'])
-                else:
-                    if not optD['noheader']:
-                        print('series')
-                    for series in internalSeries:
-                        # series is a string
-                        print(series)
+                if not optD['noheader']:
+                    print('series')
+                for series in internalSeries:
+                    # series is a string
+                    print(series)
         else:
-            if optD['json']:
-                rootObj['errMsg'] = errMsg # A string
-                rootObj['seriesList'] = internalSeries # a dict or list
-                print(json.dumps(rootObj))
-            else:
-                if errMsg:
-                    print(errMsg, file=sys.stderr)
+            if errMsg:
+                print(errMsg, file=sys.stderr)
 
         sys.exit(rv)

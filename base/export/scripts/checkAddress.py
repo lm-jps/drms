@@ -63,17 +63,17 @@ if __name__ == "__main__":
 
     try:
         optD = {}
-
+        
         # Should be invoked as an HTTP POST. If this script is invoked via HTTP POST, then FieldStorage() will consume the arguments passed
         # via STDIN, and they will no longer be available to any program called by this script.
-
-        # I think I finally figured it out. cgi.FieldStorage() uses the REQUEST_METHOD environment variable to determine if the
+    
+        # I think I finally figured it out. cgi.FieldStorage() uses the REQUEST_METHOD environment variable to determine if the 
         # arguments are from STDIN or in QUERY_STRING (if it exists) / sys.argv[1]. If REQUEST_METHOD is not set, then it gets
         # the args from QUERY_STRING/sys.argv[1]. If REQUEST_METHOD is set, then it uses stdin.
         arguments = cgi.FieldStorage()
-
+        
         optD['checkonly'] = False
-
+        
         if arguments:
             for key in arguments.keys():
                 val = arguments.getvalue(key)
@@ -90,18 +90,18 @@ if __name__ == "__main__":
                     if int(val) == 1:
                         optD['checkonly'] = True
                 # Do not worry about extraneous arguments. I had to add a 'sleep' argument to the shell wrapper, but I do not
-                # know how to strip arguments in shell.
+                # know how to strip arguments in shell.                
 
         # Ensure required arguments are present.
         if 'address' not in optD:
             raise Exception('caArgs', "Missing required argument 'address'.", RV_ERROR_ARGS)
-
+            
         if 'addresstab' not in optD:
             raise Exception('caArgs', "Missing required argument 'addresstab'.", RV_ERROR_ARGS)
-
+        
         if 'domaintab' not in optD:
             raise Exception('caArgs', "Missing required argument 'domaintab'.", RV_ERROR_ARGS)
-
+            
         # Do a quick validation on the email address.
         regExp = re.compile(r'\s*[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,6}')
         matchObj = regExp.match(optD['address'])
@@ -116,15 +116,15 @@ if __name__ == "__main__":
             optD['dbuser'] = drmsParams.get('WEB_DBUSER')
 
         localName, domainName = optD['address'].split('@')
-
+        
         timeout = drmsParams.get('REGEMAIL_TIMEOUT') # string
 
         try:
             with psycopg2.connect(database=drmsParams.get('DBNAME'), user=optD['dbuser'], host=drmsParams.get('SERVER'), port=drmsParams.get('DRMSPGPORT')) as conn:
                 with conn.cursor() as cursor:
                     # registered domain names are always lower case - the comparison should be case-insensitive
-                    cmd = 'SELECT A.confirmation FROM ' + optD['addresstab'] + ' AS A, ' + optD['domaintab'] + " AS D WHERE A.domainid = D.domainid AND lower(A.localname) = '" + localName.lower() + "' AND D.domainname = '" + domainName.lower() + "'"
-
+                    cmd = 'SELECT A.confirmation FROM ' + optD['addresstab'] + ' AS A, ' + optD['domaintab'] + " AS D WHERE A.domainid = D.domainid AND A.localname = '" + localName + "' AND D.domainname = '" + domainName.lower() + "'"
+                    
                     try:
                         cursor.execute(cmd)
                         rows = cursor.fetchall()
@@ -133,9 +133,9 @@ if __name__ == "__main__":
                     except psycopg2.Error as exc:
                         # Handle database-command errors.
                         raise Exception('dbCmd', exc.diag.message_primary, RV_ERROR_DBCMD)
-
+                    
                     if len(rows) == 0:
-                        # Email address is not in our database.
+                        # Email address is not in our database. 
                         if optD['checkonly']:
                             # Do not initiate registration.
                             rv = RV_UNREGISTEREDADDRESS
@@ -148,13 +148,13 @@ if __name__ == "__main__":
 
                             # Insert a row in the domain table, if the domain does not exist.
                             cmd = 'SELECT domainid FROM ' + optD['domaintab'] + " WHERE lower(domainname) = '" + domainName.lower() + "'"
-
+                            
                             try:
                                 cursor.execute(cmd)
                                 rows = cursor.fetchall()
                                 if len(rows) > 1:
                                     raise Exception('dbCorruption', 'Unexpected number of rows returned: ' + cmd + '.', RV_ERROR_DBCMD)
-
+                        
                                 if len(rows) == 0:
                                     # The domain does not exist. Add the domain.
                                     # Get next item in sequence.
@@ -163,7 +163,7 @@ if __name__ == "__main__":
                                     rows = cursor.fetchall()
                                     if len(rows) > 1:
                                         raise Exception('dbCorruption', 'Unexpected number of rows returned: ' + cmd + '.', RV_ERROR_DBCMD)
-
+                                    
                                     domainid = rows[0][0]
 
                                     cmd = 'INSERT INTO ' + optD['domaintab'] + '(domainid, domainname) VALUES(' + str(domainid) + ", '" + domainName.lower() + "')"
@@ -171,28 +171,28 @@ if __name__ == "__main__":
                                 else:
                                     # The domain does exist.
                                     domainid = rows[0][0]
-
+                        
                                 # insert a row into the addresses table; make sure not to insert a duplicate confirmation code
                                 cmd = 'SELECT confirmation FROM ' + optD['addresstab'] + " WHERE confirmation ='" + str(confirmation) + "'"
                                 cursor.execute(cmd)
                                 rows = cursor.fetchall()
                                 if len(rows) > 0:
                                     raise Exception('dupeConfirmation', 'Cannot insert row into address table; confirmation ' + str(confirmation) + ' already exists.', RV_ERROR_DUPECONFIRMATION)
-
+                                
                                 starttime = datetime.now().strftime('%Y-%m-%d %T')
-
+            
                                 cmd = 'INSERT INTO ' + optD['addresstab'] + "(localname, domainid, confirmation, starttime) VALUES('" + localName + "', " + str(domainid) + ", '" + str(confirmation) + "', '" + starttime + "')"
                                 cursor.execute(cmd)
                             except psycopg2.Error as exc:
                                 # Handle database-command errors.
                                 raise Exception('dbCmd', exc.diag.message_primary, RV_ERROR_DBCMD)
-
+                    
                             rv = RV_REGISTRATIONINITIATED
                             msg = 'Your email address has not been registered for use with the export system - starting registration process. You will receive an email address from user jsoc. Please reply to this email message within ' + timeout + ' minutes without modifying the body.'
                     else:
                         # Email address is in our database. Check to see if registration is pending.
                         confirmation = rows[0][0]
-
+                        
                         if confirmation is None or len(confirmation) == 0:
                             # Email address in our database is registered.
                             rv = RV_REGISTEREDADDRESS
@@ -203,7 +203,7 @@ if __name__ == "__main__":
                             msg = 'Email-address registration is pending. Please wait and try again later.'
         except psycopg2.DatabaseError as exc:
             # Closes the cursor and connection
-
+            
             # Man, there is no way to get an error message from any exception object that will provide any information why
             # the connection failed.
             raise Exception('dbConnect', 'Unable to connect to the database.', RV_ERROR_DBCONNECT)
@@ -216,7 +216,7 @@ if __name__ == "__main__":
         if etype == 'emailBadrecipient' or etype == 'caArgs' or etype == 'drmsParams' or etype == 'dbCorruption' or etype == 'dbCmd' or etype == 'dbConnect' or etype == 'dupeConfirmation':
             msg = exc.args[1]
             rv = exc.args[2]
-
+            
             if msg:
                 # print to web error_log
                 print('Fatal ERROR in checkAddress.py: ' + msg, file=sys.stderr)

@@ -26,7 +26,7 @@ def getDRMSParam(drmsParams, param):
         raise Exception('drmsParams', 'DRMS parameter ' + param + ' is not defined.', RET_DRMSPARAMS)
 
     return rv
-
+    
 try:
 	optD = {}
 	allArgs = []
@@ -44,7 +44,7 @@ try:
 					optD['spec'] = val
 
 				allArgs.append(key + '=' + val)
-
+                
 	# Enforce requirements.
 	if not 'dbhost' in optD:
 		raise Exception('invalidArgs', "Missing required argument '" + "dbhost'.")
@@ -81,7 +81,7 @@ try:
 	if output is None:
 		raise Exception('arch', 'Unexpected response from jsoc_machine.csh', RET_ARCH)
 
-	# There should be only one output line.
+	# There should be only one output line.    
 	outputList = output.splitlines()
 	arch = outputList[0];
 
@@ -134,9 +134,9 @@ try:
 	## Run show_info ##
 	###################
 	# show_info does NOT print the Content-type header needed when it is run from the command line;
-	# show_info prints the HTTP content to stdout; we need to capture this, and then
+	# show_info prints the HTTP content to stdout; we need to capture this, and then 
 	# pre-pend with the Content-type header if everything goes smoothly
-	#
+	# 
 	cmdList = [os.path.join(binDir, arch, 'show_info'), 'JSOC_DBHOST=' + server]
 	# Provide all show_info arguments passed through showextinfo.py to show_info.
 	cmdList.extend(allArgs)
@@ -147,7 +147,7 @@ try:
 		raise Exception('showinfo', exc.args[0], RET_SHOWINFO)
 	except CalledProcessError as exc:
 		raise Exception('showinfo', exc.output.decode('UTF-8').rstrip('\n'), RET_SHOWINFO)
-
+		
 	# show_info success; concatenate Content-type header with show_info stdout
 	print('Content-type: text/plain\n')
 	print(resp.decode('UTF-8').rstrip('\n'))

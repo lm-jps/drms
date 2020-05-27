@@ -22,27 +22,36 @@ void drms_disconnect(DRMS_Env_t *env, int abort);
 void drms_disconnect_now(DRMS_Env_t *env, int abort);
 #endif
 /** \brief Perform query and receive query results in DB_Binary_Result_t*/
-DB_Binary_Result_t *drms_query_bin(DRMS_Session_t *session, const char *query);
+DB_Binary_Result_t *drms_query_bin(DRMS_Session_t *session, char *query);
 /** \brief Same as drms_query_bin() with query parameters in variable argument list, calls drms_query_bin_array()*/
-DB_Binary_Result_t *drms_query_binv(DRMS_Session_t *session, const char *query,
+DB_Binary_Result_t *drms_query_binv(DRMS_Session_t *session, char *query,
 				    ...);
 /** \brief Same as drms_query_bin() with query parameters*/
-DB_Binary_Result_t *drms_query_bin_array(DRMS_Session_t *session, const char *query, int n_args, DB_Type_t *intype, void **argin);
+DB_Binary_Result_t *drms_query_bin_array(DRMS_Session_t *session, 
+					  char *query,
+					 int n_args, DB_Type_t *intype, 
+                                         void **argin);
 
 DB_Binary_Result_t **drms_query_bin_ntuple(DRMS_Session_t *session, const char *stmnt, unsigned int nelems, unsigned int nargs, DB_Type_t *dbtypes, void **values);
 
 /** \brief Perform query and receive query results in DB_Text_Result_t*/
-DB_Text_Result_t *drms_query_txt(DRMS_Session_t *session, const char *query);
+DB_Text_Result_t *drms_query_txt(DRMS_Session_t *session, char *query);
 /** \brief Execute a data manipulation statement (DMS). */
-int drms_dms(DRMS_Session_t *session, int *row_count, const char *query);
+int drms_dms(DRMS_Session_t *session, int *row_count, char *query);
 /** \brief Same as drmm_dms() with DMS parameters*/
-int drms_dms_array(DRMS_Session_t *session, int *row_count, const char *query, int n_rows, int n_args, DB_Type_t *intype, void **argin);
+int drms_dms_array(DRMS_Session_t *session, int *row_count, 
+		    char *query, int n_rows, int n_args, 
+		   DB_Type_t *intype, void **argin);
 /** \brief Same as drms_dms() with DMS parameters in variable argument list, calls drms_dms_array()*/
-int drms_dmsv(DRMS_Session_t *session, int *row_count, const char *query, int n_rows, ...);
+int drms_dmsv(DRMS_Session_t *session, int *row_count,  char *query, 
+	      int n_rows, ...);
 /** \brief Bulk insert*/
-int drms_bulk_insert_array(DRMS_Session_t *session, char *table, int n_rows, int n_args, DB_Type_t *intype, void **argin );
+int drms_bulk_insert_array(DRMS_Session_t *session,
+			   char *table, int n_rows, int n_args, 
+			   DB_Type_t *intype, void **argin );
 /** \brief Bulk insert with parameters in variable argument list, calls drms_bulk_insert_array() */
-int drms_bulk_insertv(DRMS_Session_t *session, char *table, int n_rows, int n_cols, ...);
+int drms_bulk_insertv(DRMS_Session_t *session, char *table, 
+		      int n_rows, int n_cols, ...);
 
 int drms_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve);
 

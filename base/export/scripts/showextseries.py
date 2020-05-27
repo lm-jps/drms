@@ -121,7 +121,6 @@ def getArgs(drmsParams):
             # Optional
             parser.add_argument('-d', '--debug', help='Run in CGI mode, and print helpful diagnostics.', dest='debug', action='store_true', default=False)
             parser.add_argument('-i', '--info', help='Print additional series information (such as series description)', dest='info', action='store_true', default=False)
-            parser.add_argument('-j', '--json', help='Print JSON output.', dest='json', action='store_true', default=False)
             parser.add_argument('-n', '--noheader', help='Supress the HTML header (cgi runs only).', dest='noheader', action='store_true', default=False)
             parser.add_argument('-P', '--dbport', help='The port on the machine hosting DRMS data series names.', metavar='<db host port>', dest='dbport', default=drmsParams.get('DRMSPGPORT'))
             parser.add_argument('-N', '--dbname', help='The name of the database serving DRMS series names.', metavar='<db name>', dest='dbname', default=drmsParams.get('DBNAME'))
@@ -145,7 +144,6 @@ def getArgs(drmsParams):
         # Cannot loop through attributes since args has extra attributes we do not want.
         optD['noheader'] = args.noheader
         optD['info'] = args.info
-        optD['json'] = args.json
         optD['dbhost'] = args.dbhost
         optD['dbport'] = int(args.dbport)
         optD['dbname'] = args.dbname
@@ -379,32 +377,22 @@ if __name__ == "__main__":
         sys.exit(0)
     else:
         if rv == RET_SUCCESS:
-            if optD['json']:
-                rootObj['errMsg'] = errMsg # A string
-                rootObj['seriesList'] = combinedSeries # a dict or list
-                print(json.dumps(rootObj))
+            if optD['info']:
+                if not optD['noheader']:
+                    print('series\tdescription')
+                for series in combinedSeries:
+                    # series is a dictionary.
+                    # Python 3 keys() returns a view object, not a list.
+                    print(list(series.keys())[0] + '\t', end='')
+                    print(list(series.values())[0]['description'])
             else:
-                if optD['info']:
-                    if not optD['noheader']:
-                        print('series\tdescription')
-                    for series in combinedSeries:
-                        # series is a dictionary.
-                        # Python 3 keys() returns a view object, not a list.
-                        print(list(series.keys())[0] + '\t', end='')
-                        print(list(series.values())[0]['description'])
-                else:
-                    if not optD['noheader']:
-                        print('series')
-                    for series in combinedSeries:
-                        # series is a string
-                        print(series)
+                if not optD['noheader']:
+                    print('series')
+                for series in combinedSeries:
+                    # series is a string
+                    print(series)
         else:
-            if optD['json']:
-                rootObj['errMsg'] = errMsg # A string
-                rootObj['seriesList'] = combinedSeries # a dict or list
-                print(json.dumps(rootObj))
-            else:
-                if errMsg:
-                    print(errMsg, file=sys.stderr)
+            if errMsg:
+                print(errMsg, file=sys.stderr)
 
         sys.exit(rv)

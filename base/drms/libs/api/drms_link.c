@@ -333,7 +333,6 @@ DRMS_Record_t *drms_link_follow(DRMS_Record_t *rec, const char *linkname,
         XASSERT(!link->wasFollowed); /* Do not follow links more than once (for any given original
                                       * record). */
         link->wasFollowed = 1;
-        /* will set refcount to 1 since the child record has not been cached yet */
         return drms_retrieve_record(rec->env, link->info->target_series, link->recnum, NULL, status);
     }
 }
@@ -409,7 +408,7 @@ DRMS_RecordSet_t *drms_link_followall(DRMS_Record_t *rec, const char *linkname,
 }
 #endif
 
-/* Recolve dynamic links by selecting the DB ROW with highest recnum
+/* Recolve dynamic links by selecting the record with highest record number
    matching the value of the primary index given in the link structure. */
 static int drms_link_resolve(DRMS_Link_t *link)
 {
@@ -441,7 +440,7 @@ static int drms_link_resolve(DRMS_Link_t *link)
 }
 
 
-/* Resolve a link to all matching DB ROWS in the child series. A static link only has one match. */
+/* Resolve a link to all matching records. A static link only has one match. */
 static int drms_link_resolveall(DRMS_Link_t *link, int *n, long long **recnums)
 {
   char query[DRMS_MAXQUERYLEN+DRMS_MAXPRIMIDX*DRMS_MAXKEYNAMELEN], *p;

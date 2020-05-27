@@ -18,7 +18,7 @@ class DrmsLock(object):
                 # save the lock file information
                 self._lockFile = fileName
                 self._lfObj = None
-                self._lfContent = content # the content to write to the lock file if the lock is successfully acquired
+                self._lfContent = content
                 self._hasLock = False
                 self._retry = retry
             except Exception as exc:
@@ -40,7 +40,6 @@ class DrmsLock(object):
             if not self._lfObj:
                 try:
                     self._lfObj = open(self._lockFile, 'a')
-                    # read the existing value so we can restore it if we fail to acquire lock
                 except Exception as exc:
                     raise Exception('drmsLock', 'unable to open lock file ' + self._lockFile)
 
@@ -63,16 +62,11 @@ class DrmsLock(object):
 
             self._hasLock = gotLock
 
-        if self._hasLock: 
-            # write the content into the file; but first truncate the file (because we opened the file in 'a' mode)
+        if self._hasLock:            
+            # Write the content into the file.
             if self._lfContent and len(self._lfContent) > 0:
-                self._lfObj.seek(0)
-                self._lfObj.truncate()            
                 self._lfObj.write(self._lfContent)
                 self._lfObj.flush()
-        else:
-            # we did not acquire lock; because we opened in append mode, the value in the lock file will not be changed
-            pass
                 
         return self._hasLock
 

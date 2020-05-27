@@ -293,7 +293,7 @@ KEY *getdo_1(KEY *params)
   uint32_t tapeback;
   uint64_t uid, sunum;
   enum clnt_stat status;
-  int reqcnt, i, offline, group, storeset, offcnt, getvers;
+  int reqcnt, i, offline, storeset, offcnt, getvers;
   char *call_err, *cptr, *wd;
   char scmd[96], errstr[80];
   double bytes;
@@ -378,23 +378,7 @@ KEY *getdo_1(KEY *params)
             offcnt++;
             sprintf(nametmp, "bytes_%d", i);
             bytes = getkey_double(retlist, nametmp);
-	    //------
-            //storeset = JSOC;         /* always use JSOC set for now */
-	    // get storeset from sum_partn_avail table; code copied from allocdo_1; kehcheng 2020.03.11
-	    //
-	      if(!findkey(params, "group")) {	//use storeset 0 if no group
-		storeset = 0;
-	      }
-	      else {				//query sum_arch_group db table
-		group = getkey_int(params, "group");
-		status = SUMLIB_SumsetGet(group, &storeset); //default storeset is 0
-		if(!status) {
-		  write_log("Error ret from SUMLIB_SumsetGet() for group=%d, user=%s\n",
-			     group, GETKEY_str(params, "USER"));
-		}
-	      }
-	    //-------
-
+            storeset = JSOC;         /* always use JSOC set for now */
             if((status=SUMLIB_PavailGet(bytes,storeset,uid,0,&retlist))) {
               write_log("***Can't alloc storage for retrieve uid = %lu\n", uid);
               freekeylist(&retlist);
@@ -643,12 +627,6 @@ KEY *infodoArray_1(Sunumarray *params)
   //char *filename = "/home/production/junk/infoarray.ans"; //!!TEMP
 
   reqcnt = params->reqcnt;
-  if(reqcnt == 0 || params->sunums == 0) {
-    write_log("**Error: SUM_infoArray() id=%d for user=%s uid=%lu cnt=%d. Reqcnt or sunum is 0\n", rrid, params->username, params->uid, reqcnt);
-    rinfo = 1;          /* ret err code back to caller */
-    send_ack();
-    return((KEY *)1);   /* nothing will be sent later */
-  }
   retlist = newkeylist();
   write_log("SUM_infoArray() id=%d for user=%s uid=%lu 1st sunum=%lu cnt=%d\n", 
 	rrid, params->username, params->uid, *params->sunums, reqcnt);
@@ -665,7 +643,6 @@ KEY *infodoArray_1(Sunumarray *params)
   //  write_log("Error in infodoArray_1(): %s\n", cmd);
   //}
   sprintf(filename, "%s/infoarray.ans", partname);
-  write_log("%s\n", filename);
   effective_date = (char *)get_effdate(0);
 
   //make the alloc dir del pending

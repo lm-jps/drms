@@ -101,7 +101,6 @@ RecordSet_t *parse_record_set(DRMS_Env_t *env, char **in)
 }
 
 /* <name> = <alpha> (<alphanum> | '_')*  */
-/* I guess this function simply ensures that the input name is a valid series name? */
 static int parse_name(char **in, char *out, int maxlen)
 {
   int len;
@@ -142,7 +141,9 @@ static int parse_name(char **in, char *out, int maxlen)
   return 0;
 }
 
-static RecordSet_Filter_t *parse_record_set_filter(DRMS_Record_t *template, char **in, int *allvers)
+static RecordSet_Filter_t *parse_record_set_filter(DRMS_Record_t *template, 
+						   char **in,
+                                                   int *allvers)
 {
   RecordSet_Filter_t *head=NULL, *rsp=NULL;
   char *p = *in;
@@ -2437,7 +2438,6 @@ char *drms_recordset_extractfilter(DRMS_Record_t *template, const char *in, int 
     char *rsquery = strdup(in);
     char *pc = rsquery;
     char *rv = NULL;
-    char outNameWeWillNeverNeed[DRMS_MAXSERIESNAMELEN] = {0};
     RecordSet_Filter_t *dontcare = NULL;
     char *filter = NULL;
     
@@ -2447,9 +2447,8 @@ char *drms_recordset_extractfilter(DRMS_Record_t *template, const char *in, int 
     recnum_filter = 0;
     
     SKIPWS(pc);
-    if (!parse_name(&pc, outNameWeWillNeverNeed, DRMS_MAXSERIESNAMELEN))
+    if (!parse_name(&pc, template->seriesinfo->seriesname, DRMS_MAXSERIESNAMELEN))
     {
-        /* the recordset specification has a valid series name */
         SKIPWS(pc);
         
         if (*pc == 0)
