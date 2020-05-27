@@ -24,7 +24,8 @@
 
 /* DMS function with variable argument list. Collects arguments in
    list of void * and calls db_dms_array. */
-int db_dmsv(DB_Handle_t *dbin, int *row_count, const char *query, int n_rows, ...)
+int db_dmsv(DB_Handle_t  *dbin, int *row_count,  char *query, 
+	    int n_rows, ...)
 {
   int status=1;
   DB_Type_t intype[MAXARG];
@@ -215,7 +216,7 @@ int db_bulk_insertv(DB_Handle_t  *dbin, char *table,
 
 /* Query function with variable argument list. Collects arguments in
    list of void * and calls db_dms_array. */
-DB_Binary_Result_t *db_query_binv(DB_Handle_t *dbin, const char *query, ...)
+DB_Binary_Result_t *db_query_binv(DB_Handle_t  *dbin,  char *query, ...)
 {
   DB_Type_t intype[MAXARG];
   void *argin[MAXARG];

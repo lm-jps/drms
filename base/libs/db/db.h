@@ -174,27 +174,34 @@ void db_disconnect(DB_Handle_t **db);
 
 
 /* SQL data manipulation statement with fixed input and no output. */
-int db_dms(DB_Handle_t  *db, int *row_count, const char *query_string);
+int db_dms(DB_Handle_t  *db, int *row_count, char *query_string);
 
 /* SQL data manipulation statement with variable array input and no output. */
-int db_dmsv(DB_Handle_t  *dbin, int *row_count, const char *query_string, int n_rows, ...);
-int db_dms_array(DB_Handle_t *dbin, int *row_count, const char *oquery, int n_rows, int n, DB_Type_t *intype, void **argin );
+int db_dmsv(DB_Handle_t  *dbin, int *row_count, char *query_string, 
+	    int n_rows, ...);
+int db_dms_array(DB_Handle_t  *dbin, int *row_count, 
+		  char *oquery, int n_rows, 
+		 int n, DB_Type_t *intype, void **argin );
 
 /* Bulk inserts via fast path interface. */
-int db_bulk_insertv(DB_Handle_t *dbin, char *table, int n_rows, int n_cols, ...);
+int db_bulk_insertv(DB_Handle_t  *dbin, char *table, 
+		    int n_rows, int n_cols, ...);
 
-int db_bulk_insert_array(DB_Handle_t *dbin, char *table, int n_rows, int n_args, DB_Type_t *intype, void **argin );
+int db_bulk_insert_array(DB_Handle_t  *dbin, char *table, int n_rows, 
+			 int n_args, DB_Type_t *intype, void **argin );
 
 /* SQL query statement with result returned as table of strings. */
-DB_Text_Result_t *db_query_txt(DB_Handle_t *db, const char *query_string);
+DB_Text_Result_t *db_query_txt(DB_Handle_t  *db, char *query_string);
 
 /* Packing and unpacking query results. */
 DB_Text_Result_t *db_unpack_text(char *buf);
 
 /* SQL query statement with result returned as table of binary data. */
-DB_Binary_Result_t *db_query_bin(DB_Handle_t *db, const char *query_string);
-DB_Binary_Result_t *db_query_binv(DB_Handle_t *dbin, const char *query, ...);
-DB_Binary_Result_t *db_query_bin_array(DB_Handle_t  *dbin, const char *query, int n_args, DB_Type_t *intype, void **argin);
+DB_Binary_Result_t *db_query_bin(DB_Handle_t  *db, char *query_string);
+DB_Binary_Result_t *db_query_binv(DB_Handle_t  *dbin, char *query, ...);
+DB_Binary_Result_t *db_query_bin_array(DB_Handle_t  *dbin, 
+				        char *query, int n_args,
+				       DB_Type_t *intype, void **argin );
 DB_Binary_Result_t **db_query_bin_ntuple(DB_Handle_t *dbin, const char *stmnt, unsigned int nelems, unsigned int nargs, DB_Type_t *dbtypes, void **values);
 		
 
@@ -327,14 +334,25 @@ int db_server_sequence_getcurrent(int sockfd, DB_Handle_t *db_handle);
 int db_server_sequence_getlast(int sockfd, DB_Handle_t *db_handle);
 
 /* Client side API. */
-DB_Text_Result_t *db_client_query_txt(int sockfd, const char *query, int compress, char **errmsg);
-DB_Binary_Result_t *db_client_query_bin(int sockfd, const char *query, int compress, char **errmsg);
-DB_Binary_Result_t *db_client_query_bin_array(int sockfd, const char *query, int compress, int n_args, DB_Type_t *intype, void **argin);
+DB_Text_Result_t *db_client_query_txt(int sockfd, char *query, 
+				      int compress, 
+                                      char **errmsg);
+DB_Binary_Result_t *db_client_query_bin(int sockfd, char *query, 
+					int compress,
+                                        char **errmsg);
+DB_Binary_Result_t *db_client_query_bin_array(int sockfd, char *query, 
+					      int compress, int n_args,  
+					      DB_Type_t *intype, void **argin);
 DB_Binary_Result_t **db_client_query_bin_ntuple(int sockfd, const char *stmnt, unsigned int nexes, unsigned int nargs, DB_Type_t *dbtypes, void **values);
-int db_client_dmsv(int sockfd,  int *row_count, const char *query, int n_rows, ...);
-int db_client_dms_array(int sockfd,  int *row_count, const char *query, int n_rows, int n_args, DB_Type_t *intype, void **argin);
-int db_client_bulk_insert_array(int sockfd, char *table, int n_rows, int n_args, DB_Type_t *intype, void **argin);
-int db_client_dms(int sockfd, int *row_count, const char *query);
+int db_client_dmsv(int sockfd,  int *row_count, char *query, 
+		   int n_rows, ...);
+int db_client_dms_array(int sockfd,  int *row_count, char *query, 
+			int n_rows, int n_args, DB_Type_t *intype, 
+			void **argin );
+int db_client_bulk_insert_array(int sockfd, char *table, 
+				int n_rows, int n_args, DB_Type_t *intype, 
+				void **argin );
+int db_client_dms(int sockfd, int *row_count, char *query);
 int db_client_sequence_create(int sockfd, char *table);
 int db_client_sequence_drop(int sockfd, char *table);
 long long db_client_sequence_getnext(int sockfd, char *table);

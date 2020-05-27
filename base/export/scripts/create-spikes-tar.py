@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-# 1/ run on rumble.stanford.edu
+# 1/ run on fumble.stanford.edu
 # 2/ write to /surge28/spikes-tars
 # 3/ use jsocport to serve the tar files via scp
 # 4/ so we can run in batches, input a start date (2011.1.1_UTC) and end end date (2011.1.2_UTC) as arguments
@@ -22,12 +22,10 @@ import shutil
 from datetime import datetime, timedelta
 from subprocess import check_output, CalledProcessError
 
-START_DATE = '2016.08.03'
-NUM_DAYS = 7
-SEGMENT = 'spikes'
-LOG_FILE = 'spikes-tar.log2.txt'
+START_DATE = '2011.10.12'
+NUM_DAYS = 144
+LOG_FILE = 'spikes-tar.log.txt'
 LOG_LEVEL = getattr(logging, 'INFO')
-SPIKES_FILE = 'spikes.fits'
 TAR_DIR = '/surge28/spikes-tars'
 TAR_FILE_PREFIX = 'aia-lev1-spikes_'
 
@@ -117,7 +115,7 @@ if __name__ == "__main__":
     # day loop
     drmsDate = datetime.strptime(START_DATE, '%Y.%m.%d')
     for day in range(0, NUM_DAYS):
-        cmdList = [ '/home/jsoc/cvs/Development/JSOC/bin/linux_avx/show_info', 'aia.lev1[' + drmsDate.strftime('%Y.%m.%d_UTC') + '/1d][? QUALITY>=0 ?]', 'segment=' + SEGMENT, 'key=T_OBS,WAVELNTH' , '-Pq' ]
+        cmdList = [ '/home/jsoc/cvs/Development/JSOC/bin/linux_avx/show_info', 'aia.lev1[' + drmsDate.strftime('%Y.%m.%d_UTC') + '/1d][? QUALITY>=0 ?]', 'segment=spikes', 'key=T_OBS,WAVELNTH' , '-Pq' ]
 
         try:
             resp = check_output(cmdList)
@@ -138,14 +136,14 @@ if __name__ == "__main__":
                 matchObj = regExpObs.match(obsTime)
                 if matchObj is not None:
                     obsDay = matchObj.group(1)
-                    spikesFile = os.path.join(dir, SPIKES_FILE)
+                    spikesFile = os.path.join(dir, 'spikes.fits')
         
                     # run tar
 
                     # if the current tar file contains data files of the same day as the current data file, then
                     # add the current data file to the current tar file, otherwise, create a new tar file and
                     # add the current data file to it
-                    tarFileArchiveFile = obsTime + '_' + wavelength.zfill(4) + '.' + SPIKES_FILE
+                    tarFileArchiveFile = obsTime + '_' + wavelength.zfill(4) + '.spikes.fits'
                     if tarf is None or obsDay != tarFileObsDay:
                         # create new tar file
                         if tarf:

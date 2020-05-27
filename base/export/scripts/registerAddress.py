@@ -24,13 +24,13 @@ RV_ERROR_ADDRESS = -8
 RV_ERROR_BODY = -9
 RV_ERROR_MAIL = -10
 
-# By default, procmail prints these lines to the procmail log:
+# By default, procmail prints these lines to the procmail log: 
 # From nour4soccer@gmail.com  Fri Feb 10 08:19:23 2017
 #  Subject: Re: CONFIRM EXPORT ADDRESS
 #   Folder: /home/jsoc/cvs/Development/JSOC/base/export/scripts/register     5390
 #
 # To disable this default behavior, add the LOGABSTRACT=no variable to .procmailrc.
-# Anything printed by this script will appear AFTER these three lines.
+# Anything printed by this script will appear AFTER these three lines. 
 
 # Print stdin
 # import fileinput
@@ -75,7 +75,7 @@ def SendMailFailure(localName, domainName, msg):
 
 if __name__ == "__main__":
     rv = RV_ERROR_NONE
-
+    
     try:
         actualMessage = None # the message containing the email body
         addressField = None
@@ -84,27 +84,27 @@ if __name__ == "__main__":
         localName = None
         domainName = None
         confirmation = None
-
+        
         textIn = sys.stdin.read() # text string (sys.stdin is a str of chars; each char in the text string is a Unicode code point (an integer between 0 and 0x10FFFF))
-
+        
         # Ok, this took 2 hours of my life I will never get back! If there are empty lines, or lines with only whitespace, in the incoming
         # message, then message_from_string() considers every thing after the first empty line the body of the message.
         strippedTextIn = '\n'.join([ line for line in textIn.split('\n') if line.strip() != '' ])
-
+        
         message = email.message_from_string(strippedTextIn) # never fails, even for an invalid email message
-
+        
         if message.is_multipart():
-            # for multi-part messages, the sender's address is in the top-level message, but the body is in one of the
+            # for multi-part messages, the sender's address is in the top-level message, but the body is in one of the 
             # 'parts'; we are assuming it is in the first text/plain part
             addressField = message.get('from')
-
+            
             if not addressField:
                 raise Exception('raAddress', "Sender's email address not found in email reply header.", RV_ERROR_ADDRESS)
 
             for amessage in message.get_payload():
                 type = amessage.get_content_type()
                 disposition = amessage.get_content_disposition()
-
+                
                 if type == 'text/plain' and not disposition == 'attachment':
                     actualMessage = amessage
                     break
@@ -113,11 +113,11 @@ if __name__ == "__main__":
             if not addressField:
                 raise Exception('raAddress', "Sender's email address not found in email reply header.", RV_ERROR_ADDRESS)
 
-            actualMessage = message
+            actualMessage = message            
 
         if actualMessage == None:
             raise Exception('raMessage', 'Invalid email message.', RV_ERROR_MESSAGE)
-
+        
         parsedAddressField = email.utils.parseaddr(addressField)
         if len(parsedAddressField[1]) > 0:
             address = parsedAddressField[1]
@@ -128,21 +128,21 @@ if __name__ == "__main__":
         bodyEncoded = actualMessage.get_payload(decode=True) # decodes base64 and quoted-printable only; most likely the resulting body is non-ascii (binary) data (although it could be ascii)
         if not bodyEncoded:
             raise Exception('raBody', 'Email message has no body.', RV_ERROR_BODY)
-
+        
         charset = actualMessage.get_content_charset()
         if not charset:
             charset = 'utf8'
         body = bodyEncoded.decode(charset) # if bodyEncoded is ascii data, utf8 will work; if bodyEncoded is non-ascii (binary) data, then get_content_charset() should indicate the encoding; if this is binary data, and there is no charset provided, try utf8
-
+        
         # stderr goes to procmail log
         print('** message address: ' + address, file=sys.stderr)
         print('** message body: ' + body, file=sys.stderr)
-
+        
         regExpS = re.compile(r'\[([0-9A-Fa-f]{8}\-[0-9A-Fa-f]{4}\-[0-9A-Fa-f]{4}\-[0-9A-Fa-f]{4}\-[0-9A-Fa-f]{12})\]')
         matchObj = regExpS.search(body)
         if matchObj:
             confirmation = matchObj.group(1)
-
+            
         if confirmation:
             # stderr goes to procmail log
             print('** confirmation code: ' + confirmation, file=sys.stderr)
@@ -173,7 +173,7 @@ if __name__ == "__main__":
                     starttimeDB = rows[0][2] # cannot be null (db constraint)
                     domainIDDB = rows[0][3] # cannot be null (db constraint)
                     domainNameDB = rows[0][4] # cannot be null (db constraint)
-
+                    
                     print('** registering address: ' + localNameDB + '@' + domainNameDB + ' (' + confirmation + ')', file=sys.stderr)
 
                     # Reject if the confirmation code has expired.
@@ -182,7 +182,7 @@ if __name__ == "__main__":
 
                     # Remove confirmation code from address's record in jsoc.export_addresses. This is how we signify that the address has
                     # been successfully registered.
-                    xxxcmd = 'UPDATE jsoc.export_addresses SET confirmation = NULL WHERE domainid = ' + str(domainIDDB) + " AND lower(localname) = '" + localNameDB.lower() + "'"
+                    cmd = 'UPDATE jsoc.export_addresses SET confirmation = NULL WHERE domainid = ' + str(domainIDDB) + " AND localname = '" + localNameDB + "'"
 
                     try:
                         cursor.execute(cmd)
@@ -192,10 +192,10 @@ if __name__ == "__main__":
 
                     SendMailSuccess(localName, domainName)
                     print('** succesful registration: ' + localNameDB + '@' + domainNameDB + ' (' + confirmation + ')', file=sys.stderr)
-
+                    
         except psycopg2.DatabaseError as exc:
             # Closes the cursor and connection.
-
+            
             # Man, there is no way to get an error message from any exception object that will provide any information why
             # the connection failed.
             raise Exception('dbConnect', 'Unable to connect to the database.', RV_ERROR_DBCONNECT)
@@ -207,13 +207,13 @@ if __name__ == "__main__":
             import traceback
             print('Unhandled exception: ' + traceback.format_exc(8) + '.', file=sys.stderr)
             raise # Re-raise
-
+        
         etype = exc.args[0]
 
         if etype == 'drmsParams' or etype == 'dbCorruption' or etype == 'dbCmd' or etype == 'dbConnect' or etype == 'raConfirmation' or etype == 'emailBadrecipient' or etype == 'raTimeout' or etype == 'raMessage' or etype == 'raAddress' or etype == 'raBody':
             msg = exc.args[1]
             rv = exc.args[2]
-
+            
             if localName and domainName:
                 if msg and len(msg) > 0:
                     mailMsg = msg + '\nPlease visit the export page and register your address again.'
@@ -222,7 +222,7 @@ if __name__ == "__main__":
             # The procmail log captures stderr only.
             if msg and len(msg) > 0:
                 print(msg, file=sys.stderr)
-
+            
             if etype == 'raTimeout':
                 # Remove row from address table. Don't worry about the domain table. Let the cleanAddresses.py script deal with that.
                 cmd = 'DELETE FROM jsoc.export_addresses WHERE domainid = ' + str(domainIDDB) + " AND localname = '" + localNameDB + "'"

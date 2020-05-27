@@ -24,7 +24,7 @@ MODEXE_SOCK_$(d):= $(MODEXE_$(d):%=%_sock)
 MODEXE_SOCK	:= $(MODEXE_SOCK) $(MODEXE_SOCK_$(d))
 
 EXE_$(d)        := $(MODEXE_$(d)) $(MODEXE_ONLY_$(d)) $(CEXE_$(d))
-OBJ_$(d)	:= $(EXE_$(d):%=%.o)
+OBJ_$(d)	:= $(EXE_$(d):%=%.o) 
 DEP_$(d)	:= $(OBJ_$(d):%=%.d)
 CLEAN		:= $(CLEAN) \
 		   $(OBJ_$(d)) \
@@ -53,10 +53,8 @@ $(MODEXE_$(d)):		$(LIBJSON) $(LIBJSMN) $(LIBEXPDRMS) $(LIBEXPUTL) $(LIBQDECODER)
 $(MODEXE_ONLY_$(d)):	$(LIBJSON) $(LIBJSMN) $(LIBEXPDRMS) $(LIBEXPUTL) $(LIBQDECODER)
 $(MODEXE_SOCK_$(d)):	$(LIBJSON) $(LIBJSMN) $(LIBEXPDRMS) $(LIBEXPUTL) $(LIBQDECODER)
 
-ifeq ($(JMD_IS_INSTALLED),1)
 $(MODEXE_$(d)):		LL_TGT := $(LL_TGT) $(LIBTARL)
 $(MODEXE_SOCK_$(d)):	LL_TGT := $(LL_TGT) $(LIBTARL)
-endif
 
 # Shortcuts
 .PHONY:	$(S_$(d))

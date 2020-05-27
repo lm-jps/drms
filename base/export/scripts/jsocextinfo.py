@@ -2,7 +2,7 @@
 
 # This is a wrapper for jsoc_info.c, so it must adhere to its API:
 #   If no error has occurs, then return "status" : 0.
-#   If an error occurs, return a non-zero status. jsoc_info.c does not return anything other than
+#   If an error occurs, return a non-zero status. jsoc_info.c does not return anything other than 
 #     "status" : 1, but jsocextinfo.py distinguishes several different kinds of errors. jsocextinfo.py
 #     returns one of its return values (success is still 0). An error message is returned via
 #     the "error" property.
@@ -49,7 +49,7 @@ try:
     # getting them from STDIN, but I cannot see how it is doing that. So, we have to read them in here, then pass them to jsoc_info
     # in the check_call() function. dbhost is a parameter for jsocextinfo.py, but not for jsoc_info. It gets stripped off
     # from the list of arguments passed in, and the remaining parameters are passed onto jsoc_info. 'dbhost' is the external db host
-    # that the external user is attempting to access.
+    # that the external user is attempting to access. 
     arguments = cgi.FieldStorage()
 
     if arguments:
@@ -58,7 +58,7 @@ try:
 
             if key in ('H', 'dbhost'):
                 optD['dbhost'] = val
-            elif key in ('N'):
+            elif key in ('n'):
                 optD['noheader'] = strtobool(val) == True
             else:
                 if key in ('ds'):
@@ -98,11 +98,11 @@ try:
         raise Exception('arch', exc.args[0], RET_ARCH)
     except CalledProcessError as exc:
         raise Exception('arch', "Command '" + ' '.join(cmdList) + "' returned non-zero status code " + str(exc.returncode), RET_ARCH)
-
+    
     if output is None:
         raise Exception('arch', 'Unexpected response from jsoc_machine.csh', RET_ARCH)
 
-    # There should be only one output line.
+    # There should be only one output line.    
     outputList = output.splitlines()
     arch = outputList[0];
 
@@ -131,7 +131,7 @@ try:
     ## Determine Series DB Server ##
     ################################
     # Ask checkExpDbServer.py to provide the name of the db server that can handle all the series in series.
-    binPy = getDRMSParam(drmsParams, 'BIN_PY3')
+    binPy = getDRMSParam(drmsParams, 'BIN_PY')
     scriptsDir = getDRMSParam(drmsParams, 'SCRIPTS_EXPORT')
 
     cmdList = [binPy, os.path.join(scriptsDir, 'checkExpDbServer.py'), '-c', 'n=1&dbhost=' + optD['dbhost'] + '&series=' + ','.join(series)]
@@ -155,16 +155,15 @@ try:
     ## Run jsoc_info ##
     ###################
     cmdList = [ os.path.join(binDir, arch, 'jsoc_info'), 'JSOC_DBHOST=' + server, 'DRMS_DBTIMEOUT=600000', 'DRMS_QUERY_MEM=4096', 'DRMS_DBUTF8CLIENTENCODING=1' ]
-
+    
     if optD['noheader']:
         cmdList.append('-s')
-
+        
     # Provide all jsoc_info arguments passed through jsocextinfo.py to jsoc_info.
     cmdList.extend(allArgs)
 
     try:
-        if not optD['noheader']:
-            print('running ' + ' '.join(cmdList), file=sys.stderr)
+        print('running ' + ' '.join(cmdList), file=sys.stderr)
         proc = Popen(cmdList, stdin=None, stderr=PIPE, stdout=PIPE)
         jstdout, jstderr = proc.communicate()
 
@@ -174,7 +173,7 @@ try:
         if proc.returncode != 0:
             if errMsg is None:
                 errMsg = "Command '" + ' '.join(cmdList) + "' returned non-zero status code " + str(proc.returncode)
-
+        
             raise Exception('jsocinfo', errMsg , RET_JSOCINFO)
     except ValueError as exc:
         raise Exception('jsocinfo', exc.args[0], RET_JSOCINFO)
@@ -215,6 +214,6 @@ if err:
 else:
     # use jsoc_info's output
     if jstdout is not None:
-        print(jstdout.decode('UTF8'), end='')
+        print(jstdout.decode('UTF8'))
 
 sys.exit(0)

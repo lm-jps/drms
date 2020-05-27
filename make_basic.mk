@@ -4,7 +4,7 @@
 #
 
 VPATH  = $(SRCDIR)
-STATIC =
+STATIC = 
 DBMS = POSTGRESQL
 CUSTOMSW =
 
@@ -99,13 +99,13 @@ endif
 # THIRD-PARTY LIBRARIES
 #
 # This section contains make variables that hold the paths to and names of third-party libraries.
-# Variables that end in 'H' contain the -I link flags that contain the include paths
+# Variables that end in 'H' contain the -I link flags that contain the include paths 
 # for the library headers, variables that end in 'L' contain the -L link flags that
 # contain the paths to the library binaries, and variables
 # that end in "LIBS" contain the full link cmd (the -L flag plus the -l flag)
 #
 
-# PostgreSQL
+# PostgreSQL 
 PGH = -I$(POSTGRES_INCS)
 
 # For use of dynamic library
@@ -115,10 +115,7 @@ PGLIBS = $(POSTGRES_LIBS)/lib$(POSTGRES_LIB).so
 CFITSIOH = -I$(CFITSIO_INCS)
 CFITSIOL = -L$(CFITSIO_LIBS)
 CFITSIOLIBNAME = $(CFITSIO_LIB)
-# make sure to use static library so we don't have to deal with locating the dynamic one at run time
-# set back to dynamic (the default) for the other libraries that could follow cfitsio
-CFITSIOLIBS = $(CFITSIOL) -Wl,-Bstatic -l$(CFITSIOLIBNAME) -Wl,-Bdynamic
-# end CFITSIO
+CFITSIOLIBS = $(CFITSIOL) -l$(CFITSIOLIBNAME)
 
 # GSL
 GSLH = -I$(GSL_INCS)
@@ -153,10 +150,10 @@ ifneq ($(DRMS_DEFAULT_RETENTION),)
 	CUSTOMSW := $(CUSTOMSW) -DDRMS_DEFAULT_RETENTION=$(DRMS_DEFAULT_RETENTION)
 endif
 
-# Due to legacy code, the name __LOCALIZED_DEFS__ must be used for NetDRMS builds.
-# Despite the name, this macro has nothing to do with localized definitions. It means
-# "not Stanford JSOC-SDP" (it essentially means NetDRMS). So, if __LOCALIZED_DEFS__ is set, then
-# the binaries were built for use outside of Stanford.
+# Due to legacy code, the name __LOCALIZED_DEFS__ must be used for NetDRMS builds. 
+# Despite the name, this macro has nothing to do with localized definitions. It means 
+# "not Stanford JSOC-SDP" (it essentially means NetDRMS). So, if __LOCALIZED_DEFS__ is set, then 
+# the binaries were built for use outside of Stanford. 
 # For future use, we also define the NETDRMS_BUILD as a synonym, but with a more appropriate name.
 # __LOCALIZED_DEFS__ is deprecated and should not be used in new code.
 ifeq ($(BUILD_TYPE),NETDRMS)
@@ -175,7 +172,7 @@ endif
 #
 # Global flags
 #
-# All modules must be able to find libdsds.so. The define DRMS_LIBDIR specifies the path to
+# All modules must be able to find libdsds.so. The define DRMS_LIBDIR specifies the path to 
 # all libraries.
 
 GLOBALSW = -DDRMS_ARCH="\"$(MACH)\""
@@ -186,7 +183,7 @@ GLOBALSW = -DDRMS_ARCH="\"$(MACH)\""
 #
 # WARNINGS
 #
-# NO LONGER USED - Disable several warnings/remarks when compiling with icc - icc's Wall is a bit picky, it
+# NO LONGER USED - Disable several warnings/remarks when compiling with icc - icc's Wall is a bit picky, it 
 # complains about extern declarations in .c files.
 #   1418 (remark) - external function definition with no prior declaration
 #   1419 (warning) - external declaration in primary source file
@@ -242,7 +239,7 @@ endif
 #
 # GLOBAL COMPILE FLAGS
 #
-GCC_CF_GCCCOMP  = -DGCCCOMP
+GCC_CF_GCCCOMP  = -DGCCCOMP 
 ICC_CF_ICCCOMP  = -DICCCOMP -openmp
 
 # can't figure out how to get stupid make to do if/else if/else
@@ -264,7 +261,7 @@ ifeq ($(DEBUG), 0)
 
   ifeq ($(JSOC_MACHINE), linux_ia32)
     GCC_CF_ALL	= -I$(SRCDIR)/base/include -std=gnu99 -O2 -march=i686 $(GCC_WARN) $(GCC_CF_GCCCOMP) $(CUSTOMSW) $(GLOBALSW) -DNDEBUG
-  endif
+  endif	
 
 else
 # -g tells the icc and gcc compilers to generate full debugging information
@@ -290,12 +287,12 @@ ifeq ($(FCOMPILER), ifort)
   FCFLAGS_INIT := -ftrapuv
 else
   # must be gfortran
-  FCFLAGS_INIT  :=
+  FCFLAGS_INIT  := 
 endif
 
 ifeq ($(DEBUG), 0)
 # -xW optimizes ifort compilation for Pentium 4
-# -ftrapuv initializes stack local variables to an unusual value to aid error detection.
+# -ftrapuv initializes stack local variables to an unusual value to aid error detection. 
   F_CF_ALL	:= $(F_CF_ALL) $(FCOMPILER_WARN)
 else
   F_CF_ALL	:= $(F_CF_ALL) -g $(FCFLAGS_INIT) $(FCOMPILER_WARN)
@@ -306,10 +303,10 @@ endif
 #***********************************************************************************************#
 #
 # BUILD TOOLS
-#
+# 
 # The C compiler named here must output full (header) dependencies in $(@).d.
 # It may be necessary to create a script similar to ccd-gcc for your compiler.
-#
+# 
 GCC_CMPLR	= $(SRCDIR)/build/ccd-gcc
 ICC_CMPLR	= $(SRCDIR)/build/ccd-icc
 ARCHIVE		= ar crus $@ $^
@@ -348,8 +345,8 @@ SLLIB		= ln -sf ../../_$(MACH)/$@ ../lib/$(MACH)/
 #
 # LIBRARY COLLECTIONS
 #
-ALL_LIBS_FPIC = $(LIBDRMSCLIENT_FPIC) $(LIBDBCLIENT_FPIC) $(LIBCMDPARAMS_FPIC) $(LIBTHREADUTIL_FPIC) $(LIBRICECOMP_FPIC) $(LIBDEFS_FPIC) $(LIBMISC_FPIC) $(LIBDSTRUCT_FPIC) $(LIBTIMEIO_FPIC) $(LIBFITSRW_FPIC)
-ALL_LIBS_PY_FPIC = $(LIBDRMS_SERVER_FPIC) $(LIBDB_SERVER_FPIC) $(LIBCMDPARAMS_FPIC) $(LIBTHREADUTIL_FPIC) $(LIBRICECOMP_FPIC) $(LIBDEFS_FPIC) $(LIBMISC_FPIC) $(LIBDSTRUCT_FPIC) $(LIBTIMEIO_FPIC) $(LIBFITSRW_FPIC)
+ALL_LIBS_FPIC = $(LIBDRMSCLIENT_FPIC) $(LIBDBCLIENT_FPIC) $(LIBCMDPARAMS_FPIC) $(LIBTHREADUTIL_FPIC) $(LIBRICECOMP_FPIC) $(LIBDEFS_FPIC) $(LIBMISC_FPIC) $(LIBDSTRUCT_FPIC) $(LIBTIMEIO_FPIC) $(LIBFITSRW_FPIC) 
+ALL_LIBS_PY_FPIC = $(LIBDRMS_SERVER_FPIC) $(LIBDB_SERVER_FPIC) $(LIBCMDPARAMS_FPIC) $(LIBTHREADUTIL_FPIC) $(LIBRICECOMP_FPIC) $(LIBDEFS_FPIC) $(LIBMISC_FPIC) $(LIBDSTRUCT_FPIC) $(LIBTIMEIO_FPIC) $(LIBFITSRW_FPIC) 
 
 ### Standard parts
 #
@@ -367,7 +364,7 @@ FSRCLIBS = $(LIBTHREADUTIL) $(LIBRICECOMP) $(LIBCMDPARAMSF) $(LIBTIMEIO) $(LIBFI
 ########## Libraries to link for server executables,    ##############
 ########## standalone executables and pipeline modules. ##############
 
-# SERVERLIBS: Libraries linked with "server" programs that
+# SERVERLIBS: Libraries linked with "server" programs that 
 # need direct access to the DRMS databases.
 SERVERLIBS = $(LIBDRMS) $(LIBDEFSSERVER) $(LIBDB) $(LIBSUMSAPI) $(LIBCJSON) $(SRCLIBS)
 
@@ -403,7 +400,7 @@ $(CEXE):	%:	%.o $(EXELIBS)
 		$(LINK)
 		$(SLBIN)
 
-$(FEXE):	%:	%.o
+$(FEXE):	%:	%.o 
 		$(FLINK)
 		$(SLBIN)
 
