@@ -143,7 +143,7 @@ def StartUpInstance(path, port, loglevel, logfile, quiet):
 
 # read arguments
 sumsDrmsParams = SumsDrmsParams()
-parser = CmdlParser(usage='%(prog)s daemon=<path to daemon> ports=<listening ports> [ --instancesfile=<instances file path> ] [ --loglevel=<critical, error, warning, info, or debug>] [ --logfile=<file name> ] [ --quiet ]')
+parser = CmdlParser(usage='%(prog)s daemon=<path to daemon> [ --ports=<listening ports> ] [ --instancesfile=<instances file path> ] [ --loglevel=<critical, error, warning, info, or debug>] [ --logfile=<file name> ] [ --quiet ]')
 
 # required
 parser.add_argument('d', 'daemon', help='path of the sumsd.py daemon to launch', metavar='<path to daemon>', dest='daemon', required=True)
