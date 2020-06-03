@@ -49,6 +49,7 @@ struct CFITSIO_FITSFILE_struct
     fitsfile *fptr;
 };
 
+
 /* Half-assed - just enough to get past a bug.  Should really check that the value
  * doesn't fall outside the range of the destination type.
  */
@@ -281,6 +282,40 @@ static void Cf_close_file(fitsfile **fptr, int drop_content)
 
         *fptr = NULL;
     }
+}
+
+static int Cf_stream_and_close_file(fitsfile **fptr)
+{
+    CFITSIO_IMAGE_INFO fpinfo;
+    int cfiostat = 0;
+    char cfiostat_msg[FLEN_STATUS];
+    int err = CFITSIO_SUCCESS;
+
+
+    if (fptr && *fptr)
+    {
+        /* if fitsfile is cached, remove from cache and close file; cannot currently drop data if the file is cached */
+        if (!fitsrw_getfpinfo_ext(*fptr, &fpinfo))
+        {
+            /* writes FITS keyword data and image checksums */
+            fitsrw_closefptr(0, *fptr);
+        }
+        else
+        {
+            fits_close_file(*fptr, &cfiostat);
+
+            if (cfiostat)
+            {
+                fits_get_errstatus(cfiostat, cfiostat_msg);
+                fprintf(stderr, "[ Cf_stream_and_close_file() ] %s\n", cfiostat_msg);
+                err = CFITSIO_ERROR_LIBRARY;
+            }
+        }
+
+        *fptr = NULL;
+    }
+
+    return err;
 }
 
 static int Cf_write_key(fitsfile *fptr, CFITSIO_KEYWORD *key)
@@ -939,24 +974,46 @@ int cfitsio_create_file(CFITSIO_FILE **out_file, const char *file_name, cfitsio_
     return err;
 }
 
-void cfitsio_close_file(CFITSIO_FILE **fitsFile)
+void cfitsio_close_file(CFITSIO_FILE **fits_file)
 {
     CFITSIO_IMAGE_INFO fpinfo;
-    int cfiostat = 0; /* MUST start with no-error status, else CFITSIO will fail */
 
 
-    if (fitsFile && *fitsFile)
+    if (fits_file && *fits_file)
     {
-        if ((*fitsFile)->fptr)
+        if ((*fits_file)->fptr)
         {
             /* if the FITS file is not cached, then we should call fits_close_file(), dropping
              * data if the file was in-memory-only */
-            Cf_close_file(&(*fitsFile)->fptr, (*fitsFile)->in_memory);
+            Cf_close_file(&(*fits_file)->fptr, (*fits_file)->in_memory);
         }
 
-        free(*fitsFile);
-        *fitsFile = NULL;
+        free(*fits_file);
+        *fits_file = NULL;
     }
+}
+
+/* if `fits_file` is an in-memory file (which is not globally cached), then the file content is dumped to stdout */
+int cfitsio_stream_and_close_file(CFITSIO_FILE **fits_file)
+{
+    CFITSIO_IMAGE_INFO fpinfo;
+    int err = CFITSIO_SUCCESS;
+
+
+    if (fits_file && *fits_file)
+    {
+        if ((*fits_file)->fptr)
+        {
+            /* if the FITS file is not cached, then we should call fits_close_file(), dropping
+             * data if the file was in-memory-only */
+            err = Cf_stream_and_close_file(&(*fits_file)->fptr);
+        }
+
+        free(*fits_file);
+        *fits_file = NULL;
+    }
+
+    return err;
 }
 
 void cfitsio_get_fitsfile(CFITSIO_FILE *file, CFITSIO_FITSFILE *fptr)
@@ -975,6 +1032,90 @@ void cfitsio_set_fitsfile(CFITSIO_FILE *file, CFITSIO_FITSFILE fptr, int in_memo
     }
 
     file->in_memory = in_memory;
+}
+
+static int cfitsio_get_fits_compression_type(CFITSIO_COMPRESSION_TYPE cfitsio_type, int *fits_type)
+{
+    int err = CFITSIO_SUCCESS;
+    int fits_comp_type = -1;
+
+
+    if (fits_type)
+    {
+        switch (cfitsio_type)
+        {
+            case CFITSIO_COMPRESSION_NONE:
+                *fits_type = NOCOMPRESS;
+                break;
+            case CFITSIO_COMPRESSION_RICE:
+                *fits_type = RICE_1;
+                break;
+            case CFITSIO_COMPRESSION_GZIP1:
+                *fits_type = GZIP_1;
+                break;
+#if CFITSIO_MAJOR >= 4 || (CFITSIO_MAJOR == 3 && CFITSIO_MINOR >= 27)
+            case CFITSIO_COMPRESSION_GZIP2:
+                *fits_type = GZIP_2;
+                break;
+#endif
+            case CFITSIO_COMPRESSION_PLIO:
+                *fits_type = PLIO_1;
+                break;
+            case CFITSIO_COMPRESSION_HCOMP:
+                *fits_type = HCOMPRESS_1;
+                break;
+            default:
+                err = CFITSIO_ERROR_ARGS;
+                fprintf(stderr, "[ cfitsio_get_fits_compression_type() ] invalid cfitsio compression type %d\n", (int)cfitsio_type);
+                break;
+        }
+    }
+
+    return err;
+}
+
+int cfitsio_set_compression_type(CFITSIO_FILE *file, CFITSIO_COMPRESSION_TYPE cfitsio_type)
+{
+    int cfiostat = 0; /* MUST start with no-error status, else CFITSIO will fail */
+    char cfiostat_msg[FLEN_STATUS];
+    int err = CFITSIO_SUCCESS;
+    int fits_comp_type = -1;
+
+    if (file)
+    {
+        err = cfitsio_get_fits_compression_type(cfitsio_type, &fits_comp_type);
+
+        if (err == CFITSIO_SUCCESS)
+        {
+            fits_set_compression_type(file->fptr, fits_comp_type, &cfiostat);
+            if (cfiostat)
+            {
+                fits_get_errstatus(cfiostat, cfiostat_msg);
+                fprintf(stderr, "[ cfitsio_set_compression_type() ] unable to set compression type\n");
+                fprintf(stderr, "CFITSIO error: %s\n", cfiostat_msg);
+                err = CFITSIO_ERROR_LIBRARY;
+            }
+        }
+    }
+
+    return err;
+}
+
+static int Cf_get_size(fitsfile *fptr, long long *size)
+{
+    int err = CFITSIO_SUCCESS;
+
+    if (fptr && size)
+    {
+        *size = fptr->Fptr->logfilesize;
+    }
+
+    return err;
+}
+
+int cfitsio_get_size(CFITSIO_FILE *file, long long *size)
+{
+    return Cf_get_size(file->fptr, size);
 }
 
 void cfitsio_close_header(CFITSIO_HEADER **header)
@@ -1736,6 +1877,45 @@ static int Cf_write_headsum(fitsfile *fptr, const char *headsum)
 int cfitsio_write_headsum(CFITSIO_FILE *file, const char *headsum)
 {
     return Cf_write_headsum(file->fptr, headsum);
+}
+
+/* write the DATASUM and CHECKSUM FITS keyword for the current HDU */
+static int Cf_write_chksum(fitsfile *fptr)
+{
+    int cfiostat = 0;
+    char cfiostat_msg[FLEN_STATUS];
+    int err = CFITSIO_SUCCESS;
+
+
+    if (fptr)
+    {
+        /* not globally cached */
+        fits_write_chksum(fptr, &cfiostat);
+        if (cfiostat)
+        {
+            fits_get_errstatus(cfiostat, cfiostat_msg);
+            fprintf(stderr, "[ Cf_write_chksum() ] unable to write checksum keywords\n");
+            fprintf(stderr, "CFITSIO error: %s\n", cfiostat_msg);
+            err = CFITSIO_ERROR_LIBRARY;
+        }
+    }
+
+    return err;
+}
+
+/* write the DATASUM and CHECKSUM FITS keyword for the current HDU; this only needs to be done for non-cached FITS files, since the caching code
+ * in fitsrw_closefptr() will write the checksums when a file is closed */
+int cfitsio_write_chksum(CFITSIO_FILE *file)
+{
+    int err = CFITSIO_SUCCESS;
+
+
+    if (file && file->fptr)
+    {
+        err = Cf_write_chksum(file->fptr);
+    }
+
+    return err;
 }
 
 static int Cf_write_longwarn(fitsfile *fptr)

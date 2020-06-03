@@ -148,6 +148,22 @@ struct CFITSIO_FITSFILE_struct;
 
 typedef struct CFITSIO_FITSFILE_struct *CFITSIO_FITSFILE;
 
+/* compression enum */
+enum __CFITSIO_COMPRESSION_TYPE_enum__
+{
+		CFITSIO_COMPRESSION_NONE = 0,
+    CFITSIO_COMPRESSION_RICE = 1,
+    CFITSIO_COMPRESSION_GZIP1 = 2,
+#if CFITSIO_MAJOR >= 4 || (CFITSIO_MAJOR == 3 && CFITSIO_MINOR >= 27)
+    CFITSIO_COMPRESSION_GZIP2 = 3,
+#endif
+    CFITSIO_COMPRESSION_PLIO = 4,
+    CFITSIO_COMPRESSION_HCOMP = 5
+};
+
+typedef enum __CFITSIO_COMPRESSION_TYPE_enum__ CFITSIO_COMPRESSION_TYPE;
+
+
 //****************************************************************************
 // drms_segment() call only these functions
 
@@ -182,11 +198,19 @@ int cfitsio_create_file(CFITSIO_FILE **out_file, const char *file_name, cfitsio_
 
 int cfitsio_open_file(const char *path, CFITSIO_FILE **fitsFile, int writeable);
 
-void cfitsio_close_file(CFITSIO_FILE **fitsFile);
+void cfitsio_close_file(CFITSIO_FILE **fits_file);
+
+int cfitsio_stream_and_close_file(CFITSIO_FILE **fits_file);
 
 void cfitsio_get_fitsfile(CFITSIO_FILE *file, CFITSIO_FITSFILE *fptr);
 
 void cfitsio_set_fitsfile(CFITSIO_FILE *file, CFITSIO_FITSFILE fptr, int in_memory);
+
+static int cfitsio_get_fits_compression_type(CFITSIO_COMPRESSION_TYPE cfitsio_type, int *fits_type);
+
+int cfitsio_set_compression_type(CFITSIO_FILE *file, CFITSIO_COMPRESSION_TYPE cfitsio_type);
+
+int cfitsio_get_size(CFITSIO_FILE *file, long long *size);
 
 void cfitsio_close_header(CFITSIO_HEADER **header);
 
@@ -205,6 +229,8 @@ int cfitsio_write_key(CFITSIO_FILE *file, CFITSIO_KEYWORD *key);
 int cfitsio_flush_buffer(CFITSIO_FILE *fitsFile);
 
 int cfitsio_write_headsum(CFITSIO_FILE *file, const char *headsum);
+
+int cfitsio_write_chksum(CFITSIO_FILE *file);
 
 int cfitsio_write_longwarn(CFITSIO_FILE *file);
 

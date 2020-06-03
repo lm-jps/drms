@@ -20,13 +20,8 @@
 #include "json.h"
 #include "jsoc_main.h"
 #include "exputil.h"
-/* enable the ability to pass in FITS structures to the fitsexport - could put this in make instead if desired */
-#define USE_FITS_STRUCTS 1
 #include "fitsexport.h"
-#undef USE_FITS_STRUCTS
 
-/* third-party stuff */
-#include "fitsio.h"
 
 char *module_name = "drms-export-to-stdout";
 
@@ -70,7 +65,8 @@ enum __ExpToStdoutStatus_enum__
     ExpToStdoutStatus_TarTooLarge = 11,
     ExpToStdoutStatus_AllExportsFailed = 12,
     ExpToStdoutStatus_MoreThanOneFileToExport = 13,
-    ExpToStdoutStatus_CantDumpFileNameForTarFile = 14
+    ExpToStdoutStatus_CantDumpFileNameForTarFile = 14,
+    ExpToStdoutStatus_Cfitsio = 15
 };
 
 typedef enum __ExpToStdoutStatus_enum__ ExpToStdoutStatus_t;
@@ -83,20 +79,6 @@ typedef enum __ExpToStdoutStatus_enum__ ExpToStdoutStatus_t;
 #define COMPRESSION_PLIO "plio"
 #define COMPRESSION_HCOMP "hcompress"
 
-/* compression enum */
-enum __ExpToStdout_Compression_enum__
-{
-    ExpToStdout_Compression_NONE = 0,
-    ExpToStdout_Compression_RICE = RICE_1,
-    ExpToStdout_Compression_GZIP1 = GZIP_1,
-#if CFITSIO_MAJOR >= 4 || (CFITSIO_MAJOR == 3 && CFITSIO_MINOR >= 27)
-    ExpToStdout_Compression_GZIP2 = GZIP_2,
-#endif
-    ExpToStdout_Compression_PLIO = PLIO_1,
-    ExpToStdout_Compression_HCOMP = HCOMPRESS_1
-};
-
-typedef enum __ExpToStdout_Compression_enum__ ExpToStdout_Compression_t;
 
 ModuleArgs_t module_args[] =
 {
@@ -718,66 +700,6 @@ static ExpToStdoutStatus_t WriteAckFile(FILE *writeStream, const char *path)
     return WriteFile(writeStream, path, ACK_FILE_BUFFER);
 }
 
-static ExpToStdoutStatus_t DropDataOnFloor(fitsfile *fitsPtr)
-{
-    ExpToStdoutStatus_t expStatus = ExpToStdoutStatus_Success;
-    long long numBytesFitsFile = fitsPtr->Fptr->logfilesize;
-    int savedStdout = -1;
-    char fileBuf[4096];
-    int num;
-    int fiostat = 0;
-    int devnull = -1;
-
-    if (numBytesFitsFile > 0)
-    {
-        /* open /dev/null */
-        devnull = open("/dev/null", O_WRONLY);
-
-        if (devnull == -1)
-        {
-            fprintf(stderr, "unable to open /dev/null for writing\n");
-            expStatus = ExpToStdoutStatus_IO;
-        }
-
-        if (expStatus == ExpToStdoutStatus_Success)
-        {
-            savedStdout = dup(STDOUT_FILENO);
-            if (savedStdout != -1)
-            {
-                if (dup2(devnull, STDOUT_FILENO) != -1)
-                {
-                    fiostat = 0;
-                    fits_close_file(fitsPtr, &fiostat);
-                    if (fiostat)
-                    {
-                        fprintf(stderr, "unable to close and send FITS file\n");
-                    }
-
-                    fflush(stdout);
-                }
-                else
-                {
-                    /* can't flush FITSIO internal buffers */
-                    fprintf(stderr, "unable to flush FITSIO internal buffers following error\n");
-                }
-
-                /* restore stdout */
-                dup2(savedStdout, STDOUT_FILENO);
-                close(savedStdout);
-            }
-            else
-            {
-                /* can't flush FITSIO internal buffers */
-                fprintf(stderr, "unable to flush FITSIO internal buffers following error\n");
-            }
-
-            close(devnull);
-        }
-    }
-
-    return expStatus;
-}
-
 static ExpToStdoutStatus_t Capture_stderr(int saved_pipes[2], int *saved_stderr, FILE **read_stream)
 {
     ExpToStdoutStatus_t exp_status = ExpToStdoutStatus_Success;
@@ -909,15 +831,357 @@ static int Restore_stderr(int saved_pipes[2], int *saved_stderr, FILE **stream, 
     return exp_status;
 }
 
+static void Insert_error_msg(const char *record_spec, const char *seg_name, const char *file_name, const char *msg, json_t *error_arr)
+{
+    char specbuf[1024];
+    json_t *recobj = NULL;
+
+
+    recobj = json_new_object();
+    snprintf(specbuf, sizeof(specbuf), "%s{%s}", record_spec, seg_name);
+    json_insert_pair_into_object(recobj, "record", json_new_string(specbuf));
+    if (file_name)
+    {
+        json_insert_pair_into_object(recobj, "file", json_new_string(file_name));
+    }
+    json_insert_pair_into_object(recobj, "message", json_new_string(msg));
+    json_insert_child(error_arr, recobj);
+}
+
+static void Insert_info_msg(const char *record_spec, const char *seg_name, const char *file_name, json_t *info_arr)
+{
+    char specbuf[1024];
+    json_t *recobj = NULL;
+
+
+    recobj = json_new_object();
+    snprintf(specbuf, sizeof(specbuf), "%s{%s}", record_spec, seg_name);
+    json_insert_pair_into_object(recobj, "record", json_new_string(specbuf));
+    if (file_name)
+    {
+        json_insert_pair_into_object(recobj, "filename", json_new_string(file_name));
+    }
+    json_insert_child(info_arr, recobj);
+}
+
+static void Restore_stderr_on_error(int saved_pipes[2], int *saved_stderr, FILE **stream_with_stderr, const char *alt_msg, int make_tar, json_t *error_data_arr, const char *record_spec, const char *seg_name, const char *file_name)
+{
+    ExpToStdoutStatus_t exp_status = ExpToStdoutStatus_Success;
+    char *captured_stderr = NULL;
+    char msg[512] = {0};
+
+
+    exp_status = Restore_stderr(saved_pipes, saved_stderr, stream_with_stderr, &captured_stderr);
+
+    if (exp_status == ExpToStdoutStatus_Success)
+    {
+        if (*captured_stderr != '\0')
+        {
+            snprintf(msg, sizeof(msg), captured_stderr);
+        }
+    }
+    else
+    {
+        snprintf(msg, sizeof(msg), alt_msg);
+    }
+
+    if (*msg != '\0' && make_tar && error_data_arr)
+    {
+        Insert_error_msg(record_spec, seg_name, file_name, msg, error_data_arr);
+    }
+
+    if (captured_stderr)
+    {
+        free(captured_stderr);
+        captured_stderr = NULL;
+    }
+}
+
+/* subset should be a set of records in a single series */
+static ExpToStdoutStatus_t ExportRecordSetKeywordsToStdout(DRMS_RecordSet_t *subset, const char *series, int make_tar, int dump_file_name, int suppress_stderr, const char *ffmt, const char *class_name, const char *map_file, size_t *bytes_exported, size_t max_tar_file_size, int *num_records_exported, json_t *info_data_arr, json_t *error_data_arr)
+{
+    ExpToStdoutStatus_t exp_status = ExpToStdoutStatus_Success;
+    int drms_status = DRMS_SUCCESS;
+    int cfitsio_status = 0;
+    char msg[256] = {0};
+    time_t secs = {0};
+    struct tm *local_time = NULL;
+    char time_now_str[128] = {0};
+    char fits_file_name[PATH_MAX];
+    int saved_pipes[2] = {-1, -1};
+    int saved_stderr = -1;
+    char *captured_stderr = NULL;
+    FILE *read_stream = NULL;
+    int num_records = -1;
+    char record_spec[DRMS_MAXQUERYLEN] = {0};
+    CFITSIO_FILE *cfitsio_file = NULL;
+    long long num_bytes_fits_file = -1;
+    size_t total_bytes = 0;
+    size_t total_records = 0;
+    int restore_stderr = 0;
+
+
+    secs = time(NULL);
+    local_time = localtime(&secs);
+    strftime(time_now_str, sizeof(time_now_str), "%Y%m%d_%T", local_time);
+
+    if (exp_status == ExpToStdoutStatus_Success)
+    {
+        /* determine output file name */
+        if (ffmt && *ffmt)
+        {
+            snprintf(fits_file_name, sizeof(fits_file_name), "%s", ffmt);
+        }
+        else
+        {
+
+            snprintf(fits_file_name, sizeof(fits_file_name), "%s.%s", series, time_now_str);
+        }
+    }
+
+    if (exp_status == ExpToStdoutStatus_Success)
+    {
+        if (suppress_stderr)
+        {
+            /* capture any stderr and create a recobj from it; read_stream will contain stderr */
+            exp_status = Capture_stderr(saved_pipes, &saved_stderr, &read_stream);
+
+            if (exp_status == ExpToStdoutStatus_Success)
+            {
+                restore_stderr = 1;
+            }
+        }
+    }
+
+    if (exp_status == ExpToStdoutStatus_Success)
+    {
+        /* make in-memory FITS file */
+        cfitsio_status = cfitsio_create_file(&cfitsio_file, "-", CFITSIO_FILE_TYPE_HEADER, NULL);
+        if (cfitsio_status != CFITSIO_SUCCESS)
+        {
+            snprintf(msg, sizeof(msg), "cannot create FITS file");
+
+            exp_status = ExpToStdoutStatus_Cfitsio;
+        }
+    }
+
+    if (exp_status == ExpToStdoutStatus_Success)
+    {
+        /* writes FITS file to write end of pipe (by re-directing stdout to the pipe) */
+        drms_status = fitsexport_mapexport_keywords_to_cfitsio_file(cfitsio_file, subset, class_name, map_file, &num_records);
+
+        if (drms_status == DRMS_SUCCESS)
+        {
+            /* no error - success till this point */
+            /* at this point, the entire FITS file is in memory; it does not get flushed to stdout until the
+             * FITS file is closed; send message size to caller, then send FITS data
+             */
+            cfitsio_status = cfitsio_get_size(cfitsio_file, &num_bytes_fits_file);
+
+            if (cfitsio_status != CFITSIO_SUCCESS)
+            {
+                snprintf(msg, sizeof(msg), "cannot get FITS file size");
+
+                exp_status = ExpToStdoutStatus_Cfitsio;
+            }
+
+            if (exp_status == ExpToStdoutStatus_Success)
+            {
+                if (num_bytes_fits_file > 0)
+                {
+                    if (make_tar && num_bytes_fits_file > max_tar_file_size)
+                    {
+                        /* tar file is too big */
+                        snprintf(msg, sizeof(msg), "the tar file size has exceeded the maximum size of %llu bytes; please consider requesting data for fewer records and Rice-compressing images", max_tar_file_size);
+
+                        /* cfitsio_file is an in-memory file --> content is discarded and file is closed */
+                        cfitsio_close_file(&cfitsio_file);
+
+                        exp_status = ExpToStdoutStatus_TarTooLarge;
+                    }
+
+                    if (exp_status == ExpToStdoutStatus_Success)
+                    {
+                        if (make_tar)
+                        {
+                            /* dump FITS file to stdout (0-pads header block) */
+                            DumpTarFileObjectHeader(stdout, fits_file_name, num_bytes_fits_file);
+                        }
+                        else
+                        {
+                            /* dump the name of the file, if it is being requested */
+                            if (dump_file_name)
+                            {
+                                DumpAndPad(stdout, fits_file_name, strlen(fits_file_name), FILE_NAME_SIZE, NULL);
+                            }
+                        }
+
+                        /* dump FITS-file data */
+
+                        /* since fitsPtr was an in-memory FITS file, it was not globally cached in fitsexport.c; we need
+                         * to write the FITS checksums now since normally this is performed by the global caching code */
+                        cfitsio_status = cfitsio_write_chksum(cfitsio_file) != CFITSIO_SUCCESS;
+
+                        if (cfitsio_status != CFITSIO_SUCCESS)
+                        {
+                            snprintf(msg, sizeof(msg), "unable to write FITS file checksum");
+
+                            /* cfitsio_file is an in-memory file --> content is discarded and file is closed */
+                            cfitsio_close_file(&cfitsio_file);
+
+                            exp_status = ExpToStdoutStatus_Cfitsio;
+                        }
+
+                        /* dumps FITS file content to stdout */
+                        cfitsio_status = cfitsio_stream_and_close_file(&cfitsio_file) != CFITSIO_SUCCESS;
+
+                        if (cfitsio_status != CFITSIO_SUCCESS)
+                        {
+                            /* close the CFITSIO_FILE - there should be no data written to stdout since cfitsio_file is in-memory only  */
+                            cfitsio_close_file(&cfitsio_file);
+
+                            snprintf(msg, sizeof(msg), "cannot write FITS file to stream");
+
+                            exp_status = ExpToStdoutStatus_Cfitsio;
+                        }
+                    }
+
+                    /* success writing FITS file content to stdout and closing FITS file - restore stderr (probably no captured_stderr) */
+                    if (restore_stderr)
+                    {
+                        /* put captured stderr into buffer */
+                        exp_status = Restore_stderr(saved_pipes, &saved_stderr, &read_stream, &captured_stderr);
+
+                        if (exp_status == ExpToStdoutStatus_Success)
+                        {
+                            restore_stderr = 0;
+
+                            if (*captured_stderr != '\0')
+                            {
+                                if (make_tar && error_data_arr)
+                                {
+                                    Insert_error_msg(record_spec, NULL, fits_file_name, captured_stderr, error_data_arr);
+                                }
+                            }
+                        }
+
+                        if (captured_stderr)
+                        {
+                            free(captured_stderr);
+                            captured_stderr = NULL;
+                        }
+                    }
+
+                    fflush(stdout);
+
+                    if (exp_status == ExpToStdoutStatus_Success)
+                    {
+                        if (make_tar)
+                        {
+                            /* pad last TAR data block */
+                            exp_status = FillBlock(stdout, TAR_BLOCK_SIZE, num_bytes_fits_file);
+                            fflush(stdout);
+                        }
+
+                        total_bytes += num_bytes_fits_file;
+                        total_records += num_records;
+                    }
+
+                    if (exp_status == ExpToStdoutStatus_Success)
+                    {
+                        if (make_tar && info_data_arr)
+                        {
+                            /* print JSON output for ease of parsing; append to the returned JSON obj's data array:
+                             * {
+                             *   "status" : 0,
+                             *   "msg" : "success",
+                             *   "data" : [
+                             *              {
+                             *                "record": "hmi.Ic_720s[2017.01.09_00:00:00_TAI][3]{continuum}",
+                             *                "filename": "/SUM95/D990052480/S00000/continuum.fits"
+                             *              },
+                             *              {
+                             *                ...
+                             *              }
+                             *            ]
+                             * }
+                             */
+                            Insert_info_msg(record_spec, NULL, fits_file_name, info_data_arr);
+                        }
+                    }
+                }
+                else
+                {
+                    /* no records written */
+
+                    /* close the CFITSIO_FILE - there should be no data written to stdout since cfitsio_file is in-memory only  */
+                    cfitsio_close_file(&cfitsio_file);
+
+                    if (make_tar && error_data_arr)
+                    {
+                        /* print JSON output for ease of parsing; append to the returned JSON obj's data array:
+                         * {
+                         *   "data" : [
+                         *              {
+                         *                "record": "hmi.Ic_720s[2017.01.09_00:00:00_TAI][3]{continuum}",
+                         *                "filename": "/SUM95/D990052480/S00000/continuum.fits",
+                         *                "message": "no data in segment, so no FITS file was produced"
+                         *              },
+                         *              {
+                         *                ...
+                         *              }
+                         *            ]
+                         * }
+                         */
+                        snprintf(msg, sizeof(msg), "no data in record-set, so no FITS file was produced");
+                        Insert_error_msg(record_spec, NULL, fits_file_name, msg, error_data_arr);
+                    }
+                }
+            }
+        }
+        else
+        {
+            snprintf(msg, sizeof(msg), "failure exporting keywords for record-set %s", record_spec);
+
+            /* close the CFITSIO_FILE - there should be no data written to stdout since cfitsio_file is in-memory only  */
+            cfitsio_close_file(&cfitsio_file);
+        }
+    }
+
+    if (exp_status != ExpToStdoutStatus_Success)
+    {
+        if (restore_stderr)
+        {
+            /* implies suppress_stderr */
+            Restore_stderr_on_error(saved_pipes, &saved_stderr, &read_stream, msg, make_tar, error_data_arr, record_spec, NULL, fits_file_name);
+        }
+        else
+        {
+            if (!suppress_stderr)
+            {
+                fprintf(stderr, msg);
+                fprintf(stderr, "\n");
+            }
+        }
+    }
+
+    if (captured_stderr)
+    {
+        free(captured_stderr);
+        captured_stderr = NULL;
+    }
+
+    return exp_status;
+}
 
 /* loop over segments */
 /* segCompression is an array of FITSIO macros, one for each segment, that specify the type of compression to perform; if NULL, then compress all segments with Rice compression
  */
-static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int dumpFileName, int suppress_stderr, DRMS_Record_t *expRec, const char *ffmt, ExpToStdout_Compression_t *segCompression, int compressAllSegs, const char *classname, const char *mapfile, size_t *bytesExported, size_t maxTarFileSize, size_t *numFilesExported, json_t *infoDataArr, json_t *errorDataArr)
+static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int dumpFileName, int suppress_stderr, DRMS_Record_t *expRec, const char *ffmt, CFITSIO_COMPRESSION_TYPE *segCompression, int compressAllSegs, const char *classname, const char *mapfile, size_t *bytesExported, size_t maxTarFileSize, size_t *numFilesExported, json_t *infoDataArr, json_t *errorDataArr)
 {
     ExpToStdoutStatus_t expStatus = ExpToStdoutStatus_Success;
     int drmsStatus = DRMS_SUCCESS;
-    int fiostat = 0;
+    int cfitsio_status = CFITSIO_SUCCESS;
     char recordSpec[DRMS_MAXQUERYLEN];
     DRMS_Segment_t *segIn = NULL;
     int iSeg;
@@ -925,7 +1189,7 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int dumpFileName, i
     DRMS_Segment_t *segTgt = NULL; /* If segin is a linked segment, then tgtset is the segment in the target series. */
     char formattedFitsName[DRMS_MAXPATHLEN];
     ExpUtlStat_t expUStat = kExpUtlStat_Success;
-    fitsfile *fitsPtr = NULL;
+    CFITSIO_FILE *cfitsio_file = NULL;
     long long numBytesFitsFile; /* the actual FITSIO type is LONGLONG */
     size_t totalBytes = 0;
     size_t totalFiles = 0;
@@ -933,11 +1197,12 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int dumpFileName, i
     int saved_pipes[2] = {-1, -1};
     int saved_stderr = -1;
     char *captured_stderr = NULL;
+    int restore_stderr = 0;
     FILE *read_stream = NULL;
     char specbuf[1024];
     char msg[256];
     char errMsg[512];
-    char cfiostat_msg[FLEN_STATUS];
+
 
     drms_sprint_rec_query(recordSpec, expRec);
 
@@ -958,15 +1223,16 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int dumpFileName, i
 
                 if (makeTar && errorDataArr)
                 {
-                    recobj = json_new_object();
-                    snprintf(specbuf, sizeof(specbuf), "%s{%s}", recordSpec, segIn->info->name);
-                    json_insert_pair_into_object(recobj, "record", json_new_string(specbuf));
-                    json_insert_pair_into_object(recobj, "segment", json_new_string(segIn->info->name));
-                    json_insert_pair_into_object(recobj, "message", json_new_string(msg));
-                    json_insert_child(errorDataArr, recobj);
+                    Insert_error_msg(recordSpec, segIn->info->name, NULL, msg, errorDataArr);
                 }
 
                 iSeg++;
+
+                if (!makeTar)
+                {
+                    break;
+                }
+
                 continue;
             }
         }
@@ -988,15 +1254,16 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int dumpFileName, i
 
             if (makeTar && errorDataArr)
             {
-                recobj = json_new_object();
-                snprintf(specbuf, sizeof(specbuf), "%s{%s}", recordSpec, segIn->info->name);
-                json_insert_pair_into_object(recobj, "record", json_new_string(specbuf));
-                json_insert_pair_into_object(recobj, "segment", json_new_string(segIn->info->name));
-                json_insert_pair_into_object(recobj, "message", json_new_string(msg));
-                json_insert_child(errorDataArr, recobj);
+                Insert_error_msg(recordSpec, segIn->info->name, NULL, msg, errorDataArr);
             }
 
             iSeg++;
+
+            if (!makeTar)
+            {
+                break;
+            }
+
             continue;
         }
 
@@ -1023,87 +1290,16 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int dumpFileName, i
 
             if (makeTar && errorDataArr)
             {
-                recobj = json_new_object();
-                snprintf(specbuf, sizeof(specbuf), "%s{%s}", recordSpec, segIn->info->name);
-                json_insert_pair_into_object(recobj, "record", json_new_string(specbuf));
-                json_insert_pair_into_object(recobj, "segment", json_new_string(segIn->info->name));
-                json_insert_pair_into_object(recobj, "message", json_new_string(msg));
-                json_insert_child(errorDataArr, recobj);
-            }
-
-            expStatus = ExpToStdoutStatus_BadFilenameTemplate;
-            break;
-        }
-
-        fiostat = 0;
-        if (fits_create_file(&fitsPtr, "-", &fiostat))
-        {
-            fits_report_error(stderr, fiostat);
-            snprintf(msg, sizeof(msg), "cannot create FITS file");
-
-            if (!suppress_stderr)
-            {
-                fprintf(stderr, msg);
-                fprintf(stderr, "\n");
-            }
-
-            if (makeTar && errorDataArr)
-            {
-                recobj = json_new_object();
-                snprintf(specbuf, sizeof(specbuf), "%s{%s}", recordSpec, segIn->info->name);
-                json_insert_pair_into_object(recobj, "record", json_new_string(specbuf));
-                json_insert_pair_into_object(recobj, "file", json_new_string(formattedFitsName));
-                json_insert_pair_into_object(recobj, "message", json_new_string(msg));
-                json_insert_child(errorDataArr, recobj);
+                Insert_error_msg(recordSpec, segIn->info->name, NULL, msg, errorDataArr);
             }
 
             iSeg++;
-            continue; /* we've logged an error message now go onto the next segment; do not set status to error */
-        }
 
-        /* set compression, if requested */
-        fiostat = 0;
-        if (segCompression)
-        {
-            if (compressAllSegs && (segCompression[0] != ExpToStdout_Compression_NONE))
+            if (!makeTar)
             {
-                fits_set_compression_type(fitsPtr, segCompression[0], &fiostat);
-            }
-            else if (segCompression[iSeg] && segCompression[iSeg] != ExpToStdout_Compression_NONE)
-            {
-                fits_set_compression_type(fitsPtr, segCompression[iSeg], &fiostat);
-            }
-        }
-        else
-        {
-            fits_set_compression_type(fitsPtr, ExpToStdout_Compression_RICE, &fiostat);
-        }
-
-        if (fiostat)
-        {
-            fits_report_error(stderr, fiostat);
-            /* close the fitsfile * - there should be no data written to stdout */
-            fits_close_file(fitsPtr, &fiostat);
-
-            snprintf(msg, sizeof(msg), "unable to set FITS compression");
-
-            if (!suppress_stderr)
-            {
-                fprintf(stderr, msg);
-                fprintf(stderr, "\n");
+                break;
             }
 
-            if (makeTar && errorDataArr)
-            {
-                recobj = json_new_object();
-                snprintf(specbuf, sizeof(specbuf), "%s{%s}", recordSpec, segIn->info->name);
-                json_insert_pair_into_object(recobj, "record", json_new_string(specbuf));
-                json_insert_pair_into_object(recobj, "file", json_new_string(formattedFitsName));
-                json_insert_pair_into_object(recobj, "message", json_new_string(msg));
-                json_insert_child(errorDataArr, recobj);
-            }
-
-            iSeg++;
             continue;
         }
 
@@ -1111,143 +1307,122 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int dumpFileName, i
         {
             /* capture any stderr and create a recobj from it; read_stream will contain stderr */
             expStatus = Capture_stderr(saved_pipes, &saved_stderr, &read_stream);
-        }
 
-        if (expStatus == ExpToStdoutStatus_Success)
-        {
-            /* writes FITS file to write end of pipe (by re-directing stdout to the pipe) */
-            drmsStatus = fitsexport_mapexport_tostdout(fitsPtr, segIn, classname, mapfile);
-
-            if (suppress_stderr)
-            {
-                /* put captured stderr into buffer */
-                expStatus = Restore_stderr(saved_pipes, &saved_stderr, &read_stream, &captured_stderr);
-
-                if (expStatus == ExpToStdoutStatus_Success)
-                {
-                    if (makeTar)
-                    {
-                        /* successfully read from stderr - make a recobj */
-                        recobj = json_new_object();
-                        snprintf(specbuf, sizeof(specbuf), "%s{%s}", recordSpec, segIn->info->name);
-                        json_insert_pair_into_object(recobj, "record", json_new_string(specbuf));
-                        json_insert_pair_into_object(recobj, "file", json_new_string(formattedFitsName));
-                        json_insert_pair_into_object(recobj, "message", json_new_string(captured_stderr));
-                        json_insert_child(errorDataArr, recobj);
-                    }
-                }
-                else
-                {
-                    expStatus = ExpToStdoutStatus_Success;
-                }
-
-                if (captured_stderr)
-                {
-                    free(captured_stderr);
-                    captured_stderr = NULL;
-                }
-            }
-        }
-        else
-        {
-            expStatus = ExpToStdoutStatus_Success;
-            iSeg++;
-            continue;
-        }
-
-        if (drmsStatus == DRMS_ERROR_INVALIDFILE)
-        {
-            /* no input segment file, so no error - there is nothing to export because the segment file was never created */
-            snprintf(msg, sizeof(msg), "no segment file (segment %s) for this record", segIn->info->name);
-
-            if (!suppress_stderr)
-            {
-                fprintf(stderr, msg);
-                fprintf(stderr, "\n");
-            }
-
-            if (makeTar && errorDataArr)
-            {
-                recobj = json_new_object();
-                snprintf(specbuf, sizeof(specbuf), "%s{%s}", recordSpec, segIn->info->name);
-                json_insert_pair_into_object(recobj, "record", json_new_string(specbuf));
-                json_insert_pair_into_object(recobj, "file", json_new_string(formattedFitsName));
-                json_insert_pair_into_object(recobj, "message", json_new_string(msg));
-                json_insert_child(errorDataArr, recobj);
-            }
-        }
-        else if (drmsStatus != DRMS_SUCCESS)
-        {
-            if (drmsStatus == DRMS_ERROR_CANTCOMPRESSFLOAT)
-            {
-                snprintf(msg, sizeof(msg), "cannot export Rice-compressed floating-point images");
-            }
-            else
-            {
-                /* there was an input segment file, but for some reason the export failed */
-                snprintf(msg, sizeof(msg), "failure exporting segment %s", segIn->info->name);
-            }
-
-            if (!suppress_stderr)
-            {
-                fprintf(stderr, msg);
-                fprintf(stderr, "\n");
-            }
-
-            if (makeTar && errorDataArr)
-            {
-                recobj = json_new_object();
-                snprintf(specbuf, sizeof(specbuf), "%s{%s}", recordSpec, segIn->info->name);
-                json_insert_pair_into_object(recobj, "record", json_new_string(specbuf));
-                json_insert_pair_into_object(recobj, "file", json_new_string(formattedFitsName));
-                json_insert_pair_into_object(recobj, "message", json_new_string(msg));
-                json_insert_child(errorDataArr, recobj);
-            }
-
-            /* stupid FITSIO has no way of dumping its internal buffers without writing data to stdout, but if we encountered
-             * an error on export, we do not want to dump buffer contents, whatever they may be, on stdout; so, use a pipe
-             * to redirect stdout, then read back from the pipe and drop the data on the floor; there might not actually be
-             * any data in the FITSIO internal buffers, so check fitsPtr->Fptr->logfilesize first
-             */
-
-            /* closes fitsfile * too (unless there was an IO error) */
-            expStatus = DropDataOnFloor(fitsPtr);
-            if (expStatus != ExpToStdoutStatus_Success)
+            if (expStatus != CFITSIO_SUCCESS)
             {
                 break;
             }
+            else
+            {
+                restore_stderr = 1;
+            }
+        }
+
+        if (cfitsio_create_file(&cfitsio_file, "-", CFITSIO_FILE_TYPE_IMAGE, NULL))
+        {
+            snprintf(msg, sizeof(msg), "cannot create FITS file");
+
+            if (restore_stderr)
+            {
+                /* implies suppress_stderr */
+                Restore_stderr_on_error(saved_pipes, &saved_stderr, &read_stream, msg, makeTar, errorDataArr, recordSpec, segIn->info->name, formattedFitsName);
+            }
+            else
+            {
+                /* implies !suppress_stderr */
+                fprintf(stderr, msg);
+                fprintf(stderr, "\n");
+            }
+
+            iSeg++;
+
+            if (!makeTar)
+            {
+                break;
+            }
+
+            continue; /* we've logged an error message now go onto the next segment; do not set status to error */
+        }
+
+        /* set compression, if requested */
+        if (segCompression)
+        {
+            if (compressAllSegs && (segCompression[0] != CFITSIO_COMPRESSION_NONE))
+            {
+                cfitsio_status = cfitsio_set_compression_type(cfitsio_file, segCompression[0]);
+            }
+            else if (segCompression[iSeg] && segCompression[iSeg] != CFITSIO_COMPRESSION_NONE)
+            {
+                cfitsio_status = cfitsio_set_compression_type(cfitsio_file, segCompression[iSeg]);
+            }
         }
         else
         {
+            cfitsio_status = cfitsio_set_compression_type(cfitsio_file, CFITSIO_COMPRESSION_RICE);
+        }
+
+        if (cfitsio_status != CFITSIO_SUCCESS)
+        {
+            /* close the CFITSIO_FILE - there should be no data written to stdout since cfitsio_file is in-memory only  */
+            cfitsio_close_file(&cfitsio_file);
+
+            snprintf(msg, sizeof(msg), "cannot create FITS file");
+
+            if (restore_stderr)
+            {
+                /* implies suppress_stderr */
+                Restore_stderr_on_error(saved_pipes, &saved_stderr, &read_stream, msg, makeTar, errorDataArr, recordSpec, segIn->info->name, formattedFitsName);
+            }
+            else
+            {
+                /* implies !suppress_stderr */
+                fprintf(stderr, msg);
+                fprintf(stderr, "\n");
+            }
+
+            iSeg++;
+
+            if (!makeTar)
+            {
+                break;
+            }
+
+            continue; /* we've logged an error message now go onto the next segment; do not set status to error */
+        }
+
+        /* writes FITS file to write end of pipe (by re-directing stdout to the pipe) */
+        drmsStatus = fitsexport_mapexport_to_cfitsio_file(cfitsio_file, segIn, classname, mapfile);
+
+        if (drmsStatus == DRMS_SUCCESS)
+        {
+            /* no error - success till this point */
             /* at this point, the entire FITS file is in memory; it does not get flushed to stdout until the
              * FITS file is closed; send message size to caller, then send FITS data
              */
-            numBytesFitsFile = fitsPtr->Fptr->logfilesize;
+            cfitsio_status = cfitsio_get_size(cfitsio_file, &numBytesFitsFile);
+
             if (numBytesFitsFile > 0)
             {
-                if (numBytesFitsFile + totalBytes > maxTarFileSize)
+                if (makeTar && numBytesFitsFile + totalBytes > maxTarFileSize)
                 {
                     /* tar file is too big */
                     snprintf(msg, sizeof(msg), "the tar file size has exceeded the maximum size of %llu bytes; please consider requesting data for fewer records and Rice-compressing images", maxTarFileSize);
 
-                    if (!suppress_stderr)
+                    /* cfitsio_file is an in-memory file --> content is discarded and file is closed */
+                    cfitsio_close_file(&cfitsio_file);
+
+                    if (restore_stderr)
                     {
+                        /* implies suppress_stderr */
+                        Restore_stderr_on_error(saved_pipes, &saved_stderr, &read_stream, msg, makeTar, errorDataArr, recordSpec, segIn->info->name, formattedFitsName);
+                    }
+                    else
+                    {
+                        /* implies !suppress_stderr */
                         fprintf(stderr, msg);
                         fprintf(stderr, "\n");
                     }
 
-                    if (makeTar && errorDataArr)
-                    {
-                        recobj = json_new_object();
-                        snprintf(specbuf, sizeof(specbuf), "%s{%s}", recordSpec, segIn->info->name);
-                        json_insert_pair_into_object(recobj, "record", json_new_string(specbuf));
-                        json_insert_pair_into_object(recobj, "file", json_new_string(formattedFitsName));
-                        json_insert_pair_into_object(recobj, "message", json_new_string(msg));
-                        json_insert_child(errorDataArr, recobj);
-                    }
-
-                    /* closes fitsfile * too */
-                    DropDataOnFloor(fitsPtr);
                     expStatus = ExpToStdoutStatus_TarTooLarge;
                     break;
                 }
@@ -1267,38 +1442,90 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int dumpFileName, i
                 }
 
                 /* dump FITS-file data */
-                fiostat = 0;
 
                 /* since fitsPtr was an in-memory FITS file, it was not globally cached in fitsexport.c; we need
                  * to write the FITS checksums now since normally this is performed by the global caching code */
-                fits_write_chksum(fitsPtr, &fiostat);
-
-                if (!fiostat)
+                // fits_write_chksum(fitsPtr, &fiostat);
+                if (cfitsio_write_chksum(cfitsio_file) != CFITSIO_SUCCESS)
                 {
-                    fits_close_file(fitsPtr, &fiostat);
-                }
+                    snprintf(msg, sizeof(msg), "unable to write FITS file checksum");
 
-                if (fiostat)
-                {
-                    /* get FITS error message since we could have failed for two different reasons: 1. checksum, 2.
-                     * closing the FITS file */
-                    fits_get_errstatus(fiostat, cfiostat_msg);
-                    snprintf(msg, sizeof(msg), "unable to close and send FITS file: %s", cfiostat_msg);
+                    /* cfitsio_file is an in-memory file --> content is discarded and file is closed */
+                    cfitsio_close_file(&cfitsio_file);
 
-                    if (!suppress_stderr)
+                    if (restore_stderr)
                     {
+                        /* implies suppress_stderr */
+                        Restore_stderr_on_error(saved_pipes, &saved_stderr, &read_stream, msg, makeTar, errorDataArr, recordSpec, segIn->info->name, formattedFitsName);
+                    }
+                    else
+                    {
+                        /* implies !suppress_stderr */
                         fprintf(stderr, msg);
                         fprintf(stderr, "\n");
                     }
 
-                    if (makeTar && errorDataArr)
+                    iSeg++;
+
+                    if (!makeTar)
                     {
-                        recobj = json_new_object();
-                        snprintf(specbuf, sizeof(specbuf), "%s{%s}", recordSpec, segIn->info->name);
-                        json_insert_pair_into_object(recobj, "record", json_new_string(specbuf));
-                        json_insert_pair_into_object(recobj, "file", json_new_string(formattedFitsName));
-                        json_insert_pair_into_object(recobj, "message", json_new_string(msg));
-                        json_insert_child(errorDataArr, recobj);
+                        break;
+                    }
+
+                    continue; /* we've logged an error message now go onto the next segment; do not set status to error */
+                }
+
+                /* dumps FITS file content to stdout */
+                if (cfitsio_stream_and_close_file(&cfitsio_file) != CFITSIO_SUCCESS)
+                {
+                    /* close the CFITSIO_FILE - there should be no data written to stdout since cfitsio_file is in-memory only  */
+                    cfitsio_close_file(&cfitsio_file);
+
+                    snprintf(msg, sizeof(msg), "cannot write FITS file to stream");
+
+                    if (restore_stderr)
+                    {
+                        /* implies suppress_stderr */
+                        Restore_stderr_on_error(saved_pipes, &saved_stderr, &read_stream, msg, makeTar, errorDataArr, recordSpec, segIn->info->name, formattedFitsName);
+                    }
+                    else
+                    {
+                        /* implies !suppress_stderr */
+                        fprintf(stderr, msg);
+                        fprintf(stderr, "\n");
+                    }
+
+                    iSeg++;
+
+                    if (!makeTar)
+                    {
+                        break;
+                    }
+
+                    continue; /* we've logged an error message now go onto the next segment; do not set status to error */
+                }
+
+                /* success writing FITS file content to stdout and closing FITS file - restore stderr (probably no captured_stderr) */
+                if (restore_stderr)
+                {
+                    /* put captured stderr into buffer */
+                    expStatus = Restore_stderr(saved_pipes, &saved_stderr, &read_stream, &captured_stderr);
+
+                    if (expStatus == ExpToStdoutStatus_Success)
+                    {
+                        if (*captured_stderr != '\0')
+                        {
+                            if (makeTar && errorDataArr)
+                            {
+                                Insert_error_msg(recordSpec, segIn->info->name, formattedFitsName, captured_stderr, errorDataArr);
+                            }
+                        }
+                    }
+
+                    if (captured_stderr)
+                    {
+                        free(captured_stderr);
+                        captured_stderr = NULL;
                     }
                 }
 
@@ -1314,7 +1541,7 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int dumpFileName, i
                 totalBytes += numBytesFitsFile;
                 totalFiles++;
 
-                if (infoDataArr)
+                if (makeTar && infoDataArr)
                 {
                     /* print JSON output for ease of parsing; append to the returned JSON obj's data array:
                      * {
@@ -1331,15 +1558,16 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int dumpFileName, i
                      *            ]
                      * }
                      */
-                    recobj = json_new_object();
-                    snprintf(specbuf, sizeof(specbuf), "%s{%s}", recordSpec, segIn->info->name);
-                    json_insert_pair_into_object(recobj, "record", json_new_string(specbuf));
-                    json_insert_pair_into_object(recobj, "filename", json_new_string(formattedFitsName));
-                    json_insert_child(infoDataArr, recobj);
+                    Insert_info_msg(recordSpec, segIn->info->name, formattedFitsName, infoDataArr);
                 }
             }
             else
             {
+                /* no data in segment */
+
+                /* close the CFITSIO_FILE - there should be no data written to stdout since cfitsio_file is in-memory only  */
+                cfitsio_close_file(&cfitsio_file);
+
                 if (makeTar && errorDataArr)
                 {
                     /* print JSON output for ease of parsing; append to the returned JSON obj's data array:
@@ -1356,14 +1584,51 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int dumpFileName, i
                      *            ]
                      * }
                      */
-                    recobj = json_new_object();
-                    snprintf(specbuf, sizeof(specbuf), "%s{%s}", recordSpec, segIn->info->name);
-                    json_insert_pair_into_object(recobj, "record", json_new_string(specbuf));
-                    json_insert_pair_into_object(recobj, "filename", json_new_string(formattedFitsName));
-                    json_insert_pair_into_object(recobj, "message", json_new_string("no data in segment, so no FITS file was produced"));
-                    json_insert_child(errorDataArr, recobj);
+                    snprintf(msg, sizeof(msg), "no data in segment, so no FITS file was produced");
+                    Insert_error_msg(recordSpec, segIn->info->name, formattedFitsName, msg, errorDataArr);
                 }
             }
+        }
+        else
+        {
+            if (drmsStatus == DRMS_ERROR_INVALIDFILE)
+            {
+                /* no input segment file, so no error - there is nothing to export because the segment file was never created */
+                snprintf(msg, sizeof(msg), "no segment file (segment %s) for this record", segIn->info->name);
+            }
+            else if (drmsStatus == DRMS_ERROR_CANTCOMPRESSFLOAT)
+            {
+                snprintf(msg, sizeof(msg), "cannot export Rice-compressed floating-point images");
+            }
+            else
+            {
+                /* there was an input segment file, but for some reason the export failed */
+                snprintf(msg, sizeof(msg), "failure exporting segment %s", segIn->info->name);
+            }
+
+            /* close the CFITSIO_FILE - there should be no data written to stdout since cfitsio_file is in-memory only  */
+            cfitsio_close_file(&cfitsio_file);
+
+            if (restore_stderr)
+            {
+                /* implies suppress_stderr */
+                Restore_stderr_on_error(saved_pipes, &saved_stderr, &read_stream, msg, makeTar, errorDataArr, recordSpec, segIn->info->name, formattedFitsName);
+            }
+            else
+            {
+                /* implies !suppress_stderr */
+                fprintf(stderr, msg);
+                fprintf(stderr, "\n");
+            }
+
+            iSeg++;
+
+            if (!makeTar)
+            {
+                break;
+            }
+
+            continue; /* we've logged an error message now go onto the next segment; do not set status to error */
         }
 
         if (!makeTar)
@@ -1371,6 +1636,8 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int dumpFileName, i
             /* if we are not making a tar file, we are streaming a single FITS file, so we cannot stream more than one segment */
             break;
         }
+
+        iSeg++;
     } /* seg loop */
 
     if (last)
@@ -1395,21 +1662,36 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int dumpFileName, i
 /* loop over records */
 /* segCompression is an array of FITSIO macros, one for each segment, that specify the type of compression to perform; if NULL, then compress all segments with Rice compression
  */
-static ExpToStdoutStatus_t ExportRecordSetToStdout(DRMS_Env_t *env, int makeTar, int dumpFileName, int suppress_stderr, DRMS_RecordSet_t *expRS, const char *ffmt, ExpToStdout_Compression_t *segCompression, int compressAllSegs, const char *classname, const char *mapfile, size_t *bytesExported, size_t maxTarFileSize, size_t *numFilesExported, json_t *infoDataArr, json_t *errorDataArr, char **error_buf)
+static ExpToStdoutStatus_t ExportRecordSetToStdout(DRMS_Env_t *env, int makeTar, int dumpFileName, int suppress_stderr, DRMS_RecordSet_t *expRS, const char *ffmt, CFITSIO_COMPRESSION_TYPE *segCompression, int compressAllSegs, const char *classname, const char *mapfile, size_t *bytesExported, size_t maxTarFileSize, size_t *numFilesExported, json_t *infoDataArr, json_t *errorDataArr, char **error_buf)
 {
     int drmsStatus = DRMS_SUCCESS;
     ExpToStdoutStatus_t expStatus = ExpToStdoutStatus_Success;
 
     int iSet;
-    int iRec;
+    int rec_index;
     int nRecs;
     DRMS_Record_t *expRecord = NULL;
+    DRMS_Record_t *series_template_rec = NULL;
+    int has_segments = -1;
 
+    int num_records_exported = 0;
     int recsExported = 0;
     int recsAttempted = 0;
 
     char error_buf_tmp[128];
     size_t sz_error_buf = 256;
+
+    char *allvers = NULL;
+    char **sets = NULL;
+    DRMS_RecordSetType_t *settypes = NULL;
+    char **snames = NULL;
+    char **filts = NULL;
+    int nsets = 0;
+    DRMS_RecQueryInfo_t rsinfo; /* filled in by parser as it encounters elements. */
+    char series[DRMS_MAXSERIESNAMELEN];
+    int num_set_recs = -1;
+    DRMS_RecordSet_t *subset = NULL;
+
 
     if (error_buf)
     {
@@ -1430,45 +1712,100 @@ static ExpToStdoutStatus_t ExportRecordSetToStdout(DRMS_Env_t *env, int makeTar,
         }
         else
         {
-            for (iRec = 0; expStatus == ExpToStdoutStatus_Success && iRec < nRecs; iRec++)
+            /* all records in each set must have the same series */
+            if (drms_record_parserecsetspec(expRS->ss_queries[iSet], &allvers, &sets, &settypes, &snames, &filts, &nsets, &rsinfo) == DRMS_SUCCESS)
             {
-                expRecord = drms_recordset_fetchnext(env, expRS, &drmsStatus, NULL, NULL);
+                snprintf(series, sizeof(series), snames[0]);
+            }
 
-                if (!expRecord || drmsStatus != DRMS_SUCCESS)
+            series_template_rec = drms_template_record(env, series, &drmsStatus);
+
+            drms_record_freerecsetspecarr(&allvers, &sets, &settypes, &snames, &filts, nsets);
+
+            if (drmsStatus != DRMS_SUCCESS)
+            {
+                if (error_buf && *error_buf)
                 {
-                    /* exit rec loop - last record was fetched last time */
-                    break;
+                    snprintf(error_buf_tmp, sizeof(error_buf_tmp), "WARNING: unable to obtain series information for %s, skipping subset %s\n", series, expRS->ss_queries[iSet]);
+                    *error_buf = base_strcatalloc(*error_buf, error_buf_tmp, &sz_error_buf);
                 }
+            }
+            else
+            {
+                has_segments = (hcon_size(&series_template_rec->segments) > 0);
 
-                recsAttempted++;
-
-                /* export each segment file in this record */
-                expStatus = ExportRecordToStdout(makeTar, dumpFileName, suppress_stderr, expRecord, ffmt, segCompression, compressAllSegs, classname, mapfile, bytesExported, maxTarFileSize, numFilesExported, infoDataArr, errorDataArr);
-                if (expStatus == ExpToStdoutStatus_TarTooLarge)
+                if (!has_segments)
                 {
-                    break;
+                    /* this series has no segments; instead export the entire record set subset as a FITS bintable */
+                    num_set_recs = drms_recordset_getssnrecs(expRS, iSet, &drmsStatus);
+                    subset = calloc(1, sizeof(DRMS_RecordSet_t));
+
+                    if (drmsStatus == DRMS_SUCCESS)
+                    {
+                        /* copy subset into a full-fledged record set (so we can iterate on just the subset) */
+                        recsAttempted = num_set_recs;
+                        for (rec_index = expRS->ss_starts[iSet]; rec_index <= num_set_recs; rec_index++)
+                        {
+                            expRecord = expRS->records[rec_index];
+                            drms_merge_record(subset, expRecord); // yoink!
+                            expRS->records[rec_index] = NULL; // relinquish ownership
+                        }
+
+                        expStatus = ExportRecordSetKeywordsToStdout(subset, series, makeTar, dumpFileName, suppress_stderr, ffmt, classname, mapfile, bytesExported, maxTarFileSize, &num_records_exported, infoDataArr, errorDataArr);
+
+                        subset->env = expRS->env;
+                        drms_close_records(subset, DRMS_FREE_RECORD);
+                    }
+
+                    if (expStatus == ExpToStdoutStatus_Success)
+                    {
+                        recsExported = num_records_exported;
+                        *numFilesExported = recsExported; // we have no segments, but we have records, so report the number that actually got exported
+                    }
                 }
-                else if (expStatus == ExpToStdoutStatus_Success)
+                else
                 {
-                    recsExported++;
+                    for (rec_index = 0; expStatus == ExpToStdoutStatus_Success && rec_index < nRecs; rec_index++)
+                    {
+                        expRecord = drms_recordset_fetchnext(env, expRS, &drmsStatus, NULL, NULL);
+
+                        if (!expRecord || drmsStatus != DRMS_SUCCESS)
+                        {
+                            /* exit rec loop - last record was fetched last time */
+                            break;
+                        }
+
+                        recsAttempted++;
+
+                        /* export each segment file in this record */
+                        expStatus = ExportRecordToStdout(makeTar, dumpFileName, suppress_stderr, expRecord, ffmt, segCompression, compressAllSegs, classname, mapfile, bytesExported, maxTarFileSize, numFilesExported, infoDataArr, errorDataArr);
+                        if (expStatus == ExpToStdoutStatus_TarTooLarge)
+                        {
+                            break;
+                        }
+                        else if (expStatus == ExpToStdoutStatus_Success)
+                        {
+                            recsExported++;
+                        }
+
+                        /* IF the internal FITSIO buffers have data, there is no way to NOT flush output to stdout;
+                         * hopefully this error will not happen often; if the pipe to the parent process breaks,
+                         * then we could get into this situation, in which case it does not matter if we spill the
+                         * FITSIO buffers onto stdout; if we are here because ExportRecordToStdout() failed for
+                         * some other reason, the FITSIO inner buffers are likely empty
+                         */
+
+
+                        /* if expStatus != ExpToStdoutStatus_Success, this is not because we could not send the
+                         * client a message; it has something to do with the export process itself or the
+                         * use of the FITSIO library and it affects this particular DRMS record only; we
+                         * already successfully sent the client a status-bad message, so they know to
+                         * ignore all data till the next record's data gets returned; in
+                         * this case, we want to go on to the next DRMS record, resetting expStatus to
+                         * ExpToStdoutStatus_Success */
+                         expStatus = ExpToStdoutStatus_Success;
+                    }
                 }
-
-                /* IF the internal FITSIO buffers have data, there is no way to NOT flush output to stdout;
-                 * hopefully this error will not happen often; if the pipe to the parent process breaks,
-                 * then we could get into this situation, in which case it does not matter if we spill the
-                 * FITSIO buffers onto stdout; if we are here because ExportRecordToStdout() failed for
-                 * some other reason, the FITSIO inner buffers are likely empty
-                 */
-
-
-                /* if expStatus != ExpToStdoutStatus_Success, this is not because we could not send the
-                 * client a message; it has something to do with the export process itself or the
-                 * use of the FITSIO library and it affects this particular DRMS record only; we
-                 * already successfully sent the client a status-bad message, so they know to
-                 * ignore all data till the next record's data gets returned; in
-                 * this case, we want to go on to the next DRMS record, resetting expStatus to
-                 * ExpToStdoutStatus_Success */
-                 expStatus = ExpToStdoutStatus_Success;
             }
         }
     }
@@ -1512,7 +1849,6 @@ int DoIt(void)
 
     int drmsStatus = DRMS_SUCCESS;
     int fiostat = 0;
-    fitsfile *fitsPtr = NULL;
     long long tsize = 0; /* total size of export payload in bytes */
     long long tsizeMB = 0; /* total size of export payload in Mbytes */
     void *misspix = NULL;
@@ -1529,7 +1865,7 @@ int DoIt(void)
     int suppress_stderr = 0;
     int makeTar = 1;
     ListNode_t *cparmNode = NULL;
-    ExpToStdout_Compression_t *segCompression = NULL;
+    CFITSIO_COMPRESSION_TYPE *segCompression = NULL;
     int iComp;
     DRMS_RecordSet_t *expRS = NULL;
     char generalErrorBuf[TAR_BLOCK_SIZE]; /* the last file object in the tar file will be a single tar block (makeTar == 1) */
@@ -1590,7 +1926,7 @@ int DoIt(void)
         {
             char *cparmStr = NULL;
 
-            segCompression = calloc(1, sizeof(ExpToStdout_Compression_t));
+            segCompression = calloc(1, sizeof(CFITSIO_COMPRESSION_TYPE));
 
             if (segCompression)
             {
@@ -1602,29 +1938,29 @@ int DoIt(void)
 
                     if (strcasecmp(cparmStr, COMPRESSION_NONE) == 0)
                     {
-                        segCompression[iComp] = ExpToStdout_Compression_NONE;
+                        segCompression[iComp] = CFITSIO_COMPRESSION_NONE;
                     }
                     else if (strcasecmp(cparmStr, COMPRESSION_RICE) == 0)
                     {
-                        segCompression[iComp] = ExpToStdout_Compression_RICE;
+                        segCompression[iComp] = CFITSIO_COMPRESSION_RICE;
                     }
                     else if (strcasecmp(cparmStr, COMPRESSION_GZIP1) == 0)
                     {
-                        segCompression[iComp] = ExpToStdout_Compression_GZIP1;
+                        segCompression[iComp] = CFITSIO_COMPRESSION_GZIP1;
                     }
-    #if CFITSIO_MAJOR >= 4 || (CFITSIO_MAJOR == 3 && CFITSIO_MINOR >= 27)
+#if CFITSIO_MAJOR >= 4 || (CFITSIO_MAJOR == 3 && CFITSIO_MINOR >= 27)
                     else if (strcasecmp(cparmStr, COMPRESSION_GZIP2) == 0)
                     {
-                        segCompression[iComp] = ExpToStdout_Compression_GZIP2;
+                        segCompression[iComp] = CFITSIO_COMPRESSION_GZIP2;
                     }
-    #endif
+#endif
                     else if (strcasecmp(cparmStr, COMPRESSION_PLIO) == 0)
                     {
-                        segCompression[iComp] = ExpToStdout_Compression_PLIO;
+                        segCompression[iComp] = CFITSIO_COMPRESSION_PLIO;
                     }
                     else if (strcasecmp(cparmStr, COMPRESSION_HCOMP) == 0)
                     {
-                        segCompression[iComp] = ExpToStdout_Compression_HCOMP;
+                        segCompression[iComp] = CFITSIO_COMPRESSION_HCOMP;
                     }
                     else
                     {
