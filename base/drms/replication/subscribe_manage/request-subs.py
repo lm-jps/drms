@@ -786,6 +786,7 @@ class Connection(object):
             self.log.writeDebug([ 'attempting to connect to subscription manager: host ' + sa[0] + ', port ' + str(sa[1]) ])
             try:
                 self.sock = socket.socket(af, socktype, proto)
+                self.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             except OSError:
                 self.sock = None
                 self.log.writeInfo([ 'could not create client socket' ])
