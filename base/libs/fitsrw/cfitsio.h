@@ -248,7 +248,7 @@ void cfitsio_close_header(CFITSIO_HEADER **header);
 
 int cfitsio_copy_file(CFITSIO_FILE *source_in, CFITSIO_FILE *dest_in, int copy_header_only);
 
-int cfitsio_write_keys_to_bintable(CFITSIO_FILE *file_out, LinkedList_t *keyword_data);
+int cfitsio_write_keys_to_bintable(CFITSIO_FILE *file_out, long long row_number, LinkedList_t *keyword_data);
 
 int cfitsio_copy_header_keywords(CFITSIO_FILE *in_file, CFITSIO_FILE *out_file, CFITSIO_KEYWORD *key_list);
 

@@ -554,7 +554,7 @@ static int Cf_write_header_keys(fitsfile *fptr_out, char **header, CFITSIO_KEYWO
  * [ header_data ] - an alternative way to supply the DRMS keyword data ; a LinkedList_t of CFITSIO_FILE *
  */
 
-static int Cf_write_keys_to_bintable(fitsfile *fptr_out, LinkedList_t *keyword_data)
+static int Cf_write_keys_to_bintable(fitsfile *fptr_out, long long row_number, LinkedList_t *keyword_data)
 {
     ListNode_t *node = NULL;
     CFITSIO_KEYWORD *key_list = NULL;
@@ -572,7 +572,7 @@ static int Cf_write_keys_to_bintable(fitsfile *fptr_out, LinkedList_t *keyword_d
     /* recnum is one of the keywords */
     if (keyword_data)
     {
-        row = 0;
+        row = row_number;
         list_llreset(keyword_data);
         while ((err == CFITSIO_SUCCESS) && ((node = list_llnext(keyword_data)) != NULL))
         {
@@ -643,9 +643,9 @@ static int Cf_write_keys_to_bintable(fitsfile *fptr_out, LinkedList_t *keyword_d
 /* file_out - the BINTABLE fitsfile to which DRMS keyword data are written
  * key_list - the DRMS keyword data (in FITS keyword format) to be written to the BINTABLE; a LinkedList_t of CFITSIO_KEYWORD * lists, one for each record
  */
-int cfitsio_write_keys_to_bintable(CFITSIO_FILE *file_out, LinkedList_t *keyword_data)
+int cfitsio_write_keys_to_bintable(CFITSIO_FILE *file_out, long long row_number, LinkedList_t *keyword_data)
 {
-    return Cf_write_keys_to_bintable(file_out->fptr, keyword_data);
+    return Cf_write_keys_to_bintable(file_out->fptr, row_number, keyword_data);
 }
 
 /*
