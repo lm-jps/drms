@@ -40,34 +40,34 @@
 
 
 /******** helper functions that don't get exported as part of API ********/
-static DRMS_Segment_t * __drms_segment_lookup(DRMS_Record_t *rec, 
+static DRMS_Segment_t * __drms_segment_lookup(DRMS_Record_t *rec,
 					      const char *segname, int depth);
 
 static int drms_segment_set_const(DRMS_Segment_t *seg);
-static int drms_segment_checkscaling (const DRMS_Array_t* arr, double bzero, 
+static int drms_segment_checkscaling (const DRMS_Array_t* arr, double bzero,
 				      double bscale);
 
-/* 
-   Recursive segment lookup that follows linked segment to 
-   their destination until a non-link segment is reached. If the 
-   recursion depth exceeds DRMS_MAXLINKDEPTH it is assumed that there 
+/*
+   Recursive segment lookup that follows linked segment to
+   their destination until a non-link segment is reached. If the
+   recursion depth exceeds DRMS_MAXLINKDEPTH it is assumed that there
    is an erroneous link cycle, an error message is written to stderr,
    and a NULL pointer is returned.
 */
-static DRMS_Segment_t * __drms_segment_lookup(DRMS_Record_t *rec, 
+static DRMS_Segment_t * __drms_segment_lookup(DRMS_Record_t *rec,
 					      const char *segname, int depth)
 {
     int stat;
     DRMS_Segment_t *segment;
     DRMS_Segment_t *rv = NULL;
-    
+
     segment = hcon_lookup_lower(&rec->segments, segname);
     if (segment!=NULL && depth<DRMS_MAXLINKDEPTH )
     {
         if (segment->info->islink)
         {
             DRMS_Record_t *linkedRec = NULL;
-            
+
             linkedRec = drms_link_follow(rec, segment->info->linkname, &stat);
             if (stat)
                 rv = NULL;
@@ -75,12 +75,12 @@ static DRMS_Segment_t * __drms_segment_lookup(DRMS_Record_t *rec,
             {
                 rv = __drms_segment_lookup(linkedRec, segment->info->target_seg, depth+1);
             }
-            
-            /* Whatever you do, do not free linkedRec here. If it is freed, then the segment returned, 
+
+            /* Whatever you do, do not free linkedRec here. If it is freed, then the segment returned,
              * which has a reference to linkedRec, will have a pointer to garbage. In fact, the segment
              * returned will be garbage because freeing the containing record frees the segment. */
             return rv;
-            
+
         }
         else
         {
@@ -91,7 +91,7 @@ static DRMS_Segment_t * __drms_segment_lookup(DRMS_Record_t *rec,
         fprintf(stderr, "WARNING: Max link depth exceeded for segment '%s' in "
                 "record %lld from series '%s'\n", segment->info->name, rec->recnum,
                 rec->seriesinfo->seriesname);
-    
+
     return NULL;
 }
 
@@ -125,7 +125,7 @@ int drms_segment_set_const(DRMS_Segment_t *seg) {
   strtolower(lcsegname);
 
   sprintf(stmt, "UPDATE %s." DRMS_MASTER_SEGMENT_TABLE
-	  " SET cseg_recnum = %lld WHERE lower(seriesname) = '%s' AND lower(segmentname) = '%s'", 
+	  " SET cseg_recnum = %lld WHERE lower(seriesname) = '%s' AND lower(segmentname) = '%s'",
 	  namespace, rec->recnum, lcseries, lcsegname);
 
   free(lcsegname);
@@ -173,22 +173,22 @@ void drms_copy_segment_struct(DRMS_Segment_t *dst, DRMS_Segment_t *src)
 }
 
 /* returns a pointer to the target's segment container. */
-HContainer_t *drms_create_segment_prototypes(DRMS_Record_t *target, 
-					     DRMS_Record_t *source, 
+HContainer_t *drms_create_segment_prototypes(DRMS_Record_t *target,
+					     DRMS_Record_t *source,
 					     int *status)
 {
     HContainer_t *ret = NULL;
     DRMS_Segment_t *tSeg = NULL;
     DRMS_Segment_t *sSeg = NULL;
-    
+
     XASSERT(target != NULL && target->segments.num_total == 0 && source != NULL);
-    
+
     if (target != NULL && target->segments.num_total == 0 && source != NULL)
     {
         *status = DRMS_SUCCESS;
         HIterator_t hit;
         hiter_new_sort(&hit, &(source->segments), drms_segment_ranksort);
-        
+
         while ((sSeg = hiter_getnext(&hit)) != NULL)
         {
             if (sSeg->info && strlen(sSeg->info->name) > 0)
@@ -199,27 +199,27 @@ HContainer_t *drms_create_segment_prototypes(DRMS_Record_t *target,
                 tSeg->info = malloc(sizeof(DRMS_SegmentInfo_t));
                 XASSERT(tSeg->info);
                 memset(tSeg->info, 0, sizeof(DRMS_SegmentInfo_t));
-                
+
                 if (tSeg && tSeg->info)
                 {
                     /* record */
                     tSeg->record = target;
-                    
+
                     /* segment info*/
                     memcpy(tSeg->info, sSeg->info, sizeof(DRMS_SegmentInfo_t));
-                    
+
                     /* axis is allocated as static array */
                     memcpy(tSeg->axis, sSeg->axis, sizeof(int) * DRMS_MAXRANK);
-                    
+
                     if (tSeg->info->protocol == DRMS_TAS)
                     {
                         /* blocksize is allocated as static array */
                         memcpy(tSeg->blocksize, sSeg->blocksize, sizeof(int) * DRMS_MAXRANK);
                     }
-                    
+
                     /* copy cparms - compression string */
                     snprintf(tSeg->cparms, sizeof(tSeg->cparms), "%s", sSeg->cparms);
-                    
+
                     /* bzero/bscale */
                     tSeg->bzero = sSeg->bzero;
                     tSeg->bscale = sSeg->bscale;
@@ -234,9 +234,9 @@ HContainer_t *drms_create_segment_prototypes(DRMS_Record_t *target,
                 *status = DRMS_ERROR_INVALIDSEGMENT;
             }
         }
-        
+
         hiter_free(&hit);
-        
+
         if (*status == DRMS_SUCCESS)
         {
             ret = &(target->segments);
@@ -246,14 +246,14 @@ HContainer_t *drms_create_segment_prototypes(DRMS_Record_t *target,
     {
         *status = DRMS_ERROR_INVALIDRECORD;
     }
-    
+
     return ret;
 }
 
-/* 
+/*
    Build the segment part of a dataset template by
-   using the query result holding a list of 
-   (segmentname, segnum, form, scope, type, 
+   using the query result holding a list of
+   (segmentname, segnum, form, scope, type,
    naxis, axis, unit, protocol, description)
    tuples to initialize the array of segment descriptors.
 */
@@ -286,7 +286,7 @@ int drms_template_segments(DRMS_Record_t *template)
   sprintf(query, "select segmentname, segnum, scope, type, "
 	  "naxis, axis, unit, protocol, description, "
 	  "islink, linkname, targetseg, cseg_recnum from %s.%s where "
-	  "lower(seriesname) = '%s' order by segnum", 
+	  "lower(seriesname) = '%s' order by segnum",
 	  namespace, DRMS_MASTER_SEGMENT_TABLE, lcseries);
   free(lcseries);
   free(namespace);
@@ -307,12 +307,12 @@ int drms_template_segments(DRMS_Record_t *template)
   if (qres->num_rows>0 && qres->num_cols != 13 )
   {
     status = DRMS_ERROR_BADFIELDCOUNT;
-    goto bailout;   
+    goto bailout;
   }
   for (i = 0; i<(int)qres->num_rows; i++)
   {
     /* Name */
-    db_binary_field_getstr(qres, i, 0, 1024, buf);    
+    db_binary_field_getstr(qres, i, 0, 1024, buf);
     seg = hcon_allocslot_lower(&template->segments, buf);
     memset(seg,0,sizeof(DRMS_Segment_t));
     seg->info = malloc(sizeof( DRMS_SegmentInfo_t));
@@ -325,7 +325,7 @@ int drms_template_segments(DRMS_Record_t *template)
     seg->info->islink = db_binary_field_getint(qres, i, 9);
     if (seg->info->islink) {
       /* Link segment */
-      db_binary_field_getstr(qres, i, 10, sizeof(seg->info->linkname),seg->info->linkname);      
+      db_binary_field_getstr(qres, i, 10, sizeof(seg->info->linkname),seg->info->linkname);
       db_binary_field_getstr(qres, i, 11, sizeof(seg->info->target_seg),seg->info->target_seg);
       seg->info->scope = DRMS_VARIABLE;
       seg->info->type = DRMS_TYPE_INT;
@@ -334,7 +334,7 @@ int drms_template_segments(DRMS_Record_t *template)
     } else {
       /* Simple segment */
       /* Scope */
-      db_binary_field_getstr(qres, i, 2, 1024, buf);    
+      db_binary_field_getstr(qres, i, 2, 1024, buf);
       seg->info->cseg_recnum = 0;
       if (!strcmp(buf, "constant")) {
 	seg->info->scope = DRMS_CONSTANT;
@@ -348,37 +348,37 @@ int drms_template_segments(DRMS_Record_t *template)
 	{
 	  printf("ERROR: Invalid segment scope specifier '%s'\n",buf);
 	  goto bailout;
-	}    
+	}
       /* Type */
       db_binary_field_getstr(qres, i, 3, 1024,buf);
       seg->info->type  = drms_str2type(buf);
       /* Unit */
-      db_binary_field_getstr(qres, i, 6, DRMS_MAXUNITLEN, seg->info->unit);    
+      db_binary_field_getstr(qres, i, 6, DRMS_MAXUNITLEN, seg->info->unit);
       /* Protocol */
-      db_binary_field_getstr(qres, i, 7, 1024, buf);    
+      db_binary_field_getstr(qres, i, 7, 1024, buf);
       seg->info->protocol = drms_str2prot(buf);
     }
-    /* Naxis */      
+    /* Naxis */
     seg->info->naxis = db_binary_field_getint(qres, i, 4);
     /* Axis */
     db_binary_field_getstr(qres, i, 5, 1024,buf);
     n = 0;
     p = buf;
-    /* Extract the axis dimensions (and in case of the TAS protocol 
+    /* Extract the axis dimensions (and in case of the TAS protocol
        block sizes from a copy separated list. */
     while(*p)
       {
-	XASSERT(n<2*seg->info->naxis); 
+	XASSERT(n<2*seg->info->naxis);
 	while(!isdigit(*p))
 	  ++p;
 	q = p;
 	while(isdigit(*p))
-	  ++p;	       
+	  ++p;
 	*p++ = 0;
 	if (n<seg->info->naxis)
 	  seg->axis[n] = atoi(q);
 	else
-	  seg->blocksize[n - seg->info->naxis] = atoi(q);	
+	  seg->blocksize[n - seg->info->naxis] = atoi(q);
 	n++;
       }
     if (seg->info->protocol!=DRMS_TAS)
@@ -394,13 +394,13 @@ int drms_template_segments(DRMS_Record_t *template)
     /* filename */
     seg->filename[0] = '\0';
     /* Comment */
-    db_binary_field_getstr(qres, i, 8, DRMS_MAXCOMMENTLEN, seg->info->description);    
+    db_binary_field_getstr(qres, i, 8, DRMS_MAXCOMMENTLEN, seg->info->description);
   }
 #ifdef DEBUG
   printf("#4\n");
   db_print_binary_result(qres);
 #endif
-  db_free_binary_result(qres);      
+  db_free_binary_result(qres);
   return DRMS_SUCCESS;
 
  bailout:
@@ -446,10 +446,10 @@ void drms_segment_fprint(FILE *keyfile, DRMS_Segment_t *seg)
 	       (int)seg->info->scope);
       }
     fprintf(keyfile, "\t%-*s:\t'%s'\n", fieldwidth, "unit", seg->info->unit);
-    fprintf(keyfile, "\t%-*s:\t'%s'\n", fieldwidth+9, "type", 
+    fprintf(keyfile, "\t%-*s:\t'%s'\n", fieldwidth+9, "type",
 	   drms_type2str(seg->info->type));
 
-    /* Protocol info. */ 
+    /* Protocol info. */
     const char *protstr = drms_prot2str(seg->info->protocol);
     if (protstr)
     {
@@ -462,21 +462,21 @@ void drms_segment_fprint(FILE *keyfile, DRMS_Segment_t *seg)
     }
 
     if (strlen(seg->filename)) {
-      fprintf(keyfile, "\t%-*s:\t'%s'\n", fieldwidth, "filename", seg->filename);  
+      fprintf(keyfile, "\t%-*s:\t'%s'\n", fieldwidth, "filename", seg->filename);
     }
   }
   /* Array info. */
   fprintf(keyfile, "\t%-*s:\t%d\n", fieldwidth+9, "naxis", seg->info->naxis);
   for (i=0; i<seg->info->naxis; i++)
   {
-    fprintf(keyfile, "\t%-*s[%2d]:\t%d\n", fieldwidth+5, "axis", i, 
+    fprintf(keyfile, "\t%-*s[%2d]:\t%d\n", fieldwidth+5, "axis", i,
 	   seg->axis[i]);
   }
 
 }
 
-  
-/* Return segment size in bytes. */  
+
+/* Return segment size in bytes. */
 long long drms_segment_size(DRMS_Segment_t *seg, int *status)
 {
   int i;
@@ -525,21 +525,21 @@ int drms_segment_getdims(DRMS_Segment_t *seg, DRMS_SegmentDimInfo_t *di)
    return status;
 }
 
-HContainer_t *drms_segment_createinfocon(DRMS_Env_t *drmsEnv, 
-					 const char *seriesName, 
+HContainer_t *drms_segment_createinfocon(DRMS_Env_t *drmsEnv,
+					 const char *seriesName,
 					 int *status)
 {
      HContainer_t *ret = NULL;
 
      DRMS_Record_t *template = drms_template_record(drmsEnv, seriesName, status);
-     
+
      if (*status == DRMS_SUCCESS)
      {
 	  int size = hcon_size(&(template->segments));
 	  if (size > 0)
 	  {
 	       char **nameArr = (char **)malloc(sizeof(char *) * size);
-	       DRMS_SegmentInfo_t **valArr = 
+	       DRMS_SegmentInfo_t **valArr =
 		 (DRMS_SegmentInfo_t **)malloc(sizeof(DRMS_SegmentInfo_t *) * size);
 
 	       if (nameArr != NULL && valArr != NULL)
@@ -557,7 +557,7 @@ HContainer_t *drms_segment_createinfocon(DRMS_Env_t *drmsEnv,
 			 iSeg++;
 		    }
 
-		    ret = hcon_create(sizeof(DRMS_SegmentInfo_t), 
+		    ret = hcon_create(sizeof(DRMS_SegmentInfo_t),
 				      DRMS_MAXSEGNAMELEN,
 				      NULL,
 				      NULL,
@@ -622,10 +622,10 @@ void drms_segment_filename(DRMS_Segment_t *seg, char *filename)
       if (rec->sunum != -1LL && rec->su == NULL)
       {
          /* The storage unit has not been requested from SUMS yet. Do it. */
-         if ((rec->su = drms_getunit(rec->env, 
-                                     rec->seriesinfo->seriesname, 
-                                     rec->sunum, 
-                                     1, 
+         if ((rec->su = drms_getunit(rec->env,
+                                     rec->seriesinfo->seriesname,
+                                     rec->sunum,
+                                     1,
                                      &statint)) == NULL)
          {
             statint = DRMS_ERROR_NOSTORAGEUNIT;
@@ -669,7 +669,7 @@ void drms_segment_filename(DRMS_Segment_t *seg, char *filename)
    /* for DRMS_LOCAL, filename is already set */
 }
 
-/* Delete the file storing the data of a segment. */  
+/* Delete the file storing the data of a segment. */
 int drms_delete_segmentfile (DRMS_Segment_t *seg) {
   char filename[DRMS_MAXPATHLEN];
 
@@ -708,7 +708,7 @@ DRMS_Segment_t *drms_segment_lookup (DRMS_Record_t *rec, const char *segname) {
   } else return seg;
 }
 
-/* Because elements of an hcontainer are unordered, we need to use the segnum field 
+/* Because elements of an hcontainer are unordered, we need to use the segnum field
  * to sort the elements. This is achieved by using the drms_segment_ranksort()
  * comparator. Then we have to do a linear search for the element with the
  * desired segnum. */
@@ -788,15 +788,15 @@ DRMS_Segment_t *drms_segment_lookupindex(DRMS_Record_t *rec, int index, int foll
 #if 0
 /* I was mistaken. See comment in drms_link_follow(). */
 
-/* When a linked segment is accessed (drms_segment_lookup() and drms_segment_lookupnum), the linked record 
- * containing that segment is retrieved from the db. If the record is already in the cache, then instead 
- * of retrieving the record information from the db, the refcount on this record is incremented. The 
+/* When a linked segment is accessed (drms_segment_lookup() and drms_segment_lookupnum), the linked record
+ * containing that segment is retrieved from the db. If the record is already in the cache, then instead
+ * of retrieving the record information from the db, the refcount on this record is incremented. The
  * record must then be freed, otherwise memory will be leaked. If the refcount > 1, then no memory
  * will be released during this call, but if for every access drms_segment_destroy() is also called,
  * then the memory allocated to the linked record will be freed.
  *
  * Unfortunately, DRMS_Segment_t does not have any information to indicate if the segment is a linked segment.
- * If the caller provides a non-linked segment to this function, then this will possibly delete the 
+ * If the caller provides a non-linked segment to this function, then this will possibly delete the
  * containing record, which would be bad. Given the current design, there is no good way to protect against this.
  * Have the caller provide the original segment too, and then verify that it links to the target segment.
  */
@@ -807,13 +807,13 @@ void drms_segment_destroy(DRMS_Segment_t *oSeg, DRMS_Segment_t **pSeg)
     char hashkey[DRMS_MAXHASHKEYLEN];
     void *lookup = NULL;
     DRMS_Record_t *linkedRec = NULL;
-    
+
     if (oSeg && pSeg && (seg = *pSeg))
     {
         if (oSeg->record && oSeg->info->islink && *oSeg->info->linkname != '\0')
         {
             link = hcon_lookup_lower(&oSeg->record->links, oSeg->info->linkname);
-            
+
             if (link)
             {
                 if ((link->info->type == STATIC_LINK && link->recnum != -1) ||
@@ -824,9 +824,9 @@ void drms_segment_destroy(DRMS_Segment_t *oSeg, DRMS_Segment_t **pSeg)
                     lookup = hcon_lookup_lower(mapRec, hashkey);
                     if (lookup)
                     {
-                        
+
                         linkedRec = *((DRMS_Record_t **)lookup);
-                        
+
                         /* drms_free_record() will decrement the record's refcount, and if this results
                          * in a refcount of 0, then the record is removed from the record cache. When this
                          * happens, the segment (seg) gets freed, without freeing seg->seriesinfo.
@@ -837,7 +837,7 @@ void drms_segment_destroy(DRMS_Segment_t *oSeg, DRMS_Segment_t **pSeg)
                         {
                             drms_free_record(seg->record);
                             seg->record = NULL;
-                            
+
                             *pSeg = NULL;
                         }
                     }
@@ -866,10 +866,10 @@ FILE *drms_segment_fopen(DRMS_Segment_t *seg, const char *newfilename, int appen
       if (rec->sunum != -1LL && rec->su == NULL)
       {
          /* The storage unit has not been requested from SUMS yet. Do it. */
-         if ((rec->su = drms_getunit(rec->env, 
-                                     rec->seriesinfo->seriesname, 
-                                     rec->sunum, 
-                                     1, 
+         if ((rec->su = drms_getunit(rec->env,
+                                     rec->seriesinfo->seriesname,
+                                     rec->sunum,
+                                     1,
                                      &statint)) == NULL)
          {
             statint = DRMS_ERROR_NOSTORAGEUNIT;
@@ -883,14 +883,14 @@ FILE *drms_segment_fopen(DRMS_Segment_t *seg, const char *newfilename, int appen
       if (!statint)
       {
          /* If the file is being created (the storage unit is DRMS_READWRITE and the
-          * file doesn't already exist), then you need to set seg->filename. 
-          * drms_segment_filename() yields the default file name to create if 
-          * it doesn't exist already. Override that with newfilename if the 
+          * file doesn't already exist), then you need to set seg->filename.
+          * drms_segment_filename() yields the default file name to create if
+          * it doesn't exist already. Override that with newfilename if the
           * caller desires. */
          struct stat stbuf;
 
          drms_segment_filename(seg, path);
-         
+
          if (rec->su->mode == DRMS_READWRITE && stat(path, &stbuf))
          {
             char *tmp = strdup(path);
@@ -915,8 +915,8 @@ FILE *drms_segment_fopen(DRMS_Segment_t *seg, const char *newfilename, int appen
             free(tmp);
          }
 
-         /* If the segment is part of a record that can be written to, then rec->su->mode == DRMS_READWRITE. 
-          * If the segment is part of a recrd that cannot be written to, then rec->su->mode == DRMS_READONLY. 
+         /* If the segment is part of a record that can be written to, then rec->su->mode == DRMS_READWRITE.
+          * If the segment is part of a recrd that cannot be written to, then rec->su->mode == DRMS_READONLY.
           * So, no need to have a parameter that allows the caller to specify the mode. */
          if (rec->su->mode == DRMS_READONLY)
          {
@@ -969,32 +969,32 @@ int drms_segment_fclose(FILE *fptr)
    return ret;
 }
 
-/* Open an array data segment. 
+/* Open an array data segment.
 
-   a) If the corresponding data file exists, read the 
-   entire data array into memory. Convert it to the type given as 
-   argument. If type=DRMS_TYPE_RAW then  the data is 
+   a) If the corresponding data file exists, read the
+   entire data array into memory. Convert it to the type given as
+   argument. If type=DRMS_TYPE_RAW then  the data is
    read into an array of the same type it is stored as on disk.
-   b) If the data file does not exist, then return a data array filed with 
+   b) If the data file does not exist, then return a data array filed with
    the MISSING value for the given type.
 
    The read functions do not apply bscale or bzero.  This conversion is
    performed at the end of the function (via drms_array_convert_inplace()).
-*/  
+*/
 
 
-DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type, 
+DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
 				int *status)
 {
     int statint=0,i;
     DRMS_Array_t *arr = NULL;
     char filename[DRMS_MAXPATHLEN];
     DRMS_Record_t *rec;
-    
+
     CHECKNULL_STAT(seg,status);
-    
+
     rec = seg->record;
-    
+
     if (seg->info->scope == DRMS_CONSTANT &&
         !seg->info->cseg_recnum) {
         fprintf(stderr, "ERROR in drms_segment_read: constant segment has not yet"
@@ -1002,7 +1002,7 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
         statint = DRMS_ERROR_INVALIDACTION;
         goto bailout1;
     }
-    
+
     if (seg->info->protocol == DRMS_GENERIC)
     {
         fprintf(stderr, "ERROR in drms_segment_read: Not appropriate function"
@@ -1010,7 +1010,7 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
         statint = DRMS_ERROR_INVALIDACTION;
         goto bailout1;
     }
-    
+
     if (rec->sunum != -1LL && rec->su==NULL)
     {
         /* The storage unit has not been requested from SUMS yet. Do it. */
@@ -1028,12 +1028,12 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
         }
         rec->su->refcount++;
     }
-    
+
     drms_segment_filename(seg, filename);
 #ifdef DEBUG
     printf("Trying to open segment file '%s'.\n",filename);
 #endif
-    
+
     if (seg->info->protocol == DRMS_DSDS || seg->info->protocol == DRMS_LOCAL)
     {
         /* For both of these protocols, the fits file was read with DSDS code. Be careful -
@@ -1043,7 +1043,7 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
         int ds;
         int rn;
         char *locfilename;
-        
+
         if (seg->info->protocol == DRMS_DSDS)
         {
             if (!*filename)
@@ -1055,7 +1055,7 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
                 fprintf(stderr, "There is no data file for this DSDS data record.\n");
                 goto bailout1;
             }
-            
+
             /* When the DSDS records were opened, a string representation of the keylist needed by
                to call vds_open() is saved in the record's seriesinfo description field. */
             dsdsParams = (char *)malloc(sizeof(char) * kDSDS_MaxHandle);
@@ -1064,10 +1064,10 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
                 fprintf(stderr, "Couldn't get DSDS keylist.\n");
                 goto bailout1;
             }
-            
+
             ds = drms_getkey_int(seg->record, kDSDS_DS, &statint);
             rn = drms_getkey_int(seg->record, kDSDS_RN, &statint);
-            
+
             locfilename = NULL;
         }
         else
@@ -1077,12 +1077,12 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
             rn = -1;
             locfilename = strdup(seg->filename);
         }
-        
+
         /* The DSDS and LOCAL protocols do not use SUMS.  Call into libdsds (if available)
          * to obtain data. */
         static void *hDSDS = NULL;
         static int attempted = 0;
-        
+
         if (!attempted && !hDSDS)
         {
             kDSDS_Stat_t dsdsstat;
@@ -1091,10 +1091,10 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
             {
                 statint = DRMS_ERROR_CANTOPENLIBRARY;
             }
-            
+
             attempted = 1;
         }
-        
+
         if (hDSDS)
         {
             kDSDS_Stat_t dsdsStat;
@@ -1102,11 +1102,11 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
             (pDSDSFn_DSDS_segment_read_t)DSDS_GetFPtr(hDSDS, kDSDS_DSDS_SEGMENT_READ);
             pDSDSFn_DSDS_free_array_t pFn_DSDS_free_array =
             (pDSDSFn_DSDS_free_array_t)DSDS_GetFPtr(hDSDS, kDSDS_DSDS_FREE_ARRAY);
-            
+
             if (pFn_DSDS_segment_read && pFn_DSDS_free_array)
             {
                 DRMS_Array_t *copy = NULL;
-                
+
                 if (statint == DRMS_SUCCESS)
                 {
                     arr = (*pFn_DSDS_segment_read)(dsdsParams, ds, rn, locfilename, &dsdsStat);
@@ -1115,7 +1115,7 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
                 {
                     goto bailout1;
                 }
-                
+
                 if (dsdsStat == kDSDS_Stat_Success)
                 {
                     /* Copy - the DSDS array should be freed by libdsds. */
@@ -1139,14 +1139,14 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
                         statint = DRMS_ERROR_OUTOFMEMORY;
                         goto bailout;
                     }
-                    
+
                     copy->bzero = arr->bzero;
                     copy->bscale = arr->bscale;
                     copy->israw = arr->israw;
-                    
+
                     (*pFn_DSDS_free_array)(&arr);
                     arr = copy;
-                    
+
                     /* drms_open_records() makes a temporary series to contain all DSDS data
                      * ingested during a module session. It makes a single segment whose
                      * data type is determined by the bitpix value of the header of the first fits file
@@ -1198,17 +1198,17 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
             fprintf(stdout, "Your JSOC environment does not support DSDS database access.\n");
             statint = DRMS_ERROR_NODSDSSUPPORT;
         }
-        
+
         if (dsdsParams)
         {
             free(dsdsParams);
         }
-        
+
         if (locfilename)
         {
             free(locfilename);
         }
-        
+
     } /* protocols DRMS_DSDS || DRMS_LOCAL */
     else
     {
@@ -1223,14 +1223,14 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
          * we have to assume an error. Compromise: don't write an error message, but issue an
          * error. */
         struct stat stbuf;
-        
+
         if (stat(filename, &stbuf))
         {
             /* file filename is missing */
             statint = DRMS_ERROR_INVALIDFILE;
             goto bailout1;
         }
-        
+
         switch(seg->info->protocol)
         {
             case DRMS_GENERIC:
@@ -1263,7 +1263,7 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
             {
                 CFITSIO_IMAGE_INFO *info = NULL;
                 void *image = NULL;
-                
+
                 /* Call Tim's function to read data */
                 if (fitsrw_readintfile(rec->env->verbose, filename, &info, &image, NULL) == CFITSIO_SUCCESS)
                 {
@@ -1272,7 +1272,7 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
                         fprintf(stderr,"Couldn't read segment from file '%s'.\n", filename);
                         goto bailout1;
                     }
-                    
+
                     /* Don't free image - arr has stolen it. */
                     cfitsio_free_these(&info, NULL, NULL);
                 }
@@ -1298,7 +1298,7 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
             {
                 /* Read the slice in the TAS file corresponding to this record's
                  slot. */
-                
+
                 /* The underlying fits file will have bzero/bscale fits keywords -
                  * those are used to populate arr. They must match the values
                  * that originate in the record's _bzero/_bscale keywords. They cannot
@@ -1323,7 +1323,7 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
             goto bailout1;
         }
     }
-    
+
     /* Check that dimensions match template. */
     if (arr->type != seg->info->type) {
         fprintf (stderr, "Data types in file (%d) do not match those in segment "
@@ -1337,10 +1337,10 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
         statint = DRMS_ERROR_SEGMENT_DATA_MISMATCH;
         goto bailout;
     }
-    
+
     if (seg->info->scope != DRMS_VARDIM)
     {
-        for (i=0;i<arr->naxis;i++) {    
+        for (i=0;i<arr->naxis;i++) {
             if (arr->axis[i] != seg->axis[i]) {
                 fprintf (stderr,"Dimension of axis %d in file (%d) do not match those"
                          " in segment descriptor (%d).\n", i, arr->axis[i], seg->axis[i]);
@@ -1349,13 +1349,13 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
             }
         }
     }
-    
+
     for (i=0;i<arr->naxis;i++)
     arr->start[i] = 0;
-    
-    /* Set information about mapping from parent segment to array. */ 
+
+    /* Set information about mapping from parent segment to array. */
     arr->parent_segment = seg;
-    
+
     /* Scale and convert to desired type. */
     if (type == DRMS_TYPE_RAW)
     {
@@ -1368,14 +1368,14 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
 #ifdef DEBUG
         printf("converted with bzero=%g, bscale=%g\n",arr->bzero, arr->bscale);
 #endif
-        arr->israw = 0;    
+        arr->israw = 0;
     }
-    
+
     if (status)
     *status = DRMS_SUCCESS;
-    
+
     return arr;
-    
+
 bailout:
     free(arr->data);
     free(arr);
@@ -1386,14 +1386,14 @@ bailout1:
 #endif
     if (status)
     *status = statint;
-    return NULL;  
+    return NULL;
 }
 
 
 /* The dimensionality of start, end, and seg must all match.
  *
  */
-DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type, 
+DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type,
 				     axislen_t *start, axislen_t *end, int *status)
 {
   int statint = 0, i;
@@ -1402,40 +1402,40 @@ DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type,
   DRMS_Record_t *rec;
 
   CHECKNULL_STAT(seg,status);
-  
+
   rec = seg->record;
   if (rec->sunum != -1LL && rec->su==NULL)
   {
     /* The storage unit has not been requested from SUMS yet. Do it. */
-    if ((rec->su = drms_getunit(rec->env, rec->seriesinfo->seriesname, 
+    if ((rec->su = drms_getunit(rec->env, rec->seriesinfo->seriesname,
 				rec->sunum, 1, &statint)) == NULL)
     {
-       /* A record may have an SUNUM, but the corresponding SU may no longer exist. The 
-        * series may have archive == 0 so that the SU got removed by sum_rm. Attempting to 
+       /* A record may have an SUNUM, but the corresponding SU may no longer exist. The
+        * series may have archive == 0 so that the SU got removed by sum_rm. Attempting to
         * read a data-segment file from a record whose SU has been deleted is an
         * error, although the caller of drms_segment_readslice() won't typically be aware of this
-        * situation, unless they called SUM_info() before calling drms_segment_readslice(). 
+        * situation, unless they called SUM_info() before calling drms_segment_readslice().
         * Return an error code that the call must deal with. */
        statint = DRMS_ERROR_NOSTORAGEUNIT;
        goto bailout1;
     }
     rec->su->refcount++;
-  }  
+  }
 
   drms_segment_filename(seg, filename);
-  
-  /* For all the protocols, the code needs to open the file. Under some circumstances, the 
+
+  /* For all the protocols, the code needs to open the file. Under some circumstances, the
    * file could be missing. There could be multiple data segments, but not all data segments
    * have files in the storage unit directory (only some were written). This is not an error.
    * Unfortunately, the current design doesn't distinguish this sitation from the error
    * where the file is missing for some other reason (eg., DRMS crashes and fails to write
    * a file). So, we have to assume that there is no error. But how do we tell the user
    * that the file is missing since we have this requirement that the status cannot
-   * return status? If status is not zero, this means "error". So, if a file is missing, 
+   * return status? If status is not zero, this means "error". So, if a file is missing,
    * we have to assume an error. Compromise: don't write an error message, but issue an
    * error. */
   struct stat stbuf;
-     
+
   if (stat(filename, &stbuf))
   {
      /* file filename is missing */
@@ -1443,33 +1443,33 @@ DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type,
      goto bailout1;
   }
 
-  /* For FITS, FITSZ, and TAS (which are implemented at the lowest level with a FITS file), 
-   * just read part of the file. cfitsio can read subsets of a file. 
-   * The other protocols read the whole file, then strip away what is needed, 
+  /* For FITS, FITSZ, and TAS (which are implemented at the lowest level with a FITS file),
+   * just read part of the file. cfitsio can read subsets of a file.
+   * The other protocols read the whole file, then strip away what is needed,
    * which is inefficient.
    */
-  if (seg->info->protocol == DRMS_FITS || 
+  if (seg->info->protocol == DRMS_FITS ||
       seg->info->protocol == DRMS_FITZ)
   {
-     /* The underlying fits file will have bzero/bscale fits keywords - 
-      * those are used to populate arr. They must match the values 
-      * that originate in the record's _bzero/_bscale keywords. They cannot 
+     /* The underlying fits file will have bzero/bscale fits keywords -
+      * those are used to populate arr. They must match the values
+      * that originate in the record's _bzero/_bscale keywords. They cannot
       * vary across records. */
      if ((statint = drms_fitsrw_readslice(rec->env,
-                                          filename, 
+                                          filename,
                                           seg->info->naxis,
                                           start,
                                           end,
                                           &arr)) != DRMS_SUCCESS)
      {
-        fprintf(stderr,"Couldn't read slice from file '%s'.\n", filename);      
+        fprintf(stderr,"Couldn't read slice from file '%s'.\n", filename);
         goto bailout1;
      }
   }
   else if (seg->info->protocol == DRMS_TAS)
   {
      if ((statint = drms_fitstas_readslice(rec->env,
-                                           filename, 
+                                           filename,
                                            seg->info->naxis,
                                            seg->axis,
                                            start,
@@ -1477,7 +1477,7 @@ DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type,
                                            seg->record->slotnum,
                                            &arr)) != DRMS_SUCCESS)
      {
-        fprintf(stderr,"Couldn't read slice from file '%s'.\n", filename);      
+        fprintf(stderr,"Couldn't read slice from file '%s'.\n", filename);
         goto bailout1;
      }
   }
@@ -1491,7 +1491,7 @@ DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type,
           if ((statint = drms_binfile_read(filename, 0, arr)))
           {
              fprintf(stderr,"Couldn't read segment from file '%s'.\n",
-                     filename);      
+                     filename);
              goto bailout1;
           }
           break;
@@ -1501,17 +1501,17 @@ DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type,
           if ((statint = drms_zipfile_read(filename, 0, arr)))
           {
              fprintf(stderr,"Couldn't read segment from file '%s'.\n",
-                     filename);      
+                     filename);
              goto bailout1;
           }
           break;
         case DRMS_GENERIC:
           *status = DRMS_ERROR_INVALIDACTION;
-          return NULL;    
+          return NULL;
           break;
         case DRMS_MSI:
           *status = DRMS_ERROR_NOTIMPLEMENTED;
-          return NULL;    
+          return NULL;
           break;
         case DRMS_FITZDEPRECATED:
         case DRMS_FITSDEPRECATED:
@@ -1533,12 +1533,12 @@ DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type,
        drms_free_array(arr);
      arr = tmp;
      if (!arr)
-       goto bailout1;       
+       goto bailout1;
   }
 
   /* Check that dimensions match template. */
   if (arr->type != seg->info->type) {
-     fprintf (stderr, "Data types in file (%d) do not match those in segment " 
+     fprintf (stderr, "Data types in file (%d) do not match those in segment "
               "descriptor (%d).\n", (int)arr->type, (int)seg->info->type);
      statint = DRMS_ERROR_SEGMENT_DATA_MISMATCH;
      goto bailout;
@@ -1552,7 +1552,7 @@ DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type,
 
   if (seg->info->scope != DRMS_VARDIM)
   {
-     for (i=0;i<arr->naxis;i++) {    
+     for (i=0;i<arr->naxis;i++) {
         if (arr->axis[i] > seg->axis[i]) {
            fprintf (stderr,"Dimension of axis %d in file (%d) is incompatible with those"
                     " in segment descriptor (%d).\n", i, arr->axis[i], seg->axis[i]);
@@ -1565,9 +1565,9 @@ DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type,
   for (i=0;i<arr->naxis;i++)
     arr->start[i] = 0;
 
-  /* Set information about mapping from parent segment to array. */ 
+  /* Set information about mapping from parent segment to array. */
   arr->parent_segment = seg;
-  
+
   /* Scale and convert to desired type. */
   if (type == DRMS_TYPE_RAW)
   {
@@ -1580,12 +1580,12 @@ DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type,
 #ifdef DEBUG
      printf("converted with bzero=%g, bscale=%g\n",arr->bzero, arr->bscale);
 #endif
-     arr->israw = 0;    
+     arr->israw = 0;
   }
 
   if (status)
     *status = DRMS_SUCCESS;
-  
+
   return arr;
 
  bailout:
@@ -1600,7 +1600,7 @@ DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type,
 static DRMS_Array_t *ScaleOutputArray(DRMS_Segment_t *seg, DRMS_Array_t *arr, int autoscale)
 {
    double autobscale, autobzero;
-   double bscale, bzero; /* These are actually inverses used to convert arr->data, so that the resulting 
+   double bscale, bzero; /* These are actually inverses used to convert arr->data, so that the resulting
                           * values must be interpreted with arr->bzero and arr->bscale */
 
    /* Can autoscale only if output file type is an int. */
@@ -1616,7 +1616,7 @@ static DRMS_Array_t *ScaleOutputArray(DRMS_Segment_t *seg, DRMS_Array_t *arr, in
 
    if (arr->type != DRMS_TYPE_FLOAT && arr->type != DRMS_TYPE_DOUBLE)
    {
-      /* bzero/bscale are not relevant when the data type is not 
+      /* bzero/bscale are not relevant when the data type is not
        * an integer type; so israw is also not relevant */
       if (arr->israw)
       {
@@ -1657,7 +1657,7 @@ static DRMS_Array_t *ScaleOutputArray(DRMS_Segment_t *seg, DRMS_Array_t *arr, in
             outisraw = 1;
          }
       }
-      else 
+      else
       {
          /* No scaling should occur - these are integers in physical units */
          if (!autoscale)
@@ -1705,7 +1705,7 @@ static DRMS_Array_t *ScaleOutputArray(DRMS_Segment_t *seg, DRMS_Array_t *arr, in
       }
    }
 
-#ifdef DEBUG      
+#ifdef DEBUG
    printf("in write_segment:  bzero=%g, bscale = %g\n",bzero,bscale);
 #endif
 
@@ -1714,11 +1714,11 @@ static DRMS_Array_t *ScaleOutputArray(DRMS_Segment_t *seg, DRMS_Array_t *arr, in
    {
       out = drms_array_convert(seg->info->type, bzero, bscale, arr);
    }
-   else 
+   else
    {
       out = arr;
    }
-    
+
    if (copyarrscale)
    {
       out->bzero = arr->bzero;
@@ -1740,7 +1740,7 @@ static DRMS_Array_t *ScaleOutputArray(DRMS_Segment_t *seg, DRMS_Array_t *arr, in
 static int drms_segment_writeinternal(DRMS_Segment_t *seg, DRMS_Array_t *arr, int autoscale, int wkeys)
 {
   int status,i;
-  char filename[DRMS_MAXPATHLEN]; 
+  char filename[DRMS_MAXPATHLEN];
   DRMS_Array_t *out;
   DRMS_SeriesVersion_t vers2_1 = {"2.1", ""};
   CFITSIO_KEYWORD *fitskeys = NULL;
@@ -1785,7 +1785,7 @@ static int drms_segment_writeinternal(DRMS_Segment_t *seg, DRMS_Array_t *arr, in
 	  if (arr->axis[i] != seg->axis[i])
 	  {
 	     fprintf(stderr,"Dimension of axis %d in file (%d) do not match those"
-		     " in segment descriptor (%d).\n",i,arr->axis[i], 
+		     " in segment descriptor (%d).\n",i,arr->axis[i],
 		     seg->axis[i]);
 	     return DRMS_ERROR_INVALIDDIMS;
 	  }
@@ -1859,7 +1859,7 @@ static int drms_segment_writeinternal(DRMS_Segment_t *seg, DRMS_Array_t *arr, in
          /* If wkeys, then export DRMS keys to FITS keys*/
          if (wkeys)
          {
-            fitskeys = fitsexport_mapkeys(seg, NULL, NULL, &status);
+            fitskeys = fitsexport_mapkeys(NULL, seg, NULL, NULL, NULL, NULL, NULL, &status);
             if (status)
             {
                fprintf(stderr, "WARNING - failure to export one or more keywords.\n");
@@ -1871,17 +1871,17 @@ static int drms_segment_writeinternal(DRMS_Segment_t *seg, DRMS_Array_t *arr, in
 
 	 if (!drms_fitsrw_SetImageInfo(out, &imginfo))
 	 {
-         /* Need to change the compression parameter to something meaningful 
+         /* Need to change the compression parameter to something meaningful
           * (although new users should just use the DRMS_FITS protocol )*/
          if (fitsrw_writeintfile(seg->record->env->verbose, filename, &imginfo, out->data, seg->cparms, fitskeys) != CFITSIO_SUCCESS)
          {
              status = DRMS_ERROR_FITSRW;
              goto bailout;
          }
-         
-         /* imginfo will contain the correct bzero/bscale.  This may be different 
-          * that what lives in seg->bzero/bscale - those values can be overriden. 
-          * If they are overridden, then the new values must be saved in the 
+
+         /* imginfo will contain the correct bzero/bscale.  This may be different
+          * that what lives in seg->bzero/bscale - those values can be overriden.
+          * If they are overridden, then the new values must be saved in the
           * underlying keywords where they are stored. */
          if (drms_series_isvers(seg->record->seriesinfo, &vers2_1))
          {
@@ -1918,7 +1918,7 @@ static int drms_segment_writeinternal(DRMS_Segment_t *seg, DRMS_Array_t *arr, in
          /* If wkeys, then export DRMS keys to FITS keys*/
          if (wkeys)
          {
-            fitskeys = fitsexport_mapkeys(seg, NULL, NULL, &status);
+            fitskeys = fitsexport_mapkeys(NULL, seg, NULL, NULL, NULL, NULL, NULL, &status);
             if (status)
             {
                fprintf(stderr, "WARNING - failure to export one or more keywords.\n");
@@ -1929,21 +1929,21 @@ static int drms_segment_writeinternal(DRMS_Segment_t *seg, DRMS_Array_t *arr, in
 	 CFITSIO_IMAGE_INFO imginfo;
 
 	 if (!drms_fitsrw_SetImageInfo(out, &imginfo))
-	 {	    
+	 {
 	    if (fitsrw_writeintfile(seg->record->env->verbose, filename, &imginfo, out->data, seg->cparms, fitskeys) != CFITSIO_SUCCESS)
             {
                status = DRMS_ERROR_FITSRW;
                goto bailout;
             }
-            
-            /* imginfo will contain the correct bzero/bscale.  This may be different 
-             * that what lives in seg->bzero/bscale - those values can be overriden. 
-             * If they are overridden, then the new values must be saved in the 
+
+            /* imginfo will contain the correct bzero/bscale.  This may be different
+             * that what lives in seg->bzero/bscale - those values can be overriden.
+             * If they are overridden, then the new values must be saved in the
              * underlying keywords where they are stored. */
             if (drms_series_isvers(seg->record->seriesinfo, &vers2_1))
             {
                if (!drms_segment_checkscaling(out, seg->bzero, seg->bscale))
-               {                   
+               {
                    snprintf(key, sizeof(key), "%s_bzero", seg->info->name);
                    drms_setkey_double(seg->record, key, drms_fitsrw_GetBzeroFromInfo(&imginfo));
                    snprintf(key, sizeof(key), "%s_bscale", seg->info->name);
@@ -1962,16 +1962,16 @@ static int drms_segment_writeinternal(DRMS_Segment_t *seg, DRMS_Array_t *arr, in
             cfitsio_free_keys(&fitskeys);
          }
       }
-      break;  
+      break;
     case DRMS_MSI:
       return DRMS_ERROR_NOTIMPLEMENTED;
-      break;   
+      break;
     case DRMS_TAS:
       {
           char virgin[PATH_MAX];
           struct stat stBuf;
-          
-         /* seg->bzero and seg->bscale cannot be overridden - all records must 
+
+         /* seg->bzero and seg->bscale cannot be overridden - all records must
           * have the same bzero and bscale values, since they share the same
           * fits file */
          if (drms_series_isvers(seg->record->seriesinfo, &vers2_1))
@@ -1985,18 +1985,18 @@ static int drms_segment_writeinternal(DRMS_Segment_t *seg, DRMS_Array_t *arr, in
          }
 
          status = drms_fitstas_writeslice(seg->record->env,
-                                          seg, 
-                                          filename, 
-                                          seg->info->naxis, 
-                                          seg->axis, 
-                                          NULL, 
-                                          NULL, 
-                                          seg->record->slotnum, 
+                                          seg,
+                                          filename,
+                                          seg->info->naxis,
+                                          seg->axis,
+                                          NULL,
+                                          NULL,
+                                          seg->record->slotnum,
                                           out);
 
          if (status)
            goto bailout;
-          
+
           /* We successfully wrote a slice to a TAS file, so now we have to delete the corresponding .virgin file. This
            * will ensure that we do NOT delete the TAS file during module shutdown. */
           snprintf(virgin, sizeof(virgin), "%s.virgin", filename);
@@ -2016,7 +2016,7 @@ static int drms_segment_writeinternal(DRMS_Segment_t *seg, DRMS_Array_t *arr, in
       status = DRMS_ERROR_NOTIMPLEMENTED;
       fprintf(stderr,"Protocol DRMS_FITSDEPRECATED has been deprecated.\n");
       goto bailout;
-      break; 
+      break;
     default:
       return DRMS_ERROR_UNKNOWNPROTOCOL;
     }
@@ -2059,18 +2059,18 @@ int drms_segment_write(DRMS_Segment_t *seg, DRMS_Array_t *arr, int autoscale)
 
 int drms_segment_writewithkeys(DRMS_Segment_t *seg, DRMS_Array_t *arr, int autoscale)
 {
-   return drms_segment_writeinternal(seg, arr, autoscale, 1);  
+   return drms_segment_writeinternal(seg, arr, autoscale, 1);
 }
 
-int drms_segment_writeslice_ext(DRMS_Segment_t *seg, 
-                                DRMS_Array_t *arr, 
-                                axislen_t *start, 
-                                axislen_t *end, 
+int drms_segment_writeslice_ext(DRMS_Segment_t *seg,
+                                DRMS_Array_t *arr,
+                                axislen_t *start,
+                                axislen_t *end,
                                 int *finaldims,
                                 int autoscale)
 {
   int status,i;
-  char filename[DRMS_MAXPATHLEN]; 
+  char filename[DRMS_MAXPATHLEN];
   DRMS_Array_t *out;
   DRMS_SeriesVersion_t vers2_1 = {"2.1", ""};
 
@@ -2114,7 +2114,7 @@ int drms_segment_writeslice_ext(DRMS_Segment_t *seg,
            if (start[i] < 0 || end[i] > seg->axis[i] - 1)
            {
               fprintf(stderr,
-                      "Axis slice '[%d, %d]' not entirely within data array boundaries.\n", 
+                      "Axis slice '[%d, %d]' not entirely within data array boundaries.\n",
                       start[i], end[i]);
               return DRMS_ERROR_INVALIDDIMS;
            }
@@ -2151,7 +2151,7 @@ int drms_segment_writeslice_ext(DRMS_Segment_t *seg,
            }
         }
 
-        /* if the jsd specifies "compress Rice" or "compress', then we should make the compression-tile size match 
+        /* if the jsd specifies "compress Rice" or "compress', then we should make the compression-tile size match
          * the output array's dimensions (for efficiency). */
         if (strcasestr(seg->cparms, "compress"))
         {
@@ -2179,7 +2179,7 @@ int drms_segment_writeslice_ext(DRMS_Segment_t *seg,
           status = DRMS_ERROR_NOTIMPLEMENTED;
           fprintf(stderr,"Protocol DRMS_FITSDEPRECATED and DRMS_FITZDEPRECATED have been deprecated.\n");
           goto bailout;
-          break; 
+          break;
         case DRMS_FITZ:
         case DRMS_FITS:
          {
@@ -2188,9 +2188,9 @@ int drms_segment_writeslice_ext(DRMS_Segment_t *seg,
                  fprintf(stderr, "Can't save string data into a fits file.\n");
                  goto bailout;
              }
-             
-             /* When writing a slice, bzero/bscale must match the segment's bzero/bscale. 
-              * Otherwise, you could write slices with differing bzero/bscale values, 
+
+             /* When writing a slice, bzero/bscale must match the segment's bzero/bscale.
+              * Otherwise, you could write slices with differing bzero/bscale values,
               * which would be a big problem. */
              if (drms_series_isvers(seg->record->seriesinfo, &vers2_1))
              {
@@ -2201,24 +2201,24 @@ int drms_segment_writeslice_ext(DRMS_Segment_t *seg,
                      goto bailout;
                  }
              }
-             
-             if ((status = drms_fitsrw_writeslice_ext(seg->record->env, 
+
+             if ((status = drms_fitsrw_writeslice_ext(seg->record->env,
                                                       seg,
-                                                      filename, 
-                                                      out->naxis, 
-                                                      start, 
-                                                      end, 
+                                                      filename,
+                                                      out->naxis,
+                                                      start,
+                                                      end,
                                                       finaldims,
                                                       out)) != DRMS_SUCCESS)
                  goto bailout;
          }
-          break;  
+          break;
         case DRMS_TAS:
          {
              char virgin[PATH_MAX];
              struct stat stBuf;
-             
-             /* seg->bzero and seg->bscale cannot be overridden - all records must 
+
+             /* seg->bzero and seg->bscale cannot be overridden - all records must
               * have the same bzero and bscale values, since they share the same
               * fits file */
              if (drms_series_isvers(seg->record->seriesinfo, &vers2_1))
@@ -2230,18 +2230,18 @@ int drms_segment_writeslice_ext(DRMS_Segment_t *seg,
                      goto bailout;
                  }
              }
-             
+
              if ((status = drms_fitstas_writeslice(seg->record->env,
-                                                   seg, 
-                                                   filename, 
-                                                   seg->info->naxis, 
-                                                   seg->axis, 
-                                                   start, 
-                                                   end, 
-                                                   seg->record->slotnum, 
+                                                   seg,
+                                                   filename,
+                                                   seg->info->naxis,
+                                                   seg->axis,
+                                                   start,
+                                                   end,
+                                                   seg->record->slotnum,
                                                    out)) != DRMS_SUCCESS)
                  goto bailout;
-             
+
              /* We successfully wrote a slice to a TAS file, so now we have to delete the corresponding .virgin file. This
               * will ensure that we do NOT delete the TAS file during module shutdown. */
              snprintf(virgin, sizeof(virgin), "%s.virgin", filename);
@@ -2280,10 +2280,10 @@ int drms_segment_writeslice_ext(DRMS_Segment_t *seg,
   return status;
 }
 
-int drms_segment_writeslice(DRMS_Segment_t *seg, 
-                            DRMS_Array_t *arr, 
-                            axislen_t *start, 
-                            axislen_t *end, 
+int drms_segment_writeslice(DRMS_Segment_t *seg,
+                            DRMS_Array_t *arr,
+                            axislen_t *start,
+                            axislen_t *end,
                             int autoscale)
 {
     return drms_segment_writeslice_ext(seg, arr, start, end, NULL, autoscale);
@@ -2310,7 +2310,7 @@ int drms_segment_write_from_file(DRMS_Segment_t *seg, const char *infile) {
     return DRMS_ERROR_RECORDREADONLY;
   }
 
-  // check protocol 
+  // check protocol
   if (seg->info->protocol != DRMS_GENERIC)  {
     fprintf(stderr, "ERROR in drms_segment_write_from_file: Can't use "
 	    "on non-DRMS_GENERIC segment.  Series = %s.\n", seg->record->seriesinfo->seriesname);
@@ -2323,9 +2323,9 @@ int drms_segment_write_from_file(DRMS_Segment_t *seg, const char *infile) {
   }
   // strip path from infile
   filename = rindex(infile, '/');
-  if (filename) 
+  if (filename)
     filename++;
-  else 
+  else
     filename = infile;
 
   CHECKSNPRINTF(snprintf(seg->filename, DRMS_MAXSEGFILENAME, "%s", filename), DRMS_MAXSEGFILENAME);
@@ -2343,14 +2343,14 @@ int drms_segment_write_from_file(DRMS_Segment_t *seg, const char *infile) {
     else if (read_size == 0) {
 	 break;              /* end of file */
     }
-    
+
     fwrite(buf, 1, read_size, out);
   }
   fclose(in);
-  fclose(out); 
+  fclose(out);
   free(buf);
   buf = NULL;
-  
+
   if (seg->info->scope == DRMS_CONSTANT &&
       !seg->info->cseg_recnum) {
 
@@ -2359,14 +2359,14 @@ int drms_segment_write_from_file(DRMS_Segment_t *seg, const char *infile) {
       goto bailout;
     }
     return drms_segment_set_const(seg);
-  }  
+  }
 
   return DRMS_SUCCESS;
 
  bailout1:
   unlink(outfile);
  bailout:
-  if (buf) 
+  if (buf)
     free(buf);
   seg->filename[0] = '\0';
   return 1;
@@ -2382,15 +2382,15 @@ void drms_segment_getblocksize(DRMS_Segment_t *seg, int *blksz)
 {
   memcpy(blksz,seg->blocksize,seg->info->naxis*sizeof(int));
 }
- 
+
 
 /* Set the scaling of the segment such that the values in the array
    can be stored in an (scaled) integer data segment without overflow.
    The bzero/bscale parameters that the array should be scaled by are returned.
 */
-void drms_segment_autoscale(DRMS_Segment_t *seg, 
-			    DRMS_Array_t *arr, 
-			    double *autobzero, 
+void drms_segment_autoscale(DRMS_Segment_t *seg,
+			    DRMS_Array_t *arr,
+			    double *autobzero,
 			    double *autobscale)
 {
   int iscale;
@@ -2402,7 +2402,7 @@ void drms_segment_autoscale(DRMS_Segment_t *seg,
 
   switch(seg->info->type)
   {
-  case DRMS_TYPE_CHAR: 
+  case DRMS_TYPE_CHAR:
     outmin = (double)SCHAR_MIN+1;
     outmax = (double)SCHAR_MAX;
     break;
@@ -2410,18 +2410,18 @@ void drms_segment_autoscale(DRMS_Segment_t *seg,
     outmin = (double)SHRT_MIN+1;
     outmax = (double)SHRT_MAX;
     break;
-  case DRMS_TYPE_INT:  
+  case DRMS_TYPE_INT:
     outmin = (double)INT_MIN+1;
     outmax = (double)INT_MAX;
     break;
-  case DRMS_TYPE_LONGLONG:  
+  case DRMS_TYPE_LONGLONG:
     outmin = (double)LLONG_MIN+1;
     outmax = (double)LLONG_MAX;
     break;
-  case DRMS_TYPE_FLOAT:  
-  case DRMS_TYPE_DOUBLE: 	
-  case DRMS_TYPE_TIME: 
-  case DRMS_TYPE_STRING: 
+  case DRMS_TYPE_FLOAT:
+  case DRMS_TYPE_DOUBLE:
+  case DRMS_TYPE_TIME:
+  case DRMS_TYPE_STRING:
     return;
   default:
     fprintf(stderr, "ERROR: Unhandled DRMS type %d\n",(int)seg->info->type);
@@ -2435,7 +2435,7 @@ void drms_segment_autoscale(DRMS_Segment_t *seg,
   bscale=1.0;
   switch(arr->type)
   {
-  case DRMS_TYPE_CHAR: 
+  case DRMS_TYPE_CHAR:
     if (arr->israw || CHAR_MAX>outmax || CHAR_MIN<outmin)
     {
       char *p = (char *)arr->data;
@@ -2466,7 +2466,7 @@ void drms_segment_autoscale(DRMS_Segment_t *seg,
 	  bscale = (inmax-inmin)/(outmax-outmin);
 	}
       }
-      else 
+      else
       {
 	if (inmax<=outmax && inmin>=outmin)
 	{
@@ -2478,7 +2478,7 @@ void drms_segment_autoscale(DRMS_Segment_t *seg,
 	  bzero = (inmax+inmin)/2;
 	  bscale = (inmax-inmin)/(outmax-outmin);
 	}
-      }  
+      }
     }
 
     *autobzero = bzero;
@@ -2515,7 +2515,7 @@ void drms_segment_autoscale(DRMS_Segment_t *seg,
 	  bscale = (inmax-inmin)/(outmax-outmin);
 	}
       }
-      else 
+      else
       {
 	if (inmax<=outmax && inmin>=outmin)
 	{
@@ -2527,13 +2527,13 @@ void drms_segment_autoscale(DRMS_Segment_t *seg,
 	  bzero = (inmax+inmin)/2;
 	  bscale = (inmax-inmin)/(outmax-outmin);
 	}
-      }  
+      }
     }
 
     *autobzero = bzero;
     *autobscale = bscale;
     break;
-  case DRMS_TYPE_INT:  
+  case DRMS_TYPE_INT:
     if (arr->israw || INT_MAX>outmax || INT_MIN<outmin)
     {
       int *p = (int *)arr->data;
@@ -2564,7 +2564,7 @@ void drms_segment_autoscale(DRMS_Segment_t *seg,
 	  bscale = (inmax-inmin)/(outmax-outmin);
 	}
       }
-      else 
+      else
       {
 	if (inmax<=outmax && inmin>=outmin)
 	{
@@ -2576,13 +2576,13 @@ void drms_segment_autoscale(DRMS_Segment_t *seg,
 	  bzero = (inmax+inmin)/2;
 	  bscale = (inmax-inmin)/(outmax-outmin);
 	}
-      }  
+      }
     }
 
     *autobzero = bzero;
     *autobscale = bscale;
     break;
-  case DRMS_TYPE_LONGLONG:  
+  case DRMS_TYPE_LONGLONG:
     if (arr->israw || LLONG_MAX>outmax || LLONG_MIN<outmin)
     {
       long long *p = (long long *)arr->data;
@@ -2613,7 +2613,7 @@ void drms_segment_autoscale(DRMS_Segment_t *seg,
 	  bscale = (inmax-inmin)/(outmax-outmin);
 	}
       }
-      else 
+      else
       {
 	if (inmax<=outmax && inmin>=outmin)
 	{
@@ -2625,13 +2625,13 @@ void drms_segment_autoscale(DRMS_Segment_t *seg,
 	  bzero = (inmax+inmin)/2;
 	  bscale = (inmax-inmin)/(outmax-outmin);
 	}
-      }  
+      }
     }
 
     *autobzero = bzero;
     *autobscale = bscale;
     break;
-  case DRMS_TYPE_FLOAT: 
+  case DRMS_TYPE_FLOAT:
     if (!arr->israw && (seg->info->type==DRMS_TYPE_DOUBLE || seg->info->type==DRMS_TYPE_FLOAT))
     {
        *autobzero = 0.0;
@@ -2662,8 +2662,8 @@ void drms_segment_autoscale(DRMS_Segment_t *seg,
       *autobscale = bscale;
     }
     break;
-  case DRMS_TYPE_DOUBLE: 	
-  case DRMS_TYPE_TIME: 
+  case DRMS_TYPE_DOUBLE:
+  case DRMS_TYPE_TIME:
     if (!arr->israw && (seg->info->type==DRMS_TYPE_DOUBLE))
     {
        *autobzero = 0.0;
@@ -2694,7 +2694,7 @@ void drms_segment_autoscale(DRMS_Segment_t *seg,
       *autobscale = bscale;
     }
     break;
-  case DRMS_TYPE_STRING: 
+  case DRMS_TYPE_STRING:
     *autobzero = 0.0;
     *autobscale = 1.0;
     return;
@@ -2764,17 +2764,17 @@ static DRMS_Segment_t *TemplateSegFollowLink(DRMS_Segment_t *srcseg, int depth, 
     DRMS_Link_t *link = NULL;
     DRMS_Record_t *linktempl = NULL;
     DRMS_Segment_t *tgtseg = NULL;
-    
+
     /* Fetch link struct. */
     link = (DRMS_Link_t *)hcon_lookup_lower(&srcseg->record->links, srcseg->info->linkname);
     if (link)
     {
         linktempl = drms_template_record(srcseg->record->env, link->info->target_series, &status);
-        
+
         if (linktempl)
         {
             tgtseg = (DRMS_Segment_t *)hcon_lookup_lower(&linktempl->segments, srcseg->info->target_seg);
-            
+
             if (tgtseg)
             {
                 if (tgtseg->info->islink)
@@ -2815,7 +2815,7 @@ static DRMS_Segment_t *TemplateSegFollowLink(DRMS_Segment_t *srcseg, int depth, 
             *statret = DRMS_ERROR_UNKNOWNLINK;
         }
     }
-    
+
     return tgtseg;
 }
 

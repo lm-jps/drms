@@ -19,14 +19,13 @@
 
 //****************************************************************************
 
-#define CFITSIO_MAX_DIM		                  9
-#define CFITSIO_MAX_BLANK                  32
-#define CFITSIO_MAX_STR                   128 /* Use this instead of defines in
-					       * fitsio.h, otherwise all files
-					       * that include this file will
-					       * be dependent on fitsio.h */
+#define CFITSIO_MAX_DIM		                 9
+#define CFITSIO_MAX_BLANK                 32
+#define CFITSIO_MAX_STR                   128 /* Use this instead of defines in fitsio.h, otherwise all files that include this file will be dependent on fitsio.h */
 #define CFITSIO_MAX_COMMENT               73
 #define CFITSIO_MAX_FORMAT                32
+#define CFITSIO_MAX_KEYNAME                8
+#define CFITSIO_MAX_TFORM                  3
 
 #define CFITSIO_SUCCESS                   0
 #define CFITSIO_FAIL                     -1
@@ -55,11 +54,17 @@ typedef char cfitsio_keyword_datatype_t;
 #define CFITSIO_KEYWORD_COMMENT          "COMMENT"
 #define CFITSIO_KEYWORD_CONTINUE         "CONTINUE"
 
+#define CFITSIO_MAX_BINTABLE_WIDTH    1024
+
 typedef enum
 {
-     CFITSIO_FILE_TYPE_EMPTY = 0,
-     CFITSIO_FILE_TYPE_HEADER,
-     CFITSIO_FILE_TYPE_IMAGE
+		CFITSIO_FILE_TYPE_UNKNOWN = -1,  /* the `type` field was never initialized */
+		CFITSIO_FILE_TYPE_EMPTY = 0,     /* no fptr */
+		CFITSIO_FILE_TYPE_UNITIALIZED,   /* has an fptr, but no header or image or table was created */
+		CFITSIO_FILE_TYPE_HEADER,
+		CFITSIO_FILE_TYPE_IMAGE,
+		CFITSIO_FILE_TYPE_ASCIITABLE,
+		CFITSIO_FILE_TYPE_BINTABLE
 } cfitsio_file_type_t;
 
 //****************************************************************************
@@ -101,13 +106,14 @@ typedef union cfitsio_value
 
 typedef struct cfitsio_keyword
 {
-      char key_name[CFITSIO_MAX_STR];
+      char key_name[CFITSIO_MAX_KEYNAME + 1];
       char key_type; // C: string, L: logical, I: integer, F: float, X: complex
       CFITSIO_KEY_VALUE key_value;
       char key_format[CFITSIO_MAX_FORMAT]; /* Used when writing to FITS file only,
                                                  * not used when reading from file. */
       char key_comment[CFITSIO_MAX_STR];
 			char key_unit[CFITSIO_MAX_COMMENT];
+			char key_tform[CFITSIO_MAX_TFORM + 1];                   /* the tform data type */
 			int is_missing; /* set to 1 if there is no key_value */
       struct cfitsio_keyword *next;
 
@@ -134,6 +140,26 @@ typedef	struct cfitsio_image_info
       char fhash[PATH_MAX];  /* key to fitsfile ptr stored in gFFPtrInfo */
 } CFITSIO_IMAGE_INFO;
 
+struct __CFITSIO_BINTABLE_TTYPE_struct__
+{
+		char ttype[CFITSIO_MAX_KEYNAME + 1];
+};
+typedef struct __CFITSIO_BINTABLE_TTYPE_struct__ CFITSIO_BINTABLE_TTYPE;
+
+struct __CFITSIO_BINTABLE_TFORM_struct__
+{
+		char tform[CFITSIO_MAX_TFORM + 1];
+};
+typedef struct __CFITSIO_BINTABLE_TFORM_struct__ CFITSIO_BINTABLE_TFORM;
+
+struct cfitsio_bintable_info
+{
+		LinkedList_t *rows;                                            /* a list of CFITSIO_KEYWORD * lists; each list contains the keyword values for a single row */
+		int tfields;                                                   /* the number of columns in the table; must be constant across all rows */
+		CFITSIO_BINTABLE_TTYPE *ttypes[CFITSIO_MAX_BINTABLE_WIDTH];    /* the array of names of columns in the table; must be constant across all rows */
+		CFITSIO_BINTABLE_TFORM *tforms[CFITSIO_MAX_BINTABLE_WIDTH];    /* the array of tform data type of columns in the table; must be constant across all rows */
+};
+typedef struct cfitsio_bintable_info CFITSIO_BINTABLE_INFO;
 
 /* a random fitsfile */
 typedef struct cfitsio_file CFITSIO_FILE;
@@ -184,17 +210,23 @@ int fitsrw_writeintfile(int verbose,
                         const char* compspecs,
                         CFITSIO_KEYWORD* keylist); //keylist == NULL if not needed
 
-void cfitsio_free_these(CFITSIO_IMAGE_INFO** image_info,
-			void** image,
-			CFITSIO_KEYWORD** keylist);
+void cfitsio_free_these(CFITSIO_IMAGE_INFO** image_info, void** image, CFITSIO_KEYWORD** keylist);
 
-int cfitsio_create_key(const char *name, cfitsio_keyword_datatype_t type, const void *value, const char *format, const char *comment, const char *unit, CFITSIO_KEYWORD **keyOut);
+int cfitsio_create_header_key(const char *name, cfitsio_keyword_datatype_t type, const void *value, const char *format, const char *comment, const char *unit, CFITSIO_KEYWORD **keyOut);
 
-int cfitsio_delete_key(CFITSIO_FILE *fitsFile, const char *key);
+int cfitsio_delete_header_key(CFITSIO_FILE *fitsFile, const char *key);
 
 int cfitsio_delete_headsum(CFITSIO_FILE *fitsFile);
 
-int cfitsio_create_file(CFITSIO_FILE **out_file, const char *file_name, cfitsio_file_type_t file_type, CFITSIO_IMAGE_INFO *info);
+int cfitsio_get_file_type(CFITSIO_FILE *file, cfitsio_file_type_t *type);
+
+int cfitsio_create_header(CFITSIO_FILE *file);
+
+int cfitsio_create_image(CFITSIO_FILE *file, CFITSIO_IMAGE_INFO *image_info);
+
+int cfitsio_create_bintable(CFITSIO_FILE *file, CFITSIO_BINTABLE_INFO *bintable_info);
+
+int cfitsio_create_file(CFITSIO_FILE **out_file, const char *file_name, cfitsio_file_type_t file_type, CFITSIO_IMAGE_INFO *image_info, CFITSIO_BINTABLE_INFO *bintable_info);
 
 int cfitsio_open_file(const char *path, CFITSIO_FILE **fitsFile, int writeable);
 
@@ -216,15 +248,19 @@ void cfitsio_close_header(CFITSIO_HEADER **header);
 
 int cfitsio_copy_file(CFITSIO_FILE *source_in, CFITSIO_FILE *dest_in, int copy_header_only);
 
-int cfitsio_copy_keywords(CFITSIO_FILE *in_file, CFITSIO_FILE *out_file, CFITSIO_KEYWORD *key_list);
+int cfitsio_write_keys_to_bintable(CFITSIO_FILE *file_out, LinkedList_t *keyword_data);
 
-int cfitsio_read_key(CFITSIO_FILE *file, CFITSIO_KEYWORD *key);
+int cfitsio_copy_header_keywords(CFITSIO_FILE *in_file, CFITSIO_FILE *out_file, CFITSIO_KEYWORD *key_list);
 
-int cfitsio_update_key(CFITSIO_FILE *file, CFITSIO_KEYWORD *key);
+int cfitsio_read_header_key(CFITSIO_FILE *file, CFITSIO_KEYWORD *key);
 
-int cfitsio_update_keywords(CFITSIO_FILE *file, CFITSIO_HEADER *header, CFITSIO_KEYWORD *key_list);
+int cfitsio_update_header_key(CFITSIO_FILE *file, CFITSIO_KEYWORD *key);
 
-int cfitsio_write_key(CFITSIO_FILE *file, CFITSIO_KEYWORD *key);
+int cfitsio_update_header_keywords(CFITSIO_FILE *file, CFITSIO_HEADER *header, CFITSIO_KEYWORD *key_list);
+
+int cfitsio_write_header_key(CFITSIO_FILE *file, CFITSIO_KEYWORD *key);
+
+int cfitsio_write_header_keys(CFITSIO_FILE *file, char **header, CFITSIO_KEYWORD *key_list, CFITSIO_FILE *fits_header);
 
 int cfitsio_flush_buffer(CFITSIO_FILE *fitsFile);
 
@@ -234,7 +270,7 @@ int cfitsio_write_chksum(CFITSIO_FILE *file);
 
 int cfitsio_write_longwarn(CFITSIO_FILE *file);
 
-int cfitsio_append_key(CFITSIO_KEYWORD** keylist, const char *name, cfitsio_keyword_datatype_t type, void *value, const char *format, const char *comment, const char *unit);
+int cfitsio_append_header_key(CFITSIO_KEYWORD** keylist, const char *name, cfitsio_keyword_datatype_t type, void *value, const char *format, const char *comment, const char *unit, CFITSIO_KEYWORD **fits_key_out);
 
 int cfitsio_generate_checksum(CFITSIO_FILE **fitsFile, CFITSIO_KEYWORD *keyList, char **checksum);
 

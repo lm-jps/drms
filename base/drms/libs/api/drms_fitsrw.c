@@ -16,7 +16,7 @@ DRMS_Type_t drms_fitsrw_Bitpix2Type(int bitpix, int *err)
    switch(bitpix)
    {
       case 8:
-	type = DRMS_TYPE_CHAR; 
+	type = DRMS_TYPE_CHAR;
 	break;
       case 16:
 	type = DRMS_TYPE_SHORT;
@@ -25,13 +25,13 @@ DRMS_Type_t drms_fitsrw_Bitpix2Type(int bitpix, int *err)
 	type = DRMS_TYPE_INT;
 	break;
       case 64:
-	type = DRMS_TYPE_LONGLONG;  
+	type = DRMS_TYPE_LONGLONG;
 	break;
       case -32:
 	type = DRMS_TYPE_FLOAT;
 	break;
       case -64:
-	type = DRMS_TYPE_DOUBLE; 	
+	type = DRMS_TYPE_DOUBLE;
 	break;
       default:
 	fprintf(stderr, "ERROR: Invalid bitpix value %d\n", bitpix);
@@ -54,26 +54,26 @@ int drms_fitsrw_Type2Bitpix(DRMS_Type_t type, int *err)
 
    switch(type)
    {
-      case DRMS_TYPE_CHAR: 
+      case DRMS_TYPE_CHAR:
 	bitpix = 8;
 	break;
       case DRMS_TYPE_SHORT:
 	bitpix = 16;
 	break;
-      case DRMS_TYPE_INT:  
+      case DRMS_TYPE_INT:
 	bitpix = 32;
 	break;
-      case DRMS_TYPE_LONGLONG:  
+      case DRMS_TYPE_LONGLONG:
 	bitpix = 64;
 	break;
       case DRMS_TYPE_FLOAT:
 	bitpix = -32;
 	break;
-      case DRMS_TYPE_DOUBLE: 	
-      case DRMS_TYPE_TIME: 
+      case DRMS_TYPE_DOUBLE:
+      case DRMS_TYPE_TIME:
 	bitpix = -64;
 	break;
-      case DRMS_TYPE_STRING: 
+      case DRMS_TYPE_STRING:
       default:
 	fprintf(stderr, "ERROR: Unsupported DRMS type %d\n", (int)type);
 	error = 1;
@@ -151,8 +151,8 @@ int drms_fitsrw_CreateDRMSArray(CFITSIO_IMAGE_INFO *info, void *data, DRMS_Array
 	 else
 	 {
 	    err = 1;
-	    fprintf(stderr, 
-		    "%s = %d outside allowable DRMS range [1-%d].\n", 
+	    fprintf(stderr,
+		    "%s = %d outside allowable DRMS range [1-%d].\n",
 		    kNAXIS,
 		    info->naxis,
 		    DRMS_MAXRANK);
@@ -182,7 +182,7 @@ int drms_fitsrw_CreateDRMSArray(CFITSIO_IMAGE_INFO *info, void *data, DRMS_Array
 
       if (!err && info->bitpix > 0)
       {
-	 /* BLANK isn't stored anywhere in DRMS.  Just use DRMS_MISSING_XXX. 
+	 /* BLANK isn't stored anywhere in DRMS.  Just use DRMS_MISSING_XXX.
 	  * But need to convert data blanks to missing. */
 	 if (info->bitfield & kInfoPresent_BLANK)
 	 {
@@ -214,12 +214,12 @@ int drms_fitsrw_SetImageInfo(DRMS_Array_t *arr, CFITSIO_IMAGE_INFO *info)
 {
     int err = 0;
     int ia;
-    
+
     if (info)
     {
         memset(info, 0, sizeof(CFITSIO_IMAGE_INFO));
         info->bitpix = drms_fitsrw_Type2Bitpix(arr->type, &err);
-        
+
         if (!err)
         {
             if (arr->naxis > 0)
@@ -231,27 +231,27 @@ int drms_fitsrw_SetImageInfo(DRMS_Array_t *arr, CFITSIO_IMAGE_INFO *info)
                 err = 1;
             }
         }
-        
+
         if (!err)
         {
             for (ia = 0; ia < arr->naxis; ia++)
             {
                 info->naxes[ia] = (long)(arr->axis[ia]);
             }
-            
+
             info->simple = 1;
             info->extend = 0; /* baby steps - trying to dupe what happens in FITS protocol. */
             info->bitfield = (info->bitfield | kInfoPresent_SIMPLE);
-            
+
             if (info->bitpix > 0)
             {
                 /* An integer type - need to set BLANK, and possibly BZERO and BSCALE. */
                 DRMS_Type_Value_t missing;
                 drms_missing(arr->type, &missing);
-                
+
                 info->blank = conv2longlong(arr->type, &missing, NULL);
                 info->bitfield = (info->bitfield | kInfoPresent_BLANK);
-                
+
                 if (arr->israw)
                 {
                     /* This means that the data COULD BE not real values,
@@ -263,7 +263,7 @@ int drms_fitsrw_SetImageInfo(DRMS_Array_t *arr, CFITSIO_IMAGE_INFO *info)
                     {
                         info->bscale = arr->bscale;
                         info->bzero = arr->bzero;
-                        
+
                         info->bitfield = (info->bitfield | kInfoPresent_BSCALE);
                         info->bitfield = (info->bitfield | kInfoPresent_BZERO);
                     }
@@ -274,7 +274,7 @@ int drms_fitsrw_SetImageInfo(DRMS_Array_t *arr, CFITSIO_IMAGE_INFO *info)
             }
         }
     }
-    
+
     return err;
 }
 
@@ -316,7 +316,7 @@ long long drms_fitsrw_GetBlankFromInfo(CFITSIO_IMAGE_INFO *info)
         DRMS_Type_Value_t missing;
         DRMS_Type_t dtype;
         int err;
-        
+
         dtype = drms_fitsrw_Bitpix2Type(info->bitpix, &err);
         if (!err)
         {
@@ -329,7 +329,7 @@ long long drms_fitsrw_GetBlankFromInfo(CFITSIO_IMAGE_INFO *info)
             fprintf(stderr, "Unable to convert bitpix %d to a DRMS data type.\n", info->bitpix);
             drms_missing(DRMS_TYPE_CHAR, &missing);
         }
-        
+
         return conv2longlong(dtype, &missing, NULL);
     }
 }
@@ -405,7 +405,7 @@ DRMS_Array_t *drms_fitsrw_read(DRMS_Env_t *env,
          if (!readraw && (arr->bscale != 1.0 || arr->bzero != 0.0))
          {
             drms_array_convert_inplace(arr->type, arr->bzero, arr->bscale, arr);
-            arr->israw = 0;    
+            arr->israw = 0;
          }
 
          /* Must iterate through keylist and create DRMS keywords */
@@ -414,10 +414,10 @@ DRMS_Array_t *drms_fitsrw_read(DRMS_Env_t *env,
             if (!*keywords)
             {
                /* User is filling up a new container with detached (from rec) keywords. */
-               *keywords = hcon_create(sizeof(DRMS_Keyword_t), 
-                                       DRMS_MAXKEYNAMELEN, 
+               *keywords = hcon_create(sizeof(DRMS_Keyword_t),
+                                       DRMS_MAXKEYNAMELEN,
                                        (void (*)(const void *)) drms_free_template_keyword_struct,
-                                       NULL, 
+                                       NULL,
                                        NULL,
                                        NULL,
                                        0);
@@ -442,7 +442,7 @@ DRMS_Array_t *drms_fitsrw_read(DRMS_Env_t *env,
          cfitsio_free_these(&info, NULL, &keylist);
       }
    }
-   
+
    if (status)
    {
       *status = statusint;
@@ -481,7 +481,7 @@ void drms_fitsrw_freekeys(HContainer_t **keywords)
 
 /* Array may be converted in calling function, but not here */
 int drms_fitsrw_readslice(DRMS_Env_t *env,
-                          const char *filename, 
+                          const char *filename,
                           int naxis,
                           int *start,
                           int *end,
@@ -492,10 +492,10 @@ int drms_fitsrw_readslice(DRMS_Env_t *env,
    void *image = NULL;
    int fitsrwstat = CFITSIO_SUCCESS;
 
-   /* Check start and end - end > start, and they should fall into 
+   /* Check start and end - end > start, and they should fall into
     * an acceptable range. */
 
-   /* This call really should take naxis as a parameter so that it knows how many values 
+   /* This call really should take naxis as a parameter so that it knows how many values
     * are in start and end. */
    fitsrwstat = fitsrw_readslice(env->verbose, filename, start, end, &info, &image);
 
@@ -535,7 +535,8 @@ int drms_fitsrw_write(DRMS_Env_t *env,
    int status = DRMS_SUCCESS;
    CFITSIO_IMAGE_INFO imginfo;
    void *image = NULL;
-   CFITSIO_KEYWORD* keylist = NULL;
+   CFITSIO_KEYWORD *keylist = NULL;
+   CFITSIO_KEYWORD *fits_key = NULL;
    HIterator_t hit;
    DRMS_Keyword_t *key = NULL;
    const char *keyname = NULL;
@@ -544,14 +545,14 @@ int drms_fitsrw_write(DRMS_Env_t *env,
    if (arr && arr->data && keywords)
    {
       /* iterate through keywords and populate keylist */
-      hiter_new_sort(&hit, keywords, drms_keyword_ranksort); 
+      hiter_new_sort(&hit, keywords, drms_keyword_ranksort);
       while ((key = hiter_getnext(&hit)) != NULL)
       {
          if (!drms_keyword_getimplicit(key))
          {
-            /* will reject DRMS keywords that collide with FITS reserved 
+            /* will reject DRMS keywords that collide with FITS reserved
              * keywords, like SIMPLE */
-            if (fitsexport_exportkey(key, &keylist))
+            if (fitsexport_exportkey(key, &keylist, &fits_key))
             {
                keyname = drms_keyword_getname(key);
                fprintf(stderr, "Couldn't export keyword '%s'.\n", keyname);
@@ -584,7 +585,7 @@ int drms_fitsrw_write(DRMS_Env_t *env,
             {
                status = DRMS_ERROR_FITSRW;
                fprintf(stderr, "FITSRW error '%d'.\n", fitsrwstat);
-            }     
+            }
          }
       }
       else
@@ -597,14 +598,14 @@ int drms_fitsrw_write(DRMS_Env_t *env,
    {
       fprintf(stderr, "WARNING: no data to write to FITS.\n");
    }
-   
+
    return status;
 }
 
 /* Array may be converted in calling function, but not here */
 int drms_fitsrw_writeslice_ext(DRMS_Env_t *env,
                                DRMS_Segment_t *seg,
-                               const char *filename, 
+                               const char *filename,
                                int naxis,
                                int *start,
                                int *end,
@@ -614,7 +615,7 @@ int drms_fitsrw_writeslice_ext(DRMS_Env_t *env,
    int status = DRMS_SUCCESS;
    int fitsrwstat = CFITSIO_SUCCESS;
 
-   /* If the file doesn't exist, then must create one with missing data. THIS SHOULD 
+   /* If the file doesn't exist, then must create one with missing data. THIS SHOULD
     * NEVER BE THE CASE WITH TAS FILES.  They get created when the DRMS record gets
     * created. */
    struct stat stbuf;
@@ -637,7 +638,7 @@ int drms_fitsrw_writeslice_ext(DRMS_Env_t *env,
          arr.bzero = seg->bzero;
          arr.bscale = seg->bscale;
 
-         /* If bzero == 0.0 and bscale == 1.0, then the file has physical units 
+         /* If bzero == 0.0 and bscale == 1.0, then the file has physical units
           * (data are NOT 'raw'). */
          if (seg->bzero == 0.0 && seg->bscale == 1.0)
          {
@@ -648,23 +649,23 @@ int drms_fitsrw_writeslice_ext(DRMS_Env_t *env,
             arr.israw = 1;
          }
 
-         
+
          usearrout = 0;
 
          /* The jsd axis information is only valid if all but the last dimension are non-zero. If the jsd
           * information is invalid, use the output array to obtain the first n - 1 dimensions. If there
-          * is only one dimension, then skip this determination - the jsd will automatically be 
+          * is only one dimension, then skip this determination - the jsd will automatically be
           correct. */
-          
+
           if (finaldims)
           {
               /* Override the jsd's axis lengths AND the output array's lengths. Use
-               * the values contained in finaldims. Ensure the values are 
+               * the values contained in finaldims. Ensure the values are
                * larger than the output-array-dimension values. */
               idim = 0;
               while (idim < arr.naxis)
               {
-                  if (finaldims[idim] < arrayout->axis[idim]) 
+                  if (finaldims[idim] < arrayout->axis[idim])
                   {
                       status = DRMS_ERROR_INVALIDDIMS;
                       break;
@@ -673,7 +674,7 @@ int drms_fitsrw_writeslice_ext(DRMS_Env_t *env,
                   {
                       arr.axis[idim] = finaldims[idim];
                   }
-                  
+
                   idim++;
               }
           }
@@ -688,7 +689,7 @@ int drms_fitsrw_writeslice_ext(DRMS_Env_t *env,
                       break;
                   }
               }
-              
+
               if (usearrout)
               {
                   idim = 0;
@@ -704,31 +705,31 @@ int drms_fitsrw_writeslice_ext(DRMS_Env_t *env,
           {
               if (arr.axis[arr.naxis - 1] == 0)
               {
-                  /* A last-dimension length of zero implies that the total number of slices in 
+                  /* A last-dimension length of zero implies that the total number of slices in
                    * the cube is unknown. Although this is typically the case for VARDIM segments,
                    * this scenario isn't restricted to VARDIM. And it may be known at JSD-creation
                    * time, for VARMDIM segments, was the last dimension length is. */
-                  
-                  /* Write a file with a last dimension of 1. CFITSIO will automatically 
-                   * increase the size of the last dimension before it closes the file, 
+
+                  /* Write a file with a last dimension of 1. CFITSIO will automatically
+                   * increase the size of the last dimension before it closes the file,
                    * IF the relevant NAXISn keyword is updated with the appropriate length
                    * before the file is closed. */
                   arr.axis[arr.naxis - 1] = 1;
               }
-              
+
               if (!drms_fitsrw_SetImageInfo(&arr, &info))
               {
                   if (fitsrw_writeintfile(env->verbose, filename, &info, NULL, seg->cparms, NULL) != CFITSIO_SUCCESS)
                   {
-                      fprintf(stderr, "Couldn't create FITS file '%s'.\n", filename); 
+                      fprintf(stderr, "Couldn't create FITS file '%s'.\n", filename);
                       status = DRMS_ERROR_CANTCREATETASFILE;
                   }
-                  
+
                   /* At this point, the first n-1 dimension lengths are set in stone. These lengths originated
-                   * from either the output array or the jsd. The nth length is not set and could increase 
-                   * as slices are written. As we write slices, we need to check the nth dimension of the 
-                   * slice being written. If the slice's largest value of this dimension is greater than 
-                   * the existing value stored in memory (there is a TASRW_FilePtrInfo_t that 
+                   * from either the output array or the jsd. The nth length is not set and could increase
+                   * as slices are written. As we write slices, we need to check the nth dimension of the
+                   * slice being written. If the slice's largest value of this dimension is greater than
+                   * the existing value stored in memory (there is a TASRW_FilePtrInfo_t that
                    * holds the lenghts of all dimensions), then we need to increase the value stored in memory
                    * to this largest value. When the file gets closed, we then need to update the nth NAXIS keyword
                    * in the FITS file. To do this we need a dirty flag in the TASRW_FilePtrInfo_t struct. We set the
@@ -736,7 +737,7 @@ int drms_fitsrw_writeslice_ext(DRMS_Env_t *env,
               }
               else
               {
-                  fprintf(stderr, "Couldn't set FITS file image info.\n"); 
+                  fprintf(stderr, "Couldn't set FITS file image info.\n");
                   status = DRMS_ERROR_CANTCREATETASFILE;
               }
           }
@@ -756,14 +757,14 @@ int drms_fitsrw_writeslice_ext(DRMS_Env_t *env,
       }
       else
       {
-         /* This call really should take naxis as a parameter so that it knows how many values 
+         /* This call really should take naxis as a parameter so that it knows how many values
           * are in start and end. */
          fitsrwstat = fitsrw_writeslice(env->verbose,
-                                        filename, 
-                                        start, 
+                                        filename,
+                                        start,
                                         end,
                                         arrayout->data);
-   
+
 
          if (fitsrwstat != CFITSIO_SUCCESS)
          {
@@ -778,7 +779,7 @@ int drms_fitsrw_writeslice_ext(DRMS_Env_t *env,
 
 int drms_fitsrw_writeslice(DRMS_Env_t *env,
                            DRMS_Segment_t *seg,
-                           const char *filename, 
+                           const char *filename,
                            int naxis,
                            int *start,
                            int *end,

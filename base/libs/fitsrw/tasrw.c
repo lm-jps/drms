@@ -58,13 +58,14 @@ static int IsWriteable(const char *fhash)
    return writeable;
 }
 
+/* return 1 if not cached */
 static int fitsrw_getfpinfo(fitsfile *fptr, TASRW_FilePtrInfo_t *info)
 {
    int err = 1;
    TASRW_FilePtrInfo_t *pfpinfo = NULL;
    char fileinfokey[64];
 
-   if (fptr && info)
+   if (fptr && info && gFFPtrInfo)
    {
       snprintf(fileinfokey, sizeof(fileinfokey), "%p", (void *)fptr);
       err = ((pfpinfo = (TASRW_FilePtrInfo_t *)hcon_lookup(gFFPtrInfo, fileinfokey)) == NULL);
