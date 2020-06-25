@@ -989,7 +989,7 @@ static ExpToStdoutStatus_t ExportRecordSetKeywordsToStdout(DRMS_RecordSet_t *sub
         num_records = 0;
         while ((rec = drms_recordset_fetchnext(subset->env, subset, &drms_status, NULL, NULL)) != NULL)
         {
-            drms_status = fitsexport_mapexport_keywords_to_cfitsio_file(cfitsio_file, rec, class_name, map_file);
+            drms_status = fitsexport_mapexport_keywords_to_cfitsio_file(cfitsio_file, rec, num_records, class_name, map_file);
 
             if (drms_status != DRMS_SUCCESS)
             {
@@ -1869,7 +1869,7 @@ static ExpToStdoutStatus_t ExportRecordSetToStdout(DRMS_Env_t *env, int makeTar,
                     {
                         /* copy subset into a full-fledged record set (so we can iterate on just the subset) */
                         recsAttempted = num_set_recs;
-                        for (rec_index = expRS->ss_starts[iSet]; rec_index <= num_set_recs; rec_index++)
+                        for (rec_index = expRS->ss_starts[iSet]; rec_index < expRS->ss_starts[iSet] + num_set_recs; rec_index++)
                         {
                             expRecord = expRS->records[rec_index];
                             drms_merge_record(subset, expRecord); // yoink!
