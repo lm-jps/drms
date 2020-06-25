@@ -797,10 +797,10 @@ int fitsexport_export_tofile(DRMS_Segment_t *seg, const char *cparms, const char
 /* Input seg must be the source segment, not the target segment, if the input seg is a linked segment. */
 int fitsexport_mapexport_tofile(DRMS_Segment_t *seg, const char *cparms, const char *clname, const char *mapfile, const char *fileout, char **actualfname, unsigned long long *expsize)
 {
-   return fitsexport_mapexport_tofile2(seg->record, seg, cparms, clname, mapfile, fileout, actualfname, expsize, (export_callback_func_t) NULL);  //ISS fly-tar
+   return fitsexport_mapexport_tofile2(seg->record, seg, 0, cparms, clname, mapfile, fileout, actualfname, expsize, (export_callback_func_t) NULL);  //ISS fly-tar
 }
 
-int fitsexport_mapexport_tofile2(DRMS_Record_t *rec, DRMS_Segment_t *seg, const char *cparms, /* NULL for stdout */ const char *clname, const char *mapfile, const char *fileout, /* "-" for stdout */ char **actualfname, /* NULL for stdout */ unsigned long long *expsize, /* NULL for stdout */ export_callback_func_t callback) //ISS fly-tar - fitsfile * for stdout
+int fitsexport_mapexport_tofile2(DRMS_Record_t *rec, DRMS_Segment_t *seg, long long row_number, const char *cparms, /* NULL for stdout */ const char *clname, const char *mapfile, const char *fileout, /* "-" for stdout */ char **actualfname, /* NULL for stdout */ unsigned long long *expsize, /* NULL for stdout */ export_callback_func_t callback) //ISS fly-tar - fitsfile * for stdout
 {
     int status = DRMS_SUCCESS;
     CFITSIO_KEYWORD *fitskeys = NULL;
@@ -861,475 +861,479 @@ int fitsexport_mapexport_tofile2(DRMS_Record_t *rec, DRMS_Segment_t *seg, const 
 
     if (status == DRMS_SUCCESS)
     {
+        snprintf(realfileout, sizeof(realfileout), "%s", fileout);
+
+        if (!keywords_only)
         {
-            snprintf(realfileout, sizeof(realfileout), "%s", fileout);
+            /* must be source segment if the segment is a linked segment */
+            fitskeys = fitsexport_mapkeys(NULL, seg, clname, mapfile, &num_keys, NULL, NULL, &status);
 
-            if (!keywords_only)
+            if (tgtseg)
             {
-                /* must be source segment if the segment is a linked segment */
-                fitskeys = fitsexport_mapkeys(NULL, seg, clname, mapfile, &num_keys, NULL, NULL, &status);
-
-                if (tgtseg)
-                {
-                    swval = tgtseg->info->protocol;
-                }
-                else
-                {
-                    swval = seg->info->protocol;
-                }
-
-                switch (swval)
-                {
-                    case DRMS_TAS:
-                    {
-                        if (!streaming)
-                        {
-                            /* If we are reading a single record from a TAS file, this means that we're
-                             * reading a single slice. fileout will have a .tas extension, since
-                             * the output file name is derived from the input file name. We need to
-                             * substitute .fits for .tas. */
-                            size_t len = strlen(realfileout) + 64;
-                            size_t lenstr;
-                            char *dup = malloc(len);
-                            snprintf(dup, len, "%s", realfileout);
-
-                            if (dup)
-                            {
-                                lenstr = strlen(dup);
-                                if (lenstr > 0 &&
-                                 (dup[lenstr - 1] == 's' || dup[lenstr - 1] == 'S') &&
-                                 (dup[lenstr - 2] == 'a' || dup[lenstr - 2] == 'A') &&
-                                 (dup[lenstr - 3] == 't' || dup[lenstr - 3] == 'T') &&
-                                  dup[lenstr - 4] == '.')
-                                {
-                                 *(dup + lenstr - 3) = '\0';
-                                 snprintf(realfileout, sizeof(realfileout), "%sfits", dup);
-                                }
-                                else
-                                {
-                                 fprintf(stderr, "Unexpected export file name '%s'.\n", dup);
-                                 free(dup);
-                                 status = DRMS_ERROR_EXPORT;
-                                 break;
-                                }
-
-                                free(dup);
-                            }
-                            else
-                            {
-                                status = DRMS_ERROR_OUTOFMEMORY;
-                            }
-                         }
-                    }
-
-                        /* intentional fall-through */
-                    case DRMS_BINARY:
-                        /* intentional fall-through */
-                    case DRMS_BINZIP:
-                        /* intentional fall-through */
-                    case DRMS_FITZ:
-                        /* intentional fall-through */
-                    case DRMS_FITS:
-                        /* intentional fall-through */
-                    case DRMS_DSDS:
-                        /* intentional fall-through */
-                    case DRMS_LOCAL:
-                    {
-                        /* If the segment file is compressed, and will be exported in compressed
-                         * format, don't uncompress it (which is what drms_segment_read() will do).
-                         * Instead, use the cfitsio routines to read the image into memory, as is -
-                         * so compressed image data will remain compressed in memory. Then
-                         * combine the header and image into a new FITS file and write it to
-                         * the fileout. Steps:
-                         *   1. Use CopyFile() to copy the input segment file to fileout.
-                         *   2. Call fits_open_image() to open the file for writing. This does not
-                         *      read the image into memory.
-                         *   3. Call cfitsio_key_to_card()/fits_write_record() to write keywords.
-                         *   4. Call fits_write_img().
-                         * It is probably best to use some modified version of fitsrw_write() that
-                         * simply replaces keywords - it deletes all existing keywords and
-                         * takes a keylist of keys to add to the image.
-                         *
-                         * Try to use the libfitsrw routines which automatically cache open
-                         * fitsfile pointers and calculate checksums, etc. */
-                        int file_is_up_to_date = 0;
-                        char sums_file[PATH_MAX];
-                        int fd_sums_file;
-                        char *old_headsum = NULL;
-                        char *new_headsum = NULL;
-                        void *addr = NULL;
-                        DRMS_Segment_t *actualSeg = NULL;
-                        CFITSIO_FILE *fitsFile = NULL; /* in-memory-only fitsile of existing file on disk */
-                        CFITSIO_HEADER *oldFitsHeader = NULL; /* in-memory-only fitsfile header of existing file on disk (no image) */
-                        CFITSIO_HEADER *newFitsHeader = NULL; /* in-memory-only fitsfile header of file formed from fitskeys (no image) */
-                        CFITSIO_FILE *updated_file = NULL; /* in-memory-only fitsfile to which fitsFile content has been copied and updated */
-                        CFITSIO_KEYWORD *headsum_key = NULL;
-
-
-                        snprintf(sums_file, sizeof(sums_file), "%s", filename);
-
-                        /* this must be open read-only since it is in SUMS*/
-                        if (cfitsio_open_file(sums_file, &fitsFile, 0))
-                        {
-                            /* if we can't open the file for some reason, do not error out, just pretend the existing file
-                             * does not exist */
-                            fprintf(stderr, "[ fitsexport_mapexport_tofile2() ] WARNING: unable to open internal FITS file '%s'\n", sums_file);
-                        }
-                        else
-                        {
-                            if (cfitsio_read_headsum(fitsFile, &old_headsum))
-                            {
-                                fprintf(stderr, "[ fitsexport_mapexport_tofile2() ] WARNING: unable to read HEADSUM from internal FITS file '%s'\n", sums_file);
-                            }
-
-                            if (!old_headsum)
-                            {
-                                /* there was no HEADSUM keyword in the internal FITS file, which is OK since files were not
-                                 * initially created with HEADSUM keywords; it is not clear if the fitsFile header has
-                                 * a complete set of keywords */
-
-
-                                /* XXX - I THINK we have to close the in-mem header to flush buffers, then we can capture
-                                 * the FITS file output on stdout with a pipe to ANOTHER cfitsio_open_file(); SO...
-                                 * 1. create a pipe
-                                 * 2. redirect stdout to the pipe write end
-                                 * 3. redirect stdin to the read end of the pipe
-                                 */
-                                if (cfitsio_create_file((CFITSIO_FILE **)&oldFitsHeader, "-", CFITSIO_FILE_TYPE_HEADER, NULL, NULL))
-                                {
-                                    fprintf(stderr, "[ fitsexport_mapexport_tofile2() ] unable to create empty FITS file\n");
-                                    status = DRMS_ERROR_EXPORT;
-                                }
-
-                                if (status == DRMS_SUCCESS)
-                                {
-                                    /* copy keywords in fitskeys from fitsFile to oldFitsHeader */
-                                    if (cfitsio_copy_header_keywords(fitsFile, (CFITSIO_FILE *)oldFitsHeader, fitskeys))
-                                    {
-                                        fprintf(stderr, "[ fitsexport_mapexport_tofile2() ] unable to copy internal header to empty FITS file\n");
-                                        status = DRMS_ERROR_EXPORT;
-                                    }
-                                }
-
-                                if (status == DRMS_SUCCESS)
-                                {
-                                    /* oldFitsHeader has the header of the fits file we are exporting; fitskeys is a list
-                                     * of fits keywords that we expect to be in fits file we are exporting; old_headsum
-                                     * will contain the checksum of the keys listed in fitskeys that exist in oldFitsHeader */
-                                    if (cfitsio_generate_checksum(&oldFitsHeader, NULL, &old_headsum))
-                                    {
-                                        fprintf(stderr, "[ fitsexport_mapexport_tofile2() ] unable to calculate header checksum\n");
-                                        status = DRMS_ERROR_EXPORT;
-                                    }
-                                }
-                            }
-                        }
-
-                        if (oldFitsHeader)
-                        {
-                            /* ART - need to NOT flush to stdout, but oldFitsHeader is an in-memory file */
-                            cfitsio_close_header(&oldFitsHeader);
-                        }
-
-                        /* makes `newFitsHeader` CFITSIO_HEADER that contains metadata contained in `fitskeys`; must free newFitsHeader;
-                         * generates checksum from CFITSIO_HEADER, placing it in `new_headsum` */
-                        if (cfitsio_generate_checksum(&newFitsHeader, fitskeys, &new_headsum))
-                        {
-                            fprintf(stderr, "[ fitsexport_mapexport_tofile2() ] unable to calculate header checksum\n");
-                            status = DRMS_ERROR_EXPORT;
-                        }
-
-                        file_is_up_to_date = old_headsum && new_headsum && strcmp(old_headsum, new_headsum) == 0;
-
-                        if (file_is_up_to_date)
-                        {
-                            /* no need to export - existing header is up-to-date; if we are not streaming to stdout,
-                             * make a link from filenameout to the internal FITS file; if we are streaming to stdout,
-                             *   */
-                            if (streaming)
-                            {
-                                /* dump existing internal file to stdout */
-                                fd_sums_file = open(sums_file, O_RDONLY);
-                                if (fd_sums_file == -1)
-                                {
-                                    fprintf(stderr, "[ fitsexport_mapexport_tofile2() ] unable to open internal SUMS file '%s'\n", sums_file);
-                                    status = DRMS_ERROR_INVALIDFILE;
-                                }
-
-                                if (!status)
-                                {
-                                    /* get file size */
-                                    if (fstat(fd_sums_file, &stbuf) == -1)
-                                    {
-                                        fprintf(stderr, "[ fitsexport_mapexport_tofile2() ] unable to obtain file size of internal SUMS file '%s'\n", sums_file);
-                                        status = DRMS_ERROR_INVALIDFILE;
-                                    }
-                                }
-
-                                if (!status)
-                                {
-                                    if ((addr = mmap(NULL, stbuf.st_size, PROT_READ, MAP_PRIVATE, fd_sums_file, 0)) == MAP_FAILED);
-                                    {
-                                        fprintf(stderr, "[ fitsexport_mapexport_tofile2() ] unable to memory-map internal SUMS file '%s'\n", sums_file);
-                                        status = DRMS_ERROR_INVALIDFILE;
-                                    }
-                                }
-
-                                if (!status)
-                                {
-                                    if (write(STDOUT_FILENO, addr, stbuf.st_size) == -1)
-                                    {
-                                        fprintf(stderr, "[ fitsexport_mapexport_tofile2() ] unable to write memory-mapped internal SUMS file '%s' to stdout\n", sums_file);
-                                        status = DRMS_ERROR_INVALIDFILE;
-                                    }
-                                }
-
-                                close(fd_sums_file);
-                            }
-                            else
-                            {
-                                if (symlink(sums_file, realfileout) == -1)
-                                {
-                                    status = DRMS_ERROR_INVALIDFILE;
-                                }
-                            }
-                        }
-                        else
-                        {
-                            /* must export - existing header is NOT up-to-date; send new FITSIO header instead of
-                             * the fitskeys list (to avoid creating the FITS header a second time), and
-                             * existing image data to ExportFITS3()
-                             */
-
-                            /* we've decided not to actually update any series if this is the case; all we care about is
-                             * fixing the metadata on EXPORT in the case where somebody modified the metadata in
-                             * the database (i.e., they bypassed DRMS and used psql to modify metadata without creating
-                             * new records); the code here will produce consistent exported files; generally, we expect the
-                             * record-generating modules to create new records that contain FITS files with up-to-date
-                             * metadata */
-
-                            /* ExportFITS3 will make a link from fileout to the keyword-updated internal FITS file */
-
-                            /* extract image from existing fitsFile (the internal fitsfile which may have metadata) */
-
-
-                            /* send image data (fitsData) and metadata (fitsHeader) to ExportFITS3, which will either:
-                             * 1. combine them into a new FITS file with a path defined by fileout; this is the non-streaming
-                             *    case;
-                             * 2. combine them into a new in-memory FITS file, and dump them on stdout; this is the
-                             *    streaming case
-                             */
-
-                            /* newFitsHeader is CLOSE to being correct - it has the wrong BITPIX and NAXIS and NAXISn; BUT the correct
-                             * values for those keywords exists in the fitsFile; we need to grab the values for fitsKeys from newFitsHeader and
-                             * union them with the keywords in fitsFile that has been stripped of the fitsKeys values; we can accomplish this
-                             * by starting with fitsFile and then copying/updating the keys in fitsKeys that exist in newFitsHeader */
-                            if (status == DRMS_SUCCESS)
-                            {
-                                /* create the fptr, but do not write any keywords (no bitpipx, naxis, naxes) */
-                                if (cfitsio_create_file(&updated_file, "-", CFITSIO_FILE_TYPE_IMAGE, NULL, NULL))
-                                {
-                                    status = DRMS_ERROR_FITSRW;
-                                }
-                            }
-
-                             if (status == DRMS_SUCCESS)
-                             {
-                                 /* we need to copy the internal input fitsfile so we can edit the header */
-                                 if (cfitsio_copy_file(fitsFile, updated_file, 0))
-                                 {
-                                     status = DRMS_ERROR_FITSRW;
-                                 }
-                             }
-
-                            if (status == DRMS_SUCCESS)
-                            {
-                                if (cfitsio_update_header_keywords(updated_file, newFitsHeader, fitskeys))
-                                {
-                                    status = DRMS_ERROR_FITSRW;
-                                }
-                            }
-
-                            if (status == DRMS_SUCCESS)
-                            {
-                                /* write the LONGSTRN keyword to inform FITS readers that the long string convention may be used */
-                                if (cfitsio_write_longwarn(updated_file))
-                                {
-                                    status = DRMS_ERROR_FITSRW;
-                                }
-                            }
-
-                            /* write the HEADSUM keyword; this is a checksum of just the FITS keywords that map to
-                             * the DRMS keywords for this image */
-                            if (status == DRMS_SUCCESS)
-                            {
-                                if (cfitsio_write_headsum(updated_file, new_headsum))
-                                {
-                                    status = DRMS_ERROR_FITSRW;
-                                }
-                            }
-
-                            if (status == DRMS_SUCCESS)
-                            {
-                                if (callback != NULL)
-                                {
-                                    CFITSIO_FITSFILE fptr = NULL; /* the fitsfile * inside (CFITSIO_FILE *)callback (if streaming), or produced by callback (if not streaming) */
-
-
-                                    /* we are not initializing fptr since we will be using a fitsfile generated by a different
-                                     * block of code (streaming --> callback is the fptr; !streaming --> callback will create the fptr) */
-                                    if (cfitsio_create_file(&out_file, NULL, CFITSIO_FILE_TYPE_EMPTY, NULL, NULL))
-                                    {
-                                        status = DRMS_ERROR_FITSRW;
-                                    }
-                                    /* do not cache this fitsfile; in the streaming case, the fitsfile is in-memory-only, so don't need to cache;
-                                     * in the VSO "create" case, the VSO drms_export_cgi.c handles the fitsfile */
-                                    close_out_file = 0;
-
-                                    if (streaming)
-                                    {
-                                        /* callback IS the in-memory-only CFITSIO_FITSFILE that will be eventually streamed */
-                                        cfitsio_get_fitsfile((CFITSIO_FILE *)callback, &fptr);
-                                        cfitsio_set_fitsfile(out_file, fptr, 1);
-                                        /* DO NOT CLOSE THIS FILE */
-                                    }
-                                    else
-                                    {
-                                        /* not stdout */
-                                        int retVal = 0;
-                                        int cfiostat = 0;
-
-
-                                        /* use ISS callback to create the fitsfile */
-                                        /* NOTE - there is no reason to call the "setarrout" callback any more; the DRMS_Array_t is no longer
-                                         * used by drms_export_cgi.c; cfitsio_copy_file() will copy the image into out_file->fptr, which is then
-                                         * used by drms_export_cgi.c */
-                                        /* DO NOT CLOSE THIS FILE */
-
-                                        (*callback)("create", &fptr, realfileout, cparms, &cfiostat, &retVal);
-                                        if (cfiostat || retVal != CFITSIO_SUCCESS)
-                                        {
-                                            status = DRMS_ERROR_FILECREATE;
-                                        }
-                                        else
-                                        {
-                                            cfitsio_set_fitsfile(out_file, fptr, 1);
-                                        }
-                                    }
-                                }
-                                else
-                                {
-                                    /* create a new file - realfileout is the file to export onto disk (not streaming); the fitsfile
-                                     * will be cached */
-
-                                    /* create the fptr, but do not write any keywords (no bitpipx, naxis, naxes) */
-                                    if (cfitsio_create_file(&out_file, realfileout, CFITSIO_FILE_TYPE_IMAGE, NULL, NULL))
-                                    {
-                                        status = DRMS_ERROR_FITSRW;
-                                    }
-                                    else
-                                    {
-                                        close_out_file = 1;
-                                    }
-                                }
-
-                                if (status == DRMS_SUCCESS)
-                                {
-                                    /* now, copy the final in-memory file (updated_file) to either disk or stdout (streaming) */
-                                    if (cfitsio_copy_file(updated_file, out_file, 0))
-                                    {
-                                        status = DRMS_ERROR_FITSRW;
-                                    }
-
-                                    /* updated_file was an in-memory-only file */
-                                    /* ART - need to NOT flush to stdout, but updated_file is an in-memory file */
-                                    cfitsio_close_file(&updated_file);
-                                }
-
-                                if (close_out_file)
-                                {
-                                    /* flush to disk or stdout (if streaming, do not flush to stdout) */
-                                    cfitsio_close_file(&out_file);
-                                }
-                            }
-                        }
-
-                        if (new_headsum)
-                        {
-                            free(new_headsum);
-                            new_headsum = NULL;
-                        }
-
-                        if (newFitsHeader)
-                        {
-                            cfitsio_close_header(&newFitsHeader);
-                        }
-                    }
-                    break;
-                    case DRMS_GENERIC:
-                    {
-                        int ioerr;
-
-                        /* Simply copy the file from the segment's data-file path
-                        * to fileout, no keywords to worry about. */
-
-                        /* filename could be a directory. If that is the case, then copy the entire tree to realfileout. Art made a change
-                         * to exputl_mk_expfilename() so that if a generic segment has no seg->filename to use for realfileout, then
-                         * one is made from <su dir>/<slot dir>/<seg name>. He also changed CopyFile() to handle tree copies. */
-                        if (CopyFile(filename, realfileout, &ioerr) != stbuf.st_size)
-                        {
-                            if (!S_ISDIR(stbuf.st_mode))
-                            {
-                                /* For a directory, CopyFile will return the number of bytes of all the files copied within the directory at any level.
-                                 * This will not match stbuf.st_size, the size of the directory, which is 0.
-                                 */
-                                fprintf(stderr, "Unable to export file '%s' to '%s'.\n", filename, realfileout);
-                                status = DRMS_ERROR_FILECOPY;
-                            }
-                        }
-                    }
-                    break;
-                    default:
-                      fprintf(stderr, "data export does not support data segment protocol '%s'\n", drms_prot2str(seg->info->protocol));
-                } /* segment protocol switch */
+                swval = tgtseg->info->protocol;
             }
             else
             {
-                /* adding a row to a BINTABLE (or making a keyword BINTABLE) */
-                CFITSIO_FITSFILE fptr = NULL; /* the fitsfile * inside (CFITSIO_FILE *)callback (if streaming), or produced by callback (if not streaming) */
-                int retVal = 0;
-                cfitsio_file_type_t callback_file_type = CFITSIO_FILE_TYPE_UNKNOWN;
-                int cfiostat = 0;
+                swval = seg->info->protocol;
+            }
 
-                /* check to see if bintable has already been created */
-                if (callback != NULL)
+            switch (swval)
+            {
+                case DRMS_TAS:
                 {
-                    close_out_file = 0;
+                    if (!streaming)
+                    {
+                        /* If we are reading a single record from a TAS file, this means that we're
+                         * reading a single slice. fileout will have a .tas extension, since
+                         * the output file name is derived from the input file name. We need to
+                         * substitute .fits for .tas. */
+                        size_t len = strlen(realfileout) + 64;
+                        size_t lenstr;
+                        char *dup = malloc(len);
+                        snprintf(dup, len, "%s", realfileout);
 
-                    if (streaming)
-                    {
-                        out_file = (CFITSIO_FILE *)callback;
-                    }
-                    else
-                    {
-                        (*callback)("create", &fptr, realfileout, cparms, &cfiostat, &retVal);
-                        if (cfiostat || retVal != CFITSIO_SUCCESS)
+                        if (dup)
                         {
-                            fprintf(stderr, "[ fitsexport_mapexport_tofile2() ] unable to export file '%s' to '%s'.\n", filename, realfileout);
-                            status = DRMS_ERROR_FILECREATE;
+                            lenstr = strlen(dup);
+                            if (lenstr > 0 &&
+                             (dup[lenstr - 1] == 's' || dup[lenstr - 1] == 'S') &&
+                             (dup[lenstr - 2] == 'a' || dup[lenstr - 2] == 'A') &&
+                             (dup[lenstr - 3] == 't' || dup[lenstr - 3] == 'T') &&
+                              dup[lenstr - 4] == '.')
+                            {
+                             *(dup + lenstr - 3) = '\0';
+                             snprintf(realfileout, sizeof(realfileout), "%sfits", dup);
+                            }
+                            else
+                            {
+                             fprintf(stderr, "Unexpected export file name '%s'.\n", dup);
+                             free(dup);
+                             status = DRMS_ERROR_EXPORT;
+                             break;
+                            }
+
+                            free(dup);
                         }
                         else
                         {
-                            cfitsio_set_fitsfile(out_file, fptr, 1);
+                            status = DRMS_ERROR_OUTOFMEMORY;
+                        }
+                     }
+                }
+
+                    /* intentional fall-through */
+                case DRMS_BINARY:
+                    /* intentional fall-through */
+                case DRMS_BINZIP:
+                    /* intentional fall-through */
+                case DRMS_FITZ:
+                    /* intentional fall-through */
+                case DRMS_FITS:
+                    /* intentional fall-through */
+                case DRMS_DSDS:
+                    /* intentional fall-through */
+                case DRMS_LOCAL:
+                {
+                    /* If the segment file is compressed, and will be exported in compressed
+                     * format, don't uncompress it (which is what drms_segment_read() will do).
+                     * Instead, use the cfitsio routines to read the image into memory, as is -
+                     * so compressed image data will remain compressed in memory. Then
+                     * combine the header and image into a new FITS file and write it to
+                     * the fileout. Steps:
+                     *   1. Use CopyFile() to copy the input segment file to fileout.
+                     *   2. Call fits_open_image() to open the file for writing. This does not
+                     *      read the image into memory.
+                     *   3. Call cfitsio_key_to_card()/fits_write_record() to write keywords.
+                     *   4. Call fits_write_img().
+                     * It is probably best to use some modified version of fitsrw_write() that
+                     * simply replaces keywords - it deletes all existing keywords and
+                     * takes a keylist of keys to add to the image.
+                     *
+                     * Try to use the libfitsrw routines which automatically cache open
+                     * fitsfile pointers and calculate checksums, etc. */
+                    int file_is_up_to_date = 0;
+                    char sums_file[PATH_MAX];
+                    int fd_sums_file;
+                    char *old_headsum = NULL;
+                    char *new_headsum = NULL;
+                    void *addr = NULL;
+                    DRMS_Segment_t *actualSeg = NULL;
+                    CFITSIO_FILE *fitsFile = NULL; /* in-memory-only fitsile of existing file on disk */
+                    CFITSIO_HEADER *oldFitsHeader = NULL; /* in-memory-only fitsfile header of existing file on disk (no image) */
+                    CFITSIO_HEADER *newFitsHeader = NULL; /* in-memory-only fitsfile header of file formed from fitskeys (no image) */
+                    CFITSIO_FILE *updated_file = NULL; /* in-memory-only fitsfile to which fitsFile content has been copied and updated */
+                    CFITSIO_KEYWORD *headsum_key = NULL;
+
+
+                    snprintf(sums_file, sizeof(sums_file), "%s", filename);
+
+                    /* this must be open read-only since it is in SUMS*/
+                    if (cfitsio_open_file(sums_file, &fitsFile, 0))
+                    {
+                        /* if we can't open the file for some reason, do not error out, just pretend the existing file
+                         * does not exist */
+                        fprintf(stderr, "[ fitsexport_mapexport_tofile2() ] WARNING: unable to open internal FITS file '%s'\n", sums_file);
+                    }
+                    else
+                    {
+                        if (cfitsio_read_headsum(fitsFile, &old_headsum))
+                        {
+                            fprintf(stderr, "[ fitsexport_mapexport_tofile2() ] WARNING: unable to read HEADSUM from internal FITS file '%s'\n", sums_file);
+                        }
+
+                        if (!old_headsum)
+                        {
+                            /* there was no HEADSUM keyword in the internal FITS file, which is OK since files were not
+                             * initially created with HEADSUM keywords; it is not clear if the fitsFile header has
+                             * a complete set of keywords */
+
+
+                            /* XXX - I THINK we have to close the in-mem header to flush buffers, then we can capture
+                             * the FITS file output on stdout with a pipe to ANOTHER cfitsio_open_file(); SO...
+                             * 1. create a pipe
+                             * 2. redirect stdout to the pipe write end
+                             * 3. redirect stdin to the read end of the pipe
+                             */
+                            if (cfitsio_create_file((CFITSIO_FILE **)&oldFitsHeader, "-", CFITSIO_FILE_TYPE_HEADER, NULL, NULL))
+                            {
+                                fprintf(stderr, "[ fitsexport_mapexport_tofile2() ] unable to create empty FITS file\n");
+                                status = DRMS_ERROR_EXPORT;
+                            }
+
+                            if (status == DRMS_SUCCESS)
+                            {
+                                /* copy keywords in fitskeys from fitsFile to oldFitsHeader */
+                                if (cfitsio_copy_header_keywords(fitsFile, (CFITSIO_FILE *)oldFitsHeader, fitskeys))
+                                {
+                                    fprintf(stderr, "[ fitsexport_mapexport_tofile2() ] unable to copy internal header to empty FITS file\n");
+                                    status = DRMS_ERROR_EXPORT;
+                                }
+                            }
+
+                            if (status == DRMS_SUCCESS)
+                            {
+                                /* oldFitsHeader has the header of the fits file we are exporting; fitskeys is a list
+                                 * of fits keywords that we expect to be in fits file we are exporting; old_headsum
+                                 * will contain the checksum of the keys listed in fitskeys that exist in oldFitsHeader */
+                                if (cfitsio_generate_checksum(&oldFitsHeader, NULL, &old_headsum))
+                                {
+                                    fprintf(stderr, "[ fitsexport_mapexport_tofile2() ] unable to calculate header checksum\n");
+                                    status = DRMS_ERROR_EXPORT;
+                                }
+                            }
                         }
                     }
 
-                    if (status == DRMS_SUCCESS)
+                    if (oldFitsHeader)
                     {
-                        status = cfitsio_get_file_type(out_file, &callback_file_type);
+                        /* ART - need to NOT flush to stdout, but oldFitsHeader is an in-memory file */
+                        cfitsio_close_header(&oldFitsHeader);
+                    }
+
+                    /* makes `newFitsHeader` CFITSIO_HEADER that contains metadata contained in `fitskeys`; must free newFitsHeader;
+                     * generates checksum from CFITSIO_HEADER, placing it in `new_headsum` */
+                    if (cfitsio_generate_checksum(&newFitsHeader, fitskeys, &new_headsum))
+                    {
+                        fprintf(stderr, "[ fitsexport_mapexport_tofile2() ] unable to calculate header checksum\n");
+                        status = DRMS_ERROR_EXPORT;
+                    }
+
+                    file_is_up_to_date = old_headsum && new_headsum && strcmp(old_headsum, new_headsum) == 0;
+
+                    if (file_is_up_to_date)
+                    {
+                        /* no need to export - existing header is up-to-date; if we are not streaming to stdout,
+                         * make a link from filenameout to the internal FITS file; if we are streaming to stdout,
+                         *   */
+                        if (streaming)
+                        {
+                            /* dump existing internal file to stdout */
+                            fd_sums_file = open(sums_file, O_RDONLY);
+                            if (fd_sums_file == -1)
+                            {
+                                fprintf(stderr, "[ fitsexport_mapexport_tofile2() ] unable to open internal SUMS file '%s'\n", sums_file);
+                                status = DRMS_ERROR_INVALIDFILE;
+                            }
+
+                            if (!status)
+                            {
+                                /* get file size */
+                                if (fstat(fd_sums_file, &stbuf) == -1)
+                                {
+                                    fprintf(stderr, "[ fitsexport_mapexport_tofile2() ] unable to obtain file size of internal SUMS file '%s'\n", sums_file);
+                                    status = DRMS_ERROR_INVALIDFILE;
+                                }
+                            }
+
+                            if (!status)
+                            {
+                                if ((addr = mmap(NULL, stbuf.st_size, PROT_READ, MAP_PRIVATE, fd_sums_file, 0)) == MAP_FAILED);
+                                {
+                                    fprintf(stderr, "[ fitsexport_mapexport_tofile2() ] unable to memory-map internal SUMS file '%s'\n", sums_file);
+                                    status = DRMS_ERROR_INVALIDFILE;
+                                }
+                            }
+
+                            if (!status)
+                            {
+                                if (write(STDOUT_FILENO, addr, stbuf.st_size) == -1)
+                                {
+                                    fprintf(stderr, "[ fitsexport_mapexport_tofile2() ] unable to write memory-mapped internal SUMS file '%s' to stdout\n", sums_file);
+                                    status = DRMS_ERROR_INVALIDFILE;
+                                }
+                            }
+
+                            close(fd_sums_file);
+                        }
+                        else
+                        {
+                            if (symlink(sums_file, realfileout) == -1)
+                            {
+                                status = DRMS_ERROR_INVALIDFILE;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        /* must export - existing header is NOT up-to-date; send new FITSIO header instead of
+                         * the fitskeys list (to avoid creating the FITS header a second time), and
+                         * existing image data to ExportFITS3()
+                         */
+
+                        /* we've decided not to actually update any series if this is the case; all we care about is
+                         * fixing the metadata on EXPORT in the case where somebody modified the metadata in
+                         * the database (i.e., they bypassed DRMS and used psql to modify metadata without creating
+                         * new records); the code here will produce consistent exported files; generally, we expect the
+                         * record-generating modules to create new records that contain FITS files with up-to-date
+                         * metadata */
+
+                        /* ExportFITS3 will make a link from fileout to the keyword-updated internal FITS file */
+
+                        /* extract image from existing fitsFile (the internal fitsfile which may have metadata) */
+
+
+                        /* send image data (fitsData) and metadata (fitsHeader) to ExportFITS3, which will either:
+                         * 1. combine them into a new FITS file with a path defined by fileout; this is the non-streaming
+                         *    case;
+                         * 2. combine them into a new in-memory FITS file, and dump them on stdout; this is the
+                         *    streaming case
+                         */
+
+                        /* newFitsHeader is CLOSE to being correct - it has the wrong BITPIX and NAXIS and NAXISn; BUT the correct
+                         * values for those keywords exists in the fitsFile; we need to grab the values for fitsKeys from newFitsHeader and
+                         * union them with the keywords in fitsFile that has been stripped of the fitsKeys values; we can accomplish this
+                         * by starting with fitsFile and then copying/updating the keys in fitsKeys that exist in newFitsHeader */
+                        if (status == DRMS_SUCCESS)
+                        {
+                            /* create the fptr, but do not write any keywords (no bitpipx, naxis, naxes) */
+                            if (cfitsio_create_file(&updated_file, "-", CFITSIO_FILE_TYPE_IMAGE, NULL, NULL))
+                            {
+                                status = DRMS_ERROR_FITSRW;
+                            }
+                        }
+
+                         if (status == DRMS_SUCCESS)
+                         {
+                             /* we need to copy the internal input fitsfile so we can edit the header */
+                             if (cfitsio_copy_file(fitsFile, updated_file, 0))
+                             {
+                                 status = DRMS_ERROR_FITSRW;
+                             }
+                         }
+
+                        if (status == DRMS_SUCCESS)
+                        {
+                            if (cfitsio_update_header_keywords(updated_file, newFitsHeader, fitskeys))
+                            {
+                                status = DRMS_ERROR_FITSRW;
+                            }
+                        }
+
+                        if (status == DRMS_SUCCESS)
+                        {
+                            /* write the LONGSTRN keyword to inform FITS readers that the long string convention may be used */
+                            if (cfitsio_write_longwarn(updated_file))
+                            {
+                                status = DRMS_ERROR_FITSRW;
+                            }
+                        }
+
+                        /* write the HEADSUM keyword; this is a checksum of just the FITS keywords that map to
+                         * the DRMS keywords for this image */
+                        if (status == DRMS_SUCCESS)
+                        {
+                            if (cfitsio_write_headsum(updated_file, new_headsum))
+                            {
+                                status = DRMS_ERROR_FITSRW;
+                            }
+                        }
+
+                        if (status == DRMS_SUCCESS)
+                        {
+                            if (callback != NULL)
+                            {
+                                CFITSIO_FITSFILE fptr = NULL; /* the fitsfile * inside (CFITSIO_FILE *)callback (if streaming), or produced by callback (if not streaming) */
+
+
+                                /* we are not initializing fptr since we will be using a fitsfile generated by a different
+                                 * block of code (streaming --> callback is the fptr; !streaming --> callback will create the fptr) */
+                                if (cfitsio_create_file(&out_file, NULL, CFITSIO_FILE_TYPE_EMPTY, NULL, NULL))
+                                {
+                                    status = DRMS_ERROR_FITSRW;
+                                }
+                                /* do not cache this fitsfile; in the streaming case, the fitsfile is in-memory-only, so don't need to cache;
+                                 * in the VSO "create" case, the VSO drms_export_cgi.c handles the fitsfile */
+                                close_out_file = 0;
+
+                                if (streaming)
+                                {
+                                    /* callback IS the in-memory-only CFITSIO_FITSFILE that will be eventually streamed */
+                                    cfitsio_get_fitsfile((CFITSIO_FILE *)callback, &fptr);
+                                    cfitsio_set_fitsfile(out_file, fptr, 1);
+                                    /* DO NOT CLOSE THIS FILE */
+                                }
+                                else
+                                {
+                                    /* not stdout */
+                                    int retVal = 0;
+                                    int cfiostat = 0;
+
+
+                                    /* use ISS callback to create the fitsfile */
+                                    /* NOTE - there is no reason to call the "setarrout" callback any more; the DRMS_Array_t is no longer
+                                     * used by drms_export_cgi.c; cfitsio_copy_file() will copy the image into out_file->fptr, which is then
+                                     * used by drms_export_cgi.c */
+                                    /* DO NOT CLOSE THIS FILE */
+
+                                    (*callback)("create", &fptr, realfileout, cparms, &cfiostat, &retVal);
+                                    if (cfiostat || retVal != CFITSIO_SUCCESS)
+                                    {
+                                        status = DRMS_ERROR_FILECREATE;
+                                    }
+                                    else
+                                    {
+                                        cfitsio_set_fitsfile(out_file, fptr, 1);
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                /* create a new file - realfileout is the file to export onto disk (not streaming); the fitsfile
+                                 * will be cached */
+
+                                /* create the fptr, but do not write any keywords (no bitpipx, naxis, naxes) */
+                                if (cfitsio_create_file(&out_file, realfileout, CFITSIO_FILE_TYPE_IMAGE, NULL, NULL))
+                                {
+                                    status = DRMS_ERROR_FITSRW;
+                                }
+                                else
+                                {
+                                    close_out_file = 1;
+                                }
+                            }
+
+                            if (status == DRMS_SUCCESS)
+                            {
+                                /* now, copy the final in-memory file (updated_file) to either disk or stdout (streaming) */
+                                if (cfitsio_copy_file(updated_file, out_file, 0))
+                                {
+                                    status = DRMS_ERROR_FITSRW;
+                                }
+
+                                /* updated_file was an in-memory-only file */
+                                /* ART - need to NOT flush to stdout, but updated_file is an in-memory file */
+                                cfitsio_close_file(&updated_file);
+                            }
+
+                            if (close_out_file)
+                            {
+                                /* flush to disk or stdout (if streaming, do not flush to stdout) */
+                                cfitsio_close_file(&out_file);
+                            }
+                        }
+                    }
+
+                    if (new_headsum)
+                    {
+                        free(new_headsum);
+                        new_headsum = NULL;
+                    }
+
+                    if (newFitsHeader)
+                    {
+                        cfitsio_close_header(&newFitsHeader);
+                    }
+                }
+                break;
+                case DRMS_GENERIC:
+                {
+                    int ioerr;
+
+                    /* Simply copy the file from the segment's data-file path
+                    * to fileout, no keywords to worry about. */
+
+                    /* filename could be a directory. If that is the case, then copy the entire tree to realfileout. Art made a change
+                     * to exputl_mk_expfilename() so that if a generic segment has no seg->filename to use for realfileout, then
+                     * one is made from <su dir>/<slot dir>/<seg name>. He also changed CopyFile() to handle tree copies. */
+                    if (CopyFile(filename, realfileout, &ioerr) != stbuf.st_size)
+                    {
+                        if (!S_ISDIR(stbuf.st_mode))
+                        {
+                            /* For a directory, CopyFile will return the number of bytes of all the files copied within the directory at any level.
+                             * This will not match stbuf.st_size, the size of the directory, which is 0.
+                             */
+                            fprintf(stderr, "Unable to export file '%s' to '%s'.\n", filename, realfileout);
+                            status = DRMS_ERROR_FILECOPY;
+                        }
+                    }
+                }
+                break;
+                default:
+                  fprintf(stderr, "data export does not support data segment protocol '%s'\n", drms_prot2str(seg->info->protocol));
+            } /* segment protocol switch */
+        }
+        else
+        {
+            /* adding a row to a BINTABLE (or making a keyword BINTABLE) */
+            CFITSIO_FITSFILE fptr = NULL; /* the fitsfile * inside (CFITSIO_FILE *)callback (if streaming), or produced by callback (if not streaming) */
+            int retVal = 0;
+            cfitsio_file_type_t callback_file_type = CFITSIO_FILE_TYPE_UNKNOWN;
+            int cfiostat = 0;
+
+            /* check to see if bintable has already been created */
+            if (callback != NULL)
+            {
+                close_out_file = 0;
+
+                if (streaming)
+                {
+                    out_file = (CFITSIO_FILE *)callback;
+                }
+                else
+                {
+                    (*callback)("create", &fptr, realfileout, cparms, &cfiostat, &retVal);
+                    if (cfiostat || retVal != CFITSIO_SUCCESS)
+                    {
+                        fprintf(stderr, "[ fitsexport_mapexport_tofile2() ] unable to export file '%s' to '%s'.\n", filename, realfileout);
+                        status = DRMS_ERROR_FILECREATE;
+                    }
+                    else
+                    {
+                        cfitsio_set_fitsfile(out_file, fptr, 1);
                     }
                 }
 
+                if (status == DRMS_SUCCESS)
+                {
+                    if (cfitsio_get_file_type(out_file, &callback_file_type))
+                    {
+                        status = DRMS_ERROR_FITSRW;
+                    }
+                }
+            }
+
+            if (status == DRMS_SUCCESS)
+            {
                 if (callback == NULL || callback_file_type == CFITSIO_FILE_TYPE_UNITIALIZED)
                 {
                     /* need to create bintable in unitialized file */
@@ -1376,7 +1380,30 @@ int fitsexport_mapexport_tofile2(DRMS_Record_t *rec, DRMS_Segment_t *seg, const 
                         }
                     }
                 }
+                else
+                {
+                    /* no need for ttypes or tforms */
+                    fitskeys = fitsexport_mapkeys(rec, NULL, clname, mapfile, &num_keys, NULL, NULL, &status);
 
+                    if (status == DRMS_SUCCESS)
+                    {
+                        if (num_keys > CFITSIO_MAX_BINTABLE_WIDTH)
+                        {
+                            fprintf(stderr, "[ fitsexport_mapexport_tofile2() too many columns in bintable (maximum is %d)]\n", CFITSIO_MAX_BINTABLE_WIDTH);
+                            status == DRMS_ERROR_FITSRW;
+                        }
+                    }
+
+                    if (status == DRMS_SUCCESS)
+                    {
+                        bintable_rows = list_llcreate(sizeof(CFITSIO_KEYWORD *), NULL);
+                        list_llinserttail(bintable_rows, &fitskeys);
+                    }
+                }
+            }
+
+            if (status == DRMS_SUCCESS)
+            {
                 if (callback == NULL)
                 {
                     if (cfitsio_create_file(&out_file, realfileout, CFITSIO_FILE_TYPE_BINTABLE, NULL, &bintable_info))
@@ -1397,59 +1424,60 @@ int fitsexport_mapexport_tofile2(DRMS_Record_t *rec, DRMS_Segment_t *seg, const 
                         status = DRMS_ERROR_FITSRW;
                     }
                 }
-
-                /* out_file now exists and is initialized to CFITSIO_FILE_TYPE_BINTABLE type */
-
-                /* need to pass a LinkedList_t that contains `fitskeys` */
-                if (status == DRMS_SUCCESS)
-                {
-                    if (cfitsio_write_keys_to_bintable(out_file, bintable_rows))
-                    {
-                        fprintf(stderr, "[ fitsexport_mapexport_tofile2() unable to write keys to FITS bintable\n");
-                        status = DRMS_ERROR_FITSRW;
-                    }
-                }
-
-                list_llfree(&bintable_rows);
-
-                if (close_out_file)
-                {
-                    /* flush to disk or stdout (if streaming, do not flush to stdout) */
-                    cfitsio_close_file(&out_file);
-                }
-
-                if (ttypes)
-                {
-                    list_llfree(&ttypes);
-                }
-
-                if (tforms)
-                {
-                    list_llfree(&tforms);
-                }
             }
 
+            /* out_file now exists and is initialized to CFITSIO_FILE_TYPE_BINTABLE type */
 
-            // fly-tar ISS
-            // Don't test the file if callback is not NULL
-            // in that case callback handles everything related
-            // to the fits generation
-            if (callback == NULL)
+            /* need to pass a LinkedList_t that contains `fitskeys` */
+            if (status == DRMS_SUCCESS)
             {
-                /* Ensure file got created. */
-                if (stat(realfileout, &filestat))
+                /* no cfitsio_bintable_info needed */
+                if (cfitsio_write_keys_to_bintable(out_file, row_number, bintable_rows))
                 {
-                    status = DRMS_ERROR_EXPORT;
-                }
-                else if (expsize)
-                {
-                    *actualfname = strdup(basename(realfileout));
-                    *expsize = filestat.st_size;
+                    fprintf(stderr, "[ fitsexport_mapexport_tofile2() unable to write keys to FITS bintable\n");
+                    status = DRMS_ERROR_FITSRW;
                 }
             }
 
-            cfitsio_free_keys(&fitskeys);
+            list_llfree(&bintable_rows);
+
+            if (close_out_file)
+            {
+                /* flush to disk or stdout (if streaming, do not flush to stdout) */
+                cfitsio_close_file(&out_file);
+            }
+
+            if (ttypes)
+            {
+                list_llfree(&ttypes);
+            }
+
+            if (tforms)
+            {
+                list_llfree(&tforms);
+            }
         }
+
+
+        // fly-tar ISS
+        // Don't test the file if callback is not NULL
+        // in that case callback handles everything related
+        // to the fits generation
+        if (callback == NULL)
+        {
+            /* Ensure file got created. */
+            if (stat(realfileout, &filestat))
+            {
+                status = DRMS_ERROR_EXPORT;
+            }
+            else if (expsize)
+            {
+                *actualfname = strdup(basename(realfileout));
+                *expsize = filestat.st_size;
+            }
+        }
+
+        cfitsio_free_keys(&fitskeys);
     }
 
     return status;
@@ -1460,13 +1488,13 @@ int fitsexport_mapexport_to_cfitsio_file(CFITSIO_FILE *file, DRMS_Segment_t *seg
     /* ugh - use "-" to indicate that we are exporting to stdout; when that happens the fitsfile * is stored in
      * the callback argument
      */
-    return fitsexport_mapexport_tofile2(seg->record, seg, NULL, clname, mapfile, "-", NULL, NULL, (export_callback_func_t)file);
+    return fitsexport_mapexport_tofile2(seg->record, seg, 0, NULL, clname, mapfile, "-", NULL, NULL, (export_callback_func_t)file);
 }
 
-int fitsexport_mapexport_keywords_to_cfitsio_file(CFITSIO_FILE *file, DRMS_Record_t *rec, const char *clname, const char *mapfile)
+int fitsexport_mapexport_keywords_to_cfitsio_file(CFITSIO_FILE *file, DRMS_Record_t *rec, long long row_number, const char *clname, const char *mapfile)
 {
     /* no segment - export FITS file with no image */
-    return fitsexport_mapexport_tofile2(rec, NULL, NULL, clname, mapfile, "-", NULL, NULL, (export_callback_func_t)file);
+    return fitsexport_mapexport_tofile2(rec, NULL, row_number, NULL, clname, mapfile, "-", NULL, NULL, (export_callback_func_t)file);
 }
 
 /* Map keys that are specific to a segment to fits keywords.  User must free.
