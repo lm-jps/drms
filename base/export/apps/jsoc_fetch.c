@@ -1003,14 +1003,6 @@ static char *GetExistReqID(DRMS_Env_t *env, const char *md5, int window, TIME *t
     *timeToCompletion = DRMS_MISSING_TIME;
     *expSize = 0;
 
-    /* delete expired md5s from jsoc.export_md5 */
-    snprintf(cmd, sizeof(cmd), "DELETE FROM jsoc.export_md5 WHERE exporttime + interval '%d hours' <= statement_timestamp()", window);
-    if (drms_dms(drms_env->session, NULL, cmd))
-    {
-       fprintf(stderr, "Failure deleting expired recent export md5s: %s.\n", cmd);
-       istat = DRMS_ERROR_BADDBQUERY;
-    }
-
     /* search jsoc.export_md5 for the md5 - map md5->requestID and return the id */
     if (istat == DRMS_SUCCESS)
     {
@@ -1118,18 +1110,6 @@ static char *GetExistReqID(DRMS_Env_t *env, const char *md5, int window, TIME *t
                 else
                 {
                     istat = DRMS_ERROR_BADDBQUERY;
-                }
-
-                if (istat != DRMS_SUCCESS)
-                {
-                    /* We may have a record in jsoc.export_md5 indicating an existing request, however we cannot find the
-                     * valid, existing request in jsoc.export. So, we need to 86 the record in jsoc.export_md5 - it is stale,
-                     * or invalid or something. */
-                    snprintf(cmd, sizeof(cmd), "DELETE FROM jsoc.export_md5 WHERE md5 = '%s'", md5);
-                    if (drms_dms(drms_env->session, NULL, cmd))
-                    {
-                       fprintf(stderr, "Failure deleting invalid recent export md5: %s.\n", cmd);
-                    }
                 }
             }
             else if (tres->num_rows != 0)
