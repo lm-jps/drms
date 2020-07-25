@@ -154,7 +154,8 @@ while(1) {
       }
       $mail = "Mail -s \"$name on $HOST Not Found\"";
       #$SENDMAILTO = "jsoc_users, jima2344\@gmail.com";
-      $SENDMAILTO = "jim, hao, jeneen, jima2344\@gmail.com";
+      #$SENDMAILTO = "jim, hao, jeneen, jima2344\@gmail.com";
+      $SENDMAILTO = "thailand, jeneen, kehcheng";
       $cmd = "echo \"No $name on $ENV{'HOST'}. Will restart one...\" | $mail $SENDMAILTO";
       system $cmd;
     }
@@ -165,7 +166,8 @@ while(1) {
   if(!@line) {  #this process is missing
       print "The tape_svc s/b restarted by running tape_svc_restart\n";
       $mail = "Mail -s \"$name on $HOST Not Found\"";
-      $SENDMAILTO = "jim, hao, jeneen, jima2344\@gmail.com";
+      #$SENDMAILTO = "jim, hao, jeneen, jima2344\@gmail.com";
+      $SENDMAILTO = "thailand, jeneen, kehcheng";
       $cmd = "echo \"No $name process. You should run tape_svc_restart\" | $mail $SENDMAILTO";
       system $cmd;
       sleep(20);        #wait longer for tape_svc to restart
