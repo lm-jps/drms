@@ -2416,6 +2416,16 @@ int DoIt(void)
 
     arrsize = nsunums;
 
+    char *partition_omit_pattern = "^/((SUM[0-9])|(SUM1[0-9])|(SUM2[0-2]))/";
+    regex_t pp_regex;
+    int filter_partition = 0;
+    int omit = 0;
+
+    if (!regcomp(&pp_regex, partition_omit_pattern, REG_EXTENDED | REG_NOSUB))
+    {
+        filter_partition = 1;
+    }
+
     for (isunum = 0; isunum < nsunums; isunum++)
       {
       SUM_info_t *sinfo;
@@ -2473,33 +2483,50 @@ int DoIt(void)
           count++;
       }
       else
-         {
-         size += (long long)sinfo->bytes;
-         dirsize = (long long)sinfo->bytes;
+      {
+          /* ART - temporarily block /SUM0.../SUM22 since these disks are old and could die if they are used heavily; */
+          size += (long long)sinfo->bytes;
+          dirsize = (long long)sinfo->bytes;
 
-         if (strcmp(sinfo->online_status,"Y")==0)
-            {
-            int y,m,d,hr,mn;
-            char sutime[50];
-            sscanf(sinfo->effective_date,"%4d%2d%2d%2d%2d", &y,&m,&d,&hr,&mn);
-            sprintf(sutime, "%4d.%02d.%02d_%02d:%02d", y,m,d,hr,mn);
-            expire = (sscan_time(sutime) - fetch_time)/86400.0;
-            snprintf(supath, sizeof(supath), "%s", sinfo->online_loc);
-            *onlinestat = 'Y';
-            }
-         if (strcmp(sinfo->online_status,"N")==0 || expire < 3)
-         {  // need to stage or reset retention time
-             if (strcmp(sinfo->archive_status, "N") == 0)
-             {
-                 *onlinestat = 'X';
-             }
-             else
-             {
-                 *onlinestat = 'N';
-                 /* Don't set status of offline, unless there is at least one SU that is offline that can be brought back online. */
-                 all_online = 0;
-             }
-         }
+          omit = 0;
+
+          if (filter_partition)
+          {
+              if (regexec(&pp_regex, sinfo->online_loc, 0, 0, 0) == 0)
+              {
+                  /* matches one of the disabled SUMS partitions */
+                  *onlinestat = 'N';
+                  all_online = 0;
+                  omit = 1;
+              }
+          }
+
+          if (!omit)
+          {
+              if (strcmp(sinfo->online_status,"Y")==0)
+              {
+                  int y,m,d,hr,mn;
+                  char sutime[50];
+                  sscanf(sinfo->effective_date,"%4d%2d%2d%2d%2d", &y,&m,&d,&hr,&mn);
+                  sprintf(sutime, "%4d.%02d.%02d_%02d:%02d", y,m,d,hr,mn);
+                  expire = (sscan_time(sutime) - fetch_time)/86400.0;
+                  snprintf(supath, sizeof(supath), "%s", sinfo->online_loc);
+                  *onlinestat = 'Y';
+              }
+              if (strcmp(sinfo->online_status,"N")==0 || expire < 3)
+              {  // need to stage or reset retention time
+                  if (strcmp(sinfo->archive_status, "N") == 0)
+                  {
+                      *onlinestat = 'X';
+                  }
+                  else
+                  {
+                      *onlinestat = 'N';
+                      /* Don't set status of offline, unless there is at least one SU that is offline that can be brought back online. */
+                      all_online = 0;
+                  }
+              }
+          }
 
          sunums[count] = sunum; // XXXXXXXXXX
          paths[count] = strdup(supath);
@@ -2514,6 +2541,11 @@ int DoIt(void)
       free(sinfo);
       sinfo = NULL;
       } /* isunum */
+
+      if (filter_partition)
+      {
+          regfree(&pp_regex);
+      }
 
         if (filterOut)
         {
