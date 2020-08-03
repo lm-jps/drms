@@ -326,42 +326,60 @@ int nice_intro ()
   }
 
 /* find first record in series that owns the given record */
-DRMS_RecordSet_t *drms_find_rec_first(DRMS_Record_t *rec, int wantprime)
-  {
-  int nprime;
-  int status;
-  DRMS_RecordSet_t *rs;
-  char query[DRMS_MAXQUERYLEN];
-  strcpy(query, rec->seriesinfo->seriesname);
-  nprime = rec->seriesinfo->pidx_num;
-  if (wantprime && nprime > 0)
-    // only first prime key is used for now
-     // for (iprime = 0; iprime < nprime; iprime++)
-      strcat(query, "[#^]");
-  else
-    strcat(query, "[:#^]");
-  rs = drms_open_nrecords(rec->env, query, 1, &status);
-  return(rs);
-  }
+DRMS_RecordSet_t *drms_find_rec_first(DRMS_Record_t *rec, int wantprime, int retrieveLinks)
+{
+    int nprime;
+    int status;
+    DRMS_RecordSet_t *rs;
+    char query[DRMS_MAXQUERYLEN];
+
+
+    strcpy(query, rec->seriesinfo->seriesname);
+    nprime = rec->seriesinfo->pidx_num;
+
+    if (wantprime && nprime > 0)
+    {
+        // only first prime key is used for now
+        // for (iprime = 0; iprime < nprime; iprime++)
+        strcat(query, "[#^]");
+    }
+    else
+    {
+        strcat(query, "[:#^]");
+    }
+
+    rs = drms_open_records2(rec->env, query, NULL, 0, 1, retrieveLinks, &status);
+
+    return(rs);
+}
 
 /* find last record in series that owns the given record */
-DRMS_RecordSet_t *drms_find_rec_last(DRMS_Record_t *rec, int wantprime)
-  {
-  int nprime;
-  int status;
-  DRMS_RecordSet_t *rs;
-  char query[DRMS_MAXQUERYLEN];
-  strcpy(query, rec->seriesinfo->seriesname);
-  nprime = rec->seriesinfo->pidx_num;
-  if (wantprime && nprime > 0)
-    // only first prime key is used for now
-     // for (iprime = 0; iprime < nprime; iprime++)
-      strcat(query, "[#$]");
-  else
-    strcat(query, "[:#$]");
-  rs = drms_open_nrecords(rec->env, query, -1, &status);
-  return(rs);
-  }
+DRMS_RecordSet_t *drms_find_rec_last(DRMS_Record_t *rec, int wantprime, int retrieveLinks)
+{
+    int nprime;
+    int status;
+    DRMS_RecordSet_t *rs;
+    char query[DRMS_MAXQUERYLEN];
+
+
+    strcpy(query, rec->seriesinfo->seriesname);
+    nprime = rec->seriesinfo->pidx_num;
+
+    if (wantprime && nprime > 0)
+    {
+        // only first prime key is used for now
+        // for (iprime = 0; iprime < nprime; iprime++)
+        strcat(query, "[#$]");
+    }
+    else
+    {
+        strcat(query, "[:#$]");
+    }
+
+    rs = drms_open_records2(rec->env, query, NULL, 0, -1, retrieveLinks, &status);
+
+    return(rs);
+}
 
 
 static void list_series_info(DRMS_Record_t *rec)
@@ -2907,7 +2925,7 @@ int DoIt(void)
        {
           DRMS_RecordSet_t *rs;
 
-          rs = drms_find_rec_first(rec, 1);
+          rs = drms_find_rec_first(rec, 1, 0);
           if (!rs || rs->n < 1)
             printf("No records Present\n");
           else
@@ -2918,14 +2936,14 @@ int DoIt(void)
              printf(", Recnum = %lld\n", rs->records[0]->recnum);
              drms_free_records(rs);
 
-             rs = drms_find_rec_last(rec, 1);
+             rs = drms_find_rec_last(rec, 1, 0);
              printf("Last Record:  ");
              drms_print_rec_query(rs->records[0]);
              if (rs->n > 1) printf(" is first of %d records matching first keyword", rs->n);
              printf(", Recnum = %lld\n", rs->records[0]->recnum);
              drms_free_records(rs);
 
-             rs = drms_find_rec_last(rec, 0);
+             rs = drms_find_rec_last(rec, 0, 0);
              printf("Last Recnum:  %lld", rs->records[0]->recnum);
              printf("\n");
           }
@@ -3098,6 +3116,10 @@ int DoIt(void)
                                         validKey = 1;
                                     }
                                 }
+                                else if (!retrieveLinksIn)
+                                {
+                                    /* skip this key if not retrieving links; validKey will remain 0 */
+                                }
                                 else
                                 {
                                     oneLinkedKey = oneKey;
@@ -3145,7 +3167,6 @@ int DoIt(void)
                                 /* work with valid keys only */
                                 if (validKey)
                                 {
-
                                     if (!keysSpecified)
                                     {
                                         keysSpecified = list_llcreate(DRMS_MAXKEYNAMELEN, NULL);
@@ -3357,6 +3378,9 @@ int DoIt(void)
                                 {
                                     break;
                                 }
+
+                                /* the user provided the -K flag (show all links) and at least one link does exist */
+                                retrieveLinks = 1;
                             }
                             else
                             {

@@ -521,37 +521,36 @@ typedef enum DRMS_RecSetCursorSeek_enum DRMS_RecSetCursorSeek_t;
 /** \brief DRMS cursor struct */
 struct DRMS_RecSetCursor_struct
 {
-    /** \brief Parent recordset */
-    struct DRMS_RecordSet_struct *parent;
-    /** \brief Array of temp DB tables - each table holds all selected records for each subset of records */
-    char **names;
-    /** \brief DRMS session environment - needed for querying db for next chunk */
-    DRMS_Env_t *env;
-    /** \brief Chunk size */
-    int chunksize;
-    /** \brief The index of the chunk currently loaded in the record-set */
-    /* If this is -1, then there are no chunks in memory */
-    int currentchunk;
-    /** \brief If -1, then there are more PG records to fetch, if >= 0, then the value
-    * is the index of the last record-set record in the current chunk. */
-    int lastrec;
-    /** \brief The relative index of the current record in the downloaded chunk 0 <= currentrec <= chunksize */
-    int currentrec;
-    /** \brief For each record-set query, 1 means there was a [! ... !] query */
-    int *allvers;
-    /** \brief For each record-set 1 means drms_stage_records has been called. */
-    int staging_needed;
-    /** \brief For needed staging, use this retrieve. */
-    int retrieve;
-    /** \brief For needed staging, use this dontwait. */
-    int dontwait;
+  /** \brief Parent recordset */
+  struct DRMS_RecordSet_struct *parent;
+  /** \brief Array of cursor names recognized by database query */
+  char **names;
+  /** \brief DRMS session environment - needed for querying db for next chunk */
+  DRMS_Env_t *env;
+  /** \brief Chunk size */
+  int chunksize;
+  /** \brief The index of the chunk currently loaded in the record-set */
+  /* If this is -1, then there are no chunks in memory */
+  int currentchunk;
+  /** \brief If -1, then there are more PG records to fetch, if >= 0, then the value
+   * is the index of the last record-set record in the current chunk. */
+  int lastrec;
+  /** \brief The relative index of the current record in the downloaded chunk 0 <= currentrec <= chunksize */
+  int currentrec;
+  /** \brief For each record-set query, 1 means there was a [! ... !] query */
+  int *allvers;
+  /** \brief For each record-set 1 means drms_stage_records has been called. */
+  int staging_needed;
+  /** \brief For needed staging, use this retrieve. */
+  int retrieve;
+  /** \brief For needed staging, use this dontwait. */
+  int dontwait;
 
-    int infoneeded;
-    /** \brief The SUM_info_t *, keyed by sunum, needed when opening record chunks. */
-    HContainer_t *suinfo;
-    int openLinks; /* set in drms_open_recordset_internal(); passed into drms_open_recordset_internal() by client (e.g., show_info) */
-    char **columns; /* set in drms_open_recordset_internal(); these are the columns of the series being SELECTed from */
-    int openCursor; /*set in drms_open_recordset_internal(); set to 1 when DECLARE CURSOR executed */
+  int infoneeded;
+  /** \brief The SUM_info_t *, keyed by sunum, needed when opening record chunks. */
+  HContainer_t *suinfo;
+
+  int openLinks; /* set in drms_open_recordset_internal(); passed into drms_open_recordset_internal() by client (e.g., show_info) */
 };
 
 /** \brief DRMS cursor struct reference */

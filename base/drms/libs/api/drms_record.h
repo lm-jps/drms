@@ -46,34 +46,6 @@ enum DRMS_RecChunking_enum
 
 typedef enum DRMS_RecChunking_enum DRMS_RecChunking_t;
 
-
-enum DRMS_RecordSet_Sql_Statement_Type_enum
-{
-    RECORDSET_SQLSTATEMENT_LANGTYPE_UKNOWN = 0,
-    RECORDSET_SQLSTATEMENT_LANGTYPE_DDL = 1,
-    RECORDSET_SQLSTATEMENT_LANGTYPE_DML = 2
-};
-
-typedef enum DRMS_RecordSet_Sql_Statement_Type_enum DRMS_RecordSet_Sql_Statement_Type_t;
-
-struct DRMS_RecordSet_Sql_Statement_struct
-{
-    DRMS_RecordSet_Sql_Statement_Type_t type;
-    char *statement;
-    char *dmlSeries; /* if this is a DML statement, then this is the series from which we are selecting records */
-    char *columns; /* if this is a DML SELECT statement (but not a count statement), these are the columns being 'SELECTed' */
-    char *parent; /* the parent series, if this is a DML statement for a child series */
-    char *link; /* the name of the DRMS link from the parent to the child, if this is a DML statement for a child series */
-    LinkedList_t *temp; /* temporary DB table DDL statement is creating, or DML statement is selecting from */
-    char linkInfoSQL; /* if this is a link-info DML statement, then this is 't', else 'f' */
-		char *ephemeralTemp; /* name of temp table that can be dropped as soon when the containing statement list is deleted */
-		DRMS_Env_t *env; /* to run SQL to drop ephemeralTemp */
-};
-
-typedef struct DRMS_RecordSet_Sql_Statement_struct DRMS_RecordSet_Sql_Statement_t;
-
-void FreeSqlStatement(void *data);
-
 /************** User level record functions ************/
 
 /**** For record sets. ****/
@@ -81,23 +53,23 @@ void FreeSqlStatement(void *data);
    given in the argument "datasetname". The records are inserted into
    the record cache and marked read-only. */
 
-DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, const char *recordsetname,
-				    int *status);
-DRMS_RecordSet_t *drms_open_nrecords(DRMS_Env_t *env,
-                                     const char *recordsetname,
-                                     int n,
-                                     int *status);
-DRMS_RecordSet_t *drms_open_recordswithkeys(DRMS_Env_t *env, const char *specification, const char *keylist, int *status);
+DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *recordsetname, int openlinks, int retrieverecs, int nrecslimit, LinkedList_t *keylist, LinkedList_t **llistout, char **allversout, int **hasshadowout, int *status);
 
-/* swiss-army-knife open-records function that has all possible options */
+DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, const char *recordsetname, int *status);
+
 DRMS_RecordSet_t *drms_open_records2(DRMS_Env_t *env, const char *specification, LinkedList_t *keys, int chunkrecs, int nrecs, int openlinks, int *status);
 
-DRMS_RecordSet_t *drms_clone_records(DRMS_RecordSet_t *recset,
-				     DRMS_RecLifetime_t lifetime,
-				     DRMS_CloneAction_t mode, int *status);
-DRMS_RecordSet_t *drms_clone_records_nosums(DRMS_RecordSet_t *recset,
-                                            DRMS_RecLifetime_t lifetime,
-                                            DRMS_CloneAction_t mode, int *status);
+DRMS_RecordSet_t *drms_open_nrecords(DRMS_Env_t *env, const char *recordsetname, int n, int *status);
+
+DRMS_RecordSet_t *drms_open_recordswithkeys(DRMS_Env_t *env, const char *specification, const char *keylist, int *status);
+
+int drms_open_recordchunk(DRMS_Env_t *env, DRMS_RecordSet_t *rs, DRMS_RecSetCursorSeek_t seektype, long long chunkindex, int *status);
+
+int drms_close_recordchunk(DRMS_RecordSet_t *rs);
+
+DRMS_RecordSet_t *drms_clone_records(DRMS_RecordSet_t *recset,  DRMS_RecLifetime_t lifetime, DRMS_CloneAction_t mode, int *status);
+
+DRMS_RecordSet_t *drms_clone_records_nosums(DRMS_RecordSet_t *recset, DRMS_RecLifetime_t lifetime, DRMS_CloneAction_t mode, int *status);
 
 DRMS_RecordSet_t *drms_create_records(DRMS_Env_t *env, int n,
 				      const char *seriesname, DRMS_RecLifetime_t lifetime,
@@ -275,6 +247,8 @@ int drms_record_freerecsetspecarr_plussegs(char **allvers, char ***sets, DRMS_Re
 /* DSDS */
 int drms_record_isdsds(DRMS_Record_t *rec);
 int drms_record_islocal(DRMS_Record_t *rec);
+
+DRMS_RecordSet_t *drms_record_retrievelinks(DRMS_Env_t *env, DRMS_RecordSet_t *rs, int *status);
 
 /* Doxygen function documentation */
 
