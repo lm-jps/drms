@@ -1,4 +1,10 @@
 #!/home/jsoc/bin/linux_x86_64/activepython
+
+# Run like this:
+#   CM/tagRelease.py -t /home/jsoc/cvs/Development/waystation/JSOC_9.4.1_beta -v 9.41
+#
+#   -t is a HEAD check-out of the CVS tree; the file jsoc_version.h will be edited, and the tree will then be tagged with the release version specified in the `-v` argument
+#   -v is a version string with a single '.'
 import sys, getopt
 import re
 import os
@@ -19,13 +25,13 @@ kVersFile = 'base/jsoc_version.h'
 
 # Classes
 
-# This class changes the current working directory, and restores the original working directory when 
+# This class changes the current working directory, and restores the original working directory when
 # the context is left.
 class Chdir:
     """Context manager for changing the current working directory"""
     def __init__(self, newPath):
         self.newPath = os.path.realpath(newPath)
-    
+
     def __enter__(self):
         self.savedPath = os.path.realpath(os.getcwd())
         os.chdir(self.newPath)
@@ -34,7 +40,7 @@ class Chdir:
             return 0
         else:
             return 1
-    
+
     def __exit__(self, etype, value, traceback):
         os.chdir(self.savedPath)
         cdir = os.path.realpath(os.getcwd())
@@ -50,7 +56,7 @@ def GetArgs(args):
 
     # tag by defuault
     optD['untag'] = 0
-    
+
     try:
         opts, remainder = getopt.getopt(args,"ht:uv:",["tree=", "version="])
     except getopt.GetoptError:
@@ -88,14 +94,14 @@ def GetArgs(args):
     return optD
 
 # Create version strings for jsoc_version.h and CVS, returns a tuple
-# containing either the two release strings (e.g., ("V8R1", "(801)", "8-1")), 
+# containing either the two release strings (e.g., ("V8R1", "(801)", "8-1")),
 # or the two development strings (e.g., ("V8R1X", "(-801)", "8-1")). The
-# third member of the tuple is always "8-1". Which 
+# third member of the tuple is always "8-1". Which
 # tuple is returned is controlled by the 'dev' argument
 def CreateVersString(versin, dev):
     regexp = re.compile(r"(\d+)\.(\d+)")
     matchobj = regexp.match(versin)
-    
+
     if not(matchobj is None):
         try:
             maj = matchobj.group(1)
@@ -103,9 +109,9 @@ def CreateVersString(versin, dev):
         except IndexError:
             print('Invalid regexp group number.')
             return None
-        
+
         tagstring = maj + "-" + min
-        
+
         if dev == 0:
             return ("V" + maj + "R" + min, "(" + maj + "{0:02d}".format(int(min)) + ")", tagstring)
         else:
@@ -115,12 +121,12 @@ def CreateVersString(versin, dev):
 
 def EditVersionFile(versfile, verstuple):
     rv = kRetSuccess
-    
+
     try:
-        with open(versfile, 'r') as fin, open(kTmpFile, 'w') as fout: 
+        with open(versfile, 'r') as fin, open(kTmpFile, 'w') as fout:
             regexp1 = re.compile(r"#define\s+jsoc_version\s+\"\w+\"")
             regexp2 = re.compile(r"#define\s+jsoc_vers_num\s+\(\-?\d+\)")
-        
+
             for line in fin:
                 matchobj1 = regexp1.match(line)
                 matchobj2 = regexp2.match(line)
@@ -161,7 +167,7 @@ ret = 0
 
 if __name__ == "__main__":
     optD = GetArgs(sys.argv[1:])
-    
+
 if not(optD is None):
     if not(optD['version'] is None) and not(optD['untag'] is None):
         regexp = re.compile(r"(.+)/\s*$")
@@ -170,11 +176,14 @@ if not(optD is None):
             tree = matchobj.group(1)
         else:
             tree = optD['tree']
+
+        # `tree` is used for editing jsoc_version.h only; the file in this tree is edited (twice - once for the release tag and once for the development tag) and then checked in;
+        # `tree` should be a HEAD version CVS tree; the file is edited with the release-tag content, committed, tagged with the release tag, edited with the dev tag, and then checked in;
         version = optD['version']
         untag = optD['untag']
         versfile = tree + '/' + kVersFile
         verstuple = CreateVersString(version, 0)
-        
+
         if verstuple is None:
             print('Invalid version string ' + version)
             rv = kRetArgs
@@ -182,7 +191,7 @@ if not(optD is None):
         if rv == kRetSuccess:
             # Edit jsoc_version.h - set the release version of the version numbers.
             rv = EditVersionFile(versfile, verstuple)
-        
+
         if rv == kRetSuccess:
             # Commit jsoc_version.h back to CVS
             try:
@@ -199,7 +208,7 @@ if not(optD is None):
             except ValueError:
                 print('Unable to run cvs cmd: ' + cmd + '.')
                 rv = kRetOS
-            
+
             if not(ret == 0):
                 print('cvs command ' + cmd + ' ran improperly.')
                 rv = kRetOS
@@ -208,10 +217,8 @@ if not(optD is None):
             print('Successfully edited ' + versfile + '; set release version.')
             # Create the tags
             try:
-                # Untag existing tags (if they exist). If the tag does not exist, then 
-                # no error is returned. Calling dlsource.pl is a bit inefficient since
-                # each time a new CVS tree is downloaded.
-                
+                # untag existing tags (if they exist); if the tag does not exist, then no error is returned; calling dlsource.pl is a bit inefficient since each time a new CVS tree is downloaded; dlsource.pl downloads the HEAD tree into a temp dir before untagging;
+
                 # Full DRMS-release tags
                 cmd = '/home/jsoc/dlsource.pl -o untag -f sdp -t Ver_' + verstuple[2]
                 ret = call(cmd, shell=True)
@@ -224,7 +231,7 @@ if not(optD is None):
                     if not(ret == 0):
                         print('ERROR: Unable to delete tag Ver_LATEST')
                         rv = kRetOS
-            
+
                 # NetDRMS-release tags
                 if rv == kRetSuccess:
                     cmd = '/home/jsoc/dlsource.pl -o untag -f net -t NetDRMS_Ver_' + verstuple[2]
@@ -238,8 +245,9 @@ if not(optD is None):
                     if not(ret == 0):
                         print('ERROR: Unable to delete tag NetDRMS_Ver_LATEST')
                         rv = kRetOS
-            
+
                 # Create new tags
+                # dlsource.pl downloads the HEAD tree into a temp dir before tagging
 
                 # Full DRMS-release tags
                 if rv == kRetSuccess:
@@ -284,7 +292,7 @@ if not(optD is None):
         if rv == kRetSuccess:
             # Edit jsoc_version.h - set the development version of the version numbers.
             rv = EditVersionFile(versfile, verstuple)
-                    
+
         if rv == kRetSuccess:
             # Commit jsoc_version.h back to CVS
             try:
