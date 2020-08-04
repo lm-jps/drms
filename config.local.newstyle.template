@@ -4,6 +4,9 @@
 #
 # Once you have edited this file, you must run the configure script, which parses this file to create macros and constants and such that are used by the various DRMS components. These data are stored in files which are then either compiled into binaries or loaded by scripts. The configure script accomplishes much of this work by calling localize.py. The resulting files are stored in the localization directory.
 
+__STYLE__
+new
+
 __DEFS__
 
 # the path to the Python 3 python executable.
