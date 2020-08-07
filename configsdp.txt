@@ -112,6 +112,7 @@ q:POLCAL_PARAMS                         /home/jsoc/hmi/tables/lev15/polcal-param
 
 # time-distance
 q:JPL_EPHEM_TABLEDIR                    /home/rick/src/ephem/tables
+q:SOHO_EPHEM_TABLE                      /home/soi/CM/tables/ephemeris/summary
 
 __MAKE__
 # JSOC_SDP third-party libraries used by base
