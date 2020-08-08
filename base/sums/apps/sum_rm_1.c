@@ -306,8 +306,8 @@ int stat_storage()
         if(max_free_set_current[i] < max_free_set_need[i]) { //del some stuff
           updated = 1;
           df_del = max_free_set_need[i] - max_free_set_current[i];
-          // Always try to delete at least 1% of total space
-          if (df_del < 0.01 * df_total) df_del = 0.01 * df_total;
+          // Always try to delete at least 10% of total space
+          if (df_del < 0.1 * df_total) df_del = 0.1 * df_total;
           printk("%s Attempt to del %e bytes\n", pptr->name, df_del);
           DS_RmDoX(pptr->name, df_del); 
         }
