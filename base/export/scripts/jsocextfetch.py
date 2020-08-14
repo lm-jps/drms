@@ -28,7 +28,7 @@ def getDRMSParam(drmsParams, param):
         raise Exception('drmsParams', 'DRMS parameter ' + param + ' is not defined.', RET_DRMSPARAMS)
 
     return rv
-    
+
 def validRequestID(id):
     regexp = re.compile(r'JSOC_\d\d\d\d\d\d\d\d_\d+_X_IN\s*$')
     match = regexp.match(id)
@@ -39,16 +39,16 @@ def validRequestID(id):
         match = regexp.match(id)
         if match is not None:
             return 'ext'
-    
+
     return None
-    
+
 def printUTF8(unicode):
     print(str(unicode).rstrip())
-    
+
 try:
     optD = {}
     allArgs = []
-    
+
     # Default to JSON output.
     optD['json'] = True
     optD['noheader'] = False
@@ -56,18 +56,18 @@ try:
     # This script may be invoked in 4 ways:
     #   1. It can be called from the jsoc_fetch CGI via an HTTP POST request. In this case, jsoc_fetch reads the arguments
     #      from stdin and puts them int the QUERY_STRING environment variable. cgi.FieldStorage() then reads them.
-    #   2. It can be called from the jsoc_fetch CGI via an HTTP GET request. In this case, the arguments are also in 
+    #   2. It can be called from the jsoc_fetch CGI via an HTTP GET request. In this case, the arguments are also in
     #      the QUERY_STRING environment variable.
-    #   3. It can be called from the jsocextfetch CGI via an HTTP POST request. In this case, the arguments are sent to 
-    #      this script via stdin. This script extracts them with the cgi.FieldStorage() call. 
-    #   4. It can be called from the jsocextfetch CGI via an HTTP GET request. In this case, the arguments are in 
+    #   3. It can be called from the jsocextfetch CGI via an HTTP POST request. In this case, the arguments are sent to
+    #      this script via stdin. This script extracts them with the cgi.FieldStorage() call.
+    #   4. It can be called from the jsocextfetch CGI via an HTTP GET request. In this case, the arguments are in
     #      the QUERY_STRING environment variable.
     #
-    # If jsocextfetch.py is reading the arguments from STDIN then, the jsoc_fetch binary will not find the arguments 
+    # If jsocextfetch.py is reading the arguments from STDIN then, the jsoc_fetch binary will not find the arguments
     # when it tries to get them from STDIN with qDecoder. So, we have to read them in here, then pass them to jsoc_fetch
     # in the check_call() function. dbhost is a parameter for jsocextfetch.py, but not for jsoc_fetch. It gets stripped off
     # from the list of arguments passed in, and the remaining parameters are passed onto jsoc_fetch. 'dbhost' is the external db host
-    # that the external user is attempting to access. 
+    # that the external user is attempting to access.
     arguments = cgi.FieldStorage()
 
     if arguments:
@@ -91,13 +91,13 @@ try:
                     optD['json'] = False
 
                 allArgs.append(key + '=' + val)
-                
+
     drmsParams = DRMSParams()
 
     if drmsParams is None:
         raise Exception('drmsParams', 'Unable to locate DRMS parameters file (drmsparams.py).', RET_DRMSPARAMS)
-     
-    # Enforce requirements.   
+
+    # Enforce requirements.
     if 'op' not in optD:
         raise Exception('invalidArgs', 'Missing required argument ' + "'op'.", RET_BADARGS)
 
@@ -109,7 +109,7 @@ try:
     elif optD['op'] == 'exp_status' or optD['op'] == 'exp_repeat':
         if not 'requestid' in optD:
             raise Exception('invalidArgs', 'Missing required argument ' + "'requestid'.", RET_BADARGS)
-    
+
         # Validate requestid - this script is called only from the external website when status is requested for a request handled by the internal database.
         expSys = validRequestID(optD['requestid'])
         if expSys == 'int':
@@ -120,7 +120,7 @@ try:
             server = optD['dbhost']
         else:
             raise Exception('invalidArgs', 'requestid ' + optD['requestid'] + ' is not an acceptable ID for the external export system (acceptable format is JSOC_YYYYMMDD_NNN_X_IN or JSOC_YYYYMMDD_NNN).', RET_BADARGS)
-    
+
     if 'requestid' in optD and 'spec' in optD:
         raise Exception('invalidArgs', 'Cannot provide both ' + "'requestid' and 'ds'.", RET_BADARGS)
 
@@ -130,28 +130,28 @@ try:
     # the command line, not from CGI environment variables.
     if 'QUERY_STRING' in os.environ:
         del os.environ['QUERY_STRING']
-        
+
     if 'REQUEST_METHOD' in os.environ:
         method = os.environ['REQUEST_METHOD']
         del os.environ['REQUEST_METHOD']
     else:
         method = 'unknown-method'
-        
+
     if 'SCRIPT_FILENAME' in os.environ:
         script = os.path.basename(os.environ['SCRIPT_FILENAME'])
     else:
         script = 'unknown-script'
-        
+
     if 'REQUEST_URI' in os.environ:
         url = os.environ['REQUEST_URI']
     else:
         url = 'unknown-URL'
-        
+
     if 'SERVER_NAME' in os.environ:
         webserver = os.environ['SERVER_NAME']
     else:
         webserver = 'unknown-webserver'
-        
+
     if 'REMOTE_ADDR' in os.environ:
         ip = os.environ['REMOTE_ADDR']
     else:
@@ -178,7 +178,7 @@ try:
     if output is None:
         raise Exception('arch', 'Unexpected response from jsoc_machine.csh', RET_ARCH)
 
-    # There should be only one output line.    
+    # There should be only one output line.
     outputList = output.splitlines()
     arch = outputList[0];
 
@@ -188,8 +188,8 @@ try:
         series = []
         server = None
 
-        # Run the jsoc_fetch command to initiate a new export request. To do that, we need to know which db server, 
-        # internal or external, to send the request to (this could be a pass-through request - made on the external site, but 
+        # Run the jsoc_fetch command to initiate a new export request. To do that, we need to know which db server,
+        # internal or external, to send the request to (this could be a pass-through request - made on the external site, but
         # handled by the internal dataabase). To determine the DB server, we have to call the drms_parserecset module
         # to extract the series from the record-set argument provided to jsocextfetch.py. Then checkExpDbServer.py can be called
         # which will provide the name of the db server that can handle the series. Finally, we pass the name of that server
@@ -215,7 +215,7 @@ try:
 
         for aset in jsonObj['subsets']:
             series.append(aset['seriesname'])
-    
+
         ################################
         ## Determine Series DB Server ##
         ################################
@@ -239,19 +239,19 @@ try:
             raise Exception('checkserver', jsonObj['errMsg'], RET_CHECKSERVER)
 
         server = jsonObj['server']
-        
+
         #############################
         ## Run log-cgi-instance.py ##
-        #############################    
+        #############################
         # create row for instance ID in instance table and fetch instance ID argument
 
-        # JSOC_DBHOST is the internal server; jsocextfetch.py is called from the external website only when the original request was supported by the 
+        # JSOC_DBHOST is the internal server; jsocextfetch.py is called from the external website only when the original request was supported by the
         # internal database.
         # W=1 ==> do not print HTML headers; this script should do that
         # p=1 ==> a pass-through to internal server is occurring (generate a requestID with an "_X" to denote this)
         extraArgs = [ 'JSOC_DBHOST=' + server, 'DRMS_DBTIMEOUT=900000', 'W=1', 'p=1' ]
         formData = '&'.join(allArgs + extraArgs)
-        
+
         cmdList = [ binPy3, os.path.join(scriptDir, 'log-cgi-instance.py'), script, webserver, url, formData, method, ip ]
 
         try:
@@ -265,7 +265,7 @@ try:
             # the partial output is saved in exc.output
             # if log-cgi-instance.py is not found, then python3 returns error code 2; a message gets printed to stderr
             output = exc.output.decode('utf-8').rstrip()
-        
+
         # output is either the empty string (on error) or the new instance ID
         if len(output) > 0:
             instanceID = int(output)
@@ -291,14 +291,14 @@ try:
             # It creates JSON to be used in a web page, but exits with 1 (which signifies that the JSON created should not
             # be used). Fortunately, the output is saved in exc.output.
             output = exc.output.decode('utf-8')
-        
+
         # ACK - jsoc_fetch can produce text output in the CGI context. Let the caller of this script handle this.
-        if optD['json']:        
+        if optD['json']:
             try:
                 jsonObj = json.loads(output)
             except ValueError as exc:
                 raise Exception('jsocfetch', exc.args[0], RET_JSOCFETCH)
-            
+
             if jsonObj is None or int(jsonObj['status']) != 0 and int(jsonObj['status']) != 1 and int(jsonObj['status']) != 2 and int(jsonObj['status']) != 3 and int(jsonObj['status']) != 4 and int(jsonObj['status']) != 5 and int(jsonObj['status']) != 6:
                 raise Exception('jsocfetch', 'jsoc_fetch did not return a known status code (code ' + jsonObj['status']+ ').', RET_JSOCFETCH)
 
@@ -309,7 +309,7 @@ try:
             if not optD['noheader']:
                 # For now, the only other option for output format is text.
                 print('Content-type: text/plain\n')
-            
+
         printUTF8(output)
 
     else:
@@ -317,13 +317,13 @@ try:
 
         #############################
         ## Run log-cgi-instance.py ##
-        #############################    
+        #############################
         # create row for instance ID in instance table and fetch instance ID argument
-        
+
         # W=1 ==> do not print HTML headers; this script should do that
-        # JSOC_DBHOST is the internal server; jsocextfetch.py is called from the external website only when the original request was supported by the 
+        # JSOC_DBHOST is the internal server; jsocextfetch.py is called from the external website only when the original request was supported by the
         # internal database
-        extraArgs = [ 'JSOC_DBHOST=' + server, 'DRMS_DBTIMEOUT=900000', 'W=1' ]        
+        extraArgs = [ 'JSOC_DBHOST=' + server, 'DRMS_DBTIMEOUT=900000', 'W=1' ]
         formData = '&'.join(allArgs + extraArgs)
 
         cmdList = [ binPy3, os.path.join(scriptDir, 'log-cgi-instance.py'), script, webserver, url, formData, method, ip ]
@@ -339,7 +339,7 @@ try:
             # the partial output is saved in exc.output
             # if log-cgi-instance.py is not found, then python3 returns error code 2; a message gets printed to stderr
             output = exc.output.decode('utf-8').rstrip()
-        
+
         # output is either the empty string (on error) or the new instance ID
         if len(output) > 0:
             instanceID = int(output)
@@ -373,9 +373,9 @@ try:
                 jsonObj = json.loads(output)
             except ValueError as exc:
                 raise Exception('jsocfetch', exc.args[0], RET_JSOCFETCH)
-            
-            if jsonObj is None or int(jsonObj['status']) != 0 and int(jsonObj['status']) != 1 and int(jsonObj['status']) != 2 and int(jsonObj['status']) != 3 and int(jsonObj['status']) != 4 and int(jsonObj['status']) != 5 and int(jsonObj['status']) != 6:
-                raise Exception('jsocfetch', 'jsoc_fetch did not return a known status code (code ' + jsonObj['status']+ ').', RET_JSOCFETCH)
+
+            if jsonObj is None or int(jsonObj['status']) != 0 and int(jsonObj['status']) != 1 and int(jsonObj['status']) != 2 and int(jsonObj['status']) != 3 and int(jsonObj['status']) != 4 and int(jsonObj['status']) != 5 and int(jsonObj['status']) != 6 and int(jsonObj['status']) != 7:
+                raise Exception('jsocfetch', 'jsoc_fetch did not return a known status code (code ' + str(jsonObj['status']) + ')', RET_JSOCFETCH)
 
             if not optD['noheader']:
                 # Print the JSON object as returned by jsoc_fetch.
@@ -386,7 +386,7 @@ try:
                 print('Content-type: text/plain\n')
 
         printUTF8(output)
-        
+
 except Exception as exc:
     if len(exc.args) != 3:
         msg = 'Unhandled exception.'
@@ -407,5 +407,5 @@ if err:
         print('Content-type: application/json\n')
     rootObj = { "status" : err, "error" : errMsg}
     print(json.dumps(rootObj))
-    
+
 sys.exit(0)
