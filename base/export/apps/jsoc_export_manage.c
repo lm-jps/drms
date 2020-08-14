@@ -141,7 +141,7 @@ typedef enum Protocol_enum Protocol_t;
 /* processing types */
 #define JEM_OPERATION_SERVICE_EXPORT "process"
 #define JEM_OPERATION_CLEAN_HASHES "clean_hashes"
-#define JEM_OPERATION_CLEAN_ADDRESSES "clean_addresses"
+#define JEM_OPERATION_CLEAN_PENDING_REQUESTS "clean_requests"
 
 #define JEM_DUP_EXPORT_WINDOW  24 /* hours */
 
@@ -152,7 +152,7 @@ enum __JEM_Processing_Type__enum
     JEM_PROCESSING_TYPE_UNKNOWN = 0,
     JEM_PROCESSING_TYPE_SERVICE_EXPORT = 1,
     JEM_PROCESSING_TYPE_CLEAN_HASHES = 2,
-    JEM_PROCESSING_TYPE_CLEAN_ADDRESSES = 3
+    JEM_PROCESSING_TYPE_CLEAN_PENDING_REQUESTS = 3
 };
 
 typedef enum __JEM_Processing_Type__enum JEM_Processing_Type_t;
@@ -288,9 +288,9 @@ static int Get_processing_type(const char *op, JEM_Processing_Type_t *type)
         {
             processing_type = JEM_PROCESSING_TYPE_CLEAN_HASHES;
         }
-        else if (strcasecmp(op, JEM_OPERATION_CLEAN_ADDRESSES) == 0)
+        else if (strcasecmp(op, JEM_OPERATION_CLEAN_PENDING_REQUESTS) == 0)
         {
-            processing_type = JEM_PROCESSING_TYPE_CLEAN_ADDRESSES;
+            processing_type = JEM_PROCESSING_TYPE_CLEAN_PENDING_REQUESTS;
         }
         else
         {
@@ -4759,6 +4759,24 @@ int DoIt(void)
             if (drms_dms(drms_env->session, NULL, cmd))
             {
                 fprintf(stderr, "failure deleting expired recent export md5s: %s\n", cmd);
+            }
+            else
+            {
+                return(0); /* normal, good exit */
+            }
+
+            break;
+        }
+        case JEM_PROCESSING_TYPE_CLEAN_PENDING_REQUESTS:
+        {
+            char cmd[DRMS_MAXQUERYLEN];
+
+
+            snprintf(cmd, sizeof(cmd), "DELETE FROM %s WHERE start_time + interval '%d hours' <= statement_timestamp()", EXPORT_PENDING_REQUESTS_TABLE, JEM_DUP_EXPORT_WINDOW);
+
+            if (drms_dms(drms_env->session, NULL, cmd))
+            {
+                fprintf(stderr, "failure deleting timed-out pending requests: %s\n", cmd);
             }
             else
             {
