@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python
 
 # When run with the -s flag, localize.py configures the SUMS-server component of NetDRMS.
 import sys
@@ -74,7 +74,21 @@ PERL_FXNS_B = """sub get
 }
 1;"""
 
-PY_BINPATH = '#!/usr/bin/python\n'
+PY_BINPATH = '#!/usr/bin/env python\n'
+
+PY_ERROR_CLASSES = """
+class DPError(Exception):
+    def __init__(self):
+        self._msg = 'DRMS Parameter Error: '
+
+class DPMissingParameterError(DPError):
+    def __init__(self, parameter):
+        super().__init__()
+        self._msg += 'missing DRMS parameter ' + parameter
+
+    def __str__(self):
+        return self._msg
+"""
 
 PY_FXNS_A = """
 class DRMSParams(object):
@@ -95,11 +109,43 @@ PY_FXNS_B = """    def get(self, name):
             return None
 """
 
-PY_FXNS_C = """    def getBool(self, name):
+PY_FXNS_C = """    def get_required(self, name):
+        try:
+            value = self.params[name]
+        except:
+            raise DPMissingParameterError(name)
+
+        return value
+
+    def getBool(self, name):
         if name in self.params:
             return bool(self.params[name] == '1')
         else:
             return None
+
+    def __getattr__(self, name):
+        # only called if object.__getattribute__(self, name) raises; and if that is true, then we want
+        # to look in self.params for it, and set the instance attribute if it does exist in self.params
+        if name in self.params:
+            attr = self.params[name]
+            self.__setattr__(name, attr)
+        else:
+            attr = None
+
+        return attr
+
+    def __setattr__(self, name, value):
+        # call neither __setattr__ nor __getattr__
+        try:
+            params = object.__getattr__(self, 'params')
+
+            # put into self.params dict, overwriting if necessary
+            params[name] = value
+        except:
+            pass
+
+        # store in instance dict as well
+        object.__setattr__(self, name, value)
 """
 
 SH_BINPATH = '#!/bin/bash\n'
@@ -863,6 +909,8 @@ def writeParamsFiles(base, cfile, mfile, pfile, pyfile, shfile, cDefs, mDefsGen,
             print(PREFIX, file=pyout)
             print('# This file contains a set of constants - one for each configuration parameter.\n', file=pyout)
             print(''.join(pyConstSection), file=pyout)
+
+            print(PY_ERROR_CLASSES, file=pyout)
             print(PY_FXNS_A, file=pyout, end='')
             print(''.join(pyInitSection), file=pyout)
             print(PY_FXNS_B, file=pyout)
