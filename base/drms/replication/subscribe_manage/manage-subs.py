@@ -1101,7 +1101,7 @@ class Worker(threading.Thread):
                 # list of tables, and then in clean-up, we COPY this list over client.lst and the client.lst row in su_production.slonycfg.
                 # At no point we do populate site_logs/client.new with all series minus the ones being unsubscribed from. Instead,
                 # if there are no errors, we instantaneously update the client.new.lst file and the client's row in su_production.slonycfg.
-                self.log.writeDebug([ 'Cleaning up request ' + str(self.requestID) + '.' ])
+                self.log.writeDebug([ '[ Worker::run() ] cleaning up request ' + str(self.requestID) ])
                 # Clean-up, regardless of action.
                 # reqTable lock is not held here.
                 wroteIntMsg = False
@@ -1119,6 +1119,7 @@ class Worker(threading.Thread):
                             raise Exception('subLock')
 
                         # Obtained global subscription lock.
+                        self.log.writeDebug([ '[ Worker::run() ] obtained subscription lock for request ' + str(self.requestID) ])
 
                         gotLock = self.reqTable.acquireLock()
                         if not gotLock:
@@ -1134,6 +1135,7 @@ class Worker(threading.Thread):
                                     print(line, file=fout)
 
                         os.rename(self.parserConfigTmp, self.parserConfig)
+                        self.log.writeDebug([ '[ Worker::run() ] removed ' + self.client + '.new.lst for request ' + str(self.requestID) ])
 
                         # Remove client.new from su_production.slonylst and su_production.slonycfg. Do not call legacy code in
                         # SubTableMgr::Remove. This would delete $node.new.lst, but it is still being used.
@@ -1142,6 +1144,8 @@ class Worker(threading.Thread):
                         # Raises CalledProcessError on error (non-zero returned by gentables.pl).
                         check_call(cmdList)
                         #XXX-self.writeStream.logLines() # Log all gentables.pl output
+
+                        self.log.writeDebug([ '[ Worker::run() ] removed ' + self.client + '.new from slonylst/slonycfg for request ' + str(self.requestID) ])
 
                         if self.newSite:
                             # If we are unsubscribing or resubscribing, we cannot be a new site.
@@ -1177,6 +1181,8 @@ class Worker(threading.Thread):
                             check_call(cmdList)
                             #XXX-self.writeStream.logLines() # log all gentables.pl output
 
+                            self.log.writeDebug([ '[ Worker::run() ] added ' + self.client + ' to slonylst for request ' + str(self.requestID) ])
+
                             # Copy all the log files in newClientLogDir to oldClientLogDir, overwriting logs of the same name.
                             # There is a period of time where we allow the log parser to run while the client is ingesting
                             # the dump file. During that time, two parallel universes exist - in one universe, the set of
@@ -1201,6 +1207,7 @@ class Worker(threading.Thread):
 
                         # LEGACY - Rename the client.new.lst file. If oldLstPath happens to exist, then rename() will overwrite it.
                         os.rename(self.newLstPath, self.oldLstPath)
+                        self.log.writeDebug([ '[ Worker::run() ] rename ' + self.client + '.new.lst to ' + self.client + '.lst for request ' + str(self.requestID) ])
 
                         break # out of lock-acquisition loop
                     except Exception as exc:
@@ -1230,6 +1237,7 @@ class Worker(threading.Thread):
                     raise Exception('lock', 'Unable to acquire req-table lock.')
 
                 self.request.setStatus('C')
+                self.log.writeDebug([ '[ Worker::run() ] set request ' + str(self.requestID) + ' status to C' ])
             finally:
                 if gotLock:
                     self.reqTable.releaseLock()
