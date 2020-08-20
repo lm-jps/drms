@@ -818,7 +818,7 @@ class Connection(object):
 
     def close(self):
         # we need to tell the server that we are done - send a DoneRequest
-        request = DoneRequest(client=self.client, timeout=15, log=self.log)
+        request = DoneRequest(client=self.client, timeout=30, log=self.log)
 
         # always returns None, no response needed by client (they already received one)
         self.sendRequest(request)
@@ -860,7 +860,7 @@ class Connection(object):
     # returns a bytes object
     def receiveMsg(self):
         # first, receive length of message
-        allTextReceived = b''
+        allText(Received = b''
         bytesReceivedTotal = 0
 
         # time-out time
@@ -1189,7 +1189,7 @@ if __name__ == "__main__":
                         try:
                             # acquire the request-table lock, and the request lock too, if one exists - we will not be
                             # modifying the request, but we will read it then take action based upon what we read
-                            request = GetPendingRequest(client=client, reqid=None, timeout=15, log=rsLog)
+                            request = GetPendingRequest(client=client, reqid=None, timeout=30, log=rsLog)
                             pendingRequest = connection.sendRequest(request)
 
                             if pendingRequest is None:
@@ -1213,7 +1213,7 @@ if __name__ == "__main__":
                     elif action.lower() == 'subscribe':
                         connection = Connection(client=client, host=serverhost, port=serverport, log=rsLog)
                         try:
-                            request = GetPendingRequest(client=client, reqid=None, timeout=15, log=rsLog)
+                            request = GetPendingRequest(client=client, reqid=None, timeout=30, log=rsLog)
                             pendingRequest = connection.sendRequest(request)
 
                             if pendingRequest is not None:
@@ -1265,7 +1265,7 @@ if __name__ == "__main__":
                             # acquire the request-table lock, but not the request lock; we are not modifying an existing request
                             # (it does not exist yet since the client is the entity that creates it); blocks until
                             # req table lock is acquired (or time-out occurs)
-                            request = GetPendingRequest(client=client, reqid=None, timeout=15, log=rsLog)
+                            request = GetPendingRequest(client=client, reqid=None, timeout=30, log=rsLog)
                             pendingRequest = connection.sendRequest(request)
 
                             if pendingRequest is not None:
@@ -1316,7 +1316,7 @@ if __name__ == "__main__":
                             # acquire the request-table lock, but not the request lock; we are not modifying an existing request
                             # (it does not exist yet since the client is the entity that creates it); blocks until
                             # req table lock is acquired (or time-out occurs)
-                            request = GetPendingRequest(client=client, reqid=None, timeout=15, log=rsLog)
+                            request = GetPendingRequest(client=client, reqid=None, timeout=30, log=rsLog)
                             pendingRequest = connection.sendRequest(request)
 
                             if pendingRequest is not None:
@@ -1334,7 +1334,7 @@ if __name__ == "__main__":
                         connection = Connection(client=client, host=serverhost, port=serverport, log=rsLog)
                         try:
                             try:
-                                request = GetPendingRequest(client=client, reqid=reqid, timeout=15, log=rsLog)
+                                request = GetPendingRequest(client=client, reqid=reqid, timeout=30, log=rsLog)
                                 pendingRequest = connection.sendRequest(request)
 
                                 if pendingRequest is None:
@@ -1357,7 +1357,7 @@ if __name__ == "__main__":
                                     elif pendingRequest.status.upper() == 'D':
                                         try:
                                             # set status to A to indicate to the server that the client is downloading the dump file
-                                            request = SetStatusRequest(client=client, reqid=reqid, log=rsLog, timeout=15, status='A')
+                                            request = SetStatusRequest(client=client, reqid=reqid, log=rsLog, timeout=30, status='A')
                                             connection.sendRequest(request)
                                             resp = ContinueResponse(log=rsLog, status=STATUS_REQUEST_DUMP_READY, msg='the SQL dump file is ready for ingestion', client=client)
                                         except ServerSideTimeout as exc:
@@ -1374,7 +1374,7 @@ if __name__ == "__main__":
                                     elif pendingRequest.status.upper() == 'D':
                                         try:
                                             # set status to A to indicate to the server that the client is downloading the dump file
-                                            request = SetStatusRequest(client=client, reqid=reqid, log=rsLog, timeout=15, status='A')
+                                            request = SetStatusRequest(client=client, reqid=reqid, log=rsLog, timeout=30, status='A')
                                             connection.sendRequest(request)
                                             resp = ContinueResponse(log=rsLog, status=STATUS_REQUEST_DUMP_READY, msg='the SQL dump file is ready for ingestion', client=client)
                                         except ServerSideTimeout as exc:
@@ -1394,7 +1394,7 @@ if __name__ == "__main__":
                         connection = Connection(client=client, host=serverhost, port=serverport, log=rsLog)
                         try:
                             try:
-                                request = GetPendingRequest(client=client, reqid=reqid, timeout=15, log=rsLog)
+                                request = GetPendingRequest(client=client, reqid=reqid, timeout=30, log=rsLog)
                                 pendingRequest = connection.sendRequest(request)
 
                                 if pendingRequest is None:
@@ -1412,7 +1412,7 @@ if __name__ == "__main__":
                                     elif pendingRequest.status.upper() == 'P':
                                         resp = WaitResponse(log=rsLog, status=STATUS_REQUEST_PROCESSING, msg='request for un-subscription from series ' + ','.join(pendingRequest.series) + ' is being processed; poll for completion with a pollcomplete request; please sleep between iterations when looping over this request', client=client, reqid=reqid)
                                     elif pendingRequest.status.upper() == 'C':
-                                        request = SetStatusRequest(client=client, reqid=reqid, log=rsLog, timeout=15, status='S')
+                                        request = SetStatusRequest(client=client, reqid=reqid, log=rsLog, timeout=30, status='S')
                                         connection.sendRequest(request)
                                         resp = ContinueResponse(log=rsLog, status=STATUS_REQUEST_COMPLETE, msg='your ' + pendingRequest.action.lower() + ' request has successfully completed', client=client)
                                     else:
@@ -1422,7 +1422,7 @@ if __name__ == "__main__":
                                     if pendingRequest.status.upper() == 'D':
                                         try:
                                             # set status to A to indicate to the server that the client is downloading the dump file
-                                            request = SetStatusRequest(client=client, reqid=reqid, log=rsLog, timeout=15, status='A')
+                                            request = SetStatusRequest(client=client, reqid=reqid, log=rsLog, timeout=30, status='A')
                                             connection.sendRequest(request)
                                             resp = ContinueResponse(log=rsLog, status=STATUS_REQUEST_DUMP_READY, msg='the SQL dump file is ready for ingestion', client=client)
                                         except ServerSideTimeout as exc:
@@ -1431,7 +1431,7 @@ if __name__ == "__main__":
                                     elif pendingRequest.status.upper() == 'A':
                                         try:
                                             # set status to I to indicate to the server that the client has ingested the dump file
-                                            request = SetStatusRequest(client=client, reqid=reqid, log=rsLog, timeout=15, status='I')
+                                            request = SetStatusRequest(client=client, reqid=reqid, log=rsLog, timeout=30, status='I')
                                             connection.sendRequest(request)
                                             resp = WaitResponse(log=rsLog, status=STATUS_REQUEST_FINALIZING, msg='requesting finalization for subscription to series ' + ','.join(pendingRequest.series) + '; poll for completion with a pollcomplete request; please sleep between iterations when looping over this request', client=client, reqid=reqid)
                                         except ServerSideTimeout as exc:
@@ -1443,7 +1443,7 @@ if __name__ == "__main__":
                                     elif pendingRequest.status.upper() == 'C':
                                         try:
                                             # set status to S to indicate to the server that the client has seen that the request is complete
-                                            request = SetStatusRequest(client=client, reqid=reqid, log=rsLog, timeout=15, status='S')
+                                            request = SetStatusRequest(client=client, reqid=reqid, log=rsLog, timeout=30, status='S')
                                             connection.sendRequest(request)
                                             resp = ContinueResponse(log=rsLog, status=STATUS_REQUEST_COMPLETE, msg='your subscription request has successfully completed', client=client)
                                         except ServerSideTimeout as exc:
@@ -1456,7 +1456,7 @@ if __name__ == "__main__":
                                     if pendingRequest.status.upper() == 'D':
                                         try:
                                             # set status to A to indicate to the server that the client is downloading the dump file
-                                            request = SetStatusRequest(client=client, reqid=reqid, log=rsLog, timeout=15, status='A')
+                                            request = SetStatusRequest(client=client, reqid=reqid, log=rsLog, timeout=30, status='A')
                                             connection.sendRequest(request)
                                             resp = ContinueResponse(log=rsLog, status=STATUS_REQUEST_DUMP_READY, msg='the SQL dump file is ready for ingestion', client=client)
                                         except ServerSideTimeout as exc:
@@ -1465,7 +1465,7 @@ if __name__ == "__main__":
                                     elif pendingRequest.status.upper() == 'A':
                                         try:
                                             # set status to I to indicate to the server that the client has ingested the dump file
-                                            request = SetStatusRequest(client=client, reqid=reqid, log=rsLog, timeout=15, status='I')
+                                            request = SetStatusRequest(client=client, reqid=reqid, log=rsLog, timeout=30, status='I')
                                             connection.sendRequest(request)
                                             resp = WaitResponse(log=rsLog, status=STATUS_REQUEST_FINALIZING, msg='requesting finalization for re-subscription to series ' + ','.join(pendingRequest.series) + '; poll for completion with a pollcomplete request; please sleep between iterations when looping over this request', client=client, reqid=reqid)
                                         except ServerSideTimeout as exc:
@@ -1477,7 +1477,7 @@ if __name__ == "__main__":
                                     elif pendingRequest.status.upper() == 'C':
                                         try:
                                             # set status to S to indicate to the server that the client has seen that the request is complete
-                                            request = SetStatusRequest(client=client, reqid=reqid, log=rsLog, timeout=15, status='S')
+                                            request = SetStatusRequest(client=client, reqid=reqid, log=rsLog, timeout=30, status='S')
                                             connection.sendRequest(request)
                                             resp = ContinueResponse(log=rsLog, status=STATUS_REQUEST_COMPLETE, msg='your re-susbscription request has successfully completed', client=client)
                                         except ServerSideTimeout as exc:
@@ -1499,7 +1499,7 @@ if __name__ == "__main__":
                         try:
                             # set request status to E
                             # XXX need to modify subscribe.py to pass an error message
-                            request = ErrorRequest(client=client, reqid=reqid, log=rsLog, timeout=15, errmsg='generic problem at client ' + client)
+                            request = ErrorRequest(client=client, reqid=reqid, log=rsLog, timeout=30, errmsg='generic problem at client ' + client)
                             connection.sendRequest(request)
                         except ServerSideTimeout as exc:
                             # do not handle a server time-out here; the client has done all it can do to tell the server that
