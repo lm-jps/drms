@@ -299,8 +299,8 @@ try:
             except ValueError as exc:
                 raise Exception('jsocfetch', exc.args[0], RET_JSOCFETCH)
 
-            if jsonObj is None or int(jsonObj['status']) != 0 and int(jsonObj['status']) != 1 and int(jsonObj['status']) != 2 and int(jsonObj['status']) != 3 and int(jsonObj['status']) != 4 and int(jsonObj['status']) != 5 and int(jsonObj['status']) != 6:
-                raise Exception('jsocfetch', 'jsoc_fetch did not return a known status code (code ' + jsonObj['status']+ ').', RET_JSOCFETCH)
+            if jsonObj is None or int(jsonObj['status']) != 0 and int(jsonObj['status']) != 1 and int(jsonObj['status']) != 2 and int(jsonObj['status']) != 3 and int(jsonObj['status']) != 4 and int(jsonObj['status']) != 5 and int(jsonObj['status']) != 6 and int(jsonObj['status']) != 7:
+                raise Exception('jsocfetch', 'jsoc_fetch did not return a known status code (code ' + str(jsonObj['status'])+ ')', RET_JSOCFETCH)
 
             if not optD['noheader']:
                 # Print the JSON object as returned by jsoc_fetch.
