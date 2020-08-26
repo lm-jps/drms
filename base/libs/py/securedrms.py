@@ -3482,7 +3482,7 @@ SecureServerConfig.register_server(SecureServerConfig(
     name='__JSOC',
     web_baseurl='http://jsoc.stanford.edu/cgi-bin/ajax/',
     web_baseurl_internal='http://jsoc2.stanford.edu/cgi-bin/ajax/',
-    web_baseurl_authority='hmiteam:hmiteam',
+    web_baseurl_authority='<user>:<pword>',
 #   web_baseurl_authorityfile='/Users/art/HEPL/drmsPy/auth.py',
     web_check_address='checkAddress.sh',
     web_export_fits='drms-export.sh',
