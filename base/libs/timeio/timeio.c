@@ -958,25 +958,22 @@ void sprint_time (char *out, TIME t, char *zone, int precision) {
     return;
   }
   if (!strcasecmp (zone, "ISO")) {
-    t += tai_adjustment (t, "UTC");
+    double tsav = t;
+    t += tai_adjustment (tsav, "UTC");
     date_from_epoch_time (t);
     if (dattim.year < 1583 || dattim.year > 9999) {
       sprintf (pzone, "Z");
       concat_zone = 1;
     } else {
-      if (dattim.ut_flag) dattim.second += 1.0;
-      // if dattim.second is within half of (1 unit = 1s/10^precision)
-      // of the minute boundary, force t to advance to the next
-      // minute and redo date_from_epoch_time() in order to prevent
-      // printing hh:mm:60 (or hh:mm:61 in case of leap second)
-      if (precision >= 0) {
+      if (precision >= 0 ) {	
 	  double tmp = 0.5 * pow(0.1, precision);
-	  tmp = (dattim.ut_flag ? 61.0 : 60.0) - tmp;
-	  if (dattim.second >= tmp) {
-	      t += (dattim.ut_flag ? 61.0 : 60.0) - dattim.second;
-	      date_from_epoch_time(t);
+	  if (dattim.second >= 60.0 - tmp) {
+	      t = round(tsav);
+	      t += tai_adjustment (t, zone);
+	      date_from_epoch_time (t);
 	  }
       }
+      if (dattim.ut_flag) dattim.second += 1.0;
       if (precision > 0) {
 	sprintf (format, "%s%02d.%dfZ", "%04d-%02d-%02dT%02d:%02d:%",
 	    precision+3, precision);
@@ -1010,21 +1007,18 @@ void sprint_time (char *out, TIME t, char *zone, int precision) {
     }
   }
 
-  t += tai_adjustment (t, zone);
+  double tsav = t;
+  t += tai_adjustment (tsav, zone);
   date_from_epoch_time (t);
-  if (dattim.ut_flag) dattim.second += 1.0;
-  // if dattim.second is within half of (1 unit = 1s/10^precision)
-  // of the minute boundary, force t to advance to the next
-  // minute and redo date_from_epoch_time() in order to prevent
-  // printing hh:mm:60 (or hh:mm:61 in case of leap second)
-  if (precision >= 0) {
+  if (precision >=0) {
       double tmp = 0.5 * pow(0.1, precision);
-      tmp = (dattim.ut_flag ? 61.0 : 60.0) - tmp;
-      if (dattim.second >= tmp) {
-	  t += (dattim.ut_flag ? 61.0 : 60.0) - dattim.second;
-	  date_from_epoch_time(t);
+      if (dattim.second >= 60.0 - tmp) {
+	  t = round(tsav);
+	  t += tai_adjustment (t, zone);
+	  date_from_epoch_time (t);
       }
   }
+  if (dattim.ut_flag) dattim.second += 1.0;
   if (precision > 0) {
     if (nozone) {
       sprintf (format, "%s%02d.%df", "%04d.%02d.%02d_%02d:%02d:%",
