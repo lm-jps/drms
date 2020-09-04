@@ -96,6 +96,7 @@ q:EXPORT_LOG_DIR                        /home/jsoc/exports/logs
 q:EXPORT_LOCK_DIR                       /home/jsoc/exports/tmp
 q:EXPORT_HANDLE_DIR                     /home/jsoc/exports
 q:EXPORT_PENDING_REQUESTS_TABLE         jsoc.export_pending_reqs
+q:EXPORT_PENDING_REQUESTS_MAX_TABLE     jsoc.export_pending_max_reqs
 a:EXPORT_PENDING_REQUESTS_TIME_OUT      60
 q:BIN_PY                                /home/jsoc/bin/linux_x86_64/activepython27
 q:BIN_PY3                               /home/jsoc/anaconda3/bin/python3

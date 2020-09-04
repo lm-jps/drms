@@ -1346,35 +1346,37 @@ static int CheckEmailAddress(const char *logfile, const char *requestor, const c
     env (DRMS_Env_t *) - DRMS environment
     address (char *)- email address registered for export
     ipAddress (char *) - IP address of the user making the export request
-    dbTable (char *)- database table of pending export requests
     timeOutInterval (int) - time out, in minutes; when time-out is exceeded, then it is OK to perform a new export
-    pendingRequestID (char *) - [OUT] the request ID of the located pending request
-    size (int) - buffer size of pendingRequestID
-
+    pending_request_ids (LinkedList_t) - a list of all pending requests for `address`
    return values:
      0 - no pending request
-     1 - error, cannot search for pending requests (missing address/ipAddress, db connection error, dbTable does not exist, etc.)
+     1 - error, cannot search for pending requests (missing address/ipAddress, db connection error, EXPORT_PENDING_REQUESTS_TABLE does not exist, etc.)
      2 - pending request, blocked email address
      3 - pending request, blocked IP address
 
-   dbTable schema:
+   EXPORT_PENDING_REQUESTS_TABLE schema:
      address text not null (primekey)
      ip_address text not null
      request_id text
      start_time timestamp
 
-  the SQL will be executed on the JSOC_DBHOST database; so each database server has the dbTable table
+  the SQL will be executed on the JSOC_DBHOST database; so each database server has the EXPORT_PENDING_REQUESTS_TABLE table
  */
-static int CheckUserLoad(DRMS_Env_t *env, const char *address, const char *ipAddress, const char *dbTable, int timeOutInterval, char *pendingRequestID, int size)
+static int CheckUserLoad(DRMS_Env_t *env, const char *address, const char *ipAddress, int timeOutInterval, LinkedList_t *pending_request_ids)
 {
     char command[256] = {0};
     DB_Binary_Result_t *bres = NULL;
+    int max_requests = 0;
+    int exempt = 0;
+    int row = 0;
+    char pending_request[32] = {0};
     int rv = -1;
 
-    /* look for pending request in dbTable - address is primary key, index on ipAddress exists too */
+    /* look for pending request in EXPORT_PENDING_REQUESTS_TABLE - address is primary key, index on ipAddress exists too */
     if (address)
     {
-        snprintf(command, sizeof(command), "SELECT request_id FROM %s WHERE address = '%s' AND CURRENT_TIMESTAMP - start_time < interval '%d minutes'", dbTable, address, timeOutInterval);
+        /* determine if user is exempt from single-request limit */
+        snprintf(command, sizeof(command), "SELECT max_requests FROM %s WHERE address ILIKE '%s'", EXPORT_PENDING_REQUESTS_MAX_TABLE, address);
 
         if ((bres = drms_query_bin(env->session, command)) == NULL)
         {
@@ -1385,13 +1387,47 @@ static int CheckUserLoad(DRMS_Env_t *env, const char *address, const char *ipAdd
         {
             if (bres->num_rows > 0)
             {
-                /* address is the prime key, so there can only be either 0 or 1 row returned */
+                max_requests = db_binary_field_getint(bres, row, 0);
+            }
+            else
+            {
+                exempt = 0;
+            }
+        }
 
-                /* extract response (request_id returns a string) */
-                db_binary_field_getstr(bres, 0, 0, size, pendingRequestID);
+        snprintf(command, sizeof(command), "SELECT request_id FROM %s WHERE address ILIKE '%s' AND CURRENT_TIMESTAMP - start_time < interval '%d minutes'", EXPORT_PENDING_REQUESTS_TABLE, address, timeOutInterval);
 
-                /* an existing request is pending for this user and it has not timed out */
-                rv = 2;
+        if ((bres = drms_query_bin(env->session, command)) == NULL)
+        {
+            fprintf(stderr, "DB query failure [%s]\n", command);
+            rv = 1;
+        }
+        else
+        {
+            if (bres->num_rows > 0)
+            {
+                /* (address, request_id) is the prime key - in general, there is 0 or 1 rows returned, but we now have a list of
+                 * people who can make multiple, simultaneous requests */
+
+                for (row = 0; row < bres->num_rows; row++)
+                {
+                    /* extract response (request_id returns a string) */
+                    db_binary_field_getstr(bres, row, 0, sizeof(pending_request), pending_request);
+
+                    list_llinserttail(pending_request_ids, pending_request);
+                }
+
+                exempt = (bres->num_rows <= max_requests);
+
+                if (exempt)
+                {
+                    rv = 0;
+                }
+                else
+                {
+                    /* an existing request is pending for this user and it has not timed out */
+                    rv = 2;
+                }
             }
             else
             {
@@ -1408,7 +1444,7 @@ static int CheckUserLoad(DRMS_Env_t *env, const char *address, const char *ipAdd
          * users with the same IP address to get around the limits imposed on email addresses */
         if (ipAddress)
         {
-            snprintf(command, sizeof(command), "SELECT count(*) FROM %s WHERE ip_address = '%s' AND CURRENT_TIMESTAMP - start_time < interval '%d minutes'", dbTable, ipAddress, timeOutInterval);
+            snprintf(command, sizeof(command), "SELECT count(*) FROM %s WHERE ip_address = '%s' AND CURRENT_TIMESTAMP - start_time < interval '%d minutes'", EXPORT_PENDING_REQUESTS_TABLE, ipAddress, timeOutInterval);
 
             if ((bres = drms_query_bin(env->session, command)) == NULL)
             {
@@ -1542,6 +1578,17 @@ int DoIt(void)
   web_query = strdup (cmdparams_get_str (&cmdparams, "QUERY_STRING", NULL));
   from_web = (strcmp (web_query, kNotSpecified) != 0) || postorget;
 
+    /* jsocextfetch removes QUERY_STRING and REQUEST_METHOD from env, and passes through the ds program argument; we still need the ip address, which
+     * will be in the REMOTE_ADDR env */
+    if ((pRemoteAddress = getenv("REMOTE_ADDR")) != NULL)
+    {
+        snprintf(ipAddress, sizeof(ipAddress), "%s", pRemoteAddress);
+    }
+    else
+    {
+        snprintf(ipAddress, sizeof(ipAddress), "%s", "<UNKNOWN>");
+    }
+
     if (from_web)
     {
         /* Log the QUERY_STRING */
@@ -1549,11 +1596,6 @@ int DoIt(void)
         if (qs)
         {
             WriteLog(kLogFileExpReqExt, "QUERY_STRING is %s.\n", qs);
-        }
-
-        if ((pRemoteAddress = getenv("REMOTE_ADDR")) != NULL)
-        {
-            snprintf(ipAddress, sizeof(ipAddress), "%s", pRemoteAddress);
         }
 
         Q_ENTRY *req = NULL;
@@ -2871,8 +2913,12 @@ check for requestor to be valid remote DRMS site
     void *pCmdParamArg = NULL;
     CmdParams_Arg_t *cmdParamArg = NULL;
     char cmdParamArgBuf[512] = {0};
-    char pendingRequestID[32] = {0};
     char series_lower[DRMS_MAXSERIESNAMELEN];
+    LinkedList_t *pending_request_ids = NULL;
+    ListNode_t *node = NULL;
+    char *pending_request_id = NULL;
+    char *pending_requests = NULL;
+    size_t pending_requests_sz = 64;
 
     if (internal)
     {
@@ -2928,6 +2974,9 @@ check for requestor to be valid remote DRMS site
         JSONDIE2(dieStr, "");
     }
 
+    pending_request_ids = list_llcreate(sizeof(pending_request_ids), NULL);
+    pending_requests = calloc(1, pending_requests_sz);
+
     /* we know that the user is a registered export user - now reject the user if they have a pending request */
     if (instanceID >= 0)
     {
@@ -2938,7 +2987,7 @@ check for requestor to be valid remote DRMS site
          * it is possible that we are using the internal DB to satisfy an export request from the external DB
          * (the passthrough feature).
          */
-        clStatus = CheckUserLoad(drms_env, notify, ipAddress, EXPORT_PENDING_REQUESTS_TABLE, EXPORT_PENDING_REQUESTS_TIME_OUT, pendingRequestID, sizeof(pendingRequestID));
+        clStatus = CheckUserLoad(drms_env, notify, ipAddress, EXPORT_PENDING_REQUESTS_TIME_OUT, pending_request_ids);
     }
 
     if (clStatus == 1)
@@ -2947,11 +2996,28 @@ check for requestor to be valid remote DRMS site
     }
     else if (clStatus == 2)
     {
-        if (*pendingRequestID == '\0')
+        /* make a string out of all request ids */
+        list_llreset(pending_request_ids);
+        while ((node = list_llnext(pending_request_ids)) != NULL)
         {
-            snprintf(pendingRequestID, sizeof(pendingRequestID), "[ UNKNOWN ]");
+            pending_request_id = (char *)(node->data);
+
+            if (*pending_request_id == '\0')
+            {
+                pending_requests = base_strcatalloc(pending_requests, "[ UNKNOWN ]", &pending_requests_sz);
+            }
+            else
+            {
+                pending_requests = base_strcatalloc(pending_requests, pending_request_id, &pending_requests_sz);
+            }
+
+            if (node->next)
+            {
+                pending_requests = base_strcatalloc(pending_requests, ",", &pending_requests_sz);
+            }
         }
-        snprintf(dieStr, sizeof(dieStr), "User %s has a pending export request %s; please wait until that request has completed before submitting a new one.", notify, pendingRequestID);
+
+        snprintf(dieStr, sizeof(dieStr), "User %s has %d pending export requests (%s); please wait until at least one request has completed before submitting a new one.", notify, list_llgetnitems(pending_request_ids), pending_requests);
         JSONDIE7(dieStr);
     }
     else if (clStatus == 3)
@@ -2959,6 +3025,8 @@ check for requestor to be valid remote DRMS site
         snprintf(dieStr, sizeof(dieStr), "There are too many requests from %s; please wait until one or more requests have completed before submitting a new one.", notify);
         JSONDIE7(dieStr);
     }
+
+    list_llfree(&pending_request_ids);
 
     size=0;
     strncpy(dsquery,dsin,DRMS_MAXQUERYLEN);
@@ -3973,8 +4041,8 @@ check for requestor to be valid remote DRMS site
      drms_setkey_int(exprec, "Requestor", requestorid);
      // drms_close_record(exprec, DRMS_INSERT_RECORD);
 
-     /* insert new row into the pending-requests table (if a row already exists, it has timed out - remove it) */
-     snprintf(cmd, sizeof(cmd), "DELETE FROM %s WHERE address = '%s'; INSERT INTO %s(address, ip_address, request_id, start_time) VALUES('%s', '%s', '%s', CURRENT_TIMESTAMP)", EXPORT_PENDING_REQUESTS_TABLE, notify, EXPORT_PENDING_REQUESTS_TABLE, notify, ipAddress, requestid);
+     /* insert new row into the pending-requests table (if the user is exempt, then there could be other rows in this table) */
+     snprintf(cmd, sizeof(cmd), "INSERT INTO %s(address, ip_address, request_id, start_time) VALUES('%s', '%s', '%s', CURRENT_TIMESTAMP)", EXPORT_PENDING_REQUESTS_TABLE, notify, ipAddress, requestid);
      if (drms_dms(drms_env->session, NULL, cmd))
      {
         fprintf(stderr, "WARNING: Failure inserting row into %s [%s]\n", EXPORT_PENDING_REQUESTS_TABLE, cmd);
