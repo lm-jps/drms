@@ -62,7 +62,7 @@ else
       {
          $rv = kInvalidArg;
       }
-   } 
+   }
    else
    {
       $rv = kInvalidArg;
@@ -74,7 +74,7 @@ else
 if ($rv == &kSuccess)
 {
     $drmsParams = new drmsparams();
-    
+
     if (!defined($drmsParams))
     {
         print STDERR "ERROR: Cannot get DRMS parameters.\n";
@@ -84,7 +84,7 @@ if ($rv == &kSuccess)
 
 if ($rv == kSuccess)
 {
-   # Acquire publication lock. This prevents more than one publication 
+   # Acquire publication lock. This prevents more than one publication
    # script from simultaneously running.
    $parselck = "$cfg{'kServerLockDir'}/$cfg{'kPubLockFile'}";
    if (toolbox::AcquireLock($parselck, \$lckfh))
@@ -119,7 +119,7 @@ if ($rv == kSuccess)
             $rv = kFileIO;
          }
       }
-     
+
       if ($rv == kSuccess)
       {
          # The host address from the configuration file is accessible only from hmidb and hmidb2.
@@ -144,7 +144,7 @@ if ($rv == kSuccess)
          {
             print "The series $series does not appear to exist. ABORTING!\n";
             $rv = kInvalidArg;
-         } 
+         }
          else
          {
             print "The series $series exists, continuing...\n";
@@ -160,7 +160,7 @@ if ($rv == kSuccess)
       if ($rv == kSuccess)
       {
          print "Checking to see if the series to be published has already been published.\n";
-         
+
          $res = TableIsReplicated(\$mdbh, $schema, $table, $cfg{'CLUSTERNAME'});
          if ($res == -1)
          {
@@ -197,7 +197,7 @@ if ($rv == kSuccess)
          {
             print("success!\n");
 
-            # Checking for the existence of the schema on the slave host of table to replicate 
+            # Checking for the existence of the schema on the slave host of table to replicate
             print "Checking for the existene of schema '$schema' on the slave database.\n";
             $res = SchemaExists(\$sdbh, $schema);
 
@@ -210,7 +210,7 @@ if ($rv == kSuccess)
             {
                print "The namespace '$schema' already exists; skipping execution of createns.\n";
                $checktab = 1;
-            } 
+            }
             else
             {
                # Running createns
@@ -252,7 +252,7 @@ if ($rv == kSuccess)
             {
                print "Table to replicate, $series, already exists on slave db host, ABORTING!\n";
                $rv = kInvalidArg;
-            } 
+            }
             else
             {
                # Running createtabstruct
@@ -407,7 +407,7 @@ sub NoErr
       }
 
       $ok = 0;
-   } 
+   }
 
    return $ok;
 }
@@ -441,7 +441,7 @@ sub RunCmd
          $ret = 1;
       }
    }
-  
+
    return $ret;
 }
 
@@ -452,10 +452,10 @@ sub TableExists
    my($table) = $_[2];
    my($stmnt);
    my($rv);
-   
+
    $stmnt = "SELECT * FROM pg_tables WHERE tablename ILIKE '$table' AND schemaname ILIKE '$schema'";
    $rv = 0;
-   
+
    print "Executing SQL ==> $stmnt\n";
    $rrows = $$rdbh->selectall_arrayref($stmnt, undef);
 
@@ -467,7 +467,7 @@ sub TableExists
          # Table exists
          $rv = 1;
       }
-   } 
+   }
    else
    {
       print STDERR "Error executing SQL ==> $stmnt\n";
@@ -486,6 +486,7 @@ sub TableIsReplicated
    my($stmnt);
    my($rv);
 
+   # check internal Slony tables to see if the series being published has already been published
    $stmnt = "SELECT * FROM _$clustname.sl_table WHERE tab_relname ILIKE '$table' AND tab_nspname ILIKE '$schema'";
    $rv = 0;
 
@@ -500,7 +501,7 @@ sub TableIsReplicated
          # Table is under replication
          $rv = 1;
       }
-   } 
+   }
    else
    {
       print STDERR "Error executing SQL ==> $stmnt\n";
@@ -517,10 +518,10 @@ sub SchemaExists
    my($stmnt);
    my($rrows);
    my($rv);
-   
+
    $stmnt = "SELECT * FROM pg_namespace WHERE nspname ILIKE '$schema'";
    $rv = 0;
-   
+
    print "Executing SQL ==> $stmnt\n";
    $rrows = $$rdbh->selectall_arrayref($stmnt, undef);
 
@@ -532,7 +533,7 @@ sub SchemaExists
          # Table exists
          $rv = 1;
       }
-   } 
+   }
    else
    {
       print STDERR "Error executing SQL ==> $stmnt\n";
@@ -551,10 +552,12 @@ sub NextIDs
    my($rrows);
    my(@rv);
 
+   # find the last Slony replication set created (for the previous publication), and the Slony ID of the last replicated table -
+   # we need to add 1 to these values and provide them to slonik commands
    $stmnt = "SELECT max(T1.set_id), max(T2.tab_id) FROM _$clustname.sl_set AS T1, _$clustname.sl_table AS T2";
    $rv[0] = -1;
    $rv[1] = -1;
-   
+
    print "Executing SQL ==> $stmnt\n";
    $rrows = $$rdbh->selectall_arrayref($stmnt, undef);
 
@@ -567,7 +570,7 @@ sub NextIDs
          $rv[0] = $rows[0]->[0];
          $rv[1] = $rows[0]->[1];
       }
-   } 
+   }
    else
    {
       print STDERR "Error executing SQL ==> $stmnt\n";
@@ -597,8 +600,8 @@ sub CreateRepSet
    $rv = 0;
    $lcseries = lc($series);
 
-   $slonikcmd = 
-   "cluster name = $clustname;\n" . 
+   $slonikcmd =
+   "cluster name = $clustname;\n" .
    "node 1 admin conninfo = 'dbname=$masterdbname host=$masterdbhost port=$masterdbport user=$repuser';\n" .
    "node 2 admin conninfo = 'dbname=$slavedbname host=$slavedbhost port=$slavedbport user=$repuser';\n\n" .
    "create set (id=$repsetid, origin=1, comment='NEW TEMPORARY REPLICATION SET');\n" .
@@ -611,7 +614,7 @@ sub CreateRepSet
    {
       print SLONIK $slonikcmd;
       close(SLONIK);
-   } 
+   }
    else
    {
       print STDERR "Failure running slonik.\n";
@@ -626,7 +629,7 @@ sub PropagatedToSlave
    my($rsdbh) = $_[0];
    my($clustname) = $_[1];
    my($subid) = $_[2];
-   
+
    my($rv) = 0;
    my($stmnt) = "SELECT count(*) FROM _$clustname.sl_table WHERE tab_id = $subid";
    my($rrows);
@@ -658,12 +661,12 @@ sub GetSeriesInfo
     my($rdbh, $dbhost, $dbport, $dbname, $series) = @_;
     my($serieslc) = lc($series);
     my(@rv) = ();
-    
+
     $stmnt = "SELECT seriesname, author, owner, unitsize, archive, retention, tapegroup, primary_idx, created, description, dbidx, version FROM drms_series() WHERE lower(seriesname) = '" . $serieslc . "'";
-    
+
     print "Executing SQL ==> $stmnt\n";
     $rrows = $$rdbh->selectall_arrayref($stmnt, undef);
-    
+
     if (NoErr($rrows, $rdbh, $stmnt))
     {
         my(@rows) = @$rrows;
@@ -690,7 +693,7 @@ sub GetSeriesInfo
     return @rv;
 }
 
-# URI encode each column's content so we can combine the contents into a comma-separated list and send 
+# URI encode each column's content so we can combine the contents into a comma-separated list and send
 # that list to a program via a command line.
 sub cleanUpMess
 {
