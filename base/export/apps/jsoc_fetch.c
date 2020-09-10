@@ -2463,10 +2463,12 @@ int DoIt(void)
     int filter_partition = 0;
     int omit = 0;
 
+#if defined(FILTER_PARTITIONS) && FILTER_PARTITIONS
     if (!regcomp(&pp_regex, partition_omit_pattern, REG_EXTENDED | REG_NOSUB))
     {
         filter_partition = 1;
     }
+#endif
 
     for (isunum = 0; isunum < nsunums; isunum++)
       {
