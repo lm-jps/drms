@@ -718,7 +718,6 @@ SUM_t *sumsopenOpen(const char *server, const char *db, int (*history)(const cha
   SUM_t *sumptr;
   SUMID_t configback;
   SUMID_t sumid;
-  enum clnt_stat status;
   struct timeval tval;
   unsigned int stime;
   char *server_name, *cptr, *username;
@@ -730,6 +729,7 @@ SUM_t *sumsopenOpen(const char *server, const char *db, int (*history)(const cha
 #endif
 
 #if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || (!defined(SUMS_USEMTSUMS_CONNECTION) || !SUMS_USEMTSUMS_CONNECTION)
+    enum clnt_stat status;
     CLIENT *clopx = NULL;
     KEY *klist = NULL;
 #endif
@@ -1662,7 +1662,7 @@ int sumsopenClose(SUM_t *sums, MTSums_CallType_t callType, int (*history)(const 
 {
   char *call_err;
   static char res;
-  enum clnt_stat status;
+
   int i, stat;
   int errflg = 0;
 
@@ -1671,6 +1671,7 @@ int sumsopenClose(SUM_t *sums, MTSums_CallType_t callType, int (*history)(const 
   }
 
 #if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || (!defined(SUMS_USEMTSUMS_CONNECTION) || !SUMS_USEMTSUMS_CONNECTION)
+  enum clnt_stat status;
   KEY *klist = NULL;
 
   klist = newkeylist();
