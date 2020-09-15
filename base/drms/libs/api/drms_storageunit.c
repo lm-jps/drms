@@ -128,12 +128,12 @@ static int EmptyDir(const char *dir, int depth)
         if (entry != NULL)
         {
            if (!notempty)
-           {   
+           {
               char *oneFile = entry->d_name;
 
               if (strcmp(oneFile, ".") != 0 && strcmp(oneFile, "..") != 0)
               {
-                 /* There is no good place to put this, but this is the most efficient place (since we already have 
+                 /* There is no good place to put this, but this is the most efficient place (since we already have
                   * to iterate through all files in the SU and this function is always called before committing an SU).
                   * Delete empty TAS files (TAS files that were created, but no slices were ever written to them). TAS
                   * files live in the sudir, not in any slot dir. This is depth == 0. */
@@ -142,7 +142,7 @@ static int EmptyDir(const char *dir, int depth)
                   * Because we are iterating through a list that we are also deleting from, we have to check for the
                   * existence of the files in the following code before doing anything with the files.
                   * If there is no TAS-file-virgin-file pair, fall through to the code below. */
-                 
+
                  snprintf(fbuf, sizeof(fbuf), "%s/%s", dir, oneFile);
                  if (stat(fbuf, &stBuf))
                  {
@@ -172,7 +172,7 @@ static int EmptyDir(const char *dir, int depth)
                              /* Delete the .virgin file. */
                              snprintf(fbuf, sizeof(fbuf), "%s/%s", dir, oneFile);
                              unlink(fbuf);
-                             
+
                              free(entry);
                              ifile++;
                              continue;
@@ -208,7 +208,7 @@ static int EmptyDir(const char *dir, int depth)
                  }
 
                  snprintf(subdir, sizeof(subdir), "%s/%s", dir, oneFile);
-                 
+
                  if (!stat(subdir, &stBuf))
                  {
                     if (S_ISDIR(stBuf.st_mode))
@@ -242,16 +242,16 @@ long long drms_su_alloc(DRMS_Env_t *env, uint64_t size, char **sudir, int *tapeg
 {
   int stat;
   long long sunum;
-  
+
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_ALLOC) && SUMS_USEMTSUMS_ALLOC
     DRMS_MtSumsRequest_t *request = NULL;
     DRMS_MtSumsRequest_t *reply = NULL;
-    
+
     request = calloc(1, sizeof(DRMS_MtSumsRequest_t));
 #else
     DRMS_SumRequest_t *request = NULL;
     DRMS_SumRequest_t *reply = NULL;
-    
+
     request = malloc(sizeof(DRMS_SumRequest_t));
 #endif
 
@@ -281,7 +281,7 @@ long long drms_su_alloc(DRMS_Env_t *env, uint64_t size, char **sudir, int *tapeg
   drms_lock_server(env);
 
   if (!env->sum_thread) {
-    if((stat = pthread_create(&env->sum_thread, NULL, &drms_sums_thread, 
+    if((stat = pthread_create(&env->sum_thread, NULL, &drms_sums_thread,
 			      (void *) env))) {
       fprintf(stderr,"Thread creation failed: %d\n", stat);
       drms_unlock_server(env);
@@ -295,7 +295,7 @@ long long drms_su_alloc(DRMS_Env_t *env, uint64_t size, char **sudir, int *tapeg
   /* Wait for reply. FIXME: add timeout. */
   /* PERFORMANCE BOTTLENECK
    * If there are many drms sessions happening, SUMS grinds to a halt right here.
-   * tqueueAdd causes the SUMS thread to call SUM_open(), but SUM_open() calls 
+   * tqueueAdd causes the SUMS thread to call SUM_open(), but SUM_open() calls
    * back up when there are a lot of transactions. As a result, SUM_open() may not
    * return for a while. After it returns it puts the result of the request into
    * the queue with its own tqueueAdd. The following tqueueDel has been blocked
@@ -315,9 +315,9 @@ long long drms_su_alloc(DRMS_Env_t *env, uint64_t size, char **sudir, int *tapeg
             fprintf(stderr,"SUM ALLOC failed with error code %d.\n",reply->opcode);
             stat = reply->opcode;
         }
-        
+
         sunum = 0;
-        
+
         if (sudir)
         {
             *sudir = NULL;
@@ -327,13 +327,13 @@ long long drms_su_alloc(DRMS_Env_t *env, uint64_t size, char **sudir, int *tapeg
     {
         stat = DRMS_SUCCESS;
         sunum = reply->sunum[0];
-        
+
         if (sudir)
         {
             /* STEAL the allocated path string, so do not free it here (caller will free it). */
             *sudir =  reply->sudir[0];
         }
-        
+
 #ifdef DEBUG
         printf("Allocated Storage unit #%lld, dir='%s'\n",sunum, reply->sudir[0]);
 #endif
@@ -341,7 +341,7 @@ long long drms_su_alloc(DRMS_Env_t *env, uint64_t size, char **sudir, int *tapeg
 
   if (status)
     *status = stat;
-    
+
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_ALLOC) && SUMS_USEMTSUMS_ALLOC
     /* For MT SUMS, we alloc the sunum and sudir fields. */
     if (reply->sunum)
@@ -354,19 +354,19 @@ long long drms_su_alloc(DRMS_Env_t *env, uint64_t size, char **sudir, int *tapeg
     {
         free(reply->sudir);
         reply->sudir = NULL;
-    }    
+    }
 #endif
-    
+
   free(reply);
-  return sunum;   
+  return sunum;
 }
 #endif
 
 #ifndef DRMS_CLIENT
-int drms_su_alloc2(DRMS_Env_t *env, 
-                   uint64_t size, 
-                   long long sunum, 
-                   char **sudir, 
+int drms_su_alloc2(DRMS_Env_t *env,
+                   uint64_t size,
+                   long long sunum,
+                   char **sudir,
                    int *tapegroup,
                    int *status)
 {
@@ -375,7 +375,7 @@ int drms_su_alloc2(DRMS_Env_t *env,
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_ALLOC) && SUMS_USEMTSUMS_ALLOC
     DRMS_MtSumsRequest_t *request = NULL;
     DRMS_MtSumsRequest_t *reply = NULL;
-    
+
     request = calloc(1, sizeof(DRMS_MtSumsRequest_t));
     XASSERT(request);
     request->sunum = calloc(1, sizeof(uint64_t));
@@ -409,10 +409,10 @@ int drms_su_alloc2(DRMS_Env_t *env,
    }
 
    drms_lock_server(env);
-   if (!env->sum_thread) 
+   if (!env->sum_thread)
    {
-      if((stat = pthread_create(&env->sum_thread, NULL, &drms_sums_thread, 
-                                (void *) env))) 
+      if((stat = pthread_create(&env->sum_thread, NULL, &drms_sums_thread,
+                                (void *) env)))
       {
          fprintf(stderr,"Thread creation failed: %d\n", stat);
          drms_unlock_server(env);
@@ -439,7 +439,7 @@ int drms_su_alloc2(DRMS_Env_t *env,
            fprintf(stderr,"SUM ALLOC2 failed with error code %d.\n",reply->opcode);
            stat = reply->opcode;
        }
-       
+
        if (sudir)
        {
            *sudir = NULL;
@@ -466,7 +466,7 @@ int drms_su_alloc2(DRMS_Env_t *env,
     {
         free(reply->sudir);
         reply->sudir = NULL;
-    }    
+    }
 #endif
 
    if (reply)
@@ -478,17 +478,17 @@ int drms_su_alloc2(DRMS_Env_t *env,
 }
 #endif /* DRMS_CLIENT */
 
-/* Get a new empty slot for a record from "series". If no storage units 
-   from this series with empty slots are currently open, allocate a new 
+/* Get a new empty slot for a record from "series". If no storage units
+   from this series with empty slots are currently open, allocate a new
    one from SUMS. When an appropriate storate unit is found, a new
-   slot number (slot) is assigned corresponding to the 
+   slot number (slot) is assigned corresponding to the
    subdirectory printf("slot%04d",slot) which gets created.
-   
-   Returns storage unit struct (which contains sunum and directory), and 
+
+   Returns storage unit struct (which contains sunum and directory), and
    slot number.
 */
 #ifndef DRMS_CLIENT
-static int drms_su_newslots_internal(DRMS_Env_t *env, int n, char *series, 
+static int drms_su_newslots_internal(DRMS_Env_t *env, int n, char *series,
                                      long long *recnum, DRMS_RecLifetime_t lifetime,
                                      int *slotnum, DRMS_StorageUnit_t **su,
                                      int createslotdirs,
@@ -496,11 +496,11 @@ static int drms_su_newslots_internal(DRMS_Env_t *env, int n, char *series,
 {
     /* Let's try to document this complex function:
      *   1. It first looks in the series' Storage Unit (SU) cache for any SU that has unused slots
-     *   2. 
+     *   2.
      */
   int i, status, slot;
-  HContainer_t *scon; 
-  HIterator_t hit; 
+  HContainer_t *scon;
+  HIterator_t hit;
   long long sunum;
   char slotdir[DRMS_MAXPATHLEN+40], hashkey[DRMS_MAXHASHKEYLEN], *sudir = NULL;
   DRMS_Record_t *template=NULL;
@@ -508,7 +508,7 @@ static int drms_su_newslots_internal(DRMS_Env_t *env, int n, char *series,
 
 
   XASSERT(env->session->db_direct==1);
-  
+
   /* Look up container of storage units for this series. */
   scon = hcon_lookup(&env->storageunit_cache, series);
   if (scon == NULL) /* Make new container for this series. */
@@ -517,19 +517,19 @@ static int drms_su_newslots_internal(DRMS_Env_t *env, int n, char *series,
     hcon_init(scon, sizeof(DRMS_StorageUnit_t), DRMS_MAXHASHKEYLEN,
 	      (void (*)(const void *)) drms_su_freeunit, NULL);
   }
-  
-  /* Now iterate through all storage units for this series open for writing 
+
+  /* Now iterate through all storage units for this series open for writing
      and try to find one with a free slot.   */
   XASSERT(scon != NULL);
   slot = -1;
   status = -1;
-  hiter_new(&hit, scon);  
+  hiter_new(&hit, scon);
   while( (su[0] = (DRMS_StorageUnit_t *)hiter_getnext(&hit)) )
   {
     /* FIND EXISTING SU FOR THIS SERIES WITH AT LEAST ONE FREE SLOT */
     if ( su[0]->mode == DRMS_READWRITE && su[0]->nfree > 0 )
     {
-        /* We found a storage unit (in scon, the series' SU cache) that is a read-write SU, and it has 
+        /* We found a storage unit (in scon, the series' SU cache) that is a read-write SU, and it has
          * free (unused and available) slots. slot EVENTUALLY holds the index of such a slot. This code
          * uses slot == -1 to indicate that no such free slot has been found, so it sloppily sets slot to
          * 0 to trick the following code into thinking that a usable slot has been found. However, the
@@ -544,21 +544,21 @@ static int drms_su_newslots_internal(DRMS_Env_t *env, int n, char *series,
   }
   hiter_free(&hit);
 
-  /* Start allocating slots (requesting new storage units from SUMS 
+  /* Start allocating slots (requesting new storage units from SUMS
      as necessary. */
 #ifdef DEBUG
   printf("n = %d\n",n);
 #endif
   for (i=0; i<n; i++)
-  {    
+  {
     if (slot >= 0)
     {
         /* a usable slot has been found */
-        if (i > 0) 
+        if (i > 0)
         {
             /* the usable slot is in fact in the PREVIOUS SU */
             /* We know that the previous SU, su[i - 1], had at least one free slot during the last iteration
-             * of this loop over i, and we know that is still does have a free slot since slot != -1. But if 
+             * of this loop over i, and we know that is still does have a free slot since slot != -1. But if
              * i == 0, then there was no previous iteration of this loop, so it must be su[0] that has the
              * free slot.
              */
@@ -566,16 +566,16 @@ static int drms_su_newslots_internal(DRMS_Env_t *env, int n, char *series,
         }
         else
         {
-            /* We already located the first available SU with free slots in the block of code labeled 
+            /* We already located the first available SU with free slots in the block of code labeled
              * "FIND EXISTING SU FOR THIS SERIES WITH AT LEAST ONE FREE SLOT"; su[0] points to it. The
              * block of code "DETERMINE USABLE SLOT INDEX" will find which slot is actually free.
              */
         }
-        
+
         XASSERT(su[i]->nfree>0);
-        
+
         /* DETERMINE USABLE SLOT INDEX */
-        while (su[i]->state[slot] != DRMS_SLOT_FREE) 
+        while (su[i]->state[slot] != DRMS_SLOT_FREE)
         {
             /* A slot can have these states: DRMS_SLOT_FREE, DRMS_SLOT_FULL, DRMS_SLOT_TEMP. If the state is DRMS_SLOT_FREE,
              * then the slot has never been assigned to a DRMS record. If the state is DRMS_SLOT_FULL, then the record is
@@ -586,10 +586,10 @@ static int drms_su_newslots_internal(DRMS_Env_t *env, int n, char *series,
     }
     if (slot == -1) /* Out of slots: It's time to allocate a new SU. */
     {
-        /* There is no free slot in the current SU. It may be that the code labeled 
-         * "FIND EXISTING SU FOR THIS SERIES WITH AT LEAST ONE FREE SLOT" never found an SU with 
+        /* There is no free slot in the current SU. It may be that the code labeled
+         * "FIND EXISTING SU FOR THIS SERIES WITH AT LEAST ONE FREE SLOT" never found an SU with
          * at least one free slot to begin with. */
-    
+
        /* ART - if gotosums == 0, then we cannot talk to SUMS, and we cannot allocate
         * the requested new slots, so we have to error out. */
        if (gotosums == 0)
@@ -611,29 +611,29 @@ static int drms_su_newslots_internal(DRMS_Env_t *env, int n, char *series,
 	}
       }
 
-        /* Do not use drms_su_size(). This function includes linked segments when calculating the size of an SU, 
+        /* Do not use drms_su_size(). This function includes linked segments when calculating the size of an SU,
          * but when you allocate an SU, i.e., when creating records, you do not need to allocate space for linked segments
          * since they reside in different SUs. Instead, simply provide a small number as an estimate (e.g., 100MB).
          * SUMS actually does not do much with this argument. It is only used to ensure that at least that many
          * bytes exist on the file system before an allocation attempt is made.
          */
-      sunum = drms_su_alloc(env, 
+      sunum = drms_su_alloc(env,
                             104857600,
                             &sudir,
-                            &(template->seriesinfo->tapegroup), 
+                            &(template->seriesinfo->tapegroup),
                             &status);
       if (status)
       {
 	if (sudir)
 	  free(sudir);
 	goto bail;
-      }	  
+      }
       sprintf(hashkey,DRMS_SUNUM_FORMAT, sunum);
       /* Insert new entry in hash table. */
       /* This allocates a new DRMS_StorageUnit_t. */
       su[i] = hcon_allocslot(scon, hashkey);
 #ifdef DEBUG
-      printf("Got su[i] = %p. Now has %d slots from '%s'\n",su[i], 
+      printf("Got su[i] = %p. Now has %d slots from '%s'\n",su[i],
 	     hcon_size(scon), series);
 #endif
 
@@ -659,7 +659,7 @@ static int drms_su_newslots_internal(DRMS_Env_t *env, int n, char *series,
       su[i]->state[slot] = DRMS_SLOT_TEMP;
     else
       su[i]->state[slot] = DRMS_SLOT_FULL;
-    su[i]->recnum[slot] = recnum[i]; 
+    su[i]->recnum[slot] = recnum[i];
     ++slot;
     su[i]->nfree--; /* Slots are numbered starting at 0. */
     if (su[i]->nfree == 0)
@@ -675,10 +675,10 @@ static int drms_su_newslots_internal(DRMS_Env_t *env, int n, char *series,
 #endif
     */
   }
-  /* Create the slot directory. */ 
+  /* Create the slot directory. */
   if (createslotdirs)
   {
-     for (i=0; i<n; i++)	
+     for (i=0; i<n; i++)
      {
         if (su[i])
 	{
@@ -687,14 +687,14 @@ static int drms_su_newslots_internal(DRMS_Env_t *env, int n, char *series,
 #ifdef DEBUG
            printf("su->sudir = '%s', slotdir = '%s'\n",su[i]->sudir, slotdir);
 #endif
-      
+
            if (mkdir(slotdir,0777))
            {
 	      fprintf(stderr,"ERROR: drms_newslot could not create record "
 		      "directory '%s'.\n",slotdir);
 	      perror("mkdir call failed with error");
 	      status = DRMS_ERROR_MKDIRFAILED;
-           } 
+           }
 	}
      }
   }
@@ -704,7 +704,7 @@ static int drms_su_newslots_internal(DRMS_Env_t *env, int n, char *series,
   return status;
 }
 
-int drms_su_newslots(DRMS_Env_t *env, int n, char *series, 
+int drms_su_newslots(DRMS_Env_t *env, int n, char *series,
                      long long *recnum, DRMS_RecLifetime_t lifetime,
                      int *slotnum, DRMS_StorageUnit_t **su,
                      int createslotdirs)
@@ -713,7 +713,7 @@ int drms_su_newslots(DRMS_Env_t *env, int n, char *series,
    return drms_su_newslots_internal(env, n, series, recnum, lifetime, slotnum, su, createslotdirs, 1);
 }
 
-int drms_su_newslots_nosums(DRMS_Env_t *env, int n, char *series, 
+int drms_su_newslots_nosums(DRMS_Env_t *env, int n, char *series,
                             long long *recnum, DRMS_RecLifetime_t lifetime,
                             int *slotnum, DRMS_StorageUnit_t **su,
                             int createslotdirs)
@@ -745,17 +745,17 @@ static DRMS_RsHandle_t *crankUpRemoteSums(DRMS_Env_t *env, int *status)
     char seqTable[128] = {0};
     DRMS_RsHandle_t *handle = NULL;
     DRMS_RsHandle_t *rv = NULL;
-    
-    
+
+
     /* The remote-sums components must be present if the JMD is not installed. Ensure this is the case. */
-    
+
     /* Create handle. */
     handle = calloc(1, sizeof(DRMS_RsHandle_t));
     if (!handle)
     {
         rsStatus = DRMS_ERROR_OUTOFMEMORY;
     }
-    
+
     /* requests table */
     if (!rsStatus)
     {
@@ -780,7 +780,7 @@ static DRMS_RsHandle_t *crankUpRemoteSums(DRMS_Env_t *env, int *status)
             }
         }
     }
-    
+
     /* requests table sequence */
     if (!rsStatus)
     {
@@ -802,7 +802,7 @@ static DRMS_RsHandle_t *crankUpRemoteSums(DRMS_Env_t *env, int *status)
             }
         }
     }
-    
+
     /* rsumsd.py */
     if (!rsStatus)
     {
@@ -810,7 +810,7 @@ static DRMS_RsHandle_t *crankUpRemoteSums(DRMS_Env_t *env, int *status)
          * I miss Python. */
         struct stat stBuf;
         FILE *fptr = NULL;
-        
+
         if (stat(RS_LOCKFILE, &stBuf) || !S_ISREG(stBuf.st_mode))
         {
             printkerr("rsumsd.py is not running - cannot find PID file %s.\n", RS_LOCKFILE);
@@ -828,7 +828,7 @@ static DRMS_RsHandle_t *crankUpRemoteSums(DRMS_Env_t *env, int *status)
             else
             {
                 char lineBuf[LINE_MAX];
-                
+
                 /* Will truncate the line after LINE_MAX - 1 chars, so the PID string must be short. */
                 if (!fgets(lineBuf, sizeof(lineBuf), fptr))
                 {
@@ -838,13 +838,13 @@ static DRMS_RsHandle_t *crankUpRemoteSums(DRMS_Env_t *env, int *status)
                 else
                 {
                     char procBuf[PATH_MAX];
-                    
+
                     /* Assume linux! */
                     if (lineBuf[strlen(lineBuf) - 1] == '\n')
                     {
                         lineBuf[strlen(lineBuf) - 1] = '\0';
                     }
-                    
+
                     snprintf(procBuf, sizeof(procBuf), "/proc/%s", lineBuf);
                     /* Now check for the existence of this DIRECTORY. */
                     if (stat(procBuf, &stBuf) || !S_ISDIR(stBuf.st_mode))
@@ -853,44 +853,44 @@ static DRMS_RsHandle_t *crankUpRemoteSums(DRMS_Env_t *env, int *status)
                         rsStatus = DRMS_ERROR_REMOTESUMS_MISSING;
                     }
                 }
-                
+
                 /* FINALLY! */
                 fclose(fptr);
             }
         }
     }
-    
+
     if (!rsStatus)
     {
         snprintf(hostPort, sizeof(hostPort), "%s:%d", RS_DBHOST, RS_DBPORT);
-        
+
         if ((handle->dbh = db_connect(hostPort, env->session->db_handle->dbuser, NULL, RS_DBNAME, 1)) == NULL)
         {
             printkerr("Couldn't connect to remote-sums database (host=%s, user=%s, db=%s).\n", hostPort, env->session->db_handle->dbuser, RS_DBNAME);
             rsStatus = DRMS_ERROR_REMOTESUMS_MISSING;
         }
     }
-    
+
     if (!rsStatus)
     {
         rv = handle;
     }
-    
+
     if (nspace)
     {
         free(nspace);
     }
-    
+
     if (table)
     {
         free(table);
     }
-    
+
     if (status)
     {
         *status = rsStatus;
     }
-    
+
     return rv;
 }
 
@@ -899,7 +899,7 @@ static void shutDownRemoteSums(DRMS_RsHandle_t **pHandle)
     if (pHandle)
     {
         DRMS_RsHandle_t *handle = *pHandle;
-        
+
         if (handle)
         {
             if (handle->seqTable)
@@ -907,21 +907,21 @@ static void shutDownRemoteSums(DRMS_RsHandle_t **pHandle)
                 free(handle->seqTable);
                 handle->seqTable = NULL;
             }
-            
+
             if (handle->requestsTable)
             {
                 free(handle->requestsTable);
                 handle->requestsTable = NULL;
             }
-            
+
             if (handle->dbh)
             {
                 db_disconnect(&handle->dbh);
             }
-            
+
             free(handle);
         }
-        
+
         *pHandle = NULL;
     }
 }
@@ -930,20 +930,20 @@ static int processRemoteSums(DRMS_RsHandle_t *handle, int64_t *sunums, unsigned 
 {
     int rsStatus = DRMS_SUCCESS;
     char idBuf[128];
-    
+
     if (!rsStatus)
     {
         /* Insert a new request record into the rsumsd.py request table. Requests look like:
          *
          *   INSERT into drms.rs_requests(requestid, starttime, sunums, status, errmsg) VALUES (10, '2014-10-31 08:00', '545196869,545196870,545196871', 'N', '')
          */
-        
+
         /* Make string out of the array of SUNUMs. */
         char *sunumList = NULL;
         size_t szList = 128;
-        
+
         sunumList = calloc(szList, sizeof(char));
-        
+
         if (!sunumList)
         {
             rsStatus = DRMS_ERROR_OUTOFMEMORY;
@@ -952,7 +952,7 @@ static int processRemoteSums(DRMS_RsHandle_t *handle, int64_t *sunums, unsigned 
         {
             int iSunum;
             char numBuf[64];
-            
+
             for (iSunum = 0; iSunum < nsunums; iSunum++)
             {
                 if (sunums[iSunum] >= 0)
@@ -961,21 +961,21 @@ static int processRemoteSums(DRMS_RsHandle_t *handle, int64_t *sunums, unsigned 
                     {
                         sunumList = base_strcatalloc(sunumList, ",", &szList);
                     }
-                    
+
                     snprintf(numBuf, sizeof(numBuf), "%lld", (long long)(sunums[iSunum]));
                     sunumList = base_strcatalloc(sunumList, numBuf, &szList);
                 }
             }
-            
+
             if (strlen(sunumList) > 0)
             {
                 /* Needs to big enough to operate on a chunk of SUNUMs (up to 512 of them). */
                 char *cmd = NULL;
                 size_t szCmd;
-                
+
                 szCmd = strlen(sunumList) + 256;
                 cmd = calloc(szCmd, sizeof(char));
-                
+
                 if (!cmd)
                 {
                     rsStatus = DRMS_ERROR_OUTOFMEMORY;
@@ -984,7 +984,7 @@ static int processRemoteSums(DRMS_RsHandle_t *handle, int64_t *sunums, unsigned 
                 {
                     /* Get request ID. */
                     long long nextID;
-                    
+
                     /* Must make a NEW db connection since the remote-sums tables may live in a different database. Have to
                      * combine the host and port. This is the correct way to obtain the user name - this code is only available
                      * to server (non-socket-module) code. */
@@ -998,7 +998,7 @@ static int processRemoteSums(DRMS_RsHandle_t *handle, int64_t *sunums, unsigned 
                         /* You actually provide the parent table, not the sequence table, to db_sequence_getnext(). */
                         nextID = db_sequence_getnext(handle->dbh, handle->requestsTable);
                         snprintf(idBuf, sizeof(idBuf), "%lld", nextID);
-                        
+
                         cmd = base_strcatalloc(cmd, "INSERT INTO ", &szCmd);
                         cmd = base_strcatalloc(cmd, handle->requestsTable, &szCmd);
                         cmd = base_strcatalloc(cmd, "(requestid, dbhost, dbport, dbname, type, starttime, sunums, status, errmsg) VALUES (", &szCmd);
@@ -1014,7 +1014,7 @@ static int processRemoteSums(DRMS_RsHandle_t *handle, int64_t *sunums, unsigned 
                         cmd = base_strcatalloc(cmd, "', 'U', localtimestamp(0), '", &szCmd);
                         cmd = base_strcatalloc(cmd, sunumList, &szCmd);
                         cmd = base_strcatalloc(cmd, "', 'N', '')", &szCmd);
-                        
+
                         /* Execute the SQL. */
                         if (db_dms(handle->dbh, NULL, cmd))
                         {
@@ -1022,15 +1022,15 @@ static int processRemoteSums(DRMS_RsHandle_t *handle, int64_t *sunums, unsigned 
                             rsStatus = DRMS_ERROR_REMOTESUMS_REQUEST;
                         }
                     }
-                    
+
                     free(cmd);
                 }
             }
-            
+
             free(sunumList);
         }
     }
-    
+
     if (!rsStatus)
     {
         char dbCmd[256];
@@ -1038,7 +1038,7 @@ static int processRemoteSums(DRMS_RsHandle_t *handle, int64_t *sunums, unsigned 
         const char *reqStatus = NULL;
         const char *reqErrmsg = NULL;
         time_t timeStart;
-        
+
         /* Poll for results from rsumds.py. Time-out in case rsumsd.py disappears. rsumsd.py has its own time-out for request processing, but
          * if it disappears, then this client will run forever. */
         timeStart = time(NULL);
@@ -1050,22 +1050,22 @@ static int processRemoteSums(DRMS_RsHandle_t *handle, int64_t *sunums, unsigned 
                 rsStatus = DRMS_REMOTESUMS_TRYLATER;
                 break;
             }
-            
+
             /* Read request record from database using handle->dbh. */
             snprintf(dbCmd, sizeof(dbCmd), "SELECT status,errmsg FROM %s WHERE requestid = %s", handle->requestsTable, idBuf);
             dbRes = db_query_txt(handle->dbh, dbCmd);
-            
+
             if (dbRes && dbRes->num_rows == 1 && dbRes->num_cols == 2)
             {
                 /* rsumsd.py finished processing the request. */
                 reqStatus = dbRes->field[0][0];
                 reqErrmsg = dbRes->field[0][1];
-                
+
                 if (*reqStatus == 'E')
                 {
                     printkerr(reqErrmsg);
                     rsStatus = DRMS_ERROR_REMOTESUMS_REQUEST;
-                    
+
                     break;
                 }
                 else if (*reqStatus == 'C')
@@ -1079,13 +1079,13 @@ static int processRemoteSums(DRMS_RsHandle_t *handle, int64_t *sunums, unsigned 
                 rsStatus = DRMS_ERROR_REMOTESUMS_REQUEST;
                 break;
             }
-            
+
             if (dbRes)
             {
                 db_free_text_result(dbRes);
                 dbRes = NULL;
             }
-            
+
             sleep(1);
         }
 
@@ -1105,18 +1105,18 @@ static int processRemoteSums(DRMS_RsHandle_t *handle, int64_t *sunums, unsigned 
             rsStatus = DRMS_ERROR_REMOTESUMS_REQUEST;
         }
     }
-    
+
     return rsStatus;
 }
 
 int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
-{  
+{
     int sustatus = DRMS_SUCCESS;
     int tryagain;
     int natts;
     int16_t stagingRet = INT16_MIN;
     int status = 0; /* For pthread_create() only. */
-    
+
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_GET) && SUMS_USEMTSUMS_GET
     DRMS_MtSumsRequest_t *request = NULL;
     DRMS_MtSumsRequest_t *reply = NULL;
@@ -1149,7 +1149,7 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
 
  /* Niles - end of declarations moved from executable code */
 
-  
+
   drms_lock_server(env);
 
   if (!env->sum_thread) {
@@ -1181,7 +1181,7 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
      request->reqcnt = 1;
      request->sunum[0] = su->sunum;
      request->mode = NORETRIEVE + TOUCH;
-     if (retrieve) 
+     if (retrieve)
        request->mode = RETRIEVE + TOUCH;
 
      request->dontwait = 0;
@@ -1191,7 +1191,7 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
        * 15-bit number - never negative). To tell SUMS that we want to set the retention to set this value, but only if
        * the current retention value is smaller that this value, make the sign of this 15-bit number negative).
        * If this value is 0, then use the STDRETENTION value.
-       */      
+       */
       if (env->retention != INT16_MIN)
       {
           /* The user set the DRMS_RETENTION argument. It overrides all other ways of specifying the retention time. */
@@ -1199,7 +1199,7 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
       }
       else if ((stagingRet = drms_series_getstagingretention(su->seriesinfo)) != INT16_MIN)
       {
-         /* Look at the lower 15 bits of the upper 16 bits of the series retention time, if the series info exists. It could 
+         /* Look at the lower 15 bits of the upper 16 bits of the series retention time, if the series info exists. It could
           * be that this function was called without knowing the series that contains the requested SU. */
          if (stagingRet == 0)
          {
@@ -1222,7 +1222,7 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
 
      /***** DON'T USE request AFTER THIS POINT - drms_sums_thread() frees it *****/
 
-     /* Wait for reply. FIXME: add timeout. 
+     /* Wait for reply. FIXME: add timeout.
       * This could take a long time if SUMS has to fetch from tape, so release env lock temporarily. */
      drms_unlock_server(env);
      tqueueDel(env->sum_outbox,  (long) pthread_self(), (char **)&reply);
@@ -1236,7 +1236,7 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
             if (reply->sudir)
             {
                 /* Client is waiting for reply, so client must clean-up sudirs. */
-                for (int i = 0; i < reply->reqcnt; i++) 
+                for (int i = 0; i < reply->reqcnt; i++)
                 {
                     if ((reply->sudir)[i])
                     {
@@ -1250,7 +1250,7 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
                 reply->sudir = NULL;
 #endif
             }
-            
+
              free(reply);
              drms_unlock_server(env);
              return DRMS_ERROR_SUMSTRYLATER;
@@ -1261,7 +1261,7 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
 
             if (reply->sudir)
             {
-                for (int i = 0; i < reply->reqcnt; i++) 
+                for (int i = 0; i < reply->reqcnt; i++)
                 {
                     if ((reply->sudir)[i])
                     {
@@ -1285,7 +1285,7 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
 
             if (reply->sudir)
             {
-                for (int i = 0; i < reply->reqcnt; i++) 
+                for (int i = 0; i < reply->reqcnt; i++)
                 {
                     if ((reply->sudir)[i])
                     {
@@ -1315,7 +1315,7 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
         }
         else if (retrieve && natts < 2 && su->sunum >= 0 && drms_su_isremotesu(su->sunum))
         {
-           /* This sudir is 
+           /* This sudir is
             * POSSIBLY owned by a remote sums.  We invoke remote
             * sums only if the retrieve flag is set.
             *
@@ -1340,14 +1340,14 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
               overwrite?) and replaced them with hard coded values. */
            postsize = create_post_msg (postmap, &postrequeststr);
            send_POST_request (postrequeststr, postsize, &ps);
-	   
+
            inprogress=-1;
            ntries = 0;
-           
+
             int timeOutSecs = 1 * 60 * 60; /* 1 hour */
             int sleepSecs = 10;
             int maxTries = timeOutSecs / sleepSecs;
-           
+
            while ((inprogress = session_status(ps.session_id)) > 0 && ntries < maxTries)
            {
               sleep(sleepSecs);
@@ -1374,7 +1374,7 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
             {
                 sunums = calloc(1, sizeof(int64_t));
                 rsHandle = NULL;
-                
+
                 if (!sunums)
                 {
                     sustatus = DRMS_ERROR_OUTOFMEMORY;
@@ -1384,11 +1384,11 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
                 {
                     sunums[0] = su->sunum;
                     rsHandle = crankUpRemoteSums(env, &sustatus);
-                    
+
                     if (!sustatus && rsHandle)
                     {
                         sustatus = processRemoteSums(rsHandle, sunums, 1);
-                        
+
                         if (!sustatus)
                         {
                             tryagain = 1; /* This causes the SUM_get() to be retried. */
@@ -1404,15 +1404,15 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
                         {
                             sustatus = DRMS_ERROR_REMOTESUMS_INITIALIZATION;
                         }
-                        
+
                         tryagain = 0;
                     }
-                    
+
                     if (rsHandle)
                     {
                         shutDownRemoteSums(&rsHandle);
                     }
-                    
+
                     free(sunums);
                     sunums = NULL;
                 }
@@ -1426,9 +1426,9 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
             (su->sudir)[0] = '\0';
         }
      }
-     
+
     /* Since dontwait == 0, need to free up reply sudir field. */
-    for (int i = 0; i < reply->reqcnt; i++) 
+    for (int i = 0; i < reply->reqcnt; i++)
     {
         if ((reply->sudir)[i])
         {
@@ -1457,7 +1457,7 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
 /* Get the actual storage unit directory from SUMS. */
 #ifndef DRMS_CLIENT
 int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retrieve, int dontwait)
-{  
+{
   int sustatus = DRMS_SUCCESS;
   DRMS_StorageUnit_t **workingsus = NULL;
   DRMS_StorageUnit_t **rsumssus = NULL;
@@ -1470,7 +1470,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
   int16_t maxRet;
   int16_t stagingRet = INT16_MIN;
   int maxNoSus = 0;
-  
+
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_GET) && SUMS_USEMTSUMS_GET
     DRMS_MtSumsRequest_t *request = NULL;
     DRMS_MtSumsRequest_t *reply = NULL;
@@ -1499,7 +1499,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
   DRMS_RsHandle_t *rsHandle = NULL;
   DRMS_StorageUnit_t *rsu = NULL;
 
-#if defined(JMD_IS_INSTALLED) && JMD_IS_INSTALLED 
+#if defined(JMD_IS_INSTALLED) && JMD_IS_INSTALLED
   DRMS_StorageUnit_t *jmd_rsu;
   struct POSTState ps;
   char *postrequeststr;
@@ -1510,9 +1510,9 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
   int inprogress;
   int ntries;
 #endif
-  
+
   /* End of declarations that used to be in the executable code - Niles. */
-  
+
   drms_lock_server(env);
 
   if (!env->sum_thread) {
@@ -1528,7 +1528,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
 
     /* SUMS does not support dontwait == 1, so force dontwait to be 0 (deprecate the dontwait parameter). */
     dontwait = 0;
-    
+
   for (isu = 0; isu < n; isu++)
   {
      onesu = su[isu];
@@ -1537,7 +1537,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
      *(onesu->sudir) = '\0';
   }
 
-  /* There is a maximum no. of SUs that can be requested from SUMS, MAXSUMREQCNT (for RPC SUMS) and 
+  /* There is a maximum no. of SUs that can be requested from SUMS, MAXSUMREQCNT (for RPC SUMS) and
    * MAX_MTSUMS_NSUS (for MT SUMS). So, loop. */
   start = 0;
   end = SUMIN(maxNoSus, n); /* index of SU one past the last one to be processed */
@@ -1575,8 +1575,8 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
 
         request->opcode = DRMS_SUMGET;
         request->reqcnt = end - start;
-         
-        for (isu = start, iSUMSsunum = 0; isu < end; isu++, iSUMSsunum++) 
+
+        for (isu = start, iSUMSsunum = 0; isu < end; isu++, iSUMSsunum++)
         {
            request->sunum[iSUMSsunum] = workingsus[isu]->sunum;
            if (maxRet == -1)
@@ -1593,13 +1593,13 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
               }
            }
         }
-        
+
         request->mode = NORETRIEVE + TOUCH;
-        if (retrieve) 
+        if (retrieve)
           request->mode = RETRIEVE + TOUCH;
 
         request->dontwait = dontwait;
-         
+
         /* Use the Sget retention value here. This is the upper half of the 32-bit retention value in su->seriesinfo->retention
          * (actually the lower 15 bits of the upper 16 bits). This can be overriden by the value in env->retention (a positive
          * 15-bit number - never negative). To tell SUMS that we want to set the retention to set this value, but only if
@@ -1620,25 +1620,25 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
 
         /* Submit request to sums server thread. */
         tqueueAdd(env->sum_inbox, (long) pthread_self(), (char *) request);
-  
+
         /* Wait for reply. FIXME: add timeout. */
-        if (!dontwait) 
+        if (!dontwait)
         {
-           /* If and only if user wants to wait for the reply, then return back 
+           /* If and only if user wants to wait for the reply, then return back
             * to user all SUDIRs found. */
-           /* Could take a while for SUMS to respond (it it has to fetch from tape), 
+           /* Could take a while for SUMS to respond (it it has to fetch from tape),
             * so release env lock temporarily. */
            drms_unlock_server(env);
            tqueueDel(env->sum_outbox,  (long) pthread_self(), (char **)&reply);
            drms_lock_server(env);
-     
+
            if (reply->opcode != 0)
            {
                if (reply->opcode == 3)
                {
                     if (reply->sudir)
                     {
-                        for (int i = 0; i < reply->reqcnt; i++) 
+                        for (int i = 0; i < reply->reqcnt; i++)
                         {
                             if ((reply->sudir)[i])
                             {
@@ -1652,7 +1652,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
                         reply->sudir = NULL;
 #endif
                     }
-               
+
                     free(reply);
                     drms_unlock_server(env);
 
@@ -1662,10 +1662,10 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
                else if (reply->opcode == -2)
                {
                    fprintf(stderr, "Cannot access SUMS in this DRMS session - a tape read is pending.\n");
-                   
+
                     if (reply->sudir)
                     {
-                        for (int i = 0; i < reply->reqcnt; i++) 
+                        for (int i = 0; i < reply->reqcnt; i++)
                         {
                             if ((reply->sudir)[i])
                             {
@@ -1679,7 +1679,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
                         reply->sudir = NULL;
 #endif
                     }
-                   
+
                     free(reply);
                     drms_unlock_server(env);
                     return DRMS_ERROR_PENDINGTAPEREAD;
@@ -1687,10 +1687,10 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
                else if (reply->opcode == -3)
                {
                     fprintf(stderr, "Failure setting sum-get-pending flag.\n");
-                   
+
                     if (reply->sudir)
                     {
-                        for (int i = 0; i < reply->reqcnt; i++) 
+                        for (int i = 0; i < reply->reqcnt; i++)
                         {
                             if ((reply->sudir)[i])
                             {
@@ -1704,7 +1704,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
                         reply->sudir = NULL;
 #endif
                     }
-                    
+
                     free(reply);
                     drms_unlock_server(env);
                     return DRMS_ERROR_SUMGET;
@@ -1715,7 +1715,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
 
                     if (reply->sudir)
                     {
-                        for (int i = 0; i < reply->reqcnt; i++) 
+                        for (int i = 0; i < reply->reqcnt; i++)
                         {
                             if ((reply->sudir)[i])
                             {
@@ -1736,10 +1736,10 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
                else
                {
                     fprintf(stderr, "SUM GET failed with error code %d.\n", reply->opcode);
-                   
+
                     if (reply->sudir)
                     {
-                        for (int i = 0; i < reply->reqcnt; i++) 
+                        for (int i = 0; i < reply->reqcnt; i++)
                         {
                             if ((reply->sudir)[i])
                             {
@@ -1753,7 +1753,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
                         reply->sudir = NULL;
 #endif
                     }
-                   
+
                     free(reply);
                     drms_unlock_server(env);
                     return DRMS_ERROR_SUMGET;
@@ -1770,15 +1770,15 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
               {
                  if (strlen(reply->sudir[iSUMSsunum]) > 0)
                  {
-                    /* For these SUNUMs, we have SUDIRs, so we can provide these 
+                    /* For these SUNUMs, we have SUDIRs, so we can provide these
                      * back to the caller.  */
-                    strncpy(workingsus[isu]->sudir, 
-                            reply->sudir[iSUMSsunum], 
+                    strncpy(workingsus[isu]->sudir,
+                            reply->sudir[iSUMSsunum],
                             DRMS_MAXPATHLEN);
                  }
                  else if (retrieve && natts < 2 && workingsus[isu]->sunum >= 0 && drms_su_isremotesu(workingsus[isu]->sunum))
                  {
-                    /* Count the sudirs that are empty string.  Each of these is 
+                    /* Count the sudirs that are empty string.  Each of these is
                      * POSSIBLY owned by a remote sums.  We invoke remote
                      * sums only if the retrieve flag is set.
                      *
@@ -1796,7 +1796,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
                  }
                  else
                  {
-                     /* Some kind of problem with the sunum - set the sudir field to '\0'. This should already be the case, 
+                     /* Some kind of problem with the sunum - set the sudir field to '\0'. This should already be the case,
                       * but make sure. */
                      (workingsus[isu]->sudir)[0] = '\0';
                  }
@@ -1819,8 +1819,8 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
 
         start = end;
         end = SUMIN(maxNoSus + start, workingn);
-        
-        /* request is shallow-freed by the SUMS thread, so don't free here. */        
+
+        /* request is shallow-freed by the SUMS thread, so don't free here. */
      } /* while */
 
      /* At this point, there may be some off-site SUNUMs - if so, run master script
@@ -1858,10 +1858,10 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
 	    int timeOutSecs = 12 * 60 * 60; /* 12 hours */
 	    int sleepSecs = 10;
 	    int maxTries = timeOutSecs / sleepSecs;
-	    
-        while ((inprogress = session_status(ps.session_id)) > 0 && ntries < maxTries) 
+
+        while ((inprogress = session_status(ps.session_id)) > 0 && ntries < maxTries)
         {
-            /* if this time-out happens, then no code below gets executed, and the sudirs of the SUs that the JMD fetches 
+            /* if this time-out happens, then no code below gets executed, and the sudirs of the SUs that the JMD fetches
              * are not properly initialized (the sudirs remain "rs") */
             sleep(sleepSecs);
             ntries++;
@@ -1870,7 +1870,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
         //free any post structures
         free_post_request(postmap);
         free(postrequeststr);
-        
+
         if (ntries >= maxTries)
         {
             /* time-out occurred, set error status */
@@ -1920,10 +1920,10 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
              sunums = NULL;
              rsHandle = NULL;
              rsu = NULL;
-             
+
              nretrySUNUMS = list_llgetnitems(retrysus);
              sunums = calloc(SUMIN(maxNoSus, nretrySUNUMS), sizeof(int64_t));
-             
+
              if (!sunums)
              {
                  sustatus = DRMS_ERROR_OUTOFMEMORY;
@@ -1932,7 +1932,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
              else
              {
                  rsHandle = crankUpRemoteSums(env, &sustatus);
-                 
+
                  if (!sustatus && rsHandle)
                  {
                      /* Iterate through SUs. We have to chunk them before calling processRemoteSums(). */
@@ -1940,25 +1940,25 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
                      {
                          rsu = *((DRMS_StorageUnit_t **)(node->data));
                          sunums[iSUMSsunum++] = rsu->sunum;
-                         
+
                          if (iSUMSsunum > 0 && (iSUMSsunum % maxNoSus == 0 || isu == nretrySUNUMS - 1))
                          {
                              /* if isu == nretrySUNUMS - 1, then about to exit loop. */
                              sustatus = processRemoteSums(rsHandle, sunums, iSUMSsunum);
                              free(sunums);
                              sunums = NULL;
-                             
+
                              iSUMSsunum = 0;
-                             
+
                              if (sustatus)
                              {
                                  break;
                              }
-                             
+
                              if (isu < nretrySUNUMS - 1)
                              {
                                  sunums = calloc(SUMIN(maxNoSus, nretrySUNUMS - isu - 1), sizeof(int64_t));
-                                 
+
                                  if (!sunums)
                                  {
                                      sustatus = DRMS_ERROR_OUTOFMEMORY;
@@ -1975,22 +1975,22 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
                          sustatus = DRMS_ERROR_REMOTESUMS_INITIALIZATION;
                      }
                  }
-                 
+
                  if (rsHandle)
                  {
                      shutDownRemoteSums(&rsHandle);
                  }
-                 
+
                  if (!sustatus)
                  {
                      /* The remote-sums request was successfully processed. Retry all the SUs tagged for retry. */
                      tryagain = 1;
-                     
+
                      start = 0;
                      /* index of SU one past the last one to be processed */
                      end = SUMIN(maxNoSus, nretrySUNUMS);
                      rsumssus = (DRMS_StorageUnit_t **)malloc(sizeof(DRMS_StorageUnit_t *) * nretrySUNUMS);
-                     
+
                      isu = 0;
                      while (node = list_llgethead(retrysus))
                      {
@@ -2002,12 +2002,12 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
                          list_llremove(retrysus, node);
                          list_llfreenode(&node);
                      }
-                     
+
                      if (retrysus)
                      {
                          list_llfree(&retrysus); /* sets retrysus to NULL */
                      }
-                     
+
                      workingsus = rsumssus;
                      workingn = nretrySUNUMS;
                      natts++;
@@ -2068,7 +2068,7 @@ int drms_su_setretention(DRMS_Env_t *env, int16_t newRetention, int nsus, long l
     int start;
     int szChunk;
     int maxNoSus = 0;
-    
+
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_GET) && SUMS_USEMTSUMS_GET
     maxNoSus = MAX_MTSUMS_NSUS;
     DRMS_MtSumsRequest_t *request = NULL;
@@ -2078,11 +2078,11 @@ int drms_su_setretention(DRMS_Env_t *env, int16_t newRetention, int nsus, long l
     DRMS_SumRequest_t *request = NULL;
     DRMS_SumRequest_t *reply = NULL;
 #endif
-    
+
     drmsStatus = DRMS_SUCCESS;
-    
+
     drms_lock_server(env);
-    
+
     if (!env->sum_thread)
     {
         int libStat;
@@ -2092,15 +2092,15 @@ int drms_su_setretention(DRMS_Env_t *env, int16_t newRetention, int nsus, long l
             drmsStatus = DRMS_ERROR_CANTCREATETHREAD;
         }
     }
-    
+
     if (drmsStatus == DRMS_SUCCESS)
     {
         HContainer_t *map = NULL;
         int yep;
         char key[128];
-        
+
         map = hcon_create(sizeof(SUM_info_t *), 128, NULL, NULL, NULL, NULL, 0);
-        
+
         if (!map)
         {
             drmsStatus = DRMS_ERROR_OUTOFMEMORY;
@@ -2109,7 +2109,7 @@ int drms_su_setretention(DRMS_Env_t *env, int16_t newRetention, int nsus, long l
         {
             yep = 1;
             start = 0;
-            
+
             while (start < nsus)
             {
                 /* create SUMS request (SUMS frees this request) */
@@ -2121,14 +2121,14 @@ int drms_su_setretention(DRMS_Env_t *env, int16_t newRetention, int nsus, long l
 #else
                 request = malloc(sizeof(DRMS_SumRequest_t));
                 XASSERT(request);
-#endif          
+#endif
                 request->opcode = DRMS_SUMGET;
-                
+
                 for (isu = start, szChunk = 0; szChunk < maxNoSus && isu < nsus; isu++)
                 {
                     /* Some of these SUs may not even belong to the local SUMS. We don't care if that happens. We
                      * want to modify the retention of local SUs only. */
-                    
+
                     /* Do not send SUNUMs with a value of -1 to SUMS, and don't send duplicates. */
                     snprintf(key, sizeof(key), "%llu", (unsigned long long)sunums[isu]); /* -1 converted to ULLONG_MAX. */
                     if (sunums[isu] >= 0 && !hcon_member(map, key))
@@ -2138,11 +2138,11 @@ int drms_su_setretention(DRMS_Env_t *env, int16_t newRetention, int nsus, long l
                         szChunk++;
                     }
                 }
-                
+
                 start += szChunk; /* for next while-loop iteration */
-                
+
                 request->reqcnt = szChunk;
-                
+
                 /* If a requested SU is offline, bring it online and set its retention. */
                 if (newRetention != 0)
                 {
@@ -2157,12 +2157,12 @@ int drms_su_setretention(DRMS_Env_t *env, int16_t newRetention, int nsus, long l
                 /* newRetention can be positive or negative. A positive number will potentially result in a decrease of the
                  * retention value. */
                 request->tdays = newRetention;
-                
+
                 /* Submit request to sums server thread. */
                 tqueueAdd(env->sum_inbox, (long) pthread_self(), (char *) request);
-                
+
                 /* Wait for reply. FIXME: add timeout. */
-                
+
                 /* If and only if user wants to wait for the reply, then return back
                  * to user all SUDIRs found. */
                 /* Could take a while for SUMS to respond (it it has to fetch from tape),
@@ -2170,7 +2170,7 @@ int drms_su_setretention(DRMS_Env_t *env, int16_t newRetention, int nsus, long l
                 drms_unlock_server(env);
                 tqueueDel(env->sum_outbox,  (long) pthread_self(), (char **)&reply);
                 drms_lock_server(env);
-                
+
                 if (reply->opcode != 0)
                 {
                     if (reply->opcode == 3)
@@ -2201,7 +2201,7 @@ int drms_su_setretention(DRMS_Env_t *env, int16_t newRetention, int nsus, long l
                 }
 
                 /* success setting new retention */
-                
+
                 /* free returned SUDIRs (which are not needed by this call) */
                 if (reply->sudir)
                 {
@@ -2213,7 +2213,7 @@ int drms_su_setretention(DRMS_Env_t *env, int16_t newRetention, int nsus, long l
                         }
                     }
                 }
-                
+
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_GET) && SUMS_USEMTSUMS_GET
                 if (reply->sudir)
                 {
@@ -2221,16 +2221,16 @@ int drms_su_setretention(DRMS_Env_t *env, int16_t newRetention, int nsus, long l
                     reply->sudir = NULL;
                 }
 #endif
-                
+
                 free(reply);
             }
-            
+
             hcon_destroy(&map);
         }
     }
-    
+
     drms_unlock_server(env);
-    
+
     return drmsStatus;
 }
 #endif
@@ -2257,7 +2257,7 @@ int drms_su_getinfo(DRMS_Env_t *env, long long *sunums, int nsunums, SUM_info_t 
    SUM_info_t *nulladdr = NULL;
    SUM_info_t **pinfo = NULL;
    int maxNoSus = 0;
-   
+
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_INFO) && SUMS_USEMTSUMS_INFO
     maxNoSus = MAX_MTSUMS_NSUS;
     DRMS_MtSumsRequest_t *request = NULL;
@@ -2270,11 +2270,11 @@ int drms_su_getinfo(DRMS_Env_t *env, long long *sunums, int nsunums, SUM_info_t 
 
    drms_lock_server(env);
 
-   if (!env->sum_thread) 
+   if (!env->sum_thread)
    {
 
       if((status = pthread_create(&env->sum_thread, NULL, &drms_sums_thread,
-                                  (void *) env)) != DRMS_SUCCESS) 
+                                  (void *) env)) != DRMS_SUCCESS)
       {
          fprintf(stderr,"Thread creation failed: %d\n", status);
          drms_unlock_server(env);
@@ -2282,7 +2282,7 @@ int drms_su_getinfo(DRMS_Env_t *env, long long *sunums, int nsunums, SUM_info_t 
       }
    }
 
-   /* There might be more than maxNoSus sunums, and there might be duplicates. 
+   /* There might be more than maxNoSus sunums, and there might be duplicates.
     * Store unique values. */
    map = hcon_create(sizeof(SUM_info_t *), 128, SUFreeInfo, NULL, NULL, NULL, 0);
 
@@ -2293,7 +2293,7 @@ int drms_su_getinfo(DRMS_Env_t *env, long long *sunums, int nsunums, SUM_info_t 
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_INFO) && SUMS_USEMTSUMS_INFO
         request = (DRMS_MtSumsRequest_t *)calloc(1, sizeof(DRMS_MtSumsRequest_t));
         XASSERT(request);
-        
+
         request->sunum = calloc(maxNoSus, sizeof(uint64_t)); /* This may be larger than needed, but don't sweat it. */
         XASSERT(request->sunum);
 #else
@@ -2308,14 +2308,14 @@ int drms_su_getinfo(DRMS_Env_t *env, long long *sunums, int nsunums, SUM_info_t 
       snprintf(key, sizeof(key), "%llu", (unsigned long long)sunums[isunum]); /* -1 converted to ULLONG_MAX. */
       if (!hcon_member(map, key))
       {
-         /* sunums[isnum] could be equal to -1. The code in drms_server.c will handle these, not 
+         /* sunums[isnum] could be equal to -1. The code in drms_server.c will handle these, not
           * sending them onto sums. */
          request->sunum[nReqs] = (uint64_t)sunums[isunum]; /* -1 converted to ULLONG_MAX. */
          hcon_insert(map, key, &nulladdr);
          nReqs++;
       }
-      
-      /* ART - Although SUMS will handle up to maxNoSus SUNUMs, the keylist 
+
+      /* ART - Although SUMS will handle up to maxNoSus SUNUMs, the keylist
        * code used by SUMS is inefficient - the optimal batch size is 64. */
       if (nReqs == maxNoSus || (isunum + 1 == nsunums && nReqs > 0))
       {
@@ -2326,11 +2326,11 @@ int drms_su_getinfo(DRMS_Env_t *env, long long *sunums, int nsunums, SUM_info_t 
          drms_unlock_server(env);
          tqueueDel(env->sum_outbox,  (long)pthread_self(), (char **)&reply);
          drms_lock_server(env);
-     
+
          if (reply->opcode != 0)
          {
              hcon_destroy(&map);
-             
+
              if (reply->opcode == -2)
              {
                  fprintf(stderr, "Cannot access SUMS in this DRMS session - a tape read is pending.\n");
@@ -2339,7 +2339,7 @@ int drms_su_getinfo(DRMS_Env_t *env, long long *sunums, int nsunums, SUM_info_t 
                     if (reply->sudir)
                     {
                         /* Client is waiting for reply, so client must clean-up sudirs. */
-                        for (int i = 0; i < reply->reqcnt; i++) 
+                        for (int i = 0; i < reply->reqcnt; i++)
                         {
                             if ((reply->sudir)[i])
                             {
@@ -2352,20 +2352,20 @@ int drms_su_getinfo(DRMS_Env_t *env, long long *sunums, int nsunums, SUM_info_t 
                         reply->sudir = NULL;
 #endif
                     }
-                    
+
                      free(reply);
                  }
                  drms_unlock_server(env);
                  return DRMS_ERROR_PENDINGTAPEREAD;
              }
-             
+
              fprintf(stderr, "SUMINFO failed with error code %d.\n", reply->opcode);
-             
+
              if (reply)
              {
                 if (reply->sudir)
                 {
-                    for (int i = 0; i < reply->reqcnt; i++) 
+                    for (int i = 0; i < reply->reqcnt; i++)
                     {
                         if ((reply->sudir)[i])
                         {
@@ -2378,23 +2378,23 @@ int drms_su_getinfo(DRMS_Env_t *env, long long *sunums, int nsunums, SUM_info_t 
                     reply->sudir = NULL;
 #endif
                 }
-                    
+
                  free(reply);
              }
-             
+
              drms_unlock_server(env);
              return 1;
          }
          else
          {
             SUM_info_t *retinfo = NULL;
-            
+
             /* reply->surdir now has pointers to the SUM_info_t structs */
             for (iinfo = 0; iinfo < nReqs; iinfo++)
             {
-               /* NOTE - if an SUNUM is unknown, the SUM_info_t returned from SUM_infoEx() will have the sunum set 
+               /* NOTE - if an SUNUM is unknown, the SUM_info_t returned from SUM_infoEx() will have the sunum set
                 * to -1.  But drms_server.c will overwrite that -1 with the SUNUM requested. BUT, there could have
-                * been a sunum of -1 passed to this function to begin with. In that case, the -1 got passed to 
+                * been a sunum of -1 passed to this function to begin with. In that case, the -1 got passed to
                 * drms_server.c, and drms_server.c will return an info struct for that sunum, but it will
                 * be all zeros (except for the sunum, which will be -1). */
                retinfo = (SUM_info_t *)reply->sudir[iinfo];
@@ -2423,7 +2423,7 @@ int drms_su_getinfo(DRMS_Env_t *env, long long *sunums, int nsunums, SUM_info_t 
                 reply->sudir = NULL;
             }
 #endif
-                    
+
             free(reply);
             reply = NULL;
          }
@@ -2459,14 +2459,14 @@ int drms_su_getinfo(DRMS_Env_t *env, long long *sunums, int nsunums, SUM_info_t 
    /* request is shallow-freed by the SUMS thread, so don't free here. */
 
    drms_unlock_server(env);
-   
+
    return status;
 }
 #endif
 
 /* Tell SUMS to save this storage unit. */
 /* This su commit function writes the Records.txt file. This is used by SUMS when deleting DRMS records (when the archive flag is -1).
- * drms_su_commitsu() does NOT write the Records.txt file, so it is not possible for SUMS to delete DRMS records of SUs committed 
+ * drms_su_commitsu() does NOT write the Records.txt file, so it is not possible for SUMS to delete DRMS records of SUs committed
  * with this function. */
 #ifndef DRMS_CLIENT
 int drms_commitunit(DRMS_Env_t *env, DRMS_StorageUnit_t *su)
@@ -2477,7 +2477,7 @@ int drms_commitunit(DRMS_Env_t *env, DRMS_StorageUnit_t *su)
   int actualarchive = 0;
   int docommit = 0;
   int16_t newSuRet = INT16_MIN;
-  
+
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_PUT) && SUMS_USEMTSUMS_PUT
     DRMS_MtSumsRequest_t *request = NULL;
     DRMS_MtSumsRequest_t *reply = NULL;
@@ -2509,7 +2509,7 @@ int drms_commitunit(DRMS_Env_t *env, DRMS_StorageUnit_t *su)
            return 1;
         }
 
-        /* If archive is set to -1, then write flag text at the top of the file to 
+        /* If archive is set to -1, then write flag text at the top of the file to
          * tell SUMS to delete the DRMS records within the storage unit. */
         if (actualarchive == -1)
         {
@@ -2526,7 +2526,7 @@ int drms_commitunit(DRMS_Env_t *env, DRMS_StorageUnit_t *su)
         }
         fclose(fp);
      }
-     
+
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_PUT) && SUMS_USEMTSUMS_PUT
      request = calloc(1, sizeof(DRMS_MtSumsRequest_t));
      XASSERT(request);
@@ -2543,20 +2543,20 @@ int drms_commitunit(DRMS_Env_t *env, DRMS_StorageUnit_t *su)
      request->reqcnt = 1;
      request->dsname = su->seriesinfo->seriesname;
      request->group = su->seriesinfo->tapegroup;
-     
+
      /* SUMS does not examine the mode TOUCH bit at all. It uses the tdays field to calculate the effective date.
       *   -Art
       */
-     if (actualarchive == 1) 
+     if (actualarchive == 1)
        request->mode = ARCH + TOUCH;
      else
        request->mode = TEMP + TOUCH;
 
      /* If the user doesn't override the retention time on the cmd-line, use the db new-su retention value.
-      * Since we are creating the SU for the first time, we should make the sign of the retention time sent 
+      * Since we are creating the SU for the first time, we should make the sign of the retention time sent
       * to SUMS positive.
       */
-     if (env->newsuretention != INT16_MIN) 
+     if (env->newsuretention != INT16_MIN)
      {
         /* The user set the DRMS_NEWSURETENTION argument. It overrides all other ways of specifying the retention time. */
         request->tdays = env->newsuretention;
@@ -2590,7 +2590,7 @@ int drms_commitunit(DRMS_Env_t *env, DRMS_StorageUnit_t *su)
      tqueueAdd(env->sum_inbox, (long) pthread_self(), (char *)request);
      /* Wait for reply. FIXME: add timeout. */
      tqueueDel(env->sum_outbox,  (long) pthread_self(), (char **)&reply);
-     if (reply->opcode != 0) 
+     if (reply->opcode != 0)
      {
          if (reply->opcode == -2)
          {
@@ -2598,7 +2598,7 @@ int drms_commitunit(DRMS_Env_t *env, DRMS_StorageUnit_t *su)
              free(reply);
              return DRMS_ERROR_PENDINGTAPEREAD;
          }
-         
+
          fprintf(stderr, "ERROR in drms_commitunit: SUM PUT failed with "
                  "error code %d.\n",reply->opcode);
          free(reply);
@@ -2613,9 +2613,9 @@ int drms_commitunit(DRMS_Env_t *env, DRMS_StorageUnit_t *su)
   return 0;
 }
 
-static int CommitUnits(DRMS_Env_t *env, 
-                       LinkedList_t *ll, 
-                       const char *seriesName, 
+static int CommitUnits(DRMS_Env_t *env,
+                       LinkedList_t *ll,
+                       const char *seriesName,
                        int seriesArch,
                        int seriesUS,
                        int seriesTG,
@@ -2631,7 +2631,7 @@ static int CommitUnits(DRMS_Env_t *env,
    int isu;
    int islot;
 
-   
+
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_PUT) && SUMS_USEMTSUMS_PUT
     DRMS_MtSumsRequest_t *request = NULL;
     DRMS_MtSumsRequest_t *reply = NULL;
@@ -2695,14 +2695,14 @@ static int CommitUnits(DRMS_Env_t *env,
                snprintf(filename, sizeof(filename), "%s/Records.txt", sunit->sudir);
                if ((fp = fopen(filename,"w")) == NULL)
                {
-                  fprintf(stderr, 
+                  fprintf(stderr,
                           "ERROR in drms_commitunits: Failed to open file '%s'\n",
                           filename);
                   statint = DRMS_ERROR_FILECREATE;
                   break;
                }
 
-               /* If archive is set to -1, then write flag text at the top of the file to 
+               /* If archive is set to -1, then write flag text at the top of the file to
                 * tell SUMS to delete the DRMS records within the storage unit. */
                if (actualarchive == -1)
                {
@@ -2728,7 +2728,7 @@ static int CommitUnits(DRMS_Env_t *env,
             request->sudir[nsus] = sunit->sudir;
             request->sunum[nsus] = sunit->sunum;
 
-            /* Store a pointer to the storage unit - will need to modify the mode 
+            /* Store a pointer to the storage unit - will need to modify the mode
              * later in the code. */
             punits[nsus] = sunit;
             nsus++;
@@ -2747,7 +2747,7 @@ static int CommitUnits(DRMS_Env_t *env,
          request->reqcnt = nsus;
          request->dsname = seriesName;
          request->group = seriesTG;
-         if (actualarchive == 1) 
+         if (actualarchive == 1)
          {
             request->mode = ARCH + TOUCH;
          }
@@ -2770,7 +2770,7 @@ static int CommitUnits(DRMS_Env_t *env,
          /* Wait for reply. FIXME: add timeout. */
          tqueueDel(env->sum_outbox,  (long) pthread_self(), (char **)&reply);
 
-         if (reply->opcode != 0) 
+         if (reply->opcode != 0)
          {
              if (reply->opcode == -2)
              {
@@ -2778,7 +2778,7 @@ static int CommitUnits(DRMS_Env_t *env,
                  statint = DRMS_ERROR_PENDINGTAPEREAD;
              }
              else
-             {    
+             {
                  fprintf(stderr, "ERROR in drms_commitunit: SUM PUT failed with "
                          "error code %d.\n",reply->opcode);
                  statint = DRMS_ERROR_SUMPUT;
@@ -2801,7 +2801,7 @@ static int CommitUnits(DRMS_Env_t *env,
       if (punits)
       {
         free(punits);
-        punits = NULL;        
+        punits = NULL;
       }
 #endif
    }
@@ -2812,9 +2812,9 @@ static int CommitUnits(DRMS_Env_t *env,
 
 #endif
 
-/* Loop though all open storage units and commits the 
+/* Loop though all open storage units and commits the
    ones open for writing that have slots marked as full
-   (i.e. non-temporary) to SUMS. Return the largest retention 
+   (i.e. non-temporary) to SUMS. Return the largest retention
    time of any unit committed. */
 #ifndef DRMS_CLIENT
 int drms_commit_all_units(DRMS_Env_t *env, int *archive, int *status)
@@ -2833,7 +2833,7 @@ int drms_commit_all_units(DRMS_Env_t *env, int *archive, int *status)
     int16_t newSuRetention = INT16_MIN;
     int16_t maxNewSuRetention = INT16_MIN;
     int maxNoSus = 0;
-    
+
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_PUT) && SUMS_USEMTSUMS_PUT
     maxNoSus = MAX_MTSUMS_NSUS;
 #else
@@ -2844,9 +2844,9 @@ int drms_commit_all_units(DRMS_Env_t *env, int *archive, int *status)
     hiter_new(&hit_outer, &env->storageunit_cache);
     if (archive)
         *archive = 0;
-    
+
     nsus = 0;
-    
+
     while((scon = (HContainer_t *)hiter_extgetnext(&hit_outer, &seriesName)))
     {
         /* If ANY series has its storage units archived, and the caller
@@ -2857,21 +2857,21 @@ int drms_commit_all_units(DRMS_Env_t *env, int *archive, int *status)
         {
             /* Get the archive value from the series info */
             recTemp = drms_template_record(env, seriesName, &statint);
-            
+
             if (statint != DRMS_SUCCESS)
             {
                 break;
             }
-            
+
             if (recTemp->seriesinfo->archive)
             {
                 *archive = 1;
             }
         }
-        
+
         si = NULL; /* fetch series info on each outer iteration */
         maxNewSuRetention = INT16_MIN; /* reset for every series - take the max retention for all SUs within each series */
-        
+
         /* loops over SUs within a single series */
         hiter_new(&hit_inner, scon);
         while((su = (DRMS_StorageUnit_t *)hiter_getnext(&hit_inner)))
@@ -2879,7 +2879,7 @@ int drms_commit_all_units(DRMS_Env_t *env, int *archive, int *status)
             if (!si)
             {
                 si = su->seriesinfo;
-                
+
                 if (env->newsuretention != INT16_MIN)
                 {
                     /* The user set the DRMS_NEWSURETENTION argument. It overrides all other ways of specifying the retention time. */
@@ -2903,13 +2903,13 @@ int drms_commit_all_units(DRMS_Env_t *env, int *archive, int *status)
                     /* The user did not set the DRMS_NEWSURETENTION argument, and we couldn't fetch the value from the database. */
                     newSuRetention = (int16_t)abs(STDRETENTION);
                 }
-                
+
                 if (newSuRetention > maxNewSuRetention)
                 {
                     maxNewSuRetention = newSuRetention;
                 }
             }
-            
+
             if ( su->mode == DRMS_READWRITE )
             {
                 /* See if this unit has any non-temporary, full slots. */
@@ -2922,13 +2922,13 @@ int drms_commit_all_units(DRMS_Env_t *env, int *archive, int *status)
                             /* Don't deep free SUs - that is done elsewhere. */
                             sulist = list_llcreate(sizeof(DRMS_StorageUnit_t *), NULL);
                         }
-                        
+
                         list_llinserttail(sulist, &su);
                         nsus++;
                         break;
                     }
                 }
-                
+
                 /* When SUMS batches, it uses keylist.c, which is inefficient. Empirically, 64
                  * is an optimal batch size. */
                 if (nsus == maxNoSus)
@@ -2936,7 +2936,7 @@ int drms_commit_all_units(DRMS_Env_t *env, int *archive, int *status)
                     statint = CommitUnits(env, sulist, seriesName, si->archive, si->unitsize, si->tapegroup, maxNewSuRetention);
                     list_llfree(&sulist);
                     nsus = 0;
-                    
+
                     if (statint != DRMS_SUCCESS)
                     {
                         break;
@@ -2944,9 +2944,9 @@ int drms_commit_all_units(DRMS_Env_t *env, int *archive, int *status)
                 }
             }
         }
-        
+
         hiter_free(&hit_inner);
-        
+
         /* May be some SUs in sulist not yet committed (because there are fewer than 64). */
         if (nsus > 0)
         {
@@ -2955,20 +2955,20 @@ int drms_commit_all_units(DRMS_Env_t *env, int *archive, int *status)
             nsus = 0;
         }
     } /* loop over series */
-    
+
     hiter_free(&hit_outer);
-    
+
     /* If the caller set the archive flag on the cmd-line, then override what the series' jsds say. */
     if (archive && *archive == 0 && env->archive == 1)
         *archive = 1;
-    
+
     if (status)
     {
         *status = statint;
     }
-    
-    /* The retention-time value returned here will be used as the retention time for the SU created that 
-     * contains the DRMS log (-L flag). 
+
+    /* The retention-time value returned here will be used as the retention time for the SU created that
+     * contains the DRMS log (-L flag).
      */
     return maxNewSuRetention < DRMS_LOG_RETENTION ? DRMS_LOG_RETENTION : maxNewSuRetention;
 }
@@ -2978,13 +2978,13 @@ int drms_commit_all_units(DRMS_Env_t *env, int *archive, int *status)
 DRMS_StorageUnit_t *drms_su_lookup(DRMS_Env_t *env, char *series,
 				   long long sunum, HContainer_t **scon_out)
 {
-  HIterator_t hit; 
+  HIterator_t hit;
   HContainer_t *scon;
   DRMS_StorageUnit_t *su;
   char hashkey[DRMS_MAXHASHKEYLEN];
 
   //  XASSERT(env->session->db_direct==1);
-  
+
   su = NULL;
   scon = NULL;
   if (series==NULL)
@@ -2997,7 +2997,7 @@ DRMS_StorageUnit_t *drms_su_lookup(DRMS_Env_t *env, char *series,
     {
       if ( (su = hcon_lookup(scon, hashkey)) )
 	break;
-    }      
+    }
   }
   else
   {
@@ -3008,7 +3008,7 @@ DRMS_StorageUnit_t *drms_su_lookup(DRMS_Env_t *env, char *series,
       su = hcon_lookup(scon, hashkey);
     }
   }
-  if (scon_out) 
+  if (scon_out)
     *scon_out = scon;
   return su;
 }
@@ -3046,12 +3046,12 @@ void drms_freeunit(DRMS_Env_t *env, DRMS_StorageUnit_t *su)
       su->recnum=NULL;
     }
     hcon_remove(scon, hashkey);
-  }      
+  }
 }
 
 
 
-/* Mark a storage unit slot as free and remove the associated directory 
+/* Mark a storage unit slot as free and remove the associated directory
    (if any). This is only valid if the storage
    unit is open in mode DRMS_READWRITE. */
 int drms_su_freeslot(DRMS_Env_t *env, char *series, long long sunum,
@@ -3070,7 +3070,7 @@ int drms_su_freeslot(DRMS_Env_t *env, char *series, long long sunum,
       /* We just freed a non-empty slot. Remove the associated directory. */
       CHECKSNPRINTF(snprintf(slotdir, DRMS_MAXPATHLEN, "%s/" DRMS_SLOTDIR_FORMAT,
 			     su->sudir,slotnum), DRMS_MAXPATHLEN);
-     
+
       return (RemoveDir(slotdir, 64) == 0 ? 0 : 1);
     }
     return 0;
@@ -3078,20 +3078,20 @@ int drms_su_freeslot(DRMS_Env_t *env, char *series, long long sunum,
 }
 
 
-/* Change state of a storage unit slot. This is only valid if 
+/* Change state of a storage unit slot. This is only valid if
    the storage unit is open in mode DRMS_READWRITE. On entry *state
    must contain the new state. On exit *state will contain the old
    state.
     Possible states are DRMS_SLOT_FREE, DRMS_SLOT_FULL, DRMS_SLOT_TEMP.
 */
-DRMS_StorageUnit_t *drms_su_markslot(DRMS_Env_t *env, char *series, 
+DRMS_StorageUnit_t *drms_su_markslot(DRMS_Env_t *env, char *series,
 				     long long sunum, int slotnum, int *state)
 {
   int oldstate;
   HContainer_t *scon;
   DRMS_StorageUnit_t *su;
 
-  
+
   if (state==NULL)
     return NULL;
   if ((su = drms_su_lookup(env, series, sunum, &scon)) == NULL)
@@ -3126,15 +3126,15 @@ int drms_su_getexportURL(DRMS_Env_t *env, long long sunum, char *url, int size)
     * and drmssite_server_siteinfo() will respond by calling db_query_txt() three times.
     */
    drms_send_commandcode(env->session->sockfd, DRMS_SITEINFO);
-   ret = drmssite_client_info_from_sunum((unsigned long long)sunum, 
+   ret = drmssite_client_info_from_sunum((unsigned long long)sunum,
                                          env->session->sockfd,
                                          &info);
 #else
-   ret = drmssite_server_info_from_sunum((unsigned long long)sunum, 
+   ret = drmssite_server_info_from_sunum((unsigned long long)sunum,
                                          env->session->db_handle,
                                          &info);
 #endif
-   
+
    if (!ret && info)
    {
       snprintf(url, size, "%s", info->request_URL);
@@ -3148,12 +3148,12 @@ int drms_su_getexportURL(DRMS_Env_t *env, long long sunum, char *url, int size)
    return ret;
 }
 
-/* Return the name of the export server that can serve 
- * data files that compose the storage unit identified by 
+/* Return the name of the export server that can serve
+ * data files that compose the storage unit identified by
  * sunum. */
-int drms_su_getexportserver(DRMS_Env_t *env, 
-                            long long sunum, 
-                            char *expserver, 
+int drms_su_getexportserver(DRMS_Env_t *env,
+                            long long sunum,
+                            char *expserver,
                             int size)
 {
    int ret = 0;
@@ -3161,11 +3161,11 @@ int drms_su_getexportserver(DRMS_Env_t *env,
 
 #ifdef DRMS_CLIENT
    drms_send_commandcode(env->session->sockfd, DRMS_SITEINFO);
-   ret = drmssite_client_info_from_sunum((unsigned long long)sunum,  
+   ret = drmssite_client_info_from_sunum((unsigned long long)sunum,
                                          env->session->sockfd,
                                          &info);
 #else
-   ret = drmssite_server_info_from_sunum((unsigned long long)sunum,  
+   ret = drmssite_server_info_from_sunum((unsigned long long)sunum,
                                          env->session->db_handle,
                                          &info);
 #endif
@@ -3186,20 +3186,20 @@ int drms_su_getexportserver(DRMS_Env_t *env,
 }
 
 #ifndef DRMS_CLIENT
-int drms_su_allocsu(DRMS_Env_t *env, 
-                    uint64_t size, 
-                    long long sunum, 
-                    char **sudir, 
-                    int *tapegroup, 
+int drms_su_allocsu(DRMS_Env_t *env,
+                    uint64_t size,
+                    long long sunum,
+                    char **sudir,
+                    int *tapegroup,
                     int *status)
 {
    return drms_su_alloc2(env, size, sunum, sudir, tapegroup, status);
 }
 
-/* drms_su_commitsu() does NOT write the Records.txt file, so it is not possible for SUMS to delete DRMS records of SUs committed 
+/* drms_su_commitsu() does NOT write the Records.txt file, so it is not possible for SUMS to delete DRMS records of SUs committed
  * with this function. */
-int drms_su_commitsu(DRMS_Env_t *env, 
-                     const char *seriesname, 
+int drms_su_commitsu(DRMS_Env_t *env,
+                     const char *seriesname,
                      long long sunum,
                      const char *sudir)
 {
@@ -3209,7 +3209,7 @@ int drms_su_commitsu(DRMS_Env_t *env,
   int drmsst = DRMS_SUCCESS;
   int docommit = 0;
   int16_t newSuRet = INT16_MIN;
-  
+
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_PUT) && SUMS_USEMTSUMS_PUT
     DRMS_MtSumsRequest_t *request = NULL;
     DRMS_MtSumsRequest_t *reply = NULL;
@@ -3240,7 +3240,7 @@ int drms_su_commitsu(DRMS_Env_t *env,
         else
         {
            actualarchive = seriesinfo->archive;
-        }   
+        }
 
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_PUT) && SUMS_USEMTSUMS_PUT
         request = calloc(1, sizeof(DRMS_MtSumsRequest_t));
@@ -3253,14 +3253,14 @@ int drms_su_commitsu(DRMS_Env_t *env,
         request = malloc(sizeof(DRMS_SumRequest_t));
         XASSERT(request);
 #endif
-        
+
         request->opcode = DRMS_SUMPUT;
         request->dontwait = 0;
         request->reqcnt = 1;
         request->dsname = seriesinfo->seriesname;
         request->group = seriesinfo->tapegroup;
 
-        if (actualarchive == 1) 
+        if (actualarchive == 1)
         {
            request->mode = ARCH + TOUCH;
         }
@@ -3312,7 +3312,7 @@ int drms_su_commitsu(DRMS_Env_t *env,
         /* Wait for reply. FIXME: add timeout. */
         tqueueDel(env->sum_outbox,  (long) pthread_self(), (char **)&reply);
 
-        if (reply->opcode != 0) 
+        if (reply->opcode != 0)
         {
             if (reply->opcode == -2)
             {
@@ -3344,71 +3344,10 @@ int drms_su_commitsu(DRMS_Env_t *env,
   return drmsst;
 }
 
-int drms_su_sumexport(DRMS_Env_t *env, SUMEXP_t *sumexpt)
-{
-   int drmsst = DRMS_SUCCESS;
-
-   DRMS_SumRequest_t *request = NULL;
-   DRMS_SumRequest_t *reply = NULL;
-
-   request = malloc(sizeof(DRMS_SumRequest_t));
-   XASSERT(request);
-   memset(request, 0, sizeof(DRMS_SumRequest_t));
-
-   /* Only 2 fields matter - opcode and comment. The latter is used to hold 
-    * a pointer to the SUMEXP_t object. */
-   request->opcode = DRMS_SUMEXPORT;
-   request->comment = (char *)sumexpt;
-
-   drms_lock_server(env);
-   if (!env->sum_thread) 
-   {
-      if((drmsst = pthread_create(&env->sum_thread, NULL, &drms_sums_thread, 
-                                (void *) env))) 
-      {
-         fprintf(stderr, "Thread creation failed: %d\n", drmsst);
-         drms_unlock_server(env);
-         return 1;
-      }
-   }
-
-   /* Submit request to sums server thread. */
-   tqueueAdd(env->sum_inbox, (long) pthread_self(), (char *)request);
-
-   drms_unlock_server(env);
-   /* Wait for reply. FIXME: add timeout. */
-   tqueueDel(env->sum_outbox, (long) pthread_self(), (char **)&reply);
-
-   if (reply->opcode)
-   {
-       if (reply->opcode == -2)
-       {
-           fprintf(stderr, "Cannot access SUMS in this DRMS session - a tape read is pending.\n");
-           drmsst = DRMS_ERROR_PENDINGTAPEREAD;
-       }
-       else
-       {
-           fprintf(stderr,"SUM_EXPORT failed with error code %d.\n", reply->opcode);
-           drmsst = reply->opcode;
-       }
-   }
-   else
-   {
-      drmsst = DRMS_SUCCESS;
-   }
-
-   if (reply)
-   {
-      free(reply);
-   }
-
-   return drmsst;
-}
-
 #if defined(JMD_IS_INSTALLED) && JMD_IS_INSTALLED
 //igor ISS VSO HTTP request to JMD START {
 
-int send_POST_request(char * postrequeststr, curl_off_t postsize, struct POSTState *ps) 
+int send_POST_request(char * postrequeststr, curl_off_t postsize, struct POSTState *ps)
 {
    CURL *curl;
 
@@ -3433,10 +3372,10 @@ int send_POST_request(char * postrequeststr, curl_off_t postsize, struct POSTSta
    return 0;
 }
 
-void populate_with_sunums(DRMS_Env_t *env, HContainer_t *postmap, char * seriesname, int n, long long sulist[]) 
+void populate_with_sunums(DRMS_Env_t *env, HContainer_t *postmap, char * seriesname, int n, long long sulist[])
 {
    int k = 0;
-   for (k = 0; k < n; k++) 
+   for (k = 0; k < n; k++)
    {
       add_sunum_to_POST(env, postmap, seriesname, sulist[k]);
    }
@@ -3457,7 +3396,7 @@ struct PassSunumList
 */
 
 //After create_post_msg has created the basic stuff we can start adding sunums to the JMD request
-void add_sunum_to_POST(DRMS_Env_t *env, HContainer_t *postmap, char *seriesname, long long sunum) 
+void add_sunum_to_POST(DRMS_Env_t *env, HContainer_t *postmap, char *seriesname, long long sunum)
 {
    int  allocsize = 1000;
 
@@ -3471,15 +3410,15 @@ void add_sunum_to_POST(DRMS_Env_t *env, HContainer_t *postmap, char *seriesname,
       strcpy(poststruct->series,seriesname);
       poststruct->sunumarr = malloc(sizeof(long long)*allocsize);
       hcon_insert(postmap,seriesname,&poststruct);
-   } 
+   }
    else
    {
       struct PassSunumList **ptr;
       if ((ptr = hcon_lookup(postmap,seriesname))!= NULL)
       {
          poststruct = *ptr;
-      } 
-      else 
+      }
+      else
       {
          //error!!
          fprintf(stderr, "Seriesname [%s], is unknown to hash structure in remote POST handling.\n", seriesname);
@@ -3490,19 +3429,19 @@ void add_sunum_to_POST(DRMS_Env_t *env, HContainer_t *postmap, char *seriesname,
       }
 
       //note that we increment the size of poststruct in allocsize chunks
-      if (((poststruct->n+1) % allocsize) == 0) 
+      if (((poststruct->n+1) % allocsize) == 0)
       {
          //realloc allocsize array to sunumarr
          if ((poststruct->sunumarr = realloc((void *) poststruct->sunumarr, sizeof(long long ) * (poststruct->n+1) + sizeof(long long ) * allocsize)) == NULL)
          {
             fprintf(stderr, "Can not allocate new memory for POST sunum array.\n");
-            /* xxx NO - cannot call exit()! Send a message to the signal thread to shutdown. 
+            /* xxx NO - cannot call exit()! Send a message to the signal thread to shutdown.
                exit(1);
             */
             pthread_kill(env->signal_thread, SIGTERM);
 
-         } 
-         else 
+         }
+         else
          {
 
          }
@@ -3514,7 +3453,7 @@ void add_sunum_to_POST(DRMS_Env_t *env, HContainer_t *postmap, char *seriesname,
 }
 
 //Creates the basic POST msg container
-size_t create_post_msg(HContainer_t *postmap, char **ptrr) 
+size_t create_post_msg(HContainer_t *postmap, char **ptrr)
 {
    int size_count = 0;   //count of sunums so far in message??
    int i = 0;
@@ -3527,18 +3466,18 @@ size_t create_post_msg(HContainer_t *postmap, char **ptrr)
    HIterator_t hit;
 
    hiter_new(&hit,postmap);
-   
-   while ((lpptr = (struct PassSunumList **)hiter_getnext(&hit))) 
+
+   while ((lpptr = (struct PassSunumList **)hiter_getnext(&hit)))
    {
       list = *lpptr;
       estsize = estsize + 1000 + list->n * (strlen(list->series) + 20);
 
-      if (*ptrr == NULL) 
+      if (*ptrr == NULL)
       {
          //estimated size
          *ptrr = calloc(1,sizeof(char) * estsize);
-      } 
-      else 
+      }
+      else
       {
          *ptrr = realloc(*ptrr, sizeof(char) * estsize);
       }
@@ -3546,13 +3485,13 @@ size_t create_post_msg(HContainer_t *postmap, char **ptrr)
       char *ptr2 = *ptrr;
       ptr2 += size_count;
 
-      if (seriesname == NULL || strcmp(seriesname, list->series)) 
+      if (seriesname == NULL || strcmp(seriesname, list->series))
       {
-         if (seriesname == NULL) 
+         if (seriesname == NULL)
          {
             sprintf(ptr2, "type=request&series=%s", list->series);
-         } 
-         else 
+         }
+         else
          {
             sprintf(ptr2, "&series=%s", list->series);
          }
@@ -3566,7 +3505,7 @@ size_t create_post_msg(HContainer_t *postmap, char **ptrr)
       // loop through the list of sunums and start building the
       // post query in array form.
       //  i.e. series_name=sunum1&series_name=sunum2 ...
-      for(i = 0; i < list->n; i++) 
+      for(i = 0; i < list->n; i++)
       {
          //if not the first time. I.e. there are already sunums in the POST array
 
@@ -3577,7 +3516,7 @@ size_t create_post_msg(HContainer_t *postmap, char **ptrr)
 
          size_count += chunklen;
 
-         if (size_count > estsize) 
+         if (size_count > estsize)
          {
             estsize = estsize + (list->n - list->ncount) * (strlen(list->series) + 40);
             *ptrr = realloc(*ptrr, sizeof(char) * estsize);
@@ -3599,7 +3538,7 @@ size_t create_post_msg(HContainer_t *postmap, char **ptrr)
 
 //Callback function in charge of populating the POSTState structure
 // this callback is called from send_POST_request
-size_t write_data(void *buffer, size_t size, size_t nmemb, void *userp) 
+size_t write_data(void *buffer, size_t size, size_t nmemb, void *userp)
 {
    /*
      sessionID=4022d6a7-d7e3-4b73-898a-3526efc321a4
@@ -3619,7 +3558,7 @@ size_t write_data(void *buffer, size_t size, size_t nmemb, void *userp)
 }
 
 //parse routine of JMD output
-size_t parse_session_state(void *buffer, size_t size, size_t nmemb, void *userp) 
+size_t parse_session_state(void *buffer, size_t size, size_t nmemb, void *userp)
 {
    int *inprogress = (int *)userp;
    int total = -2;
@@ -3633,7 +3572,7 @@ size_t parse_session_state(void *buffer, size_t size, size_t nmemb, void *userp)
 //for a given request (session) return its status
 // return status is the number of sunums waiting to be downloaded
 // see parse_session_state
-int session_status (char *session) 
+int session_status (char *session)
 {
    CURL *curl;
 
@@ -3661,13 +3600,13 @@ int session_status (char *session)
 void free_post_request (HContainer_t *postmap)
 {
    HIterator_t *hitmap = hiter_create(postmap);
-   if (hitmap) 
+   if (hitmap)
    {
       struct PassSunumList **ppoststruct = NULL;
       while ((ppoststruct = hiter_getnext(hitmap)) != NULL)
       {
          struct PassSunumList *poststruct = *ppoststruct;
-         if (poststruct->sunumarr != NULL) 
+         if (poststruct->sunumarr != NULL)
          {
             free(poststruct->sunumarr);
             poststruct->sunumarr=NULL;

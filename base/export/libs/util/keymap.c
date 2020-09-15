@@ -1,6 +1,6 @@
-/* keymap.c 
+/* keymap.c
  *
- * Functions to map an internal DRMS keyword to an external FITS keyword, 
+ * Functions to map an internal DRMS keyword to an external FITS keyword,
  * and vice versa.
  *
  * Added documenting comments - Art Amezcua, 11/29/2007
@@ -8,21 +8,18 @@
  */
 
 #include "keymap.h"
-#ifdef __APPLE__
-  #include <sys/param.h>
-#endif /* __APPLE__ */
-
+#include <sys/param.h>
 #include "drms_types.h"
 
-/* The keymap data used to be defined in defkeymapclass.h, and 
+/* The keymap data used to be defined in defkeymapclass.h, and
  * included throught the #include directive, but this confused
  * doxygen, so removed it.  The ramifications of this change
- * are that you have to be careful to keep the enum and string 
+ * are that you have to be careful to keep the enum and string
  * definitions in synch.
  */
 
 /* KeyMapClass tables */
-const char *KeyMapClassTables[] = 
+const char *KeyMapClassTables[] =
 {
    "",
    "",
@@ -37,7 +34,7 @@ const char *KeyMapClassTables[] =
 };
 
 /* KeyMapClass enum to string identifier table */
-const char *KeyMapClassIDMap[] = 
+const char *KeyMapClassIDMap[] =
 {
    "",
    "dsds",
@@ -58,14 +55,14 @@ static void KMFree(const void *val);
 static int exputl_keymap_initcltables();
 static void exputl_keymap_termcltables();
 
-/* KMFree() - This function frees all HContainer_t memory associated with a 
+/* KMFree() - This function frees all HContainer_t memory associated with a
  * drms keymap. Used as the deep_free function in the call to hcon_create()
  * when the global class table (gClassTables) is created.
  */
 static void KMFree(const void *val)
 {
    Exputl_KeyMap_t *km = (Exputl_KeyMap_t *)val;
-   
+
    if (km)
    {
       hcon_free(&(km->int2ext));
@@ -75,11 +72,11 @@ static void KMFree(const void *val)
 
 /* exputl_keymap_initcltables() - JSOC defines several default keyword mappings. Each
  * such default mapping is considered a mapping "class". For each mapping class
- * defined above, this function reads the mapping data and creates 
+ * defined above, this function reads the mapping data and creates
  * a Exputl_Keymap_t structure. These Exputl_Keymap_t structures are saved in a global
  * container - gClassTables. Once exputl_keymap_initcltables() completes, programs
- * then have access to these classes with the exputl_keymap_classidextname(), 
- * exputl_keymap_classextname(), exputl_keymap_classidintname(), and 
+ * then have access to these classes with the exputl_keymap_classidextname(),
+ * exputl_keymap_classextname(), exputl_keymap_classidintname(), and
  * exputl_keymap_classintname() functions.
  */
 static int exputl_keymap_initcltables()
@@ -127,7 +124,7 @@ static int exputl_keymap_initcltables()
    {
       hcon_destroy(&gClassTables);
    }
-   
+
    return ret;
 }
 
@@ -141,7 +138,7 @@ static void exputl_keymap_termcltables()
       hcon_destroy(&gClassTables);
    }
 }
-/* exputl_keymap_create() - Allocate an empty Exputl_Keymap_t and return a pointer to it if 
+/* exputl_keymap_create() - Allocate an empty Exputl_Keymap_t and return a pointer to it if
  * memory was successfully allocated. It is the caller's responsiblity to free the returned
  * Exputl_Keymap_t by calling exputl_keymap_destroy().
  */
@@ -160,7 +157,7 @@ Exputl_KeyMap_t *exputl_keymap_create()
    return ret;
 }
 
-/* exputl_keymap_destroy() - Free all allocated memory associated with a Exputl_Keymap_t. 
+/* exputl_keymap_destroy() - Free all allocated memory associated with a Exputl_Keymap_t.
  * The Exputl_Keymap_t pointer contained in km is set to NULL.
  */
 void exputl_keymap_destroy(Exputl_KeyMap_t **km)
@@ -175,10 +172,10 @@ void exputl_keymap_destroy(Exputl_KeyMap_t **km)
 }
 
 /* exputl_keymap_parsetable() - Parse a buffer containing FITS-keyword-name-to-DRMS-keyword-name
- * mappings. The buffer, <text>, can contain zero or more mappings, each of the form 
+ * mappings. The buffer, <text>, can contain zero or more mappings, each of the form
  * <fitsname>(<whitespace> | ',')<drmsname>. Each pair of mappings must be separated by
  * a newline character ('\n'). Comments or emtpy strings may appear between newline characters
- * as well. If <keymap> is not NULL, the resulting set of mappings is used to 
+ * as well. If <keymap> is not NULL, the resulting set of mappings is used to
  * initialize <keymap>.
  */
 int exputl_keymap_parsetable(Exputl_KeyMap_t *keymap, const char *text)
@@ -194,7 +191,7 @@ int exputl_keymap_parsetable(Exputl_KeyMap_t *keymap, const char *text)
       char *drms = NULL;
       char *textC = strdup(text);
       char *lasts = NULL;
-      
+
       pCh = strtok_r(textC, "\n", &lasts);
       for (; success && pCh != NULL; pCh = strtok_r(NULL, "\n", &lasts))
       {
@@ -254,8 +251,8 @@ int exputl_keymap_parsetable(Exputl_KeyMap_t *keymap, const char *text)
    return success;
 }
 /* exputl_keymap_parsefile() - Parse a file containing FITS-keyword-name-to-DRMS-keyword-name
- * mappings. <fPtr> must contain a valid file pointer. If <keymap> is not NULL, the 
- * resulting set of mappings is used to initialize <keymap>. This function 
+ * mappings. <fPtr> must contain a valid file pointer. If <keymap> is not NULL, the
+ * resulting set of mappings is used to initialize <keymap>. This function
  * calls exputl_keymap_parsetable() to parse the content of the file to which <fPtr>
  * refers.
  */
@@ -276,7 +273,7 @@ int exputl_keymap_parsefile(Exputl_KeyMap_t *keymap, FILE *fPtr)
 	 if (strlen(lineBuf) + nRead < sizeof(buf))
 	 {
 	    nRead += strlen(lineBuf);
-	    strcat(buf, lineBuf); 
+	    strcat(buf, lineBuf);
 	 }
 	 else
 	 {

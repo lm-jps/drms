@@ -30,9 +30,9 @@
 #define kBrokenPipe       -99
 #define kTooManySumsOpen  -98
 
-sem_t *gShutdownsem = NULL; /* synchronization among signal thread, main thread, 
+sem_t *gShutdownsem = NULL; /* synchronization among signal thread, main thread,
                                sums thread, and server threads during shutdown */
-DRMS_Shutdown_State_t gShutdown; /* shudown state following receipt by DRMS of a signal that 
+DRMS_Shutdown_State_t gShutdown; /* shudown state following receipt by DRMS of a signal that
                                  * causes module termination */
 
 pthread_mutex_t *gSUMSbusyMtx = NULL;
@@ -43,8 +43,8 @@ static volatile sig_atomic_t gGotPipe = 0;
 
 /* Container of pending SUM_get() requests, indexed by the SUM_t::uid. An SU is pending
  * if a SUM_get() was performed on it, causing an asynchronous tape read. The container
- * actually contains one entry per sum_t (SUMS session). If a SUMS session is processing a 
- * pending SUM_get() (i.e., tape read), then no further SUM_get() called can be made during 
+ * actually contains one entry per sum_t (SUMS session). If a SUMS session is processing a
+ * pending SUM_get() (i.e., tape read), then no further SUM_get() called can be made during
  * that session.
  */
 HContainer_t *gSgPending = NULL;
@@ -56,8 +56,8 @@ static void drms_delete_temporaries(DRMS_Env_t *env);
 static int IsMTSums(int opcode)
 {
     int isMTSums = 0;
-    
-    /* We do not need to deal with DRMS_SUMABORT or the SUM_poll() or SUM_ping() APIs since 
+
+    /* We do not need to deal with DRMS_SUMABORT or the SUM_poll() or SUM_ping() APIs since
      * the DRMS request/reply structs are not used for those.
      */
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
@@ -74,7 +74,7 @@ static int IsMTSums(int opcode)
         #endif
     }
     else if (opcode == DRMS_SUMGET)
-    {    
+    {
         #if defined(SUMS_USEMTSUMS_GET) && SUMS_USEMTSUMS_GET
             isMTSums = 1;
         #endif
@@ -100,24 +100,24 @@ static int IsMTSums(int opcode)
     else
     {
         /* Ugh - no good way to deal with this. Downstream calls will fail, so print some error message and let the downstream
-         * take care of the ensuing mess. 
+         * take care of the ensuing mess.
          */
         printkerr("Invalid opcode %d.\n", opcode);
     }
-    
+
 #endif
-    
+
     return isMTSums;
 }
 
-/* returns the SUMS opcode, or -99 if a broken-pipe error occurred, or -1 if opcode is NA, 
+/* returns the SUMS opcode, or -99 if a broken-pipe error occurred, or -1 if opcode is NA,
  * or -2 if SUMS cannot be called again because DRMS timed-out waiting for SUMS. */
 static int MakeSumsCall(DRMS_Env_t *env, int calltype, SUM_t **sumt, int (*history)(const char *fmt, ...), ...)
 {
     int opcode = 0;
     va_list ap;
     static int nsumsconn = 0;
-    
+
     if (calltype != DRMS_SUMCLOSE)
     {
         /* Always allow DRMS_SUMCLOSE call. */
@@ -129,14 +129,14 @@ static int MakeSumsCall(DRMS_Env_t *env, int calltype, SUM_t **sumt, int (*histo
         }
         drms_unlock_server(env);
     }
-    
+
     if (opcode == kSUMSDead)
     {
         return opcode;
     }
-    
+
     gGotPipe = 0;
-    
+
     switch (calltype)
     {
         case DRMS_SUMOPEN:
@@ -145,8 +145,8 @@ static int MakeSumsCall(DRMS_Env_t *env, int calltype, SUM_t **sumt, int (*histo
             va_start(ap, history);
             char *server = va_arg(ap, char *);
             char *db = va_arg(ap, char *);
-            
-            /* SUMS allows a maximum of MAXSUMOPEN number of connections. The module should terminate if 
+
+            /* SUMS allows a maximum of MAXSUMOPEN number of connections. The module should terminate if
              * there is an attempt to open more than this number. */
             if (nsumsconn >= MAXSUMOPEN)
             {
@@ -159,12 +159,12 @@ static int MakeSumsCall(DRMS_Env_t *env, int calltype, SUM_t **sumt, int (*histo
                 *sumt = SUM_open(server, db, history);
                 opcode = -1; /* not used for this call */
             }
-            
+
             if (*sumt)
             {
                 ++nsumsconn;
             }
-            
+
             va_end(ap);
         }
             break;
@@ -194,9 +194,9 @@ static int MakeSumsCall(DRMS_Env_t *env, int calltype, SUM_t **sumt, int (*histo
             va_start(ap, history);
             char *fpath = va_arg(ap, char *);
             char *series = va_arg(ap, char *);
-            
+
             opcode = SUM_delete_series(*sumt, fpath, series, history);
-            
+
             va_end(ap);
         }
             break;
@@ -204,19 +204,9 @@ static int MakeSumsCall(DRMS_Env_t *env, int calltype, SUM_t **sumt, int (*histo
         {
             va_start(ap, history);
             uint64_t sunum = va_arg(ap, uint64_t);
-            
+
             opcode = SUM_alloc2(*sumt, sunum, history);
-            
-            va_end(ap);
-        }
-            break;
-        case DRMS_SUMEXPORT:
-        {
-            va_start(ap, history);
-            SUMEXP_t *sumexpt = va_arg(ap, SUMEXP_t *);
-            
-            opcode = SUM_export(sumexpt, history);
-            
+
             va_end(ap);
         }
             break;
@@ -225,24 +215,24 @@ static int MakeSumsCall(DRMS_Env_t *env, int calltype, SUM_t **sumt, int (*histo
             va_start(ap, history);
             uint64_t *dxarray = va_arg(ap, uint64_t *);
             int reqcnt = va_arg(ap, int);
-            
+
             opcode = SUM_infoArray(*sumt, dxarray, reqcnt, history);
-            
+
             va_end(ap);
         }
             break;
         default:
             fprintf(stderr, "Invalid SUMS call type '%d'.\n", calltype);
-            
+
     }
-    
+
     if (gGotPipe)
     {
         /* Print an error message with a timestamp. */
         fprintf(stderr, "Received a SIGPIPE signal; error calling SUMS call %d.\n", calltype);
         opcode = kBrokenPipe;
     }
-    
+
     return opcode;
 }
 
@@ -273,7 +263,7 @@ void drms_server_initsdsem(void)
 
   /* Initialize semaphore to 1 - "unlocked" */
   sem_init(gShutdownsem, 0, 1);
-  
+
   /* Initialize shutdown state to kSHUTDOWN_UNINITIATED - no shutdown requested */
   gShutdown = kSHUTDOWN_UNINITIATED;
 }
@@ -307,7 +297,7 @@ int drms_server_authenticate(int sockfd, DRMS_Env_t *env, int clientid)
     int port = -1;
     char *endptr = NULL;
     long long ival = 0;
-    
+
     /* Send session information to the client. */
     t=tmp; v=vec;
     net_packint(status, t++, v++);
@@ -318,7 +308,7 @@ int drms_server_authenticate(int sockfd, DRMS_Env_t *env, int clientid)
     net_packlonglong(env->session->sunum, &ltmp[1], v++);
     net_packstring(env->session->sudir ? env->session->sudir : kNOLOGSUDIR, t++, v);
     v += 2;
-    
+
     /* Send dbhost, dbport, dbname, dbuser. */
     net_packstring(env->session->db_handle->dbhost, t++, v);
     v += 2;
@@ -330,17 +320,17 @@ int drms_server_authenticate(int sockfd, DRMS_Env_t *env, int clientid)
     {
         port = (int)ival;
     }
-    
+
     net_packint(port, t++, v++);
-    
+
     net_packstring(env->session->db_handle->dbname, t++, v);
     v += 2;
-    
+
     net_packstring(env->session->db_handle->dbuser, t++, v);
     v += 2;
-    
+
     Writevn(sockfd, vec, 15);
-    
+
     return status;
 }
 
@@ -348,7 +338,7 @@ int drms_server_authenticate(int sockfd, DRMS_Env_t *env, int clientid)
  * assumes that drms_server_end_transaction() was never called with the 'final'
  * flag set. */
 
-/* Only the main thread will access these parts of the env, so no need to 
+/* Only the main thread will access these parts of the env, so no need to
  * lock the env. */
 int drms_server_begin_transaction(DRMS_Env_t *env) {
 
@@ -369,12 +359,12 @@ int drms_server_begin_transaction(DRMS_Env_t *env) {
       {
           goto bailout;
       }
-      
+
       /* drms_lock_server is a noop if env->drms_lock == NULL */
       drms_lock_server(env);
       env->transrunning = 1;
       drms_unlock_server(env);
-      
+
       /* Issue the statement_timeout statement, but only if env->dbtimeout is not
        * INT_MIN (the default). A default value implies a timeout is not desired. */
       if (env->dbtimeout != INT_MIN)
@@ -384,7 +374,7 @@ int drms_server_begin_transaction(DRMS_Env_t *env) {
               fprintf(stderr, "Failed to modify db-statement time-out to %d.\n", env->dbtimeout);
           }
       }
-      
+
     /* if the user specified the UTF* encoding, set that here */
     if (env->dbutf8clientencoding != 0)
     {
@@ -392,7 +382,7 @@ int drms_server_begin_transaction(DRMS_Env_t *env) {
         {
             fprintf(stderr, "failed to set UTF8 client encoding\n");
         }
-        
+
         if (env->verbose)
         {
             printf("set UTF8 database client encoding\n");
@@ -418,7 +408,7 @@ int drms_server_begin_transaction(DRMS_Env_t *env) {
      /* to lock anything in env */
      env->drms_lock = malloc(sizeof(pthread_mutex_t));
      XASSERT(env->drms_lock);
-     pthread_mutex_init (env->drms_lock, NULL); 
+     pthread_mutex_init (env->drms_lock, NULL);
 
      /* to serialize server threads (drms_server clients) access to drms_server's DRMS library */
      env->clientlock = malloc(sizeof(pthread_mutex_t));
@@ -426,7 +416,7 @@ int drms_server_begin_transaction(DRMS_Env_t *env) {
      pthread_mutex_init(env->clientlock, NULL);
 
      drms_lock_server(env);
-     if (drms_cache_init(env)) 
+     if (drms_cache_init(env))
      {
         drms_unlock_server(env);
         goto bailout;
@@ -436,14 +426,14 @@ int drms_server_begin_transaction(DRMS_Env_t *env) {
      drms_unlock_server(env);
   }
 
-  /* drms_server_open_session() can be slow when the dbase is busy - 
+  /* drms_server_open_session() can be slow when the dbase is busy -
    * this is caused by SUM_open() calls backing up. */
   if (!notfirst)
   {
-     drms_lock_server(env); 
+     drms_lock_server(env);
   }
 
-  if (drms_server_open_session(env)) 
+  if (drms_server_open_session(env))
   {
      drms_unlock_server(env);
      return 1;
@@ -470,22 +460,22 @@ int drms_session_setread(DRMS_Env_t *env)
 {
     int rv = DRMS_SUCCESS;
     char stmt[DRMS_MAXQUERYLEN];
-    
+
     /* Lock environment - we will be changing this. */
     drms_lock_server(env);
-    
+
     if (env && env->session)
     {
         /* Start all DRMS sessions read only. If a user wants to write into the database, they need a namespace that has a drms_session table so
          * a record can be inserted to track their read-write session. When such a user attempts to write to the database, session->readonly
          * will be set to 0. */
         env->session->readonly = 1;
-        
+
         /* Set the transaction mode to read-only. */
 #if 0
         /* This didn't work - read-only users still need the ability to write to the db. */
         snprintf(stmt, sizeof(stmt), "SET TRANSACTION READ ONLY");
-        
+
         if (db_dms(env->session->db_handle, NULL, stmt))
         {
             fprintf(stderr, "Failed to set transaction mode to READ WRITE.\n");
@@ -498,9 +488,9 @@ int drms_session_setread(DRMS_Env_t *env)
         fprintf(stderr, "No session - cannot set it READ ONLY.\n");
         rv = DRMS_ERROR_MODDBTRANS;
     }
-    
+
     drms_unlock_server(env);
-    
+
     return rv;
 }
 
@@ -510,29 +500,29 @@ int drms_session_setwrite(DRMS_Env_t *env)
     char stmt[DRMS_MAXQUERYLEN];
     pid_t pid;
     struct passwd *pwd = NULL;
-    
+
     /* Lock environment - we will be changing this. */
     drms_lock_server(env);
-    
+
     pid = getpid();
     pwd = getpwuid(geteuid());
-    
+
     /* Several things should be true if the session was started read-only:
      * 1. env->session->readonly == 1. The sessionid sequence will NOT have been incremented.
-     * 2. env->session->sessionid == 0. 
-     * 3. There is no record in the ns.drms_session table. 
+     * 2. env->session->sessionid == 0.
+     * 3. There is no record in the ns.drms_session table.
      * 4. env->session->startTime is not "".
      * 5. The SU for the session log files will not have been created (env->session->sunum == 0).
-     * 6. The current transaction mode will be read-only. I don't think there is a way to test for this. 
+     * 6. The current transaction mode will be read-only. I don't think there is a way to test for this.
      *      PostgreSQL does provide the "show transaction isolation level" command, but there does not
      *      seem to be away to check the READ ONLY and READ WRITE flags. */
-    
+
     if (env->session->readonly != 1 || env->session->sessionid != 0 || *env->session->startTime == '\0' || env->session->sunum != 0 || env->session->sudir != NULL)
     {
         drms_unlock_server(env);
         return DRMS_SUCCESS;
     }
-    
+
     if (!env->session->sessionns || *env->session->sessionns == '\0')
     {
         /* No namespace for the session record. This server was started by a read-only user who has no associated namespace. Error out. */
@@ -543,9 +533,9 @@ int drms_session_setwrite(DRMS_Env_t *env)
     {
         /* Create the database connection for the DRMS-session logging. */
         char hostbuf[1024];
-        
+
         snprintf(hostbuf, sizeof(hostbuf), "%s:%s", env->session->db_handle->dbhost, env->session->db_handle->dbport);
-        
+
         if ((env->session->stat_conn = db_connect(hostbuf, env->session->db_handle->dbuser, env->dbpasswd, env->session->db_handle->dbname, 1)) == NULL)
         {
             fprintf(stderr,"Error: Couldn't establish database connection for write-session logging.\n");
@@ -558,7 +548,7 @@ int drms_session_setwrite(DRMS_Env_t *env)
     {
         /* Increment sessionid, and set in the environment. */
         char *sn = malloc(sizeof(char) * strlen(env->session->sessionns) + 16);
-        
+
         if (sn)
         {
             sprintf(sn, "%s.drms_sessionid", env->session->sessionns);
@@ -571,25 +561,25 @@ int drms_session_setwrite(DRMS_Env_t *env)
             rv = DRMS_ERROR_OUTOFMEMORY;
         }
     }
-    
+
     if (rv == DRMS_SUCCESS)
     {
         if (env->dolog)
         {
             /* Create the SU to contain the log files. */
-            
+
             /* Allocate a 1MB storage unit for log files. */
             /* drms_su_alloc() can be slow when the dbase is busy */
             int tg = 1; /* Use tapegroup 1 - SUMS maps this number to a sums partition set. */
             long long sunum = -1;
             int sumsStat = 0;
-            
+
             /* Must release lock, cuz the sums thread will acquire it (in the wrapper around SUM_alloc()). */
             drms_unlock_server(env);
             sunum = drms_su_alloc(env, 1<<20, &env->session->sudir, &tg, &sumsStat);
             drms_lock_server(env);
             env->session->sunum = sunum;
-            
+
             if (sumsStat)
             {
                 fprintf(stderr,"SUMS failed to allocate a storage unit for the write-log files: %d.\n", sumsStat);
@@ -597,7 +587,7 @@ int drms_session_setwrite(DRMS_Env_t *env)
             }
         }
     }
-    
+
     if (rv == DRMS_SUCCESS)
     {
         /* Insert a record into the correct drms_session table. */
@@ -605,7 +595,7 @@ int drms_session_setwrite(DRMS_Env_t *env)
         {
             char filename_e[DRMS_MAXPATHLEN];
             char filename_o[DRMS_MAXPATHLEN];
-            
+
             /* LOCALTIMESTAMP() prints the time the transaction started. However, the session-db-connection code does not explicitly
              * start a transaction with BEGIN, so each db command will implicitly start a new transaction, then run the command, then
              * commit the transaction. This implies that LOCALTIMESTAMP() will print the current time.
@@ -618,7 +608,7 @@ int drms_session_setwrite(DRMS_Env_t *env)
                      env->session->sessionns,
                      jsoc_version,
                      jsoc_vers_num);
-            
+
             if (db_dmsv(env->session->stat_conn, NULL, stmt, -1,
                         DB_INT8, env->session->sessionid,
                         DB_STRING, env->session->hostname,
@@ -632,7 +622,7 @@ int drms_session_setwrite(DRMS_Env_t *env)
                 fprintf(stderr,"Error: Couldn't register session.\n");
                 rv = DRMS_ERROR_BADDBQUERY;
             }
-            
+
             if (rv == DRMS_SUCCESS)
             {
                 /* Redirect or "tee" stdout and stderr. Save the pointers to the existing stdout and stderr so they can be restored
@@ -649,7 +639,7 @@ int drms_session_setwrite(DRMS_Env_t *env)
                         /* Tee output */
                         CHECKSNPRINTF(snprintf(filename_e, DRMS_MAXPATHLEN, "%s/%s.stderr.gz", env->session->sudir, env->logfile_prefix), DRMS_MAXPATHLEN);
                         CHECKSNPRINTF(snprintf(filename_o, DRMS_MAXPATHLEN, "%s/%s.stdout.gz", env->session->sudir, env->logfile_prefix), DRMS_MAXPATHLEN);
-                        
+
                         if ((env->tee_pid = tee_stdio(filename_o, 0644, filename_e, 0644)) < 0)
                         {
                             pthread_kill(env->signal_thread, SIGTERM);
@@ -661,7 +651,7 @@ int drms_session_setwrite(DRMS_Env_t *env)
                         /* Redirect output */
                         CHECKSNPRINTF(snprintf(filename_e, DRMS_MAXPATHLEN, "%s/%s.stderr", env->session->sudir, env->logfile_prefix), DRMS_MAXPATHLEN);
                         CHECKSNPRINTF(snprintf(filename_o, DRMS_MAXPATHLEN, "%s/%s.stdout", env->session->sudir, env->logfile_prefix), DRMS_MAXPATHLEN);
-                        
+
                         if (redirect_stdio(filename_o, 0644, filename_e, 0644))
                         {
                             pthread_kill(env->signal_thread, SIGTERM);
@@ -670,14 +660,14 @@ int drms_session_setwrite(DRMS_Env_t *env)
                     }
                 }
             }
-            
+
             if (rv == DRMS_SUCCESS)
             {
                 printf("DRMS server connected to database '%s' on host '%s' as user '%s'.\n",
                        env->session->db_handle->dbname,
                        env->session->db_handle->dbhost,
                        env->session->db_handle->dbuser);
-                
+
                 printf("DRMS_HOST = %s\n"
                        "DRMS_PORT = %hu\n"
                        "DRMS_PID = %lu\n"
@@ -705,7 +695,7 @@ int drms_session_setwrite(DRMS_Env_t *env)
                      env->session->sessionns,
                      jsoc_version,
                      jsoc_vers_num);
-            
+
             if (db_dmsv(env->session->stat_conn, NULL, stmt, -1,
                         DB_INT8, env->session->sessionid,
                         DB_STRING, env->session->hostname,
@@ -719,24 +709,24 @@ int drms_session_setwrite(DRMS_Env_t *env)
             }
         }
     }
-    
+
     if (rv == DRMS_SUCCESS)
     {
         /* Set the environment's session readonly flag to false. */
         env->session->readonly = 0;
     }
-    
+
     drms_unlock_server(env);
-    
+
     return rv;
 }
 
-/* Get a new DRMS session ID from the database and insert a session 
+/* Get a new DRMS session ID from the database and insert a session
    record in the drms_session_table table. */
 /* MUST HAVE CALLED drms_lock_server() before entering this function!! */
 int drms_server_open_session(DRMS_Env_t *env)
 {
-#ifdef DEBUG  
+#ifdef DEBUG
   printf("In drms_server_open_session()\n");
 #endif
 
@@ -744,12 +734,12 @@ int drms_server_open_session(DRMS_Env_t *env)
   time_t secs = time(NULL);
   struct tm *ltime = localtime(&secs);
   char tbuf[128];
-    
+
   strftime(tbuf, sizeof(tbuf), "%Y-%m-%d %T", ltime);
   snprintf(env->session->startTime, sizeof(env->session->startTime), "%s", tbuf);
   pid_t pid = getpid();
 
-  if (!strcmp(env->logfile_prefix, "drms_server")) 
+  if (!strcmp(env->logfile_prefix, "drms_server"))
   {
      // this information is needed by modules that self-start a
      // drms_server process
@@ -757,7 +747,7 @@ int drms_server_open_session(DRMS_Env_t *env)
             env->session->db_handle->dbname,
             env->session->db_handle->dbhost,
             env->session->db_handle->dbuser);
-      
+
      printf("DRMS_HOST = %s\n"
             "DRMS_PORT = %hu\n"
             "DRMS_PID = %lu\n"
@@ -770,7 +760,7 @@ int drms_server_open_session(DRMS_Env_t *env)
 
   return 0;
 }
-      
+
 /* Update record corresponding to the session associated with env
    from the session table and close the extra database connection. */
 /* MUST HAVE CALLED drms_lock_server() before entering this function!! */
@@ -789,7 +779,7 @@ int drms_server_close_session(DRMS_Env_t *env, char *stat_str, int clients,
   if (env->tee_pid > 0) {
     int status = 0;
 
-    /* STDOUT_FILENO and STDERR_FILENO point to two pipes that are read by a child process that got created by the tee code. This child process 
+    /* STDOUT_FILENO and STDERR_FILENO point to two pipes that are read by a child process that got created by the tee code. This child process
      * writes to both the stdout/stderr streams AND the two log files created by the -L DRMS module flag. We must close these pipes, which will
      * cause the child to terminate. Then waitpid() will return. */
     close(STDERR_FILENO);
@@ -797,11 +787,11 @@ int drms_server_close_session(DRMS_Env_t *env, char *stat_str, int clients,
 
     waitpid(env->tee_pid, &status, 0);
 
-    /* ART - I think this is a bug, printing to stdout. I think there is no stdout (the write end of the tee pipe) at this point, because we just 
+    /* ART - I think this is a bug, printing to stdout. I think there is no stdout (the write end of the tee pipe) at this point, because we just
      * closed it. But I'm not sure. */
     if (status) printf("Problem returning from tee\n");
   }
-    
+
     /* stderr and stdout were redirected only if the user made the transaction read write. Do not attempt to restore
      * these file descriptors otherwise. */
     if (!env->session->readonly && env->dolog)
@@ -817,12 +807,12 @@ int drms_server_close_session(DRMS_Env_t *env, char *stat_str, int clients,
             fprintf(stderr, "Can't open %s\n", env->session->sudir);
             return 1;
         }
-        
+
         while ((dirp = readdir(dp)) != NULL) {
             if (!strcmp(dirp->d_name, ".") ||
-                !strcmp(dirp->d_name, "..")) 
+                !strcmp(dirp->d_name, ".."))
                 continue;
-            
+
             /* Gzip drms_server log files. */
             /* The module log files are now handled with gz* functions. */
             /* Only the server logs are not compressed. */
@@ -836,7 +826,7 @@ int drms_server_close_session(DRMS_Env_t *env, char *stat_str, int clients,
             }
         }
         closedir(dp);
-        
+
         /* Commit log storage unit to SUMS. */
         memset(&su,0,sizeof(su));
         su.seriesinfo = malloc(sizeof(DRMS_SeriesInfo_t));
@@ -844,7 +834,7 @@ int drms_server_close_session(DRMS_Env_t *env, char *stat_str, int clients,
         strcpy(su.seriesinfo->seriesname,DRMS_LOG_DSNAME);
         su.seriesinfo->tapegroup = DRMS_LOG_TAPEGROUP;
         su.seriesinfo->archive = archive_log;
-        if (emptydir) 
+        if (emptydir)
             su.seriesinfo->archive = 0;
         if (log_retention <= 0 )
             su.seriesinfo->retention = 1;
@@ -857,7 +847,7 @@ int drms_server_close_session(DRMS_Env_t *env, char *stat_str, int clients,
         su.recnum = NULL;
         su.seriesinfo->hasshadow = 0;
         su.seriesinfo->createshadow = 0;
-        
+
         /* drms_commitunit() will lock the global env mutex, so must release here. */
         drms_unlock_server(env);
         if (drms_commitunit(env, &su))
@@ -874,7 +864,7 @@ int drms_server_close_session(DRMS_Env_t *env, char *stat_str, int clients,
         sprintf(stmt, "UPDATE %s."DRMS_SESSION_TABLE
                 " SET sudir=NULL,status=?,clients=?,lastcontact=LOCALTIMESTAMP(0),"
                 "endtime=LOCALTIMESTAMP(0) WHERE sessionid=?", env->session->sessionns);
-        
+
         if (db_dmsv(env->session->stat_conn, NULL, stmt, -1,
                     DB_STRING, stat_str,
                     DB_INT4, clients,
@@ -892,7 +882,7 @@ int drms_server_close_session(DRMS_Env_t *env, char *stat_str, int clients,
    2. Remove the session from the session list in the database.
       In POSTGRES this can require starting a new transaction if
       an error occurred in the old one.
-   3. Set the abort flag on the DB connection flag telling all threads 
+   3. Set the abort flag on the DB connection flag telling all threads
       that the session is about to be aborted and keep them from
       initiating any new database commands.
    4. Free the environment. */
@@ -900,7 +890,7 @@ void drms_server_abort(DRMS_Env_t *env, int final)
 {
   drms_lock_server(env);
   if (env->verbose)
-    fprintf(stderr,"WARNING: DRMS is aborting...\n");  
+    fprintf(stderr,"WARNING: DRMS is aborting...\n");
 
   /* Roll back. */
   if (env->transrunning)
@@ -935,23 +925,23 @@ void drms_server_abort(DRMS_Env_t *env, int final)
  #endif
      XASSERT(request);
 
-    if (env->sum_tag) 
+    if (env->sum_tag)
     {
       // has to be dynamically allocated since it's going to be freed.
        /* This code simply tells the thread that made an unprocessed
         * SUMS request that there was an error (abort is happening). */
-        
-        /* This doesn't make sense. How do we know that the calling thread did 
+
+        /* This doesn't make sense. How do we know that the calling thread did
          * not already get a reply? */
-         
+
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_CONNECTION) && SUMS_USEMTSUMS_CONNECTION
       DRMS_MtSumsRequest_t *reply = NULL;
       reply = calloc(1, sizeof(DRMS_MtSumsRequest_t));
-#else   
+#else
       DRMS_SumRequest_t *reply;
       reply = malloc(sizeof(DRMS_SumRequest_t));
 #endif
-      XASSERT(reply);     
+      XASSERT(reply);
       reply->opcode = DRMS_ERROR_ABORT;
       tqueueAdd(env->sum_outbox, env->sum_tag, (char *)reply);
       request->opcode = DRMS_SUMABORT;
@@ -971,18 +961,18 @@ void drms_server_abort(DRMS_Env_t *env, int final)
   }
 
   db_disconnect(&env->session->stat_conn);
- 
+
   /* Close DB connection and set abort flag... */
   db_disconnect(&env->session->db_handle);
 
-  /* No need to sleep here ("wait for other threads to finish cleanly") because 
+  /* No need to sleep here ("wait for other threads to finish cleanly") because
    * the main thread waits for all other threads to finish before returning. But
-   * waiting can be indicated with a cmd-line argument (which causes 
+   * waiting can be indicated with a cmd-line argument (which causes
    * env->server_wait to be set). */
   if (env->server_wait)
   {
-     if (env->verbose) 
-       fprintf(stderr, "WARNING: DRMS server aborting in %d seconds...\n", 
+     if (env->verbose)
+       fprintf(stderr, "WARNING: DRMS server aborting in %d seconds...\n",
                DRMS_ABORT_SLEEP);
      sleep(DRMS_ABORT_SLEEP);
   }
@@ -1012,7 +1002,7 @@ void drms_server_abort(DRMS_Env_t *env, int final)
    2. Remove the session from the session list in the database.
       In POSTGRES this can require starting a new transaction if
       an error occurred in the old one.
-   3. Set the abort flag on the DB connection flag telling all threads 
+   3. Set the abort flag on the DB connection flag telling all threads
       that the session is about to be aborted and keep them from
       initiating any new database commands.
    4. Free the environment. */
@@ -1021,15 +1011,15 @@ void drms_server_commit(DRMS_Env_t *env, int final)
   int log_retention, archive_log;
   int status = 0;
 
-  if (env->verbose) 
-    printf("DRMS is committing...stand by...\n");  
+  if (env->verbose)
+    printf("DRMS is committing...stand by...\n");
   /* Lock the server to make sure nobody else is changing its state. */
   drms_lock_server(env);
   /* Delete all session temporary records from the DRMS database. */
   if (env->verbose)
     printf("Deleting temporary records from DRMS.\n");
   drms_delete_temporaries(env);
-    
+
   /* Commit (SUM_put) all storage units to SUMS. */
   if (env->verbose)
     printf("Commiting changes to SUMS.\n");
@@ -1037,10 +1027,10 @@ void drms_server_commit(DRMS_Env_t *env, int final)
   /* Must close fitsrw open fitsfiles before calling drms_commit_all_units(). The latter
    * call makes the SUMS directories read-only. Since the fitsfiles are pointers to files
    * in SUMS, calling drms_fitsrw_term() after drms_commit_all_units() will fail. This is
-   * only for direct-connect modules. For such modules, the process which contains the 
+   * only for direct-connect modules. For such modules, the process which contains the
    * drms_server_commit() call is the same one that created the list of open fitsfiles (the module's process).
    * For indirect-connect modules (sock modules), the process that executes drms_server_commit()
-   * is drms_server. So, for indirect-connect modules, you have to have the module process call 
+   * is drms_server. So, for indirect-connect modules, you have to have the module process call
    * drms_fitsrw_term(), right before it terminates. */
   if (env->session->db_direct == 1)
   {
@@ -1049,7 +1039,7 @@ void drms_server_commit(DRMS_Env_t *env, int final)
 
     /* drms_commit_all_units() might acquire the env lock. */
     drms_unlock_server(env);
-    log_retention = drms_commit_all_units(env, &archive_log, &status);  
+    log_retention = drms_commit_all_units(env, &archive_log, &status);
     drms_lock_server(env);
 
   /* Unregister session */
@@ -1064,10 +1054,10 @@ void drms_server_commit(DRMS_Env_t *env, int final)
 
   if (env->sum_thread) {
     /* Tell SUM thread to finish up. */
-    
+
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_CONNECTION) && SUMS_USEMTSUMS_CONNECTION
     DRMS_MtSumsRequest_t *request = NULL;
-    request = calloc(1, sizeof(DRMS_MtSumsRequest_t));    
+    request = calloc(1, sizeof(DRMS_MtSumsRequest_t));
 #else
     DRMS_SumRequest_t *request = NULL;
     request = malloc(sizeof(DRMS_SumRequest_t));
@@ -1078,7 +1068,7 @@ void drms_server_commit(DRMS_Env_t *env, int final)
     tqueueAdd(env->sum_inbox, (long) pthread_self(), (char *)request);
     /* Wait for SUM service thread to finish. */
 
-    /* It is possible that the SUMS thread is blocked right now. It will call drms_lock_server(), and 
+    /* It is possible that the SUMS thread is blocked right now. It will call drms_lock_server(), and
      * if it does so after execution has entered drms_server_commit(), then we will deadlock. To
      * forestall this problem, release the lock now. */
     drms_unlock_server(env);
@@ -1091,7 +1081,7 @@ void drms_server_commit(DRMS_Env_t *env, int final)
 
   /* Commit all changes to the DRMS database. */
   if (env->transrunning)
-  {    
+  {
      if (status)
      {
         db_rollback(env->session->db_handle);
@@ -1119,7 +1109,7 @@ void drms_server_commit(DRMS_Env_t *env, int final)
   /* Free memory.*/
   if (final)
   {
-     drms_free_env(env, 1);  
+     drms_free_env(env, 1);
   }
   else
   {
@@ -1192,7 +1182,7 @@ void *drms_server_thread(void *arg)
       fprintf(stderr,"thread %d: Couldn't start database transaction.\n",tnum);
       goto bail;
     }
-      
+
       if (drms_session_setread(env) != DRMS_SUCCESS)
       {
           goto bail;
@@ -1222,17 +1212,17 @@ void *drms_server_thread(void *arg)
 	printf("thread %d: Executing DRMS_ROLLBACK.\n", tnum);
       pthread_mutex_lock(env->clientlock);
       status = db_rollback(db_handle);
-            
+
       if (!status)
       {
           status = db_start_transaction(db_handle);
       }
-         
+
       if (!status)
       {
           status = drms_session_setread(env);
       }
-            
+
       pthread_mutex_unlock(env->clientlock);
       Writeint(sockfd, status);
       break;
@@ -1241,17 +1231,17 @@ void *drms_server_thread(void *arg)
 	printf("thread %d: Executing DRMS_COMMIT.\n", tnum);
       pthread_mutex_lock(env->clientlock);
       status = db_commit(db_handle);
-            
+
       if (!status)
       {
           status = db_start_transaction(db_handle);
       }
-            
+
       if (!status)
       {
           status = drms_session_setread(env);
       }
-            
+
       pthread_mutex_unlock(env->clientlock);
       Writeint(sockfd, status);
       break;
@@ -1316,7 +1306,7 @@ void *drms_server_thread(void *arg)
             {
                 printf("thread %d: Executing DRMS_BINQUERY_NTUPLE.\n", tnum);
             }
-            
+
             status = db_server_query_bin_ntuple(sockfd, db_handle);
             break;
         }
@@ -1540,17 +1530,17 @@ void *drms_server_thread(void *arg)
 
       // Exit(1); - never call exit(), only the signal thread can do that.
       // Instead, send a TERM signal to the signal thread.
-        
-        /* Killing the drms_server here is a bad idea. The clients do not know that 
-         * it is being terminated. They will continue to send requests to drms_server. 
+
+        /* Killing the drms_server here is a bad idea. The clients do not know that
+         * it is being terminated. They will continue to send requests to drms_server.
          * But because drms_sever will not respond, the clients will error out with
          * a cryptic error message:
-         
+
          FATAL ERROR: The DRMS server echoed a different command code (16777216)
          from the one sent (1).
          This usually indicates that the module generated an invalid command
          that caused the DRMS server to terminate the connection.
-         
+
          * A better architecture would be to 1. block new client connections, and
          * 2. send some kind of failure status to all new requests, and 3. when
          * all client connections have disappeared, then drms_server can quit.
@@ -1576,7 +1566,7 @@ void *drms_server_thread(void *arg)
 }
 
 
-/* Server stub for drms_su_newslot. Allocate a new slots in storage units. 
+/* Server stub for drms_su_newslot. Allocate a new slots in storage units.
    If no storage unit with a free slot is found in the storage unit cache
    allocate a new one from SUMS. */
 int drms_server_newslots(DRMS_Env_t *env, int sockfd)
@@ -1591,17 +1581,17 @@ int drms_server_newslots(DRMS_Env_t *env, int sockfd)
   int gotosums;
 
   status = DRMS_SUCCESS;
-  series = receive_string(sockfd);  
+  series = receive_string(sockfd);
 
-  n = Readint(sockfd);  
+  n = Readint(sockfd);
   if (n>0)
-  {    
-    lifetime = (DRMS_RecLifetime_t) Readint(sockfd); 
+  {
+    lifetime = (DRMS_RecLifetime_t) Readint(sockfd);
     createslotdirs = Readint(sockfd);
 
     /* ART - Add gotosums flag */
     gotosums = Readint(sockfd);
-  
+
     su = malloc(n*sizeof(DRMS_StorageUnit_t *));
     XASSERT(su);
     slotnum = malloc(n*sizeof(int));
@@ -1609,10 +1599,10 @@ int drms_server_newslots(DRMS_Env_t *env, int sockfd)
     recnum = malloc(n*sizeof(long long));
     XASSERT(recnum);
     for (i=0; i<n; i++)
-      recnum[i] = Readlonglong(sockfd);  
-      
+      recnum[i] = Readlonglong(sockfd);
+
 #if defined(DEBUG)
-    fprintf(stdout, "series = '%s'\nn = '%d'\nlifetime = '%d'\ncreateslotdirs = '%d'\n", 
+    fprintf(stdout, "series = '%s'\nn = '%d'\nlifetime = '%d'\ncreateslotdirs = '%d'\n",
             series, n, lifetime, createslotdirs);
 #endif
 
@@ -1630,7 +1620,7 @@ int drms_server_newslots(DRMS_Env_t *env, int sockfd)
       int *tmp, *t;
       long long *ltmp, *lt;
       struct iovec *vec, *v;
-      
+
       tmp = malloc((2*n+1)*sizeof(int));
       XASSERT(tmp);
       ltmp = malloc((n+1)*sizeof(long long));
@@ -1653,8 +1643,8 @@ int drms_server_newslots(DRMS_Env_t *env, int sockfd)
     else
       Writeint(sockfd, status);
     free(slotnum);
-    free(su);	
-    free(recnum);	
+    free(su);
+    free(recnum);
   }
   free(series);
   return status;
@@ -1662,10 +1652,10 @@ int drms_server_newslots(DRMS_Env_t *env, int sockfd)
 
 
 /* Server stub for drms_getunit. Get the path to a storage unit and
-   return it to the client.  If the storage unit is not in the storage 
+   return it to the client.  If the storage unit is not in the storage
    unit cache, request it from SUMS. */
 int drms_server_getunit(DRMS_Env_t *env, int sockfd)
-{ 
+{
   int status;
   long long sunum;
   char *series;
@@ -1695,7 +1685,7 @@ int drms_server_getunit(DRMS_Env_t *env, int sockfd)
       len = htonl(vec[2].iov_len);
       vec[1].iov_len = sizeof(len);
       vec[1].iov_base = &len;
-    }      
+    }
     Writevn(sockfd, vec, 3);
   }
   else
@@ -1705,10 +1695,10 @@ int drms_server_getunit(DRMS_Env_t *env, int sockfd)
 }
 
 /* Server stub for drms_getunits. Get the path to a storage unit and
-   return it to the client.  If the storage unit is not in the storage 
+   return it to the client.  If the storage unit is not in the storage
    unit cache, request it from SUMS. */
 int drms_server_getunits(DRMS_Env_t *env, int sockfd)
-{ 
+{
   int status;
   int n;
 
@@ -1733,7 +1723,7 @@ int drms_server_getunits(DRMS_Env_t *env, int sockfd)
 
   retrieve = Readint(sockfd);
   dontwait = Readint(sockfd);
-    
+
     /* SUMS does not support dontwait == 1, so force dontwait to be 0 (deprecate the dontwait parameter). */
     dontwait = 0;
 
@@ -1763,7 +1753,7 @@ int drms_server_getunits(DRMS_Env_t *env, int sockfd)
 	  len[i] = htonl(vec[2*i+1].iov_len);
 	  vec[2*i].iov_len = sizeof(len[i]);
 	  vec[2*i].iov_base = &len[i];
-	}      
+	}
       }
       Writevn(sockfd, vec, 2*n);
       free(len);
@@ -1789,9 +1779,9 @@ int drms_server_getsudir(DRMS_Env_t *env, int sockfd)
    int retrieve;
    DRMS_StorageUnit_t su;
    int status;
-   
+
    su.sudir[0] = '\0';
-   su.mode = DRMS_READONLY; 
+   su.mode = DRMS_READONLY;
    su.nfree = 0;
    su.state = NULL;
    su.recnum = NULL;
@@ -1803,7 +1793,7 @@ int drms_server_getsudir(DRMS_Env_t *env, int sockfd)
    retrieve = Readint(sockfd);
 
    status = drms_su_getsudir(env, &su, retrieve);
-   
+
    send_string(sockfd, su.sudir);
    Writeint(sockfd, status);
 
@@ -1826,7 +1816,7 @@ int drms_server_getsudirs(DRMS_Env_t *env, int sockfd)
    int dontwait;
    int isu;
    int status;
-   
+
    num = Readint(sockfd);
 
    su = malloc(sizeof(DRMS_StorageUnit_t *) * num);
@@ -1837,7 +1827,7 @@ int drms_server_getsudirs(DRMS_Env_t *env, int sockfd)
       onesu = su[isu];
       onesu->sunum = Readlonglong(sockfd);
       onesu->sudir[0] = '\0';
-      onesu->mode = DRMS_READONLY; 
+      onesu->mode = DRMS_READONLY;
       onesu->nfree = 0;
       onesu->state = NULL;
       onesu->recnum = NULL;
@@ -1847,12 +1837,12 @@ int drms_server_getsudirs(DRMS_Env_t *env, int sockfd)
 
    retrieve = Readint(sockfd);
    dontwait = Readint(sockfd);
-    
+
     /* SUMS does not support dontwait == 1, so force dontwait to be 0 (deprecate the dontwait parameter). */
     dontwait = 0;
 
    status = drms_su_getsudirs(env, num, su, retrieve, dontwait);
-   
+
    for (isu = 0; isu < num; isu++)
    {
       onesu = su[isu];
@@ -1962,41 +1952,41 @@ int drms_server_setretention(DRMS_Env_t *env, int sockfd)
     int status;
     long long *sunums = NULL;
     int isu;
-    
+
     newRetention = Readshort(sockfd);
     num = Readint(sockfd);
     sunums = (long long *)malloc(num * sizeof(long long));
-    
+
     if (!sunums)
     {
         fprintf(stderr, "drms_server_setretention(): out of memory.\n");
         return DRMS_ERROR_OUTOFMEMORY;
     }
-    
+
     for (isu = 0; isu < num; isu++)
     {
         sunums[isu] = Readlonglong(sockfd);
     }
-    
+
     status = drms_su_setretention(env, newRetention, num, sunums);
     Writeint(sockfd, status);
-    
+
     return status;
 }
 
 int drms_server_session_setwrite(DRMS_Env_t *env, int sockfd)
 {
     int status = DRMS_SUCCESS;
-    
+
     status = drms_session_setwrite(env);
     Writeint(sockfd, status);
-    
+
     return status;
 }
 
 /* Server stub for drms_su_freeslot and drms_su_markstate. */
 int drms_server_alloc_recnum(DRMS_Env_t *env, int sockfd)
-{ 
+{
   int status, n, i;
   char *series;
   DRMS_RecLifetime_t lifetime;
@@ -2017,7 +2007,7 @@ int drms_server_alloc_recnum(DRMS_Env_t *env, int sockfd)
   else
   {
     status = 0;
-    
+
     /* Insert record numbers in temp list if temporary. */
     if (lifetime == DRMS_TRANSIENT)
     {
@@ -2037,7 +2027,7 @@ int drms_server_alloc_recnum(DRMS_Env_t *env, int sockfd)
     vec[1].iov_base = recnums;
     Writevn(sockfd, vec, 2);
     free(recnums);
-  }    
+  }
   free(series);
   return status;
 }
@@ -2080,7 +2070,7 @@ void drms_server_transient_records(DRMS_Env_t *env, char *series, int n, long lo
 		}
 	      ds = ds->next;
 	    }
-	}    
+	}
     }
   if ( ds->n+n >= ds->nmax )
     {
@@ -2095,7 +2085,7 @@ void drms_server_transient_records(DRMS_Env_t *env, char *series, int n, long lo
 
 /* Server stub for drms_su_freeslot and drms_su_markstate. */
 int drms_server_slot_setstate(DRMS_Env_t *env, int sockfd)
-{ 
+{
   int status, state;
   char *series;
   int slotnum;
@@ -2119,18 +2109,18 @@ int drms_server_slot_setstate(DRMS_Env_t *env, int sockfd)
    server series_cache for it in case the client requests
    storage units or a template for it. */
 int drms_server_newseries(DRMS_Env_t *env, int sockfd)
-{ 
+{
   char *series;
   DRMS_Record_t *template;
 
   series = receive_string(sockfd);
 
-  /* even though we're typically caching series on-demand now, it is okay to cache this one now, 
+  /* even though we're typically caching series on-demand now, it is okay to cache this one now,
    * because in fact you probably will use this newly created series. */
   template = (DRMS_Record_t *)hcon_allocslot_lower(&env->series_cache, series);
   memset(template,0,sizeof(DRMS_Record_t));
   template->init = 0;
-  
+
   free(series);
   return 0;
 }
@@ -2139,7 +2129,7 @@ int drms_server_newseries(DRMS_Env_t *env, int sockfd)
 /* A client destroyed a series. Remove its entry in the
    server series_cache */
 int drms_server_dropseries(DRMS_Env_t *env, int sockfd)
-{ 
+{
   char *series_lower;
   char *tn;
   DRMS_Array_t *vec = NULL;
@@ -2192,13 +2182,13 @@ int drms_server_dropseries_su(DRMS_Env_t *env, const char *tn, DRMS_Array_t *arr
   int drmsstatus = DRMS_SUCCESS;
 
   if (!env->sum_thread) {
-    if((status = pthread_create(&env->sum_thread, NULL, &drms_sums_thread, 
+    if((status = pthread_create(&env->sum_thread, NULL, &drms_sums_thread,
 			      (void *) env))) {
-      fprintf(stderr,"Thread creation failed: %d\n", status);          
+      fprintf(stderr,"Thread creation failed: %d\n", status);
       return 1;
     }
   }
-  
+
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_DELETESUS) && SUMS_USEMTSUMS_DELETESUS
     char commentbuf[DRMS_MAXSERIESNAMELEN * 2];
     DRMS_MtSumsRequest_t *request = NULL;
@@ -2210,14 +2200,14 @@ int drms_server_dropseries_su(DRMS_Env_t *env, const char *tn, DRMS_Array_t *arr
     request->opcode = DRMS_SUMDELETESERIES;
     /* provide path to data file and series name to SUMS */
     snprintf(commentbuf, sizeof(commentbuf), "NONE,%s", tn);
-    request->comment = commentbuf; 
+    request->comment = commentbuf;
 
     tqueueAdd(env->sum_inbox, (long)pthread_self(), (char *)request);
     tqueueDel(env->sum_outbox, (long)pthread_self(), (char **)&reply);
 
     /* SUMS thread has freed request. */
 
-    if (reply->opcode) 
+    if (reply->opcode)
     {
        fprintf(stderr, "SUM_delete_series() returned with error code '%d'.\n", reply->opcode);
        status = DRMS_ERROR_SUMDELETESERIES;
@@ -2231,10 +2221,10 @@ int drms_server_dropseries_su(DRMS_Env_t *env, const char *tn, DRMS_Array_t *arr
 #else
 
   /* 2 dimensions, one column, at least one row */
-  if (array && 
-      array->naxis == 2 && 
-      array->axis[0] == 1 && 
-      array->axis[1] > 0 && 
+  if (array &&
+      array->naxis == 2 &&
+      array->axis[0] == 1 &&
+      array->axis[1] > 0 &&
       array->type == DRMS_TYPE_LONGLONG)
   {
      /* Put the contained SUNUMs in an SUDIR */
@@ -2263,14 +2253,14 @@ int drms_server_dropseries_su(DRMS_Env_t *env, const char *tn, DRMS_Array_t *arr
               char obuf[64];
 
               lastrow += kDelSerChunk < array->axis[1] - lastrow ? kDelSerChunk : array->axis[1] - lastrow;
-           
+
               /* only one column*/
               for (; irow < lastrow; irow++)
               {
                  snprintf(obuf, sizeof(obuf), "%lld\n", data[irow]);
                  fwrite(obuf, strlen(obuf), 1, fptr);
               }
-           
+
               if (!fclose(fptr))
               {
                  /* Now it is okay for SUMS to take over */
@@ -2304,7 +2294,7 @@ int drms_server_dropseries_su(DRMS_Env_t *env, const char *tn, DRMS_Array_t *arr
                  /* Wait for reply. FIXME: add timeout. */
                  tqueueDel(env->sum_outbox, (long) pthread_self(), (char **)&putrep);
 
-                 if (putrep->opcode != 0) 
+                 if (putrep->opcode != 0)
                  {
                     fprintf(stderr, "ERROR in drms_server_dropseries_su(): SUM PUT failed with "
                             "error code %d.\n", putrep->opcode);
@@ -2330,17 +2320,17 @@ int drms_server_dropseries_su(DRMS_Env_t *env, const char *tn, DRMS_Array_t *arr
                     request->opcode = DRMS_SUMDELETESERIES;
                     /* provide path to data file and series name to SUMS */
                     snprintf(commentbuf, sizeof(commentbuf), "%s,%s", fbuf, tn);
-                    request->comment = commentbuf; 
- 
+                    request->comment = commentbuf;
+
                     tqueueAdd(env->sum_inbox, (long)pthread_self(), (char *)request);
                     tqueueDel(env->sum_outbox, (long)pthread_self(), (char **)&reply);
 
                     /* SUMS thread has freed request. */
 
-                    if (reply->opcode) 
+                    if (reply->opcode)
                     {
-                       fprintf(stderr, 
-                               "SUM_delete_series() returned with error code '%d'.\n", 
+                       fprintf(stderr,
+                               "SUM_delete_series() returned with error code '%d'.\n",
                                reply->opcode);
                        status = DRMS_ERROR_SUMDELETESERIES;
                     }
@@ -2417,7 +2407,7 @@ int drms_trylock_server(DRMS_Env_t *env)
       return pthread_mutex_trylock(env->drms_lock);
    }
 }
- 
+
 long long drms_server_gettmpguid(int *sockfd)
 {
    static long long GUID = 1;
@@ -2480,23 +2470,23 @@ static void SigPipeHndlr(int signum)
 /* This is the thread in the DRMS server which is responsible for
    forwarding requests to the SUM server. It receives requests from the
    ordinary drms_server_thread(s) in env->sum_inbox (a FIFO), forwards them
-   to SUMS via the SUMS RPC protocol, and puts the reply into 
-   env->sum_outbox (also a FIFO) for the drms_server_thread to pick it up. 
-   Messages are tagged by the drms_server_thread(s) with the value 
-   pthread_self() to make sure messages from different requesters are not 
+   to SUMS via the SUMS RPC protocol, and puts the reply into
+   env->sum_outbox (also a FIFO) for the drms_server_thread to pick it up.
+   Messages are tagged by the drms_server_thread(s) with the value
+   pthread_self() to make sure messages from different requesters are not
    mixed. */
 void *drms_sums_thread(void *arg)
 {
   int status;
   DRMS_Env_t *env;
   SUM_t *sum=NULL;
-  
-  /* ACK! Horrible hack to get around SUMS limiting the #SUs per request. For API functions that 
-   * use the MT SUMS daemon, we need to use the DRMS_MtSumsRequest_t request/reply struct, not 
+
+  /* ACK! Horrible hack to get around SUMS limiting the #SUs per request. For API functions that
+   * use the MT SUMS daemon, we need to use the DRMS_MtSumsRequest_t request/reply struct, not
    * the DRMS_SumRequest_t struct. */
   void *request = NULL;
   void *reply = NULL;
-  
+
   long stop, empty;
   int connected = 0;
   char *ptmp;
@@ -2512,7 +2502,7 @@ void *drms_sums_thread(void *arg)
   int opcode;
   int dontwait;
   int reqcnt;
-  
+
 
   env = (DRMS_Env_t *) arg;
 
@@ -2542,12 +2532,12 @@ void *drms_sums_thread(void *arg)
   printf("drms_sums_thread started.\n");
   fflush(stdout);
 #endif
-  
+
   if (!gSUMSbusyMtx)
   {
      gSUMSbusyMtx = malloc(sizeof(pthread_mutex_t));
      XASSERT(gSUMSbusyMtx);
-     pthread_mutex_init(gSUMSbusyMtx, NULL); 
+     pthread_mutex_init(gSUMSbusyMtx, NULL);
   }
 
   /* Main processing loop. */
@@ -2560,14 +2550,14 @@ void *drms_sums_thread(void *arg)
      /* if stop == 1, the the queue is corked, accepting no new items. So then we want
       * to process any remaining items in the queue before breaking out of this while loop.
       * If the queue has been corked (and stop == 1), then tqueueDelAny() will return
-      * whether or not the queue is empty (unless there was an error in tqueueDelAny() - 
-      * this is a bug - this function shouldn't mix up "status" with "emptiness"). But 
+      * whether or not the queue is empty (unless there was an error in tqueueDelAny() -
+      * this is a bug - this function shouldn't mix up "status" with "emptiness"). But
       * the original code, here since the beginning of time, always considered the return
       * value from tqueueDelAny() as an indicator of emptiness. If the queue has not
       * been corked then, if tqueueDelAny() encounters no internal error, the function
       * returns 0 always. So, we really shouldn't look at the return value from this
-      * function, unless stop == 1. If stop == 1, then we should set empty to 
-      * the return from this function. 
+      * function, unless stop == 1. If stop == 1, then we should set empty to
+      * the return from this function.
       *
       * ART - 10/21/2011 */
 
@@ -2577,20 +2567,20 @@ void *drms_sums_thread(void *arg)
      /* Whoa! We're modifying env, but we haven't acquired the env lock. */
     env->sum_tag = 0;
     rv = tqueueDelAny(env->sum_inbox, &env->sum_tag,  &ptmp );
-      
+
     if (stop == 1)
     {
        empty = rv;
     }
 
-    /* Regardless of the type of request struct, casting as a DRMS_SumRequest_t to obtain 
+    /* Regardless of the type of request struct, casting as a DRMS_SumRequest_t to obtain
      * the opcode will work. */
     opcode = ((DRMS_SumRequest_t *)ptmp)->opcode;
-    
+
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
     /* This could be a multi-thread SUMS request. */
     mtRequest = IsMTSums(opcode);
-    
+
     if (mtRequest)
     {
         request = (DRMS_MtSumsRequest_t *)ptmp;
@@ -2602,7 +2592,7 @@ void *drms_sums_thread(void *arg)
 #endif
         /* We have an old-type request struct. */
         mtRequest = 0;
-        
+
         request = (DRMS_SumRequest_t *)ptmp;
         dontwait = ((DRMS_SumRequest_t *)request)->dontwait;
         reqcnt = ((DRMS_SumRequest_t *)request)->reqcnt;
@@ -2610,7 +2600,7 @@ void *drms_sums_thread(void *arg)
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
     }
 #endif
-    
+
     if (env->verbose)
     {
         printf("sums thread: Got request %d from thread %ld.\n", opcode, env->sum_tag);
@@ -2619,15 +2609,15 @@ void *drms_sums_thread(void *arg)
     if (tryconnect && !connected && opcode!=DRMS_SUMCLOSE)
     {
         int firstSumOpen = 1;
-        
+
         /* Connect to SUMS. */
         tryagain = 1;
         sleepiness = 1;
-        
+
         while (tryagain)
         {
             tryagain = 0;
-            
+
             if (!sum)
             {
                 /* SUMS not there - try to connect. */
@@ -2635,16 +2625,16 @@ void *drms_sums_thread(void *arg)
                 {
                     timer = CreateTimer();
                 }
-                
+
                 if (env->verbose)
                 {
                     printf("sums thread: No SUMS connection, calling SUM_open(). First SUM_open()?: %d.\n", firstSumOpen);
                 }
-                
+
                 sumscallret = MakeSumsCall(env, DRMS_SUMOPEN, &sum, printkerr, NULL, NULL);
-                
+
                 firstSumOpen = 0;
-                
+
                 if (sumscallret == kBrokenPipe || sumscallret == kSUMSDead || sumscallret == kTooManySumsOpen)
                 {
                     /* free a non-null sum? */
@@ -2652,16 +2642,16 @@ void *drms_sums_thread(void *arg)
                     {
                         printf("sums thread: SUM_open() failed. MakeSumsCall() returned %d.\n", sumscallret);
                     }
-                    
+
                     sum = NULL;
                 }
-                
+
                 if (env->verbose && timer)
                 {
                     fprintf(stdout, "to call SUM_open: %f seconds.\n", GetElapsedTime(timer));
                     DestroyTimer(&timer);
                 }
-                
+
                 if (!sum)
                 {
                     if (env->loopconn && sumscallret != kSUMSDead && sumscallret != kTooManySumsOpen)
@@ -2678,10 +2668,10 @@ void *drms_sums_thread(void *arg)
                         stop = 1; /* exit main loop, after queue is empty (otherwise, keep going until queue is empty). */
                         tryconnect = 0; /* don't try connecting to SUMS again. */
                         empty = tqueueCork(env->sum_inbox); /* Don't allow new sums requests. */
-                        
+
                         fprintf(stderr,"Failed to connect to SUMS; terminating.\n");
                         fflush(stdout);
-                        
+
                         sleep(1);
                         pthread_kill(env->signal_thread, SIGTERM); /* the signal thread will cause a DRMS_SUMCLOSE
                                                                     * SUMS request to be issued, which will terminate
@@ -2693,7 +2683,7 @@ void *drms_sums_thread(void *arg)
                     connected = 1;
                 }
             }
-            
+
             /* check for user interrupting module. */
             if (sdsem)
             {
@@ -2701,20 +2691,20 @@ void *drms_sums_thread(void *arg)
                 shuttingdown = (drms_server_getsd() != kSHUTDOWN_UNINITIATED);
                 sem_post(sdsem);
             }
-            
+
             if (shuttingdown)
             {
                 if (env->verbose)
                 {
                     printf("sums thread: Shutting down.\n");
                 }
-                
+
                 tryagain = 0;
                 tryconnect = 0;
             }
-            
+
         } /* loop SUM_open() */
-        
+
 #ifdef DEBUG
         printf("drms_sums_thread connected to SUMS. SUMID = %llu\n",sum->uid);
         fflush(stdout);
@@ -2728,28 +2718,28 @@ void *drms_sums_thread(void *arg)
         {
             printf("sums thread: DRMS_SUMCLOSE requested.\n");
         }
-        
+
       if (!stop)
       {
           if (env->verbose)
           {
               printf("sums thread: stopping request loop.\n");
           }
-          
+
          /* if stop == 1, then the first SUM_open() failed, so we already corked the queue.
           * Don't try to cork a corked queue. */
          stop = 1;
 
-         /* tqueueCork() does, when no error happens, return whether or not the 
+         /* tqueueCork() does, when no error happens, return whether or not the
           * queue is empty. Otherwise it returns an error code. So this is a bug -
           * it should always return one thing, either whether or not the queue
-          * is empty, or a status, not both. 
+          * is empty, or a status, not both.
           *
-          * There is actually no race condition with empty 
+          * There is actually no race condition with empty
           * because a corked queue cannot accept new items. Even as tqueueDelAny()
           * is called, there is no race condition, because no new items can
           * be added to the queue. This is only true if stop == 1 (and the queue is
-          * corked). 
+          * corked).
           *
           * ART - 10/21/2011 */
          empty = tqueueCork(env->sum_inbox); /* Do not accept any more requests, but keep
@@ -2763,36 +2753,36 @@ void *drms_sums_thread(void *arg)
         {
             printf("sums thread: DRMS_SUMABORT requested.\n");
         }
-        
+
       break;
     }
     else /* A regular request. */
     {
         int requestID = opcode;
-        
+
         if (env->verbose)
         {
             printf("sums thread: Processing a non-close/abort DRMS request. request (ID): %d\n", requestID);
         }
-        
+
         if (connected)
         {
             if (env->verbose)
             {
                 printf("sums thread: Already connected to SUMS.\n");
             }
-            
+
             /* Send the request to SUMS. sum_svc could die while processing is happening.
              * If that is the case drms_process_sums_request() will attempt to re-open
              * sum_svc with a SUM_open() call. If that happens, drms_process_sums_request()
              * will return the new SUM_t. */
-            
+
             reply = drms_process_sums_request(env, &sum, (DRMS_SumRequest_t *)request, opcode, mtRequest);
             if (!reply)
             {
                 fprintf(stderr, "sums thread: drms_process_sums_request() returned NULL. Thread making the request (ID): %ld. Request (ID): %d\n", env->sum_tag, requestID);
             }
-            
+
             XASSERT(reply); /* If there is no reply, then the calling thread will hang (since it will
                              * be blocked on env->sum_outbox). */
         }
@@ -2802,7 +2792,7 @@ void *drms_sums_thread(void *arg)
             {
                 printf("sums thread: Not connected to SUMS. Replying to main thread with a DRMS_ERROR_SUMOPEN code.\n");
             }
-            
+
             /* Send a reply to the client saying that SUM_open() failed. */
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
             if (mtRequest)
@@ -2817,11 +2807,11 @@ void *drms_sums_thread(void *arg)
                 reply = malloc(sizeof(DRMS_SumRequest_t));
                 XASSERT(reply);
                 ((DRMS_SumRequest_t *)reply)->opcode = DRMS_ERROR_SUMOPEN;
-#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS                
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
             }
 #endif
         }
-        
+
         if (reply)
         {
             if (env->verbose)
@@ -2829,7 +2819,7 @@ void *drms_sums_thread(void *arg)
                 /* The opcode is accessible from either type of request struct. */
                 printf("sums thread: A reply was returned from SUMS, return code %d.\n", ((DRMS_SumRequest_t *)reply)->opcode);
             }
-            
+
             if (!dontwait)
             {
                 /* Client is waiting for reply. */
@@ -2837,7 +2827,7 @@ void *drms_sums_thread(void *arg)
                 {
                     printf("sums thread: Requestor wants the reply, queueing reply.\n");
                 }
-                
+
                 /* Put the reply in the outbox. */
                 tqueueAdd(env->sum_outbox, env->sum_tag, (char *) reply);
             }
@@ -2847,7 +2837,7 @@ void *drms_sums_thread(void *arg)
                 {
                     printf("sums thread: Requestor does not want the reply.\n");
                 }
-                
+
                 /* If the calling thread waits for the reply, then it is the caller's responsibility
                  * to clean up. Otherwise, clean up here. */
  #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
@@ -2858,15 +2848,15 @@ void *drms_sums_thread(void *arg)
                         free(((DRMS_MtSumsRequest_t *)reply)->sunum);
                         ((DRMS_MtSumsRequest_t *)reply)->sunum = NULL;
                     }
-                
-                    for (int i = 0; i < reqcnt; i++) 
+
+                    for (int i = 0; i < reqcnt; i++)
                     {
                         if ((((DRMS_MtSumsRequest_t *)reply)->sudir)[i])
                         {
                             free((((DRMS_MtSumsRequest_t *)reply)->sudir)[i]);
                         }
                     }
-                    
+
                     if (((DRMS_MtSumsRequest_t *)reply)->sudir)
                     {
                         free(((DRMS_MtSumsRequest_t *)reply)->sudir);
@@ -2876,7 +2866,7 @@ void *drms_sums_thread(void *arg)
                 else
                 {
 #endif
-                    for (int i = 0; i < reqcnt; i++) 
+                    for (int i = 0; i < reqcnt; i++)
                     {
                         if ((((DRMS_SumRequest_t *)reply)->sudir)[i])
                         {
@@ -2886,7 +2876,7 @@ void *drms_sums_thread(void *arg)
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
                 }
 #endif
-                
+
                 free(reply);
             }
         }
@@ -2903,23 +2893,23 @@ void *drms_sums_thread(void *arg)
                 fprintf(stderr, "ERROR: The client has requested a reply from SUMS, but no such reply is available.\n");
             }
         }
-        
+
         env->sum_tag = 0; // done processing
     }
 
-    /* Note: request is only shallow-freed. The is the requestor's responsiblity 
+    /* Note: request is only shallow-freed. The is the requestor's responsiblity
      * to free any memory allocated for the dsname, comment, and sudir fields. */
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
     if (mtRequest)
     {
         if (((DRMS_MtSumsRequest_t *)request)->sunum)
         {
-            /* If the request is handled by the multi-threaded SUMS, then DRMS allocated the list of SUNUMs (for SUM_info(), SUM_get(), 
+            /* If the request is handled by the multi-threaded SUMS, then DRMS allocated the list of SUNUMs (for SUM_info(), SUM_get(),
              * SUM_put(), etc.). Free those here. */
             free(((DRMS_MtSumsRequest_t *)request)->sunum);
             ((DRMS_MtSumsRequest_t *)request)->sunum = NULL;
         }
-        
+
         if (((DRMS_MtSumsRequest_t *)request)->sudir)
         {
             /* If the request is handled by the multi-threaded SUMS, then DRMS allocated the list of dirs (for SUM_put()). Free those here. */
@@ -2944,7 +2934,7 @@ void *drms_sums_thread(void *arg)
 
   if (gSUMSbusyMtx)
   {
-     pthread_mutex_destroy(gSUMSbusyMtx); 
+     pthread_mutex_destroy(gSUMSbusyMtx);
   }
 
   return NULL;
@@ -2968,16 +2958,16 @@ static int IsSgPending(SUMID_t id, uint64_t *sunums, int nsunums)
     char idstr[32];
     char sunumstr[32];
     HContainer_t *idH = NULL;
-    
+
     ans = 0;
-    
+
     if (gSgPending)
     {
         snprintf(idstr, sizeof(idstr), "%u", id); /* id is a uint32_t */
         if ((idH = hcon_lookup(gSgPending, idstr)) != NULL)
         {
             for (isunum = 0; idH && isunum < nsunums; isunum++)
-            {    
+            {
                 snprintf(sunumstr, sizeof(sunumstr), "%llu", (unsigned long long)sunums[isunum]);
                 if (hcon_member(idH, sunumstr))
                 {
@@ -2988,7 +2978,7 @@ static int IsSgPending(SUMID_t id, uint64_t *sunums, int nsunums)
             }
         }
     }
-    
+
     return ans;
 }
 
@@ -2999,9 +2989,9 @@ static int SetSgPending(SUMID_t id, uint64_t *sunums, int nsunums)
     char idstr[32];
     char sunumstr[32];
     HContainer_t *idH = NULL;
-    
+
     err = 0;
-    
+
     /* First, see if the container of pending SUs exists. */
     snprintf(idstr, sizeof(idstr), "%u", id); /* id is a uint32_t */
     if (gSgPending == NULL)
@@ -3012,14 +3002,14 @@ static int SetSgPending(SUMID_t id, uint64_t *sunums, int nsunums)
     {
         idH = hcon_lookup(gSgPending, idstr);
     }
-    
+
     if (!err)
     {
         if (!idH)
         {
             /* Must create the HContainer_t for this id. */
             err = ((idH = hcon_create(sizeof(char), sizeof(sunumstr), NULL, NULL, NULL, NULL, 0)) == NULL);
-            
+
             if (!err)
             {
                 /* Now we must add the id-specific HContainer_t to the gSgPending HContainer_t. */
@@ -3027,15 +3017,15 @@ static int SetSgPending(SUMID_t id, uint64_t *sunums, int nsunums)
             }
         }
     }
-    
+
     if (!err)
     {
         char val = 't';
-        
+
         for (isunum = 0; isunum < nsunums; isunum++)
         {
             snprintf(sunumstr, sizeof(sunumstr), "%llu", (unsigned long long)sunums[isunum]);
-            
+
             /* If the su is already pending, then error out. */
             if (hcon_member(idH, sunumstr))
             {
@@ -3043,7 +3033,7 @@ static int SetSgPending(SUMID_t id, uint64_t *sunums, int nsunums)
                 err = 1;
                 break;
             }
-            
+
             err = hcon_insert(idH, sunumstr, &val);
         }
     }
@@ -3055,26 +3045,26 @@ static int UnsetSgPending(SUMID_t id)
 {
     int err;
     char idstr[32];
-    
+
     err = 0;
-    
+
     if (gSgPending)
     {
         /* Free entire HContainer_t for this id. */
         snprintf(idstr, sizeof(idstr), "%u", id); /* id is a uint32_t */
         hcon_remove(gSgPending, idstr); /* no-op if not HContainer_t for id */
-        
+
         if (hcon_member(gSgPending, idstr))
         {
             err = 1;
         }
-        
+
         if (!err)
         {
             if (hcon_size(gSgPending) == 0)
             {
                 hcon_destroy(&gSgPending);
-                
+
                 if (gSgPending)
                 {
                     err = 1;
@@ -3082,7 +3072,7 @@ static int UnsetSgPending(SUMID_t id)
             }
         }
     }
-    
+
     return err;
 }
 
@@ -3098,7 +3088,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
   sem_t *sdsem = drms_server_getsdsem();
   SUM_t *sum = NULL;
   int tryagain;    /* SUMS crash - try the SUMS API call again. */
-  int nosums;      /* A SUM API call returned an error (not caused by a crash) - 
+  int nosums;      /* A SUM API call returned an error (not caused by a crash) -
                     * a SUMS retry wouldn't make sense. */
   int sumscrashed; /* SUM_ping() says SUMS isn't there. */
   int sleepiness;
@@ -3110,7 +3100,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
   {
      sum = *suminout;
   }
-  
+
   if (!sum)
   {
      fprintf(stderr , "Error in drms_process_sums_request(): No SUMS connection.\n");
@@ -3184,7 +3174,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
                replyOp = sumscallret;
                break;
            }
-           
+
            if (!sum)
            {
                fprintf(stderr, "Failed to connect to SUMS; trying again in %d seconds.\n", sleepiness);
@@ -3200,15 +3190,15 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
        }
 
        sum->reqcnt = 1;
-       
+
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_ALLOC) && SUMS_USEMTSUMS_ALLOC
         sum->bytes = ((DRMS_MtSumsRequest_t *)request)->bytes;
         sum->group = ((DRMS_MtSumsRequest_t *)request)->group;
 #else
         sum->bytes = request->bytes;
-        sum->group = request->group; 
+        sum->group = request->group;
 #endif
-       /* An older version of SUMS used the storeset field to determine which partition set to 
+       /* An older version of SUMS used the storeset field to determine which partition set to
         * use. But later versions of SUMS use sum->group to map to a partition set (there is a
         * SUMS table that maps group to set). */
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_ALLOC) && SUMS_USEMTSUMS_ALLOC
@@ -3232,7 +3222,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
             sum->storeset = request->group / kExtTapegroupSlot;
         }
 #endif
- 	 
+
        if (sum->storeset > kExtTapegroupMaxStoreset)
        {
           fprintf(stderr, "SUM thread: storeset '%d' out of range.\n", sum->storeset);
@@ -3243,7 +3233,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
 
        /* Make RPC call to the SUM server. */
        /* PERFORMANCE BOTTLENECK */
-       /* drms_su_alloc() can be slow when the dbase is busy - this is due to 
+       /* drms_su_alloc() can be slow when the dbase is busy - this is due to
         * SUM_open() calls backing up. */
        replyOp = MakeSumsCall(env, DRMS_SUMALLOC, &sum, printkerr);
 
@@ -3267,15 +3257,15 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
           }
        }
     } /* tryagain loop */
-    
+
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_ALLOC) && SUMS_USEMTSUMS_ALLOC
         ((DRMS_MtSumsRequest_t *)reply)->opcode = replyOp;
-        
+
         if (!nosums)
         {
             ((DRMS_MtSumsRequest_t *)reply)->sunum = calloc(1, sizeof(uint64_t));
             ((DRMS_MtSumsRequest_t *)reply)->sudir = calloc(1, sizeof(char *));
-        
+
             ((DRMS_MtSumsRequest_t *)reply)->sunum[0] = sum->dsix_ptr[0];
             ((DRMS_MtSumsRequest_t *)reply)->sudir[0] = strdup(sum->wd[0]);
             free(sum->wd[0]);
@@ -3285,7 +3275,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
         }
 #else
         reply->opcode = replyOp;
-        
+
         if (!nosums)
         {
             reply->sunum[0] = sum->dsix_ptr[0];
@@ -3336,9 +3326,9 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
             fprintf(stderr, "Unable to process a SUM_get() request. One or more requested storage units being requested are pending.n");
             reply->opcode = -2; /* pending tape read */
             break;
-        }  
+        }
 #endif
-    
+
 
 #ifdef DEBUG
     printf("SUM thread: calling SUM_get\n");
@@ -3352,7 +3342,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
     {
         tryagain = 0;
         sumscrashed = 0;
-        
+
         if (!sum)
         {
             /* SUMS crashed - open a new SUMS. */
@@ -3369,7 +3359,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
                 replyOp = sumscallret;
                 break;
             }
-            
+
             if (!sum)
             {
                 fprintf(stderr, "Failed to connect to SUMS; trying again in %d seconds.\n", sleepiness);
@@ -3383,21 +3373,21 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
                 *suminout = sum;
             }
         }
-        
+
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_GET) && SUMS_USEMTSUMS_GET
         sum->reqcnt = ((DRMS_MtSumsRequest_t *)request)->reqcnt;
         sum->mode = ((DRMS_MtSumsRequest_t *)request)->mode;
         sum->tdays = ((DRMS_MtSumsRequest_t *)request)->tdays;
-        
+
         /* this may have been used in a previous SUMS call */
         if (sum->dsix_ptr)
         {
             free(sum->dsix_ptr);
             sum->dsix_ptr = NULL;
         }
-    
+
         sum->dsix_ptr = (uint64_t *)calloc(((DRMS_MtSumsRequest_t *)request)->reqcnt, sizeof(uint64_t));
-        
+
         for (i = 0; i < ((DRMS_MtSumsRequest_t *)request)->reqcnt; i++)
         {
             sum->dsix_ptr[i] = ((DRMS_MtSumsRequest_t *)request)->sunum[i];
@@ -3406,39 +3396,39 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
         sum->reqcnt = request->reqcnt;
         sum->mode = request->mode;
         sum->tdays = request->tdays;
-        
+
         /* this may have been used in a previous SUMS call */
         if (sum->dsix_ptr)
         {
             free(sum->dsix_ptr);
             sum->dsix_ptr = NULL;
         }
-    
+
         sum->dsix_ptr = (uint64_t *)calloc(SUMARRAYSZ, sizeof(uint64_t));
-        
+
         for (i=0; i<request->reqcnt; i++)
         {
             sum->dsix_ptr[i] = request->sunum[i];
         }
 #endif
-        
+
         /* Make RPC call to the SUM server. */
         replyOp = MakeSumsCall(env, DRMS_SUMGET, &sum, printkerr);
 
 #ifdef DEBUG
         printf("SUM thread: SUM_get returned %d\n", replyOp);
 #endif
-        
+
         if (replyOp == RESULT_PEND)
         {
-            /* This SUM_wait() call can take a while. If DRMS is shutting down, 
-             * then don't wait. Should be okay to get shut down sem since 
+            /* This SUM_wait() call can take a while. If DRMS is shutting down,
+             * then don't wait. Should be okay to get shut down sem since
              * the main and signal threads don't hold onto them for too long. */
             int pollrv = 0;
             int naptime = 1;
             int nloop = 10;
             int maxloop = 21600; /* 6 hours (very roughly) */
-            
+
             /* Mark these sunums as SUM_get()-pending. */
             if (SetSgPending(sum->uid, sum->dsix_ptr, sum->reqcnt))
             {
@@ -3446,45 +3436,45 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
                 nosums = 1;
                 break;
             }
-            
+
             /* WARNING - this is potentially an infinite loop. */
             while (1)
             {
-                if (maxloop <= 0)   
+                if (maxloop <= 0)
                 {
                     /* tape read didn't complete */
                     fprintf(stderr, "Tape read has not completed; try again later.\n");
                     nosums = 1;
-                    
+
                     drms_lock_server(env);
-                    /* It is no longer ok to call SUMS. Once DRMS times-out waiting on SUMS, 
+                    /* It is no longer ok to call SUMS. Once DRMS times-out waiting on SUMS,
                      * if DRMS were to call SUMS again, SUMS could break. */
                     env->sumssafe = 0;
                     drms_unlock_server(env);
                     break;
                 }
-                
+
                 if (sdsem)
                 {
                     sem_wait(sdsem);
                     shuttingdown = (drms_server_getsd() != kSHUTDOWN_UNINITIATED);
                     sem_post(sdsem);
                 }
-                
+
                 if (shuttingdown)
                 {
                     replyOp = 0;
                     break; // from inner loop
                 }
-                
+
                 if (gSUMSbusyMtx)
                 {
                     pthread_mutex_lock(gSUMSbusyMtx);
                     gSUMSbusy = 1;
                     pthread_mutex_unlock(gSUMSbusyMtx);
                 }
-                
-                /* if sum_svc is down, 
+
+                /* if sum_svc is down,
                  * then SUM_poll() will never return anything but TIMEOUTMSG. */
                 if (nloop <= 0)
                 {
@@ -3499,25 +3489,25 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
                         gSUMSbusy = 0;
                         pthread_mutex_unlock(gSUMSbusyMtx);
                     }
-                    
+
                     nloop--;
                     maxloop--;
                     sleep(1);
                     continue;
                 }
-                
+
                 if (env->verbose)
                 {
                     fprintf(stdout, "SUM_poll() returned %d.\n", pollrv);
                 }
-                
+
                 if (gSUMSbusyMtx)
                 {
                     pthread_mutex_lock(gSUMSbusyMtx);
                     gSUMSbusy = 0;
                     pthread_mutex_unlock(gSUMSbusyMtx);
                 }
-                
+
                 if (pollrv == 0)
                 {
                     /* There could be an error: sum->status is examined below and if it is not 0, then
@@ -3533,24 +3523,24 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
                 else
                 {
                     /* One of four things is true:
-                     *   1. The tape drive is still working on the tape fetch request (the tape could be on a shelf somewhere even). 
-                     *   2. sum_svc has died. 
-                     *   3. tape_svc has died. 
+                     *   1. The tape drive is still working on the tape fetch request (the tape could be on a shelf somewhere even).
+                     *   2. sum_svc has died.
+                     *   3. tape_svc has died.
                      *   4. driveX_svc has died.
                      * Call SUM_nop() to differentiate these options. It returns:
-                     *   4 - sum_svc crashed or restarted. 
-                     *   5 - tape_svc crashed or restarted. 
-                     *   6 - driveX_svc crashed or restarted. 
+                     *   4 - sum_svc crashed or restarted.
+                     *   5 - tape_svc crashed or restarted.
+                     *   6 - driveX_svc crashed or restarted.
                      *
                      * If sum_svc has crashed or restarted, then SUM_open() needs to be called again. Otherwise, if
                      * tape_svc or driveX_svc has crashed or restarted, then SUM_get() needs to be called again. */
                     sumnoop = SUM_nop(sum, printkerr);
-                    
+
                     if (env->verbose)
                     {
                         fprintf(stdout, "SUM_nop() returned %d.\n", sumnoop);
                     }
-                    
+
                     sumscrashed = (sumnoop == 4);
                     if (sumnoop >= 4)
                     {
@@ -3561,7 +3551,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
                             sum = NULL;
                             if (UnsetSgPending((sum->uid)))
                             {
-                               /* There was an error unsetting the pending flag on all the contained SUNUMS. It             
+                               /* There was an error unsetting the pending flag on all the contained SUNUMS. It
                                 * might still be set. */
                                replyOp = -4; /* Error releasing pending flags on SUNUMs. */
                                break; /* from inner loop, but tryagain == 0, so breaks from outter loop too. */
@@ -3573,7 +3563,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
                         {
                             fprintf(stderr, "Either tape_svc or driveX_svc died; trying SUM_get() again in %d seconds.\n", sleepiness);
                         }
-                        
+
                         /* Must go back to SUM_get(). */
                         tryagain = 1;
                         sleep(sleepiness);
@@ -3588,16 +3578,16 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
                             fprintf(stdout, "Tape fetch has not completed, waiting for %d seconds.\n", naptime);
                         }
                         sleep(naptime);
-                        
+
                         /* don't increase the length of the nap - we want to keep polling at a regular, quick interval. */
                     }
                 }
             } /* inner while (loop on polling) */
-            
+
             if (!shuttingdown && !tryagain)
             {
                 replyOp = pollrv;
-                
+
                 if (replyOp || sum->status)
                 {
                     fprintf(stderr,"SUM thread: Last SUM_poll call returned error code = %d, sum->status = %d.\n", replyOp, sum->status);
@@ -3608,9 +3598,9 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
         }
         else if (replyOp == 1)
         {
-            /* SUMS received a duplicate SUNUM in the same SUMS session. This is a fatal error. We are actively 
+            /* SUMS received a duplicate SUNUM in the same SUMS session. This is a fatal error. We are actively
              * trying to find code that causes duplicate SUNUMs to be issued too, but in case we haven't found
-             * all the places that cause this error, this block of code will prevent Sget() from crashing 
+             * all the places that cause this error, this block of code will prevent Sget() from crashing
              * due to duplicate SUNUMs. */
             fprintf(stderr, "SUMS thread: SUM_get() failure. Terminating DRMS module.\n");
             nosums = 1;
@@ -3631,7 +3621,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
                 {
                     fprintf(stderr, "Either tape_svc or driveX_svc died; trying SUM_get() again in %d seconds.\n", sleepiness);
                 }
-                
+
                 tryagain = 1;
                 sleep(sleepiness);
                 GettingSleepier(&sleepiness);
@@ -3644,14 +3634,14 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
             }
         }
     } /* tryagain (outer) loop */
-    
+
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_GET) && SUMS_USEMTSUMS_GET
         ((DRMS_MtSumsRequest_t *)reply)->opcode = replyOp;
-        
+
         if (!nosums)
         {
             ((DRMS_MtSumsRequest_t *)reply)->sudir = calloc(((DRMS_MtSumsRequest_t *)request)->reqcnt, sizeof(char *));
-            
+
             for (i = 0; i < ((DRMS_MtSumsRequest_t *)request)->reqcnt; i++)
             {
                 if (!shuttingdown)
@@ -3667,7 +3657,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
                    ((DRMS_MtSumsRequest_t *)reply)->sudir[i] = strdup("NA (shuttingdown)");
                 }
              }
-             
+
              reply->reqcnt = request->reqcnt;
         }
         else
@@ -3676,7 +3666,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
         }
 #else
         reply->opcode = replyOp;
-        
+
         if (!nosums)
         {
            for (i = 0; i < request->reqcnt; i++)
@@ -3694,7 +3684,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
                  reply->sudir[i] = strdup("NA (shuttingdown)");
               }
            }
-           
+
            reply->reqcnt = request->reqcnt;
         }
         else
@@ -3703,7 +3693,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
         }
 #endif
 
-    
+
     }
     break;
 
@@ -3777,7 +3767,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
                replyOp = sumscallret;
                break;
            }
-           
+
            if (!sum)
            {
                fprintf(stderr, "Failed to connect to SUMS; trying again in %d seconds.\n", sleepiness);
@@ -3800,22 +3790,22 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
         sum->tdays = ((DRMS_MtSumsRequest_t *)request)->tdays;
         sum->reqcnt = ((DRMS_MtSumsRequest_t *)request)->reqcnt;
         sum->history_comment = ((DRMS_MtSumsRequest_t *)request)->comment;
-        
+
         /* this may have been used in a previous SUMS call */
         if (sum->dsix_ptr)
         {
             free(sum->dsix_ptr);
             sum->dsix_ptr = NULL;
         }
-    
+
         sum->dsix_ptr = (uint64_t *)calloc(((DRMS_MtSumsRequest_t *)request)->reqcnt, sizeof(uint64_t));
-        
+
         if (sum->wd)
         {
             free(sum->wd);
             sum->wd = NULL;
         }
-    
+
         sum->wd = (char **)calloc(((DRMS_MtSumsRequest_t *)request)->reqcnt, sizeof(char *));
 
         for (i = 0; i < ((DRMS_MtSumsRequest_t *)request)->reqcnt; i++)
@@ -3830,7 +3820,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
             if (fptr)
             {
                 fprintf(fptr, "  %lld\n", (long long)((DRMS_MtSumsRequest_t *)request)->sunum[i]);
-            }     
+            }
 #endif
         }
 #else
@@ -3840,7 +3830,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
        sum->tdays = request->tdays;
        sum->reqcnt = request->reqcnt;
        sum->history_comment = request->comment;
-       
+
         /* this may have been used in a previous SUMS call (the RPC SUMS requires SUMARRAYSZ elements)*/
         if (sum->dsix_ptr)
         {
@@ -3857,7 +3847,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
         }
 
         sum->wd = (char **)calloc(SUMARRAYSZ, sizeof(char *));
-       
+
        for (i=0; i<request->reqcnt; i++)
        {
           sum->dsix_ptr[i] = request->sunum[i];
@@ -3871,7 +3861,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
           if (fptr)
           {
              fprintf(fptr, "  %lld\n", (long long)request->sunum[i]);
-          }     
+          }
 #endif
        }
 #endif
@@ -3896,7 +3886,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
           }
        }
     } /* while loop */
-    
+
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_PUT) && SUMS_USEMTSUMS_PUT
         ((DRMS_MtSumsRequest_t *)reply)->opcode = replyOp;
 #else
@@ -3964,7 +3954,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
                             replyOp = sumscallret;
                             break;
                         }
-                    
+
                         if (!sum)
                         {
                             fprintf(stderr, "Failed to connect to SUMS; trying again in %d seconds.\n", sleepiness);
@@ -4000,8 +3990,8 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
                        }
                     }
                  }
-                 
-#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_DELETESUS) && SUMS_USEMTSUMS_DELETESUS                
+
+#if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_DELETESUS) && SUMS_USEMTSUMS_DELETESUS
                 ((DRMS_MtSumsRequest_t *)reply)->opcode = replyOp;
 #else
                 reply->opcode = replyOp;
@@ -4015,7 +4005,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
     break;
     case DRMS_SUMALLOC2:
     {
-        /* Do not make this call available to "_sock" connect modules - it is 
+        /* Do not make this call available to "_sock" connect modules - it is
          * to be used by modules that ingest remote storage units and it
          * does not affect any kind of DRMS/PSQL session. */
         int replyOp = 0;
@@ -4061,7 +4051,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
                replyOp = sumscallret;
                break;
            }
-           
+
            if (!sum)
            {
                fprintf(stderr, "Failed to connect to SUMS; trying again in %d seconds.\n", sleepiness);
@@ -4077,14 +4067,14 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
        }
 
        sum->reqcnt = 1;
-       
+
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_ALLOC) && SUMS_USEMTSUMS_ALLOC
         sum->bytes = ((DRMS_MtSumsRequest_t *)request)->bytes;
         sum->group = ((DRMS_MtSumsRequest_t *)request)->group;
 
-        /* An older version of SUMS used the storeset field to determine which partition set to 
+        /* An older version of SUMS used the storeset field to determine which partition set to
         * use. But later versions of SUMS use sum->group to map to a partition set (there is a
-        * SUMS table that maps group to set). 
+        * SUMS table that maps group to set).
         *
         * SO sum->storeset IS OBSOLETE - Art 2016-11-18.
         */
@@ -4101,9 +4091,9 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
         sum->bytes = request->bytes;
         sum->group = request->group;
 
-        /* An older version of SUMS used the storeset field to determine which partition set to 
+        /* An older version of SUMS used the storeset field to determine which partition set to
         * use. But later versions of SUMS use sum->group to map to a partition set (there is a
-        * SUMS table that maps group to set). 
+        * SUMS table that maps group to set).
         *
         * SO sum->storeset IS OBSOLETE - Art 2016-11-18.
         */
@@ -4148,15 +4138,15 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
           }
        }
     }
-    
+
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_ALLOC) && SUMS_USEMTSUMS_ALLOC
         ((DRMS_MtSumsRequest_t *)reply)->opcode = replyOp;
-    
+
         if (!nosums)
         {
-            ((DRMS_MtSumsRequest_t *)reply)->sudir = calloc(1, sizeof(char *));            
+            ((DRMS_MtSumsRequest_t *)reply)->sudir = calloc(1, sizeof(char *));
             ((DRMS_MtSumsRequest_t *)reply)->sudir[0] = strdup(sum->wd[0]);
-            free(sum->wd[0]); 
+            free(sum->wd[0]);
         }
 #else
         reply->opcode = replyOp;
@@ -4164,30 +4154,9 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
         if (!nosums)
         {
             reply->sudir[0] = strdup(sum->wd[0]);
-            free(sum->wd[0]); 
+            free(sum->wd[0]);
         }
 #endif
-    }
-    break;
-  case DRMS_SUMEXPORT:
-    {
-       /* cast the comment field of the request - 
-        * it contains the SUMEXP_t struct */
-       SUMEXP_t *sumexpt = (SUMEXP_t *)request->comment;
-
-       /* fill in the uid */
-       sumexpt->uid = sum->uid;
-
-       /* Make RPC call to the SUM server. */
-       if ((reply->opcode = MakeSumsCall(env, DRMS_SUMEXPORT, &sum, SUMExptErr, sumexpt)))
-       {
-          fprintf(stderr,"SUM thread: SUM_export RPC call failed with "
-                  "error code %d\n", reply->opcode);
-          break;
-       }
-
-       /* Don't retry SUM_export() on failure. If this fails because SUMS is down, just
-        * tell the caller, and let them handle the problem, retrying if they like. */
     }
     break;
   case DRMS_SUMINFO:
@@ -4237,7 +4206,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
               {
                   sum = NULL;
                   nosums = 1;
-                  
+
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_INFO) && SUMS_USEMTSUMS_INFO
                 ((DRMS_MtSumsRequest_t *)reply)->opcode = sumscallret;
 #else
@@ -4245,7 +4214,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
 #endif
                   break;
               }
-              
+
               if (!sum)
               {
                   fprintf(stderr, "Failed to connect to SUMS; trying again in %d seconds.\n", sleepiness);
@@ -4260,16 +4229,16 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
               }
           }
 
-            /* IMPORTANT! SUM_infoEx() will not support duplicate sunums. So, need to 
-             * remove duplicates, but map each SUNUM in the original request to 
+            /* IMPORTANT! SUM_infoEx() will not support duplicate sunums. So, need to
+             * remove duplicates, but map each SUNUM in the original request to
              * the SUNUM in the array of streamlined requests. */
             map = hcon_create(sizeof(SUM_info_t *), 128, NULL, NULL, NULL, NULL, 0);
 
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_INFO) && SUMS_USEMTSUMS_INFO
             for (i = 0, isunum = 0; i < ((DRMS_MtSumsRequest_t *)request)->reqcnt; i++)
             {
-                /* One or more sunums may be ULLONG_MAX (originally, they were -1, but because request->sunum 
-                 * is an array of uint64_t, they will have been cast to ULLONG_MAX). Don't put the -1 
+                /* One or more sunums may be ULLONG_MAX (originally, they were -1, but because request->sunum
+                 * is an array of uint64_t, they will have been cast to ULLONG_MAX). Don't put the -1
                  * requests in dxarray, because -1 is invalid as far as SUMS is concerned. */
 
                 if (((DRMS_MtSumsRequest_t *)request)->sunum[i] == ULLONG_MAX)
@@ -4289,8 +4258,8 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
 #else
             for (i = 0, isunum = 0; i < request->reqcnt; i++)
             {
-                /* One or more sunums may be ULLONG_MAX (originally, they were -1, but because request->sunum 
-                 * is an array of uint64_t, they will have been cast to ULLONG_MAX). Don't put the -1 
+                /* One or more sunums may be ULLONG_MAX (originally, they were -1, but because request->sunum
+                 * is an array of uint64_t, they will have been cast to ULLONG_MAX). Don't put the -1
                  * requests in dxarray, because -1 is invalid as far as SUMS is concerned. */
 
                 if (request->sunum[i] == ULLONG_MAX)
@@ -4308,7 +4277,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
                 }
             }
 #endif
-            
+
           sum->reqcnt = isunum;
           sum->sinfo = NULL;
 
@@ -4325,7 +4294,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
                     tryagain = 1;
                     hcon_destroy(&map);
                     sleep(sleepiness);
-                    GettingSleepier(&sleepiness); 
+                    GettingSleepier(&sleepiness);
                 }
                 else
                 {
@@ -4348,7 +4317,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
                     tryagain = 1;
                     hcon_destroy(&map);
                     sleep(sleepiness);
-                    GettingSleepier(&sleepiness); 
+                    GettingSleepier(&sleepiness);
                 }
                 else
                 {
@@ -4362,8 +4331,8 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
 
        if (!nosums)
        {
-          /* Returns a linked-list of SUM_info_t structures in sum->sinfo. Each 
-           * node has been malloc'd by SUM_infoEx(). It is the caller's responsibility to 
+          /* Returns a linked-list of SUM_info_t structures in sum->sinfo. Each
+           * node has been malloc'd by SUM_infoEx(). It is the caller's responsibility to
            * free the list. */
           SUM_info_t *psinfo = sum->sinfo;
           SUM_info_t **pinfo = NULL;
@@ -4381,12 +4350,12 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
                 break;
              }
 
-             /* NOTE - if an sunum is unknown, the returned SUM_info_t will have the sunum set 
+             /* NOTE - if an sunum is unknown, the returned SUM_info_t will have the sunum set
               * to -1.  So don't use the returned sunum. */
              if ((pinfo = hcon_lookup(map, key)) != NULL)
              {
                 *pinfo = psinfo;
-                /* work around SUMS ditching the SUNUM for bad SUNUMs - modify the info struct returned 
+                /* work around SUMS ditching the SUNUM for bad SUNUMs - modify the info struct returned
                  * by SUMS directly. */
                 (*pinfo)->sunum = dxarray[i];
              }
@@ -4399,10 +4368,10 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
 
              psinfo = psinfo->next;
           }
-          
+
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS && defined(SUMS_USEMTSUMS_INFO) && SUMS_USEMTSUMS_INFO
             ((DRMS_MtSumsRequest_t *)reply)->opcode = replyOp;
-            
+
             if (replyOp == 0)
             {
                 /* We are going to send back SUM_info_t structs in the reply->sudir field. Malloc (more than needed) now. */
@@ -4410,15 +4379,15 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
 
                 for (i = 0; i < ((DRMS_MtSumsRequest_t *)request)->reqcnt; i++)
                 {
-                   /* request->sunum may contain duplicate sunums. One or more sunums may be ULLONG_MAX also 
-                    * (originally, they were -1, but because request->sunum is an array of uint64_t, 
+                   /* request->sunum may contain duplicate sunums. One or more sunums may be ULLONG_MAX also
+                    * (originally, they were -1, but because request->sunum is an array of uint64_t,
                     * they will have been cast to ULLONG_MAX). */
                    if (((DRMS_MtSumsRequest_t *)request)->sunum[i] == ULLONG_MAX)
                    {
                        /* Create a dummy, empty SUM_info_t*/
                        ((DRMS_MtSumsRequest_t *)reply)->sudir[i] = (char *)malloc(sizeof(SUM_info_t));
                        memset(((DRMS_MtSumsRequest_t *)reply)->sudir[i], 0, sizeof(SUM_info_t));
-                       ((SUM_info_t *)(((DRMS_MtSumsRequest_t *)reply)->sudir[i]))->sunum = ULLONG_MAX; /* This will be cast to -1 by the 
+                       ((SUM_info_t *)(((DRMS_MtSumsRequest_t *)reply)->sudir[i]))->sunum = ULLONG_MAX; /* This will be cast to -1 by the
                                                                                * calling code. */
                        continue;
                    }
@@ -4437,7 +4406,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
                        break; // from loop
                    }
                 }
-                
+
                 reply->reqcnt = request->reqcnt;
             }
             else
@@ -4451,15 +4420,15 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
             {
                for (i = 0; i < request->reqcnt; i++)
                {
-                   /* request->sunum may contain duplicate sunums. One or more sunums may be ULLONG_MAX also 
-                    * (originally, they were -1, but because request->sunum is an array of uint64_t, 
+                   /* request->sunum may contain duplicate sunums. One or more sunums may be ULLONG_MAX also
+                    * (originally, they were -1, but because request->sunum is an array of uint64_t,
                     * they will have been cast to ULLONG_MAX). */
                    if (request->sunum[i] == ULLONG_MAX)
                    {
                        /* Create a dummy, empty SUM_info_t*/
                        reply->sudir[i] = (char *)malloc(sizeof(SUM_info_t));
                        memset(reply->sudir[i], 0, sizeof(SUM_info_t));
-                       ((SUM_info_t *)(reply->sudir[i]))->sunum = ULLONG_MAX; /* This will be cast to -1 by the 
+                       ((SUM_info_t *)(reply->sudir[i]))->sunum = ULLONG_MAX; /* This will be cast to -1 by the
                                                                                * calling code. */
                        continue;
                    }
@@ -4478,7 +4447,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
                        break; // from loop
                    }
                }
-               
+
                reply->reqcnt = request->reqcnt;
             }
             else
@@ -4494,7 +4463,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
     }
     break;
   default:
-  
+
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
     if (mtRequest)
     {
@@ -4509,7 +4478,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
     }
 #endif
-    
+
     break;
   }
 
@@ -4552,7 +4521,7 @@ int drms_server_registercleaner(DRMS_Env_t *env, CleanerData_t *data)
    {
       fprintf(stderr, "Can't register doit cleaner function. Unable to obtain mutex.\n");
    }
-  
+
    return ok;
 }
 
@@ -4580,7 +4549,7 @@ static void HastaLaVistaBaby(DRMS_Env_t *env, int signo)
    }
 
    drms_lock_server(env);
-   /* Send a cancel request to the db - this will result in an attempt to cancel 
+   /* Send a cancel request to the db - this will result in an attempt to cancel
     * the currently db. This is only useful if there is currently a long-running
     * query (executed by the main thread). */
 
@@ -4604,7 +4573,7 @@ static void HastaLaVistaBaby(DRMS_Env_t *env, int signo)
    /* don't lock server lock - drms_server_end_transaction() locks/unlocks it. */
    drms_server_end_transaction(env, signo != SIGUSR1, 0);
 
-   /* Don't wait for main thread to terminate, it may be in the middle of a long DoIt(). But 
+   /* Don't wait for main thread to terminate, it may be in the middle of a long DoIt(). But
     * main can't start using env and the database and cmdparams after we clean them up. */
 
    /* Must disconnect db, because we didn't set the final flag in drms_server_end_transaction() */
@@ -4614,7 +4583,7 @@ static void HastaLaVistaBaby(DRMS_Env_t *env, int signo)
    drms_unlock_server(env);
 
    /* must lock inside drms_free_env() since it destroys the lock. */
-   drms_free_env(env, 1); 
+   drms_free_env(env, 1);
 
    /* doesn't call at_exit_action() */
    _exit(signo != SIGUSR1);
@@ -4667,7 +4636,7 @@ void *drms_signal_thread(void *arg)
       break;
     case SIGQUIT:
       fprintf(stderr,"WARNING: DRMS server received SIGQUIT...exiting.\n");
-      break; 
+      break;
     case SIGUSR1:
       if (env->verbose) {
 	fprintf(stderr,"DRMS server received SIGUSR1...commiting data & stopping.\n");
@@ -4675,7 +4644,7 @@ void *drms_signal_thread(void *arg)
       }
       break;
        case SIGUSR2:
-         if (env->verbose) 
+         if (env->verbose)
          {
             fprintf(stdout,"signal thread received SIGUSR2 (main shutting down)...exiting.\n");
          }
@@ -4683,7 +4652,7 @@ void *drms_signal_thread(void *arg)
          pthread_exit(NULL);
       break;
     default:
-      fprintf(stderr,"WARNING: DRMS server received signal no. %d...exiting.\n", 
+      fprintf(stderr,"WARNING: DRMS server received signal no. %d...exiting.\n",
 	      signo);
 
       Exit(1);
@@ -4696,7 +4665,7 @@ void *drms_signal_thread(void *arg)
     case SIGTERM:
     case SIGQUIT:
     case SIGUSR1:
-      /* No need to acquire lock to look at env->shutdownsem, which was either 
+      /* No need to acquire lock to look at env->shutdownsem, which was either
        * created or not before the signal_thread existed. By the time
        * execution gets here, shutdownsem is read-only */
       if (gShutdownsem)
@@ -4707,8 +4676,8 @@ void *drms_signal_thread(void *arg)
          if (gShutdown == kSHUTDOWN_UNINITIATED)
          {
             /* There is no shutdown in progress - okay to start shutdown */
-            gShutdown = (signo == SIGUSR1) ? 
-              kSHUTDOWN_COMMITINITIATED : 
+            gShutdown = (signo == SIGUSR1) ?
+              kSHUTDOWN_COMMITINITIATED :
               kSHUTDOWN_ABORTINITIATED; /* Shutdown initiated */
 
             if (!env->selfstart || env->verbose || signo == SIGTERM || signo == SIGINT)
@@ -4728,7 +4697,7 @@ void *drms_signal_thread(void *arg)
             }
 
             /* Allow DoIt() function a chance to clean up. */
-            /* Call user-registered callback, if such a callback was registered, that cleans up 
+            /* Call user-registered callback, if such a callback was registered, that cleans up
              * resources used in the DoIt() loop */
             if (env->cleaners)
             {
@@ -4747,7 +4716,7 @@ void *drms_signal_thread(void *arg)
 
             /* release shutdown lock */
             sem_post(gShutdownsem);
-           
+
             doexit = 1;
          }
          else
@@ -4769,8 +4738,8 @@ void *drms_signal_thread(void *arg)
          HastaLaVistaBaby(env, signo);
          return NULL; /* kill the signal thread - only thread left */
       }
-      
-      break;      
+
+      break;
     }
   }
 }

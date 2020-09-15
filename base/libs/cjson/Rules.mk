@@ -3,7 +3,7 @@ dirstack_$(sp)  := $(d)
 d               := $(dir)
 
 LIBCJSON         := $(d)/libcjson.a
-LIBCJSONH        := $(SRCDIR)/$(d)
+LIBCJSONH        := $(CURDIR)/$(d)
 
 # Local variables
 OBJ_$(d)        := $(addprefix $(d)/, cJSON.o)

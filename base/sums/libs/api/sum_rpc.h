@@ -6,8 +6,13 @@
  * (copied from /home/jim/STAGING/src/pipe/rpc/pe_rpc.h)
  */
 #include <SUM.h>
+#include "serverdefs.h"
+
+#if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || ((!defined(SUMS_USEMTSUMS_CONNECTION) || !SUMS_USEMTSUMS_CONNECTION) && (!defined(SUMS_USEMTSUMS_ALL) || !SUMS_USEMTSUMS_ALL))
 #include <rpc/rpc.h>
 #include <soi_key.h>
+#endif
+
 #if defined(SUMS_TAPE_AVAILABLE) && SUMS_TAPE_AVAILABLE
   #include <tape.h>
 #endif
@@ -92,6 +97,7 @@
 #define xdr_uint64_t xdr_u_int64_t
 #endif /* __APPLE__ */
 
+#if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || ((!defined(SUMS_USEMTSUMS_CONNECTION) || !SUMS_USEMTSUMS_CONNECTION) && (!defined(SUMS_USEMTSUMS_ALL) || !SUMS_USEMTSUMS_ALL))
 typedef char *nametype;
 bool_t xdr_nametype(XDR *xdr, nametype *objp);
 
@@ -126,6 +132,7 @@ struct Rkey {
 };
 typedef struct Rkey Rkey;
 bool_t xdr_Rkey(XDR *xdrs, Rkey *objp);
+#endif
 
 //This is used by the SUMS API SUM_infoArray() to send info to sums
 struct Sunumarray {
@@ -139,7 +146,10 @@ struct Sunumarray {
   uint64_t *sunums;
 };
 typedef struct Sunumarray Sunumarray;
+
+#if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || ((!defined(SUMS_USEMTSUMS_CONNECTION) || !SUMS_USEMTSUMS_CONNECTION) && (!defined(SUMS_USEMTSUMS_ALL) || !SUMS_USEMTSUMS_ALL))
 bool_t xdr_Sunumarray(XDR *xdrs, Sunumarray *objp);
+#endif
 
 //This is used by the SUMS API SUM_infoArray() to receive info from sums
 struct Sinfoarray {
@@ -149,8 +159,11 @@ struct Sinfoarray {
   SUM_info_t *sinfo;	//defined in sum_info.h
 };
 typedef struct Sinfoarray Sinfoarray;
+
+#if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || ((!defined(SUMS_USEMTSUMS_CONNECTION) || !SUMS_USEMTSUMS_CONNECTION) && (!defined(SUMS_USEMTSUMS_ALL) || !SUMS_USEMTSUMS_ALL))
 bool_t xdr_Sinfoarray(XDR *xdrs, Sinfoarray *objp);
 bool_t xdr_sum_info_t(XDR *xdrs, SUM_info_t *objp);
+#endif
 
 
 /* This is the sum_svc program registration. Client API sends here */
@@ -228,6 +241,7 @@ bool_t xdr_sum_info_t(XDR *xdrs, SUM_info_t *objp);
 #define INFODOARRAY ((uint32_t)19)
 #define SUMREPARTN ((uint32_t)20)
 
+#if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || ((!defined(SUMS_USEMTSUMS_CONNECTION) || !SUMS_USEMTSUMS_CONNECTION) && (!defined(SUMS_USEMTSUMS_ALL) || !SUMS_USEMTSUMS_ALL))
 extern KEY *sumdo_1(void);
 extern KEY *opendo_1(KEY *params);
 extern KEY *shutdo_1(KEY *params);
@@ -251,6 +265,7 @@ extern KEY *sumrmdo_1(void);
 extern KEY *delseriesdo_1(KEY *params);
 extern KEY *configdo_1(KEY *params);
 extern KEY *repartndo_1(KEY *params);
+#endif
 
 /* This is the tape_svc program registration */
 #define TAPEPROG ((uint32_t)0x20000612)  /* 536872466 */
@@ -271,6 +286,7 @@ extern KEY *repartndo_1(KEY *params);
 #define TAPENOPDO ((uint32_t)14)
 #define CLNTGONE ((uint32_t)15)
 
+#if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || ((!defined(SUMS_USEMTSUMS_CONNECTION) || !SUMS_USEMTSUMS_CONNECTION) && (!defined(SUMS_USEMTSUMS_ALL) || !SUMS_USEMTSUMS_ALL))
 extern KEY *readdo_1(void);
 extern KEY *writedo_1(void);
 extern KEY *taperespreaddo_1(void);
@@ -286,6 +302,7 @@ extern KEY *jmtxtapedo_1(void);
 extern KEY *expclosedo_1(void);
 extern KEY *tapenopdo_1(void);
 extern KEY *clntgone_1(void);
+#endif
 
 /* This is the SUM client API code response handling registration */
 #define RESPPROG ((uint32_t)0x20000613)  /* 536872467 */
@@ -294,7 +311,10 @@ extern KEY *clntgone_1(void);
 #define RESPDOARRAY ((uint32_t)2)
 #define RESULT_PEND 32		/* returned by clnt_call GETDO request
 				   when storage unit is off line */
+
+#if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || ((!defined(SUMS_USEMTSUMS_CONNECTION) || !SUMS_USEMTSUMS_CONNECTION) && (!defined(SUMS_USEMTSUMS_ALL) || !SUMS_USEMTSUMS_ALL))
 extern KEY *respdo_1(KEY *params);
+#endif
 
 /* This is the tapearc program registration */
 #define TAPEARCPROG ((uint32_t)0x20000614) /* 536872468 */
@@ -310,7 +330,9 @@ extern KEY *respdo_1(KEY *params);
 #define TAPEARCVERS8 ((uint32_t)10)
 #define TAPEARCDO ((uint32_t)1)
 
+#if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || ((!defined(SUMS_USEMTSUMS_CONNECTION) || !SUMS_USEMTSUMS_CONNECTION) && (!defined(SUMS_USEMTSUMS_ALL) || !SUMS_USEMTSUMS_ALL))
 extern KEY *tapearcdo_1(KEY *params);
+#endif
 
 /* This is the drive0_svc program registration */
 #define DRIVE0PROG ((uint32_t)0x20000615)  /* 536872469 */
@@ -318,8 +340,10 @@ extern KEY *tapearcdo_1(KEY *params);
 #define READDRVDO ((uint32_t)1)
 #define WRITEDRVDO ((uint32_t)2)
 
+#if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || ((!defined(SUMS_USEMTSUMS_CONNECTION) || !SUMS_USEMTSUMS_CONNECTION) && (!defined(SUMS_USEMTSUMS_ALL) || !SUMS_USEMTSUMS_ALL))
 extern KEY *readdrvdo_1(KEY *params);
 extern KEY *writedrvdo_1(KEY *params);
+#endif
 
 /* This is the drive1_svc program registration */
 #define DRIVE1PROG ((uint32_t)0x20000616)
@@ -393,8 +417,10 @@ extern KEY *writedrvdo_1(KEY *params);
 #define ROBOTDO ((uint32_t)1)
 #define ROBOTDOORDO ((uint32_t)2)
 
+#if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || ((!defined(SUMS_USEMTSUMS_CONNECTION) || !SUMS_USEMTSUMS_CONNECTION) && (!defined(SUMS_USEMTSUMS_ALL) || !SUMS_USEMTSUMS_ALL))
 extern KEY *robotdo_1(KEY *params);
 extern KEY *robotdoordo_1(KEY *params);
+#endif
 
 /* This is the robot1_svc program registration */
 #define ROBOT1PROG ((uint32_t)0x20000628)
@@ -414,14 +440,20 @@ extern KEY *robotdoordo_1(KEY *params);
 #define SUMPEVERS2 ((uint32_t)2)
 #define SUMPEDO ((uint32_t)1)
 #define SUMPEACK ((uint32_t)2)
+
+#if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || ((!defined(SUMS_USEMTSUMS_CONNECTION) || !SUMS_USEMTSUMS_CONNECTION) && (!defined(SUMS_USEMTSUMS_ALL) || !SUMS_USEMTSUMS_ALL))
 extern KEY *sumpedo_1(KEY *params);
 extern KEY *sumpeack_1(KEY *params);
+#endif
 
 /* This is the pe/peq program registration for answers from sum_pe_svc */
 #define PEPEQPROG ((uint32_t)0x2000062b)
 #define PEPEQVERS ((uint32_t)1)
 #define PEPEQRESPDO ((uint32_t)1)
+
+#if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || ((!defined(SUMS_USEMTSUMS_CONNECTION) || !SUMS_USEMTSUMS_CONNECTION) && (!defined(SUMS_USEMTSUMS_ALL) || !SUMS_USEMTSUMS_ALL))
 extern KEY *pepeqdo_1(KEY *params);
+#endif
 
 /* This is the sum_export_svc program registration */
 #define SUMEXPROG ((uint32_t)0x2000062c)
@@ -429,8 +461,11 @@ extern KEY *pepeqdo_1(KEY *params);
 #define SUMEXVERS2 ((uint32_t)2)
 #define SUMEXDO ((uint32_t)1)
 #define SUMEXACK ((uint32_t)2)
+
+#if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || ((!defined(SUMS_USEMTSUMS_CONNECTION) || !SUMS_USEMTSUMS_CONNECTION) && (!defined(SUMS_USEMTSUMS_ALL) || !SUMS_USEMTSUMS_ALL))
 extern KEY *sumexdo_1(KEY *params);
 extern KEY *sumexack_1(KEY *params);
+#endif
 
 /* This is the SUM_export() registration for answers from sum_export_svc */
 #define REMSUMPROG ((uint32_t)0x2000062d)
@@ -441,7 +476,10 @@ extern KEY *sumexack_1(KEY *params);
 #define JMTXPROG ((uint32_t)0x2000062e) /* 536872494 */
 #define JMTXVERS ((uint32_t)1)
 #define JMTXDO ((uint32_t)1)
+
+#if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || ((!defined(SUMS_USEMTSUMS_CONNECTION) || !SUMS_USEMTSUMS_CONNECTION) && (!defined(SUMS_USEMTSUMS_ALL) || !SUMS_USEMTSUMS_ALL))
 extern KEY *jmtxdo_1(KEY *params);
+#endif
 
 /* This is the sum_ping program registration */
 #define SUMPINGPROG ((uint32_t)0x2000062f) /* 536872495 */
@@ -507,6 +545,7 @@ typedef int MSUMSCLIENT_t;
 #define SUM_NUMSUM 0
 
 #else /* SUMS_USEMTSUMS_ALL */
+/* SUMS_USEMTSUMS_ALL is NOT defined */
 
 #if (defined(SUMS_USEMTSUMS_CONNECTION) && SUMS_USEMTSUMS_CONNECTION) && (defined(SUMS_USEMTSUMS_INFO) && SUMS_USEMTSUMS_INFO) && (defined(SUMS_USEMTSUMS_GET) && SUMS_USEMTSUMS_GET) && (defined(SUMS_USEMTSUMS_ALLOC) && SUMS_USEMTSUMS_ALLOC) && (defined(SUMS_USEMTSUMS_PUT) && SUMS_USEMTSUMS_PUT) && (defined(SUMS_USEMTSUMS_DELETESUS) && SUMS_USEMTSUMS_DELETESUS)
 /* The client has SUMS_USEMTSUMS_ALL set to 0, but all MT service macros are defined */
@@ -613,6 +652,7 @@ typedef struct SUM_struct
 #endif
 } SUM_t;
 
+#if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || (!defined(SUMS_USEMTSUMS_CONNECTION) || !SUMS_USEMTSUMS_CONNECTION)
 typedef struct SUMEXP_struct
 {
   SUMID_t uid;
@@ -718,6 +758,7 @@ struct peuid {
   int petid;
 };
 typedef struct peuid PEUID;
+#endif
 
 
 SUM_t *SUM_open(char *server, char *db, int (*history)(const char *fmt, ...));
@@ -730,12 +771,12 @@ int SUM_alloc2(SUM_t *sum, uint64_t sunum, int (*history)(const char *fmt, ...))
 int SUM_poll(SUM_t *sum);
 int SUM_wait(SUM_t *sum);
 int SUM_delete_series(SUM_t *sum, char *filename, char *seriesname, int (*history)(const char *fmt, ...));
-int SUM_export(SUMEXP_t *sumexp, int (*history)(const char *fmt, ...));
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
 int SUM_rollback(SUM_t *sums, int (*history)(const char *fmt, ...));
 int SUM_infoArray(SUM_t *sums, uint64_t *sunums, int reqcnt, int (*history)(const char *fmt, ...));
 void SUM_infoArray_free(SUM_t *sums);
 #else
+int SUM_export(SUMEXP_t *sumexp, int (*history)(const char *fmt, ...));
 int SUM_info(SUM_t *sum, uint64_t sunum, int (*history)(const char *fmt, ...));
 int SUM_infoEx(SUM_t *sum, int (*history)(const char *fmt, ...));
 int SUM_infoArray(SUM_t *sum, uint64_t *dxarray, int reqcnt, int (*history)(const char *fmt, ...));
@@ -747,6 +788,8 @@ int SUM_repartn(SUM_t *sum, int (*history)(const char *fmt, ...));
 
 int NC_PaUpdate(char *wd, uint64_t uid, double bytes, int status, int archsub, char *eff_date, int gpid, int sid, uint64_t ds_index, int flg, int commit);
 SUMID_t SUMLIB_Open(void);
+
+#if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || (!defined(SUMS_USEMTSUMS_CONNECTION) || !SUMS_USEMTSUMS_CONNECTION)
 SUMID_t sumrpcopen_1(KEY *argp, CLIENT *clnt, int (*history)(const char *fmt, ...));
 void setsumopened (SUMOPENED **list, SUMID_t uid, SUM_t *sum, char *user);
 SUMOPENED *getsumopened (SUMOPENED *list, SUMID_t uid);
@@ -800,6 +843,7 @@ int SUM_StatOnline(uint64_t ds_index, char *newwd);
 int DS_DataRequest_WD(KEY *params, KEY **results);
 int SUMLIB_TapeUpdate(char *tapeid, int tapenxtfn, uint64_t tellblock, double totalbytes);
 int SUMLIB_TapeFilenumber(char *tapeid);
+
 #if defined(SUMS_TAPE_AVAILABLE) && SUMS_TAPE_AVAILABLE
 int SUMLIB_TapeFindGroup(int group, double bytes, TAPE *tape);
 #endif
@@ -833,5 +877,6 @@ void write_time(void);
 void send_ack(void);
 CLIENT *set_client_handle(uint32_t prognum, uint32_t versnum);
 double du_dir(char *wd);
+#endif
 
 #endif

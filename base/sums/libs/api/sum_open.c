@@ -31,13 +31,15 @@ http://sun.stanford.edu/web.hmi/development/SU_Development_Plan/SUM_API.html
  * This is linked in with each program that is going to call SUMS.
 */
 #include <SUM.h>
+#include <sum_rpc.h>
+#if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || (!defined(SUMS_USEMTSUMS_ALL) || !SUMS_USEMTSUMS_ALL)
 #include <soi_key.h>
 #include <rpc/rpc.h>
 #include <rpc/pmap_clnt.h>
+#endif
 #include <sys/time.h>
 #include <sys/errno.h>
 #include <pwd.h>
-#include <sum_rpc.h>
 #include <printk.h>
 #include "serverdefs.h"
 #include "cJSON.h"
@@ -185,6 +187,7 @@ static int unjsonizeResponse(SUM_t *sums, MTSums_CallType_t type, const char *ms
 
 #endif
 
+#if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || (!defined(SUMS_USEMTSUMS_ALL) || !SUMS_USEMTSUMS_ALL)
 /* Static prototypes. */
 SUMID_t sumrpcopen_1(KEY *argp, CLIENT *clnt, int (*history)(const char *fmt, ...));
 static void respd(struct svc_req *rqstp, SVCXPRT *transp);
@@ -200,12 +203,12 @@ extern void printkey (KEY *key);
 //static struct timeval TIMEOUT = { 240, 0 };
 static struct timeval TIMEOUT = { 3600, 0 };
 static int RESPDO_called;
-static SUMOPENED *sumopened_hdr = NULL;/* linked list of opens for this client*/
 
-#if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || (!defined(SUMS_USEMTSUMS_ALL) || !SUMS_USEMTSUMS_ALL)
 // All these global RPC clients are never used in any RPC functions. Consider them variables that point
 // to CLIENT structs in the SUM_struct struct. There is no reason they need to be global, and in fact
 // there is no reason for them to exist at all.
+static SUMOPENED *sumopened_hdr = NULL;/* linked list of opens for this client*/
+
 static CLIENT *cl = NULL;
 static CLIENT *clalloc = NULL;
 static CLIENT *clget = NULL;
@@ -232,7 +235,9 @@ static SUMID_t transpid[MAXSUMOPEN];
 // asynchronous client, like SUM_get(), and then call other clients while you wait for the asynchronous client
 // to complete.
 // If the current SUMS API function is an MT SUMS function, then clprev is NULL.
+#if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || (!defined(SUMS_USEMTSUMS_ALL) || !SUMS_USEMTSUMS_ALL)
 static CLIENT *clprev = NULL;
+#endif
 static int numopened = 0;
 static int numSUM = 0;
 static int taperdon_cleared = 0;
@@ -710,8 +715,6 @@ static void DisconnectFromMtSums(SUM_t *sums)
  /* RPC and MT SUMS server SUM_open() */
 SUM_t *sumsopenOpen(const char *server, const char *db, int (*history)(const char *fmt, ...))
 {
-  CLIENT *clopx = NULL;
-  KEY *klist = NULL;
   SUM_t *sumptr;
   SUMID_t configback;
   SUMID_t sumid;
@@ -724,6 +727,11 @@ SUM_t *sumsopenOpen(const char *server, const char *db, int (*history)(const cha
 
 #if defined(SUMS_USEMTSUMS) && SUMS_USEMTSUMS
     MSUMSCLIENT_t msums = -1;
+#endif
+
+#if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || (!defined(SUMS_USEMTSUMS_CONNECTION) || !SUMS_USEMTSUMS_CONNECTION)
+    CLIENT *clopx = NULL;
+    KEY *klist = NULL;
 #endif
 
   if(numopened >= MAXSUMOPEN) {
@@ -800,7 +808,6 @@ SUM_t *sumsopenOpen(const char *server, const char *db, int (*history)(const cha
     }
 #else // sum_svc SUM_open() was called (branch above)
     numSUM = SUM_NUMSUM;
-    clprev = NULL;
 #endif
 
 #if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || (!defined(SUMS_USEMTSUMS_CONNECTION) || !SUMS_USEMTSUMS_CONNECTION)
@@ -1018,7 +1025,6 @@ for(i=0; i < numSUM; i++) {
     /* sums->uid now contains sumsid. */
     sumid = sums->uid;
     sumptr = sums;
-    clprev = NULL;
 #endif
 
     numopened++;
@@ -1634,12 +1640,13 @@ for(j=0; j < numSUM; j++) {
 
 #if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || (!defined(SUMS_USEMTSUMS_CONNECTION) || !SUMS_USEMTSUMS_CONNECTION)
   setsumopened(&sumopened_hdr, sumid, sumptr, username); //put in open list
-#endif
+
   if (klist)
   {
       freekeylist(&klist);
       klist = NULL;
   }
+#endif
   return(sumptr);
 }
 
@@ -1653,7 +1660,6 @@ int sumsopenClose(SUM_t *sums, int (*history)(const char *fmt, ...))
 int sumsopenClose(SUM_t *sums, MTSums_CallType_t callType, int (*history)(const char *fmt, ...))
 #endif
 {
-  KEY *klist = NULL;
   char *call_err;
   static char res;
   enum clnt_stat status;
@@ -1665,6 +1671,8 @@ int sumsopenClose(SUM_t *sums, MTSums_CallType_t callType, int (*history)(const 
   }
 
 #if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || (!defined(SUMS_USEMTSUMS_CONNECTION) || !SUMS_USEMTSUMS_CONNECTION)
+  KEY *klist = NULL;
+
   klist = newkeylist();
   setkey_uint64(&klist, "uid", sums->uid);
   setkey_int(&klist, "DEBUGFLG", sums->debugflg);
@@ -1803,11 +1811,14 @@ int sumsopenClose(SUM_t *sums, MTSums_CallType_t callType, int (*history)(const 
 
   if(sums->sinfo) free(sums->sinfo);
   free(sums);
+#if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || (!defined(SUMS_USEMTSUMS_CONNECTION) || !SUMS_USEMTSUMS_CONNECTION)
   if (klist)
   {
       freekeylist(&klist);
       klist = NULL;
   }
+#endif
+
   if(errflg) return(4);
   return(0);
 }
@@ -1977,7 +1988,7 @@ static int sumsopenPollMT(SUM_t *sums)
 }
 #endif
 
-#if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || (!defined(SUMS_USEMTSUMS_CONNECTION) || !SUMS_USEMTSUMS_CONNECTION)
+#if (!defined(SUMS_USEMTSUMS) || !SUMS_USEMTSUMS) || (!defined(SUMS_USEMTSUMS_ALL) || !SUMS_USEMTSUMS_ALL)
 /* Open with sum_svc. Return 0 on error.
 */
 SUMID_t sumrpcopen_1(KEY *argp, CLIENT *clnt, int (*history)(const char *fmt, ...))
@@ -4436,7 +4447,9 @@ int callMTSums(SUM_t *sums, MTSums_CallType_t callType, JSONIZER_DATA_t *data, i
     int err;
     TIMER_t *timer = NULL;
 
+#if (!defined(SUMS_USEMTSUMS_ALL) || !SUMS_USEMTSUMS_ALL)
     clprev = NULL;
+#endif
 
     err = jsonizeRequest(sums, callType, data, &request, history);
 
