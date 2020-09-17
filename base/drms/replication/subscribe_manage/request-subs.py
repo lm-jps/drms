@@ -860,7 +860,7 @@ class Connection(object):
     # returns a bytes object
     def receiveMsg(self):
         # first, receive length of message
-        allText(Received = b''
+        allTextReceived = b''
         bytesReceivedTotal = 0
 
         # time-out time
@@ -1201,7 +1201,7 @@ if __name__ == "__main__":
                             # figure out if client should make a pollDump or pollComplete request.
                             if pendingRequest.status.upper() == 'N' or pendingRequest.status.upper() == 'P' or pendingRequest.status.upper() == 'D':
                                 respAction = 'polldump'
-                            elif pendingRequest.status.upper() == 'I' or penpendingRequest.status.upper() == 'C' or pendingRequest.status.upper() == 'A':
+                            elif pendingRequest.status.upper() == 'I' or pendingRequest.status.upper() == 'C' or pendingRequest.status.upper() == 'A':
                                 respAction = 'pollcomplete'
                             else:
                                 # Error response.
