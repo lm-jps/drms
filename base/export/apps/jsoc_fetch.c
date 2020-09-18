@@ -75,7 +75,6 @@
 #define kArgRequestor	"requestor"
 #define kArgNotify	"notify"
 #define kArgShipto	"shipto"
-#define kArgRequestorid	"requestorid"
 #define kArgFile	"file"
 #define kArgTestmode    "t"
 #define kArgOnlineOnly  "o"
@@ -1141,7 +1140,12 @@ static char *GetExistReqID(DRMS_Env_t *env, const char *md5, int window, TIME *t
     return id;
 }
 
-static int CheckEmailAddress(const char *logfile, const char *requestor, const char *notify, char *dieStr, int sz)
+/* notify - case-sensitive email address provided by user on export web page
+ * user_id - returned by checkAddress.py (from jsoc.export_user_info; user_id was created when email was registered)
+ * dieStr - error message to return to caller
+ * sz - size of the dieStr buffer
+ */
+static int CheckEmailAddress(const char *logfile, const char *notify, int *user_id, char *dieStr, size_t sz)
 {
     /* Check notification email address. */
     int rv = 0;
@@ -1157,14 +1161,14 @@ static int CheckEmailAddress(const char *logfile, const char *requestor, const c
 
     /* Call script to verify notification email address. If the email address is not registered, then we fail right here. */
     char caCmd[PATH_MAX];
-    char caMsg[1024];
     FILE *caFptr = NULL;
+    int caUserID = -1;
     int res;
 
     /* This is going to be Stanford-specific stuff - I'll localize this when I have time. */
     /* This script needs to connect to the database as database user apache, so the user running jsoc_fetch must have db user apache in their
      * .pgpass file. Normally it is linux user apache who runs jsoc_fetch, and this user has database user apache in their .pgpass. */
-    snprintf(caCmd, sizeof(caCmd), "unset REQUEST_METHOD; unset QUERY_STRING; %s %s/checkAddress.py address=%s'&'checkonly=1'&'addresstab=jsoc.export_addresses'&'domaintab=jsoc.export_addressdomains'&'dbuser=apache", BIN_PY3, SCRIPTS_EXPORT, notify);
+    snprintf(caCmd, sizeof(caCmd), "unset REQUEST_METHOD; unset QUERY_STRING; %s %s/checkAddress.py address=%s'&'checkonly=1", BIN_PY3, SCRIPTS_EXPORT, notify);
     WriteLog(logfile, "Calling checkAddress.py: %s\n", caCmd);
     caFptr = popen(caCmd, "r");
 
@@ -1185,6 +1189,7 @@ static int CheckEmailAddress(const char *logfile, const char *requestor, const c
         size_t szTok;
         int statusTok = -1;
         int msgTok = -1;
+        int useridTok = -1;
         char *endptr = NULL;
         long long caStatus;
         char *caMsg = NULL;
@@ -1283,6 +1288,12 @@ static int CheckEmailAddress(const char *logfile, const char *requestor, const c
                             msgTok = -1;
                         }
 
+                        if (useridTok != -1)
+                        {
+                            caUserID = strtoll(tok, &endptr, 10);
+                            useridTok = -1;
+                        }
+
                         if (strcasecmp(tok, "status") == 0)
                         {
                             statusTok = itok + 1;
@@ -1290,6 +1301,10 @@ static int CheckEmailAddress(const char *logfile, const char *requestor, const c
                         else if (strcasecmp(tok, "msg") == 0)
                         {
                             msgTok = itok + 1;
+                        }
+                        else if (strcasecmp(tok, "user_id") == 0)
+                        {
+                            useridTok = itok + 1;
                         }
                     }
 
@@ -1336,6 +1351,11 @@ static int CheckEmailAddress(const char *logfile, const char *requestor, const c
         /* Cannot call JSONDIE from functions. */
         snprintf(dieStr, sz, "Unable to call checkAddress.py.");
         rv = 1;
+    }
+
+    if (rv == 0 && user_id)
+    {
+        *user_id = caUserID;
     }
 
     return rv;
@@ -1508,7 +1528,7 @@ int DoIt(void)
   const char *requestid = NULL;
   const char *process;
   const char *requestor;
-  int requestorid;
+  int requestorid = -1; /* id in jsoc.export_user_info */
   const char *notify;
   const char *format;
   const char *formatvar;
@@ -1655,7 +1675,6 @@ int DoIt(void)
             SetWebArg(req, kArgRequestor, &webarglist, &webarglistsz);
             SetWebArg(req, kArgNotify, &webarglist, &webarglistsz);
             SetWebArg(req, kArgShipto, &webarglist, &webarglistsz);
-            SetWebArg(req, kArgRequestorid, &webarglist, &webarglistsz);
             SetWebArg(req, kUserHandle, &webarglist, &webarglistsz);
             SetWebArg(req, kArgCgiInstance, &webarglist, &webarglistsz);
             SetWebArg(req, kArgSizeRatio, &webarglist, &webarglistsz);
@@ -1708,7 +1727,6 @@ int DoIt(void)
   requestor = cmdparams_get_str (&cmdparams, kArgRequestor, NULL);
   notify = cmdparams_get_str (&cmdparams, kArgNotify, NULL);
   shipto = cmdparams_get_str (&cmdparams, kArgShipto, NULL);
-  requestorid = cmdparams_get_int (&cmdparams, kArgRequestorid, NULL);
 
   if (strlen(drms_env->session->db_handle->dbhost) > 0)
   {
@@ -2463,12 +2481,10 @@ int DoIt(void)
     int filter_partition = 0;
     int omit = 0;
 
-#if defined(FILTER_PARTITIONS) && FILTER_PARTITIONS
     if (!regcomp(&pp_regex, partition_omit_pattern, REG_EXTENDED | REG_NOSUB))
     {
         filter_partition = 1;
     }
-#endif
 
     for (isunum = 0; isunum < nsunums; isunum++)
       {
@@ -2814,20 +2830,6 @@ int DoIt(void)
       fclose(exportlog);
       }
 
-    // Add Requestor info to jsoc.export_user series
-    // Can not watch for new information since can not read this series.
-    //   start by looking up requestor
-    if (strcmp(requestor, kNotSpecified) != 0)
-      {
-#ifdef SHOULD_BE_HERE
-check for requestor to be valid remote DRMS site
-#else // for now
-      requestorid = 0;
-#endif
-      }
-    else
-      requestorid = 0;
-
     if ( !requestid || !*requestid || strcmp(requestid, "none") == 0)
         JSONDIE("Must have valid requestID - internal error.");
 
@@ -2882,7 +2884,6 @@ check for requestor to be valid remote DRMS site
     drms_setkey_time(exprec, "EstTime", fetch_time+10); // Crude guess for now
     drms_setkey_longlong(exprec, "Size", (int)size);
     drms_setkey_int(exprec, "Status", (testmode ? 12 : 2));
-    drms_setkey_int(exprec, "Requestor", requestorid);
 
     if (dataSetCol)
     {
@@ -2892,143 +2893,143 @@ check for requestor to be valid remote DRMS site
     // drms_close_record(exprec, DRMS_INSERT_RECORD);
     } // end of exp_su
 
-  /*  op == exp_request  */
-  else if (strcmp(op,kOpExpRequest) == 0)
+    /*  op == exp_request  */
+    else if (strcmp(op,kOpExpRequest) == 0)
     {
-    int status=0;
-    int segcount = 0;
-    int irec;
-    int all_online = 1;
-    int all_nearline = 0;
-    char dsquery[DRMS_MAXQUERYLEN];
-    char *p;
-    char *file, *filename;
-    int filesize;
-    DRMS_RecordSet_t *rs;
-    int compressedStorage;
-    int compressedDownload;
-    char dieStr[1024];
-    int caStatus = 0;
-    int clStatus = 0; /* assume passed test */
-    HContainer_t *argsCont = NULL;
-    HIterator_t *hIter = NULL;
-    void *pCmdParamArg = NULL;
-    CmdParams_Arg_t *cmdParamArg = NULL;
-    char cmdParamArgBuf[512] = {0};
-    char series_lower[DRMS_MAXSERIESNAMELEN];
-    LinkedList_t *pending_request_ids = NULL;
-    ListNode_t *node = NULL;
-    char *pending_request_id = NULL;
-    char *pending_requests = NULL;
-    size_t pending_requests_sz = 64;
+        int status=0;
+        int segcount = 0;
+        int irec;
+        int all_online = 1;
+        int all_nearline = 0;
+        char dsquery[DRMS_MAXQUERYLEN];
+        char *p;
+        char *file, *filename;
+        int filesize;
+        DRMS_RecordSet_t *rs;
+        int compressedStorage;
+        int compressedDownload;
+        char dieStr[1024];
+        int caStatus = 0;
+        int clStatus = 0; /* assume passed test */
+        HContainer_t *argsCont = NULL;
+        HIterator_t *hIter = NULL;
+        void *pCmdParamArg = NULL;
+        CmdParams_Arg_t *cmdParamArg = NULL;
+        char cmdParamArgBuf[512] = {0};
+        char series_lower[DRMS_MAXSERIESNAMELEN];
+        LinkedList_t *pending_request_ids = NULL;
+        ListNode_t *node = NULL;
+        char *pending_request_id = NULL;
+        char *pending_requests = NULL;
+        size_t pending_requests_sz = 64;
 
-    if (internal)
-    {
-       lfname = kLogFileExpReqInt;
-    }
-    else
-    {
-       lfname = kLogFileExpReqExt;
-    }
-
-    /* requestid was not provided on the command-line. It is created near the end of this code block. */
-    LogReqInfo(lfname, instanceID, fileupload, op, dsin, requestid, dbhost, from_web, webarglist, fetch_time);
-
-    /* Write all command-line argument values so we can debug. */
-    argsCont = cmdparams_get_argscont(&cmdparams);
-    if (argsCont)
-    {
-        hIter = hiter_create(argsCont);
-        if (hIter)
+        if (internal)
         {
-            while ((pCmdParamArg = hiter_getnext(hIter)) != NULL)
-            {
-                cmdParamArg = (CmdParams_Arg_t *)pCmdParamArg;
+           lfname = kLogFileExpReqInt;
+        }
+        else
+        {
+           lfname = kLogFileExpReqExt;
+        }
 
-                if (cmdParamArg->strval)
+        /* requestid was not provided on the command-line. It is created near the end of this code block. */
+        LogReqInfo(lfname, instanceID, fileupload, op, dsin, requestid, dbhost, from_web, webarglist, fetch_time);
+
+        /* Write all command-line argument values so we can debug. */
+        argsCont = cmdparams_get_argscont(&cmdparams);
+        if (argsCont)
+        {
+            hIter = hiter_create(argsCont);
+            if (hIter)
+            {
+                while ((pCmdParamArg = hiter_getnext(hIter)) != NULL)
                 {
-                    snprintf(cmdParamArgBuf, sizeof(cmdParamArgBuf), "%s=%s\n", cmdParamArg->name ? cmdParamArg->name : "Unnamed", cmdParamArg->strval);
+                    cmdParamArg = (CmdParams_Arg_t *)pCmdParamArg;
+
+                    if (cmdParamArg->strval)
+                    {
+                        snprintf(cmdParamArgBuf, sizeof(cmdParamArgBuf), "%s=%s\n", cmdParamArg->name ? cmdParamArg->name : "Unnamed", cmdParamArg->strval);
+                    }
+
+                    WriteLog(lfname, cmdParamArgBuf);
                 }
 
-                WriteLog(lfname, cmdParamArgBuf);
+                hiter_destroy(&hIter);
             }
-
-            hiter_destroy(&hIter);
         }
-    }
 
-    caStatus = CheckEmailAddress(lfname, requestor, notify, dieStr, sizeof(dieStr));
+        caStatus = CheckEmailAddress(lfname, notify, &requestorid, dieStr, sizeof(dieStr));
 
-    if (caStatus == 1)
-    {
-        if (gLogs)
+        if (caStatus == 1)
         {
-            hcon_destroy(&gLogs);
+            if (gLogs)
+            {
+                hcon_destroy(&gLogs);
+            }
+            JSONDIE(dieStr);
         }
-        JSONDIE(dieStr);
-    }
-    else if (caStatus == 2 || caStatus == 3)
-    {
-        if (gLogs)
+        else if (caStatus == 2 || caStatus == 3)
         {
-           hcon_destroy(&gLogs);
+            if (gLogs)
+            {
+               hcon_destroy(&gLogs);
+            }
+            JSONDIE2(dieStr, "");
         }
-        JSONDIE2(dieStr, "");
-    }
 
-    pending_request_ids = list_llcreate(sizeof(pending_request_ids), NULL);
-    pending_requests = calloc(1, pending_requests_sz);
+        pending_request_ids = list_llcreate(sizeof(pending_request_ids), NULL);
+        pending_requests = calloc(1, pending_requests_sz);
 
-    /* we know that the user is a registered export user - now reject the user if they have a pending request */
-    if (instanceID >= 0)
-    {
-        /* instanceID is the only way to be 100% sure that jsoc_fetch was invoked in a web/CGI environment;
-         * jsocextfetch.py sets instanceID directly (and then disables 'from_web' in jsoc_fetch by unsetting
-         * QUERY_STRING); the jsoc_fetch CGI sets instanceID in QUERY_STRING
-         *
-         * it is possible that we are using the internal DB to satisfy an export request from the external DB
-         * (the passthrough feature).
-         */
-        clStatus = CheckUserLoad(drms_env, notify, ipAddress, EXPORT_PENDING_REQUESTS_TIME_OUT, pending_request_ids);
-    }
-
-    if (clStatus == 1)
-    {
-        JSONDIE("error checking list of pending export requests");
-    }
-    else if (clStatus == 2)
-    {
-        /* make a string out of all request ids */
-        list_llreset(pending_request_ids);
-        while ((node = list_llnext(pending_request_ids)) != NULL)
+        /* we know that the user is a registered export user - now reject the user if they have a pending request */
+        if (instanceID >= 0)
         {
-            pending_request_id = (char *)(node->data);
-
-            if (*pending_request_id == '\0')
-            {
-                pending_requests = base_strcatalloc(pending_requests, "[ UNKNOWN ]", &pending_requests_sz);
-            }
-            else
-            {
-                pending_requests = base_strcatalloc(pending_requests, pending_request_id, &pending_requests_sz);
-            }
-
-            if (node->next)
-            {
-                pending_requests = base_strcatalloc(pending_requests, ",", &pending_requests_sz);
-            }
+            /* instanceID is the only way to be 100% sure that jsoc_fetch was invoked in a web/CGI environment;
+             * jsocextfetch.py sets instanceID directly (and then disables 'from_web' in jsoc_fetch by unsetting
+             * QUERY_STRING); the jsoc_fetch CGI sets instanceID in QUERY_STRING
+             *
+             * it is possible that we are using the internal DB to satisfy an export request from the external DB
+             * (the passthrough feature).
+             */
+            clStatus = CheckUserLoad(drms_env, notify, ipAddress, EXPORT_PENDING_REQUESTS_TIME_OUT, pending_request_ids);
         }
 
-        snprintf(dieStr, sizeof(dieStr), "User %s has %d pending export requests (%s); please wait until at least one request has completed before submitting a new one.", notify, list_llgetnitems(pending_request_ids), pending_requests);
-        JSONDIE7(dieStr);
-    }
-    else if (clStatus == 3)
-    {
-        snprintf(dieStr, sizeof(dieStr), "There are too many requests from %s; please wait until one or more requests have completed before submitting a new one.", notify);
-        JSONDIE7(dieStr);
-    }
+        if (clStatus == 1)
+        {
+            JSONDIE("error checking list of pending export requests");
+        }
+        else if (clStatus == 2)
+        {
+            /* make a string out of all request ids */
+            list_llreset(pending_request_ids);
+            while ((node = list_llnext(pending_request_ids)) != NULL)
+            {
+                pending_request_id = (char *)(node->data);
 
-    list_llfree(&pending_request_ids);
+                if (*pending_request_id == '\0')
+                {
+                    pending_requests = base_strcatalloc(pending_requests, "[ UNKNOWN ]", &pending_requests_sz);
+                }
+                else
+                {
+                    pending_requests = base_strcatalloc(pending_requests, pending_request_id, &pending_requests_sz);
+                }
+
+                if (node->next)
+                {
+                    pending_requests = base_strcatalloc(pending_requests, ",", &pending_requests_sz);
+                }
+            }
+
+            snprintf(dieStr, sizeof(dieStr), "User %s has %d pending export requests (%s); please wait until at least one request has completed before submitting a new one.", notify, list_llgetnitems(pending_request_ids), pending_requests);
+            JSONDIE7(dieStr);
+        }
+        else if (clStatus == 3)
+        {
+            snprintf(dieStr, sizeof(dieStr), "There are too many requests from %s; please wait until one or more requests have completed before submitting a new one.", notify);
+            JSONDIE7(dieStr);
+        }
+
+        list_llfree(&pending_request_ids);
 
     size=0;
     strncpy(dsquery,dsin,DRMS_MAXQUERYLEN);
@@ -3964,59 +3965,11 @@ check for requestor to be valid remote DRMS site
       fclose(exportlog);
       }
 
-
-     // Add Requestor info to jsoc.export_user series
-     // Can not watch for new information since can not read this series.
-     //   start by looking up requestor
-     if (strcmp(requestor, kNotSpecified) != 0)
-      {
-      DRMS_Record_t *requestor_rec;
-
-#ifdef IN_MY_DREAMS
-      DRMS_RecordSet_t *requestor_rs;
-      char requestorquery[2000];
-      sprintf(requestorquery, "%s[? Requestor = '%s' ?]", kExportUser, requestor);
-      requestor_rs = drms_open_records(drms_env, requestorquery, &status);
-      if (!requestor_rs)
-        JSONDIE("Cant find requestor info series");
-      if (requestor_rs->n == 0)
-        { // First request for this user
-        drms_close_records(requestor_rs, DRMS_FREE_RECORD);
-#endif
-                /* Create a new entry for the user. */
-                requestor_rec = drms_create_record(drms_env, kExportUser, DRMS_PERMANENT, &status);
-                if (!requestor_rec)
-                    JSONDIE("Cant create new user info record");
-
-                requestorid = requestor_rec->recnum;
-                drms_setkey_int(requestor_rec, "RequestorID", requestorid);
-                drms_setkey_string(requestor_rec, "Requestor", requestor);
-                if (strncasecmp(notify,"solarmail",9) == 0)
-                {
-                    char tmp_notify[1024];
-                    sprintf(tmp_notify, "%s@spd.aas.org", requestor);
-                    drms_setkey_string(requestor_rec, "Notify", tmp_notify);
-                }
-                else
-                    drms_setkey_string(requestor_rec, "Notify", notify);
-                drms_setkey_string(requestor_rec, "ShipTo", shipto);
-                drms_setkey_time(requestor_rec, "FirstTime", fetch_time);
-                drms_setkey_time(requestor_rec, "UpdateTime", fetch_time);
-                drms_close_record(requestor_rec, DRMS_INSERT_RECORD);
-
-#ifdef IN_MY_DREAMS
-        }
-      else
-        { // returning user, look for updated info
-        // WARNING ignore adding new info for now - XXXXXX must fix this later
-        requestor_rec = requestor_rs->records[0];
-        requestorid = drms_getkey_int(requestor_rec, "RequestorID", NULL);
-        drms_close_records(requestor_rs, DRMS_FREE_RECORD);
-        }
-#endif
-       }
-     else
-       requestorid = 0;
+        /* jsoc_fetch no longer manages jsoc.export_user; instead, when the user registers an email address,
+         * they also register a user name, and a snail-mail address too; these values are stored in jsoc.export_user_info
+         * (internal DB only) by the email-registration code; when a user enters their registered email address into
+         * the exportdata.html text box, the user-name and snail text boxes get filled and made read-only; they can
+         * register their name and snail only if they are also registering a new email address */
 
      // Create new record in export control series
      // This will be copied into the cluster-side series on first use.
@@ -4029,6 +3982,7 @@ check for requestor to be valid remote DRMS site
      exprec = drms_create_record(drms_env, kExportSeriesNew, DRMS_PERMANENT, &status);
      if (!exprec)
       JSONDIE("Cant create new export control record");
+
      drms_setkey_string(exprec, "RequestID", requestid);
      drms_setkey_string(exprec, "DataSet", dsquery);
      drms_setkey_string(exprec, "Processing", process);
@@ -4040,8 +3994,14 @@ check for requestor to be valid remote DRMS site
      drms_setkey_time(exprec, "EstTime", fetch_time+10); // Crude guess for now
      drms_setkey_longlong(exprec, "Size", (int)size);
      drms_setkey_int(exprec, "Status", (testmode ? 12 : 2));
-     drms_setkey_int(exprec, "Requestor", requestorid);
-     // drms_close_record(exprec, DRMS_INSERT_RECORD);
+
+        /* we are in kOpExpRequest */
+        /* set `requestor` column in jsoc.export_new; requestorid is also id in jsoc.export_user_info - the two tables can be joined;
+         * `requestorid` was obtained from jsoc.export_user_info by the call to check the user's email address;
+         * if the user's address has not been inserted into jsoc.export_user_info, then requestorid can be -1 - this
+         * should only happen while transitioning to the new user-info code
+         */
+        drms_setkey_int(exprec, "requestor", requestorid);
 
      /* insert new row into the pending-requests table (if the user is exempt, then there could be other rows in this table) */
      snprintf(cmd, sizeof(cmd), "INSERT INTO %s(address, ip_address, request_id, start_time) VALUES('%s', '%s', '%s', CURRENT_TIMESTAMP)", EXPORT_PENDING_REQUESTS_TABLE, notify, ipAddress, requestid);
@@ -4053,97 +4013,119 @@ check for requestor to be valid remote DRMS site
      }
      } // End of kOpExpRequest setup
 
-  /*  op == exp_repeat  */
-  else if (strcmp(op,kOpExpRepeat) == 0)
+    /*  op == exp_repeat  */
+    else if (strcmp(op,kOpExpRepeat) == 0)
     {
-    char logpath[DRMS_MAXPATHLEN];
+        char logpath[DRMS_MAXPATHLEN];
 
         /* requestid must be provided on the command-line. It is not created by jsoc_fetch. */
-    if (strcmp(requestid, kNotSpecified) == 0)
-      JSONDIE("RequestID must be provided");
-
-    // Log this re-export request
-    if (1)
-      {
-      char exportlogfile[1000];
-      char timebuf[50];
-      FILE *exportlog;
-      sprintf(exportlogfile, "/home/jsoc/exports/tmp/%s.reqlog", requestid);
-      exportlog = fopen(exportlogfile, "a");
-      sprint_ut(timebuf, fetch_time);
-      fprintf(exportlog,"XXX New repeat request started at %s\n", timebuf);
-      fprintf(exportlog,"REMOTE_ADDR=%s\nHTTP_REFERER=%s\nREQUEST_METHOD=%s\nQUERY_STRING=%s\n",
-         getenv("REMOTE_ADDR"), getenv("HTTP_REFERER"), getenv("REQUEST_METHOD"), getenv("QUERY_STRING"));
-      fclose(exportlog);
-      }
-
-JSONDIE("Re-Export requests temporarily disabled.");
-
-    // First check status in jsoc.export
-    sprintf(status_query, "%s[%s]", kExportSeries, requestid);
-    exports = drms_open_records(drms_env, status_query, &status);
-    if (!exports)
-      JSONDIE3("Cant locate export series: ", status_query);
-    if (exports->n < 1)
-      JSONDIE3("Cant locate export request: ", status_query);
-    status = drms_getkey_int(exports->records[0], "Status", NULL);
-    if (status != 0)
-      JSONDIE("Can't re-request a failed or incomplete prior request");
-    // if sunum and su exist, then just want the retention updated.  This will
-    // be accomplished by checking the record_directory.
-
-        // *** export_log == NULL here - not sure what it should equal, exp_repeat must not be implemented yet.
-        // YES it is!! and it at least used to work. In version 1.36 export_log was changed to exprec in almost all places by Art.
-
-    if (drms_record_directory(exprec, logpath, 0) != DRMS_SUCCESS || *logpath == '\0')
-      {  // really is no SU so go ahead and resubmit the request
-      drms_close_records(exports, DRMS_FREE_RECORD);
-
-      // new email provided, update with new requestorid
-      if (strcmp(notify, kNotSpecified) != 0)
+        if (strcmp(requestid, kNotSpecified) == 0)
         {
-        DRMS_Record_t *requestor_rec;
-        requestor_rec = drms_create_record(drms_env, kExportUser, DRMS_PERMANENT, &status);
-        if (!requestor_rec)
-          JSONDIE("Cant create new user info record");
-        requestorid = requestor_rec->recnum;
-        drms_setkey_int(requestor_rec, "RequestorID", requestorid);
-        drms_setkey_string(requestor_rec, "Requestor", "NA");
-        drms_setkey_string(requestor_rec, "Notify", notify);
-        drms_setkey_string(requestor_rec, "ShipTo", "NA");
-        drms_setkey_time(requestor_rec, "FirstTime", fetch_time);
-        drms_setkey_time(requestor_rec, "UpdateTime", fetch_time);
-        drms_close_record(requestor_rec, DRMS_INSERT_RECORD);
+            JSONDIE("RequestID must be provided");
         }
-      else
-        requestorid = 0;
 
-      // Now switch to jsoc.export_new
-      sprintf(status_query, "%s[%s]", kExportSeriesNew, requestid);
+        // Log this re-export request
+        if (1)
+        {
+            char exportlogfile[1000];
+            char timebuf[50];
+            FILE *exportlog;
 
-          // For exp_repeat, the exprec will not have been opened yet.
-      exports = drms_open_records(drms_env, status_query, &status);
-      if (!exports)
-        JSONDIE3("Cant locate export series: ", status_query);
-      if (exports->n < 1)
-        JSONDIE3("Cant locate export request: ", status_query);
-      exprec = drms_clone_record(exports->records[0], DRMS_PERMANENT, DRMS_SHARE_SEGMENTS, &status);
-      if (!exprec)
-        JSONDIE("Cant create new export control record");
+            snprintf(exportlogfile, sizeof(exportlogfile), "/home/jsoc/exports/tmp/%s.reqlog", requestid);
+            exportlog = fopen(exportlogfile, "a");
 
-          drms_setkey_int(exprec, "Status", 2);
+            if (exportlog)
+            {
+                sprint_ut(timebuf, fetch_time);
+                fprintf(exportlog,"XXX New repeat request started at %s\n", timebuf);
+                fprintf(exportlog,"REMOTE_ADDR=%s\nHTTP_REFERER=%s\nREQUEST_METHOD=%s\nQUERY_STRING=%s\n",
+                getenv("REMOTE_ADDR"), getenv("HTTP_REFERER"), getenv("REQUEST_METHOD"), getenv("QUERY_STRING"));
+                fclose(exportlog);
+                exportlog = NULL;
+            }
+        }
+
+        JSONDIE("Re-Export requests temporarily disabled.");
+
+        // First check status in jsoc.export
+        snprintf(status_query, sizeof(status_query), "%s[%s]", kExportSeries, requestid);
+        exports = drms_open_records(drms_env, status_query, &status);
+        if (!exports)
+        {
+            JSONDIE3("Cant locate export series: ", status_query);
+        }
+
+        if (exports->n < 1)
+        {
+            JSONDIE3("Cant locate export request: ", status_query);
+        }
+
+        /* jsoc.export */
+        status = drms_getkey_int(exports->records[0], "Status", NULL);
+        if (status != 0)
+        {
+            JSONDIE("Can't re-request a failed or incomplete prior request");
+        }
+
+        // if sunum and su exist, then just want the retention updated.  This will
+        // be accomplished by checking the record_directory.
+
+        // exprec is NULL - maybe it should be exports->records[0] - ART
+        if (drms_record_directory(exprec, logpath, 0) != DRMS_SUCCESS || *logpath == '\0')
+        {  // really is no SU so go ahead and resubmit the request
+            drms_close_records(exports, DRMS_FREE_RECORD);
+            exports = NULL;
+
+            /* check email registration, as in kOpExpRequest */
+
+            // Now switch to jsoc.export_new
+            // I think that this code requires that we do not delete old jsoc.export_new records, but we do delete them to
+            // make jsoc_export_manage run quickly, and because the same information exists in jsoc.export - ART
+            // I think this code clones the existing jsoc.export_new record, and then sets its status to 2 so that
+            // jsoc_export_manage will re-do the export - ART
+            sprintf(status_query, "%s[%s]", kExportSeriesNew, requestid);
+
+            // For exp_repeat, the exprec will not have been opened yet.
+            exports = drms_open_records(drms_env, status_query, &status);
+
+            if (!exports)
+            {
+                JSONDIE3("Cant locate export series: ", status_query);
+            }
+            if (exports->n < 1)
+            {
+                JSONDIE3("Cant locate export request: ", status_query);
+            }
+
+            /* exprec is a new record in jsoc.export_new; this is kOpExpRepeat */
+            exprec = drms_clone_record(exports->records[0], DRMS_PERMANENT, DRMS_SHARE_SEGMENTS, &status);
+
+            if (!exprec)
+            {
+                JSONDIE("Cant create new export control record");
+            }
+
+            drms_setkey_int(exprec, "Status", 2);
+
+          /* in exp repeat (not used yet) */
           if (requestorid)
-              drms_setkey_int(exprec, "Requestor", requestorid);
+          {
+              /* requestorid is determined by email-address check */
+              drms_setkey_int(exprec, "requestor", requestorid);
+          }
+
           drms_setkey_time(exprec, "ReqTime", fetch_time);
+
           // drms_close_records(RsClone, DRMS_INSERT_RECORD);
           drms_close_records(exports, DRMS_FREE_RECORD);
       }
-    else // old export is still available, do not repeat, but treat as status request.
+      else // old export is still available, do not repeat, but treat as status request.
       {
-      drms_close_records(exports, DRMS_FREE_RECORD);
+          drms_close_records(exports, DRMS_FREE_RECORD);
       }
-    // if repeating export then export_series is set to jsoc.export_new
-    // else if just touching retention then is it jsoc_export
+
+      // if repeating export then export_series is set to jsoc.export_new
+      // else if just touching retention then is it jsoc_export
     } // End kOpExpRepeat
 
   // Now report back to the requestor by dropping into the code for status request.
@@ -4220,6 +4202,7 @@ JSONDIE("Re-Export requests temporarily disabled.");
     // handle to this record is exprec.             //
     // ******************************************** //
 
+    /* generate HTML to send to web user */
 
   if (strcmp(requestid, kNotSpecified) == 0)
   {
@@ -4227,7 +4210,8 @@ JSONDIE("Re-Export requests temporarily disabled.");
       JSONCOMMIT("RequestID must be provided", &exprec, !insertexprec);
   }
 
-    // export_series is jsoc.export_new; no need to call drms_open_records(), exprec is already available
+    // export_series, exp_rec is jsoc.export_new; no need to call drms_open_records(), exprec is already available
+    // actually, there is no need to use exprec - these values are in memory already - ART
 
   status     = drms_getkey_int(exprec, "Status", NULL);
   process = drms_getkey_string(exprec, "Processing", NULL);
@@ -4238,7 +4222,6 @@ JSONDIE("Re-Export requests temporarily disabled.");
   reqtime    = drms_getkey_time(exprec, "ReqTime", NULL);
   esttime    = drms_getkey_time(exprec, "EstTime", NULL); // Crude guess for now
   size       = drms_getkey_longlong(exprec, "Size", NULL);
-  requestorid = drms_getkey_int(exprec, "Requestor", NULL);
   char *export_errmsg = drms_getkey_string(exprec, "errmsg", NULL);
 
   // Do special actions on status

@@ -121,6 +121,8 @@
 #define kMaxShVar  32
 #define kMaxArgVar 64
 
+#define MAX_EMAIL_STRING_LENGTH 256
+
 #define DIE(msg) { fprintf(stderr,"XXXX jsoc_exports_manager failure: %s\nstatus=%d",msg,status); exit(1); }
 
 #define kHgPatchLog "hg_patch.log"
@@ -439,7 +441,7 @@ static int RegisterShVar(const char *key, const char *val)
 }
 
 /* The caller wants to connect to the db on the host specified by dbhost. The current context,
- * env, may hanve a handle to the desired connection. If so, contextOKout is set to 1. If not,
+ * env, may have a handle to the desired connection. If so, contextOKout is set to 1. If not,
  * the desired connection is made, then contextOKout is set to 0. */
 static DB_Handle_t *GetDBHandle(DRMS_Env_t *env, const char *dbhost, int *contextOKout, int close)
 {
@@ -812,7 +814,7 @@ static void make_qsub_call(char *requestid, /* like JSOC_20120906_199_IN*/
     fprintf(fp, "  sleep 1\nend \n");
 
     /* Reject email addresses with spaces and quotes in them (they are invalid any way). */
-    if (notify)
+    if (notify && *notify != '\0')
     {
        for (ich = 0; ich < strlen(notify); ich++)
        {
@@ -3554,6 +3556,56 @@ static int DBNEWCOMM(DRMS_RecordSet_t **exprecs, DRMS_Record_t **rec, int irec, 
     return 0; // Commit db changes.
 }
 
+/* get user email address (from INTERNAL DB, dbmainhost)
+ *   SELECT address FROM jsoc.user_info_get(2886);
+ */
+static int email_from_user_id(DRMS_Env_t *env, const char *address_db_host, int user_id, char *email)
+{
+    DB_Handle_t *dbh = NULL;
+    int context_ok = 0;
+    char db_cmd[256];
+    DB_Binary_Result_t *res = NULL;
+    int err = 0;
+
+    /* get handle to db */
+    dbh = GetDBHandle(env, address_db_host, &context_ok, 0);
+
+    if (!dbh)
+    {
+        fprintf(stderr, "[ email_from_user_id() ]: unable to connect to database\n");
+        err = 1;
+    }
+    else
+    {
+        snprintf(db_cmd, sizeof(db_cmd), "SELECT address FROM %s(%d)", EXPORT_USER_INFO_FN, user_id);
+
+        if (!context_ok)
+        {
+            res = db_query_bin(dbh, db_cmd);
+        }
+        else
+        {
+            res = db_query_bin(drms_env->session->db_handle, db_cmd);
+        }
+
+        if (res)
+        {
+            db_binary_field_getstr(res, 0, 0, MAX_EMAIL_STRING_LENGTH, email);
+
+            db_free_binary_result(res);
+            res = NULL;
+        }
+        else
+        {
+            fprintf(stderr, "[ email_from_user_id() ]: failing running db query %s\n", db_cmd);
+            err = 1;
+        }
+    }
+
+    return err;
+}
+
+
 /* Module main function. */
 int DoIt(void)
 {
@@ -3564,8 +3616,8 @@ int DoIt(void)
     char *requestid;
     char *process;
     char *requestor;
-    long requestorid;
-    char *notify;
+    int requestorid;
+    char notify[MAX_EMAIL_STRING_LENGTH] = {0};
     char *format;
     char *shipto;
     char *method;
@@ -3780,25 +3832,15 @@ int DoIt(void)
                 reqtime    = drms_getkey_time(export_log, "ReqTime", NULL);
                 esttime    = drms_getkey_time(export_log, "EstTime", NULL); // Crude guess for now
                 size       = drms_getkey_longlong(export_log, "Size", NULL);
-                requestorid = drms_getkey_int(export_log, "Requestor", NULL); /* This is an ID, despite the name "Requestor". It is the
-                                                                         * recnum of the requestor's record in jsoc.export_user .
-                                                                         * When jsoc_fetch created the export request, it added a record
-                                                                         * to jsoc.export_user (even if the user already existed in
-                                                                         * the table). The recnum of that record was stored in
-                                                                         * jsoc.export_new in the Requestor column. (export_log is
-                                                                         * a record in jsoc.export_new). This recnum links
-                                                                         * the requestor's record in jsoc.export_user with
-                                                                         * the request record in jsoc.export_new.
-                                                                         *
-                                                                         * Ideally, the word linking the two tables should be
-                                                                         * the requestor's name, not the record number. But the Requestor
-                                                                         * field is an int, so I think we just punt on this.
-                                                                         *
-                                                                         * PHS - No, actually by design the name of the requester is
-                                                                         * not to be visible on the open web, and jsoc.export_user is
-                                                                         * not readable by apache so the method chosen properly hides
-                                                                         * the requester name.  so people can export data without others                                                                     * watching what they are doing. The name could have been better.
-                                                                         */
+
+                /* this is the id (int) in jsoc.export_user_info; to find the user info from jsoc.export_new/jsoc.export:
+                 *   jsoc=> select A.address, U.name, U.id, U.snail_address, A.confirmation, A.starttime from jsoc.export_user_info U, jsoc.address_info_get() A where U.id = 2886 and lower(A.address) = lower(U.address);
+                             address        | name |  id  | snail_address | confirmation |       starttime
+                     -----------------------+------+------+---------------+--------------+------------------------
+                      arta@sun.stanford.edu | ME   | 2886 |               |              | 2015-06-24 12:10:44-07
+                     (1 row)
+                 */
+                requestorid = drms_getkey_int(export_log, "Requestor", NULL);
 
                 if (strncmp(dataset, "sunums=", 7) == 0)
                 {
@@ -3820,33 +3862,14 @@ int DoIt(void)
 
                 RegisterIntVar("requestid", 's', requestid);
 
-                // Get user notification email address
-                sprintf(requestorquery, "%s[:#%ld]", EXPORT_USER, requestorid); // requestorid is recnum in jsoc.export_user
-                requestor_rs = drms_open_records(drms_env, requestorquery, &status);
-
-                if (!requestor_rs)
+                /* get user email address (from INTERNAL DB, dbmainhost)
+                 *   SELECT address FROM jsoc.export_user_info WHERE id = 2886;
+                 */
+                if (email_from_user_id(drms_env, dbmainhost, requestorid, notify))
                 {
-                    return DBNEWCOMM(&exports_new, &export_log, irec, "JSOC error, Can't find requestor info series", 4);
-                    // When jsoc_export_manage runs again, it will NOT try to process this export record again.
-                    // Cannot get here.
+                    /* could not get user's email address */
+                    fprintf(stderr, "can not obtain user email address for user %d\n", requestorid);
                 }
-
-                if (requestor_rs->n > 0)
-                {
-                    DRMS_Record_t *rec = requestor_rs->records[0];
-                    notify = drms_getkey_string(rec, "Notify", NULL);
-
-                    if (*notify == '\0')
-                    {
-                        notify = NULL;
-                    }
-                }
-                else
-                {
-                    notify = NULL;
-                }
-
-                drms_close_records(requestor_rs, DRMS_FREE_RECORD);
 
                 // Create new record in export control series, this one must be DRMS_PERMANENT
                 // It will contain the scripts to do the export and set the status to processing
@@ -3924,7 +3947,7 @@ int DoIt(void)
             * to the database about DRMS objects (like records, keywords, etc.).
             * It is connected to the db on dbexporthost. dbmainhost is the host
             * of the correct jsoc database. This function will ensure that
-            * it talks to dbmainhost. */
+            * it talks to dbmainhost (which is hmidb, the internal db). */
             proccmds = ParseFields(drms_env, procser, dbmainhost, process, dataset, requestid, &RecordLimit, emLogFH, &ppstat);
             if (ppstat == 0)
             {
