@@ -34,11 +34,11 @@ static int SeriesExist(DRMS_Env_t *env, const char *rsspec, char ***names, int *
     char **filts = NULL;
     int nsets = 0;
     int istat;
-    
+
     if ((istat = drms_record_parserecsetspec(rsspec, &allvers, &sets, &settypes, &snames, &filts, &nsets, NULL)) == DRMS_SUCCESS)
     {
         int iseries;
-        
+
         for (iseries = 0; iseries < nsets; iseries++)
         {
             rv = drms_series_exists(env, snames[iseries], &istat);
@@ -59,34 +59,34 @@ static int SeriesExist(DRMS_Env_t *env, const char *rsspec, char ***names, int *
         fprintf(stderr, "dscp FAILURE: invalid record-set specification %s.\n", rsspec);
         rv = 0;
     }
-    
+
     if (istat == DRMS_SUCCESS)
     {
         int iseries;
-        
+
         if (nseries)
         {
             *nseries = nsets;
         }
-        
+
         if (names)
         {
             *names = (char **)malloc(nsets * sizeof(char *));
-            
+
             for (iseries = 0; iseries < nsets; iseries++)
             {
                 (*names)[iseries] = strdup(snames[iseries]);
             }
         }
     }
-    
+
     drms_record_freerecsetspecarr(&allvers, &sets, &settypes, &snames, &filts, nsets);
-    
+
     if (ostat)
     {
         *ostat = istat;
     }
-    
+
     return rv;
 }
 
@@ -95,79 +95,86 @@ static int SeriesExist(DRMS_Env_t *env, const char *rsspec, char ***names, int *
 static int CalcChunkSize(DRMS_Env_t *env, const char *sname)
 {
     int rv = 0;
-    
-    /* Open latest record to get file sizes. Use this as a (poor) estimate of 
-     * the file size of each segment. Use an SQL query, because this is the only 
-     * way to get the 'last' record in a series without knowing anything about 
+
+    /* Open latest record to get file sizes. Use this as a (poor) estimate of
+     * the file size of each segment. Use an SQL query, because this is the only
+     * way to get the 'last' record in a series without knowing anything about
      * the series (i.e., the number of prime keys). */
+    int drms_stat = DRMS_SUCCESS;
+    DRMS_Record_t *template = NULL;
     char query[2048];
+    int iinfo;
+    long long sunum = -1;
+    SUM_info_t **info = NULL;
     DB_Binary_Result_t *res = NULL;
-    
-    /* series-name case matters not */
-    snprintf(query, sizeof(query), 
-             "SELECT sunum FROM %s WHERE recnum = (SELECT max(recnum) FROM %s)", 
-             sname, 
-             sname);
-    res = drms_query_bin(env->session, query);
-    
-    if (res) 
+
+
+    rv = kMaxChunkSize;
+
+    /* check to see if the input series has segments */
+    template = drms_template_record(env, sname, &drms_stat);
+    if (template && drms_stat == DRMS_SUCCESS)
     {
-        if (res->num_rows == 1 && res->num_cols == 1)
+        if (drms_record_numsegments(template) > 0)
         {
-            long long sunum = db_binary_field_getint(res, 0, 0);
-            SUM_info_t **info = (SUM_info_t **)malloc(sizeof(SUM_info_t *) * 1);
-            
-            /* Get file-size info from SUMS. */
-            if (drms_getsuinfo(env, &sunum, 1, info) == DRMS_SUCCESS)
+            /* series-name case matters not */
+            snprintf(query, sizeof(query), "SELECT sunum FROM %s WHERE recnum = (SELECT max(recnum) FROM %s)", sname, sname);
+            res = drms_query_bin(env->session, query);
+
+            if (res)
             {
-                if (info[0]->online_loc == '\0')
+                if (res->num_rows == 1 && res->num_cols == 1)
                 {
-                    /* Not online or invalid SUNUM. Give up and use maximum chunk size. */
-                    rv = kMaxChunkSize;
-                }
-                else
-                {
-                    rv =  (int)((double)kGb / info[0]->bytes);
-                    if (rv < 1)
+                    sunum = db_binary_field_getint(res, 0, 0);
+
+                    if (sunum >= 0)
                     {
-                        rv = 1;
+                        info = (SUM_info_t **)calloc(1, sizeof(SUM_info_t *));
+
+                        if (info)
+                        {
+                            /* Get file-size info from SUMS. */
+                            if (drms_getsuinfo(env, &sunum, 1, info) == DRMS_SUCCESS)
+                            {
+                                if (*(info[0]->online_loc) != '\0')
+                                {
+                                    rv =  (int)((double)kGb / info[0]->bytes);
+                                    if (rv < 1)
+                                    {
+                                        rv = 1;
+                                    }
+                                }
+                                else
+                                {
+                                    /* Not online or invalid SUNUM. Give up and use maximum chunk size. */
+                                }
+                            }
+
+                            for (iinfo = 0; iinfo < 1; iinfo++)
+                            {
+                                if (info[iinfo])
+                                {
+                                    free(info[iinfo]);
+                                    info[iinfo] = NULL;
+                                }
+                            }
+
+                            free(info);
+                            info = NULL;
+                        }
                     }
                 }
+
+                db_free_binary_result(res);
+                res = NULL;
             }
             else
             {
                 rv = kMaxChunkSize;
             }
-            
-            if (info)
-            {
-                int iinfo;
-                
-                for (iinfo = 0; iinfo < 1; iinfo++)
-                {
-                    if (info[iinfo])
-                    {
-                        free(info[iinfo]);
-                        info[iinfo] = NULL;
-                    }
-                }
-                
-                free(info);
-            }
         }
-        else
-        {
-            rv = kMaxChunkSize;
-        }
-        
-        db_free_binary_result(res);
-        res = NULL;
     }
-    else
-    {
-        rv = kMaxChunkSize;
-    }
-    
+
     return rv;
 }
 
@@ -182,7 +189,7 @@ static int ProcessRecord(DRMS_Record_t *recin, DRMS_Record_t *recout)
     DRMS_Record_t *lrec = NULL;
     int istat = DRMS_SUCCESS;
     int rv = 0;
-    
+
     /* copy keywords to output records */
     if (!drms_copykeys(recout, recin, 1, kDRMS_KeyClass_Explicit))
     {
@@ -191,21 +198,21 @@ static int ProcessRecord(DRMS_Record_t *recin, DRMS_Record_t *recout)
         {
             /* Get output segment */
             segout = drms_segment_lookup(recout, segin->info->name);
-            
+
             if (segout)
             {
                 if (recin->sunum != -1LL)
                 {
                     if (segin->info->type == segout->info->type)
                     {
-                        /* Since the segment data types are the same, we can copy the source SUMS file directly into the 
+                        /* Since the segment data types are the same, we can copy the source SUMS file directly into the
                          * newly created SU. */
                         *infile = '\0';
                         *outfile = '\0';
-                        
+
                         /* skip input records that have no SU associated with them */
                         drms_segment_filename(segin, infile);
-                        
+
                         if (segout->info->protocol == DRMS_GENERIC)
                         {
                             char *filename = NULL;
@@ -214,11 +221,11 @@ static int ProcessRecord(DRMS_Record_t *recin, DRMS_Record_t *recout)
                             {
                                 filename++;
                             }
-                            else 
+                            else
                             {
                                 filename = infile;
                             }
-                            
+
                             CHECKSNPRINTF(snprintf(segout->filename, DRMS_MAXSEGFILENAME, "%s", filename), DRMS_MAXSEGFILENAME);
                             drms_segment_filename(segout, outfile);
                         }
@@ -226,30 +233,30 @@ static int ProcessRecord(DRMS_Record_t *recin, DRMS_Record_t *recout)
                         {
                             drms_segment_filename(segout, outfile);
                         }
-                        
+
                         if (*infile != '\0' && *outfile != '\0')
                         {
                             struct stat statBuf;
-                            
+
                             if (stat(infile, &statBuf) == -1)
                             {
-                                /* input segment file does not exist - this is not an error condition; segment files do not 
+                                /* input segment file does not exist - this is not an error condition; segment files do not
                                  * necessarily need to exist */
                                  fprintf(stderr, "input segment file %s does not exist; skipping to next input segment\n", infile);
                                  continue;
                             }
-                            
+
                             if (copyfile(infile, outfile) != 0)
                             {
                                 fprintf(stderr, "failure copying file '%s' to '%s'.\n", infile, outfile);
                                 rv = 1;
                                 break;
                             }
-                        }   
+                        }
                     }
                     else
                     {
-                        /* The input and output segments are of different data types. We cannot directly copy the source SUMS file to the target. 
+                        /* The input and output segments are of different data types. We cannot directly copy the source SUMS file to the target.
                          * Instead, we need to read the source file with drms_segment_read(). */
                         if (segin->info->protocol == DRMS_GENERIC || segout->info->protocol == DRMS_GENERIC)
                         {
@@ -263,15 +270,15 @@ static int ProcessRecord(DRMS_Record_t *recin, DRMS_Record_t *recout)
                         else
                         {
                             DRMS_Array_t *data = NULL;
-                            
+
                             /* drms_segment_read() always returns an array in 'physical units' (or bscale/bzero are 1/0). It
-                             * is possible that drms_segment_read() could set data->israw to 1, but in that case, 
-                             * bscale == 1 and bzero == 0, so whether israw is 0 or not is irrelevant. The data are in 
+                             * is possible that drms_segment_read() could set data->israw to 1, but in that case,
+                             * bscale == 1 and bzero == 0, so whether israw is 0 or not is irrelevant. The data are in
                              * physical units. */
-                            
-                            /* Do NOT convert to the output data type with drms_segment_read(). If conversion happens now, 
+
+                            /* Do NOT convert to the output data type with drms_segment_read(). If conversion happens now,
                              * then files with binary double data that are to be converted to integer data will be integer
-                             * truncated. Read data as-is, and let drms_segment_write() do the inverse-scaling if needed. 
+                             * truncated. Read data as-is, and let drms_segment_write() do the inverse-scaling if needed.
                              * drms_segment_write() will preserve as much precision as possible. */
                             data = drms_segment_read(segin, segin->info->type, &istat);
                             if (!data || istat != DRMS_SUCCESS)
@@ -285,21 +292,21 @@ static int ProcessRecord(DRMS_Record_t *recin, DRMS_Record_t *recout)
                                 }
                                 break;
                             }
-                            
+
                             /* Force inverse-scaling. If we don't, then input floating-point values will get TRUNCATED to int
                              * values (integer truncation). */
                             data->israw = 0;
-                            
-                            /* If israw == 0, then bzero and bscale are ignored by all code, except for drms_segment_write(), 
+
+                            /* If israw == 0, then bzero and bscale are ignored by all code, except for drms_segment_write(),
                              * which will do inverse-scaling if the output segment data type is an integer.*/
                             data->bzero = segout->bzero;
                             data->bscale = segout->bscale;
-                            
+
                             istat = drms_segment_write(segout, data, 0);
-                            
+
                             drms_free_array(data);
                             data = NULL;
-                            
+
                             if (istat != DRMS_SUCCESS)
                             {
                                 fprintf(stderr, "Unable to write output segment file.\n");
@@ -311,23 +318,23 @@ static int ProcessRecord(DRMS_Record_t *recin, DRMS_Record_t *recout)
                 }
             }
         }
-        
+
         if (iter)
         {
             hiter_destroy(&iter);
         }
-        
+
         /* If recin is linked to a record in another series, then
          * copy that link to recout, if recout has a same-named link. */
         while ((linkin = drms_record_nextlink(recin, &iter)) != NULL)
         {
-            /* If the output record has a link whose name matches the current input 
+            /* If the output record has a link whose name matches the current input
              * record's link ...*/
             if (hcon_lookup_lower(&recout->links, linkin->info->name))
             {
                 /* Obtain record linked-to from recin, if such a link exists. */
                 lrec = drms_link_follow(recin, linkin->info->name, &istat);
-                
+
                 if (istat == DRMS_SUCCESS && lrec)
                 {
                     if (drms_link_set(linkin->info->name, recout, lrec) != DRMS_SUCCESS)
@@ -339,7 +346,7 @@ static int ProcessRecord(DRMS_Record_t *recin, DRMS_Record_t *recout)
                 }
             }
         }
-        
+
         if (iter)
         {
             hiter_destroy(&iter);
@@ -350,7 +357,7 @@ static int ProcessRecord(DRMS_Record_t *recin, DRMS_Record_t *recout)
         fprintf(stderr, "copy keys failure.\n");
         rv = 1;
     }
-    
+
     return rv;
 }
 
@@ -358,7 +365,7 @@ int DoIt(void)
 {
    DSCPError_t rv = kDSCPErrSuccess;
    int status;
-   
+
    const char *rsspecin = NULL;
    const char *dsspecout = NULL;
    char **seriesin = NULL;
@@ -425,19 +432,13 @@ int DoIt(void)
        DRMS_Record_t *recout = NULL;
        int irec;
        int nrecs;
-       
-       /* Determine good chunk size (based on first input series). */
-       chunksize = CalcChunkSize(drms_env, seriesin[0]);
-       if (drms_recordset_setchunksize(chunksize))
-       {
-           fprintf(stderr, "Unable to set record-set chunk size of %d; using default.\n", chunksize);
-           chunksize = drms_recordset_getchunksize();
-       }
-       
+
+
+
        /* First obtain number of records in record-set. Must use drms_count_records() to determine
         * exactly how many records exist. drms_open_recordset() cannot determine that. */
        nrecs = drms_count_records(drms_env, rsspecin, &status);
-       
+
        if (status == DRMS_SUCCESS)
        {
            if (nrecs)
@@ -450,11 +451,15 @@ int DoIt(void)
                }
            }
        }
-       
+
        if (status == DRMS_SUCCESS && rsin && nrecs > 0)
        {
-           /* Adjust chunksize - if nrecs < chunksize, then there are fewer records in the 
-            * record-set than exist in a chunk. Make the chunksize = nrecs. */
+           /* Determine good chunk size (based on first input series). */
+           chunksize = CalcChunkSize(drms_env, seriesin[0]);
+
+           /* adjust chunksize - if nrecs < chunksize, then there are fewer records in the
+            * record-set than exist in a chunk. Make the chunksize = nrecs
+            */
            if (chunksize > nrecs)
            {
                chunksize = nrecs;
@@ -464,17 +469,17 @@ int DoIt(void)
                    chunksize = drms_recordset_getchunksize();
                }
            }
-           
+
            /* Stage the records. The retrieval is actually deferred until the drms_recordset_fetchnext()
             * call opens a new record chunk. */
-           drms_sortandstage_records(rsin, 1, 0, NULL); 
-           
-           /* Create a record-set that contains only "good" output records. Records for which 
+           drms_sortandstage_records(rsin, 1, 0, NULL);
+
+           /* Create a record-set that contains only "good" output records. Records for which
             * there was some kind of failure do not get put into rsfinal. */
            rsfinal = malloc(sizeof(DRMS_RecordSet_t));
            memset(rsfinal, 0, sizeof(DRMS_RecordSet_t));
            irec = 0;
-           
+
            while ((recin = drms_recordset_fetchnext(drms_env, rsin, &status, &cstat, &newchunk)) != NULL)
            {
                if (status != DRMS_SUCCESS)
@@ -483,7 +488,7 @@ int DoIt(void)
                    rv = kDSCPErrCantOpenRec;
                    break;
                }
-               
+
                if (newchunk)
                {
                    /* Close old chunk of output records (if one exists). */
@@ -494,7 +499,7 @@ int DoIt(void)
                        drms_close_records(rsout, DRMS_FREE_RECORD);
                        rsout = NULL;
                    }
-                   
+
                    /* Create a chunk of output records. */
                    rsout = drms_create_records(drms_env, chunksize, dsspecout, DRMS_PERMANENT, &status);
                    if (status || !rsout || rsout->n != chunksize)
@@ -502,15 +507,15 @@ int DoIt(void)
                        fprintf(stderr, "Failure creating output records.\n");
                        break;
                    }
-                   
+
                    /* rsfinal will own all records in rsout, so the records in rsfinal are not detached from
-                    * the environment, and must point to the environment for drms_close_records() to 
+                    * the environment, and must point to the environment for drms_close_records() to
                     * know how to free them from the environment record cache. */
                    rsfinal->env = rsout->env;
-                   
+
                    irec = 0;
                }
-               
+
                recout = drms_recordset_fetchnext(drms_env, rsout, &status, NULL, NULL);
                if (status != DRMS_SUCCESS)
                {
@@ -518,9 +523,9 @@ int DoIt(void)
                    rv = kDSCPErrCantOpenRec;
                    break;
                }
-               
+
                status = ProcessRecord(recin, recout);
-               
+
                if (status != 0)
                {
                    fprintf(stderr, "Failure processing record.\n");
@@ -531,22 +536,22 @@ int DoIt(void)
                    /* Successfully processed record - save output record in rsfinal. */
                    drms_merge_record(rsfinal, recout);
                    XASSERT(rsout->records[irec] == recout);
-                   
-                   /* Renounce ownership (if this isn't done, the calls to drms_close_records(rsout) and 
+
+                   /* Renounce ownership (if this isn't done, the calls to drms_close_records(rsout) and
                     * drms_close_records(rsfinal) will attempt to free the same record.). */
                    rsout->records[irec] = NULL;
                }
-               
+
                irec++;
            }
-           
+
            /* free remaining output records not freed in while loop. */
            if (rsout)
            {
                drms_close_records(rsout, DRMS_FREE_RECORD);
                rsout = NULL;
            }
-           
+
            if (rsfinal)
            {
                drms_close_records(rsfinal, DRMS_INSERT_RECORD);
@@ -556,9 +561,9 @@ int DoIt(void)
        {
            fprintf(stderr, "No records to process.\n");
        }
-       
+
        /* Close input records. */
-       drms_close_records(rsin, DRMS_FREE_RECORD);      
+       drms_close_records(rsin, DRMS_FREE_RECORD);
    }
 
    if (seriesin)
