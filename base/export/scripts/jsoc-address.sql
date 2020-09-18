@@ -357,6 +357,23 @@ END;
 $$
 LANGUAGE plpgsql;
 
+-- returns address, id, name, snail_address for one or all users
+-- if address is NULL, empty, or the empty string, then returns rows for all users
+CREATE OR REPLACE FUNCTION jsoc.user_info_get(user_id integer) RETURNS SETOF jsoc.user_info AS
+$$
+DECLARE
+    row_out jsoc.user_info%ROWTYPE;
+
+BEGIN
+	FOR row_out IN SELECT address, id, name, snail_address FROM jsoc.export_user_info WHERE id = user_id
+	LOOP
+		RETURN NEXT row_out;
+	END LOOP;
+
+  RETURN;
+END;
+$$
+LANGUAGE plpgsql;
 
 -- add new export user to jsoc.export_addresses, jsoc.export_addressdomains, and jsoc.export_user_info; used by registerAddress.py during registration finalization
 -- to remove confirmation from jsoc.export_addresses and insert into jsoc.export_user_info; if `address` already exists, and `confirmation` is not NULL in the DB row
