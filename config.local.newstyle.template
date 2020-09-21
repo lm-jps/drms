@@ -27,6 +27,8 @@ q:DRMS_LOG_DIR                                /home/netdrms_production/log/DRMS
 # the port that the DRMS database cluster instance is listening on.
 q:DRMSPGPORT                                   5432
 
+q:EXPORT_PRODUCTION_DB_USER                   netdrms_production
+
 # the directory to which export programs save handles.
 q:EXPORT_HANDLE_DIR                           /home/netdrms_production/lock
 
@@ -108,7 +110,7 @@ q:RS_TMPDIR                                  /tmp
 # the path to the directory in the NetDRMS installation that contains the export scripts.
 q:SCRIPTS_EXPORT                             /opt/netdrms/scripts
 
-# The DRMS database table that contains the pending export requests. Unless you have a fully functional export system 
+# The DRMS database table that contains the pending export requests. Unless you have a fully functional export system
 # (you don't), set this to the empty string
 a:EXPORT_PENDING_REQUESTS_TABLE              ""
 
