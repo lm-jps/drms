@@ -812,6 +812,7 @@ static void make_qsub_call(char *requestid, /* like JSOC_20120906_199_IN*/
     fprintf(fp, "  @ WAITCOUNT = $WAITCOUNT - 1\n");
     fprintf(fp, "  if ($WAITCOUNT <= 0) then\n    set DRMS_ERROR = -1\n    break\n  endif\n");
     fprintf(fp, "  sleep 1\nend \n");
+    fprintf(fp, "# email address is %s\n", notify);
 
     /* Reject email addresses with spaces and quotes in them (they are invalid any way). */
     if (notify && *notify != '\0')
@@ -3865,6 +3866,7 @@ int DoIt(void)
                 /* get user email address (from INTERNAL DB, dbmainhost)
                  *   SELECT address FROM jsoc.export_user_info WHERE id = 2886;
                  */
+                memset(notify, '\0', MAX_EMAIL_STRING_LENGTH);
                 if (email_from_user_id(drms_env, dbmainhost, requestorid, notify))
                 {
                     /* could not get user's email address */
