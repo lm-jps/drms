@@ -76,6 +76,7 @@ WL_HASWL                          a:WL_HASWL
 WL_FILE                           q:WL_FILE
 BIN_EXPORT                        q:BIN_EXPORT
 SCRIPTS_EXPORT                    q:SCRIPTS_EXPORT
+EXPORT_PRODUCTION_DB_USER         q:EXPORT_PRODUCTION_DB_USER
 EXPORT_LOG_DIR                    q:EXPORT_LOG_DIR
 EXPORT_LOCK_DIR                   q:EXPORT_LOCK_DIR
 EXPORT_HANDLE_DIR                 q:EXPORT_HANDLE_DIR
