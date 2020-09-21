@@ -876,7 +876,7 @@ static void make_qsub_call(char *requestid, /* like JSOC_20120906_199_IN*/
      * such row so that jsoc_fetch will not block a in-house user such as production - that user is allowed to
      * make multiple simultaneous requests.
      */
-    snprintf(sql, sizeof(sql), "DELETE FROM %s WHERE address = '%s'", EXPORT_PENDING_REQUESTS_TABLE, notifyStr);
+    snprintf(sql, sizeof(sql), "DELETE FROM %s WHERE lower(address) = lower('%s') AND lower(request_id) = lower('%s')", EXPORT_PENDING_REQUESTS_TABLE, notifyStr, requestid);
     // fprintf(fp, "psql -h %s -c \"%s\" %s >& /dev/null\n", dbexporthost, sql, dbname);
     fprintf(fp, "psql -h %s -U %s -c \"%s\" %s\n", dbexporthost, dbuser, sql, dbname);
 
