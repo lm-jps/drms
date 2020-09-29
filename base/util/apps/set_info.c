@@ -1,4 +1,4 @@
-/* set_info - set keyword information and/or file path for given recordset. 
+/* set_info - set keyword information and/or file path for given recordset.
  *  This is really just set_keys modified to handle data segments of
  *  FITS protocol.
  *  --Art
@@ -15,7 +15,7 @@
 \par Synopsis:
 
 \code
-set_info [-h] 
+set_info [-h]
 set_info [-ciktv] [JSOC_FLAGS] ds=<seriesname> [<keyword>=<value>]... [<segment>=<filename>]... [<link>=<record-set specification>]...
 set_info [-Cimtv] [JSOC_FLAGS] ds=<record_set> [<keyword>=<value>]... [<segment>=<filename>]... [<link>=<record-set specification>]...
 set_info_soc {options as above}
@@ -47,16 +47,16 @@ record directory and the segment filename will be saved in the segment descripto
 If a \c segment=<filename> argument specifies the path to a FITS file, then set_info will parse the FITS-file
 header. For each header keyword, set_info examines the set of series' DRMS keywords. If the header-keyword name matches the name of such
 a DRMS keyword, then set_info assigns the header-keyword's value to the DRMS keyword. If there exists
-such a DRMS header keyword, and the DRMS keyword also appears as the name of an argument on the 
+such a DRMS header keyword, and the DRMS keyword also appears as the name of an argument on the
 command line, then the command-line argument value takes precendence over the value in the FITS-file header. The
 header-keyword value is ignored in this case. This
 default behavior can be disabled with the \c -i flag. If the \c -i flag is present on the command line,
-along with the \c segment=<filename> argument where \c <filename> is a FITS file, then the entire FITS-file header 
-is not parsed and is essentially ignored by set_info. 
+along with the \c segment=<filename> argument where \c <filename> is a FITS file, then the entire FITS-file header
+is not parsed and is essentially ignored by set_info.
 
-In no case is a constant DRMS-keyword value updated by set_info. If a constant DRMS keyword is specified on the 
-command line, then set_info exits with an error. If a FITS file is specified on the command line, the module simply 
-ignores FITS-file header keywords that correspond to constant DRMS keywords. 
+In no case is a constant DRMS-keyword value updated by set_info. If a constant DRMS keyword is specified on the
+command line, then set_info exits with an error. If a FITS file is specified on the command line, the module simply
+ignores FITS-file header keywords that correspond to constant DRMS keywords.
 
 In normal usage if NO segments are specified, any segments in the original version of an updated record will
 be shared with the new record.  This allows keyword metadata to be updated without making unnecessary copies
@@ -64,9 +64,9 @@ of file data in SUMS.  However if any segment file is to be updated, a new recor
 and any other segment's files will be copied (cloned) to the new directory and associated with the new record.
 If the \a -C "clone" flag is present then a new record directory will be allocated even if none of the
 segments are to be updated.  This usually only makes sense in a JSOC session script where the same record
-will be incrementally updated by multiple modules and set_info is invoked as set_info_sock.  
+will be incrementally updated by multiple modules and set_info is invoked as set_info_sock.
 For each link argument specified, the argument name must match the name of a link in the series.
-The argument value for each such argument must be a record-set specification that identifies a single record in a target series. If these conditions are met, then for each link argument specified, a link between the newly created record and the record specified by the 
+The argument value for each such argument must be a record-set specification that identifies a single record in a target series. If these conditions are met, then for each link argument specified, a link between the newly created record and the record specified by the
 record-set specification will be created.
 
 Only one instance of each keyword name or segment name is allowed.
@@ -89,7 +89,7 @@ you want to modify.
 
 The \c -c and \c -m flags cannot be used simultaneously.
 
-\par JSOC flags: 
+\par JSOC flags:
 \ref jsoc_main
 
 \par Usage:
@@ -125,13 +125,14 @@ set_info ds=su_arta.TestStoreFile[file=dsds_data.fits][sel=January] note=fred
 set_info -c ds=su_arta.TestStoreFile file=data.txt sel=February file_seg=/home/arta/febdata.txt
 \endcode
 
-\bug 
+\bug
 
 */
 ModuleArgs_t module_args[] =
-{ 
+{
   {ARG_STRING, "ds", "Not Specified", "Series name with optional record spec"},
   {ARG_FLAG, "h", "0", "Print usage message and quit"},
+  {ARG_FLAG, "B", NULL, "ingest floating-point values as hexidecimal strings"},
   {ARG_FLAG, "c", "0", "Create a new record from command line keywords"},
   {ARG_FLAG, "C", "0", "Force cloning of needed records to be DRMS_COPY_SEGMENT mode"},
   {ARG_FLAG, "i", NULL, "Ignore the default behavior of ingesting the FITS-file header"},
@@ -187,10 +188,10 @@ static int FitsImport(DRMS_Record_t *rec, DRMS_Segment_t *seg, const char *file,
    DRMS_Keyword_t *akey = NULL;
     HContainer_t *keysintFiltered = NULL;
     DRMS_Keyword_t *drmskey = NULL;
-    
+
 
    /* Read data - don't apply bzero and bzero in fits file (leave israw == true). If
-    * the segment requires conversion of the output array, this will happen in 
+    * the segment requires conversion of the output array, this will happen in
     * drms_segment_write(), but don't convert when reading, since the writing may
     * have to undo the conversion. */
    data = drms_fitsrw_read(drms_env, file, 1, &keysint, &drmsstat);
@@ -204,25 +205,25 @@ static int FitsImport(DRMS_Record_t *rec, DRMS_Segment_t *seg, const char *file,
       else
       {
           /* Since the ultimate DRMS record we are creating might contain multiple segments and, therefore, multiple
-           * data files, we have to ensure that for each keyword the data files have in common either 
-           * 1. the multiple keyword values match, or 2. the DRMS record belongs to a series that has a 
-           * per-segment keyword to accommodate the disparate keyword values. To that end, 
+           * data files, we have to ensure that for each keyword the data files have in common either
+           * 1. the multiple keyword values match, or 2. the DRMS record belongs to a series that has a
+           * per-segment keyword to accommodate the disparate keyword values. To that end,
            * store the keywords in a container with <keywordname>:<segnum> as the key and the DRMS_Keyword_t
            * as the value. After the loop containing this function call ends, check all the keyword and
            * resolve the conflicts between keyword values. */
-          
-          /* Iterate through keys and add unique values to keylist. BUT DON'T ADD KEYS THAT DO NOT 
+
+          /* Iterate through keys and add unique values to keylist. BUT DON'T ADD KEYS THAT DO NOT
            * BELONG TO THE SERIES BEING POPULATED. And do not attempt to add values for series' keywords
            * that are constant. keysintFiltered has all the keys in keysint, minus the ones that are
            * constant keywords. */
-          keysintFiltered = hcon_create(sizeof(DRMS_Keyword_t), 
-                                        DRMS_MAXKEYNAMELEN, 
+          keysintFiltered = hcon_create(sizeof(DRMS_Keyword_t),
+                                        DRMS_MAXKEYNAMELEN,
                                         (void (*)(const void *))drms_free_template_keyword_struct,
-                                        NULL, 
+                                        NULL,
                                         NULL,
                                         NULL,
                                         0);
-          
+
           hiter_new_sort(&hit, keysint, drms_keyword_ranksort);
           while ((akey = hiter_extgetnext(&hit, &intstr)) != NULL)
           {
@@ -230,27 +231,27 @@ static int FitsImport(DRMS_Record_t *rec, DRMS_Segment_t *seg, const char *file,
               /* These keywords are NOT part of any drms record, so the only valid data in them is their name, type and value. To
                * determine if they are constant or not, we must find the same-named keyword in the rec passed in. */
               drmskey = drms_keyword_lookup(rec, akey->info->name, 0);
-              
+
               if (drmskey && !drms_keyword_isconstant(drmskey))
               {
-                  /* This call copies the record ptr (which is NULL), the info ptr (so it steals the key info), and 
+                  /* This call copies the record ptr (which is NULL), the info ptr (so it steals the key info), and
                    * the keyword value from akey to the entry in keysintFiltered. */
                   hcon_insert(keysintFiltered, intstr, akey);
-                  
+
                   if (!hcon_member(keylist, intstr))
                   {
-                      hcon_insert(keylist, intstr, (const void *)&akey->info->rank); 
+                      hcon_insert(keylist, intstr, (const void *)&akey->info->rank);
                   }
-                  
+
                   /* Ensure that when keysint is freed, that the info fields are not freed to (since
                    * they are in use by keysintFiltered). */
                   akey->info = NULL;
               }
-              
+
           }
-          
+
           hiter_free(&hit);
-          
+
           keys[seg->info->segnum] = keysintFiltered;
           hcon_destroy(&keysint);
       }
@@ -273,14 +274,14 @@ static inline int KeySort(const void *he1, const void *he2)
 {
    int *r1 = (int *)hcon_getval(*((HContainerElement_t **)he1));
    int *r2 = (int *)hcon_getval(*((HContainerElement_t **)he2));
-   
+
    XASSERT(r1 && r2);
 
    return (*r1 < *r2) ? -1 : (*r1 > *r2 ? 1 : 0);
 }
 
-/* keylist is a list of all unique keys - it is not necessarily true that every segment file will 
- * have had all these keys. 
+/* keylist is a list of all unique keys - it is not necessarily true that every segment file will
+ * have had all these keys.
  * segfilekeys is an array of key containers - one for each segment file (indexed by segnum). */
 static int WriteKeyValues(DRMS_Record_t *rec, int nsegments, HContainer_t *keylist, HContainer_t **segfilekeys)
 {
@@ -375,7 +376,7 @@ static int WriteKeyValues(DRMS_Record_t *rec, int nsegments, HContainer_t *keyli
                   fprintf(stdout , "Per-segment Keyword-Check Query: %s\n", query);
                }
 
-               if ((qres = drms_query_txt(rec->env->session, query)) != NULL && qres->num_rows != 0) 
+               if ((qres = drms_query_txt(rec->env->session, query)) != NULL && qres->num_rows != 0)
                {
                   persegexists = 1;
                }
@@ -389,7 +390,7 @@ static int WriteKeyValues(DRMS_Record_t *rec, int nsegments, HContainer_t *keyli
                   db_free_text_result(qres);
                   qres = NULL;
                }
-         
+
                if (conflict || persegexists)
                {
                   if (persegexists)
@@ -433,8 +434,8 @@ static int WriteKeyValues(DRMS_Record_t *rec, int nsegments, HContainer_t *keyli
                }
                else
                {
-                  /* Check for the existence of the keyword to be written - if the input file 
-                   * contains a keyword that the output series does not contain, then simply 
+                  /* Check for the existence of the keyword to be written - if the input file
+                   * contains a keyword that the output series does not contain, then simply
                    * print a warning, but continue. */
                   if (!drms_keyword_lookup(rec, kbuf, 0))
                   {
@@ -442,6 +443,10 @@ static int WriteKeyValues(DRMS_Record_t *rec, int nsegments, HContainer_t *keyli
                   }
                   else
                   {
+
+
+
+
                      /* Write to record the keyword value. */
                      if ((skret = drms_setkey(rec, kbuf, *valtype, val)) == DRMS_ERROR_KEYWORDREADONLY)
                      {
@@ -482,11 +487,11 @@ static int IngestingAFile(DRMS_Record_t * rec)
 
     /* We do NOT want to follow links, so don't use drms_segment_lookup...(). */
     while ((seg = drms_record_nextseg(rec, &hit, 0)) != NULL)
-    {        
+    {
         if (!seg->info->islink)
         {
             /* Can't ingest a file for a linked segment. */
-            
+
             if (seg->info->protocol == DRMS_GENERIC || seg->info->protocol == DRMS_FITS)
             {
                 const char *segname = NULL;
@@ -497,19 +502,19 @@ static int IngestingAFile(DRMS_Record_t * rec)
                 {
                     rv = 1;
                     break; /* Stop iterating if we found a segment file. */
-                    /* We know that there is a valid segment name on the cmd-line, so we WILL need 
-                     * to fetch the SU containing the segment at some point. If we don't reach 
+                    /* We know that there is a valid segment name on the cmd-line, so we WILL need
+                     * to fetch the SU containing the segment at some point. If we don't reach
                      * this spot, then we don't want to access SUMS, unless force_copyseg is set. */
                 }
             }
         }
     }
-    
+
     if (hit)
     {
         hiter_destroy(&hit);
     }
-    
+
     return rv;
 }
 
@@ -519,24 +524,24 @@ static int CreateLinks(DRMS_Record_t *srec, HContainer_t *links)
     DRMS_Link_t *lnk = NULL;
     int status;
     int rv = 0;
-    
+
     lhit = hiter_create(links);
-    
+
     if (lhit)
     {
         const char *lname = NULL;
         const char *lval = NULL;
         DRMS_RecordSet_t *rs = NULL;
         DRMS_Record_t *rec = NULL;
-        
+
         while ((lnk = (DRMS_Link_t *)hiter_getnext(lhit)) != NULL)
         {
             lname = lnk->info->name;
-            
+
             if (cmdparams_exists(&cmdparams, (char*)lname))
             {
                 lval = cmdparams_get_str(&cmdparams, lname, NULL);
-                
+
                 /* Verify that lval is a valid record-set specification. */
                 rs = drms_open_records(drms_env, lval, &status);
                 if (!rs || status != DRMS_SUCCESS)
@@ -545,37 +550,37 @@ static int CreateLinks(DRMS_Record_t *srec, HContainer_t *links)
                     rv = 1;
                     break;
                 }
-                
+
                 if (rs->n != 1)
                 {
                     fprintf(stderr, "Record-set specification '%s' does not identify a single record.\n", lval);
                     rv = 1;
                     break;
                 }
-                
+
                 rec = drms_recordset_fetchnext(drms_env, rs, &status, NULL, NULL);
-                
+
                 if (!rec || status != DRMS_SUCCESS)
                 {
                     fprintf(stderr, "Unable to fetch records.\n");
                     rv = 1;
                     break;
                 }
-                
+
                 if (drms_link_set(lname, srec, rec) != DRMS_SUCCESS)
                 {
                     fprintf(stderr, "Failure creating %s link.\n", lname);
                     rv = 1;
                     break;
                 }
-            }       
+            }
         }
-        
+
         if (rs)
         {
             drms_close_records(rs, DRMS_FREE_RECORD);
         }
-        
+
         hiter_destroy(&lhit);
     }
     else
@@ -583,7 +588,7 @@ static int CreateLinks(DRMS_Record_t *srec, HContainer_t *links)
         fprintf(stderr, "Unable to create iterator.\n");
         rv = 1;
     }
-    
+
     return rv;
 }
 
@@ -599,7 +604,7 @@ int get_params_from_stdin()
     char *p = buf;
     while (*p && isblank(*p))
       p++;
-    if (*p == '\n') 
+    if (*p == '\n')
       {
       if (found_from_stdin) // blank line is between records
 {
@@ -641,11 +646,62 @@ fprintf(stderr,"found blank line, skip\n");
   return(0);
   }
 
+int get_keyword_value(CmdParams_t *parms, const char *name, DRMS_Type_t type, int binary, DRMS_Value_t *value)
+{
+    int err = 0;
+    int drms_stat = DRMS_SUCCESS;
+    const char *str = drms_cmdparams_get_str(parms, name, &drms_stat);
+    char *tmp = NULL;
+
+    if (drms_stat == DRMS_SUCCESS)
+    {
+        if (!binary && type == DRMS_TYPE_STRING)
+        {
+            /* If the string contains spaces, then drms_scsanf3 will parse out the substring to the
+             * left of the first space, unless we surround the string string with double quotes. */
+            tmp = malloc(strlen(str) + 3);
+
+            if (tmp)
+            {
+               snprintf(tmp, strlen(str) + 3, "\"%s\"", str);
+               str = tmp;
+            }
+            else
+            {
+               err = 1;
+               fprintf(stderr, "[ get_keyword_value ] out of memory\n");
+            }
+        }
+    }
+    else
+    {
+        err = 1;
+    }
+
+    if (!err)
+    {
+        /* will set value->type to type */
+        if (drms_sscanf3(str, NULL, 0, type, binary, value) == -1)
+        {
+            err = 1;
+        }
+    }
+
+    if (tmp)
+    {
+       free(tmp);
+       tmp = NULL;
+    }
+
+    return err;
+}
+
 /* Module main function. */
 int DoIt(void)
 {
   int status = 0;
   int multiple = 0;
+  int binary = 0;
   int create = 0;
   int create_from_stdin = 0;
   int nrecs, irec;
@@ -678,6 +734,7 @@ int DoIt(void)
    force_transient = cmdparams_get_int(&cmdparams, "t", NULL) != 0;
 
    multiple = cmdparams_get_int(&cmdparams, "m", NULL) != 0;
+   binary = cmdparams_isflagset(&cmdparams, "B");
    create = cmdparams_get_int(&cmdparams, "c", NULL) != 0;
    create_from_stdin = cmdparams_get_int(&cmdparams, "k", NULL) != 0;
    if (multiple && (create || create_from_stdin))
@@ -717,11 +774,11 @@ int DoIt(void)
     }
     nrecs = 1;
     rec = rs->records[0];
-    if (verbose) fprintf(stderr, "recnum=%lld\n", rec->recnum); 
+    if (verbose) fprintf(stderr, "recnum=%lld\n", rec->recnum);
 
-    pkeys = drms_series_createpkeyarray(drms_env, 
+    pkeys = drms_series_createpkeyarray(drms_env,
 					rec->seriesinfo->seriesname,
-					&nprime, 
+					&nprime,
 					&status);
     if (status)
         {
@@ -764,9 +821,9 @@ int DoIt(void)
 	}
     rec = ors->records[0];
 
-    pkeys = drms_series_createpkeyarray(drms_env, 
-					rec->seriesinfo->seriesname, 
-					&nprime, 
+    pkeys = drms_series_createpkeyarray(drms_env,
+					rec->seriesinfo->seriesname,
+					&nprime,
 					&status);
 
     for (iprime = 0; iprime < nprime; iprime++)
@@ -825,36 +882,36 @@ int DoIt(void)
       char recordpath[DRMS_MAXPATHLEN];
       rec = rs->records[irec];
       noutsegs = hcon_size(&rec->segments);
-      
+
       if (noutsegs > 0)
       {
           segfilekeys = malloc(sizeof(HContainer_t *) * noutsegs);
           memset(segfilekeys, 0, sizeof(HContainer_t *) * noutsegs);
           keylist = hcon_create(sizeof(int), sizeof(DRMS_MAXKEYNAMELEN), NULL, NULL, NULL, NULL, 0);
       }
-      
+
       /* make sure record directory is staged and included in the new record IF we are going to write
-       * to the record directory (if the user has supplied a filename on the cmd-line of a file to 
+       * to the record directory (if the user has supplied a filename on the cmd-line of a file to
        * be ingested, or if the user has specified the -C flag, which means to copy segments files
        * when cloning the original record). */
       if (is_new_seg || force_copyseg)
       {
           drms_record_directory(rec, recordpath, 1);
       }
-      
+
       /* We do NOT want to follow links, so don't use drms_segment_lookup...(). */
       while ((seg = drms_record_nextseg(rec, &seghit, 0)) != NULL)
-      {        
+      {
           if (!seg->info->islink)
           {
               const char *filename = NULL;
               const char *segname = seg->info->name;
-              
+
               nonlnksegs++;
               segfilekeys[seg->info->segnum] = NULL; /* initialize to NULL - FitsImport
                                                       * may override this. */
               filename = cmdparams_get_str(&cmdparams, segname, NULL);
-              
+
               if (filename && *filename)
               {
                   /* check to see if generic segment(s) present */
@@ -864,14 +921,14 @@ int DoIt(void)
                       char *afile = NULL;
                       char *pch = NULL;
                       char *tmp = strdup(filename);
-                      
+
                       if (tmp)
                       {
                           afile = tmp;
                           while ((pch = strchr(afile, ',')) != NULL)
-                          {             
+                          {
                               *pch = '\0';
-                              
+
                               /* For generic protocol, there are no keyword values to import. */
                               if ((status = drms_segment_write_from_file(seg, afile)))
                               {
@@ -880,10 +937,10 @@ int DoIt(void)
                                   tmp = NULL;
                                   DIE("segment name matches cmdline arg but file copy failed.\n");
                               }
-                              
+
                               afile = pch + 1;
                           }
-                          
+
                           /* handle last file in list */
                           if ((status = drms_segment_write_from_file(seg, afile)))
                           {
@@ -892,7 +949,7 @@ int DoIt(void)
                               tmp = NULL;
                               DIE("segment name matches cmdline arg but file copy failed.\n");
                           }
-                          
+
                           free(tmp);
                           tmp = NULL;
                       }
@@ -904,9 +961,9 @@ int DoIt(void)
                           if (FitsImport(rec, seg, filename, segfilekeys, keylist) != 0)
                           {
                               char diebuf[256];
-                             
-                              snprintf(diebuf, sizeof(diebuf), 
-                                       "File '%s' does not contain data compatible with segment '%s'.\n", 
+
+                              snprintf(diebuf, sizeof(diebuf),
+                                       "File '%s' does not contain data compatible with segment '%s'.\n",
                                        filename, seg->info->name);
                               if (query) { free(query); query = NULL; }
                               DIE(diebuf);
@@ -920,29 +977,29 @@ int DoIt(void)
               }
           }
       } /* foreach(seg) */
-      
+
       if (seghit)
       {
           hiter_destroy(&seghit);
       }
-      
+
       /* Resolve keyword value conflicts - iterate over keylist */
       if (nonlnksegs > 0)
       {
           WriteKeyValues(rec, noutsegs, keylist, segfilekeys);
       }
-      
+
       /* Free segment files' keylists */
       if (segfilekeys)
       {
           for (isegment = 0; isegment < noutsegs; isegment++)
-          { 
+          {
               if (segfilekeys[isegment])
               {
                   hcon_destroy(&segfilekeys[isegment]);
               }
           }
-          
+
           free(segfilekeys);
       }
       /* Free keylist of unique keys from all segments. */
@@ -950,23 +1007,23 @@ int DoIt(void)
       {
           hcon_destroy(&keylist);
       }
-      
-      /* Loop through cmd-line arguments, checking for keyword names. If a keyword is encountered, set the keyword value 
+
+      /* Loop through cmd-line arguments, checking for keyword names. If a keyword is encountered, set the keyword value
        * in the record with the value from the cmd-line argument. */
       HIterator_t *last = NULL;
       const char *argname = NULL;
       DRMS_Value_t *keyval = NULL;
       CmdParams_Arg_t *arg = NULL;
-      
+
       while ((arg = drms_cmdparams_getnext(&cmdparams, &last, &status)) != NULL)
       {
           if (status)
           {
               DIE("Problem examining cmd-line arguments.");
           }
-          
+
           argname = cmdparams_get_argname(arg);
-          
+
           if (argname)
           {
               key = drms_keyword_lookup(rec, argname, 0);
@@ -976,13 +1033,13 @@ int DoIt(void)
               /* This is an unamed argument, and isn't relevant. */
               continue;
           }
-          
+
           if (key)
           {
               keyname = argname; /* Use the cmd-line argument name since we'll be searching the arguments container
                                   * for an argument with this name. */
               keytype = drms_keyword_gettype(key);
-              
+
               /* A valid DRMS-keyword name was provided on the cmd-line. */
               if (drms_keyword_isprime(key))
               {
@@ -994,51 +1051,71 @@ int DoIt(void)
                   }
                   else
                   {
-                      keyval = drms_cmdparams_get(&cmdparams, keyname, keytype, &status);
-                      
-                      if (status != DRMS_SUCCESS)
+                      if (binary)
+                      {
+                          keyval = calloc(1, sizeof(DRMS_Value_t));
+                          status = get_keyword_value(&cmdparams, keyname, keytype, binary, keyval);
+                      }
+                      else
+                      {
+                          /* retrieve key value from command line; expects decimal strings */
+                          keyval = drms_cmdparams_get(&cmdparams, keyname, keytype, &status);
+                      }
+
+                      if (status != DRMS_SUCCESS || !keyval)
                       {
                           char msg[128];
                           snprintf(msg, sizeof(msg), "Cannot get cmd-line argument %s.", keyname);
                           DIE(msg);
                       }
-                      
+
                       key_anyval = keyval->value;
                       status = drms_setkey(rec, keyname, keytype, &key_anyval);
-                      
+
                       if (keytype == DRMS_TYPE_STRING)
                       {
                           free(key_anyval.string_val);
                           key_anyval.string_val = NULL;
-                      } 
+                      }
+
+                      free(keyval);
+                      keyval = NULL;
                   }
               }
               else if (drms_keyword_getrecscope(key) == kRecScopeType_Constant)
               { // This is not supposed to be needed according to comments at start, but constant keywords were not ignored.
-                  ; 
+                  ;
               }
               else
               {
-                  keyval = drms_cmdparams_get(&cmdparams, keyname, keytype, &status);
-                  
+                  if (binary)
+                  {
+                      keyval = calloc(1, sizeof(DRMS_Value_t));
+                      status = get_keyword_value(&cmdparams, keyname, keytype, binary, keyval);
+                  }
+                  else
+                  {
+                      keyval = drms_cmdparams_get(&cmdparams, keyname, keytype, &status);
+                  }
+
                   if (status != DRMS_SUCCESS)
                   {
                       char msg[128];
                       snprintf(msg, sizeof(msg), "Cannot get cmd-line argument %s.", keyname);
                       DIE(msg);
                   }
-                  
+
                   if (!keyname || !keytype || !keyval)
                   {
                       char buffer[DRMS_MAXKEYNAMELEN];
-                      
+
                       snprintf(buffer, sizeof(buffer), "Unable to get cmd-line value for keyword %s.", keyname);
                       status = DRMS_ERROR_INVALIDDATA;
                       DIE(buffer);
                   }
-                  
+
                   key_anyval = keyval->value;
-                  
+
                   /* Check for specialness - HISTORY and COMMENT keywords. */
                   if (strcasecmp("history", keyname) == 0)
                   {
@@ -1072,13 +1149,13 @@ int DoIt(void)
                   {
                       status = drms_setkey(rec, keyname, keytype, &key_anyval);
                   }
-                  
+
                   if (keytype == DRMS_TYPE_STRING)
                   {
                       free(key_anyval.string_val);
                       key_anyval.string_val = NULL;
                   }
-               
+
                   free(keyval);
                   keyval = NULL;
 
@@ -1095,44 +1172,44 @@ int DoIt(void)
       {
          hiter_destroy(&last);
       }
-    
+
       /* Ensure that all prime keys are set (if the record was created, not cloned). */
       if (create || create_from_stdin)
       {
           keyval = malloc(sizeof(DRMS_Value_t));
-          
+
           if (!keyval)
           {
               free(keyval);
               DIE("Out of memory.");
           }
-          
+
           for (iprime = 0; iprime < nprime; iprime++)
-          {    
+          {
               *keyval = drms_getkey_p(rec, prime_names[iprime], &status);
-              
+
               if (status != DRMS_SUCCESS)
               {
                   free(keyval);
                   DIE("Problem getting keyword value.");
               }
-              
+
               if (drms_ismissing(keyval))
               {
                   free(keyval);
                   DIE("some prime key not specified on command line");
               }
           }
-          
+
           free(keyval);
       }
-      
+
       /* Set any links for cmd-line link arguments. */
       if (CreateLinks(rec, &rec->links))
       {
           DIE("Unable to create link.");
       }
-      
+
       if (create_from_stdin && found_from_stdin)
         { // close current record and create next one
 fprintf(stderr,"closing record\n");
@@ -1161,10 +1238,10 @@ fprintf(stderr,"closing record\n");
      DIE("close failure");
   }
 
-  if (query) 
-  { 
-     free(query); 
-     query = NULL; 
+  if (query)
+  {
+     free(query);
+     query = NULL;
   }
 
   return 0;
@@ -1175,7 +1252,7 @@ fprintf(stderr,"closing record\n");
 DRMS_Type_Value_t cmdparams_get_type(CmdParams_t *cmdparams, char *keyname, DRMS_Type_t keytype, int *status)
 {
 DRMS_Type_Value_t value;
-switch (keytype) 
+switch (keytype)
   {
   case DRMS_TYPE_CHAR:
     value.char_val = cmdparams_get_int8(cmdparams, keyname, status);
@@ -1207,4 +1284,3 @@ switch (keytype)
   }
 return value;
 }
-

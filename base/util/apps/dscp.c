@@ -191,7 +191,13 @@ static int ProcessRecord(DRMS_Record_t *recin, DRMS_Record_t *recout)
     int rv = 0;
 
     /* copy keywords to output records */
-    if (!drms_copykeys(recout, recin, 1, kDRMS_KeyClass_Explicit))
+    if (drms_copykeys(recout, recin, 1, kDRMS_KeyClass_Explicit))
+    {
+        rv = 1;
+        fprintf(stderr, "failure copying DRMS keywords\n");
+    }
+
+    if (rv == 0)
     {
         /* copy segment files */
         while ((segin = drms_record_nextseg(recin, &iter, 0)) != NULL)
@@ -361,27 +367,188 @@ static int ProcessRecord(DRMS_Record_t *recin, DRMS_Record_t *recout)
     return rv;
 }
 
+static int copy_columns(DRMS_Env_t *env, const char *source_series, const char *dest_series, DRMS_Record_t *source_template, const char *record_set, long long num_records)
+{
+    /* first try: assume the column names and data types match exactly when compared, regardless of declared order */
+    char *source_schema = NULL;
+    char *source_table = NULL;
+    char *dest_schema = NULL;
+    char *dest_table = NULL;
+    char cmd[2048];
+    DB_Binary_Result_t *res = NULL;
+    int num_columns = 0;
+    char *column_list = NULL;
+    char *where = NULL;
+    char *series_name = NULL;
+    char *pkwhere = NULL;
+    char *npkwhere = NULL;
+    int filter;
+    int mixed;
+    int allvers;
+    HContainer_t *firstlast = NULL;
+    HContainer_t *pkwhereNFL = NULL;
+    int recnumq;
+    char *query = NULL;
+    long long limit;
+    int err;
+
+
+    err = 1;
+
+    if (get_namespace(source_series, &source_schema, &source_table) || get_namespace(dest_series, &dest_schema, &dest_table))
+    {
+        fprintf(stderr, "unable to parse source and/or destination series name(s)\n");
+    }
+    else
+    {
+        strtolower(source_schema);
+        strtolower(source_table);
+        strtolower(dest_schema);
+        strtolower(dest_table);
+
+        /* compare names and types */
+        snprintf(cmd, sizeof(cmd), "SELECT column_name, data_type, series FROM\n(SELECT column_name, data_type FROM\n((SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = '%s' AND table_name = '%s' UNION SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = '%s' AND table_name = '%s') EXCEPT\n(SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = '%s' AND table_name = '%s' INTERSECT SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = '%s' AND table_name = '%s')) AS FOO) AS BAR\nJOIN (SELECT column_name, data_type, table_schema || E'.' || table_name AS series FROM information_schema.columns) AS BART USING (column_name, data_type) WHERE BART.series IN ('%s.%s', '%s.%s')", source_schema, source_table, dest_schema, dest_table, source_schema, source_table, dest_schema, dest_table, source_schema, source_table, dest_schema, dest_table);
+
+        res = drms_query_bin(env->session, cmd);
+
+        if (res)
+        {
+            if (res->num_rows == 0 && res->num_cols == 3)
+            {
+                /* the tables match, but the order of the columns may differ so specify column list */
+                /* this is the same column list that is explicit in `query` */
+                column_list = drms_field_list(source_template, 1, &num_columns);
+                if (column_list)
+                {
+                    if (drms_recordset_query(env, record_set, &where, &pkwhere, &npkwhere, &series_name, &filter, &mixed, &allvers, &firstlast, &pkwhereNFL, &recnumq) == DRMS_SUCCESS)
+                    {
+                        /* `query` select columns from `source_table`*/
+                        limit = num_records + 1; /* force limit to be all records (plus 1 to avoid truncation error) */
+                        query = drms_query_string(env, source_template->seriesinfo->seriesname, where, pkwhere, npkwhere, filter, mixed, DRMS_QUERY_ALL, NULL, NULL, allvers, firstlast, pkwhereNFL, recnumq, 1, 1, &limit);
+                        if (query)
+                        {
+                            snprintf(cmd, sizeof(cmd), "INSERT INTO %s.%s (%s) %s", dest_schema, dest_table, column_list, query);
+
+                            if (!drms_dms(env->session, NULL, cmd))
+                            {
+                                err = 0;
+                            }
+
+                            free(query);
+                        }
+                    }
+
+                    free(column_list);
+                }
+            }
+
+            db_free_binary_result(res);
+        }
+
+        if (err)
+        {
+            /* second try: assume the data types match exactly when compared in declared order; try an insert without specifying
+             * column lists
+             */
+            if (drms_recordset_query(env, record_set, &where, &pkwhere, &npkwhere, &series_name, &filter, &mixed, &allvers, &firstlast, &pkwhereNFL, &recnumq) == DRMS_SUCCESS)
+            {
+                 /* `query` select columns from `source_table`*/
+                 limit = num_records + 1; /* force limit to be all records (plus 1 to avoid truncation error) */
+                 query = drms_query_string(env, source_template->seriesinfo->seriesname, where, pkwhere, npkwhere, filter, mixed, DRMS_QUERY_ALL, NULL, NULL, allvers, firstlast, pkwhereNFL, recnumq, 1, 1, &limit);
+                 if (query)
+                 {
+                     snprintf(cmd, sizeof(cmd), "INSERT INTO %s.%s %s", dest_schema, dest_table, query);
+
+                     if (!drms_dms(env->session, NULL, cmd))
+                     {
+                         err = 0;
+                     }
+
+                     free(query);
+                 }
+            }
+        }
+    }
+
+    if (where)
+    {
+        free(where);
+        where = NULL;
+    }
+
+    if (pkwhere)
+    {
+        free(pkwhere);
+        pkwhere = NULL;
+    }
+    if (npkwhere)
+    {
+        free(npkwhere);
+        npkwhere = NULL;
+    }
+
+    if (series_name)
+    {
+        free(series_name);
+        series_name = NULL;
+    }
+
+    if (firstlast)
+    {
+        hcon_destroy(&firstlast);
+    }
+
+    if (pkwhereNFL)
+    {
+        hcon_destroy(&pkwhereNFL);
+    }
+
+    if (source_schema)
+    {
+        free(source_schema);
+    }
+
+    if (source_table)
+    {
+        free(source_table);
+    }
+
+    if (dest_schema)
+    {
+        free(dest_schema);
+    }
+
+    if (dest_table)
+    {
+        free(dest_table);
+    }
+
+    return err;
+}
+
 int DoIt(void)
 {
     DSCPError_t rv = kDSCPErrSuccess;
     int status;
 
     const char *rsspecin = NULL;
-    const char *dsspecout = NULL;
+    const char *series_in = NULL;
+    const char *series_out = NULL;
     char **seriesin = NULL;
     int nseriesin = 0;
+    DRMS_Record_t *source_template = NULL;
 
     rsspecin = cmdparams_get_str(&cmdparams, kRecSetIn, NULL);
-    dsspecout = cmdparams_get_str(&cmdparams, kDSOut, NULL);
+    series_out = cmdparams_get_str(&cmdparams, kDSOut, NULL);
 
     /* If both rsspecin and dsout are missing, use positional arguments. */
-    if (strcasecmp(rsspecin, kUndef) == 0 && strcasecmp(dsspecout, kUndef) == 0)
+    if (strcasecmp(rsspecin, kUndef) == 0 && strcasecmp(series_out, kUndef) == 0)
     {
         /* cmdparams counts the executable as the first argument! */
         if (cmdparams_numargs(&cmdparams) >= 3)
         {
             rsspecin = cmdparams_getarg(&cmdparams, 1);
-            dsspecout = cmdparams_getarg(&cmdparams, 2);
+            series_out = cmdparams_getarg(&cmdparams, 2);
         }
         else
         {
@@ -389,7 +556,7 @@ int DoIt(void)
         }
     }
 
-    if (strcasecmp(rsspecin, kUndef) == 0 || strcasecmp(dsspecout, kUndef) == 0)
+    if (strcasecmp(rsspecin, kUndef) == 0 || strcasecmp(series_out, kUndef) == 0)
     {
         rv = kDSCPErrBadArgs;
     }
@@ -407,14 +574,24 @@ int DoIt(void)
         }
         else if (exists)
         {
-            exists = SeriesExist(drms_env, dsspecout, NULL, NULL, &status);
-            if (status)
+            source_template = drms_template_record(drms_env, seriesin[0], &status);
+
+            if (status != DRMS_SUCCESS || source_template == NULL)
             {
-                fprintf(stderr, "LibDRMS error  %d.\n", status);
+                fprintf(stderr, "unable to retrieve template record, status %d\n", status);
             }
             else
             {
-                rv = kDSCPErrSuccess;
+                exists = SeriesExist(drms_env, series_out, NULL, NULL, &status);
+                if (status)
+                {
+                    fprintf(stderr, "LibDRMS error  %d.\n", status);
+                }
+                else
+                {
+                    rv = kDSCPErrSuccess;
+                    series_in = source_template->seriesinfo->seriesname;
+                }
             }
         }
     }
@@ -432,143 +609,162 @@ int DoIt(void)
         DRMS_Record_t *recout = NULL;
         int irec;
         int nrecs;
+        int copy_keywords = 1;
 
 
         /* First obtain number of records in record-set. Must use drms_count_records() to determine
         * exactly how many records exist. drms_open_recordset() cannot determine that. */
         nrecs = drms_count_records(drms_env, rsspecin, &status);
 
-        if (status == DRMS_SUCCESS)
+        if (status == DRMS_SUCCESS && nrecs > 0)
         {
-            if (nrecs)
+            if (drms_record_numsegments(source_template) == 0)
+            {
+                /* might be able to get away with copying from source series db table to dest series db table; if this
+                 * succeeds, then there is nothing else to do
+                 */
+                copy_keywords = (copy_columns(drms_env, series_in, series_out, source_template, rsspecin, nrecs) != 0);
+            }
+
+            if (copy_keywords)
             {
                 rsin = drms_open_recordset(drms_env, rsspecin, &status);
-                if (status)
+                if (status || !rsin)
                 {
                     fprintf(stderr, "Invalid record-set specification %s.\n", rsspecin);
                     rv = kDSCPErrBadArgs;
                 }
-            }
-        }
-
-        if (status == DRMS_SUCCESS && rsin && nrecs > 0)
-        {
-            /* Determine good chunk size (based on first input series). */
-            chunksize = CalcChunkSize(drms_env, seriesin[0]);
-
-            if (chunksize < drms_recordset_getchunksize())
-            {
-                /* we are going to allocate `chunksize` output records each iteration, so we need to make sure that
-                * chunksize == drms_recordset_getchunksize() */
-                chunksize = drms_recordset_getchunksize();
-            }
-            else
-            {
-                if (drms_recordset_setchunksize(chunksize))
+                else
                 {
-                    fprintf(stderr, "Unable to set record-set chunk size of %d; using default.\n", chunksize);
-                    chunksize = drms_recordset_getchunksize();
-                }
-            }
+                    /* Determine good chunk size (based on first input series). */
+                    chunksize = CalcChunkSize(drms_env, series_in);
 
-            /* adjust chunksize - if nrecs < chunksize, then there are fewer records in the
-            * record-set than exist in a chunk. Make the chunksize = nrecs
-            */
-            if (chunksize >= nrecs)
-            {
-                chunksize = nrecs;
-                if (drms_recordset_setchunksize(chunksize))
-                {
-                    fprintf(stderr, "Unable to set record-set chunk size of %d; using default.\n", chunksize);
-                    chunksize = drms_recordset_getchunksize();
-                }
-            }
+                    if (chunksize < drms_recordset_getchunksize())
+                    {
+                        /* we are going to allocate `chunksize` output records each iteration, so we need to make sure that
+                        * chunksize == drms_recordset_getchunksize() */
+                        chunksize = drms_recordset_getchunksize();
+                    }
+                    else
+                    {
+                        if (drms_recordset_setchunksize(chunksize))
+                        {
+                            fprintf(stderr, "Unable to set record-set chunk size of %d; using default.\n", chunksize);
+                            chunksize = drms_recordset_getchunksize();
+                        }
+                    }
 
-            /* Stage the records. The retrieval is actually deferred until the drms_recordset_fetchnext()
-            * call opens a new record chunk. */
-            drms_sortandstage_records(rsin, 1, 0, NULL);
+                    /* adjust chunksize - if nrecs < chunksize, then there are fewer records in the
+                    * record-set than exist in a chunk. Make the chunksize = nrecs
+                    */
+                    if (chunksize >= nrecs)
+                    {
+                        chunksize = nrecs;
+                        if (drms_recordset_setchunksize(chunksize))
+                        {
+                            fprintf(stderr, "Unable to set record-set chunk size of %d; using default.\n", chunksize);
+                            chunksize = drms_recordset_getchunksize();
+                        }
+                    }
 
-            /* Create a record-set that contains only "good" output records. Records for which
-            * there was some kind of failure do not get put into rsfinal. */
-            rsfinal = malloc(sizeof(DRMS_RecordSet_t));
-            memset(rsfinal, 0, sizeof(DRMS_RecordSet_t));
-            irec = 0;
+                    /* Stage the records. The retrieval is actually deferred until the drms_recordset_fetchnext()
+                    * call opens a new record chunk. */
+                    drms_sortandstage_records(rsin, 1, 0, NULL);
 
-            while ((recin = drms_recordset_fetchnext(drms_env, rsin, &status, &cstat, &newchunk)) != NULL)
-            {
-                if (status != DRMS_SUCCESS)
-                {
-                    fprintf(stderr, "Unable to fetch next input record.\n");
-                    rv = kDSCPErrCantOpenRec;
-                    break;
-                }
+                    /* try copying keywords OUTSIDE of the loop that copies the SUs; this will only work if either: 1., the
+                     * the data types and names of input columns and output columns match exactly, regardless of column order,
+                     * or 2., the data types of the input columns and output columns match exactly when compared in their
+                     * original orders (the first column of the input table is compared to the first column of the output table, ...);
+                     *
+                     * if this attempt succeeds, then there is no attempt to copy DRMS keywords; if this fails, then
+                     * drms_copykeys() is called (which might succeed since DRMS will cast/convert data types if necessary -
+                     * DRMS sorts the keywords in both series by rank before attempting to copy);
+                     */
 
-                if (newchunk)
-                {
-                    /* Close old chunk of output records (if one exists). */
+
+                    /* Create a record-set that contains only "good" output records. Records for which
+                    * there was some kind of failure do not get put into rsfinal. */
+                    rsfinal = malloc(sizeof(DRMS_RecordSet_t));
+                    memset(rsfinal, 0, sizeof(DRMS_RecordSet_t));
+                    irec = 0;
+
+                    while ((recin = drms_recordset_fetchnext(drms_env, rsin, &status, &cstat, &newchunk)) != NULL)
+                    {
+                        if (status != DRMS_SUCCESS)
+                        {
+                            fprintf(stderr, "Unable to fetch next input record.\n");
+                            rv = kDSCPErrCantOpenRec;
+                            break;
+                        }
+
+                        if (newchunk)
+                        {
+                            /* Close old chunk of output records (if one exists). */
+                            if (rsout)
+                            {
+                                /* All "good" records will have been saved in rsfinal, so we can
+                                * free all rsout records. */
+                                drms_close_records(rsout, DRMS_FREE_RECORD);
+                                rsout = NULL;
+                            }
+
+                            /* Create a chunk of output records. */
+                            rsout = drms_create_records(drms_env, chunksize, series_out, DRMS_PERMANENT, &status);
+                            if (status || !rsout || rsout->n != chunksize)
+                            {
+                                fprintf(stderr, "Failure creating output records.\n");
+                                break;
+                            }
+
+                            /* rsfinal will own all records in rsout, so the records in rsfinal are not detached from
+                            * the environment, and must point to the environment for drms_close_records() to
+                            * know how to free them from the environment record cache. */
+                            rsfinal->env = rsout->env;
+
+                            irec = 0;
+                        }
+
+                        recout = drms_recordset_fetchnext(drms_env, rsout, &status, NULL, NULL);
+                        if (status != DRMS_SUCCESS)
+                        {
+                            fprintf(stderr, "Unable to fetch next output record.\n");
+                            rv = kDSCPErrCantOpenRec;
+                            break;
+                        }
+
+                        status = ProcessRecord(recin, recout);
+
+                        if (status != 0)
+                        {
+                            fprintf(stderr, "Failure processing record.\n");
+                            break;
+                        }
+                        else
+                        {
+                            /* Successfully processed record - save output record in rsfinal. */
+                            drms_merge_record(rsfinal, recout);
+                            XASSERT(rsout->records[irec] == recout);
+
+                            /* Renounce ownership (if this isn't done, the calls to drms_close_records(rsout) and
+                            * drms_close_records(rsfinal) will attempt to free the same record.). */
+                            rsout->records[irec] = NULL;
+                        }
+
+                        irec++;
+                    }
+
+                    /* free remaining output records not freed in while loop. */
                     if (rsout)
                     {
-                        /* All "good" records will have been saved in rsfinal, so we can
-                        * free all rsout records. */
                         drms_close_records(rsout, DRMS_FREE_RECORD);
                         rsout = NULL;
                     }
 
-                    /* Create a chunk of output records. */
-                    rsout = drms_create_records(drms_env, chunksize, dsspecout, DRMS_PERMANENT, &status);
-                    if (status || !rsout || rsout->n != chunksize)
+                    if (rsfinal)
                     {
-                        fprintf(stderr, "Failure creating output records.\n");
-                        break;
+                        drms_close_records(rsfinal, DRMS_INSERT_RECORD);
                     }
-
-                    /* rsfinal will own all records in rsout, so the records in rsfinal are not detached from
-                    * the environment, and must point to the environment for drms_close_records() to
-                    * know how to free them from the environment record cache. */
-                    rsfinal->env = rsout->env;
-
-                    irec = 0;
                 }
-
-                recout = drms_recordset_fetchnext(drms_env, rsout, &status, NULL, NULL);
-                if (status != DRMS_SUCCESS)
-                {
-                    fprintf(stderr, "Unable to fetch next output record.\n");
-                    rv = kDSCPErrCantOpenRec;
-                    break;
-                }
-
-                status = ProcessRecord(recin, recout);
-
-                if (status != 0)
-                {
-                    fprintf(stderr, "Failure processing record.\n");
-                    break;
-                }
-                else
-                {
-                    /* Successfully processed record - save output record in rsfinal. */
-                    drms_merge_record(rsfinal, recout);
-                    XASSERT(rsout->records[irec] == recout);
-
-                    /* Renounce ownership (if this isn't done, the calls to drms_close_records(rsout) and
-                    * drms_close_records(rsfinal) will attempt to free the same record.). */
-                    rsout->records[irec] = NULL;
-                }
-
-                irec++;
-            }
-
-            /* free remaining output records not freed in while loop. */
-            if (rsout)
-            {
-                drms_close_records(rsout, DRMS_FREE_RECORD);
-                rsout = NULL;
-            }
-
-            if (rsfinal)
-            {
-                drms_close_records(rsfinal, DRMS_INSERT_RECORD);
             }
         }
         else

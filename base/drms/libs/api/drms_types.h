@@ -1395,7 +1395,9 @@ int drms_sprintfval_format(char *dst, DRMS_Type_t type, DRMS_Type_Value_t *val,
 int drms_printfval (DRMS_Type_t type, DRMS_Type_Value_t *val);
 int drms_fprintfval(FILE *keyfile, DRMS_Type_t type, DRMS_Type_Value_t *val);
 int drms_sscanf_str(const char *str, const char *delim, DRMS_Type_Value_t *dst);
+int drms_sscanf_str3(const char *str, const char *delim, int binary, DRMS_Type_Value_t *dst);
 int drms_sscanf2(const char *str, const char *delim, int silent, DRMS_Type_t dsttype, DRMS_Value_t *dst);
+int drms_sscanf3(const char *str, const char *delim, int silent, DRMS_Type_t dsttype, int binary, DRMS_Value_t *dst);
 
 /* Scalar conversion functions. */
 int drms_convert(DRMS_Type_t dsttype, DRMS_Type_Value_t *dst,

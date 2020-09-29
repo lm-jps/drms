@@ -243,138 +243,416 @@ void drms_keyword_fprint(FILE *keyfile, DRMS_Keyword_t *key)
 
 
 /* Print the fields of a keyword struct to stdout. */
-void drms_keyword_printval(DRMS_Keyword_t *key)
+void drms_keyword_printval2(DRMS_Keyword_t *key, int max_precision, int binary)
 {
-  drms_keyword_fprintval(stdout, key);
+    drms_keyword_fprintval2(stdout, key, max_precision, binary);
 }
 
-static void PrintTimeVal(DRMS_Keyword_t *key, char *outbuf, int size)
+void drms_keyword_printval(DRMS_Keyword_t *key)
 {
-   char buf[1024];
-   char *endptr = NULL;
-   TIME interval = 0;
+    drms_keyword_fprintval(stdout, key);
+}
 
-   interval = atoinc(key->info->unit);
-   if (interval > 0)
-   {
-      /* This is a time interval. Must convert the value to the unit of the time interval.
-       * format is a printf format, not the precision. */
-      snprintf(buf, sizeof(buf), key->info->format, key->value.time_val / interval);
-   }
-   else
-   {
-      /* key->info->format can be converted to an integer safely - it has been checked already */
-      int format = (int)strtod(key->info->format, &endptr);
-      sprint_time(buf, key->value.time_val, key->info->unit, format);
-   }
+static void PrintTimeVal(DRMS_Keyword_t *key, char *outbuf, int size, int max_precision, int binary)
+{
+    char buf[1024];
+    char *endptr = NULL;
+    TIME interval = 0;
+    double converted_interval = 0;
+    int format = 0;
 
-   if (outbuf)
-   {
-      snprintf(outbuf, size, "%s", buf);
-   }
+
+    interval = atoinc(key->info->unit);
+
+    /* if we want a time string that can be used to restore the bit pattern in the DB, then we need 17
+     * significant digits
+     */
+    if (max_precision)
+    {
+        if (binary)
+        {
+            if (interval > 0)
+            {
+                /* bit pattern not necessarily preserved */
+                converted_interval = key->value.time_val / interval;
+                snprintf(buf, sizeof(buf), "%016llX", *((unsigned long long *)&converted_interval));
+                // snprintf(buf, sizeof(buf), "%A", converted_interval);
+            }
+            else
+            {
+                /* bit pattern NOT preserved */
+                snprintf(buf, sizeof(buf), "%016llX", (unsigned long long)key->value.longlong_val);
+                // snprintf(buf, sizeof(buf), "%A", key->value.double_val);
+            }
+        }
+        else
+        {
+            if (interval > 0)
+            {
+                /* bit pattern not necessarily preserved */
+                snprintf(buf, sizeof(buf), "%.17G", key->value.time_val / interval);
+            }
+            else
+            {
+                /* bit pattern NOT preserved */
+                sprint_time(buf, key->value.time_val, key->info->unit, 6);
+            }
+        }
+    }
+    else
+    {
+        /* not attempting to preserve precision/bit patterns */
+        if (interval > 0)
+        {
+            /* This is a time interval. Must convert the value to the unit of the time interval.
+            * format is a printf format, not the precision. */
+            snprintf(buf, sizeof(buf), key->info->format, key->value.time_val / interval);
+        }
+        else
+        {
+            /* key->info->format can be converted to an integer safely - it has been checked already */
+            format = (int)strtod(key->info->format, &endptr);
+            sprint_time(buf, key->value.time_val, key->info->unit, format);
+        }
+    }
+
+    if (outbuf)
+    {
+        snprintf(outbuf, size, "%s", buf);
+    }
 }
 
 /* Print the fields of a keyword struct to a file. */
+void drms_keyword_fprintval2(FILE *keyfile, DRMS_Keyword_t *key, int max_precision, int binary)
+{
+    const char *fmt = NULL;
+
+    if (key->info->format && *(key->info->format) != '\0')
+    {
+      fmt = key->info->format;
+    }
+
+    switch(key->info->type)
+    {
+        case DRMS_TYPE_CHAR:
+            if (max_precision)
+            {
+                if (binary)
+                {
+                    fprintf(keyfile, "%02X", (unsigned int)key->value.char_val);
+                }
+                else
+                {
+                    fprintf(keyfile, "%hhd", key->value.char_val);
+                }
+            }
+            else
+            {
+                fmt = (fmt != NULL) ? fmt : "%hhd";
+                fprintf(keyfile, fmt, key->value.char_val);
+            }
+            break;
+        case DRMS_TYPE_SHORT:
+            if (max_precision)
+            {
+                if (binary)
+                {
+                    fprintf(keyfile, "%04X", (unsigned int)key->value.short_val);
+                }
+                else
+                {
+                    fprintf(keyfile, "%hd", key->value.short_val);
+                }
+            }
+            else
+            {
+                fmt = (fmt != NULL) ? fmt : "%hd";
+                fprintf(keyfile, fmt, key->value.short_val);
+            }
+            break;
+        case DRMS_TYPE_INT:
+            if (max_precision)
+            {
+                if (binary)
+                {
+                    fprintf(keyfile, "%08X", (unsigned int)key->value.int_val);
+                }
+                else
+                {
+                    fprintf(keyfile, "%d", key->value.int_val);
+                }
+            }
+            else
+            {
+                fmt = (fmt != NULL) ? fmt : "%d";
+                fprintf(keyfile, fmt, key->value.int_val);
+            }
+            break;
+        case DRMS_TYPE_LONGLONG:
+            if (max_precision)
+            {
+                if (binary)
+                {
+                    fprintf(keyfile, "%016llX", (unsigned long long)key->value.longlong_val);
+                }
+                else
+                {
+                    fprintf(keyfile, "%lld", key->value.longlong_val);
+                }
+            }
+            else
+            {
+                fmt = (fmt != NULL) ? fmt : "%lld";
+                fprintf(keyfile, fmt, key->value.longlong_val);
+            }
+            break;
+        case DRMS_TYPE_FLOAT:
+            if (max_precision)
+            {
+                if (binary)
+                {
+                    fprintf(keyfile, "%08X", (unsigned int)key->value.int_val);
+                    // fprintf(keyfile, "%A", key->value.float_val);
+                }
+                else
+                {
+                    fprintf(keyfile, "%.9G", (double)key->value.float_val);
+                }
+            }
+            else
+            {
+                fmt = (fmt != NULL) ? fmt : "%f";
+                fprintf(keyfile, fmt, key->value.float_val);
+            }
+            break;
+        case DRMS_TYPE_DOUBLE:
+            if (max_precision)
+            {
+                if (binary)
+                {
+                    fprintf(keyfile, "%016llX", (unsigned long long)key->value.longlong_val);
+                    // fprintf(keyfile, "A", key->value.double_val);
+                }
+                else
+                {
+                    fprintf(keyfile, "%.17G", key->value.double_val);
+                }
+            }
+            else
+            {
+                fmt = (fmt != NULL) ? fmt : "%f";
+                fprintf(keyfile, fmt, key->value.double_val);
+            }
+            break;
+        case DRMS_TYPE_TIME:
+        {
+            char buf[1024];
+            PrintTimeVal(key, buf, sizeof(buf), max_precision, binary);
+            fprintf(keyfile, "%s", buf);
+        }
+        break;
+        case DRMS_TYPE_STRING:
+        {
+            char *str_char = NULL;
+
+            if (max_precision)
+            {
+                if (binary)
+                {
+                    str_char = key->value.string_val;
+
+                    while (*str_char)
+                    {
+                        fprintf(keyfile, "%02X", (unsigned int)(*str_char));
+                        str_char++;
+                    }
+                }
+                else
+                {
+                    fprintf(keyfile, "%s", key->value.string_val);
+                }
+            }
+            else
+            {
+                fmt = (fmt != NULL) ? fmt : "%s";
+                fprintf(keyfile, fmt, key->value.string_val);
+            }
+        }
+        break;
+        default:
+            break;
+    }
+}
+
 void drms_keyword_fprintval(FILE *keyfile, DRMS_Keyword_t *key)
 {
-   const char *fmt = NULL;
+    drms_keyword_fprintval2(keyfile, key, 0, 0);
+}
 
-   if (key->info->format && *(key->info->format) != '\0')
-   {
-      fmt = key->info->format;
-   }
+void drms_keyword_snprintfval2(DRMS_Keyword_t *key, char *buf, int size, int max_precision, int binary)
+{
+    const char *fmt = NULL;
 
-   switch(key->info->type)
-   {
-      case DRMS_TYPE_CHAR:
-        fmt = (fmt != NULL) ? fmt : "%hhd";
-        fprintf(keyfile, fmt, key->value.char_val);
+    if (key->info->format && *(key->info->format) != '\0')
+    {
+        fmt = key->info->format;
+    }
+
+    switch(key->info->type)
+    {
+        case DRMS_TYPE_CHAR:
+            if (max_precision)
+            {
+                if (binary)
+                {
+                    snprintf(buf, size, "%02X", (unsigned int)key->value.char_val);
+                }
+                else
+                {
+                    snprintf(buf, size, "%hhd", key->value.char_val);
+                }
+            }
+            else
+            {
+              fmt = (fmt != NULL) ? fmt : "%hhd";
+              snprintf(buf, size, fmt, key->value.char_val);
+            }
+            break;
+        case DRMS_TYPE_SHORT:
+            if (max_precision)
+            {
+                if (binary)
+                {
+                    snprintf(buf, size, "%04X", (unsigned int)key->value.short_val);
+                }
+                else
+                {
+                    snprintf(buf, size, "%hd", key->value.short_val);
+                }
+            }
+            else
+            {
+                fmt = (fmt != NULL) ? fmt : "%hd";
+                snprintf(buf, size, fmt, key->value.short_val);
+            }
+            break;
+        case DRMS_TYPE_INT:
+            if (max_precision)
+            {
+                if (binary)
+                {
+                    snprintf(buf, size, "%08X", (unsigned int)key->value.int_val);
+                }
+                else
+                {
+                    snprintf(buf, size, "%d", key->value.int_val);
+                }
+            }
+            else
+            {
+                fmt = (fmt != NULL) ? fmt : "%d";
+                snprintf(buf, size, fmt, key->value.int_val);
+            }
+            break;
+        case DRMS_TYPE_LONGLONG:
+            if (max_precision)
+            {
+                if (binary)
+                {
+                    snprintf(buf, size, "%016llX", (unsigned long long)key->value.longlong_val);
+                }
+                else
+                {
+                    snprintf(buf, size, "%lld", key->value.longlong_val);
+                }
+            }
+            else
+            {
+                fmt = (fmt != NULL) ? fmt : "%lld";
+                snprintf(buf, size, fmt, key->value.longlong_val);
+            }
+            break;
+        case DRMS_TYPE_FLOAT:
+            if (max_precision)
+            {
+                if (binary)
+                {
+                    snprintf(buf, size, "%08X", (unsigned int)key->value.int_val);
+                    // snprintf(buf, size, "%A", key->value.float_val);
+                }
+                else
+                {
+                    snprintf(buf, size, "%.9G", (double)key->value.float_val);
+                }
+            }
+            else
+            {
+                fmt = (fmt != NULL) ? fmt : "%f";
+                snprintf(buf, size, fmt, key->value.float_val);
+            }
+            break;
+        case DRMS_TYPE_DOUBLE:
+            if (max_precision)
+            {
+                if (binary)
+                {
+                    snprintf(buf, size, "%016llX", (unsigned long long)key->value.longlong_val);
+                    // snprintf(buf, size, "%A", (unsigned long long)key->value.double_val);
+                }
+                else
+                {
+                    snprintf(buf, size, "%.17G", (double)key->value.double_val);
+                }
+            }
+            else
+            {
+                fmt = (fmt != NULL) ? fmt : "%f";
+                snprintf(buf, size, fmt, key->value.double_val);
+            }
+            break;
+        case DRMS_TYPE_TIME:
+        {
+            char intbuf[1024];
+            PrintTimeVal(key, intbuf, sizeof(intbuf), max_precision, binary);
+            snprintf(buf, size, "%s", intbuf);
+        }
+            break;
+        case DRMS_TYPE_STRING:
+        {
+            char *str_char = NULL;
+
+            if (max_precision)
+            {
+                if (binary)
+                {
+                    str_char = key->value.string_val;
+
+                    while (*str_char)
+                    {
+                        snprintf(buf, size, "%02X", (unsigned int)(*str_char));
+                        str_char++;
+                    }
+                }
+                else
+                {
+                    snprintf(buf, size, "%s", key->value.string_val);
+                }
+            }
+            else
+            {
+                fmt = (fmt != NULL) ? fmt : "%s";
+                snprintf(buf, size, fmt, key->value.string_val);
+            }
+        }
         break;
-      case DRMS_TYPE_SHORT:
-        fmt = (fmt != NULL) ? fmt : "%hd";
-        fprintf(keyfile, fmt, key->value.short_val);
-        break;
-      case DRMS_TYPE_INT:
-        fmt = (fmt != NULL) ? fmt : "%d";
-        fprintf(keyfile, fmt, key->value.int_val);
-        break;
-      case DRMS_TYPE_LONGLONG:
-        fmt = (fmt != NULL) ? fmt : "%lld";
-        fprintf(keyfile, fmt, key->value.longlong_val);
-        break;
-      case DRMS_TYPE_FLOAT:
-        fmt = (fmt != NULL) ? fmt : "%f";
-        fprintf(keyfile, fmt, key->value.float_val);
-        break;
-      case DRMS_TYPE_DOUBLE:
-        fmt = (fmt != NULL) ? fmt : "%f";
-        fprintf(keyfile, fmt, key->value.double_val);
-        break;
-      case DRMS_TYPE_TIME:
-      {
-         char buf[1024];
-         PrintTimeVal(key, buf, sizeof(buf));
-         fprintf(keyfile, "%s", buf);
-      }
-      break;
-      case DRMS_TYPE_STRING:
-        fmt = (fmt != NULL) ? fmt : "%s";
-        fprintf(keyfile, fmt, key->value.string_val);
-        break;
-      default:
-        break;
-   }
+        default:
+            break;
+    }
 }
 
 void drms_keyword_snprintfval(DRMS_Keyword_t *key, char *buf, int size)
 {
-const char *fmt = NULL;
-
-   if (key->info->format && *(key->info->format) != '\0')
-   {
-      fmt = key->info->format;
-   }
-
-   switch(key->info->type)
-   {
-      case DRMS_TYPE_CHAR:
-        fmt = (fmt != NULL) ? fmt : "%hhd";
-	snprintf(buf, size, fmt, key->value.char_val);
-	break;
-      case DRMS_TYPE_SHORT:
-        fmt = (fmt != NULL) ? fmt : "%hd";
-	snprintf(buf, size, fmt, key->value.short_val);
-	break;
-      case DRMS_TYPE_INT:
-        fmt = (fmt != NULL) ? fmt : "%d";
-	snprintf(buf, size, fmt, key->value.int_val);
-	break;
-      case DRMS_TYPE_LONGLONG:
-        fmt = (fmt != NULL) ? fmt : "%lld";
-	snprintf(buf, size, fmt, key->value.longlong_val);
-	break;
-      case DRMS_TYPE_FLOAT:
-        fmt = (fmt != NULL) ? fmt : "%f";
-	snprintf(buf, size, fmt, key->value.float_val);
-	break;
-      case DRMS_TYPE_DOUBLE:
-        fmt = (fmt != NULL) ? fmt : "%f";
-	snprintf(buf, size, fmt, key->value.double_val);
-	break;
-      case DRMS_TYPE_TIME:
-      {
-         char intbuf[1024];
-         PrintTimeVal(key, intbuf, sizeof(intbuf));
-         snprintf(buf, size, "%s", intbuf);
-      }
-      break;
-      case DRMS_TYPE_STRING:
-        fmt = (fmt != NULL) ? fmt : "%s";
-	snprintf(buf, size, fmt, key->value.string_val);
-	break;
-      default:
-	break;
-   }
+    drms_keyword_snprintfval2(key, buf, size, 0, 0);
 }
 
 /*
@@ -1455,11 +1733,21 @@ static int AppendStrKeyInternal(DRMS_Record_t *rec, const char *key, const char 
 
 int drms_appendhistory(DRMS_Record_t *rec, const char *str, int newline)
 {
+    if (!str || !*str)
+    {
+        return DRMS_SUCCESS;
+    }
+
     return AppendStrKeyInternal(rec, "HISTORY", str, newline);
 }
 
 int drms_appendcomment(DRMS_Record_t *rec, const char *str, int newline)
 {
+    if (!str || !*str)
+    {
+        return DRMS_SUCCESS;
+    }
+
     return AppendStrKeyInternal(rec, "COMMENT", str, newline);
 }
 

@@ -154,8 +154,6 @@ static DRMS_RecordSet_t *OpenPlainFileRecords(DRMS_Env_t *env,
 					      char **pkeysout,
 					      int *status);
 
-static char *drms_query_string(DRMS_Env_t *env, const char *seriesname, char *where, const char *pkwhere, const char *npkwhere, int filter, int mixed, DRMS_QueryType_t qtype, void *data, const char *fl, int allvers, HContainer_t *firstlast, HContainer_t *pkwhereNFL, int recnumq, int cursor, int openLinks, long long *limit);
-
 DRMS_RecordSet_t *drms_open_recordset_internal(DRMS_Env_t *env, const char *rsquery, int openLinks, int *status);
 
 static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *seriesname, char *where, const char *pkwhere, const char *npkwhere, int filter, int mixed,HContainer_t *goodsegcont, const char *qoverride, int allvers, int nrecs, HContainer_t *firstlast, HContainer_t *pkwhereNFL, int recnumq, int cursor, HContainer_t *links, /* Links to fetch from db. */HContainer_t *keys, /* Keys to fetch from db. */ HContainer_t *segs, /* Segs to fetch from db. */ int fetchLinkedRecords, int *status);
@@ -163,7 +161,7 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const c
 static void RSFree(const void *val);
 /* end drms_open_records() helpers */
 
-static char *columnList(DRMS_Record_t *rec, HContainer_t *links, HContainer_t *keys, HContainer_t *segs, int openLinks, int *num_cols);
+static char *columnList(DRMS_Record_t *rec, HContainer_t *links, HContainer_t *keys, HContainer_t *segs, int openLinks, int *num_cols, LinkedList_t *columns);
 
 static size_t partialRecordMemsize(DRMS_Record_t *rec, HContainer_t *links, HContainer_t *keys, HContainer_t *segs);
 
@@ -5741,7 +5739,7 @@ DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *se
             recsize = drms_record_memsize(template);
         }
 
-        limit  = (long long)((0.4e6 * env->query_mem) / recsize);
+        limit = (long long)((0.4e6 * env->query_mem) / recsize);
     }
     else
     {
@@ -7860,7 +7858,7 @@ char *drms_query_string(DRMS_Env_t *env, const char *seriesname, char *where, co
                 goto bailout;
             }
 
-            field_list = columnList(template, NULL, keys, NULL, 1, NULL);
+            field_list = columnList(template, NULL, keys, NULL, 1, NULL, NULL);
         }
         else
         {
@@ -7886,7 +7884,10 @@ char *drms_query_string(DRMS_Env_t *env, const char *seriesname, char *where, co
     }
 
       {
-          *limit = (long long)((1.1e6*env->query_mem)/recsize);
+          if (*limit == 0)
+          {
+              *limit = (long long)((1.1e6*env->query_mem)/recsize);
+          }
 
           if (!allvers)
           {
@@ -8058,7 +8059,10 @@ char *drms_query_string(DRMS_Env_t *env, const char *seriesname, char *where, co
           /* n=XX */
           field_list = drms_field_list(template, openLinks, NULL);
           recsize = drms_record_memsize(template);
-          *limit = (long long)((1.1e6*env->query_mem)/recsize);
+          if (*limit == 0)
+          {
+              *limit = (long long)((1.1e6*env->query_mem)/recsize);
+          }
           nrecs = *(int *)(data);
 
           if (!allvers)
@@ -9569,7 +9573,7 @@ int drms_populate_records(DRMS_Env_t *env, DRMS_RecordSet_t *rs, DB_Binary_Resul
 
 */
 
-char *columnList(DRMS_Record_t *rec, HContainer_t *links, HContainer_t *keys, HContainer_t *segs, int openLinks, int *num_cols)
+char *columnList(DRMS_Record_t *rec, HContainer_t *links, HContainer_t *keys, HContainer_t *segs, int openLinks, int *num_cols, LinkedList_t *columns)
 {
     int i;
     char *buf = NULL;
@@ -9613,6 +9617,15 @@ char *columnList(DRMS_Record_t *rec, HContainer_t *links, HContainer_t *keys, HC
     buf = base_strcatalloc(buf, ", sessionns", &szBuf);
     ++ncol;
 
+    if (columns)
+    {
+        list_llinserttail(columns, "recnum");
+        list_llinserttail(columns, "sunum");
+        list_llinserttail(columns, "slotnum");
+        list_llinserttail(columns, "sessionid");
+        list_llinserttail(columns, "sessionns");
+    }
+
     if (!err)
     {
         if (openLinks)
@@ -9640,6 +9653,10 @@ char *columnList(DRMS_Record_t *rec, HContainer_t *links, HContainer_t *keys, HC
                     {
                         snprintf(tail, sizeof(tail), ", ln_%s", lower);
                         buf = base_strcatalloc(buf, tail, &szBuf);
+                        if (columns)
+                        {
+                            list_llinserttail(columns, tail);
+                        }
                         ++ncol;
                     }
                     else  /* Oh crap! A dynamic link... */
@@ -9648,6 +9665,10 @@ char *columnList(DRMS_Record_t *rec, HContainer_t *links, HContainer_t *keys, HC
                         {
                             snprintf(tail, sizeof(tail), ", ln_%s_isset", lower);
                             buf = base_strcatalloc(buf, tail, &szBuf);
+                            if (columns)
+                            {
+                                list_llinserttail(columns, tail);
+                            }
                             ++ncol;
                         }
 
@@ -9657,6 +9678,10 @@ char *columnList(DRMS_Record_t *rec, HContainer_t *links, HContainer_t *keys, HC
                         {
                             snprintf(tail, sizeof(tail), ", ln_%s_%s", lower, link->info->pidx_name[i]);
                             buf = base_strcatalloc(buf, tail, &szBuf);
+                            if (columns)
+                            {
+                                list_llinserttail(columns, tail);
+                            }
                             ++ncol;
                         }
                     }
@@ -9686,6 +9711,10 @@ char *columnList(DRMS_Record_t *rec, HContainer_t *links, HContainer_t *keys, HC
                     {
                         snprintf(tail, sizeof(tail), ", ln_%s", lower);
                         buf = base_strcatalloc(buf, tail, &szBuf);
+                        if (columns)
+                        {
+                            list_llinserttail(columns, tail);
+                        }
                         ++ncol;
                     }
                     else  /* Oh crap! A dynamic link... */
@@ -9694,6 +9723,10 @@ char *columnList(DRMS_Record_t *rec, HContainer_t *links, HContainer_t *keys, HC
                         {
                             snprintf(tail, sizeof(tail), ", ln_%s_isset", lower);
                             buf = base_strcatalloc(buf, tail, &szBuf);
+                            if (columns)
+                            {
+                                list_llinserttail(columns, tail);
+                            }
                             ++ncol;
                         }
 
@@ -9703,6 +9736,10 @@ char *columnList(DRMS_Record_t *rec, HContainer_t *links, HContainer_t *keys, HC
                         {
                             snprintf(tail, sizeof(tail), ", ln_%s_%s", lower, link->info->pidx_name[i]);
                             buf = base_strcatalloc(buf, tail, &szBuf);
+                            if (columns)
+                            {
+                                list_llinserttail(columns, tail);
+                            }
                             ++ncol;
                         }
                     }
@@ -9740,6 +9777,10 @@ char *columnList(DRMS_Record_t *rec, HContainer_t *links, HContainer_t *keys, HC
                 {
                     snprintf(tail, sizeof(tail), ", %s", lower);
                     buf = base_strcatalloc(buf, tail, &szBuf);
+                    if (columns)
+                    {
+                        list_llinserttail(columns, tail);
+                    }
                     ++ncol;
                 }
 
@@ -9768,6 +9809,10 @@ char *columnList(DRMS_Record_t *rec, HContainer_t *links, HContainer_t *keys, HC
                 {
                     snprintf(tail, sizeof(tail), ", %s", lower);
                     buf = base_strcatalloc(buf, tail, &szBuf);
+                    if (columns)
+                    {
+                        list_llinserttail(columns, tail);
+                    }
                     ++ncol;
                 }
 
@@ -9803,6 +9848,10 @@ char *columnList(DRMS_Record_t *rec, HContainer_t *links, HContainer_t *keys, HC
 
                 snprintf(tail, sizeof(tail), ", sg_%03d_file", segnum);
                 buf = base_strcatalloc(buf, tail, &szBuf);
+                if (columns)
+                {
+                    list_llinserttail(columns, tail);
+                }
                 ++ncol;
 
                 if (seg->info->scope==DRMS_VARDIM)
@@ -9812,6 +9861,10 @@ char *columnList(DRMS_Record_t *rec, HContainer_t *links, HContainer_t *keys, HC
                     {
                         snprintf(tail, sizeof(tail), ", sg_%03d_axis%03d", segnum, i);
                         buf = base_strcatalloc(buf, tail, &szBuf);
+                        if (columns)
+                        {
+                            list_llinserttail(columns, tail);
+                        }
                         ++ncol;
                     }
                 }
@@ -9840,6 +9893,10 @@ char *columnList(DRMS_Record_t *rec, HContainer_t *links, HContainer_t *keys, HC
 
                 snprintf(tail, sizeof(tail), ", sg_%03d_file", segnum);
                 buf = base_strcatalloc(buf, tail, &szBuf);
+                if (columns)
+                {
+                    list_llinserttail(columns, tail);
+              }
                 ++ncol;
 
                 if (seg->info->scope==DRMS_VARDIM)
@@ -9849,6 +9906,10 @@ char *columnList(DRMS_Record_t *rec, HContainer_t *links, HContainer_t *keys, HC
                     {
                         snprintf(tail, sizeof(tail), ", sg_%03d_axis%03d", segnum, i);
                         buf = base_strcatalloc(buf, tail, &szBuf);
+                        if (columns)
+                        {
+                            list_llinserttail(columns, tail);
+                        }
                         ++ncol;
                     }
                 }
@@ -9874,7 +9935,12 @@ char *columnList(DRMS_Record_t *rec, HContainer_t *links, HContainer_t *keys, HC
 char *drms_field_list(DRMS_Record_t *rec, int openLinks, int *num_cols)
 {
     /* call with links, keys, segs containers all NULL to form a list of all columns, not selected links, keys, segs */
-    return columnList(rec, NULL, NULL, NULL, openLinks, num_cols);
+    return columnList(rec, NULL, NULL, NULL, openLinks, num_cols, NULL);
+}
+
+char *drms_db_columns(DRMS_Record_t *rec, HContainer_t *links, HContainer_t *keys, HContainer_t *segs, int *num_cols, LinkedList_t *columns)
+{
+    return columnList(rec, links, keys, segs, 1, num_cols, columns);
 }
 
 /* Insert multiple records via bulk insert interface. */
