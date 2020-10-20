@@ -48,7 +48,7 @@ BEGIN
 		SELECT domainid INTO address_domainid FROM jsoc.export_addressdomains WHERE lower(domainname) = lower(address_domain);
 		IF NOT FOUND THEN
 			-- insert new domain
-			SELECT domainid INTO address_domainid FROM nextval(jsoc.export_addressdomains_seq) AS domainid;
+			SELECT domainid INTO address_domainid FROM nextval('jsoc.export_addressdomains_seq') AS domainid;
 			INSERT INTO jsoc.export_addressdomains(domainid, domainname) VALUES (address_domainid, lower(address_domain));
 		END IF;
 
@@ -212,7 +212,9 @@ BEGIN
 	END IF;
 
 	SELECT address INTO address_located FROM jsoc.export_user_info WHERE lower(address) = lower(user_address);
-	IF NOT FOUND THEN
+	IF FOUND THEN
+		RAISE EXCEPTION 'failure inserting user - user already exists';
+	ELSE
 		command := 'INSERT INTO jsoc.export_user_info(address';
 
 		IF user_name IS NOT NULL THEN
@@ -483,6 +485,45 @@ BEGIN
 
 		return_value := TRUE;
 	END IF;
+
+	RETURN return_value;
+END;
+$$
+LANGUAGE plpgsql;
+
+-- operate on a list of addresses
+-- returns true if all addresses in `user_addresses` are located; raises if a failure
+-- deleting one or more addresses occurs
+CREATE OR REPLACE FUNCTION jsoc.user_unregister(user_addresses varchar(256)[]) RETURNS boolean AS
+$$
+DECLARE
+	user_address varchar(256);
+	address_located varchar(256);
+	was_deleted boolean;
+	return_value boolean;
+
+BEGIN
+	return_value := TRUE;
+
+	FOR index_address IN 1..array_length(user_addresses, 1)
+	LOOP
+		user_address = user_addresses[index_address];
+		SELECT address INTO address_located FROM jsoc.address_info_get(user_address);
+		IF FOUND THEN
+			SELECT deleted INTO was_deleted FROM jsoc.user_info_delete(user_address) AS deleted;
+			IF NOT FOUND THEN
+				RAISE EXCEPTION 'failure deleting user';
+			END IF;
+
+			SELECT deleted INTO was_deleted FROM jsoc.address_info_delete(user_address, FALSE) AS deleted;
+			IF NOT FOUND THEN
+				RAISE EXCEPTION 'failure deleting address';
+			END IF;
+		ELSE
+			-- return false if at least one address was not located
+			return_value := FALSE;
+		END IF;
+	END LOOP;
 
 	RETURN return_value;
 END;
