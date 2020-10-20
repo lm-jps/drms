@@ -108,6 +108,7 @@ q:EXPORT_USER_INFO_FN                   jsoc.user_info_get
 q:EXPORT_USER_INFO_INSERT_FN            jsoc.user_info_insert
 q:EXPORT_USER_INFO_UPDATE_FN            jsoc.user_info_update
 q:EXPORT_USER_INFO_DELETE_FN            jsoc.user_info_delete
+q:EXPORT_USER_UNREGISTER_FN             jsoc.user_unregister
 q:BIN_PY                                /home/jsoc/bin/linux_x86_64/activepython27
 q:BIN_PY3                               /home/jsoc/anaconda3/bin/python3
 a:SUMS_USEMTSUMS                        1
