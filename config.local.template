@@ -292,6 +292,7 @@ EXPORT_USER_INFO_FN                   ""
 EXPORT_USER_INFO_INSERT_FN            ""
 EXPORT_USER_INFO_UPDATE_FN            ""
 EXPORT_USER_INFO_DELETE_FN            ""
+EXPORT_USER_UNREGISTER_FN             ""
 
 # The Python binary must be at least version 2.7. 3.x binaries will work.
 BIN_PY                                /usr/bin/python

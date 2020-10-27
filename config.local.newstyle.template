@@ -127,6 +127,7 @@ a:EXPORT_USER_INFO_FN                   ""
 a:EXPORT_USER_INFO_INSERT_FN            ""
 a:EXPORT_USER_INFO_UPDATE_FN            ""
 a:EXPORT_USER_INFO_DELETE_FN            ""
+a:EXPORT_USER_UNREGISTER_FN             ""
 
 # the name of the DRMS database cluster host.
 q:SERVER                                     drms
