@@ -459,6 +459,7 @@ static int receiveMsg(SUM_t *sums, char **out, size_t *outLen, int (*history)(co
     {
         /* Convert hex string to number. */
         *numBytesMessage = '\0';
+        recvBuffer[bytesReceivedTotal] = '\0';
         snprintf(numBytesMessage, sizeof(numBytesMessage), "%s", recvBuffer);
         sscanf(numBytesMessage, "%08x", &sizeMessage);
 
