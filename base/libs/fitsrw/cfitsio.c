@@ -1250,16 +1250,26 @@ int cfitsio_create_file(CFITSIO_FILE **out_file, const char *file_name, cfitsio_
 
 void cfitsio_close_file(CFITSIO_FILE **fits_file)
 {
-    CFITSIO_IMAGE_INFO fpinfo;
+    CFITSIO_IMAGE_INFO image_info;
+    int num_hdus = -1;
+    int cfiostat = 0;
+    char cfiostat_msg[FLEN_STATUS];
 
 
     if (fits_file && *fits_file)
     {
         if ((*fits_file)->fptr)
         {
-            /* if the FITS file is not cached, then we should call fits_close_file(), dropping
-             * data if the file was in-memory-only */
-            Cf_close_file(&(*fits_file)->fptr, (*fits_file)->in_memory);
+            /* FITSIO has this problem that you cannot close a FITS file that has no completed HDUs - seems like a bug;
+             * check for that situation by getting the number of finalized/closed HDUs; if 0, then don't call
+             * Cf_close_file(); I guess FITSIO will leak, but I'm not sure what to do */
+            fits_get_num_hdus((*fits_file)->fptr, &num_hdus, &cfiostat);
+            if (!cfiostat && num_hdus > 0)
+            {
+                /* if the FITS file is not cached, then we should call fits_close_file(), dropping
+                 * data if the file was in-memory-only */
+                Cf_close_file(&(*fits_file)->fptr, (*fits_file)->in_memory);
+            }
         }
 
         free(*fits_file);
