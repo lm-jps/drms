@@ -1731,7 +1731,7 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int dumpFileName, i
                 snprintf(msg, sizeof(msg), "failure exporting segment %s", segIn->info->name);
             }
 
-            /* close the CFITSIO_FILE - there should be no data written to stdout since cfitsio_file is in-memory only  */
+            /* close the CFITSIO_FILE - there should be no data written to stdout since cfitsio_file is in-memory only */
             cfitsio_close_file(&cfitsio_file);
 
             if (restore_stderr)
