@@ -5710,6 +5710,7 @@ DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *se
   const char *hkey = NULL;
     char *tmpquery = NULL;
     long long recsize = 0;
+    char alias[DRMS_MAXKEYNAMELEN] = {0};
 
   CHECKNULL_STAT(env,status);
 
@@ -5842,6 +5843,8 @@ DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *se
             hcon_init(&rs->records[i]->keywords, sizeof(DRMS_Keyword_t), DRMS_MAXHASHKEYLEN, (void (*)(const void *))drms_free_keyword_struct, (void (*)(const void *, const void *))drms_copy_keyword_struct);
             hcon_init(&rs->records[i]->segments, sizeof(DRMS_Segment_t), DRMS_MAXHASHKEYLEN, (void (*)(const void *))drms_free_segment_struct, (void (*)(const void *, const void *))drms_copy_segment_struct);
 
+            rs->records[i]->keyword_aliases = hcon_create(sizeof(DRMS_Keyword_t *), DRMS_MAXKEYNAMELEN, NULL, NULL, NULL, NULL, 0);
+
             const char *keyVal = NULL;
             const char *strVal = NULL;
 
@@ -5907,7 +5910,19 @@ DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *se
             while((key = (DRMS_Keyword_t *)hiter_getnext(&hit)) != NULL)
             {
                 key->record = rs->records[i];
+
+                if (!drms_keyword_getimplicit(key))
+                {
+                    /* instantiate any aliases for FITS header output */
+                    fitsexport_getextkeyname(key, alias, sizeof(alias));
+                    if (*alias != '\0' && !hcon_member_lower(&key->record->keywords, alias))
+                    {
+                        hcon_insert_lower(key->record->keyword_aliases, alias, &key);
+                        *alias = '\0';
+                    }
+                }
             }
+
             hiter_free(&hit);
 
             /* Copy segment structs from template. segs == 0 ==> all segs, list_llgetnitems(segs) == 0 ==> no segs. */
@@ -9019,7 +9034,7 @@ static DRMS_Record_t *drms_template_record_int(DRMS_Env_t *env,
     if ((stat=drms_template_keywords_int(template, !jsd, colnames)))
       goto bailout;
 
-    /* If any segments present, lookup pemission to set retention */
+    /* If any segments present, lookup permission to set retention */
     if (template->segments.num_total > 0)
     {
         template->seriesinfo->retention_perm = drms_series_isdbowner(env, template->seriesinfo->seriesname, &stat);
@@ -9263,6 +9278,8 @@ void drms_free_template_record_struct(DRMS_Record_t *rec)
     (rec->keywords).deep_free = (void (*)(const void *)) drms_free_template_keyword_struct;
     hcon_free(&rec->keywords);
 
+    hcon_destroy(&rec->keyword_aliases);
+
     free(rec->seriesinfo);
   }
 }
@@ -9277,6 +9294,8 @@ void drms_free_record_struct(DRMS_Record_t *rec)
     hcon_free(&rec->links);
     hcon_free(&rec->segments);
     hcon_free(&rec->keywords);
+    hcon_destroy(&rec->keyword_aliases);
+
     free(rec->sessionns);
 
     if (rec->suinfo)
@@ -9308,6 +9327,10 @@ void drms_copy_record_struct(DRMS_Record_t *dst, DRMS_Record_t *src)
   DRMS_Keyword_t *key;
   DRMS_Link_t *link;
   DRMS_Segment_t *seg;
+  HIterator_t *alias_iter = NULL;
+  const char *alias = NULL;
+  DRMS_Keyword_t **ptr_src_keyword = NULL;
+  DRMS_Keyword_t *dst_keyword = NULL;
 
   XASSERT(dst && src);
   /* Copy fields in the main structure and
@@ -9317,6 +9340,30 @@ void drms_copy_record_struct(DRMS_Record_t *dst, DRMS_Record_t *src)
   hcon_copy(&dst->keywords, &src->keywords);
   hcon_copy(&dst->links, &src->links);
   hcon_copy(&dst->segments, &src->segments);
+
+  /* copy aliases - the assignment above messes up the keyword_aliases field */
+  // dst->keyword_aliases = (HContainer_t *)malloc(sizeof(HContainer_t));
+  // hcon_copy(dst->keyword_aliases, src->keyword_aliases);
+  dst->keyword_aliases = hcon_create(sizeof(DRMS_Keyword_t *), DRMS_MAXKEYNAMELEN, NULL, NULL, NULL, NULL, 0);
+
+  if (dst->keyword_aliases)
+  {
+      alias_iter = hiter_create(src->keyword_aliases);
+
+      if (alias_iter)
+      {
+          while ((ptr_src_keyword = (DRMS_Keyword_t **)hiter_extgetnext(alias_iter, &alias)) != NULL)
+          {
+              dst_keyword = hcon_lookup_lower(&dst->keywords, (*ptr_src_keyword)->info->name);
+              if (dst_keyword)
+              {
+                  hcon_insert_lower(dst->keyword_aliases, alias, &dst_keyword);
+              }
+          }
+
+          hiter_destroy(&alias_iter);
+      }
+  }
 
   /* Set parent pointers. */
   hiter_new(&hit, &dst->links);

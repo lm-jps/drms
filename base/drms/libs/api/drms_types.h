@@ -681,6 +681,9 @@ struct DRMS_Record_struct
                          call. */
   int refcount; /* Track all references to the record struct in the
                        * record_cache. */
+  HContainer_t *keyword_aliases; /* Each keyword can have an arbitrary number of aliases
+                                  * (as long as there are no duplicate key names)
+                                  */
 };
 
 /** DRMS record struct reference */

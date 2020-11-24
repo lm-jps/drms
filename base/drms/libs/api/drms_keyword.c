@@ -674,6 +674,7 @@ int drms_template_keywords_int(DRMS_Record_t *template, int expandperseg, const 
   int rankindeterminate;
   int constrank;
   DB_Binary_Result_t *qres;
+  char alias[DRMS_MAXKEYNAMELEN] = {0};
 
   DRMS_SeriesVersion_t vers2_1 = {"2.1", ""};
 
@@ -682,6 +683,8 @@ int drms_template_keywords_int(DRMS_Record_t *template, int expandperseg, const 
   hcon_init(&template->keywords, sizeof(DRMS_Keyword_t), DRMS_MAXHASHKEYLEN,
 	    (void (*)(const void *)) drms_free_keyword_struct,
 	    (void (*)(const void *, const void *)) drms_copy_keyword_struct);
+
+  template->keyword_aliases = hcon_create(sizeof(DRMS_Keyword_t *), DRMS_MAXKEYNAMELEN, NULL, NULL, NULL, NULL, 0);
 
   num_segments = hcon_size(&template->segments);
 
@@ -802,7 +805,6 @@ int drms_template_keywords_int(DRMS_Record_t *template, int expandperseg, const 
 	db_binary_field_getstr(qres, irow, 7, sizeof(key->info->unit), key->info->unit);
 	key->info->recscope = (DRMS_RecScopeType_t)db_binary_field_getint(qres, irow, 8);
 
-
         if (key->info->type == DRMS_TYPE_TIME)
         {
            /* If unit is an interval unit (eg, day), then key->value is incorrect
@@ -880,6 +882,17 @@ int drms_template_keywords_int(DRMS_Record_t *template, int expandperseg, const 
         drms_keyword_unsetperseg(key);
         drms_keyword_unsetintprime(key);
         drms_keyword_unsetextprime(key);
+      }
+
+      if (!drms_keyword_getimplicit(key))
+      {
+          /* instantiate any aliases for FITS header output (key->record is template) */
+          fitsexport_getextkeyname(key, alias, sizeof(alias));
+          if (*alias != '\0' && !hcon_member_lower(&key->record->keywords, alias))
+          {
+              hcon_insert_lower(key->record->keyword_aliases, alias, &key);
+              *alias = '\0';
+          }
       }
 
       /* perform an amazing switcheroo - per Phil, existing series
@@ -1092,7 +1105,10 @@ DRMS_Keyword_t *drms_keyword_lookup(DRMS_Record_t *rec, const char *key, int fol
   /* Handle explicit link syntax, <linkname>:<keyname> */
   char tmplink[DRMS_MAXLINKNAMELEN]={0};
   char *colonchar;
+  DRMS_Keyword_t **ptr_key_found = NULL;
+  DRMS_Keyword_t *key_found = NULL;
   int status;
+
   colonchar = strchr(key, ':');
   if (colonchar)
   {
@@ -1126,7 +1142,21 @@ DRMS_Keyword_t *drms_keyword_lookup(DRMS_Record_t *rec, const char *key, int fol
       fprintf(stderr,"WARNING keyword name too long, %s\n",tmp);
   }
   if (!followlink)
-    return hcon_lookup_lower(&rec->keywords, tmp);
+  {
+      key_found = hcon_lookup_lower(&rec->keywords, tmp);
+
+      if (key_found == NULL && rec->keyword_aliases != NULL)
+      {
+          /* try the aliases */
+          ptr_key_found = hcon_lookup_lower(rec->keyword_aliases, tmp);
+          if (ptr_key_found)
+          {
+              key_found = *ptr_key_found;
+          }
+      }
+
+      return key_found;
+  }
   return __drms_keyword_lookup(rec, tmp, 0);
 }
 
@@ -1141,9 +1171,21 @@ static DRMS_Keyword_t * __drms_keyword_lookup(DRMS_Record_t *rec,
 					      const char *key, int depth)
 {
     int stat;
-    DRMS_Keyword_t *keyword;
+    DRMS_Keyword_t **ptr_key_found = NULL;
+    DRMS_Keyword_t *keyword = NULL;
 
     keyword = hcon_lookup_lower(&rec->keywords, key);
+
+    if (keyword == NULL && rec->keyword_aliases != NULL)
+    {
+        /* try the aliases */
+        ptr_key_found = hcon_lookup_lower(rec->keyword_aliases, key);
+        if (ptr_key_found)
+        {
+            keyword = *ptr_key_found;
+        }
+    }
+
     if (keyword!=NULL && depth<DRMS_MAXLINKDEPTH )
     {
         if (keyword->info->islink)
