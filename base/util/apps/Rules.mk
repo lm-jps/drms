@@ -6,15 +6,16 @@ d		:= $(dir)
 # Local variables
 CF_$(d)		:= -D$(DBMS)
 
-MODEXE_$(d)	:= $(addprefix $(d)/, create_series describe_series delete_series retrieve_dir retrieve_file set_keys set_info show_info show_keys show_series store_dir store_file plot_keys show_coverage dscp addkey timeslot ingestdata set_suretention)
+MODEXE_$(d)	:= $(addprefix $(d)/, create_series describe_series delete_series retrieve_dir retrieve_file set_keys set_info show_info show_keys show_series store_dir store_file plot_keys show_coverage addkey timeslot ingestdata set_suretention)
+MODEXE_NO_SOCK_$(d) := $(addprefix $(d)/, dscp)
 
-MODEXE		:= $(MODEXE) $(MODEXE_$(d))
+MODEXE		:= $(MODEXE) $(MODEXE_$(d)) $(MODEXE_NO_SOCK_$(d))
 
 MODEXE_SOCK_$(d):= $(MODEXE_$(d):%=%_sock)
 MODEXE_SOCK	:= $(MODEXE_SOCK) $(MODEXE_SOCK_$(d))
 
-EXE_$(d)	:= $(MODEXE_$(d)) 
-OBJ_$(d)	:= $(EXE_$(d):%=%.o) 
+EXE_$(d)	:= $(MODEXE_$(d)) $(MODEXE_NO_SOCK_$(d))
+OBJ_$(d)	:= $(EXE_$(d):%=%.o)
 DEP_$(d)	:= $(EXE_$(d):%=%.o.d)
 CLEAN		:= $(CLEAN) \
 		   $(OBJ_$(d)) \

@@ -21,7 +21,7 @@ typedef double   db_double_t;
 typedef char *   db_string_t;
 typedef char *   db_varchar_t;
 #endif
-#ifdef MYSQL 
+#ifdef MYSQL
 typedef char      db_char_t;
 typedef char      db_int1_t;
 typedef short     db_int2_t;
@@ -53,13 +53,13 @@ extern char __db_error_message[4096];
 
 #define MAXARG 1024 /* Maximum # of args to db_dmsv and db_query_binv. */
 
-typedef void(*db_sigblock_fn)(sigset_t *set, void *data); 
+typedef void(*db_sigblock_fn)(sigset_t *set, void *data);
 
 /* Generic column types. */
-typedef enum DB_Type_enum  { 
-  DB_CHAR, DB_INT1, DB_INT2, DB_INT4, DB_INT8, 
+typedef enum DB_Type_enum  {
+  DB_CHAR, DB_INT1, DB_INT2, DB_INT4, DB_INT8,
   DB_FLOAT, DB_DOUBLE, DB_STRING, DB_VARCHAR
-} DB_Type_t; 
+} DB_Type_t;
 
 /* Handle to database connection */
 typedef struct DB_Handle_struct
@@ -68,7 +68,7 @@ typedef struct DB_Handle_struct
   char dbhost[1024], dbname[1024], dbuser[1024];
   pthread_mutex_t *db_lock; /* Global lock (for multi-threaded operation). */
   int abort_now;            /* Abort flag (for multi-threaded operation). */
-  unsigned int stmt_num;    /* Statement counter (for multi-threaded operation). */ 
+  unsigned int stmt_num;    /* Statement counter (for multi-threaded operation). */
   int isolation_level;      /* Transaction isolation level. */
   char dbport[1024];  /* Port on host connected to */
   char errmsg[4096]; /* Error message of last command. */
@@ -96,7 +96,7 @@ static inline const char *DB_GetErrmsg(DB_Handle_t *dbh)
     {
         return dbh->errmsg;
     }
-    
+
     return NULL;
 }
 
@@ -121,7 +121,7 @@ typedef struct DB_Column_struct
   DB_Type_t type;        /* The data type. */
   unsigned int num_rows; /* Number of rows in the column.  */
   unsigned int size;     /* Size of data type. */
-  char *data;            /* Array of type "type" holding the column data. 
+  char *data;            /* Array of type "type" holding the column data.
 			    The total length of *column_data is num_rows*size.  */
   short *is_null;        /* An array of flags indicating if the field
 			    contained a NULL value. */
@@ -144,8 +144,8 @@ typedef struct DB_Text_Result_struct
   char **column_name;     /* Name of the column. */
   int *column_width;      /* Max width of the column. */
   char *buffer;           /* buffers holding the results. On buffer per row. */
-  char ***field;          /* field[i][j] is a string contained in the i'th row 
-			     and j'th column of the result. */ 
+  char ***field;          /* field[i][j] is a string contained in the i'th row
+			     and j'th column of the result. */
 } DB_Text_Result_t;
 
 
@@ -161,12 +161,12 @@ void db_get_error_message(int maxlen, char *err);
 /* Size of datatypes. */
 int db_sizeof(DB_Type_t type);
 
-/* SQL names for data types. */ 
+/* SQL names for data types. */
 const char *db_type_string(DB_Type_t dbtype);
 char *db_stringtype_maxlen(int maxlen);
 
 /* Establish authenticated connection to database server. */
-DB_Handle_t  *db_connect(const char *host, const char *user, 
+DB_Handle_t  *db_connect(const char *host, const char *user,
 			 const char *passwd, const char *db_name,
 			 const int lock);
 /* Disconnect from  database server. */
@@ -175,6 +175,8 @@ void db_disconnect(DB_Handle_t **db);
 
 /* SQL data manipulation statement with fixed input and no output. */
 int db_dms(DB_Handle_t  *db, int *row_count, const char *query_string);
+
+int db_dms_quiet(DB_Handle_t *dbin, int *row_count, const char *query_string);
 
 /* SQL data manipulation statement with variable array input and no output. */
 int db_dmsv(DB_Handle_t  *dbin, int *row_count, const char *query_string, int n_rows, ...);
@@ -196,33 +198,33 @@ DB_Binary_Result_t *db_query_bin(DB_Handle_t *db, const char *query_string);
 DB_Binary_Result_t *db_query_binv(DB_Handle_t *dbin, const char *query, ...);
 DB_Binary_Result_t *db_query_bin_array(DB_Handle_t  *dbin, const char *query, int n_args, DB_Type_t *intype, void **argin);
 DB_Binary_Result_t **db_query_bin_ntuple(DB_Handle_t *dbin, const char *stmnt, unsigned int nelems, unsigned int nargs, DB_Type_t *dbtypes, void **values);
-		
+
 
 /* Functions for extraction the field values from a binary table. */
-/*char *db_binary_field_get(DB_Binary_Result_t *res, unsigned int row, 
+/*char *db_binary_field_get(DB_Binary_Result_t *res, unsigned int row,
   unsigned int col); */
-int db_binary_field_is_null(DB_Binary_Result_t *res, unsigned int row, 
+int db_binary_field_is_null(DB_Binary_Result_t *res, unsigned int row,
 			    unsigned int col);
 /* DB_Type_t db_binary_column_type(DB_Binary_Result_t *res, unsigned int col); */
 void db_print_binary_field_type(DB_Type_t dbtype);
 DB_Text_Result_t *db_binary_to_text(DB_Binary_Result_t *binres);
 
 /* with conversion... */
-char db_binary_field_getchar(DB_Binary_Result_t *res, unsigned int row, 
+char db_binary_field_getchar(DB_Binary_Result_t *res, unsigned int row,
 			     unsigned int col);
-int db_binary_field_getint(DB_Binary_Result_t *res, unsigned int row, 
+int db_binary_field_getint(DB_Binary_Result_t *res, unsigned int row,
 			   unsigned int col);
-long long db_binary_field_getlonglong(DB_Binary_Result_t *res, 
-				      unsigned int row, 
+long long db_binary_field_getlonglong(DB_Binary_Result_t *res,
+				      unsigned int row,
 				      unsigned int col);
-float db_binary_field_getfloat(DB_Binary_Result_t *res, unsigned int row, 
+float db_binary_field_getfloat(DB_Binary_Result_t *res, unsigned int row,
 			       unsigned int col);
-double db_binary_field_getdouble(DB_Binary_Result_t *res, unsigned int row, 
+double db_binary_field_getdouble(DB_Binary_Result_t *res, unsigned int row,
 				 unsigned int col);
-void db_binary_field_getstr(DB_Binary_Result_t *res, unsigned int row, 
+void db_binary_field_getstr(DB_Binary_Result_t *res, unsigned int row,
 			    unsigned int col, int len, char *str);
 
-/* Formated printing of table of results. */    
+/* Formated printing of table of results. */
 void db_print_binary_result(DB_Binary_Result_t *res);
 void db_print_binary_field(DB_Type_t dbtype, int width, char *data);
 int db_sprint_binary_field(DB_Type_t dbtype, int width, char *data, char *dst);
@@ -258,7 +260,7 @@ int db_cancel(DB_Handle_t *db, char *effbuf, int size);
 int db_settimeout(DB_Handle_t *db, unsigned int timeoutval);
 int db_setutf8clientencoding(DB_Handle_t *db);
 
-/* Set transaction isolation level.   
+/* Set transaction isolation level.
    0 = read commited
    1 = serializable.
    2 = read only. */
@@ -267,7 +269,7 @@ int db_isolation_level(DB_Handle_t  *dbin, int level);
 
 /* Utilities */
 void *safemalloc(size_t size);
-char *search_replace(const char *string, const char *search, 
+char *search_replace(const char *string, const char *search,
 		     const char *replace);
 
 /* Conversion routines for binary results. */
@@ -351,40 +353,40 @@ void db_register_sigblock(db_sigblock_fn fn, void *data);
 
 
 /********** Inline functions ****************/
-static inline void net_packint(int val, int *buf, struct iovec *vec)  
+static inline void net_packint(int val, int *buf, struct iovec *vec)
 {
-  *buf=htonl((val)); 
-  vec->iov_len=sizeof(int); 
+  *buf=htonl((val));
+  vec->iov_len=sizeof(int);
   vec->iov_base = buf;
 }
 
-static inline void net_packlonglong(long long val, long long *buf, struct iovec *vec)  
+static inline void net_packlonglong(long long val, long long *buf, struct iovec *vec)
 {
-  *buf=htonll((val)); 
-  vec->iov_len=sizeof(long long); 
+  *buf=htonll((val));
+  vec->iov_len=sizeof(long long);
   vec->iov_base = buf;
 }
 
 static inline void net_packstring(char *str, int *buf, struct iovec *vec)
 {
-  (vec+1)->iov_len=strlen(str); 
-  (vec+1)->iov_base = str; 
-  *buf=htonl((vec+1)->iov_len); 
-  vec->iov_len=sizeof(int); 
+  (vec+1)->iov_len=strlen(str);
+  (vec+1)->iov_base = str;
+  *buf=htonl((vec+1)->iov_len);
+  vec->iov_len=sizeof(int);
   vec->iov_base = buf;
 }
 
-static inline DB_Type_t db_binary_column_type(DB_Binary_Result_t *res, 
+static inline DB_Type_t db_binary_column_type(DB_Binary_Result_t *res,
 					      unsigned int col)
 {
   return res->column[col].type;
 }
 
 
-static inline char *db_binary_field_get(DB_Binary_Result_t *res, 
-					unsigned int row, 
+static inline char *db_binary_field_get(DB_Binary_Result_t *res,
+					unsigned int row,
 					unsigned int col)
-{  
+{
   if ( row<res->num_rows && col<res->num_cols )
     return (res->column[col].data+row*res->column[col].size);
   else
@@ -395,7 +397,7 @@ static inline char *db_binary_field_get(DB_Binary_Result_t *res,
 #pragma warning (disable : 810 1469)
 #endif
 /* There appears to be no way to use htons() without generating an icc compiler warning. */
-static inline void Writeshort(int fd, short val) 
+static inline void Writeshort(int fd, short val)
 { short tmp; tmp = htons((val)); Writen((fd), &tmp, sizeof(short)); }
 #ifdef ICCCOMP
 #pragma warning (default : 810 1469)
@@ -403,12 +405,11 @@ static inline void Writeshort(int fd, short val)
 
 static inline void Writeint(int fd, int val)
 { int tmp; tmp = htonl((val)); Writen((fd), &tmp, sizeof(int)); }
-static inline void Writelonglong(int fd, long long val) 
+static inline void Writelonglong(int fd, long long val)
 { long long tmp; tmp = htonll((val)); Writen((fd), &tmp, sizeof(long long)); }
 
 
 #define QUERY_ERROR(__query__) fprintf(stderr,"Error at %s, line %d: Query '" \
- "%s' failed.\n",   __FILE__, __LINE__,__query__); 
+ "%s' failed.\n",   __FILE__, __LINE__,__query__);
 
 #endif
-

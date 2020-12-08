@@ -457,7 +457,7 @@ static int copy_columns(DRMS_Env_t *env, const char *source_series, const char *
                  {
                      snprintf(cmd, sizeof(cmd), "INSERT INTO %s.%s %s", dest_schema, dest_table, query);
 
-                     if (!drms_dms(env->session, NULL, cmd))
+                     if (!drms_dms_quiet(env->session, NULL, cmd))
                      {
                          err = 0;
                      }

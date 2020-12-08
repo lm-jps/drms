@@ -4,7 +4,7 @@
 #include <unistd.h>
 #include <stdarg.h>
 #include <assert.h>
-#include <ctype.h> 
+#include <ctype.h>
 #include <netinet/in.h>
 #include <libpq-fe.h>
 #include "db.h"
@@ -22,7 +22,7 @@
 #define PG_STRING_OID  (25)
 #define PG_VARCHAR_OID (1043)
 
-//#define DEBUG 
+//#define DEBUG
 
 
 
@@ -75,14 +75,14 @@ static DB_Type_t pgsql2db_type(int pgtype)
   case PG_VARCHAR_OID:
     return DB_VARCHAR;
   default:
-    return DB_STRING;    
+    return DB_STRING;
   }
 }
 
 
 
 
-DB_Handle_t *db_connect(const char *host, const char *user, 
+DB_Handle_t *db_connect(const char *host, const char *user,
 			const char *passwd, const char *db_name,
 			const int lock)
 {
@@ -96,7 +96,7 @@ DB_Handle_t *db_connect(const char *host, const char *user,
   /* If any of the authentication information is missing
      rely on ~/.pgpass to contain it. */
   p = conninfo;
-  if (host) 
+  if (host)
   {
      hostname = strdup(host);
 
@@ -110,21 +110,21 @@ DB_Handle_t *db_connect(const char *host, const char *user,
      if (isdigit(hostname[0]))
        p += sprintf(p,"hostaddr = %s ",hostname);
      else
-       p += sprintf(p,"host = %s ",hostname); 
+       p += sprintf(p,"host = %s ",hostname);
 
-     if (port) 
+     if (port)
      {
         p += sprintf(p, "port = %s ", port);
      }
   }
 
   if (db_name)
-      p += sprintf(p,"dbname = %s ",db_name); 
-  if (user) 
-      p += sprintf(p,"user = %s ",user); 
+      p += sprintf(p,"dbname = %s ",db_name);
+  if (user)
+      p += sprintf(p,"user = %s ",user);
   if (passwd)
-      p += sprintf(p,"password = %s ",passwd); 
-      
+      p += sprintf(p,"password = %s ",passwd);
+
     /* cannot set client encoding here with PG 8.4 :( */
 
   db = PQconnectdb(conninfo);
@@ -150,14 +150,14 @@ DB_Handle_t *db_connect(const char *host, const char *user,
   /* Initialize DB handle struct. */
   handle = malloc(sizeof(DB_Handle_t));
   XASSERT(handle);
-  
+
   strncpy(handle->dbhost,PQhost(db),1024);
   snprintf(handle->dbport, sizeof(handle->dbport), "%s", PQport(db));
   strncpy(handle->dbname,PQdb(db),1024);
   strncpy(handle->dbuser,PQuser(db),1024);
   handle->db_connection = (void *) db;
   handle->abort_now = 0;
-  handle->stmt_num = 0; 
+  handle->stmt_num = 0;
   handle->isolation_level = DB_TRANS_READCOMMIT;
   if (lock)
   {
@@ -167,7 +167,7 @@ DB_Handle_t *db_connect(const char *host, const char *user,
   }
   else
     handle->db_lock = NULL;
-    
+
     memset(handle->errmsg, 0, sizeof(handle->errmsg));
 
   if (port)
@@ -182,7 +182,7 @@ DB_Handle_t *db_connect(const char *host, const char *user,
 
   return handle;
 }
-    
+
 void db_disconnect(DB_Handle_t **db)
 {
   if (db && *db)
@@ -203,7 +203,7 @@ void db_disconnect(DB_Handle_t **db)
        dbin->db_lock = NULL; /* make it easier to spot use after free. */
     }
 
-    free(dbin); 
+    free(dbin);
     *db = NULL;
   }
 }
@@ -259,21 +259,21 @@ DB_Text_Result_t *db_query_txt(DB_Handle_t  *dbin, const char *query_string)
     {
       colname_length += strlen(PQfname(res, i))+1;
       result->column_width[i] = 0;
-      for(j = 0; j < result->num_rows; j++) 
+      for(j = 0; j < result->num_rows; j++)
       {
 	width = PQgetlength(res,j,i);
 	buffer_length += width+1;
 	if (width > result->column_width[i])
 	  result->column_width[i] = width;
       }
-    }    
+    }
 
     buflen = (3+result->num_cols)*sizeof(int) + colname_length + buffer_length;
     result->buffer = malloc( buflen );
     XASSERT(result->buffer);
 
     p = result->buffer;
-    
+
     /* Pack size info into the buffer. */
     *((int *) p) = htonl(buflen);
     p += sizeof(int);
@@ -286,7 +286,7 @@ DB_Text_Result_t *db_query_txt(DB_Handle_t  *dbin, const char *query_string)
       *((int *) p) = htonl(result->column_width[i]);
       p += sizeof(int);
     }
-    
+
     /* Copy column names. */
     for (i=0; i<result->num_cols; i++)
     {
@@ -298,13 +298,13 @@ DB_Text_Result_t *db_query_txt(DB_Handle_t  *dbin, const char *query_string)
       printf("name = %s, copy = %s, n = %d.\n",PQfname(res, i),result->column_name[i], n);
 #endif
     }
-    
+
 
     /* Set up data structure for the actual contents. */
     result->field =  (char ***) malloc(result->num_rows*sizeof(char **) + result->num_rows*result->num_cols*sizeof(char *));
     XASSERT(result->field);
     for (i=0; i<result->num_rows; i++)
-      result->field[i] = (char **) &result->field[result->num_rows + 
+      result->field[i] = (char **) &result->field[result->num_rows +
 						  i*result->num_cols];
 
     /* Copy over the actual field contents. */
@@ -325,7 +325,7 @@ DB_Text_Result_t *db_query_txt(DB_Handle_t  *dbin, const char *query_string)
   db_unlock(dbin);
   return result;
 }
-  
+
 
 
 DB_Binary_Result_t *db_query_bin(DB_Handle_t *dbin, const char *query_string)
@@ -350,7 +350,7 @@ DB_Binary_Result_t *db_query_bin(DB_Handle_t *dbin, const char *query_string)
 #endif
   res = PQexecParams(db,query_string, 0, NULL,
 		     NULL, NULL, NULL, 1);
-  
+
     DB_ResetErrmsg(dbin);
   if (PQresultStatus(res) != PGRES_TUPLES_OK)
   {
@@ -369,7 +369,7 @@ DB_Binary_Result_t *db_query_bin(DB_Handle_t *dbin, const char *query_string)
 
   if (db_res->num_cols>0)  // there are rows
   {
-    db_res->column = (DB_Column_t *)malloc(db_res->num_cols * sizeof(DB_Column_t)); 
+    db_res->column = (DB_Column_t *)malloc(db_res->num_cols * sizeof(DB_Column_t));
     XASSERT(db_res->column);
     //    printf("num_rows=%d, num_cols=%d\n",db_res->num_rows,db_res->num_cols);
     for (i=0; i<db_res->num_cols; i++)
@@ -378,7 +378,7 @@ DB_Binary_Result_t *db_query_bin(DB_Handle_t *dbin, const char *query_string)
       colname_length = strlen(PQfname(res,i))+1;
       db_res->column[i].column_name = malloc(colname_length);
       XASSERT(db_res->column[i].column_name);
-      strcpy(db_res->column[i].column_name,PQfname(res,i)); 
+      strcpy(db_res->column[i].column_name,PQfname(res,i));
       //printf("name = %s (%s)\n",db_res->column[i].column_name,PQfname(res,i));
       db_res->column[i].type = pgsql2db_type(PQftype(res,i));
       //printf("type = %d (%d)\n",db_res->column[i].type,PQftype(res,i));
@@ -386,7 +386,7 @@ DB_Binary_Result_t *db_query_bin(DB_Handle_t *dbin, const char *query_string)
       db_res->column[i].is_null =  malloc(db_res->num_rows*sizeof(int));
       XASSERT(db_res->column[i].is_null);
       db_res->column[i].size = 0;
-      
+
       /* Get the maximum (over all rows) value length */
       for (j=0; j<db_res->num_rows; j++)
       {
@@ -394,16 +394,16 @@ DB_Binary_Result_t *db_query_bin(DB_Handle_t *dbin, const char *query_string)
 	if (width>db_res->column[i].size)
 	  db_res->column[i].size = width;
       }
-      
+
       /* The database does NOT store the trailing '\0' as part of the
 	 string. Add it manually by setting size one larger. */
-      if ( db_res->column[i].type == DB_STRING || 
+      if ( db_res->column[i].type == DB_STRING ||
 	   db_res->column[i].type == DB_VARCHAR )
 	(db_res->column[i].size)++;
 
       if (db_res->column[i].size == 0)
       {
-         /* If you malloc(0), then free() the resulting pointer, you get a crash, 
+         /* If you malloc(0), then free() the resulting pointer, you get a crash,
           * so make the size at least 1 (even though it won't be used).
           * This is the simplest fix for something that should happen
           * very often.
@@ -413,7 +413,7 @@ DB_Binary_Result_t *db_query_bin(DB_Handle_t *dbin, const char *query_string)
           */
          db_res->column[i].size = db_sizeof(db_res->column[i].type);
       }
-      
+
       db_res->column[i].data = malloc(db_res->num_rows * db_res->column[i].size);
       XASSERT(db_res->column[i].data);
 
@@ -424,25 +424,25 @@ DB_Binary_Result_t *db_query_bin(DB_Handle_t *dbin, const char *query_string)
 
 #ifdef DEBUG
       printf("sizeof column %d = %d\n",i,db_res->column[i].size);
-#endif      
+#endif
     }
-    
+
     for (i=0; i<db_res->num_cols; i++)
     {
       for (j=0; j<db_res->num_rows; j++)
       {
 	db_res->column[i].is_null[j] = PQgetisnull(res,j,i);
 	if (!db_res->column[i].is_null[j])
-	  memcpy(&db_res->column[i].data[j*db_res->column[i].size], 
+	  memcpy(&db_res->column[i].data[j*db_res->column[i].size],
 		 PQgetvalue(res,j,i), PQgetlength(res,j,i));
       }
 #if __BYTE_ORDER == __LITTLE_ENDIAN
-      db_byteswap(db_res->column[i].type, db_res->num_rows, 
+      db_byteswap(db_res->column[i].type, db_res->num_rows,
 		  db_res->column[i].data);
 #endif
-    }   
-  }  
-  PQclear(res);      
+    }
+  }
+  PQclear(res);
   db_unlock(dbin);
   return db_res;
 failure:
@@ -500,7 +500,7 @@ DB_Binary_Result_t *db_query_bin_array(DB_Handle_t  *dbin, const char *query, in
   {
     if (*q == '?')
     {
-      q++;      
+      q++;
       op += sprintf(op,"$%d",n);
       n++;
     }
@@ -584,7 +584,7 @@ DB_Binary_Result_t *db_query_bin_array(DB_Handle_t  *dbin, const char *query, in
       colname_length = strlen(PQfname(res,i))+1;
       db_res->column[i].column_name = malloc(colname_length);
       XASSERT(db_res->column[i].column_name);
-      strcpy(db_res->column[i].column_name,PQfname(res,i)); 
+      strcpy(db_res->column[i].column_name,PQfname(res,i));
       //printf("name = %s (%s)\n",db_res->column[i].column_name,PQfname(res,i));
       db_res->column[i].type = pgsql2db_type(PQftype(res,i));
       //printf("type = %d (%d)\n",db_res->column[i].type,PQftype(res,i));
@@ -598,10 +598,10 @@ DB_Binary_Result_t *db_query_bin_array(DB_Handle_t  *dbin, const char *query, in
 	if (width>db_res->column[i].size)
 	  db_res->column[i].size = width;
       }
-      
+
       /* The database does NOT store the trailing '\0' as part of the
 	 string. Add it manually by setting size one larger. */
-      if ( db_res->column[i].type == DB_STRING || 
+      if ( db_res->column[i].type == DB_STRING ||
 	   db_res->column[i].type == DB_VARCHAR )
         {
             (db_res->column[i].size)++;
@@ -614,34 +614,34 @@ DB_Binary_Result_t *db_query_bin_array(DB_Handle_t  *dbin, const char *query, in
                 db_res->column[i].size = db_sizeof(db_res->column[i].type);
             }
         }
-      
+
       db_res->column[i].data = malloc(db_res->num_rows * db_res->column[i].size);
       XASSERT(db_res->column[i].data);
 #ifdef DEBUG
       printf("sizeof column %d = %d\n",i,db_res->column[i].size);
-#endif      
+#endif
     }
-    
+
     for (i=0; i<db_res->num_cols; i++)
     {
       for (j=0; j<db_res->num_rows; j++)
       {
 	db_res->column[i].is_null[j] = PQgetisnull(res,j,i);
 	if (!db_res->column[i].is_null[j])
-	  memcpy(&db_res->column[i].data[j*db_res->column[i].size], 
+	  memcpy(&db_res->column[i].data[j*db_res->column[i].size],
 		 PQgetvalue(res,j,i), db_res->column[i].size);
 	else
 	  memset(&db_res->column[i].data[j*db_res->column[i].size], 0,
 		 db_res->column[i].size);
       }
 #if __BYTE_ORDER == __LITTLE_ENDIAN
-      db_byteswap(db_res->column[i].type, db_res->num_rows, 
+      db_byteswap(db_res->column[i].type, db_res->num_rows,
 		  db_res->column[i].data);
 #endif
-    }   
-  }  
+    }
+  }
   free(pquery);
-  PQclear(res);      
+  PQclear(res);
   db_unlock(dbin);
   return db_res;
 failure:
@@ -652,11 +652,11 @@ failure:
 }
 
 /* A better name for this function would have been db_query_bin_array(), but that name was already taken,
- * despite the fact that that function has nothing to do with arrays. 
+ * despite the fact that that function has nothing to do with arrays.
  *
- * The query string must have nargs placeholder. Each placeholder refers to an ntuple of values, which must all be of the 
- * same data type. The data type of placeholders is specified in the dbtypes array, which has nargs elements. The 
- * binary data that encodes actual values are specified in values. For all types, except strings, values[i] refers to an 
+ * The query string must have nargs placeholder. Each placeholder refers to an ntuple of values, which must all be of the
+ * same data type. The data type of placeholders is specified in the dbtypes array, which has nargs elements. The
+ * binary data that encodes actual values are specified in values. For all types, except strings, values[i] refers to an
  * array (contains the address of an array) with nelems elements, each of which contains X bytes of binary data, where X
  * is determined by the data type provided in dbtypes. For strings, values[i] refers to an array of nelems chars. Each
  * element points (is the address of) a block of memory holding a string of chars. So nelems is the number of elements in the values
@@ -703,9 +703,9 @@ DB_Binary_Result_t **db_query_bin_ntuple(DB_Handle_t *dbin, const char *stmnt, u
     int colnameLength;
     unsigned int width;
     int err;
-    
+
     err =  0;
-    
+
     if (dbin)
     {
         /* Lock database connection if in multi-threaded mode. */
@@ -717,26 +717,26 @@ DB_Binary_Result_t **db_query_bin_ntuple(DB_Handle_t *dbin, const char *stmnt, u
                 fprintf(stderr,"Maximum number of arguments exceeded (%d > %d).\n", nargs, MAXARG);
                 err = 1;
             }
-            
+
             if (!err)
             {
                 dbconn = dbin->db_connection;
                 prepareStmntClause = calloc(1, stmntsz);
-                
+
                 if (!prepareStmntClause)
                 {
                     /* Out of memory. */
                     err = 1;
                 }
             }
-                
+
             if (!err)
             {
                 pin = stmnt;
-                
+
                 /* Replace wildcards '?' with '$1', '$2', '$3' etc. */
                 counter = 1;
-                
+
                 while (*pin)
                 {
                     if (*pin == '?')
@@ -745,9 +745,9 @@ DB_Binary_Result_t **db_query_bin_ntuple(DB_Handle_t *dbin, const char *stmnt, u
                     }
                     else
                     {
-                        snprintf(buf, sizeof(buf), "%c", *pin);    
+                        snprintf(buf, sizeof(buf), "%c", *pin);
                     }
-                    
+
                     pin++;
                     prepareStmntClause = base_strcatalloc(prepareStmntClause, buf, &stmntsz);
                     if (!prepareStmntClause)
@@ -758,41 +758,41 @@ DB_Binary_Result_t **db_query_bin_ntuple(DB_Handle_t *dbin, const char *stmnt, u
                     }
                 }
             }
-             
+
             /* Create the prepared statement. */
             if (!err)
             {
                 stmntsz = 2048;
                 prepareStmnt = calloc(1, stmntsz);
-                
+
                 if (!prepareStmnt)
                 {
                     /* Out of memory. */
                     err = 1;
                 }
             }
-                
+
             if (!err)
             {
-                
+
                 for (iarg = 0; iarg < nargs; iarg++)
                 {
                     if (iarg == 0)
                     {
                         snprintf(stmntName, sizeof(stmntName), "db_tmp_stmt_%u", dbin->stmt_num);
-                        
+
                         /* Increment the global statement counter (we're in a locked region of code). */
                         ++dbin->stmt_num;
-                        
+
                         snprintf(buf, sizeof(buf), "PREPARE %s(%s", stmntName, db_type_string(dbtypes[iarg]));
                     }
                     else
                     {
                         snprintf(buf, sizeof(buf), ", %s", db_type_string(dbtypes[iarg]));
                     }
-                    
+
                     prepareStmnt = base_strcatalloc(prepareStmnt, buf, &stmntsz);
-                    
+
                     if (!prepareStmnt)
                     {
                         /* Out of memory. */
@@ -800,11 +800,11 @@ DB_Binary_Result_t **db_query_bin_ntuple(DB_Handle_t *dbin, const char *stmnt, u
                     }
                 }
             }
-                    
+
             if (!err)
             {
                 prepareStmnt = base_strcatalloc(prepareStmnt, ") AS ", &stmntsz);
-                
+
                 if (prepareStmnt)
                 {
                     prepareStmnt = base_strcatalloc(prepareStmnt, prepareStmntClause, &stmntsz);
@@ -813,7 +813,7 @@ DB_Binary_Result_t **db_query_bin_ntuple(DB_Handle_t *dbin, const char *stmnt, u
                         /* Out of memory. */
                         err = 1;
                     }
-                    
+
                     free(prepareStmntClause);
                     prepareStmntClause = NULL;
                 }
@@ -823,37 +823,37 @@ DB_Binary_Result_t **db_query_bin_ntuple(DB_Handle_t *dbin, const char *stmnt, u
                     err = 1;
                 }
             }
-                    
+
             if (!err)
             {
                 /* Must unlock db - db_dms will lock/unlock db. */
                 db_unlock(dbin);
-                
+
                 /* Ask database server to prepare a statement executing the query. */
                 if (db_dms(dbin, NULL, prepareStmnt))
                 {
                     /* Failed to create prepare statement. */
                     err = 1;
                 }
-                
+
                 db_lock(dbin);
-                
+
                 free(prepareStmnt);
                 prepareStmnt = NULL;
             }
-                        
+
             if (!err)
             {
                 void *tuple = NULL;
                 char *strAddr = NULL;
-                
+
                 for (ielem = 0; ielem < nelems; ielem++)
                 {
                     /* Extract query parameters from function argument list. */
                     for (iarg = 0, buflen = 0; iarg < nargs; iarg++)
                     {
                         tuple = values[iarg];
-                        
+
                         if (dbtypes[iarg] == DB_STRING || dbtypes[iarg] == DB_VARCHAR)
                         {
                             paramLengths[iarg] = strlen(((char **)tuple)[ielem]);
@@ -862,11 +862,11 @@ DB_Binary_Result_t **db_query_bin_ntuple(DB_Handle_t *dbin, const char *stmnt, u
                         {
                             paramLengths[iarg] = db_sizeof(dbtypes[iarg]);
                         }
-                        
+
                         paramFormats[iarg] = 1;
                         buflen += paramLengths[iarg];
                     }
-                    
+
                     paramBuf = calloc(1, buflen);
                     if (!paramBuf)
                     {
@@ -874,7 +874,7 @@ DB_Binary_Result_t **db_query_bin_ntuple(DB_Handle_t *dbin, const char *stmnt, u
                         err = 1;
                         break;
                     }
-                    
+
                     pParamBuf = paramBuf;
                     for (iarg = 0; iarg < nargs; iarg++)
                     {
@@ -895,12 +895,12 @@ DB_Binary_Result_t **db_query_bin_ntuple(DB_Handle_t *dbin, const char *stmnt, u
 #endif
                         pParamBuf += paramLengths[iarg];
                     }
-                    
+
                     /* Use prepare statement. */
                     pgres = PQexecPrepared(dbconn, stmntName, nargs, (const char * const *)paramValues, paramLengths, paramFormats, 1);
                     free(paramBuf);
                     paramBuf = NULL;
-                    
+
                     if (PQresultStatus(pgres) == PGRES_TUPLES_OK)
                     {
                         /* statement succeeded, process any data returned by it. */
@@ -911,10 +911,10 @@ DB_Binary_Result_t **db_query_bin_ntuple(DB_Handle_t *dbin, const char *stmnt, u
                             err = 1;
                             break;
                         }
-                        
+
                         dbres->num_rows = PQntuples(pgres);
                         dbres->num_cols = PQnfields(pgres);
-                        
+
                         if (dbres->num_cols > 0)
                         {
                             dbres->column = (DB_Column_t *)malloc(dbres->num_cols * sizeof(DB_Column_t));
@@ -924,7 +924,7 @@ DB_Binary_Result_t **db_query_bin_ntuple(DB_Handle_t *dbin, const char *stmnt, u
                                 err = 1;
                                 break;
                             }
-                            
+
                             for (icol = 0; icol < dbres->num_cols; icol++)
                             {
                                 colnameLength = strlen(PQfname(pgres, icol)) + 1;
@@ -935,8 +935,8 @@ DB_Binary_Result_t **db_query_bin_ntuple(DB_Handle_t *dbin, const char *stmnt, u
                                     err = 1;
                                     break;
                                 }
-                                
-                                strcpy(dbres->column[icol].column_name, PQfname(pgres,icol)); 
+
+                                strcpy(dbres->column[icol].column_name, PQfname(pgres,icol));
                                 dbres->column[icol].type = pgsql2db_type(PQftype(pgres, icol));
                                 dbres->column[icol].num_rows = dbres->num_rows;
                                 dbres->column[icol].is_null = malloc(dbres->num_rows * sizeof(int));
@@ -946,9 +946,9 @@ DB_Binary_Result_t **db_query_bin_ntuple(DB_Handle_t *dbin, const char *stmnt, u
                                     err = 1;
                                     break;
                                 }
-                                
+
                                 /* The column size is the max(width of row). */
-                                
+
                                 /* I grabbed this code from db_query_bin_array(), and apparently it has a bug. This method
                                  * for determining the width of a column should apply to strings only. For numbers,
                                  * the width of a column is determined by the data type. For example, if the data type
@@ -971,10 +971,10 @@ DB_Binary_Result_t **db_query_bin_ntuple(DB_Handle_t *dbin, const char *stmnt, u
                                  *
                                  * The comment itself isn't 100% correct, but the gist of it agrees with my comment.
                                  * The problem can happen with numbers only.
-                                 * 
+                                 *
                                  * -Art 2014/01/28
                                  */
-                                
+
                                 dbres->column[icol].size = 0;
                                 for (irow = 0; irow < dbres->num_rows; irow++)
                                 {
@@ -984,7 +984,7 @@ DB_Binary_Result_t **db_query_bin_ntuple(DB_Handle_t *dbin, const char *stmnt, u
                                         dbres->column[icol].size = width;
                                     }
                                 }
-                                
+
                                 /* The database does NOT store the trailing '\0' as part of the
                                  string. Add it manually by setting size one larger. */
                                 if (dbres->column[icol].type == DB_STRING || dbres->column[icol].type == DB_VARCHAR)
@@ -999,7 +999,7 @@ DB_Binary_Result_t **db_query_bin_ntuple(DB_Handle_t *dbin, const char *stmnt, u
                                         dbres->column[icol].size = db_sizeof(dbres->column[icol].type);
                                     }
                                 }
-                                
+
                                 dbres->column[icol].data = malloc(dbres->num_rows * dbres->column[icol].size);
                                 if (!dbres->column[icol].data)
                                 {
@@ -1008,7 +1008,7 @@ DB_Binary_Result_t **db_query_bin_ntuple(DB_Handle_t *dbin, const char *stmnt, u
                                     break;
                                 }
                             }
-                            
+
                             for (icol = 0; icol < dbres->num_cols; icol++)
                             {
                                 for (irow = 0; irow < dbres->num_rows; irow++)
@@ -1033,37 +1033,37 @@ DB_Binary_Result_t **db_query_bin_ntuple(DB_Handle_t *dbin, const char *stmnt, u
                     {
                         fprintf(stderr, "query failed: %s", PQerrorMessage(dbconn));
                     }
-                    
+
                     PQclear(pgres);
                     if (!dbresults)
                     {
-                        dbresults = (DB_Binary_Result_t **)calloc(nelems, sizeof(DB_Binary_Result_t *));    
+                        dbresults = (DB_Binary_Result_t **)calloc(nelems, sizeof(DB_Binary_Result_t *));
                     }
-                    
+
                     dbresults[ielem] = dbres;
                     dbres = NULL;
-                    
+
                 } /* loop over tuple elements. */
             }
-            
+
             /* All done with the prepared statement - deallocate it. */
             if (*stmntName)
             {
                 /* This could fail, but we don't care. */
                 snprintf(buf, sizeof(buf), "DEALLOCATE %s", stmntName);
-                
+
                 /* Must unlock db - db_dms will lock/unlock db. */
                 db_unlock(dbin);
-                
+
                 db_dms(dbin, NULL, buf);
-                
+
                 db_lock(dbin);
             }
         }
 
         db_unlock(dbin);
     }
-    
+
     if (err)
     {
         if (dbresults)
@@ -1076,60 +1076,98 @@ DB_Binary_Result_t **db_query_bin_ntuple(DB_Handle_t *dbin, const char *stmnt, u
 }
 
 /* Execute a data manipulation statement (DMS). */
-int db_dms(DB_Handle_t *dbin, int *row_count, const char *query_string)
+static int db_dms_internal(DB_Handle_t *dbin, int *row_count, const char *query_string, int quiet)
 {
-  PGconn *db;
-  PGresult *res;
-  char *str;
+    PGconn *db = NULL;
+    PGresult *res = NULL;
+    char *str = NULL;
 
-  if (dbin==NULL)
-    return 1;
-  db = dbin->db_connection;
+    if (dbin == NULL)
+    {
+        return 1;
+    }
 
-   /* Lock database connection if in multi threaded mode. */
-  db_lock(dbin);
-  if (dbin->abort_now)
-    goto failure;
+    db = dbin->db_connection;
+
+     /* Lock database connection if in multi threaded mode. */
+    db_lock(dbin);
+    if (dbin->abort_now)
+    {
+        goto failure;
+    }
+
 #ifdef DEBUG
-  printf("db_dms: query = %s\n",query_string);
+    if (!quiet)
+    {
+        printf("db_dms: query = %s\n",query_string);
+    }
 #endif
-  res = PQexec(db, query_string);
-  if (PQresultStatus(res) != PGRES_COMMAND_OK)
-  {
-    fprintf(stderr, "query failed: %s", PQerrorMessage(db));
+    res = PQexec(db, query_string);
+    if (PQresultStatus(res) != PGRES_COMMAND_OK)
+    {
+        if (!quiet)
+        {
+            fprintf(stderr, "query failed: %s", PQerrorMessage(db));
+        }
+
+        PQclear(res);
+        goto failure;
+    }
+
+    if (PQntuples(res) != 0)
+    {
+        if (!quiet)
+        {
+            fprintf(stderr, "Queries returning results are not allowed in query_dms.\n");
+        }
+
+        PQclear(res);
+        goto failure;
+    }
+
+    if (row_count)
+    {
+        str = PQcmdTuples(res);
+
+        if (*str==0)
+        {
+            *row_count = 0;
+        }
+        else
+        {
+            *row_count = atol(str);
+        }
+    }
+
     PQclear(res);
-    goto failure;
-  }
-  if (PQntuples(res) != 0)
-  {
-    fprintf(stderr, "Queries returning results are not allowed in query_dms.\n");
-    PQclear(res);
-    goto failure;
-  }
-  if (row_count)
-  {
-    str = PQcmdTuples(res);
-    if (*str==0)
-      *row_count = 0;
-    else
-      *row_count = atol(str);
-  }
-  PQclear(res);
-  db_unlock(dbin);
-  return 0;
- failure:
-  QUERY_ERROR(query_string);
-  db_unlock(dbin);
-  return 1;
+    db_unlock(dbin);
+    return 0;
+failure:
+    if (!quiet)
+    {
+        QUERY_ERROR(query_string);
+    }
+
+    db_unlock(dbin);
+
+    return 1;
 }
 
+int db_dms(DB_Handle_t *dbin, int *row_count, const char *query_string)
+{
+    return db_dms_internal(dbin, row_count, query_string, 0);
+}
+int db_dms_quiet(DB_Handle_t *dbin, int *row_count, const char *query_string)
+{
+    return db_dms_internal(dbin, row_count, query_string, 1);
+}
 
 #define MAXARG 1024
 /* This is confusing. db_dms_array() allows you to provide a prepared statement, query, with n_args parameters in it. You
- * provide a table of data in argin that has n_args rows, and n_rows columns. argin[iArg] contains n_rows elements, 
- * in other words. db_drms_array() will then create a prepared statement for query, and then it will loop through 
- * the columns of argin. During each iteration of the loop, it will submit to PG a statement with n_args arguments, 
- * one for each of the placeholder parameters defined in query. 
+ * provide a table of data in argin that has n_args rows, and n_rows columns. argin[iArg] contains n_rows elements,
+ * in other words. db_drms_array() will then create a prepared statement for query, and then it will loop through
+ * the columns of argin. During each iteration of the loop, it will submit to PG a statement with n_args arguments,
+ * one for each of the placeholder parameters defined in query.
  *
  * The prepared statement in db_dms_array() cannot accept any return values (hence the "dms" in the function name).
  *
@@ -1164,7 +1202,7 @@ int db_dms_array(DB_Handle_t  *dbin, int *row_count, const char *query, int n_ro
 
 
   db = dbin->db_connection;
-  pquery = malloc(6*strlen(query)); 
+  pquery = malloc(6*strlen(query));
   XASSERT(pquery);
 
   /* Replace wildcards '?' with '$1', '$2', '$3' etc. */
@@ -1175,7 +1213,7 @@ int db_dms_array(DB_Handle_t  *dbin, int *row_count, const char *query, int n_ro
   {
     if (*q == '?')
     {
-      q++;      
+      q++;
       op += sprintf(op,"$%d",n);
       n++;
     }
@@ -1208,7 +1246,7 @@ int db_dms_array(DB_Handle_t  *dbin, int *row_count, const char *query, int n_ro
       db_unlock(dbin);
       goto failure;
     }
-    /* Buld the string for a PREPARE statement. */ 
+    /* Buld the string for a PREPARE statement. */
     sprintf(stmtname,"db_tmp_stmt_%u",dbin->stmt_num);
     sprintf(dallocstmt,"deallocate %s",stmtname);
     /* Increment the global statement counter. */
@@ -1228,7 +1266,7 @@ int db_dms_array(DB_Handle_t  *dbin, int *row_count, const char *query, int n_ro
       p += sprintf(p,"prepare %s as %s",stmtname,pquery);
 
 #ifdef DEBUG
-    printf("PREPARE STRING= '%s'\n",preparestring); 
+    printf("PREPARE STRING= '%s'\n",preparestring);
 #endif
     db_unlock(dbin);
 
@@ -1263,7 +1301,7 @@ int db_dms_array(DB_Handle_t  *dbin, int *row_count, const char *query, int n_ro
 
       res = PQexecPrepared(db, stmtname, n_args,
           (const char * const *)paramValues, paramLengths, paramFormats, 0);
-    
+
       if (PQresultStatus(res) != PGRES_COMMAND_OK)
       {
 	fprintf(stderr, "query failed: %s", PQerrorMessage(db));
@@ -1342,7 +1380,7 @@ int db_dms_array(DB_Handle_t  *dbin, int *row_count, const char *query, int n_ro
 
 
 
-int db_bulk_insert_array(DB_Handle_t  *dbin, char *table, int n_rows, 
+int db_bulk_insert_array(DB_Handle_t  *dbin, char *table, int n_rows,
 			 int n_args, DB_Type_t *intype, void **argin )
 {
   PGconn *db;
@@ -1371,7 +1409,7 @@ int db_bulk_insert_array(DB_Handle_t  *dbin, char *table, int n_rows,
     status = 1;
     goto failure;
   }
-  
+
 #if __BYTE_ORDER == __LITTLE_ENDIAN
   for(i=0; i<n_args; i++)
     db_byteswap(intype[i],n_rows,argin[i]);
@@ -1392,8 +1430,8 @@ int db_bulk_insert_array(DB_Handle_t  *dbin, char *table, int n_rows,
 #ifdef DEBUG
 	printf("len('%s') = %d\n",((char **) argin[j])[i],paramLengths[j][i]);
 #endif
-      }  
-    }  
+      }
+    }
     else
       bufsize += n_rows*db_sizeof(intype[j]);
   }
@@ -1497,7 +1535,7 @@ int db_bulk_insert_array(DB_Handle_t  *dbin, char *table, int n_rows,
     if (intype[j] == DB_STRING || intype[j] == DB_VARCHAR )
     {
       free(paramLengths[j]);
-    }  
+    }
   }
   free(buf);
   free(query);
@@ -1514,7 +1552,7 @@ int db_bulk_insert_array(DB_Handle_t  *dbin, char *table, int n_rows,
  */
 int db_isolation_level(DB_Handle_t  *dbin, int level)
 {
-  if (dbin == NULL) 
+  if (dbin == NULL)
     return 1;
 
   switch(level)
@@ -1538,20 +1576,19 @@ int db_isolation_level(DB_Handle_t  *dbin, int level)
   default:
     fprintf(stderr,"db_isolation_level: Invalid isolation level (%d) specified. Legal values are 0 = read commited, 1 = serializable, 2 = read only, 3 = repeatable read.\n", level);
     return 1;
-    break;    
+    break;
   }
 }
-  
+
 /* Begin new transaction */
 int db_start_transaction(DB_Handle_t  *db)
 {
-  return db_dms(db,NULL,"BEGIN");  
+  return db_dms(db,NULL,"BEGIN");
 }
-
 
 /* Commit the current transaction. */
 int db_commit(DB_Handle_t  *db)
-{  
+{
   return db_dms(db,NULL,"COMMIT");
 }
 
@@ -1567,7 +1604,7 @@ int db_rollback(DB_Handle_t  *db)
 long long db_sequence_getnext(DB_Handle_t *db,  char *tablename)
 {
   DB_Text_Result_t *res;
-  char query[1024];  
+  char query[1024];
   long long val;
 
   sprintf(query, "SELECT nextval('%s_seq')",tablename);
@@ -1588,7 +1625,7 @@ long long *db_sequence_getnext_n(DB_Handle_t *db,  char *tablename, int n)
 {
   DB_Binary_Result_t *res;
   int len,count,chunk, i;
-  char *query,*p;  
+  char *query,*p;
   long long *val;
 
   XASSERT(n>0);
@@ -1597,7 +1634,7 @@ long long *db_sequence_getnext_n(DB_Handle_t *db,  char *tablename, int n)
   XASSERT(query);
   val = malloc(sizeof(long long)*n);
   XASSERT(val);
-  
+
   count = 0;
   while (count < n)
   {
@@ -1618,7 +1655,7 @@ long long *db_sequence_getnext_n(DB_Handle_t *db,  char *tablename, int n)
       break;
     }
     else
-    {    
+    {
       for (i=0; i<chunk; i++)
 	val[count++] = *((long long *)res->column[i].data);
     }
@@ -1634,7 +1671,7 @@ long long *db_sequence_getnext_n(DB_Handle_t *db,  char *tablename, int n)
 long long db_sequence_getcurrent(DB_Handle_t *db,  char *tablename)
 {
   DB_Text_Result_t *res;
-  char query[512];  
+  char query[512];
   unsigned int val;
 
   sprintf(query, "SELECT currval('%s_seq')",tablename);
@@ -1654,7 +1691,7 @@ long long db_sequence_getcurrent(DB_Handle_t *db,  char *tablename)
 long long db_sequence_getlast(DB_Handle_t *db,  char *tablename)
 {
   DB_Text_Result_t *res;
-  char query[512];  
+  char query[512];
   unsigned int val;
 
   sprintf(query, "SELECT last_value from %s_seq",tablename);

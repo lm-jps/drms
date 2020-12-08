@@ -13,14 +13,14 @@ static int TableExists(DRMS_Session_t *session, const char *schema, const char *
 {
     int statint;
     int rv = 0;
-    
+
     rv = drms_query_tabexists(session, schema, table, &statint);
-    
+
     if (statint != DRMS_SUCCESS)
     {
         rv = -1;
     }
-    
+
     return rv;
 }
 
@@ -32,7 +32,7 @@ static int GetDBMinVersion(DRMS_Session_t *session, char **versout)
     char *table = NULL;
     char query[256];
     DB_Text_Result_t *qres = NULL;
-    
+
     if (!versout)
     {
         fprintf(stderr, "Invalid argument to GetDBMinVersion().\n");
@@ -58,7 +58,7 @@ static int GetDBMinVersion(DRMS_Session_t *session, char **versout)
             {
                 /* Fetch the version from the DB version table. */
                 snprintf(query, sizeof(query), "SELECT minversion FROM %s", DRMS_MINVERSTABLE);
-                
+
                 if ((qres = drms_query_txt(session, query)) == NULL)
                 {
                     /* Error */
@@ -80,19 +80,19 @@ static int GetDBMinVersion(DRMS_Session_t *session, char **versout)
                     else
                     {
                         const char *version = qres->field[0][0];
-                        
+
                         *versout = strdup(version);
                     }
 
                     db_free_text_result(qres);
                 }
             }
-            
+
             free(schema);
             free(table);
         }
     }
-    
+
     return rv;
 }
 
@@ -109,23 +109,23 @@ DRMS_Session_t *drms_connect(const char *host)
     unsigned short portnum;
     char *sudirrecv = NULL;
     struct sockaddr *serverp = NULL;
-    
+
     if (host)
     {
         hostname = strdup(host);
-        
+
         if (!hostname)
         {
             fprintf(stderr, "drms_connect(): Out of memory.\n");
             goto bailout1;
         }
-        
+
         /* extract port from host */
         if ((pport = strchr(host, ':')) != NULL)
         {
             hostname[pport - host] = '\0';
             port = strdup(pport + 1);
-            
+
             if (!port)
             {
                 fprintf(stderr, "drms_connect(): Out of memory.\n");
@@ -137,18 +137,18 @@ DRMS_Session_t *drms_connect(const char *host)
             fprintf(stderr, "Port number missing from host.\n");
             goto bailout1;
         }
-        
+
         if (port)
         {
             sscanf(port, "%hu", &portnum);
         }
     }
-    
+
     /* get the host info */
     if ((he=gethostbyname(hostname)) == NULL)
     {
         herror("gethostbyname");
-        
+
         if (port)
         {
             free(port);
@@ -157,22 +157,22 @@ DRMS_Session_t *drms_connect(const char *host)
         {
             free(hostname);
         }
-        
+
         fprintf(stderr, "Error calling gethostbyname().\n");
         return NULL;
     }
-    
+
     session = malloc(sizeof(DRMS_Session_t));
     XASSERT(session);
     session->db_direct = 0;
-    
+
     /* set up the transport end point */
     if ((session->sockfd = socket(AF_INET, SOCK_STREAM, 0)) == -1)
     {
         perror("socket call failed");
         goto bailout1;
     }
-    
+
     {
         int rcvbuf, sndbuf;
         db_getsocketbufsize(session->sockfd, &sndbuf,&rcvbuf);
@@ -191,12 +191,12 @@ DRMS_Session_t *drms_connect(const char *host)
                sndbuf,rcvbuf);
 #endif
     }
-    
+
     memset(&server, 0, sizeof(server));
     server.sin_family = AF_INET;     /* host byte order */
     server.sin_port = htons(portnum); /* short, network byte order */
     server.sin_addr = *((struct in_addr *)he->h_addr);
-    
+
     serverp = (struct sockaddr *)&server;
     /* connect the socket to the server's address */
     if ( connect(session->sockfd, serverp, sizeof(struct sockaddr_in)) == -1 )
@@ -215,7 +215,7 @@ DRMS_Session_t *drms_connect(const char *host)
      sizeof(int)) < 0)
      return NULL;
      */
-    
+
     /* Receive anxiously anticipaqted reply from the server. If denied=1
      we are doomed, but if denied=0 we are on our way to the green
      pastures of DRMS. */
@@ -229,7 +229,7 @@ DRMS_Session_t *drms_connect(const char *host)
     session->sessionid = Readlonglong(session->sockfd);
     session->sessionns = receive_string(session->sockfd);
     session->sunum = Readlonglong(session->sockfd);
-    
+
     /* Big pain in the ass - this is the SUDIR of the log directory. We don't always
      * create such a directory, and the code checks for NULL session->sudir in many
      * cases. But there is no way that the client (sock module) knows whether or
@@ -239,7 +239,7 @@ DRMS_Session_t *drms_connect(const char *host)
      * client code, drop NOLOGSUIDR and set session->sudir to NULL.
      */
     sudirrecv = receive_string(session->sockfd);
-    
+
     if (sudirrecv && strcasecmp(sudirrecv, kNOLOGSUDIR))
     {
         session->sudir = sudirrecv;
@@ -247,12 +247,12 @@ DRMS_Session_t *drms_connect(const char *host)
     else
     {
         free(sudirrecv);
-        session->sudir = NULL;  
+        session->sudir = NULL;
     }
-    
+
     /* Receive database-connection information (the connection from drms_server to the database). */
     char *tmp = NULL;
-    
+
     /* dbhost */
     tmp = receive_string(session->sockfd);
     if (tmp)
@@ -261,10 +261,10 @@ DRMS_Session_t *drms_connect(const char *host)
         free(tmp);
         tmp = NULL;
     }
-    
+
     /* dbport */
     session->dbport = Readint(session->sockfd);
-    
+
     /* dbname */
     tmp = receive_string(session->sockfd);
     if (tmp)
@@ -273,7 +273,7 @@ DRMS_Session_t *drms_connect(const char *host)
         free(tmp);
         tmp = NULL;
     }
-    
+
     /* dbname */
     tmp = receive_string(session->sockfd);
     if (tmp)
@@ -282,7 +282,7 @@ DRMS_Session_t *drms_connect(const char *host)
         free(tmp);
         tmp = NULL;
     }
-    
+
 #ifdef DEBUG
     printf("got sudir=%s\n",session->sudir);
 #endif
@@ -294,9 +294,9 @@ DRMS_Session_t *drms_connect(const char *host)
     {
         free(hostname);
     }
-    
+
     return session;
-    
+
 bailout:
     close(session->sockfd);
 bailout1:
@@ -327,16 +327,16 @@ int drms_send_commandcode (int sockfd, int command) {
     exit (1);	   /*  FIXME: Should call some user supplied abort callback  */
   }
   return 0;
-}  
+}
 
 int drms_send_commandcode_noecho (int sockfd, int command) {
   Writeint (sockfd, command);
   return 0;
-}  
+}
 
 #ifndef DRMS_CLIENT
 /* server-modules use this function. */
-DRMS_Session_t *drms_connect_direct(const char *dbhost, const char *dbuser, 
+DRMS_Session_t *drms_connect_direct(const char *dbhost, const char *dbuser,
 				    const char *dbpasswd, const char *dbname,
 				    const char *sessionns)
 {
@@ -344,17 +344,17 @@ DRMS_Session_t *drms_connect_direct(const char *dbhost, const char *dbuser,
     char *minversion = NULL;
     char jsocversion[128];
     char *defSessionNS = NULL;
-    
-    
+
+
     session = malloc(sizeof(DRMS_Session_t));
     XASSERT(session);
     memset(session, 0, sizeof(DRMS_Session_t));
     session->db_direct = 1;
-    
+
     /* Set client variables to some null values. */
     session->port = -1;
     session->sockfd = -1;
-    
+
     /* Authenticate and connect to the database. */
     if ((session->db_handle = db_connect(dbhost, dbuser, dbpasswd, dbname, 1)) == NULL)
     {
@@ -366,10 +366,10 @@ DRMS_Session_t *drms_connect_direct(const char *dbhost, const char *dbuser,
     {
         /* Print out some diagnostic information */
     }
-    
+
     /* Do not attempt to set the db transaction to READ ONLY at this point - there is no db transaction running. Do this
      * whenever a new transaction is created (which is achived by call db_start_transaction()). */
-    
+
     if (session)
     {
         /* Check the version of this module against the minimum version required by the DRMS database. */
@@ -383,12 +383,12 @@ DRMS_Session_t *drms_connect_direct(const char *dbhost, const char *dbuser,
         else
         {
             jsoc_getversion(jsocversion, sizeof(jsocversion), NULL);
-            
+
             if (!base_isvers(jsocversion, minversion))
             {
                 char *schema = NULL;
                 char *table = NULL;
-                
+
                 /* Save some information about which executable was too old. */
                 if (get_namespace(DRMS_OLDCODETABLE, &schema, &table))
                 {
@@ -408,7 +408,7 @@ DRMS_Session_t *drms_connect_direct(const char *dbhost, const char *dbuser,
                         char *date = NULL;
                         int rowexists = 0;
                         DB_Text_Result_t *qres = NULL;
-                        
+
                         if (readlink("/proc/self/exe", binpath, sizeof(binpath)) == -1)
                         {
                             fprintf(stderr, "Cannot obtain path to running binary.\n");
@@ -420,7 +420,7 @@ DRMS_Session_t *drms_connect_direct(const char *dbhost, const char *dbuser,
                             /* Check for existence of a record for this binary. Update the
                              * date and version if the record does exist. */
                             snprintf(query, sizeof(query), "SELECT path FROM %s WHERE path = '%s'", DRMS_OLDCODETABLE, binpath);
-                            
+
                             if ((qres = drms_query_txt(session, query)) == NULL)
                             {
                                 /* Error */
@@ -432,10 +432,10 @@ DRMS_Session_t *drms_connect_direct(const char *dbhost, const char *dbuser,
                             {
                                 rowexists = qres->num_rows > 0;
                                 db_free_text_result(qres);
-                                
+
                                 gettimeofday(&tv, NULL);
                                 date = ctime(&tv.tv_sec);
-                                
+
                                 if (rowexists)
                                 {
                                     /* Update */
@@ -446,7 +446,7 @@ DRMS_Session_t *drms_connect_direct(const char *dbhost, const char *dbuser,
                                     /* Fetch the version from the DB version table. */
                                     snprintf(query, sizeof(query), "INSERT INTO %s (path, date, version) VALUES ('%s', '%s', '%s')", DRMS_OLDCODETABLE, binpath, date, jsocversion);
                                 }
-                                
+
                                 if (drms_dms(session, NULL, query))
                                 {
                                     fprintf(stderr, "Invalid database query: %s.\n", query);
@@ -456,11 +456,11 @@ DRMS_Session_t *drms_connect_direct(const char *dbhost, const char *dbuser,
                             }
                         }
                     }
-                    
+
                     free(table);
                     free(schema);
                 }
-                
+
                 fprintf(stderr, "Your DRMS module/client code (version %s) is incompatible with the current version of DRMS (which requires version %s). Please update.\n", jsocversion, minversion);
                 /* No transaction to rollback. */
                 db_disconnect(&session->db_handle);
@@ -468,20 +468,20 @@ DRMS_Session_t *drms_connect_direct(const char *dbhost, const char *dbuser,
                 session = NULL;
             }
         }
-        
+
         if (minversion)
         {
             free(minversion);
         }
     }
-    
+
     if (session)
     {
         int istat = DRMS_SUCCESS;
         int tabExists = 0;
         DB_Text_Result_t *tresult = NULL;
         char query[1024];
-        
+
         if (sessionns && *sessionns)
         {
             /* sessionns comes from the jsoc_main cmd-line argument JSOC_SESSIONNS. If set, then the user is requesting that DRMS use
@@ -493,21 +493,21 @@ DRMS_Session_t *drms_connect_direct(const char *dbhost, const char *dbuser,
         {
             // get the default session namespace
             tabExists = drms_query_tabexists(session, "admin", "sessionns", &istat);
-            
+
             if (istat == DRMS_SUCCESS)
             {
                 if (tabExists)
                 {
                     sprintf(query, "SELECT sessionns FROM admin.sessionns WHERE username='%s'", session->db_handle->dbuser);
                     tresult = db_query_txt(session->db_handle, query);
-                    
+
                     if (tresult)
                     {
                         if (tresult->num_rows > 0)
                         {
                             defSessionNS = strdup(tresult->field[0][0]);
                         }
-                        
+
                         db_free_text_result(tresult);
                         tresult = NULL;
                     }
@@ -526,14 +526,14 @@ DRMS_Session_t *drms_connect_direct(const char *dbhost, const char *dbuser,
                 session = NULL;
             }
         }
-        
+
         if (session)
         {
             if (defSessionNS)
             {
                 /* Check for the existence of the session table before setting session->sessionns with sessionns. */
                 tabExists = drms_query_tabexists(session, defSessionNS, DRMS_SESSION_TABLE, &istat);
-                
+
                 if (istat == DRMS_SUCCESS)
                 {
                     if (tabExists)
@@ -556,7 +556,7 @@ DRMS_Session_t *drms_connect_direct(const char *dbhost, const char *dbuser,
             }
         }
     }
-    
+
     if (session)
     {
         if (!session->sessionns)
@@ -564,16 +564,16 @@ DRMS_Session_t *drms_connect_direct(const char *dbhost, const char *dbuser,
             session->sessionns = strdup("");
         }
     }
-    
+
     return session;
 }
 #endif
 
 /* Clean up shutdown -- arta 4/28/2009
- * Server processes never exit this way - they call drms_server_abort, or 
- * drms_server_commit so make this call client-only. Also, 
+ * Server processes never exit this way - they call drms_server_abort, or
+ * drms_server_commit so make this call client-only. Also,
  * remove drms_disconnect_now, which was a duplicate of drms_disconnect.
- * So, drms_disconnect means to disconnect from the server (eg, drms_server app). 
+ * So, drms_disconnect means to disconnect from the server (eg, drms_server app).
  * It won't affect the server, unless the client experienced an error while
  * running. If it passes abort == 1, then this will cause the server
  * (eg, drms_server) to terminate, but only after all other clients
@@ -653,13 +653,13 @@ DB_Text_Result_t *drms_query_txt(DRMS_Session_t *session, const char *query)
   {
    drms_send_commandcode(session->sockfd, DRMS_TXTQUERY);
    rv = db_client_query_txt(session->sockfd, query, 0, &errmsg);
-      
+
    if (errmsg)
    {
        snprintf(session->db_handle->errmsg, sizeof(session->db_handle->errmsg), "%s", errmsg);
        free(errmsg);
    }
-      
+
       return rv;
   }
 }
@@ -684,13 +684,13 @@ DB_Binary_Result_t *drms_query_bin(DRMS_Session_t *session, const char *query)
   {
     drms_send_commandcode(session->sockfd, DRMS_BINQUERY);
     rv = db_client_query_bin(session->sockfd, query, 0, &errmsg);
-      
+
     if (errmsg)
     {
         snprintf(session->db_handle->errmsg, sizeof(session->db_handle->errmsg), "%s", errmsg);
         free(errmsg);
     }
-      
+
     return rv;
   }
 }
@@ -704,22 +704,22 @@ DB_Binary_Result_t *drms_query_binv(DRMS_Session_t *session, const char *query, 
   int n,i;
   char *q;
   DB_Binary_Result_t *result;
-  db_char_t tchar;   
-  db_int1_t tint1;   
-  db_int2_t tint2;   
-  db_int4_t tint4;   
-  db_int8_t tint8;   
-  db_float_t tfloat;  
-  db_double_t tdouble; 
+  db_char_t tchar;
+  db_int1_t tint1;
+  db_int2_t tint2;
+  db_int4_t tint4;
+  db_int8_t tint8;
+  db_float_t tfloat;
+  db_double_t tdouble;
 
   va_list ap;
-  va_start(ap, query);   
+  va_start(ap, query);
 
 
 #ifdef DEBUG
   printf("drms_query_binv: query = %s\n",query);
 #endif
-  
+
   /* Collect arguments. */
   q = (char *)query;
   n = 0;
@@ -803,7 +803,7 @@ DB_Binary_Result_t *drms_query_bin_array(DRMS_Session_t *session, const char *qu
 #ifndef DRMS_CLIENT
   if (session->db_direct)
   {
-    return db_query_bin_array(session->db_handle,query, n_args, intype, 
+    return db_query_bin_array(session->db_handle,query, n_args, intype,
 			      argin);
   }
   else
@@ -849,6 +849,20 @@ int drms_dms(DRMS_Session_t *session, int *row_count, const char *query)
   }
 }
 
+/* server only - not client (since we do not make new client code, the client branch is deprecated) */
+#ifndef DRMS_CLIENT
+int drms_dms_quiet(DRMS_Session_t *session, int *row_count, const char *query)
+{
+    if (session->db_direct)
+    {
+        return db_dms_quiet(session->db_handle, row_count, query);
+    }
+    else
+    {
+        return 1;
+    }
+}
+#endif
 
 /* DMS function with variable argument list. Collects arguments in
    list of void * and calls db_dms_array. */
@@ -859,17 +873,17 @@ int drms_dmsv(DRMS_Session_t *session, int *row_count, const char *query, int n_
   void *argin[MAXARG];
   int n,i;
   char *q;
-  db_char_t tchar;   
-  db_int1_t tint1;   
-  db_int2_t tint2;   
-  db_int4_t tint4;   
-  db_int8_t tint8;   
-  db_float_t tfloat;  
-  db_double_t tdouble; 
+  db_char_t tchar;
+  db_int1_t tint1;
+  db_int2_t tint2;
+  db_int4_t tint4;
+  db_int8_t tint8;
+  db_float_t tfloat;
+  db_double_t tdouble;
 
   va_list ap;
-  va_start(ap, n_rows);   
-  
+  va_start(ap, n_rows);
+
   /* Collect arguments. */
   q = (char *)query;
   n = 0;
@@ -892,7 +906,7 @@ int drms_dmsv(DRMS_Session_t *session, int *row_count, const char *query, int n_
   {
     intype[i] = va_arg(ap, DB_Type_t);
     if (n_rows == -1) /* Ac single set of arguments passed by value. */
-    {    
+    {
       switch(intype[i])
       {
       case DB_CHAR:
@@ -955,11 +969,11 @@ int drms_dmsv(DRMS_Session_t *session, int *row_count, const char *query, int n_
 
 
 int drms_dms_array(DRMS_Session_t *session, int *row_count, const char *query, int n_rows, int n_args, DB_Type_t *intype, void **argin)
-{  
+{
 #ifndef DRMS_CLIENT
   if (session->db_direct)
   {
-    return db_dms_array(session->db_handle, row_count, query, 
+    return db_dms_array(session->db_handle, row_count, query,
 			n_rows, n_args, intype, argin );
   }
   else
@@ -968,36 +982,36 @@ int drms_dms_array(DRMS_Session_t *session, int *row_count, const char *query, i
 #endif
   {
     drms_send_commandcode(session->sockfd, DRMS_DMS_ARRAY);
-    return db_client_dms_array(session->sockfd, row_count, query, 
+    return db_client_dms_array(session->sockfd, row_count, query,
 			       n_rows, n_args, intype, argin );
   }
 }
 
 /* DMS function with variable argument list. Collects arguments in
    list of void * and calls db_dms_array. */
-int drms_bulk_insertv(DRMS_Session_t *session, char *table, 
+int drms_bulk_insertv(DRMS_Session_t *session, char *table,
 		      int n_rows, int n_cols, ...)
 {
   int status=1;
   DB_Type_t intype[MAXARG];
   void *argin[MAXARG];
   int i;
-  db_char_t tchar;   
-  db_int1_t tint1;   
-  db_int2_t tint2;   
-  db_int4_t tint4;   
-  db_int8_t tint8;   
-  db_float_t tfloat;  
-  db_double_t tdouble; 
+  db_char_t tchar;
+  db_int1_t tint1;
+  db_int2_t tint2;
+  db_int4_t tint4;
+  db_int8_t tint8;
+  db_float_t tfloat;
+  db_double_t tdouble;
 
   va_list ap;
-  va_start(ap, n_cols);   
-  
+  va_start(ap, n_cols);
+
   for (i=0; i<n_cols; i++)
   {
     intype[i] = va_arg(ap, DB_Type_t);
     if (n_rows == -1) /* Ac single set of arguments passed by value. */
-    {    
+    {
       switch(intype[i])
       {
       case DB_CHAR:
@@ -1060,13 +1074,13 @@ int drms_bulk_insertv(DRMS_Session_t *session, char *table,
 
 
 int drms_bulk_insert_array(DRMS_Session_t *session,
-			   char *table, int n_rows, int n_args, 
+			   char *table, int n_rows, int n_args,
 			   DB_Type_t *intype, void **argin )
-{  
+{
 #ifndef DRMS_CLIENT
   if (session->db_direct)
   {
-    return db_bulk_insert_array(session->db_handle, table, 
+    return db_bulk_insert_array(session->db_handle, table,
 				n_rows, n_args, intype, argin );
   }
   else
@@ -1075,7 +1089,7 @@ int drms_bulk_insert_array(DRMS_Session_t *session,
 #endif
   {
     drms_send_commandcode(session->sockfd, DRMS_BULK_INSERT_ARRAY);
-    return db_client_bulk_insert_array(session->sockfd,table, 
+    return db_client_bulk_insert_array(session->sockfd,table,
 				       n_rows, n_args, intype, argin );
   }
 }
@@ -1129,7 +1143,7 @@ long long *drms_sequence_getnext(DRMS_Session_t *session,  char *table, int n)
 #endif
   {
     drms_send_commandcode(session->sockfd, DRMS_SEQUENCE_GETNEXT);
-    return db_client_sequence_getnext_n(session->sockfd, table, n); 
+    return db_client_sequence_getnext_n(session->sockfd, table, n);
   }
 }
 
@@ -1175,7 +1189,7 @@ long long drms_sequence_getlast(DRMS_Session_t *session,  char *table)
 
 
 
-long long *drms_alloc_recnum(DRMS_Env_t *env,  char *series, 
+long long *drms_alloc_recnum(DRMS_Env_t *env,  char *series,
 			     DRMS_RecLifetime_t lifetime, int n)
 {
   int i, status;
@@ -1212,7 +1226,7 @@ long long *drms_alloc_recnum(DRMS_Env_t *env,  char *series,
     vec[3].iov_len = sizeof(tmp[1]);
     vec[3].iov_base = &tmp[1];
     Writevn(sockfd, vec, 4);
-    
+
     status = Readint(sockfd);
     if (status==0)
     {
@@ -1233,12 +1247,12 @@ long long *drms_alloc_recnum(DRMS_Env_t *env,  char *series,
 /****** Client interface to Storage Units and Storage Unit Slots. *******/
 
 
-/* Retrieve the storage unit with unique id given by sunum for reading. 
+/* Retrieve the storage unit with unique id given by sunum for reading.
    The storage unit is retrieved by calling SUMS, if this has not
    already been done.
    Returns storage unit directory in su struct. */
 DRMS_StorageUnit_t *drms_getunit_internal(DRMS_Env_t *env, char *series,
-                                          long long sunum, int retrieve, 
+                                          long long sunum, int retrieve,
                                           int gotosums, int *status)
 {
   HContainer_t *scon=NULL;
@@ -1250,28 +1264,28 @@ DRMS_StorageUnit_t *drms_getunit_internal(DRMS_Env_t *env, char *series,
   char *sudir;
   XASSERT(env->session->db_direct==0);
 #endif
-  
+
   if ((su = drms_su_lookup(env, series, sunum, &scon)) == NULL)
   {
-    /* We didn't find the storage unit in the cache so we have to ask 
+    /* We didn't find the storage unit in the cache so we have to ask
        the server or SUMS for it... */
     if (!scon)
     {
-      scon = hcon_allocslot(&env->storageunit_cache,series);    
-      hcon_init(scon, sizeof(DRMS_StorageUnit_t), DRMS_MAXHASHKEYLEN, 
+      scon = hcon_allocslot(&env->storageunit_cache,series);
+      hcon_init(scon, sizeof(DRMS_StorageUnit_t), DRMS_MAXHASHKEYLEN,
 		(void (*)(const void *)) drms_su_freeunit, NULL);
     }
     /* Get a slot in the cache to insert a new entry in. */
     sprintf(hashkey,DRMS_SUNUM_FORMAT, sunum);
     su = hcon_allocslot(scon,hashkey);
 #ifdef DEBUG
-      printf("getunit: Got su = %p. Now has %d slots from '%s'\n",su, 
+      printf("getunit: Got su = %p. Now has %d slots from '%s'\n",su,
 	     hcon_size(scon), series);
 #endif
 
     /* Populate the fields in the struct. */
     su->sunum = sunum;
-    su->mode = DRMS_READONLY; /* All storage units previously archived 
+    su->mode = DRMS_READONLY; /* All storage units previously archived
 				 by SUMS are read-only. */
     su->nfree = 0;
     su->state = NULL;
@@ -1299,7 +1313,7 @@ DRMS_StorageUnit_t *drms_getunit_internal(DRMS_Env_t *env, char *series,
           struct iovec vec[4];
 
           drms_send_commandcode(env->session->sockfd, DRMS_GETUNIT);
-      
+
           /* Send seriesname,  sunum, and retrieve flag */
           vec[1].iov_len = strlen(series);
           vec[1].iov_base = series;
@@ -1313,7 +1327,7 @@ DRMS_StorageUnit_t *drms_getunit_internal(DRMS_Env_t *env, char *series,
           vec[3].iov_len = sizeof(retrieve_tmp);
           vec[3].iov_base = &retrieve_tmp;
           Writevn(env->session->sockfd, vec, 4);
-      
+
           stat = Readint(env->session->sockfd);
           if (stat == DRMS_SUCCESS)
           {
@@ -1332,7 +1346,7 @@ DRMS_StorageUnit_t *drms_getunit_internal(DRMS_Env_t *env, char *series,
         {
             /* This is causing problems. If we return a NULL SU, then there is nothing to prevent client code from calling this function again.
              * Code that calls this function does so only if rec->su is NULL, and if we return NULL, rec->su becomes NULL, and this function
-             * will be called again, which will result in SUM_get() being called again. But we do not need to keep calling SUM_get(). Once 
+             * will be called again, which will result in SUM_get() being called again. But we do not need to keep calling SUM_get(). Once
              * it has been called once, we know that there is no sudir, and we should remember that. If we do not remove the SU from
              * the SU cache, then although this function will be called again, it doesn't have to call SUM_get(). The SU in the cache will
              * have *su->sudir == '\0', so this function will return NULL, which will not change the semantics of this function. But it will
@@ -1342,7 +1356,7 @@ DRMS_StorageUnit_t *drms_getunit_internal(DRMS_Env_t *env, char *series,
              *
              * hcon_remove(scon, hashkey);
              */
-            
+
             if (!retrieve)
             {
                 /* Still want to remove the SU from the cache if it is possible that the SU is offline, but exists. That way if this function is
@@ -1350,17 +1364,17 @@ DRMS_StorageUnit_t *drms_getunit_internal(DRMS_Env_t *env, char *series,
                  * it exists on tape. */
                 hcon_remove(scon, hashkey);
             }
-            
+
             su = NULL;
         }
     } /* if (gotosums) */
-   
+
     if (stat)
     {
       hcon_remove(scon, hashkey);
       su = NULL;
     }
-  }      
+  }
   else
   {
       /* If su->sudir is '\0', then there was a previous attempt to retrieve the SU from SUMS, but it didn't exist (either aged-off, or the SUNUM was
@@ -1372,7 +1386,7 @@ DRMS_StorageUnit_t *drms_getunit_internal(DRMS_Env_t *env, char *series,
       }
       stat = DRMS_SUCCESS;
   }
- 
+
  bailout:
   if (status)
     *status = stat;
@@ -1393,11 +1407,11 @@ DRMS_StorageUnit_t *drms_getunit_nosums(DRMS_Env_t *env, char *series,
    return drms_getunit_internal(env, series, sunum, 0, 0, status);
 }
 
-/* series can be NULL, in which case the resulting storage units seriesinfo fields 
+/* series can be NULL, in which case the resulting storage units seriesinfo fields
  * will also be NULL. */
 /* SUMS does not support dontwait == 1, so dontwait is ignored. */
-int drms_getunits_internal(DRMS_Env_t *env, 
-                           int n, 
+int drms_getunits_internal(DRMS_Env_t *env,
+                           int n,
                            DRMS_SuAndSeries_t *suandseries,
                            int retrieve,
                            int dontwait)
@@ -1421,7 +1435,7 @@ int drms_getunits_internal(DRMS_Env_t *env,
 
     /* SUMS does not support dontwait == 1, so force dontwait to be 0 (deprecate the dontwait parameter). */
     dontwait = 0;
-    
+
   su_nc = malloc(n*sizeof(DRMS_StorageUnit_t *));
   XASSERT(su_nc);
 #ifdef DEBUG
@@ -1437,22 +1451,22 @@ int drms_getunits_internal(DRMS_Env_t *env,
     if ((su = drms_su_lookup(env, suandseries[i].series, suandseries[i].sunum, &scon)) == NULL) {
       if (!scon)
 	{
-	  scon = hcon_allocslot(&env->storageunit_cache, suandseries[i].series);    
-	  hcon_init(scon, sizeof(DRMS_StorageUnit_t), DRMS_MAXHASHKEYLEN, 
+	  scon = hcon_allocslot(&env->storageunit_cache, suandseries[i].series);
+	  hcon_init(scon, sizeof(DRMS_StorageUnit_t), DRMS_MAXHASHKEYLEN,
 		    (void (*)(const void *)) drms_su_freeunit, NULL);
 	}
       /* Get a slot in the cache to insert a new entry in. */
       sprintf(hashkey,DRMS_SUNUM_FORMAT, suandseries[i].sunum);
       su = hcon_allocslot(scon,hashkey);
 #ifdef DEBUG
-      printf("getunit: Got su = %p. Now has %d slots from '%s'\n",su, 
+      printf("getunit: Got su = %p. Now has %d slots from '%s'\n",su,
 	     hcon_size(scon), suandseries[i].series);
 #endif
 
       /* Populate the fields in the struct. */
       su->sunum = suandseries[i].sunum;
       su->sudir[0] = '\0';
-      su->mode = DRMS_READONLY; /* All storage units previously archived 
+      su->mode = DRMS_READONLY; /* All storage units previously archived
 				   by SUMS are read-only. */
       su->nfree = 0;
       su->state = NULL;
@@ -1468,7 +1482,7 @@ int drms_getunits_internal(DRMS_Env_t *env,
 #endif
 
       cnt++;
-    } 
+    }
   }
 
 #ifndef DRMS_CLIENT
@@ -1485,7 +1499,7 @@ int drms_getunits_internal(DRMS_Env_t *env,
     drms_send_commandcode(env->session->sockfd, DRMS_GETUNITS);
 
     /* Send cnt, series names, sunums, retrieve, and dontwait to drms_server */
-    
+
     /* pass n first */
     Writeint(env->session->sockfd, cnt);
 
@@ -1496,8 +1510,8 @@ int drms_getunits_internal(DRMS_Env_t *env,
     }
 
     /* pass n sunums */
-    vec = malloc(cnt*sizeof(struct iovec)); 
-    XASSERT(vec);     
+    vec = malloc(cnt*sizeof(struct iovec));
+    XASSERT(vec);
     sunum_tmp = malloc(cnt*sizeof(long long));
     XASSERT(sunum_tmp);
     for (int i = 0; i < cnt; i++) {
@@ -1514,7 +1528,7 @@ int drms_getunits_internal(DRMS_Env_t *env,
 
     /* dontwait */
     Writeint(env->session->sockfd, dontwait);
-      
+
     stat = Readint(env->session->sockfd);
     if (stat == DRMS_SUCCESS) {
       if (!dontwait) {
@@ -1524,7 +1538,7 @@ int drms_getunits_internal(DRMS_Env_t *env,
 	  free(sudir);
 	}
       }
-    } 
+    }
   }
 #endif
   for (int i = 0; i < cnt; i++) {
@@ -1541,10 +1555,10 @@ int drms_getunits_internal(DRMS_Env_t *env,
   return stat;
 }
 
-int drms_getunits(DRMS_Env_t *env, 
+int drms_getunits(DRMS_Env_t *env,
                   char *series,
-		  int n, 
-                  long long *sunum, 
+		  int n,
+                  long long *sunum,
 		  int retrieve,
 		  int dontwait)
 {
@@ -1557,7 +1571,7 @@ int drms_getunits(DRMS_Env_t *env,
    {
        /* SUMS does not support dontwait == 1, so force dontwait to be 0 (deprecate the dontwait parameter). */
        dontwait = 0;
-       
+
       for (isu = 0; isu < n; isu++)
       {
          arr[isu].sunum = sunum[isu];
@@ -1574,15 +1588,15 @@ int drms_getunits(DRMS_Env_t *env,
 }
 
 /* Can specify SUNUMs from more than one series. */
-int drms_getunits_ex(DRMS_Env_t *env, 
-                     int num, 
-                     DRMS_SuAndSeries_t *suandseries, 
+int drms_getunits_ex(DRMS_Env_t *env,
+                     int num,
+                     DRMS_SuAndSeries_t *suandseries,
                      int retrieve,
                      int dontwait)
 {
     /* SUMS does not support dontwait == 1, so force dontwait to be 0 (deprecate the dontwait parameter). */
     dontwait = 0;
-    
+
    return drms_getunits_internal(env, num, suandseries, retrieve, dontwait);
 }
 
@@ -1678,7 +1692,7 @@ int drms_getsuinfo(DRMS_Env_t *env, long long *sunums, int nReqs, SUM_info_t **i
          info->arch_tape_fn = arch_tape_fn;
          snprintf(info->arch_tape_date, sizeof(info->arch_tape_date), "%s", arch_tape_date);
          snprintf(info->safe_tape, sizeof(info->safe_tape), "%s", safe_tape);
-         info->safe_tape_fn = safe_tape_fn;      
+         info->safe_tape_fn = safe_tape_fn;
          snprintf(info->safe_tape_date, sizeof(info->safe_tape_date), "%s", safe_tape_date);
          info->pa_status = pa_status;
          info->pa_substatus = pa_substatus;
@@ -1714,7 +1728,7 @@ int drms_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
 #ifdef DRMS_CLIENT
    XASSERT(env->session->db_direct==0);
 #endif
-  
+
 #ifndef DRMS_CLIENT
    /* Send a query to SUMS for the storage unit directory. */
    status = drms_su_getsudir(env, su, retrieve);
@@ -1723,14 +1737,14 @@ int drms_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
       char *sudir;
 
       drms_send_commandcode(env->session->sockfd, DRMS_GETSUDIR);
-      
+
       /* Send SUNUM and retrieve */
-      /* The goal of this function is to write the storage unit directory into 
+      /* The goal of this function is to write the storage unit directory into
        * the DRMS_StorageUnit_t passed into it. But we cannot pass the DRMS_StorageUnit_t *
        * to drms_server since the latter is in a different process.
        *
        * So, just pass the essential bit of information - the SUNUM. In drms_server
-       * construct a DRMS_StorageUnit_t that contains this SUNUM, then 
+       * construct a DRMS_StorageUnit_t that contains this SUNUM, then
        * call drms_su_getsudir() with this  DRMS_StorageUnit_t.  drms_server
        * will then pass the SUDIR back, and that will be stuffed into su.
        */
@@ -1758,14 +1772,14 @@ int drms_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
 int drms_getsudirs(DRMS_Env_t *env, DRMS_StorageUnit_t **su, int num, int retrieve, int dontwait)
 {
    int status = DRMS_SUCCESS;
-    
+
     /* SUMS does not support dontwait == 1, so force dontwait to be 0 (deprecate the dontwait parameter). */
     dontwait = 0;
 
 #ifdef DRMS_CLIENT
    XASSERT(env->session->db_direct==0);
 #endif
-  
+
 #ifndef DRMS_CLIENT
    /* Send a query to SUMS for the storage unit directory. */
    status = drms_su_getsudirs(env, num, su, retrieve, dontwait);
@@ -1776,14 +1790,14 @@ int drms_getsudirs(DRMS_Env_t *env, DRMS_StorageUnit_t **su, int num, int retrie
       int isu;
 
       drms_send_commandcode(env->session->sockfd, DRMS_GETSUDIRS);
-      
+
       /* Send SUNUM and retrieve */
-      /* The goal of this function is to write the storage unit directory into 
+      /* The goal of this function is to write the storage unit directory into
        * the DRMS_StorageUnit_t passed into it. But we cannot pass the DRMS_StorageUnit_t *
        * to drms_server since the latter is in a different process.
        *
        * So, just pass the essential bit of information - the SUNUM. In drms_server
-       * construct a DRMS_StorageUnit_t that contains this SUNUM, then 
+       * construct a DRMS_StorageUnit_t that contains this SUNUM, then
        * call drms_su_getsudir() with this  DRMS_StorageUnit_t.  drms_server
        * will then pass the SUDIR back, and that will be stuffed into su.
        */
@@ -1822,7 +1836,7 @@ int drms_getsudirs(DRMS_Env_t *env, DRMS_StorageUnit_t **su, int num, int retrie
 
 /* Client version. */
 int drms_newslots_internal(DRMS_Env_t *env, int n, char *series, long long *recnum,
-                           DRMS_RecLifetime_t lifetime, int *slotnum, 
+                           DRMS_RecLifetime_t lifetime, int *slotnum,
                            DRMS_StorageUnit_t **su,
                            int createslotdirs,
                            int gotosums)
@@ -1836,7 +1850,7 @@ int drms_newslots_internal(DRMS_Env_t *env, int n, char *series, long long *recn
 
   if (!slotnum || !su || !series)
     return 1;
-  
+
 #ifndef DRMS_CLIENT
   if (env->session->db_direct)
   {
@@ -1863,7 +1877,7 @@ int drms_newslots_internal(DRMS_Env_t *env, int n, char *series, long long *recn
     drms_send_commandcode(env->session->sockfd, DRMS_NEWSLOTS);
     if (n==0)
     {
-      send_string(env->session->sockfd, series); 
+      send_string(env->session->sockfd, series);
       Writeint(env->session->sockfd, n);
       return 0;
     }
@@ -1890,7 +1904,7 @@ int drms_newslots_internal(DRMS_Env_t *env, int n, char *series, long long *recn
     Writevn(env->session->sockfd, vec, n+6);
     free(vec);
     free(ltmp);
-   
+
     status = Readint(env->session->sockfd);
     if (status==DRMS_SUCCESS)
     {
@@ -1898,26 +1912,26 @@ int drms_newslots_internal(DRMS_Env_t *env, int n, char *series, long long *recn
 	return status;
       for (i=0; i<n; i++)
       {
-	sunum = Readlonglong(env->session->sockfd);      
+	sunum = Readlonglong(env->session->sockfd);
 	sudir = receive_string(env->session->sockfd);
-	slotnum[i] = Readint(env->session->sockfd);      
+	slotnum[i] = Readint(env->session->sockfd);
 
 	/* Find the associated storage unit in the cache. */
 	scon = NULL;
 	if ((su[i] = drms_su_lookup(env, series, sunum, &scon)) == NULL)
 	{
-	  /* We didn't find the storage unit in the cache. 
+	  /* We didn't find the storage unit in the cache.
 	     Insert a new entry... */
 	  if (!scon)
 	  {
-	    scon = hcon_allocslot(&env->storageunit_cache,series);    
-	    hcon_init(scon, sizeof(DRMS_StorageUnit_t), DRMS_MAXHASHKEYLEN, 
+	    scon = hcon_allocslot(&env->storageunit_cache,series);
+	    hcon_init(scon, sizeof(DRMS_StorageUnit_t), DRMS_MAXHASHKEYLEN,
 		      (void (*)(const void *)) drms_su_freeunit, NULL);
 	  }
 	  /* Get a cache slot to insert a new entry in. */
 	  sprintf(hashkey,DRMS_SUNUM_FORMAT, sunum);
 	  su[i] = hcon_allocslot(scon,hashkey);
-	  
+
 	  /* Initialize SU structure. */
 	  su[i]->sunum = sunum;
 	  strncpy(su[i]->sudir, sudir, sizeof(su[i]->sudir));
@@ -1933,7 +1947,7 @@ int drms_newslots_internal(DRMS_Env_t *env, int n, char *series, long long *recn
 	  if (strcmp(su[i]->sudir, sudir))
 	  {
 	    fprintf(stderr,"ERROR: Storage unit %s:#%lld seen with different "
-		    "sudirs: '%s' != '%s'", 
+		    "sudirs: '%s' != '%s'",
 		    series, sunum, su[i]->sudir, sudir);
 	    return 1;
 	  }
@@ -1947,7 +1961,7 @@ int drms_newslots_internal(DRMS_Env_t *env, int n, char *series, long long *recn
       }
     }
     else
-      for (i=0; i<n; i++)	
+      for (i=0; i<n; i++)
 	su[i] = NULL;
   }
 
@@ -1955,7 +1969,7 @@ int drms_newslots_internal(DRMS_Env_t *env, int n, char *series, long long *recn
 }
 
 int drms_newslots(DRMS_Env_t *env, int n, char *series, long long *recnum,
-		  DRMS_RecLifetime_t lifetime, int *slotnum, 
+		  DRMS_RecLifetime_t lifetime, int *slotnum,
 		  DRMS_StorageUnit_t **su,
                   int createslotdirs)
 {
@@ -1964,7 +1978,7 @@ int drms_newslots(DRMS_Env_t *env, int n, char *series, long long *recnum,
 }
 
 int drms_newslots_nosums(DRMS_Env_t *env, int n, char *series, long long *recnum,
-                         DRMS_RecLifetime_t lifetime, int *slotnum, 
+                         DRMS_RecLifetime_t lifetime, int *slotnum,
                          DRMS_StorageUnit_t **su,
                          int createslotdirs)
 {
@@ -1975,10 +1989,10 @@ int drms_newslots_nosums(DRMS_Env_t *env, int n, char *series, long long *recnum
 
 /* Mark a storage unit slot as either DRMS_SLOT_FREE, DRMS_SLOT_FULL, or
    DRMS_SLOT_TEMP. */
-int drms_slot_setstate(DRMS_Env_t *env, char *series, long long sunum, 
+int drms_slot_setstate(DRMS_Env_t *env, char *series, long long sunum,
 		       int slotnum, int state)
-{ 
-  
+{
+
 #ifndef DRMS_CLIENT
   if (env->session->db_direct)
   {
@@ -2016,7 +2030,7 @@ int drms_slot_setstate(DRMS_Env_t *env, char *series, long long sunum,
     Writevn(env->session->sockfd, vec, 5);
 
     return Readint(env->session->sockfd);
-  }    
+  }
 }
 
 int drms_dropseries(DRMS_Env_t *env, const char *series, DRMS_Array_t *vec)
@@ -2025,16 +2039,16 @@ int drms_dropseries(DRMS_Env_t *env, const char *series, DRMS_Array_t *vec)
    return drms_server_dropseries_su(env, series, vec);
 #else
    XASSERT(env->session->db_direct==0);
-        
+
    if (!env->session->db_direct)
    {
-      /* This is a DRMS client - must remove deleted series from 
+      /* This is a DRMS client - must remove deleted series from
          DRMS server cache. This will also call SUM_delete_series via
          drms_server_dropseries_su() (which can be called by DRMS servers ONLY). */
       drms_send_commandcode(env->session->sockfd, DRMS_DROPSERIES);
       send_string(env->session->sockfd, series);
 
-      /* If this is a sock-module, must pass the vector SUNUM by SUNUM 
+      /* If this is a sock-module, must pass the vector SUNUM by SUNUM
        * to drms_server. */
       int irow = -1;
       long long *data = (long long *)vec->data;
@@ -2053,7 +2067,7 @@ int drms_dropseries(DRMS_Env_t *env, const char *series, DRMS_Array_t *vec)
 #endif
 }
 
-/* Create a new series in th database using the given record as template 
+/* Create a new series in th database using the given record as template
    and insert the template in the series cache. */
 int drms_create_series(DRMS_Record_t *rec, int perms)
 {
@@ -2065,7 +2079,7 @@ int drms_create_series(DRMS_Record_t *rec, int perms)
   series = rec->seriesinfo->seriesname;
   env = rec->env;
   //if (hcon_member_lower(&env->series_cache, series))
-  /* Must use drms_template_record() in case series has not yet been cached in series_cache. This function 
+  /* Must use drms_template_record() in case series has not yet been cached in series_cache. This function
    * will cache it. */
   if (drms_template_record(env, series, &status) != NULL)
   {
@@ -2074,9 +2088,9 @@ int drms_create_series(DRMS_Record_t *rec, int perms)
     return 1;
   }
   template = (DRMS_Record_t *)hcon_allocslot_lower(&env->series_cache, series);
-  drms_copy_record_struct(template, rec);  
+  drms_copy_record_struct(template, rec);
 
-  // Set pidx keywords pointers 
+  // Set pidx keywords pointers
   for (int i = 0; i < template->seriesinfo->pidx_num; i++) {
     template->seriesinfo->pidx_keywords[i] = drms_keyword_lookup(template, rec->seriesinfo->pidx_keywords[i]->info->name, 0);
   }
@@ -2102,7 +2116,7 @@ int drms_update_series(DRMS_Record_t *rec, int perms)
   series = rec->seriesinfo->seriesname;
   env = rec->env;
 
-  /* Must use drms_template_record() in case series has not yet been cached in series_cache. This function 
+  /* Must use drms_template_record() in case series has not yet been cached in series_cache. This function
    * will cache it. */
   template = drms_template_record(env, series, &status);
 
@@ -2112,11 +2126,11 @@ int drms_update_series(DRMS_Record_t *rec, int perms)
 	    "exists.\n", series);
     return 1;
   }
-  drms_copy_record_struct(template, rec);  
+  drms_copy_record_struct(template, rec);
   status = drms_insert_series(env->session, 1, template, perms);
 
-  /* If this is a client then tell the server that a new series 
-     now exists. */     
+  /* If this is a client then tell the server that a new series
+     now exists. */
   if (!status && !env->session->db_direct)
   {
     drms_send_commandcode(env->session->sockfd, DRMS_NEWSERIES);
@@ -2126,15 +2140,15 @@ int drms_update_series(DRMS_Record_t *rec, int perms)
 }
 
 /* Create a new series on-the-fly, using a template record. This template
- * must have been created with drms_create_recproto().  This function 
- * owns template. 
+ * must have been created with drms_create_recproto().  This function
+ * owns template.
  */
-int drms_create_series_fromprototype(DRMS_Record_t **prototype, 
-				     const char *outSeriesName, 
+int drms_create_series_fromprototype(DRMS_Record_t **prototype,
+				     const char *outSeriesName,
 				     int perms)
 {
    int status = DRMS_SUCCESS;
-   
+
    if (prototype && *prototype && strlen(outSeriesName) < DRMS_MAXSERIESNAMELEN)
    {
       char *user = getenv("USER");
@@ -2143,9 +2157,9 @@ int drms_create_series_fromprototype(DRMS_Record_t **prototype,
       strcpy(proto->seriesinfo->seriesname, outSeriesName);
 
       // Discard "Owner", fill it with the dbuser
-      if (proto->env->session->db_direct && 
-          proto->env->session->db_handle->dbuser && 
-          strlen(proto->env->session->db_handle->dbuser)) 
+      if (proto->env->session->db_direct &&
+          proto->env->session->db_handle->dbuser &&
+          strlen(proto->env->session->db_handle->dbuser))
       {
 	 strcpy(proto->seriesinfo->owner, proto->env->session->db_handle->dbuser);
       }
@@ -2181,9 +2195,9 @@ int drms_series_hastableprivs(DRMS_Env_t *env, const char *schema, const char *t
     char query[DRMS_MAXQUERYLEN];
     int result = 0;
     DB_Text_Result_t *qres = NULL;
-    
+
     sprintf(query, "SELECT has_table_privilege('%s.%s', '%s')", schema, table, priv);
-    
+
     if ((qres = drms_query_txt(env->session, query)) != NULL && qres->num_rows == 1 && qres->num_cols == 1)
     {
         if (*(qres->field[0][0]) == 't')
@@ -2191,12 +2205,12 @@ int drms_series_hastableprivs(DRMS_Env_t *env, const char *schema, const char *t
             result = 1;
         }
     }
-    
+
     if (qres)
     {
         db_free_text_result(qres);
     }
-    
+
     return result;
 }
 
@@ -2246,54 +2260,54 @@ int drms_query_tabexists(DRMS_Session_t *session, const char *ns, const char *ta
     char query[DRMS_MAXQUERYLEN];
     char schema[64];
     char table[64];
-    
+
     DB_Text_Result_t *qres = NULL;
-    
+
     if (status)
     {
         *status = DRMS_SUCCESS;
     }
-    
+
     /* the db stores only lower-case names for schema and table */
     if (!ns || !tab)
     {
         return 0;
     }
-    
+
     snprintf(schema, sizeof(schema), "%s", ns);
     snprintf(table, sizeof(table), "%s", tab);
-    
+
     strtolower(schema);
     strtolower(table);
-     
+
     snprintf(query, sizeof(query), "SELECT n.nspname, c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = '%s' AND c.relname = '%s';", schema, table);
-    
+
     if ((qres = drms_query_txt(session, query)) == NULL)
     {
         if (status)
         {
             *status = DRMS_ERROR_BADDBQUERY;
         }
-        
+
         fprintf(stderr, "Bad database query '%s'\n", query);
     }
     else if (qres->num_rows > 0)
     {
         result = 1;
     }
-    
+
     if (qres)
     {
         db_free_text_result(qres);
         qres = NULL;
     }
-    
+
     return result;
 }
 
 /*
-  SELECT pg_catalog.pg_get_userbyid(T1.relowner) AS owner 
-     FROM pg_catalog.pg_class AS T1, (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = 'su_arta') AS T2 
+  SELECT pg_catalog.pg_get_userbyid(T1.relowner) AS owner
+     FROM pg_catalog.pg_class AS T1, (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = 'su_arta') AS T2
      WHERE T1.relnamespace = T2.oid AND T1.relname = 'fd_m_96m_lev18'
 */
 int drms_series_isdbowner(DRMS_Env_t *env, const char *series, int *status)
@@ -2378,7 +2392,7 @@ int drms_client_isproduser(DRMS_Env_t *env, int *status)
     int istat = DRMS_SUCCESS;
     int forceconn = 0;
     DB_Handle_t *dbh = NULL;
-    
+
     if (isproduser == -1)
     {
         isproduser = 0;
@@ -2387,11 +2401,11 @@ int drms_client_isproduser(DRMS_Env_t *env, int *status)
     {
         return isproduser;
     }
-    
+
 #if defined(PRODUSER_DBHOST) && defined(PRODUSER_DBNAME) && defined(PRODUSER_PRODTAB) && defined(PRODUSER_COLUSER)
     /* Derive the db host machine from the PRODUSER_DBHOST string (which has the format host:port). */
     dbhost = strdup(PRODUSER_DBHOST);
-    
+
     if (!dbhost)
     {
         istat = DRMS_ERROR_OUTOFMEMORY;
@@ -2402,14 +2416,14 @@ int drms_client_isproduser(DRMS_Env_t *env, int *status)
         if (pc)
         {
             *pc = '\0';
-        }    
+        }
     }
-        
+
     if (istat == DRMS_SUCCESS)
     {
 #ifndef DRMS_CLIENT
         dbuser = env->session->db_handle->dbuser;
-        
+
         /* For a server module, hostname is in drms_env->session->db_handle->dbhost. */
         forceconn = (strcasecmp(dbhost, env->session->db_handle->dbhost) != 0);
         if (env->verbose)
@@ -2419,29 +2433,29 @@ int drms_client_isproduser(DRMS_Env_t *env, int *status)
 #else
         drms_send_commandcode(env->session->sockfd, DRMS_GETDBUSER);
         dbuser = receive_string(env->session->sockfd);
-        
+
         if (!dbuser)
         {
             istat = DRMS_ERROR_OUTOFMEMORY;
         }
-        
-        /* For a sock module, the db host to which it has access is the db host that the 
-         * serving drms_server is connected to. And I don't think there is a way to 
-         * determine to which db host drms_server is connected, so we'll HAVE TO 
-         * connect to PRODUSER_DBHOST here, regardless of the existing connection between 
+
+        /* For a sock module, the db host to which it has access is the db host that the
+         * serving drms_server is connected to. And I don't think there is a way to
+         * determine to which db host drms_server is connected, so we'll HAVE TO
+         * connect to PRODUSER_DBHOST here, regardless of the existing connection between
          * drms_server and a db. */
         forceconn = 1;
 #endif
     }
-    
+
     if (istat == DRMS_SUCCESS)
     {
         if (forceconn)
         {
-            /* The caller wants to obtain the list of production users on a db host to which 
+            /* The caller wants to obtain the list of production users on a db host to which
              * this module has no connection */
-            
-            /* Use db_connect to connect to the PRODUSER_DBNAME db on PRODUSER_DBHOST. Steal dbuser from the existing, 
+
+            /* Use db_connect to connect to the PRODUSER_DBNAME db on PRODUSER_DBHOST. Steal dbuser from the existing,
              * irrelevant db connection. */
             if ((dbh = db_connect(PRODUSER_DBHOST, dbuser, NULL, PRODUSER_DBNAME, 1)) == NULL)
             {
@@ -2454,15 +2468,15 @@ int drms_client_isproduser(DRMS_Env_t *env, int *status)
             dbh = env->session->db_handle;
         }
     }
-    
+
     if (istat == DRMS_SUCCESS)
     {
-        /* If this table of production users does not exist, then assume that the user is not a member of the 
+        /* If this table of production users does not exist, then assume that the user is not a member of the
          * production team. */
         int tabexists = 0;
         char *schema = NULL;
         char *table = NULL;
-        
+
         if (get_namespace(PRODUSER_PRODTAB, &schema, &table))
         {
             fprintf(stderr, "Out of memory in drms_client_isproduser().\n");
@@ -2485,18 +2499,18 @@ int drms_client_isproduser(DRMS_Env_t *env, int *status)
             free(schema);
             free(table);
         }
-        
+
         if (istat == DRMS_SUCCESS && tabexists)
         {
             snprintf(query, sizeof(query), "SELECT %s FROM %s WHERE %s = '%s'", PRODUSER_COLUSER, PRODUSER_PRODTAB, PRODUSER_COLUSER, dbuser);
-            
+
             if ((qres = db_query_txt(dbh, query)) != NULL)
             {
                 if (qres->num_cols == 1 && qres->num_rows == 1)
                 {
                     isproduser = 1;
                 }
-                
+
                 db_free_text_result(qres);
             }
             else
@@ -2505,13 +2519,13 @@ int drms_client_isproduser(DRMS_Env_t *env, int *status)
             }
         }
     }
-    
+
     if (forceconn && dbh)
     {
         /* Need to terminate new db connection. */
         db_disconnect(&dbh);
     }
-    
+
 #ifdef DRMS_CLIENT
     if (dbuser)
     {
@@ -2522,15 +2536,15 @@ int drms_client_isproduser(DRMS_Env_t *env, int *status)
 
     if (dbhost)
     {
-        free(dbhost);    
+        free(dbhost);
     }
-    
+
     if (status)
     {
         *status = istat;
     }
 #endif /* PRODUSER_DBHOST */
-    
+
     return isproduser;
 }
 
@@ -2547,15 +2561,15 @@ int drms_setretention(DRMS_Env_t *env, int16_t newRetention, int nsus, long long
     int istat;
 
     istat = DRMS_SUCCESS;
-    
+
     drms_send_commandcode(env->session->sockfd, DRMS_SETRETENTION);
-    
+
     /* Eliminate SUNUMs with a value of -1. */
     vec = calloc(sizeof(struct iovec), nsus);
     XASSERT(vec);
     sunumlist = calloc(sizeof(long long), nsus);
     XASSERT(sunumlist);
-    
+
     for (isunum = 0, count = 0; isunum < nsus; isunum++)
     {
         oneSunum = sunums[isunum];
@@ -2567,26 +2581,26 @@ int drms_setretention(DRMS_Env_t *env, int16_t newRetention, int nsus, long long
             count++;
         }
     }
-    
+
     /* Send newRetention, count, and sunumlist to drms_server. */
-    
+
     /* newRetention */
     Writeshort(env->session->sockfd, newRetention);
-    
+
     /* count */
     Writeint(env->session->sockfd, count);
-    
+
     /* pass count sunums */
     Writevn(env->session->sockfd, vec, count);
-    
+
     free(sunumlist);
     sunumlist = NULL;
     free(vec);
     vec = NULL;
-    
+
     /* Fetch status from socket. */
     istat = Readint(env->session->sockfd);
-    
+
     return istat;
 #endif
 }
@@ -2599,7 +2613,7 @@ int drms_makewritable(DRMS_Env_t *env)
     int drmsStat = DRMS_SUCCESS;
 
     drms_send_commandcode(env->session->sockfd, DRMS_MAKESESSIONWRITABLE);
-    
+
     /* Get status - that's all we need to receive. */
     drmsStat = Readint(env->session->sockfd);
 
@@ -2614,7 +2628,7 @@ int drms_makewritable(DRMS_Env_t *env)
 
 sem_t *gShutdownsem = NULL; /* synchronization among signal thread, main thread,
                                sums thread, and server threads during shutdown */
-DRMS_Shutdown_State_t gShutdown; /* shudown state following receipt by DRMS of a signal that 
+DRMS_Shutdown_State_t gShutdown; /* shudown state following receipt by DRMS of a signal that
                                  * causes module termination */
 
 void drms_lock_client(DRMS_Env_t *env)
@@ -2729,7 +2743,7 @@ int drms_client_registercleaner(DRMS_Env_t *env, CleanerData_t *data)
    {
       fprintf(stderr, "Can't register doit cleaner function. Unable to obtain mutex.\n");
    }
-  
+
    return ok;
 }
 
@@ -2803,16 +2817,16 @@ void *drms_signal_thread(void *arg)
          break;
        case SIGQUIT:
          fprintf(stderr,"WARNING: jsoc_main received SIGQUIT...exiting.\n");
-         break; 
+         break;
        case SIGUSR2:
-         if (env->verbose) 
+         if (env->verbose)
          {
             fprintf(stdout,"signal thread received SIGUSR2 (main shutting down)...exiting.\n");
          }
          pthread_exit(NULL);
          break;
        default:
-         fprintf(stderr,"WARNING: DRMS server received signal no. %d...exiting.\n", 
+         fprintf(stderr,"WARNING: DRMS server received signal no. %d...exiting.\n",
                  signo);
 
          signo = SIGTERM; /* Act like we got an abort signal. */
@@ -2824,7 +2838,7 @@ void *drms_signal_thread(void *arg)
        case SIGINT:
        case SIGTERM:
        case SIGQUIT:
-         /* No need to acquire lock to look at env->shutdownsem, which was either 
+         /* No need to acquire lock to look at env->shutdownsem, which was either
           * created or not before the signal_thread existed. By the time
           * execution gets here, shutdownsem is read-only */
          if (gShutdownsem)
@@ -2840,7 +2854,7 @@ void *drms_signal_thread(void *arg)
                fprintf(stderr, "Shutdown initiated.\n");
 
                /* Allow DoIt() function a chance to clean up. */
-               /* Call user-registered callback, if such a callback was registered, that cleans up 
+               /* Call user-registered callback, if such a callback was registered, that cleans up
                 * resources used in the DoIt() loop */
                if (env->cleaners)
                {
@@ -2859,7 +2873,7 @@ void *drms_signal_thread(void *arg)
 
                /* release shutdown lock */
                sem_post(gShutdownsem);
-           
+
                doexit = 1;
             }
             else
@@ -2881,8 +2895,8 @@ void *drms_signal_thread(void *arg)
             ArrivederciBaby(env);
             return NULL; /* kill the signal thread - only thread left */
          }
-      
-         break;      
+
+         break;
     }
   }
 }
