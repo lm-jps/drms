@@ -154,9 +154,9 @@ static DRMS_RecordSet_t *OpenPlainFileRecords(DRMS_Env_t *env,
 					      char **pkeysout,
 					      int *status);
 
-DRMS_RecordSet_t *drms_open_recordset_internal(DRMS_Env_t *env, const char *rsquery, int openLinks, int *status);
+DRMS_RecordSet_t *drms_open_recordset_internal(DRMS_Env_t *env, const char *rsquery, int openLinks, LinkedList_t *keys, int *status);
 
-static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *seriesname, char *where, const char *pkwhere, const char *npkwhere, int filter, int mixed,HContainer_t *goodsegcont, const char *qoverride, int allvers, int nrecs, HContainer_t *firstlast, HContainer_t *pkwhereNFL, int recnumq, int cursor, HContainer_t *links, /* Links to fetch from db. */HContainer_t *keys, /* Keys to fetch from db. */ HContainer_t *segs, /* Segs to fetch from db. */ int fetchLinkedRecords, int *status);
+static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *seriesname, char *where, const char *pkwhere, const char *npkwhere, int filter, int mixed, const char *qoverride, int allvers, int nrecs, HContainer_t *firstlast, HContainer_t *pkwhereNFL, int recnumq, int cursor, HContainer_t *links, /* Links to fetch from db. */HContainer_t *keys, /* Keys to fetch from db. */ HContainer_t *segs, /* Segs to fetch from db. */ int fetchLinkedRecords, int *status);
 
 static void RSFree(const void *val);
 /* end drms_open_records() helpers */
@@ -856,6 +856,8 @@ static DRMS_RecordSet_t *CreateRecordsFromDSDSKeylist(DRMS_Env_t *env,
    rset->ss_currentrecs = NULL;
    rset->cursor = NULL;
    rset->env = env;
+   rset->ss_template_keys = NULL;
+   rset->ss_template_segs = NULL;
 
    int iNewRec = 1;
    int primekeyCnt = 0;
@@ -1429,6 +1431,11 @@ static void QFree(void *data)
  * If this list is NULL, then a DRMS_Keyword_t struct will be created for all
  * keywords in the series implied by the record-set specification.
  */
+
+/* `keylist` - a linked list of keyword names
+ * `template_keys_out` - an hcon of template keyword structs used in all SQL queries - opening/retrieving records
+ * `seg_names_out` - an hcon of segment names used in all SQL queries - opening/retrieving records
+ */
 DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *recordsetname, int openlinks, int retrieverecs, int nrecslimit, LinkedList_t *keylist, LinkedList_t **llistout, char **allversout, int **hasshadowout, int *status)
 {
     DRMS_RecordSet_t *rs = NULL;
@@ -1454,6 +1461,8 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *record
     char *lasts = NULL;
     char *ans = NULL;
     HContainer_t *goodsegcont = NULL;
+    int filter_keys = 0;
+    int filter_segs = 0;
     DB_Text_Result_t *tres = NULL;
     int cursor = 0; /* The query will be run in a db cursor. */
     /* conflict with stat var in this scope */
@@ -1485,6 +1494,16 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *record
         }
     }
 
+    if (!klist)
+    {
+        if (keylist)
+        {
+            /* the original way to provide a list of keys to process was via `llistout`; but the newer way is with `keylist`; the older
+             * method overrides the newer one */
+             klist = keylist;
+        }
+    }
+
     /* recordsetname is a list of comma-separated record sets
      * commas may appear within record sets, so need to use a parsing
      * mechanism more sophisticated than strtok() */
@@ -1498,6 +1517,10 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *record
     char *allvers = NULL; /* If 'y', then don't do a 'group by' on the primekey value.
                            * The rationale for this is to allow users to get all versions
                            * of the requested DRMS records */
+
+    HContainer_t **set_template_keys = NULL; /* keywords specified by the caller (used in SQL queries and record keyword structs) */
+    HContainer_t **set_template_segs = NULL; /* segments specified by the caller (used in SQL queries and segment keyword structs) */
+
     DRMS_RecQueryInfo_t rsinfo; /* Filled in by parser as it encounters elements. */
     stat = ParseRecSetDesc(recordsetname, &allvers, &sets, &settypes, &snames, &filts, &nsets, &rsinfo);
 
@@ -1518,11 +1541,23 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *record
         if (nsets > 0)
         {
             setstarts = (int *)malloc(sizeof(int) * nsets);
+
+            /* even if no filtering ends up being done, still create an hcon array (each subset maybe or may not have an hcon element) */
+            set_template_keys = (HContainer_t **)calloc(nsets, sizeof(HContainer_t *));
+            set_template_segs = (HContainer_t **)calloc(nsets, sizeof(HContainer_t *));
         }
 
         for (iSet = 0; stat == DRMS_SUCCESS && iSet < nsets; iSet++)
         {
             char *oneSet = sets[iSet];
+
+            filter_keys = 0;
+            filter_segs = 0;
+
+            if (keylist)
+            {
+                set_template_keys[iSet] = hcon_create(sizeof(DRMS_Keyword_t *), DRMS_MAXKEYNAMELEN, NULL, NULL, NULL, NULL, 0);
+            }
 
             if (oneSet && strlen(oneSet) > 0)
             {
@@ -1678,10 +1713,19 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *record
                 } /* DSDSPort */
                 else if (settypes[iSet] == kRecordSetType_DRMS)
                 {
-                    HContainer_t *unsorted = NULL;
+                    HContainer_t *unsorted = NULL; /* hcon of keyword structs */
+                    DRMS_Record_t *recTempl = NULL;
                     DRMS_Keyword_t *keyword = NULL;
+                    DRMS_Segment_t *segment = NULL;
                     int iKey;
                     DRMS_Keyword_t *pkey = NULL;
+
+                    recTempl = drms_template_record(env, snames[iSet], &stat);
+
+                    if (!recTempl)
+                    {
+                        goto failure;
+                    }
 
                     if (klist)
                     {
@@ -1692,15 +1736,8 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *record
                          * Unfortunately, it isn't completely trivial to sort linked lists. Instead, put the
                          * keyword structs into an HContainer_t - we can sort the entries easily (since they
                          * are contiguous in memory) and we can iterate over an HCon easily. */
-                        DRMS_Record_t *recTempl = NULL;
+
                         ListNode_t *ln = NULL;
-
-                        recTempl = drms_template_record(env, snames[iSet], &stat);
-
-                        if (!recTempl)
-                        {
-                            goto failure;
-                        }
 
                         /* First, we need to put the prime-key keywords in the container. Since we are creating DRMS_Record_t
                          * structs, each struct must contain the prime-key keywords at the very least. A record is identified
@@ -1759,6 +1796,17 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *record
                         }
                     }
 
+                    if (unsorted && hcon_size(unsorted) > 0)
+                    {
+
+
+                        /* do not use hcon_copy - it calls hcon_init() again
+                         * hcon_copy(set_template_keys[iSet], unsorted);
+                         */
+                        hcon_copy_to_initialized(set_template_keys[iSet], unsorted);
+                        filter_keys = 1;
+                    }
+
                     /* oneSet may have a segement specifier - strip that off and
                      * generate the HContainer_t that contains the requested segment
                      * names. */
@@ -1811,6 +1859,9 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *record
                     if (seglist)
                     {
                         char aseg[DRMS_MAXSEGNAMELEN];
+
+                        set_template_segs[iSet] = hcon_create(sizeof(DRMS_Segment_t *), DRMS_MAXSEGNAMELEN, NULL, NULL, NULL, NULL, 0);
+
                         goodsegcont = hcon_create(DRMS_MAXSEGNAMELEN,
                                                   DRMS_MAXSEGNAMELEN,
                                                   NULL,
@@ -1826,6 +1877,9 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *record
                             /* ans is a segment name */
                             snprintf(aseg, sizeof(aseg), "%s", ans);
                             hcon_insert_lower(goodsegcont, aseg, aseg);
+                            segment = hcon_lookup_lower(&recTempl->segments, aseg); /* don't use drms_segment_lookup - follows links */
+                            hcon_insert_lower(set_template_segs[iSet], aseg, &segment);
+                            filter_segs = 1;
                         }
                         while ((ans = strtok_r(NULL, " ,;:{}", &lasts)) != NULL);
 
@@ -1838,11 +1892,11 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *record
                         XASSERT(allvers[iSet] != '\0');
                         if (env->verbose)
                         {
-                            TIME(rs = drms_retrieve_records_internal(env, seriesname, query, pkwhere, npkwhere, filter, mixed, goodsegcont, NULL, allvers[iSet] == 'y', nrecslimit, firstlast, pkwhereNFL, recnumq, 0, NULL, unsorted, NULL, openlinks, &stat));
+                            TIME(rs = drms_retrieve_records_internal(env, seriesname, query, pkwhere, npkwhere, filter, mixed, NULL, allvers[iSet] == 'y', nrecslimit, firstlast, pkwhereNFL, recnumq, 0, NULL, filter_keys ? unsorted : NULL, filter_segs ? set_template_segs[iSet] : NULL, openlinks, &stat));
                         }
                         else
                         {
-                            rs = drms_retrieve_records_internal(env, seriesname, query, pkwhere, npkwhere, filter, mixed, goodsegcont, NULL, allvers[iSet] == 'y', nrecslimit, firstlast, pkwhereNFL, recnumq, 0, NULL, unsorted, NULL, openlinks, &stat);
+                            rs = drms_retrieve_records_internal(env, seriesname, query, pkwhere, npkwhere, filter, mixed, NULL, allvers[iSet] == 'y', nrecslimit, firstlast, pkwhereNFL, recnumq, 0, NULL, filter_keys ? unsorted : NULL, filter_segs ? set_template_segs[iSet] : NULL, openlinks, &stat);
                         }
                         /* Remove unrequested segments now */
                     }
@@ -1869,6 +1923,8 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *record
                         rs->ss_currentrecs = NULL;
                         rs->cursor = NULL;
                         rs->env = env;
+                        rs->ss_template_keys = NULL;
+                        rs->ss_template_segs = NULL;
                     }
 
                     if (llist)
@@ -1882,9 +1938,9 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *record
                                                            npkwhere,
                                                            filter,
                                                            mixed,
-                                                           DRMS_QUERY_ALL,
+                                                           (klist) ? DRMS_QUERY_PARTIAL : DRMS_QUERY_ALL,
                                                            NULL,
-                                                           NULL,
+                                                           (klist) ? (const char *)unsorted : NULL,
                                                            allvers[iSet] == 'y',
                                                            firstlast,
                                                            pkwhereNFL,
@@ -1893,11 +1949,6 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *record
                                                            openlinks,
                                                            &limit);
                         list_llinserttail(llist, &selquery);
-                    }
-
-                    if (goodsegcont)
-                    {
-                        hcon_destroy(&goodsegcont);
                     }
 
 #ifdef DEBUG
@@ -1942,6 +1993,17 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *record
                         {
                             rs->records[i]->lifetime = DRMS_PERMANENT;
                         }
+                    }
+
+                    /* return final lists used for all SQL */
+                    if (goodsegcont)
+                    {
+                        hcon_destroy(&goodsegcont);
+                    }
+
+                    if (unsorted)
+                    {
+                        hcon_destroy(&unsorted);
                     }
                 } /* DRMS */
                 else
@@ -2004,6 +2066,8 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *record
                 ret->ss_currentrecs = NULL;
                 ret->cursor = NULL;
                 ret->env = env;
+                rs->ss_template_keys = NULL;
+                rs->ss_template_segs = NULL;
             }
         }
 
@@ -2111,7 +2175,18 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *record
                 /* ret can't assume ownership of sets or settypes */
                 ret->ss_queries = (char **)malloc(sizeof(char *) * nsets);
                 ret->ss_types = (DRMS_RecordSetType_t *)malloc(sizeof(DRMS_RecordSetType_t) * nsets);
-                if (ret->ss_currentrecs && ret->ss_queries && ret->ss_types)
+
+                if (set_template_keys)
+                {
+                    ret->ss_template_keys = set_template_keys; /* keywords for all sql queries and record keyword structs */
+                }
+
+                if (set_template_segs)
+                {
+                    ret->ss_template_segs = set_template_segs; /* segment for all sql queries and record segment structs */
+                }
+
+                if (ret->ss_currentrecs && ret->ss_queries && ret->ss_types && ret->ss_template_keys && ret->ss_template_segs)
                 {
                     for (iSet = 0; iSet < nsets; iSet++)
                     {
@@ -2247,8 +2322,7 @@ failure:
      */
 }
 
-DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, const char *recordsetname,
-				    int *status)
+DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, const char *recordsetname, int *status)
 {
    char *allvers = NULL;
    DRMS_RecordSet_t *ret = NULL;
@@ -2439,6 +2513,8 @@ DRMS_RecordSet_t *drms_open_recordswithkeys(DRMS_Env_t *env, const char *specifi
     return ret;
 }
 
+/* `keys` - a linked list of keyword names
+ */
 DRMS_RecordSet_t *drms_open_records2(DRMS_Env_t *env, const char *specification, LinkedList_t *keys, int chunkrecs, int nrecs, int openLinks, int *status)
 {
     char *allvers = NULL;
@@ -2449,11 +2525,11 @@ DRMS_RecordSet_t *drms_open_records2(DRMS_Env_t *env, const char *specification,
     {
         if (env->verbose)
         {
-            TIME(ret = drms_open_recordset_internal(env, specification, openLinks, status));
+            TIME(ret = drms_open_recordset_internal(env, specification, openLinks, keys, status));
         }
         else
         {
-            ret = drms_open_recordset_internal(env, specification, openLinks, status);
+            ret = drms_open_recordset_internal(env, specification, openLinks, keys, status);
         }
     }
     else if (nrecs != 0)
@@ -2648,6 +2724,8 @@ DRMS_RecordSet_t *drms_create_records_fromtemplate(DRMS_Env_t *env, int n,
   rs->ss_types = NULL;
   rs->ss_starts = NULL;
   rs->env = env;
+  rs->ss_template_keys = NULL;
+  rs->ss_template_segs = NULL;
 
   /* Need to malloc (used by drms_recordset_fetchnext()). */
   rs->ss_currentrecs = (int *)malloc(sizeof(int));
@@ -2837,6 +2915,8 @@ DRMS_RecordSet_t *drms_create_recprotos(DRMS_RecordSet_t *recset, int *status)
       detached->ss_currentrecs = NULL;
       detached->cursor = NULL;
       detached->env = NULL;
+      detached->ss_template_keys = NULL;
+      detached->ss_template_segs = NULL;
    }
    else
    {
@@ -3079,6 +3159,8 @@ static DRMS_RecordSet_t *drms_clone_records_internal(DRMS_RecordSet_t *rs_in,
   rs_out->ss_currentrecs = NULL;
   rs_out->cursor = NULL;
   rs_out->env = env;
+  rs_out->ss_template_keys = NULL;
+  rs_out->ss_template_segs = NULL;
 
   /* Outer loop over runs of input records from the same series. */
   first = 0;
@@ -5131,6 +5213,8 @@ void drms_free_records(DRMS_RecordSet_t *rs)
                                 rslink->ss_currentrecs = NULL;
                                 rslink->cursor = NULL;
                                 rslink->env = env;
+                                rslink->ss_template_keys = NULL;
+                                rslink->ss_template_segs = NULL;
 
                                 delrec = lrec;
                                 drms_free_records(rslink);
@@ -5148,6 +5232,14 @@ void drms_free_records(DRMS_RecordSet_t *rs)
                 drms_free_record(rs->records[i]); /* checks refcount on record */
                 rs->records[i] = NULL;
                 TrackerInsertRec(tracker, delrec);
+            }
+            else
+            {
+                /* now deletes record struct w/o looking in cache */
+                if (rs->records[i])
+                {
+                    drms_free_record(rs->records[i]);
+                }
             }
 
         if (rs->n>0 && rs->records)
@@ -5265,6 +5357,8 @@ void drms_free_records(DRMS_RecordSet_t *rs)
                                     rslink->ss_currentrecs = NULL;
                                     rslink->cursor = NULL;
                                     rslink->env = env;
+                                    rslink->ss_template_keys = NULL;
+                                    rslink->ss_template_segs = NULL;
 
                                     delrec = lrec;
                                     drms_free_records(rslink);
@@ -5281,6 +5375,14 @@ void drms_free_records(DRMS_RecordSet_t *rs)
                     drms_free_record(rs->records[i]); /* checks refcount on record */
                     rs->records[i] = NULL;
                     TrackerInsertRec(tracker, delrec);
+                }
+                else
+                {
+                    /* now deletes record struct w/o looking in cache */
+                    if (rs->records[i])
+                    {
+                        drms_free_record(rs->records[i]);
+                    }
                 }
             }
 
@@ -5326,6 +5428,34 @@ void drms_free_records(DRMS_RecordSet_t *rs)
     if (rs->cursor)
     {
         drms_free_cursor(&(rs->cursor));
+    }
+
+    if (rs->ss_template_keys)
+    {
+        int iSet;
+        for (iSet = 0; iSet < rs->ss_n; iSet++)
+        {
+            if (rs->ss_template_keys[iSet])
+            {
+                hcon_destroy(&rs->ss_template_keys[iSet]);
+            }
+        }
+        free(rs->ss_template_keys);
+        rs->ss_template_keys = NULL;
+    }
+
+    if (rs->ss_template_segs)
+    {
+        int iSet;
+        for (iSet = 0; iSet < rs->ss_n; iSet++)
+        {
+            if (rs->ss_template_segs[iSet])
+            {
+                hcon_destroy(&rs->ss_template_segs[iSet]);
+            }
+        }
+        free(rs->ss_template_segs);
+        rs->ss_template_segs = NULL;
     }
 
     /* Do NOT free rs->env. That is still being used. */
@@ -5399,6 +5529,8 @@ DRMS_Record_t *drms_clone_record(DRMS_Record_t *oldrec,
   rs_old.ss_currentrecs = NULL;
   rs_old.cursor = NULL;
   rs_old.env = oldrec->env;
+  rs_old.ss_template_keys = NULL;
+  rs_old.ss_template_segs = NULL;
 
   rs = drms_clone_records(&rs_old, lifetime, mode, status);
   if (rs && (rs->n==1))
@@ -5448,6 +5580,8 @@ int drms_close_record(DRMS_Record_t *rec, int action)
                            * This function should really be deprecated since it is more efficient to
                            * close sets of records.
                            */
+    rs_old->ss_template_keys = NULL;
+    rs_old->ss_template_segs = NULL;
 
   return drms_close_records(rs_old, action);
 }
@@ -5481,8 +5615,7 @@ int drms_closeall_records(DRMS_Env_t *env, int action)
 
 /* Remove a record from the record cache and free any memory
    allocated for it. */
-/* ART: This function is for records that have been cached (inv env->record_cache). It is not
- * for headless records. It won't free records of that type. */
+/* ART: this function NOW frees non-env-cached records too */
 void drms_free_record(DRMS_Record_t *rec)
 {
    char hashkey[DRMS_MAXHASHKEYLEN];
@@ -5490,22 +5623,30 @@ void drms_free_record(DRMS_Record_t *rec)
 #ifdef DEBUG
    printf("freeing '%s':%lld\n", rec->seriesinfo->seriesname, rec->recnum);
 #endif
-   if (rec->seriesinfo) {
-     drms_make_hashkey(hashkey, rec->seriesinfo->seriesname, rec->recnum);
-     /* NOTICE: refcount on rec->su will be decremented when hcon_remove calls
-	drms_free_record_struct via its deep_free callback. */
+    if (IsCachedRecord(rec->env, rec))
+    {
+        if (rec->seriesinfo)
+        {
+            drms_make_hashkey(hashkey, rec->seriesinfo->seriesname, rec->recnum);
+            /* NOTICE: refcount on rec->su will be decremented when hcon_remove calls
+            drms_free_record_struct via its deep_free callback. */
 
-     /* Caller removed a reference to the record. Decrement reference counter. */
-     --rec->refcount;
+            /* Caller removed a reference to the record. Decrement reference counter. */
+            --rec->refcount;
 
-     if (rec->refcount == 0)
-     {
-        hcon_remove(&rec->env->record_cache, hashkey);
-     }
-   }
+            if (rec->refcount == 0)
+            {
+                hcon_remove(&rec->env->record_cache, hashkey);
+            }
+        }
+    }
+    else
+    {
+        /* the template records are not in the record_cache - they are in the series_cache */
+        drms_free_record_struct(rec);
+        free(rec);
+    }
 }
-
-
 
 /* Retrieve a data record with known series and unique record number.
    If it is already in the dataset cache, simply return a pointer to its
@@ -5695,7 +5836,10 @@ static int ParseAndExecTempTableSQL(DRMS_Session_t *session, char **pquery)
  * creating a new DRMS_Record_t struct, and overwriting the existing struct in the
  * record cache.
  */
-DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *seriesname, char *where, const char *pkwhere, const char *npkwhere, int filter, int mixed, HContainer_t *goodsegcont, const char *qoverride, int allvers, int nrecs, HContainer_t *firstlast, HContainer_t *pkwhereNFL, int recnumq, int cursor, HContainer_t *links, /* Links to fetch from db. */ HContainer_t *keys, /* Keys to fetch from db. */ HContainer_t *segs, /* Segs to fetch from db. */ int fetchLinkedRecords, int *status)
+
+/* `keys` - an hcontainer of keyword structs
+ */
+DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *seriesname, char *where, const char *pkwhere, const char *npkwhere, int filter, int mixed, const char *qoverride, int allvers, int nrecs, HContainer_t *firstlast, HContainer_t *pkwhereNFL, int recnumq, int cursor, HContainer_t *links, /* Links to fetch from db. */ HContainer_t *keys, /* Keys to fetch from db. */ HContainer_t *segs, /* Segs to fetch from db. */ int fetchLinkedRecords, int *status)
 {
   int i,throttled;
   int stat = 0;
@@ -5813,7 +5957,11 @@ DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *se
       drms_make_hashkey(hashkey, seriesname, recnum);
 
       /* If a key list is passed in, then we are downloading a partial record. And we cannot cache a partial
-       * record since every piece of code that uses the cache assumes that it contains full records. */
+       * record since every piece of code that uses the cache assumes that it contains full records; the
+       * entire purpose of the env record cache is to avoid downloading the link/keyword/segment data from
+       * the db again; if we desire a partial record, though, we should check the cache for the full
+       * record first - THAT IS NOT DONE HERE AND SHOULD BE; but for now, we are assuming the full
+       * record is not in the cache */
         if ((links && hcon_size(links) > 0) || (keys && hcon_size(keys) > 0) || (segs && hcon_size(segs) > 0))
         {
             DRMS_Link_t *link = NULL;
@@ -5822,6 +5970,9 @@ DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *se
             DRMS_Keyword_t **pkey = NULL;
             DRMS_Segment_t *seg = NULL;
             DRMS_Segment_t **pseg = NULL;
+
+            /* TO DO - check record cache for full record, then copy over only desired links/keys/segs
+             */
 
             /* Don't cache these records!! They are going to be headless records. */
             rs->records[i] = calloc(1, sizeof(DRMS_Record_t));
@@ -5852,7 +6003,7 @@ DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *se
             if (!links)
             {
                 /* Copy all link structs. */
-                hcon_copy(&(rs->records[i]->links), &template->links);
+                hcon_copy_to_initialized(&(rs->records[i]->links), &template->links);
             }
             else if (hcon_size(links) > 0)
             {
@@ -5881,7 +6032,7 @@ DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *se
             if (!keys)
             {
                 /* Copy all keyword structs. This will perform a deep-copy. */
-                hcon_copy(&(rs->records[i]->keywords), &template->keywords);
+                hcon_copy_to_initialized(&(rs->records[i]->keywords), &template->keywords);
             }
             else if (hcon_size(keys) > 0)
             {
@@ -5928,8 +6079,8 @@ DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *se
             /* Copy segment structs from template. segs == 0 ==> all segs, list_llgetnitems(segs) == 0 ==> no segs. */
             if (!segs)
             {
-                /* Copy all link structs. */
-                hcon_copy(&(rs->records[i]->segments), &template->segments);
+                /* Copy all segment structs. */
+                hcon_copy_to_initialized(&(rs->records[i]->segments), &template->segments);
             }
             else if (hcon_size(segs) > 0)
             {
@@ -5938,7 +6089,7 @@ DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *se
                 {
                     seg = *pseg;
 
-                    /* Copy the link struct. */
+                    /* Copy the segment struct. */
                     hcon_insert(&(rs->records[i]->segments), keyVal, seg);
                 }
                 hiter_free(&hit);
@@ -6023,58 +6174,6 @@ DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *se
 #endif
   }
 
-  if (goodsegcont && rs->n > 0)
-  {
-     const char **keynames = NULL;
-     int nsegs = 0;
-     int iseg;
-
-     for (i=0; i < rs->n; i++)
-     {
-        /* Iterate through records, removing unrequested segments */
-        nsegs = hcon_size(&(rs->records[i]->segments));
-
-        if (nsegs > 0)
-        {
-           keynames = (const char **)malloc(sizeof(const char *) * nsegs);
-
-           if (keynames)
-           {
-               HIterator_t *hit = NULL;
-              hit = hiter_create(&(rs->records[i]->segments));
-              if (hit)
-              {
-                 iseg = 0;
-                 while (hiter_extgetnext(hit, &hkey) != NULL)
-                 {
-                    /* Put the names in a list - can't delete from a container while
-                     * iterating through it. */
-                    if (!hcon_lookup(goodsegcont, hkey))
-                    {
-                       keynames[iseg] = hkey;
-                       iseg++;
-                    }
-                 }
-
-                 nsegs = iseg;
-                 hiter_destroy(&hit);
-              }
-           }
-
-           for (iseg = 0; iseg < nsegs; iseg++)
-           {
-              hkey = keynames[iseg];
-              hcon_remove(&(rs->records[i]->segments), hkey);
-           }
-
-           if (keynames)
-           {
-              free(keynames);
-              keynames = NULL;
-           }
-        }
-     }
-  }
 
   /* Initialize subset information */
   rs->ss_n = 0;
@@ -6084,6 +6183,8 @@ DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *se
   rs->ss_currentrecs = NULL;
   rs->cursor = NULL;
   rs->env = env;
+  rs->ss_template_keys = NULL;
+  rs->ss_template_segs = NULL;
 
   db_free_binary_result(qres);
   free(query);
@@ -6122,7 +6223,7 @@ DRMS_RecordSet_t *drms_retrieve_records(DRMS_Env_t *env,
                                         const char *pkwhere,
                                         const char *npkwhere,
                                         int filter, int mixed,
-                                        HContainer_t *goodsegcont,
+                                        HContainer_t *goodsegcont, /* deprecated, not used */
                                         int allvers,
                                         int nrecs,
                                         HContainer_t *firstlast,
@@ -6134,7 +6235,7 @@ DRMS_RecordSet_t *drms_retrieve_records(DRMS_Env_t *env,
                                         HContainer_t *segs,
                                         int *status)
 {
-    return drms_retrieve_records_internal(env, seriesname, where, pkwhere, npkwhere, filter, mixed, goodsegcont, NULL, allvers, nrecs, firstlast, pkwhereNFL, recnumq, cursor, NULL, keys, NULL, 1, status);
+    return drms_retrieve_records_internal(env, seriesname, where, pkwhere, npkwhere, filter, mixed, NULL, allvers, nrecs, firstlast, pkwhereNFL, recnumq, cursor, NULL, keys, NULL, 1, status);
 }
 
 /* prepared - A prepared statement when combined with argin that results in the retrieval of db information needed to create the DRMS records specified by the statement and argin. */
@@ -6349,6 +6450,8 @@ static DRMS_RecordSet_t *drms_retrieve_records_prepared_query(DRMS_Env_t *env, c
             rv->ss_currentrecs = NULL;
             rv->cursor = NULL;
             rv->env = env;
+            rv->ss_template_keys = NULL;
+            rv->ss_template_segs = NULL;
         }
     }
     else
@@ -7114,7 +7217,7 @@ DRMS_RecordSet_t *callRetrieveRecsPreparedQuery(DRMS_Env_t *env, HContainer_t *m
                         {
                             sql = base_strcatalloc(sql, ")", &stsz);
 
-                            rvSupp = drms_retrieve_records_internal(env, seriesGet, NULL, NULL, NULL, 0, 0, NULL, sql, 0, 0, NULL, NULL, 0, 0, NULL, NULL, NULL, 1, &istat);
+                            rvSupp = drms_retrieve_records_internal(env, seriesGet, NULL, NULL, NULL, 0, 0, sql, 0, 0, NULL, NULL, 0, 0, NULL, NULL, NULL, 1, &istat);
 
                             if (rvSupp)
                             {
@@ -9427,6 +9530,8 @@ int drms_populate_record(DRMS_Env_t *env, DRMS_Record_t *rec, long long recnum, 
   rs.ss_currentrecs = NULL;
   rs.cursor = NULL;
   rs.env = env;
+  rs.ss_template_keys = NULL;
+  rs.ss_template_segs = NULL;
 
   stat = drms_populate_records(env, &rs, qres, openLinks);
   db_free_binary_result(qres);
@@ -13125,6 +13230,28 @@ int drms_merge_record(DRMS_RecordSet_t *rs, DRMS_Record_t *rec)
             drms_free_cursor(&(rs->cursor));
          }
 
+         if (rs->ss_template_keys)
+         {
+             for (iset = 0; iset < rs->ss_n; iset++)
+             {
+                 if (rs->ss_template_keys[iset])
+                 {
+                    hcon_destroy(&(rs->ss_template_keys[iset]));
+                 }
+             }
+         }
+
+         if (rs->ss_template_segs)
+         {
+             for (iset = 0; iset < rs->ss_n; iset++)
+             {
+                 if (rs->ss_template_segs[iset])
+                 {
+                    hcon_destroy(&(rs->ss_template_segs[iset]));
+                 }
+             }
+         }
+
          /* Do not free rs->env. It is still being used. */
       } /* rs->ss_n > 0 */
 
@@ -13258,11 +13385,6 @@ int drms_open_recordchunk(DRMS_Env_t *env,
           int iset;
           char sqlquery[DRMS_MAXQUERYLEN];
           char *seriesname = NULL;
-          char *psl = NULL;
-          char *seglist = NULL;
-          char *lasts = NULL;
-          char *ans = NULL;
-          HContainer_t *goodsegcont = NULL;
           int openLinkedRecords = 0;
 
           nrecs = 0;
@@ -13271,8 +13393,6 @@ int drms_open_recordchunk(DRMS_Env_t *env,
            * have been fetched OR until all available records have been fetched. */
           for (iset = 0; iset < rs->ss_n; iset++)
           {
-              goodsegcont = NULL;
-
               if (nrecs == rs->cursor->chunksize)
               {
                   /* A whole chunk's worth of records have been retrieved from the db. */
@@ -13300,43 +13420,6 @@ int drms_open_recordchunk(DRMS_Env_t *env,
                            rs->cursor->chunksize - nrecs,
                            rs->cursor->names[iset]);
 
-                  /* Extract segment list from subset query. */
-                  psl = strchr(rs->ss_queries[iset], '{');
-                  if (psl)
-                  {
-                      seglist = strdup(psl);
-                      if (!seglist)
-                      {
-                          stat = DRMS_ERROR_OUTOFMEMORY;
-                          break;
-                      }
-                  }
-
-                  if (seglist)
-                  {
-                      char aseg[DRMS_MAXSEGNAMELEN];
-                      goodsegcont = hcon_create(DRMS_MAXSEGNAMELEN,
-                                                DRMS_MAXSEGNAMELEN,
-                                                NULL,
-                                                NULL,
-                                                NULL,
-                                                NULL,
-                                                0);
-
-                      ans = strtok_r(seglist, " ,;:{}", &lasts);
-
-                      do
-                      {
-                          /* ans is a segment name */
-                          snprintf(aseg, sizeof(aseg), "%s", ans);
-                          hcon_insert_lower(goodsegcont, aseg, aseg);
-                      }
-                      while ((ans = strtok_r(NULL, " ,;:{}", &lasts)) != NULL);
-
-                      free(seglist);
-                      seglist = NULL;
-                  }
-
                   /* Unrequested segments are now filtered out. They didn't used to be filtered out. */
                   openLinkedRecords = rs->cursor->openLinks;
                   fetchedrecs = drms_retrieve_records_internal(env,
@@ -13346,7 +13429,6 @@ int drms_open_recordchunk(DRMS_Env_t *env,
                                                                NULL,
                                                                0,
                                                                0,
-                                                               goodsegcont, /* seg filter */
                                                                sqlquery,
                                                                rs->cursor->allvers[iset],
                                                                0,
@@ -13355,15 +13437,11 @@ int drms_open_recordchunk(DRMS_Env_t *env,
                                                                0,
                                                                1,
                                                                NULL,
-                                                               NULL,
-                                                               NULL,
+                                                               rs->ss_template_keys[iset], /* hcon of keyword structs */
+                                                               rs->ss_template_segs[iset], /* hcon of keyword structs */
                                                                openLinkedRecords,
                                                                &stat);
 
-                  if (goodsegcont)
-                  {
-                      hcon_destroy(&goodsegcont);
-                  }
 
                   free(seriesname);
                   seriesname = NULL;
@@ -13488,6 +13566,10 @@ int drms_open_recordchunk(DRMS_Env_t *env,
                    * set the lastrec flag. */
                   rs->cursor->lastrec = nrecs - 1;
               }
+              else
+              {
+                  rs->cursor->lastrec = rs->cursor->chunksize - 1;
+              }
 
               /* ART - stat may be DRMS_REMOTESUMS_TRYLATER. This is basically the same thing
                * as calling drms_open_recordchunk() without ever having called drms_stage_records()
@@ -13535,7 +13617,7 @@ int drms_open_recordchunk(DRMS_Env_t *env,
 
 /* Shadow Tables - we no longer know how many total records are in the record-set. I
  * removed all references to rs->n. */
-int drms_close_recordchunk(DRMS_RecordSet_t *rs)
+static int drms_close_current_recordchunk(DRMS_RecordSet_t *rs)
 {
     int irec;
     int status = 0;
@@ -13548,8 +13630,8 @@ int drms_close_recordchunk(DRMS_RecordSet_t *rs)
     if (rs->cursor->currentchunk >= 0)
     {
         /* If <0, then there are no chunks in memory. */
-        recstart = 0;
-        recend = recstart + rs->cursor->chunksize - 1;
+        recstart = rs->cursor->currentchunk * rs->cursor->chunksize;
+        recend = recstart + rs->cursor->lastrec;
         rs_new = malloc(sizeof(DRMS_RecordSet_t));
         memset(rs_new, 0, sizeof(DRMS_RecordSet_t));
 
@@ -13560,7 +13642,8 @@ int drms_close_recordchunk(DRMS_RecordSet_t *rs)
             rs->records[irec] = NULL;
         }
 
-        /* rs_new contains records that are cached in the env, so they are not detached records. */
+        /* rs_new contains records that are cached in the env, so they are not detached records; but
+         * these records might also not be cached (partial records - e.g., missing keywords - are not cached) */
         rs_new->env = rs->env;
 
         drms_close_records(rs_new, DRMS_FREE_RECORD);
@@ -13602,7 +13685,10 @@ int drms_close_recordchunk(DRMS_RecordSet_t *rs)
  * FETCH FORWARD n <cursorname>
  */
 
-DRMS_RecordSet_t *drms_open_recordset_internal(DRMS_Env_t *env, const char *rsquery, int openLinks, int *status)
+/* `keys` - a linked list of keyword names
+ * `keys_out` - an hcon of keyword structs
+ */
+DRMS_RecordSet_t *drms_open_recordset_internal(DRMS_Env_t *env, const char *rsquery, int openLinks, LinkedList_t *keys, int *status)
 {
     DRMS_RecordSet_t *rs = NULL;
     long long guid = -1;
@@ -13628,7 +13714,7 @@ DRMS_RecordSet_t *drms_open_recordset_internal(DRMS_Env_t *env, const char *rsqu
         {
             /* Since we are not retrieving records just yet, rsquery will not be evaluated
              * by PG. */
-            rs = drms_open_records_internal(env, tmp, openLinks, 0, 0, NULL, &querylist, &allvers, NULL, &stat);
+            rs = drms_open_records_internal(env, tmp, openLinks, 0, 0, keys, &querylist, &allvers, NULL, &stat);
             free(tmp);
         }
         else
@@ -13809,7 +13895,7 @@ DRMS_RecordSet_t *drms_open_recordset_internal(DRMS_Env_t *env, const char *rsqu
 
 DRMS_RecordSet_t *drms_open_recordset(DRMS_Env_t *env, const char *rsquery, int *status)
 {
-    return drms_open_recordset_internal(env, rsquery, 1, status);
+    return drms_open_recordset_internal(env, rsquery, 1, NULL, status);
 }
 
 /* Returns next record in current chunk, unless no more records in current chunk.
@@ -13861,8 +13947,21 @@ DRMS_Record_t *drms_recordset_fetchnext(DRMS_Env_t *env,
 
             if (rs->cursor->currentrec == rs->cursor->chunksize)
             {
-                drms_close_recordchunk(rs);
+                /* if the current rec is also the last record in the record set, then code below will
+                 * deal with returning kRecChunking_NoMoreRecs and no record to caller */
                 neednewchunk = (int)kRSChunk_Next;
+            }
+
+            if (rs->cursor->lastrec < rs->cursor->chunksize - 1)
+            {
+                cstat = kRecChunking_NoMoreRecs;
+            }
+
+            /* since there is a chunk in memory, lastrec should be set (not -1) */
+            if (rs->cursor->currentrec > rs->cursor->lastrec)
+            {
+                /* clears lastrec and currentrec - sets them both to -1 */
+                drms_close_current_recordchunk(rs);
             }
         }
 

@@ -13,7 +13,7 @@
 #define HASH_PRIME (47)  /* Number of hash bins. */
 
 /*
-  Initialize the container. 
+  Initialize the container.
 
   "datasize" is the size of the data slots in the container.
   "keysize" is the maxsize of the key string.
@@ -61,7 +61,7 @@ void *hcon_allocslot_lower(HContainer_t *hc, const char *key)
 /*
   Allocate a new slot indexed by the string "key". Returns a void
   pointer to data slot of size "datasize". If an element indexed
-  by key already exists this functions returns the same as hcon_lookup. 
+  by key already exists this functions returns the same as hcon_lookup.
 */
 
 /* Return the value field inside the hcontainer element. This field is necessarily a pointer
@@ -72,7 +72,7 @@ void *hcon_allocslot(HContainer_t *hc, const char *key)
   HContainerElement_t *elem = NULL; /* Pointer to allocated elem struct */
 
   elem = (HContainerElement_t *)hash_lookup(&hc->hash, key);
-  
+
   if (elem == NULL)
   {
     /* This is an item with a previously unseen key. */
@@ -85,7 +85,7 @@ void *hcon_allocslot(HContainer_t *hc, const char *key)
         elem->val = malloc(hc->datasize);
         memset(elem->val, 0, hc->datasize);
 
-        /* The pointers elem->key and elem are copied directly into the hash table.  
+        /* The pointers elem->key and elem are copied directly into the hash table.
          * Don't free key in hconfreemap, since it is equivalent to elem->key, and hconfreemap
          * frees elem->key and elem->val (if key is freed, this will double free elem->key.
          * hconfreemap also needs to free elem since it, as well as elem->key and elem->val
@@ -115,7 +115,7 @@ void *hcon_lookup_lower(HContainer_t *hc, const char *key)
 
 /*
   Returns the value field in the HContainerElement_t stored in the underlying hash table, unless
-  no such key exists in the hash table, in which case a NULL is returned. 
+  no such key exists in the hash table, in which case a NULL is returned.
 */
 void *hcon_lookup(HContainer_t *hc, const char *key)
 {
@@ -155,7 +155,7 @@ void *hcon_getn(HContainer_t *hcon, unsigned int n)
       elem = hit->elems[n];
       hiter_destroy(&hit);
    }
-   
+
    if (elem)
    {
       return elem->val;
@@ -190,7 +190,7 @@ static void hconfreemap(const void *key, const void *value, const void *data)
    HContainer_t *hcon = (HContainer_t *)data;
    HContainerElement_t *elem = NULL;
 
-   /* Don't free key - the memory it allocates (if any) wasn't allocated by 
+   /* Don't free key - the memory it allocates (if any) wasn't allocated by
     * hcon code. */
 
    if (value)
@@ -228,20 +228,20 @@ void hcon_free(HContainer_t *hc)
     {
         hash_map_data(&hc->hash, hconfreemap, hc);
     }
-    
+
     hc->num_total = 0;
     hc->datasize = 0;
     hc->keysize = 0;
     hc->deep_free = NULL;
     hc->deep_copy = NULL;
-    
+
     /* Free hash table - this frees an array of key-value structures; the actual key and value fields
      * are freed by hconfreemap. */
-    hash_free(&hc->hash);  
+    hash_free(&hc->hash);
 }
 
 /*
-  Remove the element indexed by key from the container. 
+  Remove the element indexed by key from the container.
   If "deep_free" is not NULL it is called with the slot.
 */
 void hcon_remove(HContainer_t *hc, const char *key)
@@ -251,11 +251,11 @@ void hcon_remove(HContainer_t *hc, const char *key)
    elem = (HContainerElement_t *)hash_lookup(&hc->hash, key);
    if (elem != NULL)
    {
-      /* Must remove from hash first - elem->key is the value of the key in the hash, 
+      /* Must remove from hash first - elem->key is the value of the key in the hash,
        * so you can't delete it, then call hash_remove.  If you do, you won't delete
-       * the key-value pair from the hash table because you deleted the key so 
+       * the key-value pair from the hash table because you deleted the key so
        * the hash look up will fail. */
-      
+
       /* Remove the key-value entries from the underlying hash table - does not free key or value. */
       hash_remove(&hc->hash, key);
 
@@ -275,11 +275,11 @@ void hcon_remove(HContainer_t *hc, const char *key)
          free(elem->val);
          elem->val = NULL;
       }
-    
+
       free(elem);
-     
+
       --hc->num_total;
-   }      
+   }
 }
 
 void hcon_print(HContainer_t *hc)
@@ -307,7 +307,7 @@ void hcon_printf(FILE *fp, HContainer_t *hc)
 }
 
 /*
-  Apply the function fmap to every element in the container. 
+  Apply the function fmap to every element in the container.
 */
 static void hconmapmap(const void *key, const void *value, const void *data)
 {
@@ -329,7 +329,7 @@ static void hconmapmap_ext(const void *key, const void *value, const void *bundl
    if (value)
    {
       (*fmap)(((HContainerElement_t *)value)->val, data); /* Apply fmap to every value in the hcontainer element (which is value);
-                                                           * this version of the function also takes an additional argument 
+                                                           * this version of the function also takes an additional argument
                                                            * to be used for virtually unlimited purposes. */
    }
 }
@@ -360,7 +360,7 @@ static void hconcopymap(const void *key, const void *value, const void *data)
    /* Can't use hash_copy() since in new implementation, the hash table stores pointers
     * to hcontainer elements (not indices). Instead, just insert a copy of each item into
     * the dst hcontainer. */
- 
+
    /* Should do deep copy, if deep_copy was provided. */
    hcon_insert(dst, key, elem->val);
 }
@@ -368,7 +368,17 @@ static void hconcopymap(const void *key, const void *value, const void *data)
 void hcon_copy(HContainer_t *dst, HContainer_t *src)
 {
     hcon_init(dst, src->datasize, src->keysize, src->deep_free, src->deep_copy);
-    
+
+    /* Apply a function that inserts into the dst hcontainer a key-value pair from the src hcontainer. This will
+     * deep-copy if src->deep_free != NULL. */
+    if (src->num_total > 0)
+    {
+        hash_map_data(&src->hash, hconcopymap, dst);
+    }
+}
+
+void hcon_copy_to_initialized(HContainer_t *dst, HContainer_t *src)
+{
     /* Apply a function that inserts into the dst hcontainer a key-value pair from the src hcontainer. This will
      * deep-copy if src->deep_free != NULL. */
     if (src->num_total > 0)
@@ -445,7 +455,7 @@ void hiter_new_sort(HIterator_t *hit, HContainer_t *hc, int (*comp)(const void *
    hiter_new(hit, hc);
 
    /* Now sort */
-   qsort(hit->elems, hit->nelems, sizeof(HContainerElement_t *), comp); 
+   qsort(hit->elems, hit->nelems, sizeof(HContainerElement_t *), comp);
 }
 
 void hiter_rewind(HIterator_t *hit)
@@ -453,7 +463,7 @@ void hiter_rewind(HIterator_t *hit)
   hit->curr = -1;
 }
 
-HContainer_t *hcon_create(int datasize, 
+HContainer_t *hcon_create(int datasize,
 			  int keysize,
 			  void (*deep_free)(const void *value),
 			  void (*deep_copy)(const void *dst, const void *src),
@@ -466,7 +476,7 @@ HContainer_t *hcon_create(int datasize,
    {
       hcon_init(cont, datasize, keysize, deep_free, deep_copy);
       int iArr = 0;
-	  
+
       while (valArr && nameArr && iArr < valArrSize)
       {
          void *slot = hcon_allocslot(cont, nameArr[iArr]);

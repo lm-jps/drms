@@ -27,7 +27,7 @@ struct HContainer_struct {
   Hash_Table_t hash;      /* Hash table pointing into buffer. */
   void (*deep_free)(const void *value);               /* Function for deep freeing items. */
   void (*deep_copy)(const void *dst, const void *src); /* Function for deep copy. */
-}; 
+};
 
 /** \brief HContainer struct reference */
 typedef struct HContainer_struct HContainer_t;
@@ -35,7 +35,7 @@ typedef struct HContainer_struct HContainer_t;
 typedef struct HIterator_struct {
   HContainer_t *hc;
   int curr;                    /* index of current element in elems */
-  HContainerElement_t **elems; /* array of all hcontainer elements; assigned when 
+  HContainerElement_t **elems; /* array of all hcontainer elements; assigned when
                                 * iterator is created */
   int nelems;                  /* number of elements in elems (number of used elem slots in array) */
   int szelems;                 /* number of elem slots allocated in elems */
@@ -70,6 +70,7 @@ void hcon_printf(FILE *fp, HContainer_t *hc);
 void hcon_map(HContainer_t *hc, void (*fmap)(const void *value));
 void hcon_map_ext(HContainer_t *hc, void (*fmap)(const void *value, void *data), void *data);
 void hcon_copy(HContainer_t *dst, HContainer_t *src);
+void hcon_copy_to_initialized(HContainer_t *dst, HContainer_t *src);
 //int hcon_size(HContainer_t *hc);
 void hcon_stat(HContainer_t *hc);
 
@@ -128,7 +129,7 @@ static inline void *hiter_extgetnext(HIterator_t *hit, const char **key)
    }
 
    return value;
- 
+
 }
 
 static inline void *hcon_getval(HContainerElement_t *elem)
@@ -142,7 +143,7 @@ static inline void *hcon_getval(HContainerElement_t *elem)
 }
 
 /* Wrappers to make it easy to create containers and iterate through them. */
-HContainer_t *hcon_create(int datasize, 
+HContainer_t *hcon_create(int datasize,
 			  int keysize,
 			  void (*deep_free)(const void *value),
 			  void (*deep_copy)(const void *dst, const void *src),

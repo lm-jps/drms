@@ -602,6 +602,10 @@ struct DRMS_RecordSet_struct
   DRMS_RecSetCursor_t *cursor;
   /** \brief The environment in which this record-set was created. */
   DRMS_Env_t *env;
+
+  HContainer_t **ss_template_keys;
+
+  HContainer_t **ss_template_segs;
 };
 
 /** \brief DRMS record struct reference */

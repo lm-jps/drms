@@ -13,14 +13,20 @@ typedef enum
 
 #define kRecSetIn      "rsin"
 #define kDSOut         "dsout"
+#define ARG_SOURCE     "source"
+#define ARG_DEST       "dest"
+#define ARG_KEYS       "keys"
 #define kUndef         "undef"
 #define kMaxChunkSize  8192
 #define kGb            1073741824
 
 ModuleArgs_t module_args[] =
 {
-   {ARG_STRING, kRecSetIn, kUndef,  "Input record-set specification."},
-   {ARG_STRING, kDSOut,    kUndef,  "Output data series."},
+   {ARG_STRING, kRecSetIn,   kUndef,  "Input record-set specification"},
+   {ARG_STRING, kDSOut,      kUndef,  "Output data series"},
+   {ARG_STRING, ARG_SOURCE,  kUndef,  "Input record-set specification"},
+   {ARG_STRING, ARG_DEST,    kUndef,  "Output data series"},
+   {ARG_STRINGS, ARG_KEYS,   kUndef,  "List of keywords whose values should be copied"},
    {ARG_END}
 };
 
@@ -367,7 +373,7 @@ static int ProcessRecord(DRMS_Record_t *recin, DRMS_Record_t *recout)
     return rv;
 }
 
-static int copy_columns(DRMS_Env_t *env, const char *source_series, const char *dest_series, DRMS_Record_t *source_template, const char *record_set, long long num_records)
+static int copy_columns(DRMS_Env_t *env, const char *source_series, const char *dest_series, DRMS_Record_t *source_template, HContainer_t *columns, const char *record_set, long long num_records)
 {
     /* first try: assume the column names and data types match exactly when compared, regardless of declared order */
     char *source_schema = NULL;
@@ -376,6 +382,7 @@ static int copy_columns(DRMS_Env_t *env, const char *source_series, const char *
     char *dest_table = NULL;
     int exact_match = 0;
     int subset_of = 0;
+    int specify_columns = 0;
     char cmd[2048];
     DB_Binary_Result_t *res = NULL;
     int num_columns = 0;
@@ -408,75 +415,106 @@ static int copy_columns(DRMS_Env_t *env, const char *source_series, const char *
         strtolower(dest_schema);
         strtolower(dest_table);
 
-        /* check for exact match of column name/data type between tables (subtract intersection from union) */
-        snprintf(cmd, sizeof(cmd), "SELECT column_name, data_type, series FROM\n(SELECT column_name, data_type FROM\n((SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = '%s' AND table_name = '%s' UNION SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = '%s' AND table_name = '%s') EXCEPT\n(SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = '%s' AND table_name = '%s' INTERSECT SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = '%s' AND table_name = '%s')) AS FOO) AS BAR\nJOIN (SELECT column_name, data_type, table_schema || E'.' || table_name AS series FROM information_schema.columns) AS BART USING (column_name, data_type) WHERE BART.series IN ('%s.%s', '%s.%s')", source_schema, source_table, dest_schema, dest_table, source_schema, source_table, dest_schema, dest_table, source_schema, source_table, dest_schema, dest_table);
-
-        if ((res = drms_query_bin(env->session, cmd)) != NULL)
+        if (!columns)
         {
-            if (res->num_rows == 0 && res->num_cols == 3)
-            {
-                /* the tables match - columns match in name and data type, but the declared order of columns may differ, so must provide column list */
-                exact_match = 1;
-            }
-
-            db_free_binary_result(res);
-            res = NULL;
-        }
-
-        if (!exact_match)
-        {
-            /* check to see if the set of columns in the source table is a subset of the columns in the destination table; do not
-             * check column data types - let insert fail if auto-casting fails; provide a column list in case the declared
-             * column order differs between tables (intersection equals the source's set of column names) */
-            snprintf(cmd, sizeof(cmd), "SELECT column_name FROM\n((SELECT column_name FROM information_schema.columns WHERE table_schema = '%s' AND table_name = '%s' )\nEXCEPT\n(SELECT column_name FROM information_schema.columns WHERE table_schema = '%s' AND table_name = '%s' INTERSECT SELECT column_name FROM information_schema.columns WHERE table_schema = '%s' AND table_name = '%s')) AS BART", source_schema, source_table, source_schema, source_table, dest_schema, dest_table);
+            /* check for exact match of column name/data type between tables (subtract intersection from union), but only if
+             * the user has not specified the set of columns to copy */
+            snprintf(cmd, sizeof(cmd), "SELECT column_name, data_type, series FROM\n(SELECT column_name, data_type FROM\n((SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = '%s' AND table_name = '%s' UNION SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = '%s' AND table_name = '%s') EXCEPT\n(SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = '%s' AND table_name = '%s' INTERSECT SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = '%s' AND table_name = '%s')) AS FOO) AS BAR\nJOIN (SELECT column_name, data_type, table_schema || E'.' || table_name AS series FROM information_schema.columns) AS BART USING (column_name, data_type) WHERE BART.series IN ('%s.%s', '%s.%s')", source_schema, source_table, dest_schema, dest_table, source_schema, source_table, dest_schema, dest_table, source_schema, source_table, dest_schema, dest_table);
 
             if ((res = drms_query_bin(env->session, cmd)) != NULL)
             {
-                if (res->num_rows == 0 && res->num_cols == 1)
+                if (res->num_rows == 0 && res->num_cols == 3)
                 {
-                    subset_of = 1;
+                    /* the tables match - columns match in name and data type, but the declared order of columns may differ, so must provide column list */
+                    exact_match = 1;
                 }
 
                 db_free_binary_result(res);
                 res = NULL;
             }
-        }
 
-        if (!exact_match && !subset_of)
-        {
-            /* we might be here simply because column names do not match - however, the declared order of data types MIGHT match OR
-             * they might be cast-able to match on insert; the best way to 'check' for this is to simply try it (we don't want to
-             * check the data type of each column and figure out what PG is going to do when it tries to cast); do not provide
-             * a column list since we already know the column names do not match */
-             if (drms_recordset_query(env, record_set, &where, &pkwhere, &npkwhere, &series_name, &filter, &mixed, &allvers, &firstlast, &pkwhereNFL, &recnumq) == DRMS_SUCCESS)
-             {
-                 /* `query` select columns from `source_table`*/
-                 limit = num_records + 1; /* force limit to be all records (plus 1 to avoid truncation error) */
-                 query = drms_query_string(env, source_template->seriesinfo->seriesname, where, pkwhere, npkwhere, filter, mixed, DRMS_QUERY_ALL, NULL, NULL, allvers, firstlast, pkwhereNFL, recnumq, 1, 1, &limit);
-                 if (query)
-                 {
-                     snprintf(cmd, sizeof(cmd), "INSERT INTO %s.%s %s", dest_schema, dest_table, query);
+            if (!exact_match)
+            {
+                /* check to see if the set of columns in the source table is a subset of the columns in the destination table; do not
+                 * check column data types - let insert fail if auto-casting fails; provide a column list in case the declared
+                 * column order differs between tables (intersection equals the source's set of column names); check only if not
+                 * specified the set of columns to copy */
+                snprintf(cmd, sizeof(cmd), "SELECT column_name FROM\n((SELECT column_name FROM information_schema.columns WHERE table_schema = '%s' AND table_name = '%s' )\nEXCEPT\n(SELECT column_name FROM information_schema.columns WHERE table_schema = '%s' AND table_name = '%s' INTERSECT SELECT column_name FROM information_schema.columns WHERE table_schema = '%s' AND table_name = '%s')) AS BART", source_schema, source_table, source_schema, source_table, dest_schema, dest_table);
 
-                     if (!drms_dms_quiet(env->session, NULL, cmd))
-                     {
-                         err = 0;
-                     }
-                     else
-                     {
-                        /* if this query fails, it might have hosed the transaction (a mismatch in data types does this);
-                         * re-start the transaction */
-                         drms_server_end_transaction(env, 0, 0);
-                         drms_server_begin_transaction(env);
-                     }
+                if ((res = drms_query_bin(env->session, cmd)) != NULL)
+                {
+                    if (res->num_rows == 0 && res->num_cols == 1)
+                    {
+                        subset_of = 1;
+                    }
 
-                     free(query);
+                    db_free_binary_result(res);
+                    res = NULL;
+                }
+            }
+
+            if (!exact_match && !subset_of)
+            {
+                /* we might be here simply because column names do not match - however, the declared order of data types MIGHT match OR
+                 * they might be cast-able to match on insert; the best way to 'check' for this is to simply try it (we don't want to
+                 * check the data type of each column and figure out what PG is going to do when it tries to cast); do not provide
+                 * a column list since we already know the column names do not match */
+                if (drms_recordset_query(env, record_set, &where, &pkwhere, &npkwhere, &series_name, &filter, &mixed, &allvers, &firstlast, &pkwhereNFL, &recnumq) == DRMS_SUCCESS)
+                {
+                    /* `query` select columns from `source_table`*/
+                    limit = num_records + 1; /* force limit to be all records (plus 1 to avoid truncation error) */
+                    query = drms_query_string(env, source_template->seriesinfo->seriesname, where, pkwhere, npkwhere, filter, mixed, DRMS_QUERY_ALL, NULL, NULL, allvers, firstlast, pkwhereNFL, recnumq, 1, 1, &limit);
+
+                    if (query)
+                    {
+                        snprintf(cmd, sizeof(cmd), "INSERT INTO %s.%s %s", dest_schema, dest_table, query);
+
+                        if (!drms_dms_quiet(env->session, NULL, cmd))
+                        {
+                            err = 0;
+                        }
+                        else
+                        {
+                            /* if this query fails, it might have hosed the transaction (a mismatch in data types does this);
+                             * re-start the transaction */
+                            drms_server_end_transaction(env, 0, 0);
+                            drms_server_begin_transaction(env);
+                        }
+
+                        free(query);
+                    }
                  }
-             }
+            }
+            else
+            {
+                /* use a column list */
+                specify_columns = 1;
+            }
         }
         else
         {
-            /* use a column list */
-            column_list = drms_field_list(source_template, 1, &num_columns);
+            /* the user provided a set of column names to copy; the names must exist in both the source and destination tables,
+             * otherwise, this is an error; we know the columns in `columns` exist in the source table because we checked that
+             * when creating the container of columns, but we do not know if they exist in the destination series; do not
+             * bother checking the destination table because even though the columns might exist, we do not know if their
+             * data types match - just try to copy, and if it fails, then the calling function will handle the copy with
+             * a slower method */
+
+             /* use `columns` as the column list */
+             specify_columns = 1;
+        }
+
+
+        if (specify_columns)
+        {
+            if (columns)
+            {
+                column_list = drms_db_columns(source_template, NULL, columns, NULL, &num_columns, NULL);
+            }
+            else
+            {
+                column_list = drms_field_list(source_template, 1, &num_columns);
+            }
 
             if (column_list)
             {
@@ -484,14 +522,40 @@ static int copy_columns(DRMS_Env_t *env, const char *source_series, const char *
                 {
                     /* `query` select columns from `source_table`*/
                     limit = num_records + 1; /* force limit to be all records (plus 1 to avoid truncation error) */
-                    query = drms_query_string(env, source_template->seriesinfo->seriesname, where, pkwhere, npkwhere, filter, mixed, DRMS_QUERY_ALL, NULL, NULL, allvers, firstlast, pkwhereNFL, recnumq, 1, 1, &limit);
+                    if (columns)
+                    {
+                        query = drms_query_string(env, source_template->seriesinfo->seriesname, where, pkwhere, npkwhere, filter, mixed, DRMS_QUERY_PARTIAL, NULL, (char *)columns, allvers, firstlast, pkwhereNFL, recnumq, 1, 1, &limit);
+                    }
+                    else
+                    {
+                        query = drms_query_string(env, source_template->seriesinfo->seriesname, where, pkwhere, npkwhere, filter, mixed, DRMS_QUERY_ALL, NULL, NULL, allvers, firstlast, pkwhereNFL, recnumq, 1, 1, &limit);
+                    }
+
                     if (query)
                     {
                         snprintf(cmd, sizeof(cmd), "INSERT INTO %s.%s (%s) %s", dest_schema, dest_table, column_list, query);
 
-                        if (!drms_dms(env->session, NULL, cmd))
+                        /* in the case where the user provided a list of columns, we do not know if the destination table has
+                         * those columns, or if it does if they have compatible data types, so drop all error messages that could
+                         * occur in that case, and re-start the transaction on failure */
+                        if (columns)
                         {
-                            err = 0;
+                            if (!drms_dms_quiet(env->session, NULL, cmd))
+                            {
+                                err = 0;
+                            }
+                            else
+                            {
+                                drms_server_end_transaction(env, 0, 0);
+                                drms_server_begin_transaction(env);
+                            }
+                        }
+                        else
+                        {
+                            if (!drms_dms(env->session, NULL, cmd))
+                            {
+                                err = 0;
+                            }
                         }
 
                         free(query);
@@ -560,6 +624,45 @@ static int copy_columns(DRMS_Env_t *env, const char *source_series, const char *
     return err;
 }
 
+int insert_keyword(DRMS_Record_t *template, const char *keyword, HContainer_t **keys_hcon, LinkedList_t **keys_list)
+{
+    DRMS_Keyword_t *template_keyword = NULL;
+    int err = 0;
+
+    if (!*keys_hcon)
+    {
+        *keys_hcon = hcon_create(sizeof(DRMS_Keyword_t *), DRMS_MAXKEYNAMELEN, NULL, NULL, NULL, NULL, 0);
+    }
+
+    if (!*keys_list)
+    {
+        *keys_list = list_llcreate(DRMS_MAXKEYNAMELEN, NULL);
+    }
+
+    if (*keys_hcon && *keys_list)
+    {
+        template_keyword = drms_keyword_lookup(template, keyword, 0);
+        if (template_keyword)
+        {
+            /* valid keyword */
+            hcon_insert_lower(*keys_hcon, template_keyword->info->name, &template_keyword);
+            list_llinserttail(*keys_list, template_keyword->info->name);
+        }
+        else
+        {
+            fprintf(stderr, "WARNING: keyword %s is not a valid source keyword", keyword);
+        }
+    }
+    else
+    {
+        fprintf(stderr, "[ insert_keyword ] out of memory\n");
+        err = 1;
+    }
+
+    return err;
+}
+
+
 int DoIt(void)
 {
     DSCPError_t rv = kDSCPErrSuccess;
@@ -568,12 +671,28 @@ int DoIt(void)
     const char *rsspecin = NULL;
     const char *series_in = NULL;
     const char *series_out = NULL;
+    int num_keys = 0;
+    char **keys_strings = NULL;
+    HContainer_t *keys_hcon = NULL;
+    LinkedList_t *keys_list = NULL;
+    int index_key;
     char **seriesin = NULL;
     int nseriesin = 0;
     DRMS_Record_t *source_template = NULL;
 
     rsspecin = cmdparams_get_str(&cmdparams, kRecSetIn, NULL);
+
+    if (strcasecmp(rsspecin, kUndef) == 0)
+    {
+        rsspecin = cmdparams_get_str(&cmdparams, ARG_SOURCE, NULL);
+    }
+
     series_out = cmdparams_get_str(&cmdparams, kDSOut, NULL);
+
+    if (strcasecmp(series_out, kUndef) == 0)
+    {
+        series_out = cmdparams_get_str(&cmdparams, ARG_DEST, NULL);
+    }
 
     /* If both rsspecin and dsout are missing, use positional arguments. */
     if (strcasecmp(rsspecin, kUndef) == 0 && strcasecmp(series_out, kUndef) == 0)
@@ -590,9 +709,23 @@ int DoIt(void)
         }
     }
 
-    if (strcasecmp(rsspecin, kUndef) == 0 || strcasecmp(series_out, kUndef) == 0)
+    if (rv == kDSCPErrSuccess)
     {
-        rv = kDSCPErrBadArgs;
+        num_keys = cmdparams_get_strarr(&cmdparams, ARG_KEYS, &keys_strings, NULL);
+
+        if (num_keys == 1 && strncmp(keys_strings[0], kUndef, sizeof(kUndef)) == 0)
+        {
+            /* the user did not provide the ARGS_KEYS argument */
+            num_keys = 0;
+        }
+    }
+
+    if (rv == kDSCPErrSuccess)
+    {
+        if (strcasecmp(rsspecin, kUndef) == 0 || strcasecmp(series_out, kUndef) == 0)
+        {
+            rv = kDSCPErrBadArgs;
+        }
     }
 
     if (rv == kDSCPErrSuccess)
@@ -655,12 +788,20 @@ int DoIt(void)
 
         if (status == DRMS_SUCCESS && nrecs > 0)
         {
+            if (num_keys > 0)
+            {
+                for (index_key = 0; index_key < num_keys; index_key++)
+                {
+                    insert_keyword(source_template, keys_strings[index_key], &keys_hcon, &keys_list);
+                }
+            }
+
             if (drms_record_numsegments(source_template) == 0)
             {
                 /* might be able to get away with copying from source series db table to dest series db table; if this
                  * succeeds, then there is nothing else to do
                  */
-                copy_keywords = (copy_columns(drms_env, series_in, series_out, source_template, rsspecin, nrecs) != 0);
+                copy_keywords = (copy_columns(drms_env, series_in, series_out, source_template, keys_hcon, rsspecin, nrecs) != 0);
             }
 
             if (copy_keywords)
@@ -682,7 +823,7 @@ int DoIt(void)
                     }
                 }
 
-                rsin = drms_open_recordset(drms_env, rsspecin, &status);
+                rsin = drms_open_records2(drms_env, rsspecin, keys_list, 1, 0, 0, &status);
                 if (status || !rsin)
                 {
                     fprintf(stderr, "Invalid record-set specification %s.\n", rsspecin);
@@ -827,6 +968,9 @@ int DoIt(void)
         /* Close input records. */
         drms_close_records(rsin, DRMS_FREE_RECORD);
     }
+
+    list_llfree(&keys_list);
+    hcon_destroy(&keys_hcon);
 
     if (seriesin)
     {
