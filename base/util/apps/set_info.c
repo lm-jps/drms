@@ -132,7 +132,7 @@ ModuleArgs_t module_args[] =
 {
   {ARG_STRING, "ds", "Not Specified", "Series name with optional record spec"},
   {ARG_FLAG, "h", "0", "Print usage message and quit"},
-  {ARG_FLAG, "B", NULL, "ingest floating-point values as hexidecimal strings"},
+  {ARG_FLAG, "B", NULL, "ingest floating-point values as hexadecimal strings"},
   {ARG_FLAG, "c", "0", "Create a new record from command line keywords"},
   {ARG_FLAG, "C", "0", "Force cloning of needed records to be DRMS_COPY_SEGMENT mode"},
   {ARG_FLAG, "i", NULL, "Ignore the default behavior of ingesting the FITS-file header"},
@@ -737,6 +737,13 @@ int DoIt(void)
    binary = cmdparams_isflagset(&cmdparams, "B");
    create = cmdparams_get_int(&cmdparams, "c", NULL) != 0;
    create_from_stdin = cmdparams_get_int(&cmdparams, "k", NULL) != 0;
+
+    if (create_from_stdin)
+    {
+        /* set_info -k uses hexadecimal strings, so set binary == 1 to expect these strings */
+        binary = 1;
+    }
+
    if (multiple && (create || create_from_stdin))
    {
       if (query) { free(query); query = NULL; }
