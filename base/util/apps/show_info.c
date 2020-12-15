@@ -243,7 +243,7 @@ ModuleArgs_t module_args[] =
   {ARG_FLAG, "a", "0", "print all keyword values"},
   {ARG_FLAG, "A", "0", "print all segment file names/paths"},
   {ARG_FLAG, "b", NULL, "disable prime-key logic"},
-  {ARG_FLAG, "B", NULL, "print floating-point values as hexidecimal strings"},
+  {ARG_FLAG, "B", NULL, "print floating-point values as hexadecimal strings"},
   {ARG_FLAG, "c", "0", "print number of records specified"},
   {ARG_FLAG, "C", NULL, "if the -P or p flag is set, then do not retrieve linked DRMS records; otherwise this flag is a noop"},
   {ARG_FLAG, "d", "0", "print segment data units, protocols, and dimensions"},
