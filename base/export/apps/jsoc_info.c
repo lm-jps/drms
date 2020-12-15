@@ -15,7 +15,7 @@ Prints keyword, segment, and other information and/or file path for given record
 
 \ref jsoc_info can list various kinds of information about a JSOC data series
 or recordset.  Exactly what information gets printed is
-controlled by command-line arguments (see below). 
+controlled by command-line arguments (see below).
 The output format is in json formatted text (see e.g. www.json.org).
 The output structure is described at: http://jsoc.stanford.edu/jsocwiki/AjaxJsocConnect.
 
@@ -42,7 +42,7 @@ records in the series. This argument is required.
 Comma-separated list of keyword names. For each keyword listed,
 information will be displayed. Several special psuedo keyword names
 are accepted.  These are: **ALL** means show all keywords (see show_info -a);
-**NONE** means show no keywords; 
+**NONE** means show no keywords;
 *recnum* means show the hidden keyword "recnum";
 *sunum* means show the hidden keyword "sunum";
 *size* means show the size of storage unit (bytes);
@@ -50,8 +50,8 @@ are accepted.  These are: **ALL** means show all keywords (see show_info -a);
 *retain* means show retention date, i.e. date at which SUMS may remove the segment storage;
 *archive* means show archive status, i.e. has or will SUMS write the storage unit to tape;
 *recdir* means show the SU dir;
-*logdir* means show the path to the processing log directory; 
-*dirmtime* means show the last modification time of the record directory in SUMS; and 
+*logdir* means show the path to the processing log directory;
+*dirmtime* means show the last modification time of the record directory in SUMS; and
 *spec* means show the record's specification
 The results are presented in arrays named "name" and "value".
 
@@ -78,7 +78,7 @@ show_info
 /*
  * To emulate a POST request on the cmd-line, force qDecoder, the HTTP-request parsing library, to process a GET request.
  * Since POST passes its argument via stdin to jsoc_fetch, it would be cumbersome
- * to use the POST branch of qDecoder code (which expects args to arrive via stdin, 
+ * to use the POST branch of qDecoder code (which expects args to arrive via stdin,
  * and expects additional env variables). Instead we can pass the arguments via
  * the cmd-line, or via environment variables.
  *   1. Set two shell environment variables, then run jsoc_fetch:
@@ -131,7 +131,7 @@ do  {	\
 
 #ifndef NDEBUG
 #define JSOC_INFO_ASSERT(expression, msg) XASSERT(expression)
-#else 
+#else
 #define JSOC_INFO_ASSERT(expression, msg) \
 do { \
     if (!(expression)) \
@@ -142,7 +142,7 @@ do { \
 #endif
 
 struct requisitionStructT
-{ 
+{
     unsigned int requireRecnum : 1;
     unsigned int requireSunum : 1;
     unsigned int requireSUMinfoSize : 1;
@@ -162,7 +162,7 @@ static int isInvalidKey(DRMS_Keyword_t *key)
     {
         return (void *)(key->record) == (void *)(&invalidObj);
     }
-    
+
     return 1;
 }
 
@@ -172,7 +172,7 @@ static int isInvalidSeg(DRMS_Segment_t *seg)
     {
         return (void *)(seg->record) == (void *)(&invalidObj);
     }
-    
+
     return 1;
 }
 
@@ -182,12 +182,12 @@ static int isInvalidLink(DRMS_Link_t *link)
     {
         return (void *)(link->record) == (void *)(&invalidObj);
     }
-    
+
     return 1;
 }
 
 static char *string_to_json(const char *in)
-{ 
+{
     // for json vers 0.9 no longer uses wide chars
     char *new = NULL;
 
@@ -200,7 +200,7 @@ static char *string_to_json(const char *in)
 void manage_userhandle(int register_handle, const char *handle)
 {
     char cmd[1024];
-    
+
     if (register_handle) // add handle and PID to current processing table
     {
         long PID = getpid();
@@ -232,12 +232,12 @@ static int populateKeyList(const char *listOfKeys, LinkedList_t *reqSegs, DRMS_R
     int specKey = 0;
     int sumInfoFakeKey = 0;
     int fakeKey = 0;
-    
+
     JSOC_INFO_ASSERT(listOfKeys && *listOfKeys != '\0' && reqSegs && template && jsdTemplate && recordSet && recsStaged && requisition && reqKeys, "populateKeyList(): invalid arguments");
     listOfKeysWorking = strdup(listOfKeys);
     JSOC_INFO_ASSERT(listOfKeysWorking, "populateKeyList(): out of memory");
 
-    /* never use strtok() under any circumstances - you never know what code inside your loop is going to 
+    /* never use strtok() under any circumstances - you never know what code inside your loop is going to
      * call strtok() */
     for (currentKey = strtok_r(listOfKeysWorking, ",", &saver); currentKey; currentKey=strtok_r(NULL, ",", &saver))
     {
@@ -248,14 +248,14 @@ static int populateKeyList(const char *listOfKeys, LinkedList_t *reqSegs, DRMS_R
         else if ((strcmp(currentKey, "**ALL**") == 0))
         {
             /* the fake keywords can be combined with **ALL** */
-                             
-            /* look-up all keywords; use proximal keyword names; use unexpanded per-segment keyword names, 
+
+            /* look-up all keywords; use proximal keyword names; use unexpanded per-segment keyword names,
              * i.e., use the jsdTemplate, not the regular template */
             if (!*jsdTemplate)
             {
                 *jsdTemplate = drms_create_jsdtemplate_record(drms_env, template->seriesinfo->seriesname, &status);
             }
-            
+
             JSOC_INFO_ASSERT(*jsdTemplate, "Could not obtain the JSD template record.");
             JSOC_INFO_ASSERT(last == NULL, "");
 
@@ -293,16 +293,16 @@ static int populateKeyList(const char *listOfKeys, LinkedList_t *reqSegs, DRMS_R
             if (last)
             {
                 hiter_destroy(&last);
-            }                     
+            }
         }
-        else 
+        else
         {
             /* the fake keywords can be combined with **ALL** */
             if ((recnumKey = (strcasecmp(currentKey, "*recnum*") == 0)) && !requisition->requireRecnum)
             {
                 requisition->requireRecnum = 1;
             }
-            
+
             if ((sunumKey = (strcasecmp(currentKey, "*sunum*") == 0)) && !requisition->requireSunum)
             {
                 requisition->requireSunum = 1;
@@ -312,27 +312,27 @@ static int populateKeyList(const char *listOfKeys, LinkedList_t *reqSegs, DRMS_R
             {
                 requisition->requireSUMinfoSize = 1;
             }
-            
+
             if ((sumInfoOnlineKey = (strcasecmp(currentKey, "*online*") == 0)) && !requisition->requireSUMinfoOnline)
             {
                 requisition->requireSUMinfoOnline = 1;
             }
-            
+
             if ((sumInfoRetainKey = (strcasecmp(currentKey, "*retain*") == 0)) && !requisition->requireSUMinfoRetain)
             {
                 requisition->requireSUMinfoRetain = 1;
             }
-            
+
             if ((sumInfoArchiveKey = (strcasecmp(currentKey, "*archive*") == 0)) && !requisition->requireSUMinfoArchive)
             {
                 requisition->requireSUMinfoArchive = 1;
             }
-            
+
             if ((recdirKey = (strcasecmp(currentKey, "*recdir*") == 0)) && !requisition->requireRecdir)
             {
-                requisition->requireRecdir = 1;                
+                requisition->requireRecdir = 1;
             }
-            
+
             if ((logdirKey = (strcasecmp(currentKey, "*logdir*") == 0)) && !requisition->requireLogdir)
             {
                 requisition->requireLogdir = 1;
@@ -340,9 +340,9 @@ static int populateKeyList(const char *listOfKeys, LinkedList_t *reqSegs, DRMS_R
 
             if ((dirmtimeKey = (strcasecmp(currentKey, "*dirmtime*") == 0)) && !requisition->requireDirmtime)
             {
-                requisition->requireDirmtime = 1;                
+                requisition->requireDirmtime = 1;
             }
-            
+
             if ((specKey = (strcasecmp(currentKey, "*spec*") == 0)) && !requisition->requireSpec)
             {
                 requisition->requireSpec = 1;
@@ -352,7 +352,7 @@ static int populateKeyList(const char *listOfKeys, LinkedList_t *reqSegs, DRMS_R
             fakeKey = sumInfoFakeKey | recnumKey | sunumKey | recdirKey | logdirKey | dirmtimeKey | specKey;
 
             if (!requisition->requireSUMinfo)
-            {                    
+            {
                 requisition->requireSUMinfo = sumInfoFakeKey | recdirKey | dirmtimeKey;
             }
 
@@ -364,9 +364,9 @@ static int populateKeyList(const char *listOfKeys, LinkedList_t *reqSegs, DRMS_R
                 {
                     *jsdTemplate = drms_create_jsdtemplate_record(drms_env, template->seriesinfo->seriesname, &status);
                 }
-                
+
                 JSOC_INFO_ASSERT(*jsdTemplate, "Could not obtain the JSD template record.");
-            
+
                 /* look-up keyword; if not found, we need to print some kind of invalid-key string */
                 keyTemplate = drms_keyword_lookup(*jsdTemplate, currentKey, 0);
 
@@ -375,7 +375,7 @@ static int populateKeyList(const char *listOfKeys, LinkedList_t *reqSegs, DRMS_R
                     keyTemplate = calloc(1, sizeof(DRMS_Keyword_t));
                     keyTemplate->record = (DRMS_Record_t *)(&invalidObj);
                     keyTemplate->info = (DRMS_KeywordInfo_t *)calloc(1, sizeof(DRMS_KeywordInfo_t));
-                    snprintf(keyTemplate->info->name, sizeof(keyTemplate->info->name), "%s", currentKey);                    
+                    snprintf(keyTemplate->info->name, sizeof(keyTemplate->info->name), "%s", currentKey);
                 }
                 else if (drms_keyword_getimplicit(keyTemplate))
                 {
@@ -393,9 +393,9 @@ static int populateKeyList(const char *listOfKeys, LinkedList_t *reqSegs, DRMS_R
             }
         }
     }
-    
+
     free(listOfKeysWorking);
-    
+
     return list_llgetnitems(reqKeys);
 }
 
@@ -408,10 +408,10 @@ static int populateSegList(const char *listOfSegs, int followLinks, DRMS_Record_
     DRMS_Segment_t *segTemplate = NULL;
 
     JSOC_INFO_ASSERT(listOfSegs && *listOfSegs != '\0' && template && recordSet && recsStaged && requisition && reqSegs, "populateSegList(): invalid arguments");
-    
+
     listOfSegsWorking = strdup(listOfSegs);
     JSOC_INFO_ASSERT(listOfSegsWorking, "populateSegList(): out of memory");
-    
+
     if (strstr(listOfSegsWorking, "**NONE**") != NULL)
     {
         JSOC_INFO_ASSERT(list_llgetnitems(reqSegs) == 0, "Invalid segment list (cannot specify **NONE** with other segments).");
@@ -422,13 +422,13 @@ static int populateSegList(const char *listOfSegs, int followLinks, DRMS_Record_
         {
             *allSegs = 1;
         }
-        
+
         JSOC_INFO_ASSERT(last == NULL, "about to leak");
 
         while ((segTemplate = drms_record_nextseg(template, &last, 0)) != NULL)
         {
             JSOC_INFO_ASSERT(segTemplate && segTemplate->info && *(segTemplate->info->name) != '\0', "Invalid segment information.");
-        
+
             if (followLinks && segTemplate->info->islink)
             {
                 /* Since rec is a template record, cannot follow links in the ordinary manner. Use this function - it finds the template
@@ -438,13 +438,13 @@ static int populateSegList(const char *listOfSegs, int followLinks, DRMS_Record_
                 drms_template_segment_followlink(segTemplate, &lnkstat);
                 JSOC_INFO_ASSERT(lnkstat != DRMS_SUCCESS, "Unable to follow link.");
             }
-            
+
             if (!list_llfind(reqSegs, (void *)&segTemplate))
             {
                 list_llinserttail(reqSegs, (void *)&segTemplate);
             }
         }
-        
+
         if (last)
         {
             hiter_destroy(&last);
@@ -453,10 +453,10 @@ static int populateSegList(const char *listOfSegs, int followLinks, DRMS_Record_
     else
     {
         for (currentSeg = strtok_r(listOfSegsWorking, ",", &saver); currentSeg; currentSeg = strtok_r(NULL, ",", &saver))
-        {        
+        {
             /* don't follow links */
             segTemplate = hcon_lookup_lower(&(template->segments), currentSeg);
-    
+
             if (!segTemplate || !(segTemplate->info) || *(segTemplate->info->name) == '\0')
             {
                 segTemplate = calloc(1, sizeof(DRMS_Segment_t));
@@ -469,7 +469,7 @@ static int populateSegList(const char *listOfSegs, int followLinks, DRMS_Record_
                 if (followLinks && segTemplate->info->islink)
                 {
                     /* Since rec is a template record, cannot follow links in the ordinary manner. Use this function - it finds the template
-                     * segment of the series linked to. 
+                     * segment of the series linked to.
                      */
                     int lnkstat = DRMS_SUCCESS;
 
@@ -483,7 +483,7 @@ static int populateSegList(const char *listOfSegs, int followLinks, DRMS_Record_
                     }
                 }
             }
-        
+
             if (!list_llfind(reqSegs, (void *)&segTemplate))
             {
                 /* avoid duplicates */
@@ -493,14 +493,14 @@ static int populateSegList(const char *listOfSegs, int followLinks, DRMS_Record_
     }
 
     if (list_llgetnitems(reqSegs) > 0)
-    {        
+    {
         if (!requisition->requireSUMinfo)
         {
             /* we need this for the online property of each segment; plus we need this to get segment paths now */
             requisition->requireSUMinfo = 1;
         }
     }
-    
+
     return list_llgetnitems(reqSegs);
 }
 
@@ -513,7 +513,7 @@ static int populateLinkList(const char *listOfLinks, DRMS_Record_t *template, Li
     DRMS_Link_t *linkTemplate = NULL;
 
     JSOC_INFO_ASSERT(listOfLinks && *listOfLinks != '\0' && template && reqLinks, "populateLinkList(): invalid arguments");
-    
+
     listOfLinksWorking = strdup(listOfLinks);
     JSOC_INFO_ASSERT(listOfLinksWorking, "populateLinkList(): out of memory");
 
@@ -526,7 +526,7 @@ static int populateLinkList(const char *listOfLinks, DRMS_Record_t *template, Li
         else if (strcmp(currentLink, "**ALL**")==0)
         {
             DRMS_Link_t *link = NULL;
-            
+
             JSOC_INFO_ASSERT(last == NULL, "about to leak");
             while ((linkTemplate = drms_record_nextlink(template, &last)) != NULL)
             {
@@ -545,7 +545,7 @@ static int populateLinkList(const char *listOfLinks, DRMS_Record_t *template, Li
         else
         {
             linkTemplate = hcon_lookup_lower(&template->links, currentLink);
-                    
+
             if (!linkTemplate || !(linkTemplate->info) || *(linkTemplate->info->name) == '\0')
             {
                 linkTemplate = calloc(1, sizeof(DRMS_Link_t));
@@ -553,14 +553,14 @@ static int populateLinkList(const char *listOfLinks, DRMS_Record_t *template, Li
                 linkTemplate->info = (DRMS_LinkInfo_t *)calloc(1, sizeof(DRMS_LinkInfo_t));
                 snprintf(linkTemplate->info->name, sizeof(linkTemplate->info->name), "%s", currentLink);
             }
-        
+
             if (!list_llfind(reqLinks, (void *)&linkTemplate))
             {
                 list_llinserttail(reqLinks, (void *)&linkTemplate);
             }
         }
     }
-    
+
     return list_llgetnitems(reqLinks);
 }
 
@@ -587,7 +587,7 @@ static void CGI_unescape_url (char *url)
   url[x] = '\0';
   }
 
-/* returns a container (`log_dirs`) of DRMS log directories; the key is <namespace>:<session id>, and the value is 
+/* returns a container (`log_dirs`) of DRMS log directories; the key is <namespace>:<session id>, and the value is
  * a directory
  * parameters:
  *   env
@@ -597,7 +597,7 @@ static void CGI_unescape_url (char *url)
  */
 static int GetLogDirs(DRMS_Env_t *env, DRMS_Record_t **recs, int nrecs, HContainer_t *log_dirs)
 {
-    /* assumes that all records in recs are from the same series (so the namespace is consistent); recs is a subset 
+    /* assumes that all records in recs are from the same series (so the namespace is consistent); recs is a subset
      * of records from a record-set with potentially many subsets */
     int err = 0;
     int drms_status = DRMS_SUCCESS;
@@ -621,16 +621,16 @@ static int GetLogDirs(DRMS_Env_t *env, DRMS_Record_t **recs, int nrecs, HContain
     SUM_info_t **info_structs = NULL;
     char log_id[128] = {0};
     char *log_dir = NULL;
-    
-    
+
+
     if (!recs || nrecs <= 0)
     {
         return err;
     }
-    
-    /* collect all session IDs - ugh, the namespace does not necessarily need to be consistent, even when the record 
+
+    /* collect all session IDs - ugh, the namespace does not necessarily need to be consistent, even when the record
      * belong to the same series */
-     
+
     /* dupe map <session namespace>:<session ID> -> char (bool implementation) */
     ns_session_ids_set = hcon_create(sizeof(char), 64, NULL, NULL, NULL, NULL, 0);
     for (irec = 0; irec < nrecs && !err; irec++)
@@ -643,7 +643,7 @@ static int GetLogDirs(DRMS_Env_t *env, DRMS_Record_t **recs, int nrecs, HContain
             session_ids = hcon_create(sizeof(LinkedList_t *), 64, (void (*)(const void *))list_llfree, NULL, NULL, NULL, 0);
             err = (session_ids == NULL);
         }
-        
+
         if (!err)
         {
             /* skip <session namespace>:<session ID> dupes */
@@ -664,24 +664,24 @@ static int GetLogDirs(DRMS_Env_t *env, DRMS_Record_t **recs, int nrecs, HContain
                     ns_session_ids = *(LinkedList_t **)p_ns_session_ids;
                     err = (ns_session_ids == NULL);
                 }
-            
+
                 if (!err)
                 {
                     list_llinserttail(ns_session_ids, &recs[irec]->sessionid);
-                    
+
                     /* update dupes map */
                     hcon_insert(ns_session_ids_set, log_id, &dupe_flag);
                 }
             }
         }
     }
-    
+
     /* no longer need dupes map */
     if (ns_session_ids_set)
     {
         hcon_destroy(&ns_session_ids_set);
     }
-    
+
     if (!err)
     {
         /* iterate through each namespace's list */
@@ -691,9 +691,9 @@ static int GetLogDirs(DRMS_Env_t *env, DRMS_Record_t **recs, int nrecs, HContain
         while ((p_ns_session_ids = (LinkedList_t **)hiter_extgetnext(ns_iter, &session_ns)) != NULL && !err)
         {
             ns_session_ids = *p_ns_session_ids;
-            
+
             /* iter through each sessionid */
-            list_llreset(ns_session_ids);     
+            list_llreset(ns_session_ids);
             while ((node = list_llnext(ns_session_ids)) != NULL)
             {
                 session_id = *(long long *)node->data;
@@ -702,30 +702,30 @@ static int GetLogDirs(DRMS_Env_t *env, DRMS_Record_t **recs, int nrecs, HContain
                 {
                     session_id_list_str = calloc(1, sizeof(sz_session_id_list_str));
                 }
-                
+
                 session_id_list_str = base_strcatalloc(session_id_list_str, session_id_str, &sz_session_id_list_str);
-            
+
                 if (node->next != NULL)
                 {
                     session_id_list_str = base_strcatalloc(session_id_list_str, ",", &sz_session_id_list_str);
                 }
             } /* session id loop */
-            
+
             /* do the actual DB query */
             snprintf(query, sizeof(query), "SELECT sessionid, sunum FROM %s.drms_session WHERE sessionid IN (%s)", session_ns, session_id_list_str);
             qres = drms_query_bin(env->session, query);
             err = (qres == NULL);
-            
+
             if (!err)
             {
                 if (qres->num_rows > 0)
-                {    
+                {
                     /* create a list of SUs so we can call drms_getsuinfo() */
                     sunums = calloc(qres->num_rows, sizeof(long long));
                     err = (sunums == NULL); /* out of memory */
                 }
             }
-            
+
             if (!err)
             {
                 if (qres->num_rows > 0)
@@ -739,7 +739,7 @@ static int GetLogDirs(DRMS_Env_t *env, DRMS_Record_t **recs, int nrecs, HContain
                     err = (info_structs == NULL); /* out of memory */
                 }
             }
-            
+
             if (!err)
             {
                 if (qres->num_rows > 0)
@@ -747,13 +747,13 @@ static int GetLogDirs(DRMS_Env_t *env, DRMS_Record_t **recs, int nrecs, HContain
                     err = (drms_getsuinfo(env, sunums, qres->num_rows, info_structs) != DRMS_SUCCESS);
                 }
             }
-            
+
             if (sunums)
             {
                 free(sunums);
                 sunums = NULL;
             }
-            
+
             if (!err)
             {
                 /* extract logdir path */
@@ -772,11 +772,11 @@ static int GetLogDirs(DRMS_Env_t *env, DRMS_Record_t **recs, int nrecs, HContain
                         /* valid, online SU */
                         log_dir = strdup(info_structs[irow]->online_loc);
                     }
-                    
+
                     hcon_insert(log_dirs, log_id, &log_dir);
                 }
             }
-            
+
             if (info_structs)
             {
                 free(info_structs);
@@ -795,7 +795,7 @@ static int GetLogDirs(DRMS_Env_t *env, DRMS_Record_t **recs, int nrecs, HContain
             hiter_destroy(&ns_iter);
         }
     }
-    
+
     /* all session-id info should now be in the out HContainer_t; no longer need this mem */
     if (session_ids)
     {
@@ -812,17 +812,17 @@ static const char *GetLogDir(DRMS_Record_t *rec, HContainer_t *log_dirs)
     LinkedList_t **p_ns_session_ids = NULL;
     const char *ret = NULL;
 
-    
+
     snprintf(log_id, sizeof(log_id), "%s:%llu", rec->sessionns, rec->sessionid);
-    
+
     /* retrieve appropriate session_id-list */
     p_log_dir = (char **)hcon_lookup_lower(log_dirs, log_id);
-    
+
     if (p_log_dir)
     {
         ret = *p_log_dir;
     }
-    
+
     return ret;
 }
 
@@ -860,14 +860,16 @@ IF YOU ADD A NEW ARGUMENT: 1. Add a corresponding line of code in the from_web b
  ensure that the cmdparams_get_* call appears AFTER the from_web block of code in DoIt()
  *******/
 ModuleArgs_t module_args[] =
-{ 
+{
   {ARG_STRING, "op", "Not Specified", "<Operation>, values are: series_struct, rs_summary, or rs_list "},
   {ARG_STRING, "ds", "Not Specified", "<record_set query>"},
   {ARG_STRING, "key", "Not Specified", "<comma delimited keyword list>, keywords or special values: **ALL**, **NONE**, *recnum*, *sunum*, *size*, *online*, *retain*, *archive*, *recdir*, *logdir*, *dirmtime*, *spec*"},
   {ARG_STRING, "link", "Not Specified", "<comma delimited linkname list>, links or special values: **ALL**, **NONE**"},
   {ARG_STRING, "seg", "Not Specified", "<comma delimited segment list>, segnames or special values: **ALL**, **NONE** "},
   {ARG_STRING, "userhandle", "Not Specified", "Unique request identifier to allow possible user kill of this program."},
+  {ARG_FLAG, "B", NULL, "print floating-point values as hexadecimal strings"},
     {ARG_FLAG, "l", NULL, "Follow links to linked segments."},
+    {ARG_FLAG, "M", NULL, "print floating-point values with maximum precision determined by DB"},
   {ARG_INT, "n", "0", "RecordSet Limit"},
   {ARG_FLAG, "h", "0", "help - show usage"},
   {ARG_FLAG, "R", "0", "Show record query"},
@@ -917,7 +919,7 @@ DRMS_RecordSet_t *drms_find_rec_first(DRMS_Record_t *rec, int wantprime)
   char query[DRMS_MAXQUERYLEN];
   strcpy(query, rec->seriesinfo->seriesname);
   nprime = rec->seriesinfo->pidx_num;
-  if (wantprime && nprime > 0) 
+  if (wantprime && nprime > 0)
     // only first prime key is used for now
      // for (iprime = 0; iprime < nprime; iprime++)
       strcat(query, "[^]");
@@ -938,7 +940,7 @@ DRMS_RecordSet_t *drms_find_rec_last(DRMS_Record_t *rec, int wantprime)
   char query[DRMS_MAXQUERYLEN];
   strcpy(query, rec->seriesinfo->seriesname);
   nprime = rec->seriesinfo->pidx_num;
-  if (wantprime && nprime > 0) 
+  if (wantprime && nprime > 0)
     // only first prime key is used for now
      // for (iprime = 0; iprime < nprime; iprime++)
       strcat(query, "[$]");
@@ -985,7 +987,7 @@ static json_t *createJsonStringVal(const char *text)
     json_t *rv = NULL;
     char *escText = NULL;
     char *jsonLibShouldReallyDeclareThisConst = NULL;
-    
+
     if (text && *text != '\0')
     {
         jsonLibShouldReallyDeclareThisConst = strdup(text);
@@ -999,14 +1001,14 @@ static json_t *createJsonStringVal(const char *text)
         free(jsonLibShouldReallyDeclareThisConst);
         jsonLibShouldReallyDeclareThisConst = NULL;
     }
-    
+
     return rv;
 }
 
-static int list_series_info(DRMS_Env_t *drms_env, DRMS_Record_t *rec, json_t *jroot, int followLinks, int useFitsKeyNames)
+static int list_series_info(DRMS_Env_t *drms_env, DRMS_Record_t *rec, json_t *jroot, int followLinks, int useFitsKeyNames, int max_precision, int binary)
 {
     int error = 0;
-    
+
     DRMS_Keyword_t *key;
     DRMS_Segment_t *seg;
     DRMS_Link_t *link;
@@ -1037,7 +1039,7 @@ static int list_series_info(DRMS_Env_t *drms_env, DRMS_Record_t *rec, json_t *jr
     /* add retention, unitsize, archive, and tapegroup integers */
     int16_t newSuRet = drms_series_getnewsuretention(rec->seriesinfo);
     int16_t stagingRet = drms_series_getstagingretention(rec->seriesinfo);
-    
+
     if (stagingRet == 0)
     {
         stagingRet = (int16_t)abs(STDRETENTION);
@@ -1061,10 +1063,10 @@ static int list_series_info(DRMS_Env_t *drms_env, DRMS_Record_t *rec, json_t *jr
         json_insert_pair_into_object(jroot, "owner", json_new_string(owner));
         free(owner);
     }
-  
+
     /* show the prime index keywords */
-    // both the original simple list and new array of objects are generated -- XXXXX REMOVE SOMEDAY                             
-    // for compatibility.  The older "primekeys" array may be removed in the future.  23Nov09 -- XXXXX REMOVE SOMEDAY           
+    // both the original simple list and new array of objects are generated -- XXXXX REMOVE SOMEDAY
+    // for compatibility.  The older "primekeys" array may be removed in the future.  23Nov09 -- XXXXX REMOVE SOMEDAY
     // old lines marked with trailing XXXXX REMOVE SOMEDAY
     primearray = json_new_array(); // XXXXX REMOVE SOMEDAY
     primeinfoarray = json_new_array();
@@ -1087,7 +1089,7 @@ static int list_series_info(DRMS_Env_t *drms_env, DRMS_Record_t *rec, json_t *jr
             int isSlotted = 0;
             pkey = rec->seriesinfo->pidx_keywords[i];
             error = 0;
-            
+
             if (!pkey || !pkey->info || *(pkey->info->name) == '\0')
             {
                 fprintf(stderr, "Corrupt DRMS pkey keyword %s.\n", MISSING_KEY_NAME);
@@ -1095,7 +1097,7 @@ static int list_series_info(DRMS_Env_t *drms_env, DRMS_Record_t *rec, json_t *jr
             }
 
             if (!error)
-            {            
+            {
                 if (drms_keyword_isindex(pkey))
                 {
                     isSlotted = 1;
@@ -1132,15 +1134,15 @@ static int list_series_info(DRMS_Env_t *drms_env, DRMS_Record_t *rec, json_t *jr
                         /* problem with skey */
                         keyNameOut = MISSING_KEY_NAME;
                     }
-                
+
                     stepKey = drms_keyword_stepfromvalkey(skey);
-                
+
                     if (!stepKey || !stepKey->info || *(stepKey->info->name) == '\0')
                     {
                         fprintf(stderr, "Corrupt DRMS step keyword for keyword %s.\n", skey->info->name);
                         error = 1;
                     }
-                
+
                     if (!error)
                     {
                         if (USE_FITS_NAMES_FOR_COLUMNS && useFitsKeyNames)
@@ -1149,7 +1151,7 @@ static int list_series_info(DRMS_Env_t *drms_env, DRMS_Record_t *rec, json_t *jr
                             fitsexport_getmappedextkeyvalue(stepKey, &fitsValue);
 
                             if (fitsValue)
-                            {                    
+                            {
                                 snprintf(rawval, sizeof(rawval), "%s", fitsValue);
                                 free(fitsValue);
                                 fitsValue = NULL;
@@ -1162,14 +1164,14 @@ static int list_series_info(DRMS_Env_t *drms_env, DRMS_Record_t *rec, json_t *jr
                             }
                         }
                         else
-                        {                
-                            drms_keyword_snprintfval(stepKey, rawval, sizeof(rawval));
+                        {
+                            drms_keyword_snprintfval2(stepKey, rawval, sizeof(rawval), max_precision, binary);
                         }
                     }
                     else
                     {
                         snprintf(rawval, sizeof(rawval), "%s", MISSING_KEY_VALUE);
-                    }                
+                    }
                 }
                 else
                 {
@@ -1189,8 +1191,8 @@ static int list_series_info(DRMS_Env_t *drms_env, DRMS_Record_t *rec, json_t *jr
                     }
                     else
                     {
-                        keyNameOut = pkey->info->name;   
-                    }                    
+                        keyNameOut = pkey->info->name;
+                    }
                 }
             }
             else
@@ -1203,13 +1205,13 @@ static int list_series_info(DRMS_Env_t *drms_env, DRMS_Record_t *rec, json_t *jr
             jsonVal = createJsonStringVal(keyNameOut);
             json_insert_pair_into_object(primeinfo, "name", jsonVal);
             jsonVal = NULL;
-            
+
             /* primeinfo - slotted */
             jsonVal = isSlotted ? json_new_number("1") : json_new_number("0");
             JSOC_INFO_ASSERT(jsonVal, "out of memory");
             json_insert_pair_into_object(primeinfo, "slotted", jsonVal);
             jsonVal = NULL;
-            
+
             /* primeinfo - step key value (optional) */
             if (stepKey)
             {
@@ -1217,15 +1219,15 @@ static int list_series_info(DRMS_Env_t *drms_env, DRMS_Record_t *rec, json_t *jr
                 json_insert_pair_into_object(primeinfo, "step", jsonVal);
                 jsonVal = NULL;
             }
-            
-            json_insert_child(primeinfoarray, primeinfo);            
-            
+
+            json_insert_child(primeinfoarray, primeinfo);
+
             /* primearray */
             jsonVal = createJsonStringVal(keyNameOut);
             json_insert_child(primearray, jsonVal); // XXXXX REMOVE SOMEDAY
             jsonVal = NULL;
         }
-        
+
         error = 0;
     }
     else
@@ -1238,11 +1240,11 @@ static int list_series_info(DRMS_Env_t *drms_env, DRMS_Record_t *rec, json_t *jr
         json_insert_child(primeinfoarray, jsonVal);
         jsonVal = NULL;
     }
-    
-    json_insert_pair_into_object(jroot, "primekeys", primearray); // XXXXX REMOVE SOMEDAY                                       
+
+    json_insert_pair_into_object(jroot, "primekeys", primearray); // XXXXX REMOVE SOMEDAY
     json_insert_pair_into_object(jroot, "primekeysinfo", primeinfoarray);
- 
-    
+
+
     /* show DB index keywords */
     indexarray = json_new_array();
     XASSERT(indexarray);
@@ -1352,12 +1354,12 @@ if (DEBUG) fprintf(stderr,"   starting all keywords\n");
     /* show all keywords */
     keyarray = json_new_array();
     XASSERT(keyarray);
-    
+
     /* If useFitsKeyNames is set, then do not use the key container from rec (which is the template
-     * record). In the template record, per-segment keywords have been "expanded". Use the 
-     * jsd template records (created with drms_create_jsdtemplate_record()). It must be destroyed 
+     * record). In the template record, per-segment keywords have been "expanded". Use the
+     * jsd template records (created with drms_create_jsdtemplate_record()). It must be destroyed
      * with drms_destroy_jsdtemplate_record(). */
-     
+
     if (useFitsKeyNames)
     {
         DRMS_Record_t *jsdTemplate = NULL;
@@ -1378,7 +1380,7 @@ if (DEBUG) fprintf(stderr,"   starting all keywords\n");
             while ((key = drms_record_nextkey(jsdTemplate, &last, 0)))
             {
                 error = 0;
-                
+
                 if (!key->info || *(key->info->name) == '\0')
                 {
                     fprintf(stderr, "Corrupt DRMS keyword.\n");
@@ -1391,10 +1393,10 @@ if (DEBUG) fprintf(stderr,"   starting all keywords\n");
                     /* do not print faux keys - they have no corresponding FITS keyword */
                     continue;
                 }
-                
+
                 keyinfo = json_new_object();
                 XASSERT(keyinfo);
-                                    
+
                 if (fitsexport_getmappedextkeyname(key, NULL, NULL, fitsName, sizeof(fitsName), NULL, 0) && *fitsName != '\0')
                 {
                     keyNameOut = fitsName;
@@ -1409,26 +1411,26 @@ if (DEBUG) fprintf(stderr,"   starting all keywords\n");
                 jsonVal = createJsonStringVal(keyNameOut);
                 json_insert_pair_into_object(keyinfo, "name", jsonVal);
                 jsonVal = NULL;
-                
+
                 if (key->info->islink)
                 {
                     /* provide link name and target keyword name */
                     char keylinkMap[DRMS_MAXLINKNAMELEN + DRMS_MAXKEYNAMELEN + 16];
-                    char *tmpstr = NULL;                        
+                    char *tmpstr = NULL;
                     json_t *linkinfo = NULL;
                     int lnkstat = DRMS_SUCCESS;
                     DRMS_Keyword_t *linkedkw = NULL;
-                    
+
                     /* display the target keyword data type; must follow link now */
                     /* per-segment target keywords complicate things */
                     linkedkw = drms_jsd_template_keyword_followlink(key, &lnkstat);
-                    
+
                     if (lnkstat != DRMS_SUCCESS || !linkedkw || !linkedkw->info || *(linkedkw->info->name) == '\0')
                     {
                         fprintf(stderr, "Cannot obtain target keyword for %s.\n", key->info->name);
                         error = 1;
                     }
-                    
+
                     if (!error)
                     {
                         if (fitsexport_getmappedextkeyname(linkedkw, NULL, NULL, fitsName, sizeof(fitsName), NULL, 0) && *fitsName != '\0')
@@ -1446,25 +1448,25 @@ if (DEBUG) fprintf(stderr,"   starting all keywords\n");
                     {
                         keyNameOut = MISSING_KEY_NAME;
                     }
-                    
+
                     snprintf(keylinkMap, sizeof(keylinkMap), "%s->%s", key->info->linkname, keyNameOut);
                     jsonVal = createJsonStringVal(keylinkMap);
                     json_insert_pair_into_object(keyinfo, "linkinfo", linkinfo);
                     jsonVal = NULL;
-                                            
+
                     /* accumulate strings for keytype, default, units, and description from link target */
                     if (lnkstat == DRMS_SUCCESS && linkedkw)
                     {
                         typeStr = strdup(drms_type2str(linkedkw->info->type));
                         scopeStr = strdup(drms_keyword_getrecscopestr(linkedkw, NULL));
-                        
+
                         JSOC_INFO_ASSERT(typeStr, "out of memory");
                         JSOC_INFO_ASSERT(scopeStr, "out of memory");
 
                         fitsexport_getmappedextkeyvalue(linkedkw, &fitsValue);
 
                         if (fitsValue)
-                        {                    
+                        {
                             snprintf(rawval, sizeof(rawval), "%s", fitsValue);
                             free(fitsValue);
                             fitsValue = NULL;
@@ -1489,7 +1491,7 @@ if (DEBUG) fprintf(stderr,"   starting all keywords\n");
                         {
                             noteStr = strdup(key->info->description);
                         }
-                        
+
                         JSOC_INFO_ASSERT(noteStr, "out of memory");
                     }
                     else
@@ -1516,11 +1518,11 @@ if (DEBUG) fprintf(stderr,"   starting all keywords\n");
                     JSOC_INFO_ASSERT(typeStr, "out of memory");
                     scopeStr = strdup(drms_keyword_getrecscopestr(key, NULL));
                     JSOC_INFO_ASSERT(scopeStr, "out of memory");
-                    
+
                     fitsexport_getmappedextkeyvalue(key, &fitsValue);
 
                     if (fitsValue)
-                    {                    
+                    {
                         snprintf(rawval, sizeof(rawval), "%s", fitsValue);
                         free(fitsValue);
                         fitsValue = NULL;
@@ -1539,11 +1541,11 @@ if (DEBUG) fprintf(stderr,"   starting all keywords\n");
                     noteStr = strdup(key->info->description);
                     JSOC_INFO_ASSERT(noteStr, "out of memory");
                 }
-        
+
                 jsonVal = createJsonStringVal(typeStr);
                 json_insert_pair_into_object(keyinfo, "type", jsonVal);
                 jsonVal = NULL;
-                // scope                                                                                                                      
+                // scope
                 // redundant - persegment = key->info->kwflags & kKeywordFlag_PerSegment;
                 jsonVal = createJsonStringVal(scopeStr);
                 json_insert_pair_into_object(keyinfo, "recscope", jsonVal);
@@ -1564,21 +1566,21 @@ if (DEBUG) fprintf(stderr,"   starting all keywords\n");
 
                 json_insert_child(keyarray, keyinfo);
             }
-         
+
             if (last)
             {
                 hiter_destroy(&last);
             }
-            
+
             drms_destroy_jsdtemplate_record(&jsdTemplate);
         }
     }
     else
     {
-        /* 
+        /*
          * not printing FITS keyword names/values
          */
-        /* We don't want to follow the link just yet - we need a combination of source and target 
+        /* We don't want to follow the link just yet - we need a combination of source and target
         * keyword information below. For now, just get the source keyword info. */
         while ((key = drms_record_nextkey(rec, &last, 0)))
         {
@@ -1597,10 +1599,10 @@ if (DEBUG) fprintf(stderr,"   starting keyword %s\n",key->info->name);
                 continue;  // only report the first instance of persegment keywords.
                 strcpy(prevKeyName, baseKeyName);
             }
-        
+
             keyinfo = json_new_object();
             json_insert_pair_into_object(keyinfo, "name", json_new_string(persegment ? baseKeyName : key->info->name));
-        
+
             if (key->info->islink)
             {
                 /* provide link name and target keyword name */
@@ -1621,7 +1623,7 @@ if (DEBUG) fprintf(stderr,"   starting keyword %s\n",key->info->name);
                 {
                     keytype = json_new_string(drms_type_names[linkedkw->info->type]);
                     scopework = string_to_json((char *)drms_keyword_getrecscopestr(linkedkw, NULL));
-                    drms_keyword_snprintfval(linkedkw, rawval, sizeof(rawval));
+                    drms_keyword_snprintfval2(linkedkw, rawval, sizeof(rawval), max_precision, binary);
                     defvalwork = string_to_json(rawval);
                     unitswork = string_to_json(linkedkw->info->unit);
                     /* if present keyword has description, use it.  else use target keyword description. */
@@ -1650,14 +1652,14 @@ if (DEBUG) fprintf(stderr,"   starting keyword %s\n",key->info->name);
                     scopework = string_to_json("segment");
                 else
                     scopework = string_to_json((char *)drms_keyword_getrecscopestr(key, NULL));
-                drms_keyword_snprintfval(key, rawval, sizeof(rawval));
+                drms_keyword_snprintfval2(key, rawval, sizeof(rawval), max_precision, binary);
                 defvalwork = string_to_json(rawval);
                 unitswork = string_to_json(key->info->unit);
                 notework = string_to_json(key->info->description);
             }
-        
+
             json_insert_pair_into_object(keyinfo, "type", keytype);
-            // scope                                                                                                                      
+            // scope
             // redundant - persegment = key->info->kwflags & kKeywordFlag_PerSegment;
             XASSERT(scopework);
             json_insert_pair_into_object(keyinfo, "recscope", json_new_string(scopework));
@@ -1681,44 +1683,44 @@ if (DEBUG) fprintf(stderr,"   starting keyword %s\n",key->info->name);
 
             json_insert_child(keyarray, keyinfo);
         }
-        
+
         if (last)
         {
             hiter_destroy(&last);
         }
     }
-    
+
 
   json_insert_pair_into_object(jroot, "keywords", keyarray);
 if (DEBUG) fprintf(stderr," done with keywords, start segments\n");
-  
+
   /* show the segments */
   segarray = json_new_array();
   if (rec->segments.num_total)
     {
       DRMS_Segment_t *oseg = NULL; /* Original seg. */
-        
+
       while ((seg = drms_record_nextseg(rec, &last, 0)))
       {
           oseg = seg;
-          
+
           if (followLinks && seg->info->islink)
           {
               /* Since rec is a template record, cannot follow links in the ordinary manner. Use this function - it finds the template
                * segment of the series linked to. */
               int lnkstat = DRMS_SUCCESS;
-              
+
               seg = drms_template_segment_followlink(seg, &lnkstat);
               if (lnkstat)
               {
                   continue;
               }
           }
-          
+
           /* segment name, units, protocol, dims, description */
       json_t *seginfo = json_new_object();
       int naxis = seg->info->naxis;
-          
+
       /* ART - Use original segment name (I'm not certain if this is the right name to use). */
       json_insert_pair_into_object(seginfo, "name", json_new_string(oseg->info->name));
       if (!followLinks && seg->info->islink)
@@ -1817,7 +1819,7 @@ static int get_series_stats(DRMS_Record_t *rec, json_t *jroot)
 
   if (status == DRMS_ERROR_QUERYFAILED)
   {
-     if (rs) 
+     if (rs)
      {
         drms_free_records(rs);
      }
@@ -1829,7 +1831,7 @@ static int get_series_stats(DRMS_Record_t *rec, json_t *jroot)
       int shadowStat;
       char shadowStr[16];
       int hasShadow;
-      
+
       if (wantowner)
       {
           /* Use the -o flag to also control the display of the HasShadow property. IDL users have not updated
@@ -1838,7 +1840,7 @@ static int get_series_stats(DRMS_Record_t *rec, json_t *jroot)
            * not be a problem). -o means "print ownership information", but we are also going to
            * use it to control the printing of shadow-table disposition. */
           hasShadow= drms_series_shadowexists(rec->env, rec->seriesinfo->seriesname, &shadowStat);
-          
+
           if (shadowStat)
           {
               snprintf(shadowStr, sizeof(shadowStr), "?");
@@ -1848,7 +1850,7 @@ static int get_series_stats(DRMS_Record_t *rec, json_t *jroot)
               snprintf(shadowStr, sizeof(shadowStr), "%s", hasShadow ? "yes" : "no");
           }
       }
-      
+
   if (!rs || rs->n < 1)
     {
     json_insert_pair_into_object(interval, "FirstRecord", json_new_string("NA"));
@@ -1860,7 +1862,7 @@ static int get_series_stats(DRMS_Record_t *rec, json_t *jroot)
     {
         json_insert_pair_into_object(interval, "HasShadow", json_new_string(shadowStr));
     }
-        
+
     if (rs) drms_free_records(rs);
     json_insert_pair_into_object(jroot, "Interval", interval);
     return DRMS_SUCCESS;
@@ -1879,7 +1881,7 @@ if (status != JSON_OK) fprintf(stderr, "json_insert_pair_into_object, status=%d,
     sprintf(val,"%lld", rs->records[0]->recnum);
     json_insert_pair_into_object(interval, "FirstRecnum", json_new_number(val));
     drms_free_records(rs);
-  
+
     if (nprime > 0)
       sprintf(query,"%s[$]", rec->seriesinfo->seriesname);
     else
@@ -1903,7 +1905,7 @@ if (status != JSON_OK) fprintf(stderr, "json_insert_pair_into_object, status=%d,
     sprintf(val,"%lld", rs->records[0]->recnum);
     json_insert_pair_into_object(interval, "LastRecnum", json_new_number(val));
     drms_free_records(rs);
- 
+
     sprintf(query,"%s[:#$]", rec->seriesinfo->seriesname);
     rs = drms_open_records(rec->env, query, &status);
 
@@ -1976,12 +1978,12 @@ void report_summary(const char *host, double StartTime, const char *remote_IP, c
   int mustchmodlck = (stat(lockfile, &stbuf) != 0);
   int mustchmodlog = (stat(logfile, &stbuf) != 0);
   int lockfd = open(lockfile, O_WRONLY | O_CREAT, S_IRWXU | S_IRWXG);
-      
+
   if (lockfd >= 0)
     {
     gettimeofday(&thistv, NULL);
     EndTime = thistv.tv_sec + thistv.tv_usec/1000000.0;
-      
+
     for(sleeps=0; lockf(lockfd,F_TLOCK,0); sleeps++)
       {
       if (sleeps >= 5)
@@ -1992,9 +1994,9 @@ void report_summary(const char *host, double StartTime, const char *remote_IP, c
         }
         sleep(1);
       }
-      
+
       log = fopen(logfile,"a");
-      
+
       if (log)
         {
         fprintf(log, "host='%s'\t",host);
@@ -2011,7 +2013,7 @@ void report_summary(const char *host, double StartTime, const char *remote_IP, c
           }
         fclose(log);
         }
-      
+
         if (mustchmodlck)
           {
           fchmod(lockfd, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
@@ -2036,7 +2038,7 @@ static int SetWebArg(Q_ENTRY *req, const char *key, char **arglist, size_t *size
 {
     char *value = NULL;
     char buf[1024];
-    
+
     if (req)
     {
         value = (char *)qEntryGetStr(req, key);
@@ -2046,12 +2048,12 @@ static int SetWebArg(Q_ENTRY *req, const char *key, char **arglist, size_t *size
             {
                 /* ART - the original intent was to return from the DoIt()
                  * function here - but it is not possible to do that from a function
-                 * called by DoIt(). But I've retained the original semantics of 
+                 * called by DoIt(). But I've retained the original semantics of
                  * returning back to DoIt() from here. */
                 return(1);
             }
 
-            /* ART - keep a copy of the web arguments provided via HTTP POST so that we can 
+            /* ART - keep a copy of the web arguments provided via HTTP POST so that we can
             * debug issues more easily. */
             snprintf(buf, sizeof(buf), "%s='%s' ", key, value);
             *arglist = base_strcatalloc(*arglist, buf, size);
@@ -2074,17 +2076,17 @@ static long long GetSegFileSize(DRMS_Record_t *rec, const char *segment)
     seg = drms_segment_lookup(rec, segment);
     if (seg && seg->record)
     {
-        /* make seg file path - use the parent record of seg (links may have been followed); rec->suinfo should not be NULL since 
-         * we called drms_record_getinfo() on the entire record-set, and this call follows links; *rec->suinfo->online_loc == '\0' 
+        /* make seg file path - use the parent record of seg (links may have been followed); rec->suinfo should not be NULL since
+         * we called drms_record_getinfo() on the entire record-set, and this call follows links; *rec->suinfo->online_loc == '\0'
          * implies an invalid SUNUM
          */
         if (rec->suinfo && *rec->suinfo->online_loc != '\0' && *rec->suinfo->online_status == 'Y')
         {
             /* OK to use drms_segment_filename() - we already 'staged' records, so we have created rec->su */
             drms_segment_filename(seg, seg_file_name);
-            
+
             if (*seg_file_name != '\0')
-            {                
+            {
                 if (stat(seg_file_name, &stat_buf) == 0)
                 {
                     if (num_bytes == -1)
@@ -2098,7 +2100,7 @@ static long long GetSegFileSize(DRMS_Record_t *rec, const char *segment)
             }
         }
     }
-    
+
     return num_bytes;
 }
 
@@ -2128,6 +2130,8 @@ int DoIt(void)
   const char *Remote_Address;
   const char *Server;
   int followLinks = 0;
+  int binary = 0;
+  int max_precision = 0;
   int from_web, keys_listed, segs_listed, links_listed;
   int max_recs = 0;
   struct timeval thistv;
@@ -2142,7 +2146,7 @@ int DoIt(void)
   json_t *recArray = NULL;
     char *jsonOut = NULL;
     char *final_json = NULL;
-    
+
     int missingKeyNumber = 0;
     int missingSegNumber = 0;
     int missingLinkNumber = 0;
@@ -2185,7 +2189,7 @@ int DoIt(void)
          *      case qDecoder will ignore it.
          *   3. jsoc_info was invoked via the cmd-line, and the caller provided the QUERY_STRING
          *      argument. The caller is trying to emulate an HTTP request - they want to invoke
-         *      the web-processing code, most likely to develop or debug a problem. 
+         *      the web-processing code, most likely to develop or debug a problem.
          *
          *   If we are in case 3, then we need to make sure that the QUERY_STRING environment variable
          *   is set since qDecoder will be called, and to process a GET, QUERY_STRING must be set.
@@ -2198,13 +2202,13 @@ int DoIt(void)
             {
                 /* Case 3 - set QUERY_STRING from cmd-line arg. */
                 setenv("QUERY_STRING", web_query, 1);
-        
+
                 /* REQUEST_METHOD is not set - set it to GET. */
                 setenv("REQUEST_METHOD", "GET", 1);
             }
         }
 
-        /* Use qDecoder to parse HTTP POST requests. qDecoder actually handles 
+        /* Use qDecoder to parse HTTP POST requests. qDecoder actually handles
          * HTTP GET requests as well.
          * See http://www.qdecoder.org
          */
@@ -2212,7 +2216,7 @@ int DoIt(void)
         webarglistsz = 2048;
         webarglist = (char *)malloc(webarglistsz);
         *webarglist = '\0';
-    
+
         req = qCgiRequestParseQueries(NULL, NULL);
         if (req)
         {
@@ -2224,26 +2228,28 @@ int DoIt(void)
             if (SetWebArg(req, "link", &webarglist, &webarglistsz)) JSONDIE("Bad QUERY_STRING");
             if (SetWebArg(req, "n", &webarglist, &webarglistsz)) JSONDIE("Bad QUERY_STRING");
             if (SetWebArg(req, "userhandle", &webarglist, &webarglistsz)) JSONDIE("Bad QUERY_STRING");
+            if (SetWebArg(req, "B", &webarglist, &webarglistsz)) JSONDIE("Bad QUERY_STRING");
             if (SetWebArg(req, "l", &webarglist, &webarglistsz)) JSONDIE("Bad QUERY_STRING");
+            if (SetWebArg(req, "M", &webarglist, &webarglistsz)) JSONDIE("Bad QUERY_STRING");
             if (SetWebArg(req, "REMOTE_ADDR", &webarglist, &webarglistsz)) JSONDIE("Bad QUERY_STRING");
             if (SetWebArg(req, "SERVER_NAME", &webarglist, &webarglistsz)) JSONDIE("Bad QUERY_STRING");
             if (SetWebArg(req, "o", &webarglist, &webarglistsz)) JSONDIE("Bad QUERY_STRING");
             if (SetWebArg(req, "R", &webarglist, &webarglistsz)) JSONDIE("Bad QUERY_STRING");
             if (SetWebArg(req, "f", &webarglist, &webarglistsz)) JSONDIE("Bad QUERY_STRING");
-            if (SetWebArg(req, "r", &webarglist, &webarglistsz)) JSONDIE("Bad QUERY_STRING");            
+            if (SetWebArg(req, "r", &webarglist, &webarglistsz)) JSONDIE("Bad QUERY_STRING");
             if (SetWebArg(req, "s", &webarglist, &webarglistsz)) JSONDIE("Bad QUERY_STRING");
 
-            
+
             /* force json output */
             cmdparams_set (&cmdparams,"z", "1");
 
-            qEntryFree(req); 
+            qEntryFree(req);
         }
-        
+
         free(webarglist);
         webarglist = NULL;
     }
-    
+
     if (web_query)
     {
         free(web_query);
@@ -2256,18 +2262,20 @@ int DoIt(void)
   seglist = strdup (cmdparams_get_str (&cmdparams, "seg", NULL));
   linklist = strdup (cmdparams_get_str (&cmdparams, "link", NULL));
   max_recs = cmdparams_get_int (&cmdparams, "n", NULL);
-  
+
   keys_listed = strcmp (keylist, "Not Specified");
   segs_listed = strcmp (seglist, "Not Specified");
   links_listed = strcmp (linklist, "Not Specified");
   userhandle = cmdparams_get_str (&cmdparams, "userhandle", NULL);
-      followLinks = cmdparams_isflagset(&cmdparams, "l");
+    followLinks = cmdparams_isflagset(&cmdparams, "l");
+    binary = cmdparams_isflagset(&cmdparams, "B");
+    max_precision = cmdparams_isflagset(&cmdparams, "M");
   Remote_Address = cmdparams_get_str(&cmdparams, "REMOTE_ADDR", NULL);
   Server = cmdparams_get_str(&cmdparams, "SERVER_NAME", NULL);
 
 	/* -o hack to allow owner added to series_struct 28 Dec 11 */
 	wantowner = cmdparams_get_int (&cmdparams, "o", NULL);
-	
+
     useFitsKeyNames = cmdparams_isflagset(&cmdparams, "f");
     skipRunTime = cmdparams_isflagset(&cmdparams, "r");
     printHTTPHeaders = !cmdparams_isflagset(&cmdparams, "s");
@@ -2279,7 +2287,7 @@ int DoIt(void)
     userhandle = "NoHandle";
 
   /*  op == series_struct  */
-  if (strcmp(op,"series_struct") == 0) 
+  if (strcmp(op,"series_struct") == 0)
     {
     char *p, *seriesname;
     json_t *jroot;
@@ -2290,11 +2298,11 @@ int DoIt(void)
     if ((p = index(seriesname,'['))) *p = '\0';
     if ((p = index(seriesname,'{'))) *p = '\0';
     rec = drms_template_record (drms_env, seriesname, &status);
-        
+
         if (status == DRMS_ERROR_QUERYFAILED)
         {
             const char *emsg = DB_GetErrmsg(drms_env->session->db_handle);
-            
+
             if (emsg)
             {
                 JSONDIE((char *)emsg);
@@ -2306,9 +2314,9 @@ int DoIt(void)
         }
         else if (status)
             JSONDIE("series not found");
-        
+
     jroot = json_new_object();
-    list_series_info(drms_env, rec, jroot, followLinks, useFitsKeyNames);
+    list_series_info(drms_env, rec, jroot, followLinks, useFitsKeyNames, max_precision, binary);
     if (get_series_stats(rec, jroot) == DRMS_ERROR_QUERYFAILED)
     {
        const char *emsg = DB_GetErrmsg(drms_env->session->db_handle);
@@ -2331,13 +2339,13 @@ int DoIt(void)
     json_tree_to_string(jroot, &jsonOut);
     final_json = json_format_string(jsonOut);
     free(jsonOut);
-    
+
     if (printHTTPHeaders)
     {
     /* send the output json back to client */
         printf("Content-type: application/json\n\n");
     }
-    
+
     printf("%s\n",final_json);
     free(final_json);
     fflush(stdout);
@@ -2348,7 +2356,7 @@ int DoIt(void)
     }
 
   /*  op == rs_summary  */
-  if (strcmp(op,"rs_summary") == 0) 
+  if (strcmp(op,"rs_summary") == 0)
     {
     json_t *jroot = json_new_object();
     int count=0, status=0;
@@ -2361,11 +2369,11 @@ int DoIt(void)
     if (countlimit)
       {
       DRMS_RecordSet_t *recordset = drms_open_nrecords (drms_env, in, max_recs, &status);
-          
+
           if (status == DRMS_ERROR_QUERYFAILED)
           {
               const char *emsg = DB_GetErrmsg(drms_env->session->db_handle);
-              
+
               if (emsg)
               {
                   JSONDIE((char *)emsg);
@@ -2375,7 +2383,7 @@ int DoIt(void)
                   JSONDIE("problem with database query");
               }
           }
-          
+
           if (recordset)
           {
               count = recordset->n;
@@ -2385,7 +2393,7 @@ int DoIt(void)
               drms_close_records(recordset, DRMS_FREE_RECORD);
               JSONDIE("unable to open records");
           }
-          
+
       drms_close_records(recordset, DRMS_FREE_RECORD);
       }
     else
@@ -2395,7 +2403,7 @@ int DoIt(void)
     if (status == DRMS_ERROR_QUERYFAILED)
     {
         const char *emsg = DB_GetErrmsg(drms_env->session->db_handle);
-        
+
         if (emsg)
         {
             JSONDIE((char *)emsg);
@@ -2407,7 +2415,7 @@ int DoIt(void)
     }
     else if (status)
         JSONDIE("series not found");
-    
+
     /* send the output json back to client */
     sprintf(val, "%d", count);
     json_insert_pair_into_object(jroot, "count", json_new_number(val));
@@ -2435,7 +2443,7 @@ int DoIt(void)
     }
 
   /*  op == rs_list  */
-  if (strcmp(op,"rs_list") == 0) 
+  if (strcmp(op,"rs_list") == 0)
     {
     int wantRecInfo = cmdparams_get_int(&cmdparams, "R", NULL);
     DRMS_RecordSet_t *recordset = NULL;
@@ -2506,7 +2514,7 @@ int DoIt(void)
       // temporarily reverting to drms_open_records until I can fix the problem with
       // not passing a segment-list ot drms_open_recordset().
       recordset = drms_open_records (drms_env, in, &status);
-    else // max_recs specified via "n=" parameter.                                                                            
+    else // max_recs specified via "n=" parameter.
       recordset = drms_open_nrecords (drms_env, in, max_recs, &status);
 
     if (status == DRMS_ERROR_QUERYFAILED)
@@ -2523,7 +2531,7 @@ int DoIt(void)
        }
     }
 
-    if (!recordset) 
+    if (!recordset)
       JSONDIE(" jsoc_info: series not found.");
     nrecs = recordset->n;
     if (nrecs == 0)
@@ -2535,7 +2543,7 @@ int DoIt(void)
         }
       json_insert_pair_into_object(jroot, "status", json_new_number("0"));
       json_tree_to_string(jroot, &jsonOut);
-      
+
         if (printHTTPHeaders)
         {
             printf("Content-type: application/json\n\n");
@@ -2547,17 +2555,17 @@ int DoIt(void)
       manage_userhandle(0, userhandle);
       return(0);
       }
-    
+
     struct requisitionStructT requisition = { 0 };
-    
+
     if (useFitsKeyNames && wantRecInfo)
     {
-        /* if we are printing FITS key names, and not DRMS key names, then we will determine whether or not the SU is online if the user 
+        /* if we are printing FITS key names, and not DRMS key names, then we will determine whether or not the SU is online if the user
          * requesting the printing of record information */
         requisition.requireSUMinfo = 1;
     }
-          
-    /* get list of segments to show for each record - do segments before keys so we know which segment-specific 
+
+    /* get list of segments to show for each record - do segments before keys so we know which segment-specific
      * keys to operate on */
     nsegs = 0;
     reqSegs = list_llcreate(sizeof(DRMS_Segment_t *), NULL);
@@ -2566,15 +2574,15 @@ int DoIt(void)
         JSONDIE("Out of memory.");
     }
 
-    if (segs_listed) 
-    { 
+    if (segs_listed)
+    {
         /* this means that the user has provided the seg=blah1,blah2,... argument */
         /* get specified segment list */
         char *thisseg;
         CGI_unescape_url(seglist);
-        
+
         if (useFitsKeyNames)
-        {            
+        {
             nsegs = populateSegList(seglist, followLinks, template, recordset, &record_set_staged, &requisition, reqSegs, &allSegs);
         }
         else
@@ -2589,7 +2597,7 @@ int DoIt(void)
                 /* will never result in an InvalidSegName printed to the output */
                 DRMS_Segment_t *seg;
                 DRMS_Segment_t *oseg = NULL;
-                
+
                 allSegs = 1;
 
                 while ((seg = drms_record_nextseg(template, &last, 0)))
@@ -2622,30 +2630,30 @@ int DoIt(void)
             {
                 /* can result in an InvalidSegName printed to the output */
                 for (thisseg=strtok(seglist, ","); thisseg; thisseg=strtok(NULL,","))
-                {                    
+                {
                     segs[nsegs++] = strdup(thisseg);
                 }
             }
-        }   
-        
+        }
+
         if (nsegs > 0)
         {
             /* we need this for the online property of each segment; plus we need this to get segment paths now */
             requisition.requireSUMinfo = 1;
-        } 
+        }
     }
 
     free (seglist);
 
     /* get list of keywords to print for each record */
-    /* Depending on the set of keywords to print, we will know whether or not 
-     * we need to call SUM_infoEx(). Here's the list of keys that necessitate 
+    /* Depending on the set of keywords to print, we will know whether or not
+     * we need to call SUM_infoEx(). Here's the list of keys that necessitate
      * a SUM_infoEx() call:
-     *  
+     *
      *   *size*
      *   *online*
      *   *retain*
-     *   *archive* 
+     *   *archive*
      */
     nkeys = 0;
     reqKeys = list_llcreate(sizeof(DRMS_Keyword_t *), NULL);
@@ -2654,14 +2662,14 @@ int DoIt(void)
         JSONDIE("Out of memory.");
     }
 
-    if (keys_listed) 
+    if (keys_listed)
     {
         /* this means that the user has provided the key=blah1,blah2,... argument */
         /* get specified list */
         char *thiskey = NULL;
         CGI_unescape_url(keylist);
         ListNode_t *node = NULL;
-      
+
         if (useFitsKeyNames)
         {
             nkeys = populateKeyList(keylist, reqSegs, template, &jsdTemplate, recordset, &record_set_staged, &requisition, reqKeys);
@@ -2670,7 +2678,7 @@ int DoIt(void)
         {
             /* not using FITS keyword names */
             for (thiskey = strtok(keylist, ","); thiskey; thiskey = strtok(NULL,","))
-            {        
+            {
                 if (strcmp(thiskey,"**NONE**") == 0)
                 {
                     nkeys = 0;
@@ -2698,32 +2706,32 @@ int DoIt(void)
                 {
                     keys[nkeys++] = strdup(thiskey);
                 }
-                
+
                 if (strcasecmp(thiskey, "*size*") == 0)
                 {
                     requisition.requireSUMinfoSize = 1;
                 }
-            
+
                 if (strcasecmp(thiskey, "*online*") == 0)
                 {
                     requisition.requireSUMinfoOnline = 1;
                 }
-            
+
                 if (strcasecmp(thiskey, "*retain*") == 0)
                 {
                     requisition.requireSUMinfoRetain = 1;
                 }
-            
+
                 if (strcasecmp(thiskey, "*archive*") == 0)
                 {
                     requisition.requireSUMinfoArchive = 1;
                 }
-            
+
                 if (strcasecmp(thiskey, "*recdir*") == 0)
                 {
-                    requisition.requireRecdir = 1;                
+                    requisition.requireRecdir = 1;
                 }
-            
+
                 if (strcasecmp(thiskey, "*logdir*") == 0)
                 {
                     requisition.requireLogdir = 1;
@@ -2731,7 +2739,7 @@ int DoIt(void)
 
                 if (strcasecmp(thiskey, "*dirmtime*") == 0)
                 {
-                    requisition.requireDirmtime = 1;                
+                    requisition.requireDirmtime = 1;
                 }
 
                 if (requisition.requireSUMinfoSize || requisition.requireSUMinfoOnline || requisition.requireSUMinfoRetain || requisition.requireSUMinfoArchive || requisition.requireRecdir || requisition.requireDirmtime)
@@ -2742,7 +2750,7 @@ int DoIt(void)
         }
     }
     free (keylist);
-    
+
     /* get list of links to print for each record */
     nlinks = 0;
     reqLinks = list_llcreate(sizeof(DRMS_Link_t *), NULL);
@@ -2750,13 +2758,13 @@ int DoIt(void)
     {
         JSONDIE("Out of memory.");
     }
-    
-    if (links_listed) 
-    { 
+
+    if (links_listed)
+    {
         /* get specified list */
         char *thislink;
         CGI_unescape_url(linklist);
-        
+
         if (useFitsKeyNames)
         {
             nlinks = populateLinkList(linklist, template, reqLinks);
@@ -2770,7 +2778,7 @@ int DoIt(void)
                     nlinks = 0;
                     break;
                 }
-            
+
                 if (strcmp(thislink, "**ALL**")==0)
                 {
                     DRMS_Link_t *link;
@@ -2788,9 +2796,9 @@ int DoIt(void)
                     links[nlinks++] = strdup(thislink);
                 }
             }
-        }        
+        }
       }
-    free (linklist);  
+    free (linklist);
 
     if (!useFitsKeyNames)
     {
@@ -2844,7 +2852,7 @@ int DoIt(void)
         drms_stage_records(recordset, 0, 0);
         record_set_staged = 1;
     }
-    
+
     /* need to find out if we will be needing SUM info if so, call drms_record_getinfo() */
     if (requisition.requireSUMinfo && !sum_info_called)
     {
@@ -2852,19 +2860,19 @@ int DoIt(void)
         drms_record_getinfo(recordset);
         sum_info_called = 1;
     }
-    
+
     if (requisition.requireLogdir)
     {
         int iset;
         int nrecs;
-        
+
         /* call SUM_get() with batches of SUs */
         for (iset = 0; iset < recordset->ss_n && status == DRMS_SUCCESS; iset++)
         {
             /* iterate over record subsets */
 
             nrecs = drms_recordset_getssnrecs(recordset, iset, &status);
-            
+
             if (status == DRMS_SUCCESS)
             {
                 /* will call drms_getsuinfo() on log-dir SUs */
@@ -2872,20 +2880,20 @@ int DoIt(void)
                 {
                     log_dirs = hcon_create(sizeof(char *), 64, (void (*)(const void *))free_log_dir, NULL, NULL, NULL, 0);
                 }
-                
+
                 JSOC_INFO_ASSERT(log_dirs != NULL, "out of memory creating log_dir container");
                 GetLogDirs(drms_env, &recordset->records[(recordset->ss_starts)[iset]], nrecs, log_dirs);
             }
         }
     }
 
-    recArray = json_new_array(); 
+    recArray = json_new_array();
     JSOC_INFO_ASSERT(recArray, "out of memory");
 
     int missingKeyName = 0;
 
     /* loop over set of selected records */
-    for (irec = 0; irec < nrecs; irec++) 
+    for (irec = 0; irec < nrecs; irec++)
       {
       char recquery[DRMS_MAXQUERYLEN];
       char numStr[64];
@@ -2907,13 +2915,13 @@ int DoIt(void)
         if (useFitsKeyNames)
         {
             json_t *keywordArray = NULL;
-            
+
             /* always include specification */
             drms_sprint_rec_query(recquery, rec);
             jsonVal = createJsonStringVal(recquery);
             json_insert_pair_into_object(recobj, "specification", jsonVal);
             jsonVal = NULL;
-            
+
             if (requisition.requireRecnum)
             {
                 snprintf(numStr, sizeof(numStr), "%lld", rec->recnum);
@@ -2922,7 +2930,7 @@ int DoIt(void)
                 json_insert_pair_into_object(recobj, "recnum", jsonVal);
                 jsonVal = NULL;
             }
-            
+
             if (requisition.requireSunum)
             {
                 snprintf(numStr, sizeof(numStr), "%lld", rec->sunum);
@@ -2931,7 +2939,7 @@ int DoIt(void)
                 json_insert_pair_into_object(recobj, "sunum", jsonVal);
                 jsonVal = NULL;
             }
-            
+
             if (requisition.requireSUMinfoSize)
             {
                 char size[64];
@@ -2963,28 +2971,28 @@ int DoIt(void)
                             {
                                 segTemplate = *((DRMS_Segment_t **)(lnSeg->data));
                                 seg = drms_segment_lookup(rec, segTemplate->info->name);
-                            
+
                                 if (seg && seg->record)
-                                {                                
+                                {
                                     /* make seg file path - use the parent record of seg (links may have been followed) */
                                     if (seg->record->suinfo && *seg->record->suinfo->online_loc != '\0' && *seg->record->suinfo->online_status == 'Y')
                                     {
                                         /* OK to use drms_segment_filename() - we already 'staged' records, so we have created rec->su */
                                         drms_segment_filename(seg, seg_file_name);
-                
+
                                         if (*seg_file_name != '\0')
-                                        {            
+                                        {
                                             segFilePath = base_strcatalloc(segFilePath, seg->record->suinfo->online_loc, &szPath);
                                             segFilePath = base_strcatalloc(segFilePath, "/", &szPath);
                                             segFilePath = base_strcatalloc(segFilePath, seg_file_name, &szPath);
-                
+
                                             if (stat(segFilePath, &statBuf) == 0)
                                             {
                                                 if (numBytes == -1)
                                                 {
                                                     numBytes++;
                                                 }
-    
+
                                                 /* online */
                                                 numBytes += statBuf.st_size;
                                             }
@@ -2992,7 +3000,7 @@ int DoIt(void)
                                     }
                                 }
                             }
-                
+
                             if (numBytes != -1)
                             {
                                 long long numBytesLL = numBytes;
@@ -3000,7 +3008,7 @@ int DoIt(void)
                                 jsonVal = json_new_number(size);
                                 JSOC_INFO_ASSERT(jsonVal, "out of memory");
                             }
-                    
+
                             free(segFilePath);
                             segFilePath = NULL;
                         }
@@ -3025,7 +3033,7 @@ int DoIt(void)
                             numBytes += numSubBytes;
                         }
                     }
-                
+
                     if (last)
                     {
                         hiter_destroy(&last);
@@ -3051,7 +3059,7 @@ int DoIt(void)
                 json_insert_pair_into_object(recobj, "size", jsonVal);
                 jsonVal = NULL;
             }
-            
+
             if (requisition.requireSUMinfoOnline)
             {
                     /* ensure that suinfo has been obtained */
@@ -3069,7 +3077,7 @@ int DoIt(void)
                 json_insert_pair_into_object(recobj, "online", jsonVal);
                 jsonVal = NULL;
             }
-            
+
             if (requisition.requireSUMinfoRetain)
             {
                 /* ensure that suinfo has been obtained */
@@ -3085,7 +3093,7 @@ int DoIt(void)
                     int month;
                     int day;
                     char dateStr[64];
-                    
+
                     if (strcmp("N", rec->suinfo->online_status) == 0)
                     {
                         jsonVal = createJsonStringVal("NA");
@@ -3093,7 +3101,7 @@ int DoIt(void)
                     else
                     {
                         sscanf(rec->suinfo->effective_date, "%4d%2d%2d", &year, &month, &day);
-                        snprintf(dateStr, sizeof(dateStr), "%4d.%02d.%02d", year, month, day);                        
+                        snprintf(dateStr, sizeof(dateStr), "%4d.%02d.%02d", year, month, day);
                         jsonVal = createJsonStringVal(dateStr);
                     }
                 }
@@ -3101,7 +3109,7 @@ int DoIt(void)
                 json_insert_pair_into_object(recobj, "expdate", jsonVal);
                 jsonVal = NULL;
             }
-            
+
             if (requisition.requireSUMinfoArchive)
             {
                 /* ensure that suinfo has been obtained */
@@ -3126,11 +3134,11 @@ int DoIt(void)
                 json_insert_pair_into_object(recobj, "archive", jsonVal);
                 jsonVal = NULL;
             }
-            
+
             if (requisition.requireRecdir)
             {
                 char recPath[DRMS_MAXPATHLEN];
-                
+
 
                 /* ensure that suinfo has been obtained */
                 XASSERT(sum_info_called);
@@ -3148,11 +3156,11 @@ int DoIt(void)
                 json_insert_pair_into_object(recobj, "recdir", jsonVal);
                 jsonVal = NULL;
             }
-            
+
             if (requisition.requireLogdir)
             {
                 const char *logdir = GetLogDir(rec, log_dirs);
-                
+
                 if (logdir)
                 {
                     jsonVal = createJsonStringVal(logdir);
@@ -3161,7 +3169,7 @@ int DoIt(void)
                 {
                     jsonVal = createJsonStringVal("NO LOG");
                 }
-                
+
                 json_insert_pair_into_object(recobj, "logdir", jsonVal);
                 jsonVal = NULL;
             }
@@ -3173,7 +3181,7 @@ int DoIt(void)
                 char recPath[DRMS_MAXPATHLEN];
                 char timebuf[128];
 
-                
+
                 /* ensure that suinfo has been obtained */
                 XASSERT(sum_info_called);
 
@@ -3187,18 +3195,18 @@ int DoIt(void)
                 {
                     snprintf(timebuf, sizeof(timebuf), "NA");
                 }
-                
+
                 jsonVal = createJsonStringVal(timebuf);
                 json_insert_pair_into_object(recobj, "dirmtime", jsonVal);
                 jsonVal = NULL;
             }
-                        
+
             if (requisition.requireSpec)
             {
                 char specBuf[DRMS_MAXSERIESNAMELEN * 2];
 
                 drms_snprint_rec_spec(specBuf, sizeof(specBuf), rec);
-                jsonVal = createJsonStringVal(specBuf);                
+                jsonVal = createJsonStringVal(specBuf);
                 JSOC_INFO_ASSERT(jsonVal, "out of memory");
                 json_insert_pair_into_object(recobj, "spec", jsonVal);
                 jsonVal = NULL;
@@ -3218,11 +3226,11 @@ int DoIt(void)
                 valOut = NULL;
                 badKey = 0;
                 missingKeyName = 0;
-                
+
                 if (isInvalidKey(keyTemplate))
                 {
                     badKey = 1;
-                    
+
                     if (keyTemplate && keyTemplate->info && *(keyTemplate->info->name) != '\0')
                     {
                         keyNameOut = keyTemplate->info->name;
@@ -3239,7 +3247,7 @@ int DoIt(void)
                     {
                         DRMS_Keyword_t *keyWithVal = NULL;
 
-                        /* get keyword name from template keyword */                            
+                        /* get keyword name from template keyword */
                         if (fitsexport_getmappedextkeyname(keyTemplate, NULL, NULL, fitsName, sizeof(fitsName), NULL, 0) && *fitsName != '\0')
                         {
                             keyNameOut = fitsName;
@@ -3250,10 +3258,10 @@ int DoIt(void)
                             missingKeyName = 1;
                         }
 
-                        /* key is the template keyword, but we need the actual keyword from the current record; 
+                        /* key is the template keyword, but we need the actual keyword from the current record;
                          * follow the link if the keyword is a linked keyword */
                         keyWithVal = drms_keyword_lookup(rec, keyTemplate->info->name, 1);
-                
+
                         if (keyWithVal)
                         {
                             /* for the f != 1, case missing values are replaced with the string "MISSING"; do
@@ -3277,18 +3285,18 @@ int DoIt(void)
                              * or the target record */
                             /* should not get here - we tested all key names for validity */
                             valOut = MISSING_KEY_VALUE;
-                        }                    
+                        }
                     }
                     else
                     {
                         /* per-segment keywords are handled in the segments objects */
                     }
                 }
-                
+
                 if (keyNameOut || missingKeyName)
                 {
                     /* skip per-segment keywords (which are !keyNameOut && !missingKeyName) */
-                
+
                     /* make json */
                     keyObj = json_new_object();
                     JSOC_INFO_ASSERT(keyObj, "out of memory");
@@ -3311,7 +3319,7 @@ int DoIt(void)
                         json_insert_pair_into_object(keyObj, "value", jsonVal);
                         jsonVal = NULL;
                     }
-                    
+
                     if (badKey)
                     {
                         jsonVal = json_new_true();
@@ -3324,7 +3332,7 @@ int DoIt(void)
                 }
 
                 if (fitsValue)
-                {                
+                {
                     free(fitsValue);
                     fitsValue = NULL;
                 }
@@ -3340,11 +3348,11 @@ int DoIt(void)
                 json_insert_pair_into_object(recobj, "name", json_new_string(jsonquery));
                 free(jsonquery);
             }
-        
-            for (ikey=0; ikey<nkeys; ikey++) 
+
+            for (ikey=0; ikey<nkeys; ikey++)
             {
-                DRMS_Keyword_t *rec_key_ikey; 
-                json_t *thiskeyval = keyvals[ikey]; 
+                DRMS_Keyword_t *rec_key_ikey;
+                json_t *thiskeyval = keyvals[ikey];
                 json_t *val;
                 char rawval[20000];
                 char *jsonval;
@@ -3367,7 +3375,7 @@ int DoIt(void)
                     long long numBytes = -1;
                     long long numSubBytes = 0;
                     DRMS_Segment_t *seg = NULL;
-                    
+
                     /* ensure that suinfo has been obtained */
                     XASSERT(sum_info_called);
 
@@ -3394,7 +3402,7 @@ int DoIt(void)
                                 numBytes += numSubBytes;
                             }
                         }
-                
+
                         if (last)
                         {
                             hiter_destroy(&last);
@@ -3419,7 +3427,7 @@ int DoIt(void)
 
                     /* ensure that suinfo has been obtained */
                     XASSERT(sum_info_called);
-                    
+
                     sinfo = rec->suinfo;
 
                     if (!sinfo)
@@ -3438,10 +3446,10 @@ int DoIt(void)
 
                     /* ensure that suinfo has been obtained */
                     XASSERT(sum_info_called);
-                    
+
                     sinfo = rec->suinfo;
 
-                
+
                     if (!sinfo)
                     {
                         val = json_new_string("NA");
@@ -3468,14 +3476,14 @@ int DoIt(void)
 
                     /* ensure that suinfo has been obtained */
                     XASSERT(sum_info_called);
-                    
+
                     sinfo = rec->suinfo;
-                    
+
                     if (!sinfo)
                     {
                         val = json_new_string("NA");
                     }
-                    else    
+                    else
                     {
                         if (sinfo->pa_status == DAAP && sinfo->pa_substatus == DAADP)
                         {
@@ -3495,7 +3503,7 @@ int DoIt(void)
 
                     /* ensure that suinfo has been obtained */
                     XASSERT(sum_info_called);
-                
+
                     if (rec->suinfo && *rec->suinfo->online_loc != '\0' && *rec->suinfo->online_status == 'Y')
                     {
                         snprintf(path, sizeof(path), "%s/" DRMS_SLOTDIR_FORMAT, rec->suinfo->online_loc, rec->slotnum);
@@ -3504,7 +3512,7 @@ int DoIt(void)
                     {
                         snprintf(path, sizeof(path), "NoDataDirectory");
                     }
-              
+
                     jsonval = string_to_json(path);
                     val = json_new_string(jsonval);
                     free(jsonval);
@@ -3512,7 +3520,7 @@ int DoIt(void)
                 else if (strcmp(keys[ikey], "*logdir*") == 0)
                 {
                     const char *logdir = GetLogDir(rec, log_dirs);
-                
+
                     if (logdir)
                     {
                         jsonval = string_to_json(logdir);
@@ -3521,7 +3529,7 @@ int DoIt(void)
                     {
                         jsonval = string_to_json("NO LOG");
                     }
-                
+
                     val = json_new_string(jsonval);
                     free(jsonval);
                 }
@@ -3532,9 +3540,9 @@ int DoIt(void)
                     char path[DRMS_MAXPATHLEN];
                     char timebuf[128];
 
-                    
+
                     /* ensure that suinfo has been obtained */
-                    XASSERT(sum_info_called);                                
+                    XASSERT(sum_info_called);
 
                     if (rec->suinfo && *rec->suinfo->online_loc != '\0' && *rec->suinfo->online_status == 'Y')
                     {
@@ -3546,7 +3554,7 @@ int DoIt(void)
                     {
                         snprintf(timebuf, sizeof(timebuf), "NA");
                     }
-                
+
                     jsonval = string_to_json(timebuf);
                     val = json_new_string(jsonval);
                     free(jsonval);
@@ -3556,12 +3564,12 @@ int DoIt(void)
                     char specBuf[DRMS_MAXSERIESNAMELEN * 2];
 
                     drms_snprint_rec_spec(specBuf, sizeof(specBuf), rec);
-                    val = createJsonStringVal(specBuf);                
+                    val = createJsonStringVal(specBuf);
                     JSOC_INFO_ASSERT(val, "out of memory");
                 }
                 else
                 {
-                    rec_key_ikey = drms_keyword_lookup (rec, keys[ikey], 1); 
+                    rec_key_ikey = drms_keyword_lookup (rec, keys[ikey], 1);
                     if (!rec_key_ikey)
                     {
                         jsonval = string_to_json("Invalid KeyLink");
@@ -3572,7 +3580,7 @@ int DoIt(void)
                     }
                     else
                     {
-                        drms_keyword_snprintfval(rec_key_ikey, rawval, sizeof(rawval));
+                        drms_keyword_snprintfval2(rec_key_ikey, rawval, sizeof(rawval), max_precision, binary);
                         /* always report keyword values as strings */
                         jsonval = string_to_json(rawval);
                     }
@@ -3580,14 +3588,14 @@ int DoIt(void)
                     val = json_new_string(jsonval);
                     free(jsonval);
                 }
-            
+
                 json_insert_child(thiskeyval, val);
             }
         }
-        
-        int online = 0; /* I think this is part of a bug; it gets set for each segment, but it is a 
+
+        int online = 0; /* I think this is part of a bug; it gets set for each segment, but it is a
                          * per-record variable */
-  
+
         /* now show desired segments */
         if (useFitsKeyNames)
         {
@@ -3605,7 +3613,7 @@ int DoIt(void)
             int iaxis = 0;
             char keyName[DRMS_MAXKEYNAMELEN];
             DRMS_Keyword_t *anckey = NULL;
-            
+
             segmentArray = json_new_array(); /* each record has a segment array - an array of { "name" : "seg1", "value" : "rumble"}
                                               * objects */
             JSOC_INFO_ASSERT(segmentArray, "out of memory");
@@ -3616,7 +3624,7 @@ int DoIt(void)
             {
                 badSeg = 0;
                 segTemplate = *((DRMS_Segment_t **)(lnSeg->data));
-                
+
                 segObj = json_new_object();
                 JSOC_INFO_ASSERT(segObj, "out of memory");
 
@@ -3624,8 +3632,8 @@ int DoIt(void)
                 {
                     /* the segment is not defined in this series */
                     badSeg = 1;
-                
-                    /* name */                    
+
+                    /* name */
                     if (segTemplate && segTemplate->info && *(segTemplate->info->name) != '\0')
                     {
                         jsonVal = createJsonStringVal(segTemplate->info->name);
@@ -3635,7 +3643,7 @@ int DoIt(void)
                         snprintf(missingSegNameBuf, sizeof(missingSegNameBuf), "%s%02d", MISSING_SEG_NAME, missingSegNumber++);
                         jsonVal = createJsonStringVal(missingSegNameBuf);
                     }
-                
+
                     json_insert_pair_into_object(segObj, "name", jsonVal);
                     jsonVal = NULL;
 
@@ -3649,23 +3657,23 @@ int DoIt(void)
                     /* the segment IS defined in this series, but the current record may not have a segment struct (because
                      * the user provided the segment filter in curly braces section of the record-set specification) */
                     segNum = segTemplate->info->segnum;
-                
+
                     /* segment info from actual record */
-                    seg = drms_segment_lookup(rec, segTemplate->info->name); 
+                    seg = drms_segment_lookup(rec, segTemplate->info->name);
 
                     if (seg)
                     {
                         char *dimStr = NULL;
                         size_t szDimStr = 32;
-                        
+
                         /* the segment is defined in this series, AND a segment struct DOES exist for this record (or linked record) */
                         /* a record does not always have a segment */
 
                         /* name */
                         jsonVal = createJsonStringVal(segTemplate->info->name);
                         json_insert_pair_into_object(segObj, "name", jsonVal);
-                        jsonVal = NULL;                        
-                        
+                        jsonVal = NULL;
+
                         /* path */
                         if (seg->record->suinfo && *seg->record->suinfo->online_loc != '\0' && *seg->record->suinfo->online_status == 'Y')
                         {
@@ -3675,8 +3683,8 @@ int DoIt(void)
                         else
                         {
                             snprintf(path, sizeof(path), "NoDataDirectory");
-                        }                    
-                    
+                        }
+
                         /* online */
                         if ((strcmp("Y", rec->suinfo->online_status) == 0) && (*path != '\0'))
                         {
@@ -3688,18 +3696,18 @@ int DoIt(void)
                         {
                             jsonVal = json_new_number("0");
                             json_insert_pair_into_object(segObj, "online", jsonVal);
-                            jsonVal = NULL;                        
+                            jsonVal = NULL;
                         }
-                    
+
                         jsonVal = createJsonStringVal(path);
                         json_insert_pair_into_object(segObj, "path", jsonVal);
                         jsonVal = NULL;
-                    
+
                         /* dims */
                         dims[0] = '\0';
                         dimStr = calloc(1, szDimStr);
                         JSOC_INFO_ASSERT(dimStr, "out of memory");
-                        
+
                         for (iaxis = 0; iaxis < seg->info->naxis; iaxis++)
                         {
                             snprintf(dims, sizeof(dims), "%d", seg->axis[iaxis]);
@@ -3708,7 +3716,7 @@ int DoIt(void)
                             {
                                 dimStr = base_strcatalloc(dimStr, "x", &szDimStr);
                             }
-                            
+
                             dimStr = base_strcatalloc(dimStr, dims, &szDimStr);
                         }
 
@@ -3716,7 +3724,7 @@ int DoIt(void)
                         json_insert_pair_into_object(segObj, "dims", jsonVal);
                         free(dimStr);
                         dimStr = NULL;
-                    
+
                         /* cparms */
                         if (seg->cparms && strlen(seg->cparms))
                         {
@@ -3724,13 +3732,13 @@ int DoIt(void)
                             json_insert_pair_into_object(segObj, "cparms", jsonVal);
                             jsonVal = NULL;
                         }
-                    
+
                         /* bzero */
                         snprintf(keyName, sizeof(keyName), "%s_bzero", segTemplate->info->name);
                         anckey = drms_keyword_lookup(rec, keyName, 1);
 
                         if (anckey)
-                        {                        
+                        {
                             fitsexport_getmappedextkeyvalue(anckey, &fitsValue);
 
                             if (fitsValue)
@@ -3741,24 +3749,24 @@ int DoIt(void)
                             {
                                 valOut = MISSING_KEY_VALUE;
                             }
-                
+
                             jsonVal = createJsonStringVal(valOut);
                             json_insert_pair_into_object(segObj, "bzero", jsonVal);
                             jsonVal = NULL;
-                            
+
                             if (fitsValue)
-                            {                
+                            {
                                 free(fitsValue);
                                 fitsValue = NULL;
                             }
                         }
-                    
+
                         /* bscale */
                         snprintf(keyName, sizeof(keyName), "%s_bscale", segTemplate->info->name);
                         anckey = drms_keyword_lookup(rec, keyName, 1);
 
                         if (anckey)
-                        {                        
+                        {
                             fitsexport_getmappedextkeyvalue(anckey, &fitsValue);
 
                             if (fitsValue)
@@ -3769,13 +3777,13 @@ int DoIt(void)
                             {
                                 valOut = MISSING_KEY_VALUE;
                             }
-                
+
                             jsonVal = createJsonStringVal(valOut);
                             json_insert_pair_into_object(segObj, "bscale", jsonVal);
                             jsonVal = NULL;
-                            
+
                             if (fitsValue)
-                            {                
+                            {
                                 free(fitsValue);
                                 fitsValue = NULL;
                             }
@@ -3790,7 +3798,7 @@ int DoIt(void)
                             keyNameOut = NULL;
                             valOut = NULL;
                             missingKeyName = 0;
-                            
+
                             if (isInvalidKey(keyTemplate))
                             {
                                 /* bad keys have already been handled, in the record-key code; skip this one */
@@ -3801,7 +3809,7 @@ int DoIt(void)
                                 if (drms_keyword_getperseg(keyTemplate))
                                 {
                                     DRMS_Keyword_t *keyWithVal = NULL;
-                    
+
                                     if (!keywordArray)
                                     {
                                         keywordArray = json_new_array(); /* each record has a keyword array - an array of { "name" : "key1", "value" : "rumble"}
@@ -3811,7 +3819,7 @@ int DoIt(void)
                                         json_insert_pair_into_object(segObj, "keywords", keywordArray);
                                     }
 
-                                    /* get keyword name from template keyword */                            
+                                    /* get keyword name from template keyword */
                                     if (fitsexport_getmappedextkeyname(keyTemplate, NULL, NULL, fitsName, sizeof(fitsName), NULL, 0) && *fitsName != '\0')
                                     {
                                         keyNameOut = fitsName;
@@ -3821,14 +3829,14 @@ int DoIt(void)
                                         fprintf(stderr, "Unable to map DRMS keyword name %s to FITS keyword name.\n", keyTemplate->info->name);
                                         missingKeyName = 1;
                                     }
-                    
-                                    /* key is from the jsd template, which does not include the _xxx suffix */
-                                    snprintf(keyName, sizeof(keyName), "%s_%03d", keyTemplate->info->name, segNum);                            
 
-                                    /* key is the template keyword, but we need the actual keyword from the current record; 
+                                    /* key is from the jsd template, which does not include the _xxx suffix */
+                                    snprintf(keyName, sizeof(keyName), "%s_%03d", keyTemplate->info->name, segNum);
+
+                                    /* key is the template keyword, but we need the actual keyword from the current record;
                                      * follow the link if the keyword is a linked keyword */
                                     keyWithVal = drms_keyword_lookup(rec, keyName, 1);
-            
+
                                     if (keyWithVal)
                                     {
                                         JSOC_INFO_ASSERT(fitsValue == NULL, "about to leak");
@@ -3847,16 +3855,16 @@ int DoIt(void)
                                     {
                                         /* should not get here - we tested all key names for validity */
                                         valOut = MISSING_KEY_VALUE;
-                                    } 
+                                    }
                                 }
                             }
 
                             JSOC_INFO_ASSERT((keyNameOut != NULL && valOut != NULL) || (keyNameOut == NULL && valOut == NULL), "invalid combination");
-                            
+
                             if (keyNameOut || missingKeyName)
                             {
                                 /* skip invalid and per-segment keywords (which are !keyNameOut && !missingKeyName) */
-                
+
                                 /* make json */
                                 keyObj = json_new_object();
                                 JSOC_INFO_ASSERT(keyObj, "out of memory");
@@ -3879,7 +3887,7 @@ int DoIt(void)
                                     json_insert_pair_into_object(keyObj, "value", jsonVal);
                                     jsonVal = NULL;
                                 }
-                    
+
                                 if (badKey)
                                 {
                                     jsonVal = json_new_true();
@@ -3892,7 +3900,7 @@ int DoIt(void)
                             }
 
                             if (fitsValue)
-                            {                
+                            {
                                 free(fitsValue);
                                 fitsValue = NULL;
                             }
@@ -3900,14 +3908,14 @@ int DoIt(void)
                     }
                     else
                     {
-                        /* the segment is defined in this series, BUT a segment struct does NOT exist for this record because: 
+                        /* the segment is defined in this series, BUT a segment struct does NOT exist for this record because:
                          * 1. the record-set spec had curly braces and although the segment does exist in the series, the {} filtered it out;
                          * OR
                          * 2. the linked record was not successfully resolved */
 
                         /* could not find segment struct (followLinks is true) */
                         DRMS_Segment_t *testSeg = NULL;
-                    
+
                         /* could be missing target record (we followed tried following links); since we know that this segment is
                          * valid, we must find the segment struct in the parent series, unless #1 above is true */
                         testSeg = hcon_lookup_lower(&rec->segments, segTemplate->info->name);
@@ -3917,7 +3925,7 @@ int DoIt(void)
                             /* #2 above */
                             jsonVal = createJsonStringVal(segTemplate->info->name);
                             json_insert_pair_into_object(segObj, "name", jsonVal);
-                            
+
                             jsonVal = createJsonStringVal("BadSegLink");
                             json_insert_pair_into_object(segObj, "path", jsonVal);
 
@@ -3928,22 +3936,22 @@ int DoIt(void)
                             /* #1 above */
                             if (!allSegs)
                             {
-                                /* the user specified a segment in the seglist that IS part of the series, but it is NOT 
+                                /* the user specified a segment in the seglist that IS part of the series, but it is NOT
                                  * in the curly braces clause */
                                 jsonVal = createJsonStringVal(segTemplate->info->name);
                                 json_insert_pair_into_object(segObj, "name", jsonVal);
 
                                 jsonVal = createJsonStringVal(INVALID_SEG);
                                 json_insert_pair_into_object(segObj, "path", jsonVal);
-                                
+
                                 jsonVal = createJsonStringVal("NA");
                                 json_insert_pair_into_object(segObj, "dims", jsonVal);
-                                jsonVal = NULL;                 
+                                jsonVal = NULL;
                             }
                         }
                     }
                 }
-                
+
                 if (segObj->child)
                 {
                     /* segment object is not empty */
@@ -3954,23 +3962,23 @@ int DoIt(void)
         else
         {
             /* not using FITS keyword names */
-            for (iseg=0; iseg<nsegs; iseg++) 
+            for (iseg=0; iseg<nsegs; iseg++)
             {
-                DRMS_Segment_t *rec_seg_iseg = drms_segment_lookup (rec, segs[iseg]); 
+                DRMS_Segment_t *rec_seg_iseg = drms_segment_lookup (rec, segs[iseg]);
                 char *jsonpath;
                 char *jsondims;
                 char path[DRMS_MAXPATHLEN];
-                json_t *thissegval = segvals[iseg]; 
-                json_t *thissegdim = segdims[iseg]; 
+                json_t *thissegval = segvals[iseg];
+                json_t *thissegdim = segdims[iseg];
                 json_t *thissegcparms = segcparms[iseg];
                 json_t *thissegbzero = segbzeros[iseg];
                 json_t *thissegbscale = segbscales[iseg];
-            
+
                 if (rec_seg_iseg)
                 {
                     int iaxis, naxis = rec_seg_iseg->info->naxis;
                     char dims[100], dimval[20];
-              
+
                     if (rec_seg_iseg->record->suinfo && *rec_seg_iseg->record->suinfo->online_loc != '\0' && *rec_seg_iseg->record->suinfo->online_status == 'Y')
                     {
                         /* OK to use drms_segment_filename() - we already 'staged' records, so we have created rec->su */
@@ -3988,26 +3996,26 @@ int DoIt(void)
 
                     // Get seg dimension info into segdims
                     dims[0] = '\0';
-                
+
                     for (iaxis=0; iaxis<naxis; iaxis++)
                     {
                         if (iaxis)
                             strcat(dims, "x");
-                        
+
                         sprintf(dimval,"%d",rec_seg_iseg->axis[iaxis]);
                         strcat(dims, dimval);
                     }
-                
+
                     jsondims = string_to_json(dims);
                     json_insert_child(thissegdim, json_new_string(jsondims));
                     free(jsondims);
 
-                    /* Print bzero and bscale values (use format of those implicit keywords, which is %g) IFF 
+                    /* Print bzero and bscale values (use format of those implicit keywords, which is %g) IFF
                     * the segment protocol implies these values (protocols fits, fitsz, tas, etc.) */
                     char keybuf[DRMS_MAXKEYNAMELEN];
                     DRMS_Keyword_t *anckey = NULL;
                     char *jsonkeyval = NULL;
-  
+
                     /* cparms */
                     if (strlen(rec_seg_iseg->cparms))
                     {
@@ -4019,25 +4027,25 @@ int DoIt(void)
                     /* bzero */
                     snprintf(keybuf, sizeof(keybuf), "%s_bzero", segs[iseg]);
                     anckey = drms_keyword_lookup(rec, keybuf, 1);
-  
+
                     if (anckey)
                     {
-                        drms_keyword_snprintfval(anckey, keybuf, sizeof(keybuf));
+                        drms_keyword_snprintfval2(anckey, keybuf, sizeof(keybuf), max_precision, binary);
 
                         /* always report keyword values as strings */
                         jsonkeyval = string_to_json(keybuf);
                         json_insert_child(thissegbzero, json_new_string(jsonkeyval));
                         free(jsonkeyval);
                     }
-  
+
                     /* bscale */
                     anckey = NULL;
                     snprintf(keybuf, sizeof(keybuf), "%s_bscale", segs[iseg]);
                     anckey = drms_keyword_lookup(rec, keybuf, 1);
-  
+
                     if (anckey)
                     {
-                        drms_keyword_snprintfval(anckey, keybuf, sizeof(keybuf));
+                        drms_keyword_snprintfval2(anckey, keybuf, sizeof(keybuf), max_precision, binary);
 
                         /* always report keyword values as strings */
                         jsonkeyval = string_to_json(keybuf);
@@ -4074,13 +4082,13 @@ int DoIt(void)
             DRMS_Record_t *linkedRec = NULL;
             char linkSpec[DRMS_MAXQUERYLEN];
             int missingLinkName = 0;
-            
+
             linkArray = json_new_array(); /* each record has a segment array - an array of { "name" : "seg1", "value" : "rumble"}
                                            * objects
                                            */
             JSOC_INFO_ASSERT(linkArray, "out of memory");
             json_insert_pair_into_object(recobj, "links", linkArray);
-            
+
             list_llreset(reqLinks);
             while ((lnLink = list_llnext(reqLinks)) != NULL)
             {
@@ -4088,14 +4096,14 @@ int DoIt(void)
                 badLink = 0;
                 valOut = NULL;
                 *linkSpec = '\0';
-                
+
                 linkObj = json_new_object();
                 JSOC_INFO_ASSERT(linkObj, "out of memory");
-                
+
                 if (isInvalidLink(linkTemplate))
                 {
                     badLink = 1;
-                    
+
                     if (linkTemplate && linkTemplate->info && *(linkTemplate->info->name) != '\0')
                     {
                         valOut = linkTemplate->info->name;
@@ -4103,7 +4111,7 @@ int DoIt(void)
                     else
                     {
                         missingLinkName = 1;
-                    }                  
+                    }
                 }
                 else if (!(linkTemplate->info) || *(linkTemplate->info->name) == '\0')
                 {
@@ -4114,7 +4122,7 @@ int DoIt(void)
                 {
                     valOut = linkTemplate->info->name;
 
-                    /* unlike the case for keywords and segments, DRMS does not have a lookup function for 
+                    /* unlike the case for keywords and segments, DRMS does not have a lookup function for
                      * links */
                     link = hcon_lookup_lower(&rec->links, linkTemplate->info->name);
 
@@ -4125,7 +4133,7 @@ int DoIt(void)
                     else
                     {
                         linkedRec = drms_link_follow(rec, linkTemplate->info->name, &status);
-                     
+
                         if (!linkedRec || !linkedRec->seriesinfo || *(linkedRec->seriesinfo->seriesname) == '\0')
                         {
                             badLink = 1;
@@ -4140,12 +4148,12 @@ int DoIt(void)
                             {
                                 snprintf(linkSpec, sizeof(linkSpec), "%s[:#%lld]", linkedRec->seriesinfo->seriesname, linkedRec->recnum);
                             }
-                            
+
                             drms_close_record(linkedRec, DRMS_FREE_RECORD);
                         }
-                    }                 
+                    }
                 }
-                
+
                 if (missingLinkName)
                 {
                     snprintf(missingLinkNameBuf, sizeof(missingLinkNameBuf), "%s%02d", MISSING_LINK_NAME, missingLinkNumber++);
@@ -4153,18 +4161,18 @@ int DoIt(void)
                 }
                 else
                 {
-                    jsonVal = createJsonStringVal(valOut);                    
+                    jsonVal = createJsonStringVal(valOut);
                 }
                 json_insert_pair_into_object(linkObj, "name", jsonVal);
                 jsonVal = NULL;
-                
+
                 if (*linkSpec != '\0')
                 {
                     jsonVal = createJsonStringVal(linkSpec);
                     json_insert_pair_into_object(linkObj, "linkedrec", jsonVal);
                     jsonVal = NULL;
                 }
-                
+
                 if (badLink)
                 {
                     jsonVal = json_new_true();
@@ -4180,9 +4188,9 @@ int DoIt(void)
         {
             /* not using FITS keyword names */
           /* now show desired links */
-          for (ilink=0; ilink<nlinks; ilink++) 
+          for (ilink=0; ilink<nlinks; ilink++)
             {
-            DRMS_Link_t *rec_link = hcon_lookup_lower (&rec->links, links[ilink]); 
+            DRMS_Link_t *rec_link = hcon_lookup_lower (&rec->links, links[ilink]);
             DRMS_Record_t *linked_rec = drms_link_follow(rec, links[ilink], &status);
             char linkquery[DRMS_MAXQUERYLEN];
             if (linked_rec)
@@ -4192,13 +4200,13 @@ int DoIt(void)
               else
                 sprintf(linkquery, "%s[:#%lld]", linked_rec->seriesinfo->seriesname, linked_rec->recnum);
               drms_close_record(linked_rec, DRMS_FREE_RECORD);
-  
-              json_t *thislinkval = linkvals[ilink]; 
+
+              json_t *thislinkval = linkvals[ilink];
               json_insert_child(thislinkval, json_new_string(linkquery));
               }
             else
               {
-              json_t *thislinkval = linkvals[ilink]; 
+              json_t *thislinkval = linkvals[ilink];
               json_insert_child(thislinkval, json_new_string("Invalid_Link"));
               }
             }
@@ -4208,7 +4216,7 @@ int DoIt(void)
         {
             if (wantRecInfo && !requisition.requireSUMinfoOnline)
             {
-                /* create an 'online' property in the record object only if the user did not request *online* - if they did 
+                /* create an 'online' property in the record object only if the user did not request *online* - if they did
                  * request *online*, then each segment has an 'online' attribute, if not then the record has an 'online' attribute */
                 if (!rec->suinfo)
                 {
@@ -4225,12 +4233,12 @@ int DoIt(void)
                         jsonVal = json_new_number("0");
                     }
                 }
-                
+
                 JSOC_INFO_ASSERT(jsonVal, "out of memory");
                 json_insert_pair_into_object(recobj, "online", jsonVal);
                 jsonVal = NULL;
             }
-            
+
             json_insert_child(recArray, recobj);
         }
         else
@@ -4249,7 +4257,7 @@ int DoIt(void)
             }
         }
       } /* rec loop */
-      
+
         /* clean up memory used by invalid keys, segs, links */
         list_llreset(reqKeys);
         while ((lnKey = list_llnext(reqKeys)) != NULL)
@@ -4257,10 +4265,10 @@ int DoIt(void)
             keyTemplate = *((DRMS_Keyword_t **)(lnKey->data));
 
             if (isInvalidKey(keyTemplate))
-            {            
+            {
                 /* remove from list so that the keyword is ignored in the per-segment code */
                 list_llremove(reqKeys, lnKey);
-            
+
                 if (keyTemplate)
                 {
                     if (keyTemplate->info)
@@ -4270,21 +4278,21 @@ int DoIt(void)
 
                     free(keyTemplate); /* invalid keys were allocated */
                 }
-                
+
                 list_llfreenode(&lnKey);
             }
         }
-        
+
         list_llreset(reqSegs);
         while ((lnSeg = list_llnext(reqSegs)) != NULL)
         {
             segTemplate = *((DRMS_Segment_t **)(lnSeg->data));
 
             if (isInvalidSeg(segTemplate))
-            {            
+            {
                 /* remove from list so that the keyword is ignored in the per-segment code */
                 list_llremove(reqSegs, lnSeg);
-            
+
                 if (segTemplate)
                 {
                     if (segTemplate->info)
@@ -4303,7 +4311,7 @@ int DoIt(void)
         while ((lnLink = list_llnext(reqLinks)) != NULL)
         {
             linkTemplate = *((DRMS_Link_t **)(lnLink->data));
-            
+
             if (isInvalidLink(linkTemplate))
             {
                 list_llremove(reqLinks, lnLink);
@@ -4321,7 +4329,7 @@ int DoIt(void)
                 list_llfreenode(&lnLink);
             }
         }
-  
+
   /* Finished.  Clean up and exit. */
         if (useFitsKeyNames)
         {
@@ -4332,13 +4340,13 @@ int DoIt(void)
             json_t *json_keywords = json_new_array();
             json_t *json_segments = json_new_array();
             json_t *json_links = json_new_array();
-        
+
           if (wantRecInfo)
             json_insert_pair_into_object(jroot, "recinfo", recinfo);
 
-          for (ikey=0; ikey<nkeys; ikey++) 
+          for (ikey=0; ikey<nkeys; ikey++)
             {
-            json_t *keyname = json_new_string(keys[ikey]); 
+            json_t *keyname = json_new_string(keys[ikey]);
             json_t *keyobj = json_new_object();
             json_insert_pair_into_object(keyobj, "name", keyname);
             json_insert_pair_into_object(keyobj, "values", keyvals[ikey]);
@@ -4346,12 +4354,12 @@ int DoIt(void)
             }
         json_insert_pair_into_object(jroot, "keywords", json_keywords);
 
-          for (iseg=0; iseg<nsegs; iseg++) 
+          for (iseg=0; iseg<nsegs; iseg++)
             {
                 /* do not insert invalid segs if allSegs == 1 */
                 if (!allSegs || segvals[iseg]->child || segdims[iseg]->child || segcparms[iseg]->child || segbzeros[iseg]->child || segbscales[iseg]->child)
                 {
-                    json_t *segname = json_new_string(segs[iseg]); 
+                    json_t *segname = json_new_string(segs[iseg]);
                     json_t *segobj = json_new_object();
                     json_insert_pair_into_object(segobj, "name", segname);
                     json_insert_pair_into_object(segobj, "values", segvals[iseg]);
@@ -4365,9 +4373,9 @@ int DoIt(void)
 
           json_insert_pair_into_object(jroot, "segments", json_segments);
 
-          for (ilink=0; ilink<nlinks; ilink++) 
+          for (ilink=0; ilink<nlinks; ilink++)
             {
-            json_t *linkname = json_new_string(links[ilink]); 
+            json_t *linkname = json_new_string(links[ilink]);
             json_t *linkobj = json_new_object();
             json_insert_pair_into_object(linkobj, "name", linkname);
             json_insert_pair_into_object(linkobj, "values", linkvals[ilink]);
@@ -4380,10 +4388,10 @@ int DoIt(void)
       json_insert_pair_into_object(jroot, "count", json_new_number(count));
       json_insert_runtime(jroot, StartTime);
       json_insert_pair_into_object(jroot, "status", json_new_number("0"));
-    
+
     drms_close_records(recordset, DRMS_FREE_RECORD);
     json_tree_to_string(jroot, &final_json);
-    
+
     if (printHTTPHeaders)
     {
         printf("Content-type: application/json\n\n");
@@ -4394,7 +4402,7 @@ int DoIt(void)
     fflush(stdout);
 
     json_free_value(&jroot);
-    
+
     if (log_dirs)
     {
         hcon_destroy(&log_dirs);
@@ -4404,7 +4412,7 @@ int DoIt(void)
     {
         list_llfree(&reqLinks);
     }
-    
+
     if (reqSegs)
     {
         list_llfree(&reqSegs);
@@ -4413,8 +4421,8 @@ int DoIt(void)
     if (reqKeys)
     {
         list_llfree(&reqKeys);
-    }    
-        
+    }
+
     drms_destroy_jsdtemplate_record(&jsdTemplate);
 
     report_summary(Server, StartTime, Remote_Address, op, in, max_recs, 0);
@@ -4425,4 +4433,3 @@ int DoIt(void)
     manage_userhandle(0, userhandle);
     return(0);
   }
-
