@@ -13952,16 +13952,14 @@ DRMS_Record_t *drms_recordset_fetchnext(DRMS_Env_t *env,
                 neednewchunk = (int)kRSChunk_Next;
             }
 
-            if (rs->cursor->lastrec < rs->cursor->chunksize - 1)
-            {
-                cstat = kRecChunking_NoMoreRecs;
-            }
-
-            /* since there is a chunk in memory, lastrec should be set (not -1) */
+            /* since there is a chunk in memory, lastrec should be set (not -1) and currentrec >= 0 */
             if (rs->cursor->currentrec > rs->cursor->lastrec)
             {
                 /* clears lastrec and currentrec - sets them both to -1 */
                 drms_close_current_recordchunk(rs);
+
+                rs->cursor->currentrec = rs->cursor->lastrec;
+                cstat = kRecChunking_NoMoreRecs;
             }
         }
 
