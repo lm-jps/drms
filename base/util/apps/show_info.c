@@ -1126,12 +1126,21 @@ static void PrintKeyInfo(int *col, DRMS_Record_t *rec, LinkedList_t *keysSpecifi
             {
                 if (keyword_list)
                 {
-                    /* always print hex strings for numbers when using -k; set_info -k will expect
-                     * hex strings (keyword_list ==> -MB) */
                     printf("%s=", name);
 
-                    /* no need to quote string data type values - binary ==> each character will be represented by a byte (including spaces) */
-                    drms_keyword_printval2(key, 1, 1);
+                    /* if printing a hexadecimal string of bytes (for a string), then there is no need
+                     * to escape the string with quotes - there will be no space characters in the
+                     * hexadecimal string */
+                    if (key->info->type != DRMS_TYPE_STRING || binary)
+                    {
+                        drms_keyword_printval2(key, max_precision, binary);
+                    }
+                    else
+                    {
+                        printf("\"");
+                        drms_keyword_printval2(key, max_precision, binary);
+                        printf("\"");
+                    }
 
                     printf("\n");
                 }

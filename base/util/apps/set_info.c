@@ -738,12 +738,6 @@ int DoIt(void)
    create = cmdparams_get_int(&cmdparams, "c", NULL) != 0;
    create_from_stdin = cmdparams_get_int(&cmdparams, "k", NULL) != 0;
 
-    if (create_from_stdin)
-    {
-        /* set_info -k uses hexadecimal strings, so set binary == 1 to expect these strings */
-        binary = 1;
-    }
-
    if (multiple && (create || create_from_stdin))
    {
       if (query) { free(query); query = NULL; }
