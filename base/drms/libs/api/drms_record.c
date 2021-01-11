@@ -13350,6 +13350,8 @@ int drms_open_recordchunk(DRMS_Env_t *env,
                    break;
                }
 
+               rs->cursor->iteration_started = 1;
+
                /* intentional fall-through */
            }
             case kRSChunk_Next:
@@ -13857,6 +13859,7 @@ DRMS_RecordSet_t *drms_open_recordset_internal(DRMS_Env_t *env, const char *rsqu
             rs->cursor->env = env;
             rs->cursor->chunksize = drms_recordset_getchunksize();
             rs->cursor->currentchunk = -1;
+            rs->cursor->iteration_started = 0;
             rs->cursor->lastrec = -1;
             rs->cursor->currentrec = -1;
         }
@@ -13911,16 +13914,13 @@ DRMS_RecordSet_t *drms_open_recordset(DRMS_Env_t *env, const char *rsquery, int 
  * For cursored queries, we have not yet allocated memory for the record pointers.
  * Do that now.
  **/
-DRMS_Record_t *drms_recordset_fetchnext(DRMS_Env_t *env,
-                                        DRMS_RecordSet_t *rs,
-                                        int *drmsstatus,
-                                        DRMS_RecChunking_t *chunkstat,
-                                        int *newchunk)
+DRMS_Record_t *drms_recordset_fetchnext(DRMS_Env_t *env, DRMS_RecordSet_t *rs, int *drmsstatus, DRMS_RecChunking_t *chunkstat, int *newchunk)
 {
     DRMS_Record_t *ret = NULL;
     int stat = DRMS_SUCCESS;
     DRMS_RecChunking_t cstat = kRecChunking_None;
     int neednewchunk = -1;
+    int close_record_chunk = 0;
     int nRecsRetr = -1;
 
     if (newchunk)
@@ -13932,34 +13932,69 @@ DRMS_Record_t *drms_recordset_fetchnext(DRMS_Env_t *env,
     {
         if (!rs->records)
         {
-           rs->records = (DRMS_Record_t **)calloc(rs->cursor->chunksize, sizeof(DRMS_Record_t *));
+            if (!rs->cursor->iteration_started)
+            {
+                rs->records = (DRMS_Record_t **)calloc(rs->cursor->chunksize, sizeof(DRMS_Record_t *));
+            }
         }
 
         if (rs->cursor->currentchunk == -1)
         {
             /* No chunks in memory */
-            neednewchunk = (int)kRSChunk_First;
+            if (rs->cursor->iteration_started)
+            {
+                /* the caller is attempting to read past the last record; the last chunk has already been closed
+                 * (rs->cursor->currentchunk == -1), but iteration started before the current call of this function */
+                cstat = kRecChunking_NoMoreRecs;
+            }
+            else
+            {
+                neednewchunk = (int)kRSChunk_First;
+            }
         }
         else
         {
             /* There is an active chunk in memory - advance record pointer */
             rs->cursor->currentrec++;
 
-            if (rs->cursor->currentrec == rs->cursor->chunksize)
+            /* set cstat for cases where we will return a record */
+            if (rs->cursor->currentrec == rs->cursor->chunksize - 1)
             {
-                /* if the current rec is also the last record in the record set, then code below will
-                 * deal with returning kRecChunking_NoMoreRecs and no record to caller */
+                cstat = kRecChunking_LastInChunk;
+
+                /* if perchance the number of records in the record set is a multiple of chunk size, then
+                 * there might be no more records and this is actually the last record in the record set;
+                 * however, we do not know the total number of records in a cursored record set before
+                 * actually iterating to the last record - the best we can do is tell the caller
+                 * that we are returning the last record in the chunk */
+            }
+            else if (rs->cursor->currentrec == rs->cursor->lastrec)
+            {
+                /* this record is the last record in the current chunk, but the size of this chunk is less than
+                 * the chunk size (otherwise the previous if statement would have been true), so
+                 * the total number of records is not a multiple of the chunk size, and this must be the
+                 * the last record in the record set */
+                cstat = kRecChunking_LastInRS;
+            }
+            else if (rs->cursor->currentrec == rs->cursor->chunksize)
+            {
+                /* first record in next chunk */
                 neednewchunk = (int)kRSChunk_Next;
+                close_record_chunk = 1;
+            }
+            else if (rs->cursor->currentrec > rs->cursor->lastrec)
+            {
+                /* attempt to get record after last record in set */
+                rs->cursor->currentrec = rs->cursor->lastrec;
+                cstat = kRecChunking_NoMoreRecs;
+                close_record_chunk = 1;
             }
 
             /* since there is a chunk in memory, lastrec should be set (not -1) and currentrec >= 0 */
-            if (rs->cursor->currentrec > rs->cursor->lastrec)
+            if (close_record_chunk)
             {
-                /* clears lastrec and currentrec - sets them both to -1 */
+                /* clears lastrec, currentrec and currentchunk - sets them all to -1 */
                 drms_close_current_recordchunk(rs);
-
-                rs->cursor->currentrec = rs->cursor->lastrec;
-                cstat = kRecChunking_NoMoreRecs;
             }
         }
 
@@ -13970,7 +14005,7 @@ DRMS_Record_t *drms_recordset_fetchnext(DRMS_Env_t *env,
              * may not be online yet. */
             if (stat != DRMS_SUCCESS && stat != DRMS_REMOTESUMS_TRYLATER && stat != DRMS_ERROR_SUMSTRYLATER)
             {
-                fprintf(stderr, "Error retrieving record chunk '%d'.\n", rs->cursor->currentchunk);
+                fprintf(stderr, "error retrieving record chunk '%d'\n", rs->cursor->currentchunk);
             }
             else if (nRecsRetr == 0)
             {
@@ -13987,18 +14022,6 @@ DRMS_Record_t *drms_recordset_fetchnext(DRMS_Env_t *env,
                 }
             }
         }
-        else
-        {
-            /* If the last call to drms_recordset_fetchnext() retrieved the last record, then this call to
-             * drms_recordset_fetchnext() is not valid, and we should return NULL with cstat set to kRecChunking_NoMoreRecs.
-             * We should also set the record pointer, rs->cursor->currentrec, to the last record in the record set
-             * (it will be one past that now). */
-            if (rs->cursor->lastrec >= 0 && rs->cursor->currentrec > rs->cursor->lastrec)
-            {
-                rs->cursor->currentrec = rs->cursor->lastrec;
-                cstat = kRecChunking_NoMoreRecs;
-            }
-        }
 
         /* ART - If remote sums is running asynchronously, then this is okay, we still need to
          * update the cursor information and return the next record. This record will not
@@ -14007,17 +14030,9 @@ DRMS_Record_t *drms_recordset_fetchnext(DRMS_Env_t *env,
         if ((stat == DRMS_SUCCESS || stat == DRMS_REMOTESUMS_TRYLATER || stat == DRMS_ERROR_SUMSTRYLATER) && rs->cursor->currentrec >= 0 && cstat != kRecChunking_NoMoreRecs)
         {
             /* Now, get the next record (only the current chunk is in rs->records) */
-            ret = rs->records[rs->cursor->currentrec];
-
-            if (nRecsRetr == 0 || (rs->cursor->lastrec > 0 && rs->cursor->lastrec == rs->cursor->currentrec))
+            if (rs->records)
             {
-                /* We're iterating through the last chunk, and in fact the current record is the last record
-                 * in the last chunk. */
-                cstat = kRecChunking_LastInRS;
-            }
-            else if (rs->cursor->currentrec == rs->cursor->chunksize - 1)
-            {
-                cstat = kRecChunking_LastInChunk;
+                ret = rs->records[rs->cursor->currentrec];
             }
         }
     }

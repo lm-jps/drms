@@ -536,6 +536,10 @@ struct DRMS_RecSetCursor_struct
   int currentchunk;
   /** \brief If -1, then there are more PG records to fetch, if >= 0, then the value
    * is the index of the last record-set record in the current chunk. */
+
+  /** \brief If 1, then attempt to fetch first record has occurred. */
+  int iteration_started;
+
   int lastrec;
   /** \brief The relative index of the current record in the downloaded chunk 0 <= currentrec <= chunksize */
   int currentrec;
