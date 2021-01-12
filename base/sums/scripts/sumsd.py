@@ -2205,8 +2205,8 @@ class Worker(threading.Thread):
             # it ensures that the server always closes the socket to the client
             try:
                 rollback = False
-                sessionOpened = False
-                sessionClosed = True
+                sessionOpened = False # True after opened, does not turn False after close
+                sessionClosed = False # True after closed/rolled back
                 clientInfoReceived = False
                 pureMT = True
                 history = []
