@@ -337,7 +337,7 @@ static int sendMsg(SUM_t *sums, const char *msg, uint32_t msgLen, int (*history)
                 pBuf = numBytesMesssage + bytesSentTotal;
                 bytesSent = send(sockfd, pBuf, strlen(pBuf), 0);
 
-                if (!bytesSent)
+                if (bytesSent < 0)
                 {
                     (*history)("Socket to MT SUMS broken.\n");
                     err = 1;
@@ -357,7 +357,7 @@ static int sendMsg(SUM_t *sums, const char *msg, uint32_t msgLen, int (*history)
                     pBuf = msg + bytesSentTotal;
                     bytesSent = send(sockfd, pBuf, msgLen - bytesSentTotal, 0);
 
-                    if (!bytesSent)
+                    if (bytesSent < 0)
                     {
                         (*history)("Socket to MT SUMS broken.\n");
                         err = 1;
