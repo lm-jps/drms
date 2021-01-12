@@ -66,11 +66,12 @@ RV_EXTRACTREQUEST = 14
 RV_REQUESTTYPE = 15
 RV_SESSIONOPENED = 16
 RV_SESSIONCLOSED = 17
-RV_GENERATERESPONSE = 18
-RV_IMPLEMENTATION = 19
-RV_TAPEREQUEST = 20
-RV_SUMSCHMOWN = 21
-RV_UNKNOWNERROR = 22
+RV_SESSIONROLLEDBACK = 18
+RV_GENERATERESPONSE = 19
+RV_IMPLEMENTATION = 20
+RV_TAPEREQUEST = 21
+RV_SUMSCHMOWN = 22
+RV_UNKNOWNERROR = 23
 
 
 # Request types
@@ -97,8 +98,10 @@ RESPSTATUS_REQ = 'bad-request'
 RESPSTATUS_REQTYPE = 'bad-request-type'
 RESPSTATUS_SESSIONCLOSED = 'session-closed'
 RESPSTATUS_SESSIONOPENED = 'session-opened'
+RESPSTATUS_SESSIONROLLEDBACK = 'session-rolledback'
 RESPSTATUS_GENRESPONSE = 'cant-generate-response'
 RESPSTATUS_TAPEREAD = 'taperead'
+RESPSTATUS_SERVICEREQUEST = 'cant-service-request' # an 'other' type of error (like OSError)
 
 # JSON keys
 IS_ALIVE = 'is-alive'
@@ -323,13 +326,11 @@ class ParamsException(SDException):
     def __init__(self, msg):
         super(ParamsException, self).__init__(msg)
 
-
 class ArgsException(SDException):
 
     retcode = RV_ARGS
     def __init__(self, msg):
         super(ArgsException, self).__init__(msg)
-
 
 class LogException(SDException):
 
@@ -337,13 +338,11 @@ class LogException(SDException):
     def __init__(self, msg):
         super(LogException, self).__init__(msg)
 
-
 class PollException(SDException):
 
     retcode = RV_POLL
     def __init__(self, msg):
         super(PollException, self).__init__(msg)
-
 
 class SocketConnectionException(SDException):
 
@@ -351,13 +350,11 @@ class SocketConnectionException(SDException):
     def __init__(self, msg):
         super(SocketConnectionException, self).__init__(msg)
 
-
 class DBConnectionException(SDException):
 
     retcode = RV_DBCONNECTION
     def __init__(self, msg):
         super(DBConnectionException, self).__init__(msg)
-
 
 class DBCommandException(SDException):
 
@@ -365,13 +362,11 @@ class DBCommandException(SDException):
     def __init__(self, msg):
         super(DBCommandException, self).__init__(msg)
 
-
 class TerminationException(SDException):
 
     retcode = RV_TERMINATED
     def __init__(self, msg):
         super(TerminationException, self).__init__(msg)
-
 
 class ReceiveMsgException(SDException):
 
@@ -379,13 +374,11 @@ class ReceiveMsgException(SDException):
     def __init__(self, msg):
         super(ReceiveMsgException, self).__init__(msg)
 
-
 class SendMsgException(SDException):
 
     retcode = RV_SENDMSG
     def __init__(self, msg):
         super(SendMsgException, self).__init__(msg)
-
 
 class JsonizerException(SDException):
 
@@ -393,13 +386,11 @@ class JsonizerException(SDException):
     def __init__(self, msg):
         super(JsonizerException, self).__init__(msg)
 
-
 class UnjsonizerException(SDException):
 
     retcode = RV_UNJSONIZE
     def __init__(self, msg):
         super(UnjsonizerException, self).__init__(msg)
-
 
 class ClientInfoException(SDException):
 
@@ -407,13 +398,11 @@ class ClientInfoException(SDException):
     def __init__(self, msg):
         super(ClientInfoException, self).__init__(msg)
 
-
 class ExtractRequestException(SDException):
 
     retcode = RV_EXTRACTREQUEST
     def __init__(self, msg):
         super(ExtractRequestException, self).__init__(msg)
-
 
 class RequestTypeException(SDException):
 
@@ -421,13 +410,11 @@ class RequestTypeException(SDException):
     def __init__(self, msg):
         super(RequestTypeException, self).__init__(msg)
 
-
 class SessionOpenedException(SDException):
 
     retcode = RV_SESSIONOPENED
     def __init__(self, msg):
         super(SessionOpenedException, self).__init__(msg)
-
 
 class SessionClosedException(SDException):
 
@@ -435,6 +422,11 @@ class SessionClosedException(SDException):
     def __init__(self, msg):
         super(SessionClosedException, self).__init__(msg)
 
+class SessionRolledbackException(SDException):
+
+    retcode = RV_SESSIONROLLEDBACK
+    def __init__(self, msg):
+        super(SessionRolledbackException, self).__init__(msg)
 
 class GenerateResponseException(SDException):
 
@@ -1675,7 +1667,7 @@ class AllocResponse(Response):
             if not 'sudir' in self.data:
                 self.data['sudir'] = sudir
             self.undo()
-            raise
+            raise # could be on OSError or an
 
     def _stringify(self):
         if not hasattr(self, 'rspDict'):
@@ -2189,7 +2181,7 @@ class Worker(threading.Thread):
     eventMaxThreads = threading.Event() # Event fired when the number of threads decreases below threshold.
 
     def __init__(self, sock, hasTapeSys, hasMultPartSets, sumsBinDir, timeout, log):
-        threading.Thread.__init__(self)
+        threading.Thread.__init__(self, target=self.__run)
         # Could raise. Handle in the code that creates the thread.
         if sock is None or sumsBinDir is None or log is None:
             raise ArgsException('Worker thread constructor: neither sock nor sumsBinDir nor log can be None')
@@ -2207,14 +2199,14 @@ class Worker(threading.Thread):
 
         self.log.writeDebug([ 'successfully instantiated worker for connection ' + str(self.sock.getpeername()) ])
 
-    def run(self):
+    def __run(self):
         try:
             # this try/finally block ensures that this thread will always be removed from the thread list AND
             # it ensures that the server always closes the socket to the client
             try:
                 rollback = False
                 sessionOpened = False
-                sessionClosed = False
+                sessionClosed = True
                 clientInfoReceived = False
                 pureMT = True
                 history = []
@@ -2275,12 +2267,11 @@ class Worker(threading.Thread):
                             if sessionClosed:
                                 raise SessionClosedException('cannot process a ' + self.request.getType() + ' request - the SUMS session is closed for client ' + peerName)
 
-                            if isinstance(self.request, OpenRequest):
-                                sessionOpened = True
-                            elif isinstance(self.request, CloseRequest):
-                                sessionClosed = True
-                            elif isinstance(self.request, RollbackRequest):
-                                rollback = True
+                            # an issue during the session caused a rollback (or the caller requests a rollback); the only allowable
+                            # requests are CloseRequest and RollbackRequest
+                            if rollback:
+                                if not isinstance(self.request, CloseRequest) and not isinstance(self.request, RollbackRequest):
+                                    raise SessionRolledbackException('cannot process a ' + self.request.getType() + ' request - the SUMS session must be closed or rolled back by client ' + peerName)
 
                         if self.log.log.getEffectiveLevel() == logging.INFO:
                             self.log.writeInfo([ 'new ' + self.request.reqType + ' request from process ' + str(self.clientInfo.data.pid) + ' by user ' + self.clientInfo.data.user + ' at ' + peerName + ':' + str(self.request) ])
@@ -2289,13 +2280,21 @@ class Worker(threading.Thread):
 
                         json_string = self.generateResponse() # a str object; generating a response can modify the DB and commit changes
 
+                        if isinstance(self.request, OpenRequest):
+                            sessionOpened = True
+                        elif isinstance(self.request, CloseRequest):
+                            sessionClosed = True
+                        elif isinstance(self.request, RollbackRequest):
+                            sessionClosed = True
+                            rollback = True
+
                         # save for potential clean-up
                         if not isinstance(self.request, RollbackRequest):
                             history.append(self.response)
                     except SocketConnectionException as exc:
                         rollback = True
 
-                        raise # can't send a message back to client
+                        raise # can't send a message back to client, so terminate Worker
                     except UnjsonizerException as exc:
                         rollback = True
                         json_string = self.generateErrorResponse(RESPSTATUS_JSON, str(exc))
@@ -2323,6 +2322,8 @@ class Worker(threading.Thread):
                     except SessionOpenedException as exc:
                         rollback = True
                         json_string = self.generateErrorResponse(RESPSTATUS_SESSIONOPENED, str(exc))
+                    except SessionRolledbackException as exc:
+                        json_string = self.generateErrorResponse(RESPSTATUS_SESSIONROLLEDBACK, str(exc))
                     except GenerateResponseException as exc:
                         rollback = True
                         self.log.writeError([ 'failure creating response' ])
@@ -2330,10 +2331,12 @@ class Worker(threading.Thread):
                         import traceback
                         self.log.writeError([ traceback.format_exc(3) ])
                         json_string = self.generateErrorResponse(RESPSTATUS_GENRESPONSE, str(exc))
-                    except:
+                    except Exception as exc:
+                        # should never get here, but in case I missed somethinig
                         rollback = True
                         import traceback
                         self.log.writeError([ traceback.format_exc(5) ])
+                        json_string = self.generateErrorResponse(RESPSTATUS_SERVICEREQUEST, str(exc))
 
                     if hasattr(self, 'response') and self.response:
                         self.log.writeDebug([ 'response:' + str(self.response) ])
@@ -2352,7 +2355,7 @@ class Worker(threading.Thread):
                         self.messageSent = True
                         self.msgLock.release()
 
-                    if sessionClosed or rollback:
+                    if sessionClosed:
                         break
                     # end session loop
 
@@ -2501,6 +2504,7 @@ class Worker(threading.Thread):
             # Create a response with a non-OK status and an error message.
             raise GenerateResponseException(str(exc))
         except Exception as exc:
+            # like on OSError (from the mkdir failing), or a DB error
             import traceback
             raise GenerateResponseException(traceback.format_exc(2))
         return self.response.getJSON()
