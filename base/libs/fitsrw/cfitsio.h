@@ -58,14 +58,38 @@ typedef char cfitsio_keyword_datatype_t;
 
 typedef enum
 {
-		CFITSIO_FILE_TYPE_UNKNOWN = -1,  /* the `type` field was never initialized */
-		CFITSIO_FILE_TYPE_EMPTY = 0,     /* no fptr */
-		CFITSIO_FILE_TYPE_UNITIALIZED,   /* has an fptr, but no header or image or table was created */
+		CFITSIO_FILE_STATE_EMPTY = 0,     /* no fptr, initial cfitsio_file state */
+		CFITSIO_FILE_STATE_UNINITIALIZED,   /* has an fptr, but no header or image or table was created (fits_create_...() not called) */
+		CFITSIO_FILE_STATE_INITIALIZED    /* has an fptr, fits_create...() also called */
+} cfitsio_file_state_t;
+
+typedef enum
+{
+		CFITSIO_FILE_TYPE_UNKNOWN = 0,
 		CFITSIO_FILE_TYPE_HEADER,
 		CFITSIO_FILE_TYPE_IMAGE,
 		CFITSIO_FILE_TYPE_ASCIITABLE,
 		CFITSIO_FILE_TYPE_BINTABLE
 } cfitsio_file_type_t;
+
+/* compression enum */
+enum __CFITSIO_COMPRESSION_TYPE_enum__
+{
+#if 0
+		/* the FITSIO documentation is misleading; you cannot have compression undefined; images are uncompressed by default */
+		CFITSIO_COMPRESSION_UNSET = -1,
+#endif
+		CFITSIO_COMPRESSION_NONE = 0,
+    CFITSIO_COMPRESSION_RICE = 1,
+    CFITSIO_COMPRESSION_GZIP1 = 2,
+#if CFITSIO_MAJOR >= 4 || (CFITSIO_MAJOR == 3 && CFITSIO_MINOR >= 27)
+    CFITSIO_COMPRESSION_GZIP2 = 3,
+#endif
+    CFITSIO_COMPRESSION_PLIO = 4,
+    CFITSIO_COMPRESSION_HCOMP = 5
+};
+
+typedef enum __CFITSIO_COMPRESSION_TYPE_enum__ CFITSIO_COMPRESSION_TYPE;
 
 //****************************************************************************
 // External contants defined in DRMS
@@ -138,6 +162,7 @@ typedef	struct cfitsio_image_info
                               *   naxes[naxis - 1] has changed since the fits file was created; if the value has
                               *   changed, then the NAXISn keyword must be updated when the fits file is closed. */
       char fhash[PATH_MAX];  /* key to fitsfile ptr stored in gFFPtrInfo */
+			CFITSIO_COMPRESSION_TYPE export_compression_type; /* used when creating an image only */
 } CFITSIO_IMAGE_INFO;
 
 struct __CFITSIO_BINTABLE_TTYPE_struct__
@@ -174,22 +199,6 @@ struct CFITSIO_FITSFILE_struct;
 
 typedef struct CFITSIO_FITSFILE_struct *CFITSIO_FITSFILE;
 
-/* compression enum */
-enum __CFITSIO_COMPRESSION_TYPE_enum__
-{
-		CFITSIO_COMPRESSION_NONE = 0,
-    CFITSIO_COMPRESSION_RICE = 1,
-    CFITSIO_COMPRESSION_GZIP1 = 2,
-#if CFITSIO_MAJOR >= 4 || (CFITSIO_MAJOR == 3 && CFITSIO_MINOR >= 27)
-    CFITSIO_COMPRESSION_GZIP2 = 3,
-#endif
-    CFITSIO_COMPRESSION_PLIO = 4,
-    CFITSIO_COMPRESSION_HCOMP = 5
-};
-
-typedef enum __CFITSIO_COMPRESSION_TYPE_enum__ CFITSIO_COMPRESSION_TYPE;
-
-
 //****************************************************************************
 // drms_segment() call only these functions
 
@@ -220,13 +229,15 @@ int cfitsio_delete_headsum(CFITSIO_FILE *fitsFile);
 
 int cfitsio_get_file_type(CFITSIO_FILE *file, cfitsio_file_type_t *type);
 
+int cfitsio_get_file_state(CFITSIO_FILE *file, cfitsio_file_state_t *state);
+
 int cfitsio_create_header(CFITSIO_FILE *file);
 
 int cfitsio_create_image(CFITSIO_FILE *file, CFITSIO_IMAGE_INFO *image_info);
 
 int cfitsio_create_bintable(CFITSIO_FILE *file, CFITSIO_BINTABLE_INFO *bintable_info);
 
-int cfitsio_create_file(CFITSIO_FILE **out_file, const char *file_name, cfitsio_file_type_t file_type, CFITSIO_IMAGE_INFO *image_info, CFITSIO_BINTABLE_INFO *bintable_info);
+int cfitsio_create_file(CFITSIO_FILE **out_file, const char *file_name, cfitsio_file_type_t file_type, CFITSIO_IMAGE_INFO *image_info, CFITSIO_BINTABLE_INFO *bintable_info, CFITSIO_COMPRESSION_TYPE *compression_type);
 
 int cfitsio_open_file(const char *path, CFITSIO_FILE **fitsFile, int writeable);
 
@@ -236,11 +247,13 @@ int cfitsio_stream_and_close_file(CFITSIO_FILE **fits_file);
 
 void cfitsio_get_fitsfile(CFITSIO_FILE *file, CFITSIO_FITSFILE *fptr);
 
-void cfitsio_set_fitsfile(CFITSIO_FILE *file, CFITSIO_FITSFILE fptr, int in_memory);
+int cfitsio_set_fitsfile(CFITSIO_FILE *file, CFITSIO_FITSFILE fptr, int in_memory, cfitsio_file_state_t state, cfitsio_file_type_t type);
 
-static int cfitsio_get_fits_compression_type(CFITSIO_COMPRESSION_TYPE cfitsio_type, int *fits_type);
+int cfitsio_get_compression_type(CFITSIO_FILE *file, CFITSIO_COMPRESSION_TYPE *cfitsio_type);
 
-int cfitsio_set_compression_type(CFITSIO_FILE *file, CFITSIO_COMPRESSION_TYPE cfitsio_type);
+int cfitsio_get_export_compression_type(CFITSIO_FILE *file, CFITSIO_COMPRESSION_TYPE *cfitsio_type);
+
+int cfitsio_set_export_compression_type(CFITSIO_FILE *file, CFITSIO_COMPRESSION_TYPE cfitsio_type);
 
 int cfitsio_get_size(CFITSIO_FILE *file, long long *size);
 

@@ -960,7 +960,7 @@ static ExpToStdoutStatus_t ExportRecordSetKeywordsToStdout(DRMS_RecordSet_t *sub
     if (exp_status == ExpToStdoutStatus_Success)
     {
         /* make in-memory FITS file (BINTABLE) */
-        if (cfitsio_create_file(&cfitsio_file, "-", CFITSIO_FILE_TYPE_BINTABLE, NULL, NULL) != CFITSIO_SUCCESS)
+        if (cfitsio_create_file(&cfitsio_file, "-", CFITSIO_FILE_TYPE_BINTABLE, NULL, NULL, NULL) != CFITSIO_SUCCESS)
         {
             snprintf(msg, sizeof(msg), "cannot create FITS file");
 
@@ -1444,7 +1444,7 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int dumpFileName, i
             }
         }
 
-        if (cfitsio_create_file(&cfitsio_file, "-", CFITSIO_FILE_TYPE_IMAGE, NULL, NULL))
+        if (cfitsio_create_file(&cfitsio_file, "-", CFITSIO_FILE_TYPE_IMAGE, NULL, NULL, NULL))
         {
             snprintf(msg, sizeof(msg), "cannot create FITS file");
 
@@ -1475,16 +1475,16 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int dumpFileName, i
         {
             if (compressAllSegs && (segCompression[0] != CFITSIO_COMPRESSION_NONE))
             {
-                cfitsio_status = cfitsio_set_compression_type(cfitsio_file, segCompression[0]);
+                cfitsio_status = cfitsio_set_export_compression_type(cfitsio_file, segCompression[0]);
             }
-            else if (segCompression[iSeg] && segCompression[iSeg] != CFITSIO_COMPRESSION_NONE)
+            else if (segCompression[iSeg] >= 0)
             {
-                cfitsio_status = cfitsio_set_compression_type(cfitsio_file, segCompression[iSeg]);
+                cfitsio_status = cfitsio_set_export_compression_type(cfitsio_file, segCompression[iSeg]);
             }
         }
         else
         {
-            cfitsio_status = cfitsio_set_compression_type(cfitsio_file, CFITSIO_COMPRESSION_RICE);
+            cfitsio_status = cfitsio_set_export_compression_type(cfitsio_file, CFITSIO_COMPRESSION_RICE);
         }
 
         if (cfitsio_status != CFITSIO_SUCCESS)
@@ -2063,6 +2063,8 @@ int DoIt(void)
                 while ((cparmNode = list_llnext(cparmsStrings)) != NULL)
                 {
                     cparmStr = *(char **)cparmNode;
+
+                    segCompression[iComp] = -1; /* not set */
 
                     if (strcasecmp(cparmStr, COMPRESSION_NONE) == 0)
                     {

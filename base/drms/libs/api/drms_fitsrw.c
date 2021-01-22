@@ -273,7 +273,11 @@ int drms_fitsrw_SetImageInfo(DRMS_Array_t *arr, CFITSIO_IMAGE_INFO *info)
                 }
             }
         }
+
+        info->export_compression_type = CFITSIO_COMPRESSION_NONE; /* default */
     }
+
+
 
     return err;
 }
