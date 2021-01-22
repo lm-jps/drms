@@ -1125,21 +1125,25 @@ int fitsexport_mapexport_tofile2(DRMS_Record_t *rec, DRMS_Segment_t *seg, long l
                                             }
                                         }
 
-                                        if (status == DRMS_SUCCESS)
-                                        {
-                                            /* write the LONGSTRN keyword to inform FITS readers that the long string convention may be used;
-                                             * no harm if this keyword already exists (it will be written to out_file only once) */
-                                            if (cfitsio_write_longwarn(updated_file))
-                                            {
-                                                status = DRMS_ERROR_FITSRW;
-                                            }
-                                        }
-
                                         /* write the HEADSUM keyword; this is a checksum of just the FITS keywords that map to
                                          * the DRMS keywords for this image */
                                         if (status == DRMS_SUCCESS)
                                         {
                                             if (cfitsio_write_headsum(updated_file, new_headsum))
+                                            {
+                                                status = DRMS_ERROR_FITSRW;
+                                            }
+                                        }
+
+                                        /*
+                                         * WRITE LONGWARN KEYWORD LAST! All keys written after LONGWARN will silently disappear.
+                                         *
+                                         */
+                                        if (status == DRMS_SUCCESS)
+                                        {
+                                            /* write the LONGSTRN keyword to inform FITS readers that the long string convention may be used;
+                                             * no harm if this keyword already exists (it will be written to out_file only once) */
+                                            if (cfitsio_write_longwarn(updated_file))
                                             {
                                                 status = DRMS_ERROR_FITSRW;
                                             }

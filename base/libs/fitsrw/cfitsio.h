@@ -229,7 +229,7 @@ int cfitsio_delete_headsum(CFITSIO_FILE *fitsFile);
 
 int cfitsio_get_file_state(CFITSIO_FILE *file, cfitsio_file_state_t *state);
 
-int cfitsio_get_file_type_from_fitsfile(CFITSIO_FITSFILE fits_file, cfitsio_file_type_t *type, int *is_initialized);
+int cfitsio_get_file_type_from_fitsfile(CFITSIO_FITSFILE fits_file, cfitsio_file_type_t *type, int *is_initialized, int *old_hdu_index);
 
 int cfitsio_get_file_type(CFITSIO_FILE *file, cfitsio_file_type_t *type);
 
