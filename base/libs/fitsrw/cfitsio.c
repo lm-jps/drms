@@ -1347,6 +1347,7 @@ static int Cf_create_file_object(fitsfile *fptr, cfitsio_file_type_t file_type, 
     return err;
 }
 
+/* file type of current HDU */
 static int Cf_get_file_type(fitsfile *fptr, int *type)
 {
     int cfiostat = 0; /* MUST start with no-error status, else CFITSIO will fail */
@@ -1374,11 +1375,214 @@ static int Cf_get_file_type(fitsfile *fptr, int *type)
 
 int cfitsio_get_file_state(CFITSIO_FILE *file, cfitsio_file_state_t *state)
 {
+    int fits_file_type = -2;
+    int is_initialized = -1;
     int err = CFITSIO_SUCCESS;
 
-    if (file && state)
+    if (file)
     {
-        *state = file->state;
+        if (file->state != CFITSIO_FILE_STATE_EMPTY)
+        {
+            *state = file->state;
+        }
+        else
+        {
+            if (file->fptr == NULL)
+            {
+                *state = CFITSIO_FILE_STATE_EMPTY;
+            }
+            else
+            {
+                err = cfitsio_get_file_type_from_fitsfile((CFITSIO_FITSFILE)file->fptr, (cfitsio_file_type_t *)&fits_file_type, &is_initialized);
+                if (err == CFITSIO_SUCCESS)
+                {
+                    if (is_initialized)
+                    {
+                        *state = CFITSIO_FILE_STATE_INITIALIZED;
+                    }
+                    else
+                    {
+                        *state = CFITSIO_FILE_STATE_UNINITIALIZED;
+                    }
+                }
+            }
+        }
+    }
+    else
+    {
+        err = CFITSIO_ERROR_ARGS;
+    }
+
+    return err;
+}
+
+static int Cf_map_file_type(int fits_file_type, cfitsio_file_type_t *cfitsio_file_type)
+{
+    int err = CFITSIO_SUCCESS;
+
+    switch (fits_file_type)
+    {
+        case IMAGE_HDU:
+            /* the type will also be IMAGE_HDU if fits_create_img() was never called */
+            *cfitsio_file_type = CFITSIO_FILE_TYPE_IMAGE;
+            break;
+        case ASCII_TBL:
+            *cfitsio_file_type = CFITSIO_FILE_TYPE_ASCIITABLE;
+            break;
+        case BINARY_TBL:
+            *cfitsio_file_type = CFITSIO_FILE_TYPE_BINTABLE;
+            break;
+        default:
+            fprintf(stderr, "unsupported FITS file type %d\n", fits_file_type);
+            err = CFITSIO_ERROR_ARGS;
+            break;
+    }
+
+    return err;
+}
+
+int cfitsio_get_file_type_from_fitsfile(CFITSIO_FITSFILE fits_file, cfitsio_file_type_t *type, int *is_initialized)
+{
+    int number_hdus = 0;
+    int current_hdu_index = 0;
+    int hdu_type = -2; /* [ -1, 2 ] are reserved */
+    int fits_is_initialized = -1;
+    int naxis = 0;
+    fitsfile *fptr = (fitsfile *)fits_file;
+    int cfiostat = 0; /* MUST start with no-error status, else CFITSIO will fail */
+    char cfiostat_msg[FLEN_STATUS];
+    int err = CFITSIO_SUCCESS;
+
+    /* check each HDU - the file type is determined by the first one that
+    * is a table, or an IMAGE_HDU with an naxis > 0 */
+    if (fits_get_num_hdus(fptr, &number_hdus, &cfiostat))
+    {
+       err = CFITSIO_ERROR_LIBRARY;
+    }
+
+    if (err == CFITSIO_SUCCESS)
+    {
+        if (number_hdus > 0)
+        {
+           /* get current HDU */
+           fits_get_hdu_num(fptr, &current_hdu_index);
+
+           if (number_hdus == 1 && current_hdu_index == 1)
+           {
+                /* an initialized fits file will have type IMAGE_HDU + naxis > 0, or
+                * ASCII_TBL, or BINARY_TBL */
+                if (fits_get_hdu_type(fptr, &hdu_type, &cfiostat))
+                {
+                    err = CFITSIO_ERROR_LIBRARY;
+                }
+
+                if (err == CFITSIO_SUCCESS)
+                {
+                    switch (hdu_type)
+                    {
+                        case ASCII_TBL:
+                            fits_is_initialized = 1;
+                            break;
+                        case BINARY_TBL:
+                            fits_is_initialized = 1;
+                            break;
+                        case IMAGE_HDU:
+                            if (fits_get_img_dim(fptr, &naxis, &cfiostat))
+                            {
+                                err = CFITSIO_ERROR_LIBRARY;
+                            }
+
+                            if (err == CFITSIO_SUCCESS)
+                            {
+                                if (naxis > 0)
+                                {
+                                    fits_is_initialized = 1;
+                                }
+                                else
+                                {
+                                    fits_is_initialized = 0;
+                                }
+                            }
+                            break;
+                    }
+                }
+           }
+           else
+           {
+               for (current_hdu_index = 1; current_hdu_index <= number_hdus; current_hdu_index++)
+               {
+                   if (fits_movabs_hdu(fptr, current_hdu_index, &hdu_type, &cfiostat))
+                   {
+                       err = CFITSIO_ERROR_LIBRARY;
+                       break;
+                   }
+
+                   switch (hdu_type)
+                   {
+                       case ASCII_TBL:
+                           fits_is_initialized = 1;
+                           break;
+                       case BINARY_TBL:
+                           fits_is_initialized = 1;
+                           break;
+                       case IMAGE_HDU:
+                           if (fits_get_img_dim(fptr, &naxis, &cfiostat))
+                           {
+                               err = CFITSIO_ERROR_LIBRARY;
+                           }
+
+                           if (err == CFITSIO_SUCCESS)
+                           {
+                               if (naxis > 0)
+                               {
+                                   fits_is_initialized = 1;
+                                   break;
+                               }
+                               else
+                               {
+                                   fits_is_initialized = 0;
+                               }
+                           }
+                           break;
+                   }
+
+                   if (fits_is_initialized)
+                   {
+                        break;
+                   }
+               }
+           }
+        }
+        else
+        {
+            fits_is_initialized = 0;
+
+            /* file type is unknown since there are no HDUs */
+        }
+    }
+
+    if (type)
+    {
+        if (hdu_type >= 0)
+        {
+            err = Cf_map_file_type(hdu_type, type);
+        }
+        else
+        {
+            *type = CFITSIO_FILE_TYPE_UNKNOWN;
+        }
+    }
+
+    if (is_initialized)
+    {
+        *is_initialized = fits_is_initialized;
+    }
+
+    if (cfiostat)
+    {
+        fits_get_errstatus(cfiostat, cfiostat_msg);
+        fprintf(stderr, "[ cfitsio_get_file_type_from_fitsfile() ] unable to get CFITSIO file type\n");
+        fprintf(stderr, "CFITSIO error: %s\n", cfiostat_msg);
     }
 
     return err;
@@ -1388,7 +1592,6 @@ int cfitsio_get_file_type(CFITSIO_FILE *file, cfitsio_file_type_t *type)
 {
     int fits_file_type = -1;
     int err = CFITSIO_SUCCESS;
-
 
     /* first check the `type` field (it could be the case that a file was created, but the type was never set) */
     if (file->type != CFITSIO_FILE_TYPE_UNKNOWN)
@@ -1403,36 +1606,16 @@ int cfitsio_get_file_type(CFITSIO_FILE *file, cfitsio_file_type_t *type)
         }
         else
         {
-            err = Cf_get_file_type(file->fptr, &fits_file_type);
-            if (!err)
-            {
-                switch (fits_file_type)
-                {
-                    case IMAGE_HDU:
-                        /* the type will also be IMAGE_HDU if fits_create_img() was never called */
-                        *type = CFITSIO_FILE_TYPE_IMAGE;
-                        break;
-                    case ASCII_TBL:
-                        *type = CFITSIO_FILE_TYPE_ASCIITABLE;
-                        break;
-                    case BINARY_TBL:
-                        *type = CFITSIO_FILE_TYPE_BINTABLE;
-                        break;
-                    default:
-                        break;
-                }
-            }
+            err = cfitsio_get_file_type_from_fitsfile((CFITSIO_FITSFILE)file->fptr, type, NULL);
         }
     }
 
     return err;
 }
 
-
 int cfitsio_create_header(CFITSIO_FILE *file)
 {
     int err = CFITSIO_SUCCESS;
-
 
     err = Cf_create_file_object(file->fptr, CFITSIO_FILE_TYPE_HEADER, NULL);
     if (err == CFITSIO_SUCCESS)
@@ -1680,26 +1863,55 @@ void cfitsio_get_fitsfile(CFITSIO_FILE *file, CFITSIO_FITSFILE *fptr)
     }
 }
 
-int cfitsio_set_fitsfile(CFITSIO_FILE *file, CFITSIO_FITSFILE fptr, int in_memory, cfitsio_file_state_t state, cfitsio_file_type_t type)
+/* if `state`/`type` are provided, then use those to set the state and type of `file`; otherwise, obtain those
+ * values from `fptr` */
+int cfitsio_set_fitsfile(CFITSIO_FILE *file, CFITSIO_FITSFILE fptr, int in_memory, cfitsio_file_state_t *state, cfitsio_file_type_t *type)
 {
     int cfiostat = 0;
     char cfiostat_msg[FLEN_STATUS];
     int fits_compression_type = 0;
     int fits_export_compression_type = 0;
+    int fits_file_state_initialized = -1;
+    int fits_file_type = -1;
+    cfitsio_file_state_t cfitsio_file_state = CFITSIO_FILE_STATE_EMPTY;
+    cfitsio_file_type_t cfistio_file_type = CFITSIO_FILE_TYPE_UNKNOWN;
     CFITSIO_COMPRESSION_TYPE cfitsio_compression_type = CFITSIO_COMPRESSION_NONE;
     CFITSIO_COMPRESSION_TYPE cfitsio_export_compression_type = CFITSIO_COMPRESSION_NONE;
     int err = CFITSIO_SUCCESS;
 
-
     if (file)
     {
+        if (!state || !type)
+        {
+            /* use the code that iterates through HDUs - it tells us:
+             * 1. the file type
+             * 2. whether it is initialized or not (we know fptr exists, so `cfitsio_file_state` cannot be empty) */
+             err = cfitsio_get_file_type_from_fitsfile(fptr, &cfistio_file_type, &fits_file_state_initialized);
+        }
+
+        if (state)
+        {
+            /* override if state was determined from fptr */
+            cfitsio_file_state = *state;
+        }
+        else
+        {
+            cfitsio_file_state = fits_file_state_initialized ? CFITSIO_FILE_STATE_INITIALIZED : CFITSIO_FILE_STATE_UNINITIALIZED;
+        }
+
+        if (type)
+        {
+            /* override if type was determined from fptr */
+            cfistio_file_type = *type;
+        }
+
         if (file->state != CFITSIO_FILE_STATE_EMPTY)
         {
             /* can only set the fits file of `file` if `file` is CFITSIO_FILE_STATE_EMPTY */
             err = CFITSIO_ERROR_ARGS;
         }
 
-        if (!fptr || state == CFITSIO_FILE_STATE_EMPTY)
+        if (!fptr || cfitsio_file_state == CFITSIO_FILE_STATE_EMPTY)
         {
             /* `fptr` must have been created, which means that state cannot be CFITSIO_FILE_STATE_EMPTY */
             err = CFITSIO_ERROR_ARGS;
@@ -1709,12 +1921,12 @@ int cfitsio_set_fitsfile(CFITSIO_FILE *file, CFITSIO_FITSFILE fptr, int in_memor
         {
             file->fptr = (fitsfile *)fptr;
             file->in_memory = in_memory;
-            file->state = state;
-            file->type = type;
+            file->state = cfitsio_file_state;
+            file->type = cfistio_file_type;
 
-            if (type == CFITSIO_FILE_TYPE_IMAGE)
+            if (cfistio_file_type == CFITSIO_FILE_TYPE_IMAGE)
             {
-                if (state == CFITSIO_FILE_STATE_INITIALIZED)
+                if (cfitsio_file_state == CFITSIO_FILE_STATE_INITIALIZED)
                 {
                     /* copy compression type from `fptr` to `file` */
                     err = Cf_get_compression_type((fitsfile *)fptr, &fits_compression_type);
@@ -1739,7 +1951,7 @@ int cfitsio_set_fitsfile(CFITSIO_FILE *file, CFITSIO_FITSFILE fptr, int in_memor
 
         if (err == CFITSIO_SUCCESS)
         {
-            if (type == CFITSIO_FILE_TYPE_IMAGE)
+            if (cfistio_file_type == CFITSIO_FILE_TYPE_IMAGE)
             {
                 /* copy export compression type from `fptr` to `file` */
                 err = Cf_get_export_compression_type((fitsfile *)fptr, &fits_export_compression_type);

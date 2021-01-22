@@ -227,9 +227,11 @@ int cfitsio_delete_header_key(CFITSIO_FILE *fitsFile, const char *key);
 
 int cfitsio_delete_headsum(CFITSIO_FILE *fitsFile);
 
-int cfitsio_get_file_type(CFITSIO_FILE *file, cfitsio_file_type_t *type);
-
 int cfitsio_get_file_state(CFITSIO_FILE *file, cfitsio_file_state_t *state);
+
+int cfitsio_get_file_type_from_fitsfile(CFITSIO_FITSFILE fits_file, cfitsio_file_type_t *type, int *is_initialized);
+
+int cfitsio_get_file_type(CFITSIO_FILE *file, cfitsio_file_type_t *type);
 
 int cfitsio_create_header(CFITSIO_FILE *file);
 
@@ -247,7 +249,7 @@ int cfitsio_stream_and_close_file(CFITSIO_FILE **fits_file);
 
 void cfitsio_get_fitsfile(CFITSIO_FILE *file, CFITSIO_FITSFILE *fptr);
 
-int cfitsio_set_fitsfile(CFITSIO_FILE *file, CFITSIO_FITSFILE fptr, int in_memory, cfitsio_file_state_t state, cfitsio_file_type_t type);
+int cfitsio_set_fitsfile(CFITSIO_FILE *file, CFITSIO_FITSFILE fptr, int in_memory, cfitsio_file_state_t *state, cfitsio_file_type_t *type);
 
 int cfitsio_get_compression_type(CFITSIO_FILE *file, CFITSIO_COMPRESSION_TYPE *cfitsio_type);
 

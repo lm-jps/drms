@@ -1175,7 +1175,7 @@ int fitsexport_mapexport_tofile2(DRMS_Record_t *rec, DRMS_Segment_t *seg, long l
                                             cfitsio_get_fitsfile(callback_cfitsio_file, &fptr);
                                             cfitsio_get_file_state(callback_cfitsio_file, &callback_file_state);
                                             cfitsio_get_file_type(callback_cfitsio_file, &callback_file_type);
-                                            cfitsio_set_fitsfile(out_file, fptr, 1, callback_file_state, callback_file_type);
+                                            cfitsio_set_fitsfile(out_file, fptr, 1, &callback_file_state, &callback_file_type);
                                             /* DO NOT CLOSE THIS FILE */
                                         }
                                         else
@@ -1198,9 +1198,17 @@ int fitsexport_mapexport_tofile2(DRMS_Record_t *rec, DRMS_Segment_t *seg, long l
                                             }
                                             else
                                             {
-                                                /* set compression type too */
-                                                cfitsio_set_fitsfile(out_file, fptr, 1, CFITSIO_FILE_STATE_UNINITIALIZED, CFITSIO_FILE_TYPE_IMAGE);
+                                                /* hard code this - we don't have a way to receive flle-type info from
+                                                 * drms_export_cgi */
+                                                callback_file_type = CFITSIO_FILE_TYPE_IMAGE;
+                                                cfitsio_set_fitsfile(out_file, fptr, 1, NULL, &callback_file_type);
                                             }
+
+                                        }
+
+                                        if (status == DRMS_SUCCESS)
+                                        {
+
                                         }
                                     }
                                     else
@@ -1299,7 +1307,8 @@ int fitsexport_mapexport_tofile2(DRMS_Record_t *rec, DRMS_Segment_t *seg, long l
             /* adding a row to a BINTABLE (or making a keyword BINTABLE) */
             CFITSIO_FITSFILE fptr = NULL; /* the fitsfile * inside (CFITSIO_FILE *)callback (if streaming), or produced by callback (if not streaming) */
             int retVal = 0;
-            cfitsio_file_state_t callback_file_state = CFITSIO_FILE_TYPE_UNKNOWN;
+            cfitsio_file_state_t callback_file_state = CFITSIO_FILE_STATE_EMPTY;
+            cfitsio_file_type_t callback_file_type = CFITSIO_FILE_TYPE_UNKNOWN;
             int cfiostat = 0;
 
             /* check to see if bintable has already been created */
@@ -1321,7 +1330,9 @@ int fitsexport_mapexport_tofile2(DRMS_Record_t *rec, DRMS_Segment_t *seg, long l
                     }
                     else
                     {
-                        cfitsio_set_fitsfile(out_file, fptr, 1, CFITSIO_FILE_STATE_UNINITIALIZED, CFITSIO_FILE_TYPE_BINTABLE);
+                        /* hard code type - "create" method does not have a means for passing back file type */
+                        callback_file_type = CFITSIO_FILE_TYPE_BINTABLE;
+                        cfitsio_set_fitsfile(out_file, fptr, 1, NULL, &callback_file_type);
                     }
                 }
 
