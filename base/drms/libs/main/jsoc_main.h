@@ -2,7 +2,7 @@
 @file jsoc_main.h
 @brief Global variables and functions for creating a DRMS module.
 
-These functions handle DRMS session startup and shutdown, cmd-line parameter 
+These functions handle DRMS session startup and shutdown, cmd-line parameter
 parsing, and default-parameter initialization.
 
 @sa ::module ::module_args
@@ -41,6 +41,7 @@ parsing, and default-parameter initialization.
 #define kNewSuRetention "DRMS_NEWSURETENTION"
 #define kCreateShadows "DRMS_SHADOW"
 #define kDBUtf8ClientEncoding "DRMS_DBUTF8CLIENTENCODING"
+#define DRMS_ARG_PRINT_SQL "DRMS_PRINT_SQL"
 
 extern CmdParams_t cmdparams;
 /* Global DRMS Environment handle. */
@@ -53,11 +54,11 @@ extern DRMS_Env_t *drms_env;
 /* @{ */
 /**
    @brief Global DRMS-module structure representing the default
-   command-line arguments for a DRMS module. 
+   command-line arguments for a DRMS module.
 
-   ::module_args, a global array of ::ModuleArgs_t structures, provides 
-   a standard mechanism for declaring the parameters expected 
-   by a module along with their types and default values, if any. 
+   ::module_args, a global array of ::ModuleArgs_t structures, provides
+   a standard mechanism for declaring the parameters expected
+   by a module along with their types and default values, if any.
    ::module_args must be declared in every module.
    The elements of the ::module_args
    array are parsed and used by the cmdparams library to
@@ -67,26 +68,26 @@ extern DRMS_Env_t *drms_env;
 
    The ::module_args array must contain at least one element, which must be
    of type ::ARG_END. Any array elements @e following the
-   ::ARG_END element are ignored. Each element has five fields: type, name, 
+   ::ARG_END element are ignored. Each element has five fields: type, name,
    (default) value, description, and range. The value field contains
    the actual default value for the argument should the argument be ommitted from
    the cmd-line. All fields are strings, and the type
-   field is required to not be NULL. The description 
+   field is required to not be NULL. The description
    field, which provides a terse summary of the purpose of the argument,
-   is always optional. But the disposition of the name, value, and range fields 
-   depends on the type of argument (see the table below; 
-   for example, for the ::ARG_FLAG, the 
+   is always optional. But the disposition of the name, value, and range fields
+   depends on the type of argument (see the table below;
+   for example, for the ::ARG_FLAG, the
    value field is not used, but for ::ARG_INT, that field is used).
 
    If applicable, the default value and range are specified as strings
    in the ::module_args array. And they are stored in the ::CmdParams_t structure
-   as strings. But by specifying a type, such as ::ARG_INT, this declares 
-   that the module intends to interpret the the string as a specific 
-   data type (such as an int).  However, it is important to note that 
-   there is NOTHING to prevent the module from interpreting the 
+   as strings. But by specifying a type, such as ::ARG_INT, this declares
+   that the module intends to interpret the the string as a specific
+   data type (such as an int).  However, it is important to note that
+   there is NOTHING to prevent the module from interpreting the
    stored string as any type it desires. The module's code performs this
    interpretation when it uses one of the cmdparams_get_XXX() functions - the type
-   in the name of the function will cause the stored string to be interpreted 
+   in the name of the function will cause the stored string to be interpreted
    as a definite data type. For example, if a type of ::ARG_INT is specified, the
    module should call ::cmdparams_get_int(), but not ::cmdparams_get_time() to
    obtain and interpret the value.
@@ -106,8 +107,8 @@ extern DRMS_Env_t *drms_env;
    <TD>@a ARG_INT</TD>
    <TD>type, name</TD>
    <TD>value, range, description</TD>
-   <TD>The cmd-line argument is to be interpreted by the module as type @a int. 
-   If the value field is present, it must contain an ascii string that can be converted 
+   <TD>The cmd-line argument is to be interpreted by the module as type @a int.
+   If the value field is present, it must contain an ascii string that can be converted
    to an integer. If the value field is missing or if the field is the empty string,
    then the cmd-line argument must be present. The range
    field is optional.  If present, it must contain an ascii string that specifies a range
@@ -117,8 +118,8 @@ extern DRMS_Env_t *drms_env;
    <TD>@a ARG_FLOAT</TD>
    <TD>type, name</TD>
    <TD>value, range, description</TD>
-   <TD>The cmd-line argument is to be interpreted by the module as type @a float.  
-   If the value field is present, it must contain an ascii string that can be converted to a float. 
+   <TD>The cmd-line argument is to be interpreted by the module as type @a float.
+   If the value field is present, it must contain an ascii string that can be converted to a float.
    If the value field is missing or if the field is the empty string,
    then the cmd-line argument must be present. The range
    field is optional.  If present, it must contain an ascii string that specifies a range
@@ -128,8 +129,8 @@ extern DRMS_Env_t *drms_env;
    <TD>@a ARG_DOUBLE</TD>
    <TD>type, name</TD>
    <TD>value, range, description</TD>
-   <TD>The cmd-line argument is to be interpreted by the module as type @a double. 
-   If the value field is present, it must contain an ascii string that can be converted to a double. 
+   <TD>The cmd-line argument is to be interpreted by the module as type @a double.
+   If the value field is present, it must contain an ascii string that can be converted to a double.
    If the value field is missing or if the field is the empty string,
    then the cmd-line argument must be present. The range
    field is optional.  If present, it must contain an ascii string that specifies a range
@@ -159,9 +160,9 @@ extern DRMS_Env_t *drms_env;
    <TD>type, name</TD>
    <TD>description</TD>
    <TD>The cmd-line argument is to be interpreted by the module as a binary flag. If the name
-   of the flag argument contains a single character X, then to "set" the flag, provide "-X" on 
+   of the flag argument contains a single character X, then to "set" the flag, provide "-X" on
    the cmd-line. If the name of the flag contains more than a single character "name", then
-   provide "--name" on the cmd-line. Do not provide a default value, as 
+   provide "--name" on the cmd-line. Do not provide a default value, as
    cmdparams does not use the value field for flags. If the flag is not provided on the cmd-line
    the flag is by default not set.</TD>
    </TR>
@@ -169,14 +170,14 @@ extern DRMS_Env_t *drms_env;
    <TD>@a ARG_NUME</TD>
    <TD>type, name, range</TD>
    <TD>value, description</TD>
-   <TD>The cmd-line argument is to be interpreted by the module as the string representation of 
-   an enumeration id, as defined in the range field. If the value field is present, 
-   it must contain the string representation of an enumeration id. 
+   <TD>The cmd-line argument is to be interpreted by the module as the string representation of
+   an enumeration id, as defined in the range field. If the value field is present,
+   it must contain the string representation of an enumeration id.
    If the value field is missing or if the field is the empty string,
    then the cmd-line argument must be present.
-   The range field contains 
+   The range field contains
    a comma-separated list of enumeration
-   ids (strings). The first item in the list is associated with an @a integer value of 0, and 
+   ids (strings). The first item in the list is associated with an @a integer value of 0, and
    each subsequent member is associated with a value one greater than the previous id. The cmd-line
    argument must contain one of the member strings. See ::cmdparams_parse for more information.</TD>
    </TR>
@@ -184,9 +185,9 @@ extern DRMS_Env_t *drms_env;
    <TD>@a ARG_INTS</TD>
    <TD>type, name</TD>
    <TD>value, description</TD>
-   <TD>The cmd-line argument is to be interpreted by the module as a comma-separated list of 
-   integer values. 
-   If the value field is present, it must contain an ascii string that can be converted 
+   <TD>The cmd-line argument is to be interpreted by the module as a comma-separated list of
+   integer values.
+   If the value field is present, it must contain an ascii string that can be converted
    to one or more integers. If the value field is missing or if the field is the empty string,
    then the cmd-line argument must be present. See ::cmdparams_parse for more information.</TD>
    </TR>
@@ -194,9 +195,9 @@ extern DRMS_Env_t *drms_env;
    <TD>@a ARG_FLOATS</TD>
    <TD>type, name</TD>
    <TD>value, description</TD>
-   <TD>The cmd-line argument is to be interpreted by the module as a comma-separated list of 
-   floating point values. 
-   If the value field is present, it must contain an ascii string that can be converted 
+   <TD>The cmd-line argument is to be interpreted by the module as a comma-separated list of
+   floating point values.
+   If the value field is present, it must contain an ascii string that can be converted
    to one or more integers. If the value field is missing or if the field is the empty string,
    then the cmd-line argument must be present. See ::cmdparams_parse for more information.</TD>
    </TR>
@@ -236,12 +237,12 @@ extern DRMS_Env_t *drms_env;
    <TD>@a ARG_END</TD>
    <TD>type</TD>
    <TD>none</TD>
-   <TD>Signals the end of the parsed argument list. 
+   <TD>Signals the end of the parsed argument list.
    Elements may follow in the array, but will be ignored.</TD>
    </TR>
    </TABLE>
 
-   @bug Range inspection does not currently extend to arguments of type ::ARG_INTS, ::ARG_FLOATS, 
+   @bug Range inspection does not currently extend to arguments of type ::ARG_INTS, ::ARG_FLOATS,
    and ::ARG_DOUBLES
 
    @sa @ref module cmdparams.h ::sscan_time
@@ -252,7 +253,7 @@ extern ModuleArgs_t module_args[];
 */
 extern ModuleArgs_t *gModArgs;
 /**
-   @brief Global DRMS-module string providing the name of the module. 
+   @brief Global DRMS-module string providing the name of the module.
 */
 extern char *module_name;
 /* @} */
@@ -267,12 +268,12 @@ CmdParams_t *GetGlobalCmdParams(void);
 int RegisterDoItCleaner(DRMS_Env_t *env, pFn_Cleaner_t cb, void *data);
 
 int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt)(void));
-int JSOCMAIN_Init(int argc, 
-		  char **argv, 
-		  const char *module_name, 
+int JSOCMAIN_Init(int argc,
+		  char **argv,
+		  const char *module_name,
 		  int *dolog,
 		  int *verbose,
-		  pid_t *drms_server_pid, 
+		  pid_t *drms_server_pid,
 		  pid_t *tee_pid,
 		  int *cont);
 int JSOCMAIN_Term(int dolog, int verbose, pid_t drms_server_pid, pid_t tee_pid, int abort_flag);

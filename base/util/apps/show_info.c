@@ -2018,7 +2018,7 @@ static int RecordLoopCursor(DRMS_Env_t *env, const char *rsq, DRMS_RecordSet_t *
         irec++;
     } /* while */
 
-    if (!quiet && !atleastone)
+    if (!quiet && !atleastone && !env->print_sql_only)
     {
         printf ("** No records in selected data set, query was %s **\n", rsq);
     }
@@ -3481,8 +3481,11 @@ int DoIt(void)
         {
             if (recordset->n == 0)
             {
-                if (!quiet)
-                  printf ("** No records in selected data set, query was %s **\n",in);
+                if (!quiet && !drms_env->print_sql_only)
+                {
+                    printf ("** No records in selected data set, query was %s **\n",in);
+                }
+
                 if (recordset)
                 {
                     drms_close_records(recordset, DRMS_FREE_RECORD);

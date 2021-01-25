@@ -413,6 +413,7 @@ struct DRMS_Env_struct
   int sumssafe; /* If 0, then don't call sums because DRMS timed-out waiting for SUMS. */
   int createshadows;  /* 1 if it is okay for module code to attempt to create shadow tables. */
   int dbutf8clientencoding;
+  int print_sql_only; /* if 1, then the SQL used to retrieve DRMS records is printed, and then program execution ends */
 };
 
 /** \brief DRMS environment struct reference */

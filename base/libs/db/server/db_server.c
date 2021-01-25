@@ -1,12 +1,12 @@
-#include <stdio.h> 
-#include <stdlib.h> 
-#include <unistd.h>  
-#include <errno.h> 
-#include <string.h> 
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <errno.h>
+#include <string.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/types.h>
-#include <arpa/inet.h> 
+#include <arpa/inet.h>
 #include <sys/wait.h>
 #include <netinet/in.h>
 #include <zlib.h>
@@ -37,10 +37,10 @@ int db_tcp_listen(char *host, int len, short *port)
   int on = 1;
   struct sockaddr_in server;
   int sockfd, size = sizeof(struct sockaddr_in);
-  
+
   if (gethostname(host, len))
     return -1;
-  
+
 
   /* set up the transport end point */
 
@@ -75,12 +75,12 @@ int db_tcp_listen(char *host, int len, short *port)
   {
     perror("getsockname call failed.");
     return -1;
-  }    
+  }
 #ifdef BLAHBLAH
   {
     int rcvbuf, sndbuf;
     db_getsocketbufsize(sockfd, &sndbuf,&rcvbuf);
-#ifdef DEBUG    
+#ifdef DEBUG
     printf("Original socket buffer sizes: SO_SNDBUF = %d, SO_RCVBUF = %d\n",sndbuf,rcvbuf);
 #endif
     if (sndbuf<65536)
@@ -89,9 +89,9 @@ int db_tcp_listen(char *host, int len, short *port)
       db_setsocketbufsize(sockfd, sndbuf, rcvbuf/2);
     }
     db_getsocketbufsize(sockfd, &sndbuf,&rcvbuf);
-#ifdef DEBUG    
+#ifdef DEBUG
     printf("New socket buffer sizes: SO_SNDBUF = %d, SO_RCVBUF = %d\n",sndbuf,rcvbuf);
-#endif      
+#endif
   }
 #endif
   /* Start listening for incoming connections */
@@ -110,12 +110,12 @@ int db_tcp_listen(char *host, int len, short *port)
 int db_send_text_result(int sockfd, DB_Text_Result_t *result, int comp)
 {
   int buflen;
-  unsigned long zlen;  
+  unsigned long zlen;
   char *zbuf;
   int tmp[4];
   struct iovec vec[5];
 
-  if (result) 
+  if (result)
   {
     /* Always send num_rows and num_cols even if the result is empty. */
     tmp[0] = htonl(result->num_rows);
@@ -148,7 +148,7 @@ int db_send_text_result(int sockfd, DB_Text_Result_t *result, int comp)
 	vec[4].iov_len = zlen;
 	vec[4].iov_base = zbuf;
 	Writevn(sockfd, vec, 5);
-	free(zbuf); 
+	free(zbuf);
       }
       else
       {
@@ -156,11 +156,11 @@ int db_send_text_result(int sockfd, DB_Text_Result_t *result, int comp)
 	vec[2].iov_len = sizeof(tmp[2]);
 	vec[2].iov_base = &tmp[2];
 	vec[3].iov_len = buflen;
-	vec[3].iov_base = result->buffer; 
+	vec[3].iov_base = result->buffer;
 	Writevn(sockfd, vec, 4);
 */
 	vec[2].iov_len = buflen;
-	vec[2].iov_base = result->buffer; 
+	vec[2].iov_base = result->buffer;
 	Writevn(sockfd, vec, 3);
       }
     }
@@ -181,34 +181,34 @@ int db_send_binary_result(int sockfd, DB_Binary_Result_t *result, int comp)
   int *tmp;
   int anynull;
 
-  if (result) 
+  if (result)
   {
     vec = malloc((3+7*result->num_cols)*sizeof(struct iovec));
     XASSERT(vec);
     tmp = malloc((3+7*result->num_cols)*sizeof(int));
     XASSERT(tmp);
-	
+
     /* Byteswap arrays and test . */
     for (i=0; i<result->num_cols; i++)
     {
       col = &result->column[i];
       db_hton(col->type, result->num_rows, col->data);
       db_hton(DB_INT2, result->num_rows, col->is_null);
-    }     
+    }
 
     /* Pack all data into I/O vectors. */
     vc=0; tc=0;
     /* Number of rows. */
-    tmp[tc] = htonl(result->num_rows);    
+    tmp[tc] = htonl(result->num_rows);
     vec[vc].iov_len = sizeof(tmp[tc]);
     vec[vc].iov_base = &tmp[tc];
     ++tc; ++vc;
     /* Number of columns. */
-    tmp[tc] = htonl(result->num_cols);    
+    tmp[tc] = htonl(result->num_cols);
     vec[vc].iov_len = sizeof(tmp[tc]);
     vec[vc].iov_base = &tmp[tc];
     ++tc; ++vc;
-    
+
     for (i=0; i<result->num_cols; i++)
     {
       col = &result->column[i];
@@ -216,17 +216,17 @@ int db_send_binary_result(int sockfd, DB_Binary_Result_t *result, int comp)
       vec[vc+1].iov_len = strlen(col->column_name);
       vec[vc+1].iov_base = col->column_name;
       /* Length of column name */
-      tmp[tc] = htonl(vec[vc+1].iov_len);    
+      tmp[tc] = htonl(vec[vc+1].iov_len);
       vec[vc].iov_len = sizeof(tmp[tc]);
       vec[vc].iov_base = &tmp[tc];
       vc+=2; ++tc;
       /* Column type. */
-      tmp[tc] = htonl(col->type);    
+      tmp[tc] = htonl(col->type);
       vec[vc].iov_len = sizeof(tmp[tc]);
       vec[vc].iov_base = &tmp[tc];
       ++tc; ++vc;
       /* Column data size. */
-      tmp[tc] = htonl(col->size);    
+      tmp[tc] = htonl(col->size);
       vec[vc].iov_len = sizeof(tmp[tc]);
       vec[vc].iov_base = &tmp[tc];
       ++tc; ++vc;
@@ -242,7 +242,7 @@ int db_send_binary_result(int sockfd, DB_Binary_Result_t *result, int comp)
       if (anynull)
 	anynull = 1;
       /* Anynull - if FALSE then the null indicator array is not sent. */
-      tmp[tc] = htonl(anynull);    
+      tmp[tc] = htonl(anynull);
       vec[vc].iov_len = sizeof(tmp[tc]);
       vec[vc].iov_base = &tmp[tc];
       ++tc; ++vc;
@@ -262,7 +262,7 @@ int db_send_binary_result(int sockfd, DB_Binary_Result_t *result, int comp)
       col = &result->column[i];
       db_hton(col->type, result->num_rows, col->data);
       db_hton(DB_INT2, result->num_rows, col->is_null);
-    }      
+    }
     free(vec);
     free(tmp);
   }
@@ -282,14 +282,14 @@ int db_server_query_bin(int sockfd, DB_Handle_t *db_handle)
     len = ntohl(tmp);
     query = malloc(len+1);
     XASSERT(query);
-    Readn(sockfd, query, len); 
+    Readn(sockfd, query, len);
     query[len] = '\0';
 
     /* Get compression flag from client. */
     comp = Readint(sockfd);
 
     /* Query database. */
-    result = db_query_bin(db_handle, query);   
+    result = db_query_bin(db_handle, query);
 
     /* Send result to client. */
     if (result)
@@ -319,7 +319,7 @@ int db_server_query_bin(int sockfd, DB_Handle_t *db_handle)
     free(query);
   }
 
-  return status;  
+  return status;
 }
 
 
@@ -340,7 +340,7 @@ int db_server_query_bin_array(int sockfd, DB_Handle_t *db_handle)
     len = ntohl(tmp);
     query = malloc(len+1);
     XASSERT(query);
-    Readn(sockfd, query, len); 
+    Readn(sockfd, query, len);
     query[len] = '\0';
 
     /* Get compression flag from client. */
@@ -352,9 +352,9 @@ int db_server_query_bin_array(int sockfd, DB_Handle_t *db_handle)
     {
       argin[i] = (void *)Read_dbtype(&(intype[i]), sockfd);
     }
-      
+
     /* Query database. */
-    result = db_query_bin_array(db_handle, query, n_args, intype, argin);   
+    result = db_query_bin_array(db_handle, query, n_args, intype, argin);
 
     /* Free arguments. */
     for (i=0; i<n_args; i++)
@@ -374,9 +374,9 @@ int db_server_query_bin_array(int sockfd, DB_Handle_t *db_handle)
     else
     {
       fprintf(stderr,"Query failed, check query string.\n");
-        
-        /* I think this is a bug. On error, I believe that -1 should be pushed into the socket. On error, 
-         * db_recv_binary_query() is expecting -1, not 0. But I don't want to change something that 
+
+        /* I think this is a bug. On error, I believe that -1 should be pushed into the socket. On error,
+         * db_recv_binary_query() is expecting -1, not 0. But I don't want to change something that
          * "has been working" for several years.
          *
          *   -Art 2014/01/24 */
@@ -385,7 +385,7 @@ int db_server_query_bin_array(int sockfd, DB_Handle_t *db_handle)
     free(query);
   }
 
-  return status;  
+  return status;
 }
 
 int db_server_query_bin_ntuple(int sockfd, DB_Handle_t *db_handle)
@@ -404,7 +404,7 @@ int db_server_query_bin_ntuple(int sockfd, DB_Handle_t *db_handle)
     char *buffer[MAXARG];
     char *pBuf = NULL;
     int status = -1;
-    
+
     /* Read the length of the db statement. */
     if (Readn(sockfd, &tmp, sizeof(int)) == sizeof(int))
     {
@@ -416,16 +416,16 @@ int db_server_query_bin_ntuple(int sockfd, DB_Handle_t *db_handle)
 
         /* Read the number of statement exes.*/
         nexes = Readint(sockfd);
-        
+
         /* Read the number of placeholders. */
         nargs = Readint(sockfd);
-        
+
         /* Read the data types of the placeholders. */
         for (iArg = 0; iArg < nargs; iArg++)
         {
             dbtypes[iArg] = (DB_Type_t)Readint(sockfd);
         }
-        
+
         /* Read the placeholder values. */
         for (iArg = 0; iArg < nargs; iArg++)
         {
@@ -437,11 +437,11 @@ int db_server_query_bin_ntuple(int sockfd, DB_Handle_t *db_handle)
                 XASSERT(buffer[iArg]);
                 values[iArg] = calloc(nexes, sizeof(void *));
                 XASSERT(values[iArg]);
-                
+
                 /* Read the string of placeholder string values into the buffer. */
                 Readn(sockfd, buffer[iArg], len);
                 pBuf = buffer[iArg];
-                
+
                 /* Put the placholder strings into the values[iArg] array. */
                 for (iExe = 0; iExe < nexes; iExe++)
                 {
@@ -467,14 +467,14 @@ int db_server_query_bin_ntuple(int sockfd, DB_Handle_t *db_handle)
                 db_ntoh(dbtypes[iArg], nexes, values[iArg]);
             }
         }
-        
+
         result = db_query_bin_ntuple(db_handle, stmnt, nexes, nargs, dbtypes, values);
-        
+
         if (result)
         {
             /* Send the number of DB_Binary_Result_t structs being returned. */
             Writeint(sockfd, nexes);
-            
+
             /* Send nexes DB_Binary_Result_t structs. */
             status = 0; /* Assume success - a failure will short the loop and set status to -1. */
             for (iExe = 0; iExe < nexes; iExe++)
@@ -485,12 +485,12 @@ int db_server_query_bin_ntuple(int sockfd, DB_Handle_t *db_handle)
                     fprintf(stderr, "Transmission of binary result failed.\n");
                     status = -1;
                     db_free_binary_result(exeResult);
-                    
+
                     /* The client will interpret a -1 as an error. */
                     Writeint(sockfd, -1);
                     break;
                 }
-                
+
                 db_free_binary_result(exeResult);
             }
         }
@@ -498,26 +498,26 @@ int db_server_query_bin_ntuple(int sockfd, DB_Handle_t *db_handle)
         {
             fprintf(stderr, "Prepared statement failed: %s.\n", stmnt);
             status = -1;
-            
+
             /* The client will interpret a -1 as an error. */
             Writeint(sockfd, -1);
         }
-        
+
         /* Free temporary buffers. */
         free(stmnt);
-        
+
         for (iArg = 0; iArg < nargs; iArg++)
         {
             if (buffer[iArg])
             {
                 free(buffer[iArg]);
             }
-            
+
             if (values[iArg])
             {
                 free(values[iArg]);
             }
-        }        
+        }
     }
 
     return status;
@@ -537,7 +537,7 @@ int db_server_query_txt(int sockfd, DB_Handle_t *db_handle)
     /* Get query string from client. */
     len = ntohl(tmp);
     query = alloca(len+1);
-    Readn(sockfd, query, len); 
+    Readn(sockfd, query, len);
     query[len] = '\0';
 
     /* Get compression flag from client. */
@@ -545,7 +545,7 @@ int db_server_query_txt(int sockfd, DB_Handle_t *db_handle)
 
     /* Query database. */
     result = db_query_txt(db_handle, query);
-      
+
     /* Send result to client. */
     if (result)
     {
@@ -590,9 +590,9 @@ int db_server_dms(int sockfd, DB_Handle_t *db_handle)
     len = ntohl(tmp);
     query = malloc(len+1);
     XASSERT(query);
-    Readn(sockfd, query, len); 
+    Readn(sockfd, query, len);
     query[len] = '\0';
-    
+
     status = db_dms(db_handle, &row_count, query);
     db_write_statncnt(sockfd, status, row_count);
     free(query);
@@ -622,7 +622,7 @@ int db_server_dms_array(int sockfd, DB_Handle_t *db_handle)
     len = ntohl(tmp);
     query = malloc(len+1);
     XASSERT(query);
-    Readn(sockfd, query, len); 
+    Readn(sockfd, query, len);
     query[len] = '\0';
 
     /* Receive the argument data in temporary buffers. */
@@ -666,7 +666,7 @@ int db_server_dms_array(int sockfd, DB_Handle_t *db_handle)
 	Readn(sockfd, argin[i], len);
 	db_ntoh(intype[i], n_rows, argin[i]);
       }
-    }            
+    }
 #ifdef DEBUG
     printf("Time to transfer data = %f.\n",StopTimer(1));
     StartTimer(1);
@@ -680,7 +680,7 @@ int db_server_dms_array(int sockfd, DB_Handle_t *db_handle)
 
     /* Return status to client. */
     db_write_statncnt(sockfd, status, row_count);
-    
+
     /* Free temporary buffers. */
     free(query);
     free(intype);
@@ -718,7 +718,7 @@ int db_server_bulk_insert_array(int sockfd, DB_Handle_t *db_handle)
     len = ntohl(tmp);
     table = malloc(len+1);
     XASSERT(table);
-    Readn(sockfd, table, len); 
+    Readn(sockfd, table, len);
     table[len] = '\0';
 
     /* Receive the argument data in temporary buffers. */
@@ -762,21 +762,20 @@ int db_server_bulk_insert_array(int sockfd, DB_Handle_t *db_handle)
 	Readn(sockfd, argin[i], len);
 	db_ntoh(intype[i], n_rows, argin[i]);
       }
-    }            
+    }
 #ifdef DEBUG
     printf("Time to transfer data = %f.\n",StopTimer(1));
     StartTimer(1);
 #endif
     /* Perform the actual database operation. */
-    status = db_bulk_insert_array(db_handle, table,
-				  n_rows, n_args, intype, argin);
+    status = db_bulk_insert_array(db_handle, table, n_rows, n_args, intype, argin, 0);
 #ifdef DEBUG
     printf("Time to perform query = %f.\n",StopTimer(1));
 #endif
 
     /* Return status to client. */
     Writeint(sockfd, status);
-    
+
     /* Free temporary buffers. */
     free(table);
     free(intype);
@@ -800,7 +799,7 @@ int db_server_sequence_drop(int sockfd, DB_Handle_t *db_handle)
 {
   int status;
   char *table;
-  
+
   table = receive_string(sockfd);
   status = db_sequence_drop(db_handle, table);
   Writeint(sockfd, status);
@@ -812,7 +811,7 @@ int db_server_sequence_create(int sockfd, DB_Handle_t *db_handle)
 {
   int status;
   char *table;
-  
+
   table = receive_string(sockfd);
   status = db_sequence_create(db_handle, table);
   Writeint(sockfd, status);
@@ -828,7 +827,7 @@ int db_server_sequence_getnext(int sockfd, DB_Handle_t *db_handle)
 
   table = receive_string(sockfd);
   id = db_sequence_getnext(db_handle, table);
-  Writelonglong(sockfd, id);  
+  Writelonglong(sockfd, id);
   free(table);
   if (id == -1LL)
     return 1;
@@ -842,7 +841,7 @@ int db_server_sequence_getnext_n(int sockfd, DB_Handle_t *db_handle)
   int i,n, status;
   long long *seqnums;
   struct iovec vec[2];
-  
+
 
   table = receive_string(sockfd);
   n = Readint(sockfd);
@@ -864,7 +863,7 @@ int db_server_sequence_getnext_n(int sockfd, DB_Handle_t *db_handle)
     vec[1].iov_base = seqnums;
     Writevn(sockfd, vec, 2);
     free(seqnums);
-  }    
+  }
   free(table);
   return status;
 }
@@ -872,7 +871,7 @@ int db_server_sequence_getnext_n(int sockfd, DB_Handle_t *db_handle)
 int db_server_sequence_getcurrent(int sockfd, DB_Handle_t *db_handle)
 {
   char *table;
-  
+
   table = receive_string(sockfd);
   Writelonglong(sockfd, db_sequence_getcurrent(db_handle, table));
   free(table);
@@ -882,7 +881,7 @@ int db_server_sequence_getcurrent(int sockfd, DB_Handle_t *db_handle)
 int db_server_sequence_getlast(int sockfd, DB_Handle_t *db_handle)
 {
   char *table;
-  
+
   table = receive_string(sockfd);
   Writelonglong(sockfd, db_sequence_getlast(db_handle, table));
   free(table);

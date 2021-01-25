@@ -44,9 +44,9 @@ int drms_dms_array(DRMS_Session_t *session, int *row_count, const char *query, i
 /** \brief Same as drms_dms() with DMS parameters in variable argument list, calls drms_dms_array()*/
 int drms_dmsv(DRMS_Session_t *session, int *row_count, const char *query, int n_rows, ...);
 /** \brief Bulk insert*/
-int drms_bulk_insert_array(DRMS_Session_t *session, char *table, int n_rows, int n_args, DB_Type_t *intype, void **argin );
+int drms_bulk_insert_array(DRMS_Env_t *env, DRMS_Session_t *session, char *table, int n_rows, int n_args, DB_Type_t *intype, void **argin);
 /** \brief Bulk insert with parameters in variable argument list, calls drms_bulk_insert_array() */
-int drms_bulk_insertv(DRMS_Session_t *session, char *table, int n_rows, int n_cols, ...);
+int drms_bulk_insertv(DRMS_Env_t *env, DRMS_Session_t *session, char *table, int n_rows, int n_cols, ...);
 
 int drms_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve);
 

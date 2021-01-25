@@ -185,7 +185,7 @@ int db_dms_array(DB_Handle_t *dbin, int *row_count, const char *oquery, int n_ro
 /* Bulk inserts via fast path interface. */
 int db_bulk_insertv(DB_Handle_t *dbin, char *table, int n_rows, int n_cols, ...);
 
-int db_bulk_insert_array(DB_Handle_t *dbin, char *table, int n_rows, int n_args, DB_Type_t *intype, void **argin );
+int db_bulk_insert_array(DB_Handle_t *dbin, char *table, int n_rows, int n_args, DB_Type_t *intype, void **argin, int print_sql_only);
 
 /* SQL query statement with result returned as table of strings. */
 DB_Text_Result_t *db_query_txt(DB_Handle_t *db, const char *query_string);

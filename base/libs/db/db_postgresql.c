@@ -1380,8 +1380,7 @@ int db_dms_array(DB_Handle_t  *dbin, int *row_count, const char *query, int n_ro
 
 
 
-int db_bulk_insert_array(DB_Handle_t  *dbin, char *table, int n_rows,
-			 int n_args, DB_Type_t *intype, void **argin )
+int db_bulk_insert_array(DB_Handle_t  *dbin, char *table, int n_rows, int n_args, DB_Type_t *intype, void **argin, int print_sql_only)
 {
   PGconn *db;
   PGresult *res;
@@ -1436,7 +1435,7 @@ int db_bulk_insert_array(DB_Handle_t  *dbin, char *table, int n_rows,
       bufsize += n_rows*db_sizeof(intype[j]);
   }
 
-  buf = malloc(bufsize);
+  buf = malloc(bufsize + 1);
   XASSERT(buf);
   p = buf;
   memcpy(p, header, 19);
@@ -1487,39 +1486,55 @@ int db_bulk_insert_array(DB_Handle_t  *dbin, char *table, int n_rows,
     goto failure;
   }
   /* Issue COPY statement. */
-  res = PQexec(db, query);
-  if (PQresultStatus(res) != PGRES_COPY_IN)
-  {
-    fprintf(stderr, "query failed: %s", PQerrorMessage(db));
-    PQclear(res);
-    status = 1;
-    goto failure;
-  }
-  PQclear(res);
-  /* Send the data across. */
-  if (PQputCopyData(db, buf, bufsize) == -1)
-  {
-    fprintf(stderr, "query failed: %s", PQerrorMessage(db));
-    status = 1;
-    goto failure;
-  }
-  /* Tell the server that we are done. */
-  if (PQputCopyEnd(db, NULL) == -1)
-  {
-    fprintf(stderr, "query failed: %s", PQerrorMessage(db));
-    status = 1;
-    goto failure;
-  }
-  /* Get result */
-  res = PQgetResult(db);
-  if (PQresultStatus(res) != PGRES_COMMAND_OK)
-  {
-    fprintf(stderr, "query failed: %s", PQerrorMessage(db));
-    PQclear(res);
-    status = 1;
-    goto failure;
-  }
-  PQclear(res);
+    if (print_sql_only)
+    {
+        printf(";%s\n", query);
+
+        /* print COPY data */
+        buf[bufsize] = '\0';
+        fputs(buf, stdout);
+    }
+    else
+    {
+        res = PQexec(db, query);
+
+        if (PQresultStatus(res) != PGRES_COPY_IN)
+        {
+            fprintf(stderr, "query failed: %s", PQerrorMessage(db));
+            PQclear(res);
+            status = 1;
+            goto failure;
+        }
+        PQclear(res);
+
+        /* Send the data across. */
+        if (PQputCopyData(db, buf, bufsize) == -1)
+        {
+            fprintf(stderr, "query failed: %s", PQerrorMessage(db));
+            status = 1;
+            goto failure;
+        }
+
+        /* Tell the server that we are done. */
+        if (PQputCopyEnd(db, NULL) == -1)
+        {
+            fprintf(stderr, "query failed: %s", PQerrorMessage(db));
+            status = 1;
+            goto failure;
+        }
+
+        /* Get result */
+        res = PQgetResult(db);
+        if (PQresultStatus(res) != PGRES_COMMAND_OK)
+        {
+            fprintf(stderr, "query failed: %s", PQerrorMessage(db));
+            PQclear(res);
+            status = 1;
+            goto failure;
+        }
+        PQclear(res);
+    }
+
 #if __BYTE_ORDER == __LITTLE_ENDIAN
   for (i=0; i<n_args; i++)
     db_byteswap(intype[i],n_rows,argin[i]);

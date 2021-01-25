@@ -28,13 +28,13 @@ DRMS_Env_t *drms_env;
 
 #ifndef FLIB
 /* For FORTRAN modules, gModArgs is defined in jsoc_main_sock_f.c from a common block
- * containing the arguments.  jsoc_main_sock_f.c allocates memory for gModArgs, and 
+ * containing the arguments.  jsoc_main_sock_f.c allocates memory for gModArgs, and
  * then deallocates the memory just before termination.
  */
 ModuleArgs_t *gModArgs = module_args;
 #endif
 
-CmdParams_t *GetGlobalCmdParams() 
+CmdParams_t *GetGlobalCmdParams()
 {
   return &cmdparams;
 }
@@ -57,12 +57,12 @@ static int FreeCmdparams(void *data)
    return 0;
 }
 
-int JSOCMAIN_Init(int argc, 
-		  char **argv, 
-		  const char *module_name, 
+int JSOCMAIN_Init(int argc,
+		  char **argv,
+		  const char *module_name,
 		  int *dolog,
 		  int *verbose,
-		  pid_t *drms_server_pid, 
+		  pid_t *drms_server_pid,
 		  pid_t *tee_pid,
 		  int *cont)
 {
@@ -80,22 +80,10 @@ int JSOCMAIN_Init(int argc,
    mn = module_name;
 
 #ifdef DEBUG_MEM
-   xmem_config (1, 1, 1, 1, 1000000, 1,0, 0); 
+   xmem_config (1, 1, 1, 1, 1000000, 1,0, 0);
 #endif
    /* Parse command line parameters */
-   snprintf(reservebuf, 
-            sizeof(reservebuf), 
-            "%s,%s,%s,%s,%s,%s,%s,%s,%s",
-            "L,Q,V,jsocmodver", 
-            kARCHIVEARG,
-            kRETENTIONARG,
-            kNewSuRetention,
-            kQUERYMEMARG,
-            kSERVERWAITARG,
-            kLoopConn,
-            kDBTimeOut,
-            kCreateShadows,
-            kDBUtf8ClientEncoding);
+   snprintf(reservebuf, sizeof(reservebuf), "%s,%s,%s,%s,%s,%s,%s,%s,%s", "L,Q,V,jsocmodver", kARCHIVEARG, kRETENTIONARG, kNewSuRetention, kQUERYMEMARG, kLoopConn, kDBTimeOut, kCreateShadows, kDBUtf8ClientEncoding, DRMS_ARG_PRINT_SQL);
    cmdparams_reserve(&cmdparams, reservebuf, "jsocmain");
 
    status = cmdparams_parse (&cmdparams, argc, argv);
@@ -112,17 +100,17 @@ int JSOCMAIN_Init(int argc,
    }
 
    printrel = cmdparams_isflagset(&cmdparams, "jsocmodver");
-   
+
    if (printrel)
    {
       char verstr[32];
       int isdev = 0;
 
       jsoc_getversion(verstr, sizeof(verstr), &isdev);
-      fprintf(stdout, 
-              "Module '%s' JSOC version is '%s' (%s)\n", 
-              module_name, 
-              verstr, 
+      fprintf(stdout,
+              "Module '%s' JSOC version is '%s' (%s)\n",
+              module_name,
+              verstr,
               isdev ? "development" : "release");
       return 0;
    }
@@ -162,19 +150,19 @@ int JSOCMAIN_Init(int argc,
 
       drms_env->selfstart = selfstart;
       drms_env->query_mem = cmdparams_get_int (&cmdparams, kQUERYMEMARG, NULL);
-    
+
       if (*dolog) {
 	 if (save_stdeo()) {
 	    printf ("Can't save stdout and stderr\n");
 	    return 1;
 	 }
-	 /* This program is now running in a DRMS session. 
+	 /* This program is now running in a DRMS session.
 	    Redirect or tee stdout and stderr to the session log directory. */
 	 CHECKSNPRINTF(snprintf (filename_o, 1023, "%s/%s.%04d.stdout.gz",
 				 drms_env->session->sudir, module_name, drms_env->session->clientid), 1023);
 	 CHECKSNPRINTF(snprintf (filename_e, 1023, "%s/%s.%04d.stderr.gz",
 				 drms_env->session->sudir, module_name, drms_env->session->clientid), 1023);
-      
+
 	 if (!quiet) {
 	    if ((*tee_pid = tee_stdio (filename_o, 0644, filename_e, 0644)) < 0)
 	      return -1;
@@ -182,15 +170,15 @@ int JSOCMAIN_Init(int argc,
 	   return -1;
       }
 #ifndef IDLLIB
-      /* Don't register an atexit function because this code is running inside 
+      /* Don't register an atexit function because this code is running inside
        * the IDL process.  When IDL exits, it always either returns from its own
        * main(), or it calls exit().  Therefore, atexit_action() is always called
        * from an IDL session.  Modules, on the other hand, exit by calling _exit()
        * when no errors have occurred.  atexit() should only be used from DRMS modules
        * where exit by anything other than _exit() denotes an error, and _exit()
-       * denotes success.  
+       * denotes success.
        */
-      atexit (atexit_action);   
+      atexit (atexit_action);
 #endif
    }
 
@@ -208,24 +196,24 @@ int JSOCMAIN_Init(int argc,
 
    if( (status = pthread_sigmask(SIG_BLOCK, &drms_env->signal_mask, &drms_env->old_signal_mask)))
    {
-      fprintf(stderr,"pthread_sigmask call failed with status = %d\n", status);          
+      fprintf(stderr,"pthread_sigmask call failed with status = %d\n", status);
       exit(1);
    }
 
    drms_env->main_thread = pthread_self();
 
-   /* Free cmd-params (valgrind reports this - let's just clean up so it doesn't show up on 
+   /* Free cmd-params (valgrind reports this - let's just clean up so it doesn't show up on
     * valgrind's radar). */
    CleanerData_t cleaner = {(pFn_Cleaner_t)FreeCmdparams, (void *)NULL};
-  
+
    drms_client_registercleaner(drms_env, &cleaner);
 
-   /* Spawn a thread that handles signals and controls server 
+   /* Spawn a thread that handles signals and controls server
       abort or shutdown. */
-   if( (status = pthread_create(&drms_env->signal_thread, NULL, &drms_signal_thread, 
+   if( (status = pthread_create(&drms_env->signal_thread, NULL, &drms_signal_thread,
                                 (void *) drms_env)) )
    {
-      fprintf(stderr,"Thread creation failed: %d\n", status);          
+      fprintf(stderr,"Thread creation failed: %d\n", status);
       exit(1);
    }
 
@@ -248,7 +236,7 @@ int JSOCMAIN_Term(int dolog, int verbose, pid_t drms_server_pid, pid_t tee_pid, 
    printf ("Module %s returned with status = %d\n", mn, abort_flag);
 #endif
 
-   /* This will close all fitsfile pointers, saving changes to the underlying fits files. 
+   /* This will close all fitsfile pointers, saving changes to the underlying fits files.
     * This must be done in the module process as that is the process that maintains the
     * list of open fitsfiles (see drms_server_commit() for more information). */
    if (!abort_flag)
@@ -259,20 +247,20 @@ int JSOCMAIN_Term(int dolog, int verbose, pid_t drms_server_pid, pid_t tee_pid, 
    /* DRMS Epilog:
       If abort_flag=0 all data records created by this module are inserted
       into the database and will become permanent at the next session commit.
-      If abort_flag=1 all data inserted into the database since the last 
+      If abort_flag=1 all data inserted into the database since the last
       session commit are rolled back and the DRMS session is aborted.
    */
    if (cmdparams_exists (&cmdparams, "DRMSSESSION")) {
       /* NOTICE: Some errors on the server side (e.g. failure to
-	 communicate with SUMS) will make drms_abort or drms_close fail with 
-	 error message "readn error: Connection reset by peer" because the 
-	 server is already stopped and has closed the socket connection. 
-	 This is not a problem since the server will already have shut itself 
+	 communicate with SUMS) will make drms_abort or drms_close fail with
+	 error message "readn error: Connection reset by peer" because the
+	 server is already stopped and has closed the socket connection.
+	 This is not a problem since the server will already have shut itself
 	 down cleanly.
       */
 
-      /* This will also cause global DRMS memory to be freed (like base_cleanup stuff) - 
-       * okay to do this since drms_free_env() knows what to do in a client environment. 
+      /* This will also cause global DRMS memory to be freed (like base_cleanup stuff) -
+       * okay to do this since drms_free_env() knows what to do in a client environment.
        */
       if (abort_flag) drms_abort (drms_env);
       else drms_close (drms_env, DRMS_INSERT_RECORD);
@@ -313,17 +301,17 @@ int JSOCMAIN_Term(int dolog, int verbose, pid_t drms_server_pid, pid_t tee_pid, 
    xmem_leakreport ();
 #endif
    fflush (stdout);
-   fflush (stderr); 
+   fflush (stderr);
 
    return status;
 }
 
-int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt)(void)) 
+int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt)(void))
 {
    int abort_flag = 0;
    int cont;
    int ret;
-    
+
    /* Passed between Init and Term. */
    int dolog;
    int verbose;
@@ -331,13 +319,13 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
    pid_t tee_pid = 0;
 
 
-   ret = JSOCMAIN_Init(argc, 
-		       argv, 
-		       module_name, 
-		       &dolog, 
-		       &verbose, 
-		       &drms_server_pid, 
-		       &tee_pid, 
+   ret = JSOCMAIN_Init(argc,
+		       argv,
+		       module_name,
+		       &dolog,
+		       &verbose,
+		       &drms_server_pid,
+		       &tee_pid,
 		       &cont);
 
    if (!cont)
@@ -360,14 +348,14 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
 
    if (drms_client_getsd() != kSHUTDOWN_UNINITIATED)
    {
-      /* signal thread is already shutting down, just wait for signal thread to finish 
+      /* signal thread is already shutting down, just wait for signal thread to finish
        * (which it won't do, because it is going to call exit, so this is an indefinite sleep). */
       if (sdsem)
       {
          sem_post(sdsem);
       }
 
-      pthread_join(drms_env->signal_thread, NULL);  
+      pthread_join(drms_env->signal_thread, NULL);
    }
    else
    {
@@ -400,13 +388,14 @@ pid_t drms_start_server (int verbose, int dolog)  {
   int loopconn;
     int createshadows = 0;
     int dbutf8clientencoding = 0;
+    int print_sql_only = 0;
   char drms_session[DRMS_MAXPATHLEN];
   char drms_host[DRMS_MAXPATHLEN];
   char drms_port[DRMS_MAXPATHLEN];
   int status = 0;
-    
-    
-	/* Get hostname, user, passwd and database name for establishing 
+
+
+	/* Get hostname, user, passwd and database name for establishing
 				    a connection to the DRMS database server */
 
     /* SERVER does not contain port information. Yet when dbhost is used in db_connect(), that function
@@ -424,22 +413,22 @@ pid_t drms_start_server (int verbose, int dolog)  {
   if ((dbhost = cmdparams_get_str (&cmdparams, "JSOC_DBHOST", NULL)) == NULL)
     {
         const char *sep = NULL;
-        
+
         dbhost =  SERVER;
         dbport = DRMSPGPORT;
-        
+
         /* Check for conflicting port numbers. */
         if ((sep = strchr(dbhost, ':')) != NULL)
         {
             if (strcmp(sep + 1, dbport) != 0)
             {
                 char *tmpBuf = strdup(dbhost);
-                
+
                 if (tmpBuf)
                 {
                     tmpBuf[sep - dbhost] = '\0';
                     fprintf(stderr, "WARNING: the port number in the SERVER localization parameter (%s) and in DRMSPGPORT (%s) conflict.\nThe DRMSPGPORT value will be used.\n", sep + 1, DRMSPGPORT);
-                    
+
                     snprintf(dbHostAndPort, sizeof(dbHostAndPort), "%s:%s", tmpBuf, dbport);
                     free(tmpBuf);
                     tmpBuf = NULL;
@@ -464,7 +453,7 @@ pid_t drms_start_server (int verbose, int dolog)  {
     {
         snprintf(dbHostAndPort, sizeof(dbHostAndPort), "%s", dbhost);
     }
-    
+
   if ((dbname = cmdparams_get_str (&cmdparams, "JSOC_DBNAME", NULL)) == NULL)
     dbname = DBNAME;
   if ((dbuser = cmdparams_get_str (&cmdparams, "JSOC_DBUSER", NULL)) == NULL)
@@ -477,9 +466,9 @@ pid_t drms_start_server (int verbose, int dolog)  {
   if (drms_cmdparams_exists(&cmdparams, kARCHIVEARG)) {
      archive = drms_cmdparams_get_int(&cmdparams, kARCHIVEARG, NULL);
   }
-    
+
     char errbuf[128];
-    
+
     retention = INT16_MIN;
     if (drms_cmdparams_exists(&cmdparams, kRETENTIONARG))
     {
@@ -491,7 +480,7 @@ pid_t drms_start_server (int verbose, int dolog)  {
                 snprintf(errbuf, sizeof(errbuf), "The value for %s must be a 15-bit positive integer.", kRETENTIONARG);
                 fprintf(stderr, errbuf);
             }
-            
+
             snprintf(errbuf, sizeof(errbuf), "Invalid value for %s.", kRETENTIONARG);
             fprintf(stderr, errbuf);
             return 1;
@@ -507,7 +496,7 @@ pid_t drms_start_server (int verbose, int dolog)  {
             retention = (int16_t)(retention & 0x7FFF);
         }
     }
-    
+
     newsuretention = INT16_MIN;
     if (drms_cmdparams_exists(&cmdparams, kNewSuRetention))
     {
@@ -519,7 +508,7 @@ pid_t drms_start_server (int verbose, int dolog)  {
                 snprintf(errbuf, sizeof(errbuf), "The value for %s must be a 15-bit positive integer.", kNewSuRetention);
                 fprintf(stderr, errbuf);
             }
-            
+
             snprintf(errbuf, sizeof(errbuf), "Invalid value for %s.", kNewSuRetention);
             fprintf(stderr, errbuf);
             return 1;
@@ -537,11 +526,11 @@ pid_t drms_start_server (int verbose, int dolog)  {
     }
 
   query_mem = 512;
-  if (cmdparams_exists (&cmdparams, kQUERYMEMARG)) 
+  if (cmdparams_exists (&cmdparams, kQUERYMEMARG))
     query_mem = cmdparams_get_int (&cmdparams, kQUERYMEMARG, NULL);
 
   server_wait = 0;
-  if (cmdparams_exists (&cmdparams, kSERVERWAITARG)) 
+  if (cmdparams_exists (&cmdparams, kSERVERWAITARG))
     server_wait = cmdparams_get_int (&cmdparams, kSERVERWAITARG, NULL);
 
     dbtimeout = INT_MIN;
@@ -549,16 +538,17 @@ pid_t drms_start_server (int verbose, int dolog)  {
     {
         dbtimeout = drms_cmdparams_get_int(&cmdparams, kDBTimeOut, NULL);
     }
-    
+
     dbutf8clientencoding = 0;
     if (drms_cmdparams_exists(&cmdparams, kDBUtf8ClientEncoding))
     {
         dbutf8clientencoding = drms_cmdparams_get_int(&cmdparams, kDBUtf8ClientEncoding, NULL);
     }
-    
-  loopconn = cmdparams_isflagset(&cmdparams, kLoopConn);
-     createshadows = cmdparams_isflagset(&cmdparams, kCreateShadows);
-  
+
+    loopconn = cmdparams_isflagset(&cmdparams, kLoopConn);
+    createshadows = cmdparams_isflagset(&cmdparams, kCreateShadows);
+    print_sql_only = cmdparams_isflagset(&cmdparams, DRMS_PRINT_SQL);
+
   int fd[2];
   pid_t	pid;
 
@@ -568,7 +558,7 @@ pid_t drms_start_server (int verbose, int dolog)  {
      * to write to only write to the pipe. So, we close the parent's write end of the pipe (fd[1]), and we close the child's
      * read end of the pipe (fd[0]).
      *
-     * The select() sys call BLOCKs until one of the file descriptors in the set of file descriptors in readfd (which contains only 
+     * The select() sys call BLOCKs until one of the file descriptors in the set of file descriptors in readfd (which contains only
      * fd[0], the fd for reading from the pipe) is reading for reading from.
      */
   if (pipe(fd) < 0) {
@@ -590,7 +580,7 @@ pid_t drms_start_server (int verbose, int dolog)  {
     line = malloc(bufsz);
     XASSERT(line);
     server_info[0] = '\0';
-    int  n;    
+    int  n;
     fd_set readfd;
     do {
       FD_ZERO(&readfd);
@@ -620,7 +610,7 @@ pid_t drms_start_server (int verbose, int dolog)  {
     if (verbose) {
       write(STDOUT_FILENO, server_info, strlen(server_info));
     }
-    
+
     char *p = strstr(server_info, "DRMS_HOST");
     sscanf(p, "DRMS_HOST = %s", drms_host);
     p = strstr(server_info, "DRMS_PORT");
@@ -650,9 +640,9 @@ pid_t drms_start_server (int verbose, int dolog)  {
     argv[i++] = strdup ("drms_server");
     argv[i++] = strdup ("-f");
     argv[i++] = strdup ("-b");
-    if (verbose) 
+    if (verbose)
       argv[i++] = strdup ("-V");
-    if (dolog) 
+    if (dolog)
       argv[i++] = strdup ("-L");
     argv[i] = malloc (strlen (dbHostAndPort)+DRMS_MAXNAMELEN);
     sprintf (argv[i++], "JSOC_DBHOST=%s", dbHostAndPort);
@@ -671,11 +661,11 @@ pid_t drms_start_server (int verbose, int dolog)  {
       sprintf (argv[i++], "JSOC_SESSIONNS=%s", sessionns);
     }
     if (archive == -1 || archive == 0 || archive == 1) {
-      argv[i] = malloc (DRMS_MAXNAMELEN*2);      
+      argv[i] = malloc (DRMS_MAXNAMELEN*2);
       sprintf (argv[i++], "%s=%d", kARCHIVEARG, archive);
     }
     if (retention > 0) {
-      argv[i] = malloc (DRMS_MAXNAMELEN*2);      
+      argv[i] = malloc (DRMS_MAXNAMELEN*2);
       sprintf (argv[i++], "%s=%d", kRETENTIONARG, retention);
     }
     if (newsuretention > 0)
@@ -691,7 +681,7 @@ pid_t drms_start_server (int verbose, int dolog)  {
       argv[i] = malloc (DRMS_MAXNAMELEN*2);
       sprintf (argv[i++], "%s=%d", kSERVERWAITARG, server_wait);
     }
-      
+
       if (INT_MIN != dbtimeout)
       {
           argv[i] = malloc (DRMS_MAXNAMELEN*2);
@@ -705,29 +695,37 @@ pid_t drms_start_server (int verbose, int dolog)  {
        snprintf(buf, sizeof(buf), "--%s", kLoopConn);
        argv[i++] = strdup(buf);
     }
-      
+
       if (createshadows)
       {
           char buf[256];
-          
+
           snprintf(buf, sizeof(buf), "--%s", kCreateShadows);
           argv[i++] = strdup(buf);
       }
-      
+
       if (dbutf8clientencoding)
       {
           argv[i] = malloc(DRMS_MAXNAMELEN * 2);
           snprintf(argv[i++], DRMS_MAXNAMELEN * 2, "%s=1", kDBUtf8ClientEncoding);
       }
 
+      if ()
+      {
+          char buf[256];
+
+          argv[i] = malloc(DRMS_MAXNAMELEN * 2);
+          snprintf(argv[i++], DRMS_MAXNAMELEN * 2, "%s=1", DRMS_PRINT_SQL);
+      }
+
     for (; i < num_args; i++) {
       argv[i] = NULL;
     }
-      
+
       if (verbose)
       {
           fprintf(stderr, "Calling drms_server with args:\n");
-          
+
           for (i = 0; i < num_args; i++)
           {
               fprintf(stderr, "\t%s\n", argv[i]);
@@ -749,4 +747,3 @@ pid_t drms_start_server (int verbose, int dolog)  {
   return(0);
 
 }
-

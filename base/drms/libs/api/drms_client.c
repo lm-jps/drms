@@ -989,8 +989,7 @@ int drms_dms_array(DRMS_Session_t *session, int *row_count, const char *query, i
 
 /* DMS function with variable argument list. Collects arguments in
    list of void * and calls db_dms_array. */
-int drms_bulk_insertv(DRMS_Session_t *session, char *table,
-		      int n_rows, int n_cols, ...)
+int drms_bulk_insertv(DRMS_Env_t *env, DRMS_Session_t *session, char *table, int n_rows, int n_cols, ...)
 {
   int status=1;
   DB_Type_t intype[MAXARG];
@@ -1065,23 +1064,19 @@ int drms_bulk_insertv(DRMS_Session_t *session, char *table,
   if (n_rows == -1)
     n_rows = 1;
 
-  status = drms_bulk_insert_array(session, table, n_rows, n_cols,
-				  intype, argin );
+  status = drms_bulk_insert_array(env, session, table, n_rows, n_cols, intype, argin);
   va_end(ap);
   return status;
 }
 
 
 
-int drms_bulk_insert_array(DRMS_Session_t *session,
-			   char *table, int n_rows, int n_args,
-			   DB_Type_t *intype, void **argin )
+int drms_bulk_insert_array(DRMS_Env_t *env, DRMS_Session_t *session, char *table, int n_rows, int n_args, DB_Type_t *intype, void **argin)
 {
 #ifndef DRMS_CLIENT
   if (session->db_direct)
   {
-    return db_bulk_insert_array(session->db_handle, table,
-				n_rows, n_args, intype, argin );
+    return db_bulk_insert_array(session->db_handle, table, n_rows, n_args, intype, argin, env->print_sql_only);
   }
   else
 #else
@@ -1089,8 +1084,7 @@ int drms_bulk_insert_array(DRMS_Session_t *session,
 #endif
   {
     drms_send_commandcode(session->sockfd, DRMS_BULK_INSERT_ARRAY);
-    return db_client_bulk_insert_array(session->sockfd,table,
-				       n_rows, n_args, intype, argin );
+    return db_client_bulk_insert_array(session->sockfd,table, n_rows, n_args, intype, argin);
   }
 }
 

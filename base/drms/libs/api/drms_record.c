@@ -1987,11 +1987,14 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *record
                     seriesname = NULL;
 
                     /* Shadow tables - this loop will not be executed for cursored queries. */
-                    for (i=0; i<rs->n; i++)
+                    if (rs)
                     {
-                        if (rs->records[i])
+                        for (i=0; i<rs->n; i++)
                         {
-                            rs->records[i]->lifetime = DRMS_PERMANENT;
+                            if (rs->records[i])
+                            {
+                                rs->records[i]->lifetime = DRMS_PERMANENT;
+                            }
                         }
                     }
 
@@ -2041,9 +2044,12 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *record
                     hcon_insert(realSets, buf, &rs);
 
                     /* Don't count num recs for cursored queries. */
-                    if (rs->n > 0)
+                    if (rs)
                     {
-                        nRecs += rs->n;
+                        if (rs->n > 0)
+                        {
+                            nRecs += rs->n;
+                        }
                     }
                 }
 
@@ -2066,8 +2072,8 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *record
                 ret->ss_currentrecs = NULL;
                 ret->cursor = NULL;
                 ret->env = env;
-                rs->ss_template_keys = NULL;
-                rs->ss_template_segs = NULL;
+                ret->ss_template_keys = NULL;
+                ret->ss_template_segs = NULL;
             }
         }
 
@@ -5757,7 +5763,7 @@ DRMS_Record_t *drms_retrieve_record(DRMS_Env_t *env, const char *seriesname,
  * statement), and the second should be a statement that is appropriate for a
  * cursor - one that selects rows from the series table.
  */
-static int ParseAndExecTempTableSQL(DRMS_Session_t *session, char **pquery)
+static int ParseAndExecTempTableSQL(DRMS_Env_t *env, DRMS_Session_t *session, char **pquery)
 {
     int istat = DRMS_SUCCESS;
     char *query = NULL;
@@ -5805,10 +5811,17 @@ static int ParseAndExecTempTableSQL(DRMS_Session_t *session, char **pquery)
 
         if (istat == DRMS_SUCCESS && tempTab == 1)
         {
-            /* Evaluate temporary-table statement. */
-            if (drms_dms(session, NULL, query))
+            if (env->print_sql_only)
             {
-                istat = DRMS_ERROR_QUERYFAILED;
+                printf("%s;\n", query);
+            }
+            else
+            {
+                /* Evaluate temporary-table statement. */
+                if (drms_dms(session, NULL, query))
+                {
+                    istat = DRMS_ERROR_QUERYFAILED;
+                }
             }
         }
 
@@ -5909,11 +5922,17 @@ DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *se
      * support this. If this is the case, then the first command will be a command that
      * creates a temporary table (used by the second command). So, we need to separate the
      * command, and issue the temp-table command separately. */
-    if (ParseAndExecTempTableSQL(env->session, &query))
+    if (ParseAndExecTempTableSQL(env, env->session, &query))
     {
         stat = DRMS_ERROR_QUERYFAILED;
         fprintf(stderr, "Failed in drms_retrieve_records, query = '%s'\n",query);
         goto bailout1;
+    }
+
+    if (env->print_sql_only)
+    {
+        printf("%s;\n", query);
+        return NULL;
     }
 
   TIME(qres = drms_query_bin(env->session, query));
@@ -7723,7 +7742,6 @@ char *drms_query_string(DRMS_Env_t *env, const char *seriesname, char *where, co
 {
     DRMS_Record_t *template;
     char *field_list = NULL;
-    char *query = NULL;
     char *series_lower;
     long long recsize;
     char *pidx_names = NULL; // comma separated pidx keyword names
@@ -7976,7 +7994,7 @@ char *drms_query_string(DRMS_Env_t *env, const char *seriesname, char *where, co
                 goto bailout;
             }
 
-            field_list = columnList(template, NULL, keys, NULL, 1, NULL, NULL);
+            field_list = columnList(template, NULL, keys, NULL, openLinks, NULL, NULL);
         }
         else
         {
@@ -8495,9 +8513,9 @@ char *drms_query_string(DRMS_Env_t *env, const char *seriesname, char *where, co
   /* Do query to retrieve record meta-data. */
   /* Do not use a static buffer to hold the resulting string. That buffer has been overrun several times. This is a security
    * issue (since a public user can cause the overrun by providing a certain query). */
-  cmdSz = strlen(field_list)+DRMS_MAXQUERYLEN;
-  query = calloc(1, cmdSz);
-  XASSERT(query);
+  cmdSz = strlen(field_list) + DRMS_MAXQUERYLEN;
+  rquery = calloc(1, cmdSz);
+  XASSERT(rquery);
 
   /* If this is a [! ... !] query, then we want to get rid of the 'group by' clause and replace
    * the max(recnum) in the subquery with simply recnum. We can do that by just forcing the
@@ -8512,44 +8530,44 @@ char *drms_query_string(DRMS_Env_t *env, const char *seriesname, char *where, co
        if (qtype != DRMS_QUERY_N)
        {
             /* p += sprintf(p, "select %s from %s, (select q2.max1 as max from  (select max(recnum) as max1, min(q1.max) as max2 from %s, (select %s, max(recnum) from %s where %s group by %s) as q1 where %s.%s = q1.%s", field_list, series_lower, series_lower, pidx_names, series_lower, where, pidx_names, series_lower, template->seriesinfo->pidx_keywords[0]->info->name, template->seriesinfo->pidx_keywords[0]->info->name); */
-            query = base_strcatalloc(query, "select ", &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, field_list, &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, " from ", &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, series_lower, &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, ", (select q2.max1 as max from  (select max(recnum) as max1, min(q1.max) as max2 from ", &cmdSz);  XASSERT(query);
-            query = base_strcatalloc(query, series_lower, &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, ", (select ", &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, pidx_names, &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, ", max(recnum) from ", &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, series_lower, &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, " where ", &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, where, &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, " group by ", &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, pidx_names, &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, ") as q1 where ", &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, series_lower, &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, ".", &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, template->seriesinfo->pidx_keywords[0]->info->name, &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, " = q1.", &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, template->seriesinfo->pidx_keywords[0]->info->name, &cmdSz); XASSERT(query);
+            rquery = base_strcatalloc(rquery, "select ", &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, field_list, &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, " from ", &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, series_lower, &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, ", (select q2.max1 as max from  (select max(recnum) as max1, min(q1.max) as max2 from ", &cmdSz);  XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, series_lower, &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, ", (select ", &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, pidx_names, &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, ", max(recnum) from ", &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, series_lower, &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, " where ", &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, where, &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, " group by ", &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, pidx_names, &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, ") as q1 where ", &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, series_lower, &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, ".", &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, template->seriesinfo->pidx_keywords[0]->info->name, &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, " = q1.", &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, template->seriesinfo->pidx_keywords[0]->info->name, &cmdSz); XASSERT(rquery);
 
             for (int i = 1; i < template->seriesinfo->pidx_num; i++)
             {
                 /* p += sprintf(p, " and %s.%s = q1.%s", series_lower, template->seriesinfo->pidx_keywords[i]->info->name, template->seriesinfo->pidx_keywords[i]->info->name); */
-                query = base_strcatalloc(query, " and ", &cmdSz); XASSERT(query);
-                query = base_strcatalloc(query, series_lower, &cmdSz); XASSERT(query);
-                query = base_strcatalloc(query, ".", &cmdSz); XASSERT(query);
-                query = base_strcatalloc(query, template->seriesinfo->pidx_keywords[i]->info->name, &cmdSz); XASSERT(query);
-                query = base_strcatalloc(query, " = q1.", &cmdSz); XASSERT(query);
-                query = base_strcatalloc(query, template->seriesinfo->pidx_keywords[i]->info->name, &cmdSz); XASSERT(query);
+                rquery = base_strcatalloc(rquery, " and ", &cmdSz); XASSERT(rquery);
+                rquery = base_strcatalloc(rquery, series_lower, &cmdSz); XASSERT(rquery);
+                rquery = base_strcatalloc(rquery, ".", &cmdSz); XASSERT(rquery);
+                rquery = base_strcatalloc(rquery, template->seriesinfo->pidx_keywords[i]->info->name, &cmdSz); XASSERT(rquery);
+                rquery = base_strcatalloc(rquery, " = q1.", &cmdSz); XASSERT(rquery);
+                rquery = base_strcatalloc(rquery, template->seriesinfo->pidx_keywords[i]->info->name, &cmdSz); XASSERT(rquery);
             }
 
             /* p += sprintf(p, " group by %s) as q2 where max1 = max2) as q3 where %s.recnum = q3.max", pidx_names, series_lower); */
-            query = base_strcatalloc(query, " group by ", &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, pidx_names, &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, ") as q2 where max1 = max2) as q3 where ", &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, series_lower, &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, ".recnum = q3.max", &cmdSz); XASSERT(query);
+            rquery = base_strcatalloc(rquery, " group by ", &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, pidx_names, &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, ") as q2 where max1 = max2) as q3 where ", &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, series_lower, &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, ".recnum = q3.max", &cmdSz); XASSERT(rquery);
        }
        else
        {
@@ -8567,24 +8585,24 @@ char *drms_query_string(DRMS_Env_t *env, const char *seriesname, char *where, co
                        template->seriesinfo->pidx_keywords[0]->info->name,
                        template->seriesinfo->pidx_keywords[0]->info->name);
              */
-            query = base_strcatalloc(query, "select ", &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, field_list, &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, " from ", &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, series_lower, &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, ", (select q2.max1 as max from (select max(recnum) as max1, min(q1.max) as max2 from ", &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, series_lower, &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, ", (select ", &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, pidx_names_n, &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, ", max(recnum) from (", &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, limitedtable, &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, ") as limited group by ", &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, pidx_names_n, &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, ") as q1 where ", &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, series_lower, &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, ".", &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, template->seriesinfo->pidx_keywords[0]->info->name, &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, " = q1.", &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, template->seriesinfo->pidx_keywords[0]->info->name, &cmdSz); XASSERT(query);
+            rquery = base_strcatalloc(rquery, "select ", &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, field_list, &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, " from ", &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, series_lower, &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, ", (select q2.max1 as max from (select max(recnum) as max1, min(q1.max) as max2 from ", &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, series_lower, &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, ", (select ", &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, pidx_names_n, &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, ", max(recnum) from (", &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, limitedtable, &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, ") as limited group by ", &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, pidx_names_n, &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, ") as q1 where ", &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, series_lower, &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, ".", &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, template->seriesinfo->pidx_keywords[0]->info->name, &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, " = q1.", &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, template->seriesinfo->pidx_keywords[0]->info->name, &cmdSz); XASSERT(rquery);
 
           for (int i = 1; i < template->seriesinfo->pidx_num; i++)
           {
@@ -8595,12 +8613,12 @@ char *drms_query_string(DRMS_Env_t *env, const char *seriesname, char *where, co
                           template->seriesinfo->pidx_keywords[i]->info->name);
               */
 
-            query = base_strcatalloc(query, " and ", &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, series_lower, &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, ".", &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, template->seriesinfo->pidx_keywords[i]->info->name, &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, " = q1.", &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, template->seriesinfo->pidx_keywords[i]->info->name, &cmdSz); XASSERT(query);
+            rquery = base_strcatalloc(rquery, " and ", &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, series_lower, &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, ".", &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, template->seriesinfo->pidx_keywords[i]->info->name, &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, " = q1.", &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, template->seriesinfo->pidx_keywords[i]->info->name, &cmdSz); XASSERT(rquery);
           }
 
             /* p += sprintf(p,
@@ -8608,11 +8626,11 @@ char *drms_query_string(DRMS_Env_t *env, const char *seriesname, char *where, co
                        pidx_names,
                        series_lower);
              */
-            query = base_strcatalloc(query, " group by ", &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, pidx_names, &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, ") as q2 where max1 = max2) as q3 where ", &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, series_lower, &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, ".recnum = q3.max", &cmdSz); XASSERT(query);
+            rquery = base_strcatalloc(rquery, " group by ", &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, pidx_names, &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, ") as q2 where max1 = max2) as q3 where ", &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, series_lower, &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, ".recnum = q3.max", &cmdSz); XASSERT(rquery);
        }
     }
     else
@@ -8624,25 +8642,25 @@ char *drms_query_string(DRMS_Env_t *env, const char *seriesname, char *where, co
        {
           /* p += sprintf(p, "select %s from %s where recnum in (select max(recnum) from %s where 1=1 ", field_list, series_lower, series_lower); */
 
-            query = base_strcatalloc(query, "select ", &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, field_list, &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, " from ", &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, series_lower, &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, " where recnum in (select max(recnum) from ", &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, series_lower, &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, " where 1=1 ", &cmdSz); XASSERT(query);
+            rquery = base_strcatalloc(rquery, "select ", &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, field_list, &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, " from ", &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, series_lower, &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, " where recnum in (select max(recnum) from ", &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, series_lower, &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, " where 1=1 ", &cmdSz); XASSERT(rquery);
 
             if (where && *where)
             {
                 /* p += sprintf(p, " and %s", where); */
-                query = base_strcatalloc(query, " and ", &cmdSz); XASSERT(query);
-                query = base_strcatalloc(query, where, &cmdSz); XASSERT(query);
+                rquery = base_strcatalloc(rquery, " and ", &cmdSz); XASSERT(rquery);
+                rquery = base_strcatalloc(rquery, where, &cmdSz); XASSERT(rquery);
             }
 
             /* p += sprintf(p, " group by %s )", pidx_names); */
-            query = base_strcatalloc(query, " group by ", &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, pidx_names, &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, " )", &cmdSz); XASSERT(query);
+            rquery = base_strcatalloc(rquery, " group by ", &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, pidx_names, &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, " )", &cmdSz); XASSERT(rquery);
        }
        else
        {
@@ -8655,30 +8673,30 @@ char *drms_query_string(DRMS_Env_t *env, const char *seriesname, char *where, co
                        pidx_names_n);
              */
 
-            query = base_strcatalloc(query, "select ", &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, field_list, &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, " from ", &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, series_lower, &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, " where recnum in (select max(recnum) from (", &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, limitedtable, &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, ") as limited group by ", &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, pidx_names_n, &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, ")", &cmdSz); XASSERT(query);
+            rquery = base_strcatalloc(rquery, "select ", &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, field_list, &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, " from ", &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, series_lower, &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, " where recnum in (select max(recnum) from (", &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, limitedtable, &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, ") as limited group by ", &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, pidx_names_n, &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, ")", &cmdSz); XASSERT(rquery);
        }
     }
   } else { // query on all records including all versions
      /* same for  DRMS_QUERY_N and other types of queries */
      /* p += sprintf(p, "select %s from %s where 1 = 1", field_list, series_lower); */
-     query = base_strcatalloc(query, "select ", &cmdSz); XASSERT(query);
-     query = base_strcatalloc(query, field_list, &cmdSz); XASSERT(query);
-     query = base_strcatalloc(query, " from ", &cmdSz); XASSERT(query);
-     query = base_strcatalloc(query, series_lower, &cmdSz); XASSERT(query);
-     query = base_strcatalloc(query, " where 1 = 1", &cmdSz); XASSERT(query);
+     rquery = base_strcatalloc(rquery, "select ", &cmdSz); XASSERT(rquery);
+     rquery = base_strcatalloc(rquery, field_list, &cmdSz); XASSERT(rquery);
+     rquery = base_strcatalloc(rquery, " from ", &cmdSz); XASSERT(rquery);
+     rquery = base_strcatalloc(rquery, series_lower, &cmdSz); XASSERT(rquery);
+     rquery = base_strcatalloc(rquery, " where 1 = 1", &cmdSz); XASSERT(rquery);
 
      if (where && *where) {
         /* p += sprintf(p, " and %s", where); */
-        query = base_strcatalloc(query, " and ", &cmdSz); XASSERT(query);
-        query = base_strcatalloc(query, where, &cmdSz); XASSERT(query);
+        rquery = base_strcatalloc(rquery, " and ", &cmdSz); XASSERT(rquery);
+        rquery = base_strcatalloc(rquery, where, &cmdSz); XASSERT(rquery);
 
      }
   }
@@ -8693,8 +8711,8 @@ char *drms_query_string(DRMS_Env_t *env, const char *seriesname, char *where, co
         if (template->seriesinfo->pidx_num > 0)
         {
            /* p += sprintf(p, " order by %s", nrecs > 0 ? pidx_names : pidx_names_desc); */
-           query = base_strcatalloc(query, " order by ", &cmdSz); XASSERT(query);
-           query = base_strcatalloc(query, nrecs > 0 ? pidx_names : pidx_names_desc, &cmdSz); XASSERT(query);
+           rquery = base_strcatalloc(rquery, " order by ", &cmdSz); XASSERT(rquery);
+           rquery = base_strcatalloc(rquery, nrecs > 0 ? pidx_names : pidx_names_desc, &cmdSz); XASSERT(rquery);
         }
 
         if (abs(nrecs) < *limit)
@@ -8706,8 +8724,8 @@ char *drms_query_string(DRMS_Env_t *env, const char *seriesname, char *where, co
         {
             /* p += sprintf(p, " limit %lld", limit); */
             snprintf(numBuf, sizeof(numBuf), "%lld", actualLimit);
-            query = base_strcatalloc(query, " limit ", &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, numBuf, &cmdSz); XASSERT(query);
+            rquery = base_strcatalloc(rquery, " limit ", &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, numBuf, &cmdSz); XASSERT(rquery);
         }
      }
      else
@@ -8715,16 +8733,16 @@ char *drms_query_string(DRMS_Env_t *env, const char *seriesname, char *where, co
         if (template->seriesinfo->pidx_num > 0)
         {
             /* p += sprintf(p, " order by %s", pidx_names); */
-            query = base_strcatalloc(query, " order by ", &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, pidx_names, &cmdSz); XASSERT(query);
+            rquery = base_strcatalloc(rquery, " order by ", &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, pidx_names, &cmdSz); XASSERT(rquery);
         }
 
         if (limitRows)
         {
             /* p += sprintf(p, " limit %lld", limit); */
             snprintf(numBuf, sizeof(numBuf), "%lld", actualLimit);
-            query = base_strcatalloc(query, " limit ", &cmdSz); XASSERT(query);
-            query = base_strcatalloc(query, numBuf, &cmdSz); XASSERT(query);
+            rquery = base_strcatalloc(rquery, " limit ", &cmdSz); XASSERT(rquery);
+            rquery = base_strcatalloc(rquery, numBuf, &cmdSz); XASSERT(rquery);
         }
      }
   }
@@ -8732,7 +8750,7 @@ char *drms_query_string(DRMS_Env_t *env, const char *seriesname, char *where, co
   if (qtype == DRMS_QUERY_FL && unique)
   {
       /* first-last record notation */
-        size_t qsize = strlen(query) * 2;
+        size_t qsize = strlen(rquery) * 2;
         char *modquery = NULL;
         modquery = calloc(1, qsize);
         XASSERT(modquery);
@@ -8748,18 +8766,18 @@ char *drms_query_string(DRMS_Env_t *env, const char *seriesname, char *where, co
         modquery = base_strcatalloc(modquery, "select ", &qsize); XASSERT(modquery);
         modquery = base_strcatalloc(modquery, field_list, &qsize); XASSERT(modquery);
         modquery = base_strcatalloc(modquery, " from (", &qsize); XASSERT(modquery);
-        modquery = base_strcatalloc(modquery, query, &qsize); XASSERT(modquery);
+        modquery = base_strcatalloc(modquery, rquery, &qsize); XASSERT(modquery);
         modquery = base_strcatalloc(modquery, ") as subfoo group by ", &qsize); XASSERT(modquery);
         modquery = base_strcatalloc(modquery, field_list, &qsize); XASSERT(modquery);
         modquery = base_strcatalloc(modquery, " order by ", &qsize); XASSERT(modquery);
         modquery = base_strcatalloc(modquery, field_list, &qsize); XASSERT(modquery);
 
-     if (query)
+     if (rquery)
      {
-        free(query);
+        free(rquery);
      }
 
-     query = modquery;
+     rquery = modquery;
   }
 
   free(series_lower);
@@ -8804,10 +8822,10 @@ char *drms_query_string(DRMS_Env_t *env, const char *seriesname, char *where, co
 
   if (env->verbose)
   {
-     printf("query (the big enchilada): %s\n", query);
+     printf("query (the big enchilada): %s\n", rquery);
   }
 
-  return query;
+  return rquery;
 }
 
 
@@ -9555,93 +9573,107 @@ int drms_populate_record(DRMS_Env_t *env, DRMS_Record_t *rec, long long recnum, 
  *  record structure with the result from a database query
  */
 int drms_populate_records(DRMS_Env_t *env, DRMS_RecordSet_t *rs, DB_Binary_Result_t *qres, int openLinks)
-  {
-  int row, col, i;
-  DRMS_Keyword_t *key;
-  DRMS_Link_t *link;
-  DRMS_Segment_t *seg;
-  DRMS_Record_t *rec;
-  DB_Type_t column_type;
-  int segnum;
-  char *record_value;
-  HIterator_t *last = NULL;
+{
+    int row, col, i;
+    DRMS_Keyword_t *key;
+    DRMS_Link_t *link;
+    DRMS_Segment_t *seg;
+    DRMS_Record_t *rec;
+    DB_Type_t column_type;
+    int segnum;
+    char *record_value;
+    HIterator_t *last = NULL;
 
-  CHECKNULL(rs);
-  CHECKNULL(qres);
+    CHECKNULL(rs);
+    CHECKNULL(qres);
 
-  if (rs->n != qres->num_rows)
-    return DRMS_ERROR_BADQUERYRESULT;
-
-  /* Believe it or not, every use of a record SHOULD occur only after obtaining
-   * the server lock. This is because records are cached in the record cache, which
-   * is a structure that lives in the DRMS_Env_t struct. */
-#ifndef DRMS_CLIENT
-  drms_lock_server(env);
-#endif
-  for (row=0; row<qres->num_rows; row++) {
-    rec = rs->records[row];
-    col = 0;
-    /* Absolute record number. */
-    rec->recnum = db_binary_field_getlonglong(qres, row, col++);
-    /* Set up storageunit info. */
-    rec->sunum = db_binary_field_getlonglong(qres, row, col++);
-    /* Storage unit slot number */
-    rec->slotnum = db_binary_field_getint(qres, row, col++);
-
-    /* Session ID of creating session. */
-    rec->sessionid = db_binary_field_getint(qres, row, col++);
-
-    /* Session namespace of creating session.*/
-    rec->sessionns = strdup(db_binary_field_get(qres, row, col++));
-
-    /* Populate Links. */
-    if (openLinks && hcon_size(&rec->links) > 0) {
-       while ((link = drms_record_nextlink(rec, &last))) {
-	link->record = rec; /* parent link. */
-	if (link->info->type == STATIC_LINK)
-	  link->recnum = db_binary_field_getlonglong(qres, row, col++);
-	else {
-					      /*  Oh crap! A dynamic link... */
-	  link->isset = db_binary_field_getint(qres, row, col);
-	  col++;
-		/*  There is a field for each keyword in the primary index
-				   of the target series...walk through them  */
-	  for (i = 0; i < link->info->pidx_num; i++, col++) {
-	    column_type = db_binary_column_type (qres, col);
-	    record_value = db_binary_field_get (qres, row, col);
-	    drms_copy_db2drms (link->info->pidx_type[i], &link->pidx_value[i],
-		column_type, record_value);
-	  }
-	}
-      }
-
-       if (last)
-       {
-          hiter_destroy(&last);
-       }
+    if (rs->n != qres->num_rows)
+    {
+        return DRMS_ERROR_BADQUERYRESULT;
     }
 
-    /* Populate keywords. */
-    if (hcon_size(&rec->keywords) > 0) {
+    /* Every use of a record SHOULD occur only after obtaining
+     * the server lock. This is because records are cached in the record cache, which
+     * is a structure that lives in the DRMS_Env_t struct. */
+#ifndef DRMS_CLIENT
+    drms_lock_server(env);
+#endif
+    for (row=0; row<qres->num_rows; row++)
+    {
+        rec = rs->records[row];
+        col = 0;
+        /* Absolute record number. */
+        rec->recnum = db_binary_field_getlonglong(qres, row, col++);
+        /* Set up storageunit info. */
+        rec->sunum = db_binary_field_getlonglong(qres, row, col++);
+        /* Storage unit slot number */
+        rec->slotnum = db_binary_field_getint(qres, row, col++);
 
-       while ((key = drms_record_nextkey(rec, &last, 0)) ) {
-	key->record = rec; /* parent link. */
-	if (likely (!key->info->islink && !drms_keyword_isconstant(key))) {
-		/*  Copy value only if not null. Otherwise use default value
-					already set from the record template  */
-	  if (!qres->column[col].is_null[row]) {
-	    column_type = db_binary_column_type (qres, col);
-	    record_value = db_binary_field_get (qres, row, col);
-	    drms_copy_db2drms (key->info->type, &key->value,
-		column_type, record_value);
-	  }
-	  col++;
-	}
-      }
-       if (last)
-       {
-          hiter_destroy(&last);
-       }
+        /* Session ID of creating session. */
+        rec->sessionid = db_binary_field_getint(qres, row, col++);
+
+        /* Session namespace of creating session.*/
+        rec->sessionns = strdup(db_binary_field_get(qres, row, col++));
+
+        /* Populate Links. */
+        if (openLinks && hcon_size(&rec->links) > 0)
+        {
+            while ((link = drms_record_nextlink(rec, &last)))
+            {
+                link->record = rec; /* parent link. */
+
+                if (link->info->type == STATIC_LINK)
+                {
+                    link->recnum = db_binary_field_getlonglong(qres, row, col++);
+                }
+                else
+                {
+                    link->isset = db_binary_field_getint(qres, row, col);
+                    col++;
+
+                    /*  There is a field for each keyword in the primary index
+                       of the target series...walk through them  */
+                    for (i = 0; i < link->info->pidx_num; i++, col++)
+                    {
+                        column_type = db_binary_column_type (qres, col);
+                        record_value = db_binary_field_get (qres, row, col);
+                        drms_copy_db2drms (link->info->pidx_type[i], &link->pidx_value[i], column_type, record_value);
+                    }
+                }
+            }
+
+           if (last)
+           {
+              hiter_destroy(&last);
+           }
+        }
+
+        /* Populate keywords. */
+        if (hcon_size(&rec->keywords) > 0)
+        {
+            while ((key = drms_record_nextkey(rec, &last, 0)) )
+            {
+                key->record = rec; /* parent link. */
+                if (likely (!key->info->islink && !drms_keyword_isconstant(key)))
+                {
+                    /* copy value only if not null. Otherwise use default value
+                     * already set from the record template  */
+                    if (!qres->column[col].is_null[row])
+                    {
+                        column_type = db_binary_column_type (qres, col);
+                        record_value = db_binary_field_get (qres, row, col);
+                        drms_copy_db2drms (key->info->type, &key->value,
+                        column_type, record_value);
+                    }
+
+                    col++;
+                }
+            }
+
+        if (last)
+        {
+            hiter_destroy(&last);
+        }
     }
 
     /* Segment fields. */
@@ -10372,8 +10404,7 @@ int drms_insert_records(DRMS_RecordSet_t *recset)
   printf("col = %d, num_args=%d\n",col,num_args);
 #endif
   XASSERT(col==num_args);
-  status = drms_bulk_insert_array(env->session, query, num_rows, num_args,
-				  intype, (void **)argin);
+  status = drms_bulk_insert_array(env, env->session, query, num_rows, num_args, intype, (void **)argin);
 
   for (col=0; col<num_args; col++)
     free(argin[col]);
@@ -13790,7 +13821,7 @@ DRMS_RecordSet_t *drms_open_recordset_internal(DRMS_Env_t *env, const char *rsqu
                     {
                         /* Check for the temporary-table statement. If it exists, evaluate it
                          * now, then pass on the second statement to the cursor. */
-                        if (ParseAndExecTempTableSQL(env->session, &cursorselect))
+                        if (ParseAndExecTempTableSQL(env, env->session, &cursorselect))
                         {
                             stat = DRMS_ERROR_QUERYFAILED;
                         }
@@ -13823,11 +13854,19 @@ DRMS_RecordSet_t *drms_open_recordset_internal(DRMS_Env_t *env, const char *rsqu
                                     fprintf(stdout, "Cursor declaration ==> %s\n", cursorquery);
                                 }
 
-                                if (drms_dms(env->session, NULL, cursorquery))
+                                if (env->print_sql_only)
                                 {
-                                    stat = DRMS_ERROR_QUERYFAILED;
+                                    printf("%s;\n", cursorquery);
                                 }
                                 else
+                                {
+                                    if (drms_dms(env->session, NULL, cursorquery))
+                                    {
+                                        stat = DRMS_ERROR_QUERYFAILED;
+                                    }
+                                }
+
+                                if (stat == DRMS_SUCCESS)
                                 {
                                     rs->cursor->names[iset] = strdup(cursorname);
                                 }
@@ -14114,9 +14153,17 @@ void drms_free_cursor(DRMS_RecSetCursor_t **cursor)
                if ((*cursor)->names[iname])
                {
                   snprintf(sqlquery, sizeof(sqlquery), "CLOSE %s", (*cursor)->names[iname]);
-                  if (drms_dms((*cursor)->env->session, NULL, sqlquery))
+
+                  if ((*cursor)->env->print_sql_only)
                   {
-                     fprintf(stderr, "Failed to close cursor '%s'.\n",(*cursor)->names[iname]);
+                      printf("%s;\n", sqlquery);
+                  }
+                  else
+                  {
+                      if (drms_dms((*cursor)->env->session, NULL, sqlquery))
+                      {
+                         fprintf(stderr, "Failed to close cursor '%s'.\n",(*cursor)->names[iname]);
+                      }
                   }
 
                   free((*cursor)->names[iname]);
@@ -14405,14 +14452,22 @@ DRMS_Array_t *drms_record_getvector(DRMS_Env_t *env,
                  * support this. If this is the case, then the first command will be a command that
                  * creates a temporary table (used by the second command). So, we need to separate the
                  * command, and issue the temp-table command separately. */
-                if (ParseAndExecTempTableSQL(env->session, &query))
+                if (ParseAndExecTempTableSQL(env, env->session, &query))
                 {
                    stat = DRMS_ERROR_QUERYFAILED;
                    fprintf(stderr, "Failed in drms_record_getvector, query = '%s'\n",query);
                    goto failure;
                 }
 
-                bres = drms_query_bin(env->session,  query);
+                if (env->print_sql_only)
+                {
+                    printf("%s;\n", query);
+                    bres = NULL;
+                }
+                else
+                {
+                    bres = drms_query_bin(env->session,  query);
+                }
 
                 if (bres)
                 {

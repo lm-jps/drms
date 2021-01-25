@@ -16,7 +16,7 @@ named parameter file; or the default values
 specified in the module source, if any.  If an argument cannot be otherwise
 evaluated, a notification message is issued and the driver program exits.
 If all the argument values exist, a DRMS session is opened or a connection
-is made to an existing DRMS server as appropriate, and the remaineder of the module 
+is made to an existing DRMS server as appropriate, and the remaineder of the module
 code is executed.
 At the end of module execution, the driver disconnects from DRMS with
 or without commits to the database depending on the exit status of the module.
@@ -26,7 +26,7 @@ Modules are expected to run as functions (or subroutines) called by a main
 driver program that parses the argument list from the command line and
 environment, and sets up the @c drms->env environment for communication
 with the DRMS database via the DRMS API. Different driver programs can be
-made available, depending on the environment. Two such programs (in the form of 
+made available, depending on the environment. Two such programs (in the form of
 libraries) are provided
 as part of the base system, @c jsoc_main.a and @c jsoc_main_sock.a (see jsoc_main.h).
 The former provides a direct connection to DRMS, for use by self-contained
@@ -91,7 +91,7 @@ the module. White space between the '=' sign and the argument value is
 optional. Flags can be concatenated as shown below.
 
 \par GEN_FLAGS (can be grouped together):
-\c -A: Force archiving of storage units during the current DRMS session.  
+\c -A: Force archiving of storage units during the current DRMS session.
 This overrides the value of series' archive flag.
 <br>
 \c -H|--help: Show jsoc_main usage information.
@@ -111,24 +111,24 @@ To specify an argument that affects properties of the DRMS session,
 use @c param=value, where @c param is one of the following.
 
 @arg @c DRMS_ARCHIVE Sets the archive status for all storage units created during the DRMS
-session started by @a module. @a value can be either -1 (don't archive data, and when a 
+session started by @a module. @a value can be either -1 (don't archive data, and when a
 storage unit's retention expires, delete all DRMS records whose data resides within this
-storage unit), 0 (don't archive, but do not delete any DRMS records), or 1 (archive data when 
+storage unit), 0 (don't archive, but do not delete any DRMS records), or 1 (archive data when
 the storage unit's retention expires).
 \arg \c DRMS_RETENTION For all existing storage units accessed during the module's session, the
  value of this argument will be used update the retention time. The value is a positive 15-bit number.
  If the current retention time is greater than the time specified with this value, then this
- argument will have no effect. But if the current retention time is less than the time specified 
+ argument will have no effect. But if the current retention time is less than the time specified
  by this value, then SUMS will ensure that the SUs touched will have a retention time AT LEAST
  as large as this argument's value. Setting this argument will never reduce the retention time
  of any existing storage unit. This argument cannot be specified as an environment variable.
 \arg \c DRMS_NEWSURETENTION The value of this argument will be the retention time for all new
- storage units created. The value is a positive 15-bit number. It will override the JSD retention time 
+ storage units created. The value is a positive 15-bit number. It will override the JSD retention time
  value specified for the series being operated on.
 \arg \c DRMS_QUERY_MEM Sets the memory maximum for a database query.
  \arg \c DRMS_DBTIMEOUT The value is the number of milliseconds any underlying database query is
  allowed to run, after which the database will issue an error, causing the module to terminate
- with an error, rolling back any database changes. The database time-out feature is initiated 
+ with an error, rolling back any database changes. The database time-out feature is initiated
  each time a transaction is started (in drms_server_begin_transaction()).
 \arg \c JSOC_DBHOST Specifies (overrides) the database host to connect to. Default is ::DBNAME
 \arg \c JSOC_DBNAME Specifies (overrides) the database name to use. Default is ::DBNAME
@@ -138,22 +138,22 @@ the storage unit's retention expires).
 
 \par MODULE_ARGUMENTS:
 These are module-specific; refer to @ref drms_util for module-specific documentation.
- 
+
  \par Examples:
- 
+
  \b Example 1:
  To ensure that the retention of existing storage units is at least 10000 days:
  \code
  show_info -P hmi.m_45s[2011.12.10_00:00/10m] DRMS_RETENTION=-10000
  \endcode
- 
+
  \b Example 2:
- To reduce retention to 0 so that SUMS will delete the storage units from disk (the caller must be the 
+ To reduce retention to 0 so that SUMS will delete the storage units from disk (the caller must be the
  series owner or a production user):
  \code
  show_info -P hmi.m_45s[2011.12.10_00:00/10m] DRMS_RETENTION=0
  \endcode
- 
+
  \b Example 3:
  To change the retention to 100 days (the caller must be the series owner or a production user):
  \code
@@ -179,14 +179,14 @@ These are module-specific; refer to @ref drms_util for module-specific documenta
 #include <sched.h>
 #endif
 
-/** 
-    @brief Global DRMS Environment handle. 
+/**
+    @brief Global DRMS Environment handle.
 */
 DRMS_Env_t *drms_env;
 
-/** 
-    @brief Global DRMS-module structure representing the command-line 
-    arguments provided to the module executable.    
+/**
+    @brief Global DRMS-module structure representing the command-line
+    arguments provided to the module executable.
 */
 CmdParams_t cmdparams;
 /**
@@ -195,12 +195,12 @@ CmdParams_t cmdparams;
 ModuleArgs_t *gModArgs = module_args;
 
 /**
-   Returns a pointer to the module's global ::CmdParams_t structure. This static 
+   Returns a pointer to the module's global ::CmdParams_t structure. This static
    structure is an in-memory representation of the cmd-line arguments provided
    to the module during execution. It is initialized upon module startup.
    See ::cmdparams for more information.
 */
-CmdParams_t *GetGlobalCmdParams() 
+CmdParams_t *GetGlobalCmdParams()
 {
   return &cmdparams;
 }
@@ -221,7 +221,7 @@ static void atexit_action (void) {
 #endif
 }
 
-/* db_lock calls this function to determine what signals it should NOT 
+/* db_lock calls this function to determine what signals it should NOT
  * allow to interrupt code running inside the db lock. */
 void drms_createsigmask(sigset_t *set, void *data)
 {
@@ -229,7 +229,7 @@ void drms_createsigmask(sigset_t *set, void *data)
    if (set && threadid == pthread_self())
    {
       sigemptyset(set);
-      sigaddset(set, SIGUSR2); 
+      sigaddset(set, SIGUSR2);
    }
 }
 
@@ -241,7 +241,7 @@ static DRMS_Shutdown_State_t GetShutdownState(DRMS_Env_t *env)
 
    if (sdsem)
    {
-      /* Wait until the signal thread is not messing with shutdown - if it is, then 
+      /* Wait until the signal thread is not messing with shutdown - if it is, then
        * main will block here until the signal thread terminates the process */
       sem_wait(sdsem);
 
@@ -253,7 +253,7 @@ static DRMS_Shutdown_State_t GetShutdownState(DRMS_Env_t *env)
       }
       else if (sdstate == kSHUTDOWN_COMMIT || sdstate == kSHUTDOWN_ABORT || sdstate == kSHUTDOWN_BYMAIN)
       {
-         /* signal-induced shutdown has already been started, and DoIt() already knows about it, 
+         /* signal-induced shutdown has already been started, and DoIt() already knows about it,
           * or main thread is shutting down. */
          st = sdstate;
          sem_post(sdsem);
@@ -299,10 +299,10 @@ static void FinalBits(DRMS_Env_t *env, int abort_flag)
 
    if (drms_server_getsd() != kSHUTDOWN_UNINITIATED)
    {
-      /* signal thread is already shutting down, just wait for signal thread to finish 
+      /* signal thread is already shutting down, just wait for signal thread to finish
        * (which it won't do, because it is going to call exit, so this is an indefinite sleep). */
       sem_post(sdsem);
-      pthread_join(env->signal_thread, NULL);  
+      pthread_join(env->signal_thread, NULL);
    }
    else
    {
@@ -329,11 +329,11 @@ static void FinalBits(DRMS_Env_t *env, int abort_flag)
       /* Must disconnect db, because we didn't set the final flag in drms_server_end_transaction() */
       db_disconnect(&env->session->db_handle);
 
-      /* Free cmd-params (valgrind reports this - let's just clean up so it doesn't show up on 
+      /* Free cmd-params (valgrind reports this - let's just clean up so it doesn't show up on
        * valgrind's radar). */
       cmdparams_freeall(&cmdparams);
 
-      drms_free_env(env, 1); 
+      drms_free_env(env, 1);
 
       /* doesn't call at_exit_action() */
       _exit(abort_flag);
@@ -372,21 +372,10 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
    memset(&cmdparams, 0, sizeof(CmdParams_t));
 
 #ifdef DEBUG
-  xmem_config(1,1,1,1,1000000,1,0,0); 
+  xmem_config(1,1,1,1,1000000,1,0,0);
 #endif
   /* Parse command line parameters. */
-  snprintf(reservebuf, 
-           sizeof(reservebuf), 
-           "%s,%s,%s,%s,%s,%s,%s,%s",
-           "L,Q,V,jsocmodver", 
-           kARCHIVEARG,
-           kRETENTIONARG,
-           kNewSuRetention,
-           kQUERYMEMARG,
-           kLoopConn,
-           kDBTimeOut,
-           kCreateShadows,
-           kDBUtf8ClientEncoding);
+  snprintf(reservebuf, sizeof(reservebuf), "%s,%s,%s,%s,%s,%s,%s,%s,%s", "L,Q,V,jsocmodver", kARCHIVEARG, kRETENTIONARG, kNewSuRetention, kQUERYMEMARG, kLoopConn, kDBTimeOut, kCreateShadows, kDBUtf8ClientEncoding, DRMS_ARG_PRINT_SQL);
   cmdparams_reserve(&cmdparams, reservebuf, "jsocmain");
 
   status = cmdparams_parse (&cmdparams, argc, argv);
@@ -410,10 +399,10 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
      int isdev = 0;
 
      jsoc_getversion(verstr, sizeof(verstr), &isdev);
-     fprintf(stdout, 
-             "Module '%s' JSOC version is '%s' (%s)\n", 
-             module_name, 
-             verstr, 
+     fprintf(stdout,
+             "Module '%s' JSOC version is '%s' (%s)\n",
+             module_name,
+             verstr,
              isdev ? "development" : "release");
      return 0;
   }
@@ -430,9 +419,9 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
   if (!(user = getenv("USER")))
     user = unknown;
 
-  /* Get hostname, user, passwd and database name for establishing 
+  /* Get hostname, user, passwd and database name for establishing
      a connection to the DRMS database server. */
-    
+
     /* SERVER does not contain port information. Yet when dbhost is used in db_connect(), that function
      * parses the value looking for an optional port number. So if you didn't provide the JSOC_DBHOST
      * then there was no way to connect to the db with a port other than the default port that the
@@ -444,26 +433,26 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
      *
      * --ART (2014.08.20)
      */
-    
+
   if ((dbhost = cmdparams_get_str(&cmdparams, "JSOC_DBHOST", NULL)) == NULL)
     {
         const char *sep = NULL;
-        
+
         dbhost =  SERVER;
         dbport = DRMSPGPORT;
-        
+
         /* Check for conflicting port numbers. */
         if ((sep = strchr(dbhost, ':')) != NULL)
         {
             if (strcmp(sep + 1, dbport) != 0)
             {
                 char *tmpBuf = strdup(dbhost);
-                
+
                 if (tmpBuf)
                 {
                     tmpBuf[sep - dbhost] = '\0';
                     fprintf(stderr, "WARNING: the port number in the SERVER localization parameter (%s) and in DRMSPGPORT (%s) conflict.\nThe DRMSPGPORT value will be used.\n", sep + 1, DRMSPGPORT);
-                    
+
                     snprintf(dbHostAndPort, sizeof(dbHostAndPort), "%s:%s", tmpBuf, dbport);
                     free(tmpBuf);
                     tmpBuf = NULL;
@@ -509,10 +498,10 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
         archive = INT_MIN;
      }
   }
-    
+
     retention = INT16_MIN;
     char errbuf[128];
-    
+
     if (drms_cmdparams_exists(&cmdparams, kRETENTIONARG))
     {
         retention = drms_cmdparams_get_int16(&cmdparams, kRETENTIONARG, &status);
@@ -523,7 +512,7 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
                 snprintf(errbuf, sizeof(errbuf), "The value for %s must be a 15-bit positive integer.", kRETENTIONARG);
                 fprintf(stderr, errbuf);
             }
-            
+
             snprintf(errbuf, sizeof(errbuf), "Invalid value for %s.", kRETENTIONARG);
             fprintf(stderr, errbuf);
             return 1;
@@ -539,7 +528,7 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
             retention = (int16_t)(retention & 0x7FFF);
         }
     }
-    
+
     newsuretention = INT16_MIN;
     if (drms_cmdparams_exists(&cmdparams, kNewSuRetention))
     {
@@ -551,7 +540,7 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
                 snprintf(errbuf, sizeof(errbuf), "The value for %s must be a 15-bit positive integer.", kNewSuRetention);
                 fprintf(stderr, errbuf);
             }
-            
+
             snprintf(errbuf, sizeof(errbuf), "Invalid value for %s.", kNewSuRetention);
             fprintf(stderr, errbuf);
             return 1;
@@ -567,18 +556,18 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
             newsuretention = (int16_t)(newsuretention & 0x7FFF);
         }
     }
-    
+
   int query_mem = 512;
   if (cmdparams_exists (&cmdparams, kQUERYMEMARG)) {
     query_mem = cmdparams_get_int(&cmdparams, kQUERYMEMARG, NULL);
   }
-    
+
     int dbtimeout = INT_MIN;
     if (drms_cmdparams_exists(&cmdparams, kDBTimeOut))
     {
         dbtimeout = drms_cmdparams_get_int(&cmdparams, kDBTimeOut, NULL);
     }
-    
+
     int dbutf8clientencoding = 0;
     if (drms_cmdparams_exists(&cmdparams, kDBUtf8ClientEncoding))
     {
@@ -586,10 +575,12 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
     }
 
   int loopconn = cmdparams_isflagset(&cmdparams, kLoopConn);
-    
+
     int createshadows = cmdparams_isflagset(&cmdparams, kCreateShadows);
 
-  /* Initialize server's own DRMS environment and connect to 
+    int print_sql_only = cmdparams_isflagset(&cmdparams, DRMS_ARG_PRINT_SQL);
+
+  /* Initialize server's own DRMS environment and connect to
      DRMS database server. */
   if ((drms_env = drms_open(dbHostAndPort, dbuser,dbpasswd,dbname,sessionns)) == NULL)
   {
@@ -606,8 +597,8 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
 
   /***************** Set up exit() and signal handling ********************/
 
-  atexit(atexit_action);  
- 
+  atexit(atexit_action);
+
   /* Block signals INT, QUIT, TERM, and USR1. They will explicitly
      handled by the signal thread created below. */
 #ifndef DEBUG
@@ -620,7 +611,7 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
 
   if( (status = pthread_sigmask(SIG_BLOCK, &drms_env->signal_mask, &drms_env->old_signal_mask)))
   {
-    fprintf(stderr,"pthread_sigmask call failed with status = %d\n", status);          
+    fprintf(stderr,"pthread_sigmask call failed with status = %d\n", status);
     Exit(1);
   }
 
@@ -628,9 +619,9 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
 
   /* Register sigblock function - whenever the dbase is accessed, certain signals
    * (like SIGUSR2) shouldn't interrupt such actions. */
-  /* This is no longer an issue - there is no signal handler any more. Instead, shutdown 
-   * is handled completely by the signal thread. If the signal thread attempts to 
-   * access the db, but the main thread has the db lock, the signal thread will 
+  /* This is no longer an issue - there is no signal handler any more. Instead, shutdown
+   * is handled completely by the signal thread. If the signal thread attempts to
+   * access the db, but the main thread has the db lock, the signal thread will
    * block until main relinquishes the lock. The signal-handler implementation required
    * blocking of the SIGUSR2 signal because it was asynchronously called, which could
    * cause interruption of a thread holding the db lock. Then the signal handler
@@ -639,18 +630,18 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
   // db_register_sigblock(&drms_createsigmask, &drms_env->main_thread);
 
 
-   /* Free cmd-params (valgrind reports this - let's just clean up so it doesn't show up on 
+   /* Free cmd-params (valgrind reports this - let's just clean up so it doesn't show up on
     * valgrind's radar). */
   CleanerData_t cleaner = {(pFn_Cleaner_t)FreeCmdparams, (void *)NULL};
-  
+
   drms_server_registercleaner(drms_env, &cleaner);
 
-  /* Spawn a thread that handles signals and controls server 
+  /* Spawn a thread that handles signals and controls server
      abort or shutdown. */
-  if( (status = pthread_create(&drms_env->signal_thread, NULL, &drms_signal_thread, 
+  if( (status = pthread_create(&drms_env->signal_thread, NULL, &drms_signal_thread,
 			       (void *) drms_env)) )
   {
-    fprintf(stderr,"Thread creation failed: %d\n", status);          
+    fprintf(stderr,"Thread creation failed: %d\n", status);
     Exit(1);
   }
 
@@ -676,6 +667,7 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
 
   drms_env->loopconn = loopconn;
     drms_env->createshadows = createshadows;
+    drms_env->print_sql_only = print_sql_only;
 
   int abort_flag = 1;
 
@@ -715,4 +707,3 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
   /* execution doesn't get here */
   return 0;
 }
-
