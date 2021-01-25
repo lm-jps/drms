@@ -83,7 +83,7 @@ int JSOCMAIN_Init(int argc,
    xmem_config (1, 1, 1, 1, 1000000, 1,0, 0);
 #endif
    /* Parse command line parameters */
-   snprintf(reservebuf, sizeof(reservebuf), "%s,%s,%s,%s,%s,%s,%s,%s,%s", "L,Q,V,jsocmodver", kARCHIVEARG, kRETENTIONARG, kNewSuRetention, kQUERYMEMARG, kLoopConn, kDBTimeOut, kCreateShadows, kDBUtf8ClientEncoding, DRMS_ARG_PRINT_SQL);
+   snprintf(reservebuf, sizeof(reservebuf), "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s", "L,Q,V,jsocmodver", kARCHIVEARG, kRETENTIONARG, kNewSuRetention, kQUERYMEMARG, kLoopConn, kDBTimeOut, kCreateShadows, kDBUtf8ClientEncoding, DRMS_ARG_PRINT_SQL);
    cmdparams_reserve(&cmdparams, reservebuf, "jsocmain");
 
    status = cmdparams_parse (&cmdparams, argc, argv);
@@ -547,7 +547,7 @@ pid_t drms_start_server (int verbose, int dolog)  {
 
     loopconn = cmdparams_isflagset(&cmdparams, kLoopConn);
     createshadows = cmdparams_isflagset(&cmdparams, kCreateShadows);
-    print_sql_only = cmdparams_isflagset(&cmdparams, DRMS_PRINT_SQL);
+    print_sql_only = cmdparams_isflagset(&cmdparams, DRMS_ARG_PRINT_SQL);
 
   int fd[2];
   pid_t	pid;
@@ -710,12 +710,12 @@ pid_t drms_start_server (int verbose, int dolog)  {
           snprintf(argv[i++], DRMS_MAXNAMELEN * 2, "%s=1", kDBUtf8ClientEncoding);
       }
 
-      if ()
+      if (print_sql_only)
       {
           char buf[256];
 
           argv[i] = malloc(DRMS_MAXNAMELEN * 2);
-          snprintf(argv[i++], DRMS_MAXNAMELEN * 2, "%s=1", DRMS_PRINT_SQL);
+          snprintf(argv[i++], DRMS_MAXNAMELEN * 2, "%s=1", DRMS_ARG_PRINT_SQL);
       }
 
     for (; i < num_args; i++) {

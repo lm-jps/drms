@@ -375,7 +375,7 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
   xmem_config(1,1,1,1,1000000,1,0,0);
 #endif
   /* Parse command line parameters. */
-  snprintf(reservebuf, sizeof(reservebuf), "%s,%s,%s,%s,%s,%s,%s,%s,%s", "L,Q,V,jsocmodver", kARCHIVEARG, kRETENTIONARG, kNewSuRetention, kQUERYMEMARG, kLoopConn, kDBTimeOut, kCreateShadows, kDBUtf8ClientEncoding, DRMS_ARG_PRINT_SQL);
+  snprintf(reservebuf, sizeof(reservebuf), "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s", "L,Q,V,jsocmodver", kARCHIVEARG, kRETENTIONARG, kNewSuRetention, kQUERYMEMARG, kLoopConn, kDBTimeOut, kCreateShadows, kDBUtf8ClientEncoding, DRMS_ARG_PRINT_SQL);
   cmdparams_reserve(&cmdparams, reservebuf, "jsocmain");
 
   status = cmdparams_parse (&cmdparams, argc, argv);
