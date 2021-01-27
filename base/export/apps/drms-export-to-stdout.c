@@ -33,6 +33,7 @@ char *module_name = "drms-export-to-stdout";
 #define ARG_ACK_FILE "ackfile"
 #define ARG_MAX_TAR_FILE_SIZE "maxfilesize"
 #define ARG_COMPRESS_ALL_SEGS "a" /* if set, then apply a single CPARMS value to all segments */
+#define ARG_KEYWORDS_ONLY "k" /* if set, then do not generate image FITS files; generate a binary table of keyword values only */
 #define ARG_DO_NOT_CREATE_TAR "s" /* if there is more than one FITS file requested in spec, error out */
 #define ARG_DUMP_FILE_NAME "d" /* if not making a tar, then dump the name of the FITS file at the beginning of the stream */
 #define ARG_SUPPRESS_STDERR "e" /* if set, then do not print error messages and warnings to stderr */
@@ -90,6 +91,7 @@ ModuleArgs_t module_args[] =
     { ARG_STRING, ARG_ACK_FILE, " ", "a file provided by the caller to include in the tar file"},
     { ARG_INT, ARG_MAX_TAR_FILE_SIZE, DEFAULT_MAX_TAR_FILE_SIZE, "the maximum size in bytes of the resulting tar file"},
     { ARG_FLAG, ARG_COMPRESS_ALL_SEGS, NULL, "apply the single string in ARG_CPARMS_STRING to all segments" },
+    { ARG_FLAG, ARG_KEYWORDS_ONLY, NULL, "dump keyword values into a FITS binary table; do not dump segments into FITS image files" },
     { ARG_FLAG, ARG_DO_NOT_CREATE_TAR, NULL, "skip producing a tar file if a single FITS file is being exported" },
     { ARG_FLAG, ARG_DUMP_FILE_NAME, NULL, "dump the name of the FITS file at the beginning of the stream"},
     { ARG_FLAG, ARG_SUPPRESS_STDERR, NULL, "do not print error messages to stdout (if not making a tar file)"},
@@ -1787,7 +1789,7 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int dumpFileName, i
 /* loop over records */
 /* segCompression is an array of FITSIO macros, one for each segment, that specify the type of compression to perform; if NULL, then compress all segments with Rice compression
  */
-static ExpToStdoutStatus_t ExportRecordSetToStdout(DRMS_Env_t *env, int makeTar, int dumpFileName, int suppress_stderr, DRMS_RecordSet_t *expRS, const char *ffmt, CFITSIO_COMPRESSION_TYPE *segCompression, int compressAllSegs, const char *classname, const char *mapfile, size_t *bytesExported, size_t maxTarFileSize, size_t *numFilesExported, json_t *infoDataArr, json_t *errorDataArr, char **error_buf)
+static ExpToStdoutStatus_t ExportRecordSetToStdout(DRMS_Env_t *env, int makeTar, int dumpFileName, int suppress_stderr, DRMS_RecordSet_t *expRS, const char *ffmt, CFITSIO_COMPRESSION_TYPE *segCompression, int compressAllSegs, int dump_keywords_only, const char *classname, const char *mapfile, size_t *bytesExported, size_t maxTarFileSize, size_t *numFilesExported, json_t *infoDataArr, json_t *errorDataArr, char **error_buf)
 {
     int drmsStatus = DRMS_SUCCESS;
     ExpToStdoutStatus_t expStatus = ExpToStdoutStatus_Success;
@@ -1859,7 +1861,7 @@ static ExpToStdoutStatus_t ExportRecordSetToStdout(DRMS_Env_t *env, int makeTar,
             {
                 has_segments = (hcon_size(&series_template_rec->segments) > 0);
 
-                if (!has_segments)
+                if (!has_segments || dump_keywords_only)
                 {
                     /* this series has no segments; instead export the entire record set subset as a FITS bintable */
                     num_set_recs = drms_recordset_getssnrecs(expRS, iSet, &drmsStatus);
@@ -1988,6 +1990,7 @@ int DoIt(void)
     const char *ackFile = NULL;
     size_t maxTarFileSize = 0;
     int compressAllSegs = 0;
+    int dump_keywords_only = 0;
     int skipTarCreation = 0;
     int dumpFileName = 0;
     int suppress_stderr = 0;
@@ -2020,6 +2023,7 @@ int DoIt(void)
     GetOptionValue(ARG_STRING, ARG_ACK_FILE, (void *)&ackFile);
     GetOptionValue(ARG_INT, ARG_MAX_TAR_FILE_SIZE, (void *)&maxTarFileSize);
     GetOptionValue(ARG_FLAG, ARG_COMPRESS_ALL_SEGS, (void *)&compressAllSegs);
+    GetOptionValue(ARG_FLAG, ARG_KEYWORDS_ONLY, (void *)&dump_keywords_only);
     GetOptionValue(ARG_FLAG, ARG_DO_NOT_CREATE_TAR, (void *)&skipTarCreation);
     GetOptionValue(ARG_FLAG, ARG_DUMP_FILE_NAME, (void *)&dumpFileName);
     GetOptionValue(ARG_FLAG, ARG_SUPPRESS_STDERR, (void *)&suppress_stderr);
@@ -2138,7 +2142,7 @@ int DoIt(void)
         }
         else
         {
-            if (skipTarCreation && expRS->n > 1)
+            if (skipTarCreation && expRS->n > 1 && !dump_keywords_only)
             {
                 expStatus = ExpToStdoutStatus_MoreThanOneFileToExport;
             }
@@ -2184,7 +2188,7 @@ int DoIt(void)
 
         /* since the following call dives into lib DRMS, it could print error and warnings messages to stderr; capture those if we are
          * suppressing writing to stderr */
-        expStatus = ExportRecordSetToStdout(drms_env, makeTar, dumpFileName, suppress_stderr, expRS, fileTemplate, segCompression, compressAllSegs, mapClass, mapFile, &bytesExported, maxTarFileSize, &numFilesExported, infoDataArr, errorDataArr, &error_buf_tmp);
+        expStatus = ExportRecordSetToStdout(drms_env, makeTar, dumpFileName, suppress_stderr, expRS, fileTemplate, segCompression, compressAllSegs, dump_keywords_only, mapClass, mapFile, &bytesExported, maxTarFileSize, &numFilesExported, infoDataArr, errorDataArr, &error_buf_tmp);
 
         if (error_buf_tmp)
         {

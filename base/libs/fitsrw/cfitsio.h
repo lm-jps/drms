@@ -139,6 +139,7 @@ typedef struct cfitsio_keyword
 			char key_unit[CFITSIO_MAX_COMMENT];
 			char key_tform[CFITSIO_MAX_TFORM + 1];                   /* the tform data type */
 			int is_missing; /* set to 1 if there is no key_value */
+			int number_bytes; /* for int and float types */
       struct cfitsio_keyword *next;
 
 } CFITSIO_KEYWORD;
@@ -221,7 +222,7 @@ int fitsrw_writeintfile(int verbose,
 
 void cfitsio_free_these(CFITSIO_IMAGE_INFO** image_info, void** image, CFITSIO_KEYWORD** keylist);
 
-int cfitsio_create_header_key(const char *name, cfitsio_keyword_datatype_t type, const void *value, const char *format, const char *comment, const char *unit, CFITSIO_KEYWORD **keyOut);
+int cfitsio_create_header_key(const char *name, cfitsio_keyword_datatype_t type, int number_bytes, const void *value, const char *format, const char *comment, const char *unit, CFITSIO_KEYWORD **key_out);
 
 int cfitsio_delete_header_key(CFITSIO_FILE *fitsFile, const char *key);
 
@@ -285,7 +286,7 @@ int cfitsio_write_chksum(CFITSIO_FILE *file);
 
 int cfitsio_write_longwarn(CFITSIO_FILE *file);
 
-int cfitsio_append_header_key(CFITSIO_KEYWORD** keylist, const char *name, cfitsio_keyword_datatype_t type, void *value, const char *format, const char *comment, const char *unit, CFITSIO_KEYWORD **fits_key_out);
+int cfitsio_append_header_key(CFITSIO_KEYWORD** keylist, const char *name, cfitsio_keyword_datatype_t type, int number_bytes, const void *value, const char *format, const char *comment, const char *unit, CFITSIO_KEYWORD **key_out);
 
 int cfitsio_generate_checksum(CFITSIO_FILE **fitsFile, CFITSIO_KEYWORD *keyList, char **checksum);
 

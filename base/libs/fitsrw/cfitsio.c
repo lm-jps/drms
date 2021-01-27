@@ -562,15 +562,22 @@ static int Cf_write_keys_to_bintable(fitsfile *fptr_out, long long row_number, L
     ListNode_t *node = NULL;
     CFITSIO_KEYWORD *key_list = NULL;
     CFITSIO_KEYWORD* key = NULL;
-    int skip_column = -1;
     int fits_tfields = -1; /* column */
     int row = -1; /* row */
     int fits_data_type = -1;
+    int number_bytes = -1;
+    char *data_string = NULL;
+    char data_logical = 0;
+    char data_byte = 0;
+    short data_short = 0;
+    int data_int = 0;
+    long long data_longlong = 0;
+    float data_float = 0;
+    double data_double = 0;
     void *data = NULL;
     int cfiostat = 0; /* MUST start with no-error status, else CFITSIO will fail */
     char cfiostat_err_msg[FLEN_STATUS];
     int err = CFITSIO_SUCCESS;
-
 
     /* recnum is one of the keywords */
     if (keyword_data)
@@ -583,36 +590,92 @@ static int Cf_write_keys_to_bintable(fitsfile *fptr_out, long long row_number, L
             key_list = *(CFITSIO_KEYWORD **)node->data;
             key = key_list;
 
-            skip_column = 0;
             fits_tfields = 0;
             while ((err == CFITSIO_SUCCESS) && key)
             {
                 /* iterate over columns */
-                switch (key->key_type)
+                data = NULL;
+                number_bytes = key->number_bytes;
+
+                if (!key->is_missing)
                 {
-                    case CFITSIO_KEYWORD_DATATYPE_STRING:
-                        fits_data_type = TSTRING;
-                        data = &key->key_value.vs;
-                        break;
-                    case CFITSIO_KEYWORD_DATATYPE_LOGICAL:
-                        fits_data_type = TLOGICAL;
-                        data = &key->key_value.vl;
-                        break;
-                    case CFITSIO_KEYWORD_DATATYPE_INTEGER:
-                        fits_data_type = TLONG;
-                        data = &key->key_value.vi;
-                        break;
-                    case CFITSIO_KEYWORD_DATATYPE_FLOAT:
-                        fits_data_type = TDOUBLE;
-                        data = &key->key_value.vf;
-                        break;
-                    default:
-                        fprintf(stderr, "invalid CFITSIO keyword data type %d; skipping keyword %s\n", key->key_type, key->key_name);
-                        skip_column = 1;
+                    switch (key->key_type)
+                    {
+                        case CFITSIO_KEYWORD_DATATYPE_STRING:
+                            fits_data_type = TSTRING;
+                            data_string = key->key_value.vs;
+                            data = &data_string;
+                            break;
+                        case CFITSIO_KEYWORD_DATATYPE_LOGICAL:
+                            fits_data_type = TLOGICAL;
+                            data_logical = (char)key->key_value.vl;
+                            data = &data_logical;
+                            break;
+                        case CFITSIO_KEYWORD_DATATYPE_INTEGER:
+                            if (number_bytes == 1)
+                            {
+                                fits_data_type = TSBYTE;
+                                data_byte = (char)key->key_value.vi;
+                                data = &data_byte;
+                            }
+                            else if (number_bytes == 2)
+                            {
+                                fits_data_type = TSHORT;
+                                data_short = (short)key->key_value.vi;
+                                data = &data_short;
+                            }
+                            else if (number_bytes == 4)
+                            {
+                                fits_data_type = TINT;
+                                data_int = (int)key->key_value.vi;
+                                data = &data_int;
+                            }
+                            else if (number_bytes == 8)
+                            {
+                                fits_data_type = TLONGLONG;
+                                data_longlong = (long long)key->key_value.vi;
+                                data = &data_longlong;
+                            }
+                            else
+                            {
+                                fprintf(stderr, "[ Cf_write_keys_to_bintable() ] invalid number_bytes value %d\n", number_bytes);
+                                err = CFITSIO_ERROR_ARGS;
+                            }
+
+                            break;
+                        case CFITSIO_KEYWORD_DATATYPE_FLOAT:
+                            if (number_bytes == 4)
+                            {
+                                fits_data_type = TFLOAT;
+                                data_float = (float)key->key_value.vf;
+                                data = &data_float;
+                            }
+                            else if (number_bytes == 8)
+                            {
+                                fits_data_type = TDOUBLE;
+                                data_double = (double)key->key_value.vf;
+                                data = &data_double;
+                            }
+                            else
+                            {
+                                fprintf(stderr, "[ Cf_write_keys_to_bintable() ] invalid number_bytes value %d\n", number_bytes);
+                                err = CFITSIO_ERROR_ARGS;
+                            }
+
+                            break;
+                        default:
+                            fprintf(stderr, "invalid CFITSIO keyword data type %d; skipping keyword %s\n", key->key_type, key->key_name);
+                    }
                 }
 
-                if (!skip_column)
+                if (data)
                 {
+                    /* I think that it is OK for a BINTABLE cell (an element in a BINTABLE column) to be undefined;
+                     * fits_read_col() will return in the returned array a value equal to the value stored in
+                     * the `nuval` argument; so if
+                     *   longlong my_nulval = -9223372036854775808, then the first element in the returne array will
+                     *   will be -9223372036854775808
+                     * */
                     fits_write_col(fptr_out, fits_data_type, fits_tfields + 1, row + 1, 1, 1, data, &cfiostat);
 
                     if (cfiostat)
@@ -622,18 +685,18 @@ static int Cf_write_keys_to_bintable(fitsfile *fptr_out, long long row_number, L
                         err = CFITSIO_ERROR_LIBRARY;
                         break;
                     }
-
-                    ++fits_tfields;
-
-                    if (fits_tfields > CFITSIO_MAX_BINTABLE_WIDTH)
-                    {
-                        fprintf(stderr, "[ Cf_write_keys_to_bintable() ] too many keywords - the mamimum allowed is %d\n", CFITSIO_MAX_BINTABLE_WIDTH);
-                        err = CFITSIO_ERROR_ARGS;
-                        break;
-                    }
                 }
 
-                key = key->next;
+                ++fits_tfields;
+
+                if (fits_tfields > CFITSIO_MAX_BINTABLE_WIDTH)
+                {
+                    fprintf(stderr, "[ Cf_write_keys_to_bintable() ] too many keywords - the mamimum allowed is %d\n", CFITSIO_MAX_BINTABLE_WIDTH);
+                    err = CFITSIO_ERROR_ARGS;
+                    break;
+                }
+
+                key = key->next; /* next key in row */
             } /* column */
 
             ++row;
@@ -877,85 +940,12 @@ int cfitsio_free_keys(CFITSIO_KEYWORD** key_list)
    return CFITSIO_SUCCESS;
 }
 
-/* value == NULL -> missing key*/
-int cfitsio_create_header_key(const char *name, cfitsio_keyword_datatype_t type, const void *value, const char *format, const char *comment, const char *unit, CFITSIO_KEYWORD **keyOut)
+/* value == NULL -> missing key */
+int cfitsio_create_header_key(const char *name, cfitsio_keyword_datatype_t type, int number_bytes, const void *value, const char *format, const char *comment, const char *unit, CFITSIO_KEYWORD **key_out)
 {
-    CFITSIO_KEYWORD *rv = NULL;
     int err = CFITSIO_SUCCESS;
 
-    if (name && keyOut)
-    {
-        rv = (CFITSIO_KEYWORD *)calloc(1, sizeof(CFITSIO_KEYWORD));
-
-        if (!rv)
-        {
-            fprintf(stderr, "cfitsio_create_header_key(): out of memory\n");
-            err = CFITSIO_ERROR_OUT_OF_MEMORY;
-        }
-        else
-        {
-            snprintf(rv->key_name, FLEN_KEYWORD, "%s", name);
-            rv->key_type = type;
-
-            if (value)
-            {
-                switch (type)
-                {
-                    case( 'X'):
-                    case (CFITSIO_KEYWORD_DATATYPE_STRING):
-                        /* 68 is the max chars in FITS string keyword, but the HISTORY and COMMENT keywords
-                         * can contain values with more than this number of characters, in which case
-                         * the fits API key-writing function will split the string across multiple
-                         * instances of these special keywords. */
-                        rv->key_value.vs = strdup((char *)value);
-                        break;
-                    case (CFITSIO_KEYWORD_DATATYPE_LOGICAL):
-                        rv->key_value.vl = *((int *)value);
-                        break;
-                    case (CFITSIO_KEYWORD_DATATYPE_INTEGER):
-                        rv->key_value.vi = *((long long *)value);
-                        break;
-                    case (CFITSIO_KEYWORD_DATATYPE_FLOAT):
-                        rv->key_value.vf = *((double *)value);
-                        break;
-                    default:
-                        fprintf(stderr, "invalid cfitsio keyword type '%c'\n", (char)type);
-                        err = CFITSIO_ERROR_ARGS;
-                        break;
-                }
-            }
-            else
-            {
-                /* missing value */
-                rv->is_missing = 1;
-            }
-
-            if (format)
-            {
-                snprintf(rv->key_format, sizeof(rv->key_format), "%s", format);
-            }
-
-            if (comment)
-            {
-                snprintf(rv->key_comment, sizeof(rv->key_comment), "%s", comment);
-            }
-
-            if (unit)
-            {
-                snprintf(rv->key_unit, sizeof(rv->key_unit), "%s", unit);
-            }
-        }
-    }
-    else
-    {
-        err = CFITSIO_ERROR_ARGS;
-    }
-
-    if (keyOut)
-    {
-        *keyOut = rv; /* swipe! */
-        rv = NULL;
-    }
+    err = cfitsio_append_header_key(NULL, name, type, number_bytes, value, format, comment, unit, key_out);
 
     return err;
 }
@@ -1620,6 +1610,7 @@ int cfitsio_create_header(CFITSIO_FILE *file)
     err = Cf_create_file_object(file->fptr, CFITSIO_FILE_TYPE_HEADER, NULL);
     if (err == CFITSIO_SUCCESS)
     {
+        file->state = CFITSIO_FILE_STATE_INITIALIZED;
         file->type = CFITSIO_FILE_TYPE_HEADER;
     }
 
@@ -1636,6 +1627,7 @@ int cfitsio_create_image(CFITSIO_FILE *file, CFITSIO_IMAGE_INFO *image_info)
     err = Cf_create_file_object(file->fptr, CFITSIO_FILE_TYPE_IMAGE, image_info);
     if (err == CFITSIO_SUCCESS)
     {
+        file->state = CFITSIO_FILE_STATE_INITIALIZED;
         file->type = CFITSIO_FILE_TYPE_IMAGE;
     }
 
@@ -1653,10 +1645,10 @@ int cfitsio_create_bintable(CFITSIO_FILE *file, CFITSIO_BINTABLE_INFO *bintable_
 {
     int err = CFITSIO_SUCCESS;
 
-
     err = Cf_create_file_object(file->fptr, CFITSIO_FILE_TYPE_BINTABLE, bintable_info);
     if (err == CFITSIO_SUCCESS)
     {
+        file->state = CFITSIO_FILE_STATE_INITIALIZED;
         file->type = CFITSIO_FILE_TYPE_BINTABLE;
     }
 
@@ -2372,7 +2364,9 @@ int cfitsio_copy_header_keywords(CFITSIO_FILE *in_file, CFITSIO_FILE *out_file, 
     return err;
 }
 
-/* read key `key`->key_name from `file`, and initialize `key` with values read from `file` */
+/* read key `key`->key_name from `file`, and initialize `key` with values read from `file`;
+ * always uses 8 bytes for ints and floats
+ */
 int cfitsio_read_header_key(CFITSIO_FILE *file, CFITSIO_KEYWORD *key)
 {
     char comment[CFITSIO_MAX_STR] = {0};
@@ -2549,7 +2543,9 @@ int cfitsio_update_header_key(CFITSIO_FILE *file, CFITSIO_KEYWORD *key)
     return err;
 }
 
-/* update keywords in `file` with keywords in `header` that are also in `key_list` */
+/* update keywords in `file` with keywords in `header` that are also in `key_list`;
+ * always uses 8 bytes for ints and floats
+ */
 int cfitsio_update_header_keywords(CFITSIO_FILE *file, CFITSIO_HEADER *header, CFITSIO_KEYWORD *key_list)
 {
     int nkeys = 0;
@@ -3122,16 +3118,14 @@ int cfitsio_write_longwarn(CFITSIO_FILE *file)
 }
 
 /****************************************************************************/
-// TH: Append to the end of list to keep COMMENT in the right sequence.
-
-int cfitsio_append_header_key(CFITSIO_KEYWORD** keylist, const char *name, cfitsio_keyword_datatype_t type, void *value, const char *format, const char *comment, const char *unit, CFITSIO_KEYWORD **fits_key_out)
+/* if `keylist` is NULL, create and return a CFITSIO_KEYWORD, but do not append it to the list */
+int cfitsio_append_header_key(CFITSIO_KEYWORD** keylist, const char *name, cfitsio_keyword_datatype_t type, int number_bytes, const void *value, const char *format, const char *comment, const char *unit, CFITSIO_KEYWORD **key_out)
 {
     CFITSIO_KEYWORD *node = NULL;
     CFITSIO_KEYWORD *last = NULL;
     int error_code = CFITSIO_SUCCESS;
 
-
-    if (name)
+    if (name && (keylist || key_out))
     {
         node = (CFITSIO_KEYWORD *)calloc(1, sizeof(CFITSIO_KEYWORD));
 
@@ -3141,59 +3135,133 @@ int cfitsio_append_header_key(CFITSIO_KEYWORD** keylist, const char *name, cfits
         }
         else
         {
-            memset(node, 0, sizeof(CFITSIO_KEYWORD));
             node->next = NULL;
 
-            // append node to the end of list
-            if (*keylist)
+            if (keylist)
             {
-                last = *keylist;
-                while(last->next) last = last->next;
-                last->next = node;
-            }
-            else // first node
-            {
-                *keylist = node;
+                // append node to the end of list - O(n*n) run time!
+                if (*keylist)
+                {
+                    last = *keylist;
+                    while (last->next)
+                    {
+                        last = last->next;
+                    }
+
+                    last->next = node;
+                }
+                else // first node
+                {
+                    *keylist = node;
+                }
             }
 
             snprintf(node->key_name, sizeof(node->key_name), "%s", name);
             node->key_type = type;
 
-            if (value)
+            if (!value)
             {
-                // save value into union
-                switch (type)
-                {
-                    case( 'X'):
-                    case (CFITSIO_KEYWORD_DATATYPE_STRING):
-                        /* 68 is the max chars in FITS string keyword, but the HISTORY and COMMENT keywords
-                         * can contain values with more than this number of characters, in which case
-                         * the fits API key-writing function will split the string across multiple
-                         * instances of these special keywords. */
-                        node->key_value.vs = strdup((char *)value);
-                        snprintf(node->key_tform, sizeof(node->key_tform), "1PA");
-                        break;
-                    case (CFITSIO_KEYWORD_DATATYPE_LOGICAL):
-                        node->key_value.vl = *((int *)value);
-                        snprintf(node->key_tform, sizeof(node->key_tform), "1L");
-                        break;
-                    case (CFITSIO_KEYWORD_DATATYPE_INTEGER):
-                        node->key_value.vi = *((long long *)value);
-                        snprintf(node->key_tform, sizeof(node->key_tform), "1K");
-                        break;
-                    case (CFITSIO_KEYWORD_DATATYPE_FLOAT):
-                        node->key_value.vf = *((double *)value);
-                        snprintf(node->key_tform, sizeof(node->key_tform), "1D");
-                        break;
-                    default:
-                        fprintf(stderr, "invalid cfitsio keyword type '%c'\n", (char)type);
-                        error_code = CFITSIO_ERROR_ARGS;
-                        break;
-                }
+                node->is_missing = 1;
             }
             else
             {
-                node->is_missing = 1;
+                node->is_missing = 0;
+            }
+
+            // save value into union
+            switch (type)
+            {
+                case( 'X'):
+                case (CFITSIO_KEYWORD_DATATYPE_STRING):
+                    /* 68 is the max chars in FITS string keyword, but the HISTORY and COMMENT keywords
+                     * can contain values with more than this number of characters, in which case
+                     * the fits API key-writing function will split the string across multiple
+                     * instances of these special keywords. */
+                    if (value)
+                    {
+                        node->key_value.vs = strdup((char *)value);
+                    }
+
+                    snprintf(node->key_tform, sizeof(node->key_tform), "1PA");
+                    break;
+                case (CFITSIO_KEYWORD_DATATYPE_LOGICAL):
+                    if (value)
+                    {
+                        node->key_value.vl = *((int *)value);
+                    }
+
+                    snprintf(node->key_tform, sizeof(node->key_tform), "1L");
+                    break;
+                case (CFITSIO_KEYWORD_DATATYPE_INTEGER):
+                    /* use hack to make this more efficient - do not use 'K' for 1-, 2-, or 4-byte integers:
+                     * 1-byte integers ==> "1A"
+                     * 2-byte integers ==> "1I"
+                     * 4-byte integers ==> "1J"
+                     * 8-byte integers ==> "1K"
+                     */
+                    if (value)
+                    {
+                        node->key_value.vi = *((long long *)value);
+                    }
+
+                    if (number_bytes == 1)
+                    {
+                        snprintf(node->key_tform, sizeof(node->key_tform), "1A");
+                        node->number_bytes = 1;
+                    }
+                    else if (number_bytes == 2)
+                    {
+                        snprintf(node->key_tform, sizeof(node->key_tform), "1I");
+                        node->number_bytes = 2;
+                    }
+                    else if (number_bytes == 4)
+                    {
+                        snprintf(node->key_tform, sizeof(node->key_tform), "1J");
+                        node->number_bytes = 4;
+                    }
+                    else if (number_bytes == 8)
+                    {
+                        snprintf(node->key_tform, sizeof(node->key_tform), "1K");
+                        node->number_bytes = 8;
+                    }
+                    else
+                    {
+                        fprintf(stderr, "[ cfitsio_append_header_key() ] invalid number_bytes value %d\n", number_bytes);
+                        error_code = CFITSIO_ERROR_ARGS;
+                    }
+
+                    break;
+                case (CFITSIO_KEYWORD_DATATYPE_FLOAT):
+                    /* use hack to make this more efficient - do not use 'D' for 4-byte floats:
+                     * 4-byte floats ==> "1E"
+                     * 8-byte floats ==> "1D"
+                     */
+                    if (value)
+                    {
+                        node->key_value.vf = *((double *)value);
+                    }
+
+                    if (number_bytes == 4)
+                    {
+                        snprintf(node->key_tform, sizeof(node->key_tform), "1E");
+                        node->number_bytes = 4;
+                    }
+                    else if (number_bytes == 8)
+                    {
+                        snprintf(node->key_tform, sizeof(node->key_tform), "1D");
+                        node->number_bytes = 8;
+                    }
+                    else
+                    {
+                        fprintf(stderr, "[ cfitsio_append_header_key() ] invalid number_bytes value %d\n", number_bytes);
+                        error_code = CFITSIO_ERROR_ARGS;
+                    }
+
+                    break;
+                default:
+                    fprintf(stderr, "invalid cfitsio keyword type '%c'\n", (char)type);
+                    error_code = CFITSIO_ERROR_ARGS;
+                    break;
             }
 
             if (format)
@@ -3211,9 +3279,9 @@ int cfitsio_append_header_key(CFITSIO_KEYWORD** keylist, const char *name, cfits
                 snprintf(node->key_unit, sizeof(node->key_unit), "%s", unit);
             }
 
-            if (fits_key_out)
+            if (key_out)
             {
-                *fits_key_out = node;
+                *key_out = node;
             }
         }
     }
@@ -3414,12 +3482,14 @@ static int cfitsio_read_keylist_and_image_info(fitsfile* fptr, CFITSIO_KEYWORD**
                     /* ART - FITSIO uses something much more complex (it will convert a string value to a long long, for example) -
                      * uses strtoll() on integer strings */
                     sscanf(key_value,"%lld", &node->key_value.vi);
+                    node->number_bytes = 8;
                     break;
 
                 case (kFITSRW_Type_Float):
                     /* ART - FITSIO uses something much more complex (it will convert a string value to a double, for example) -
                      * uses strtod() on float strings */
                     sscanf(key_value,"%lf", &node->key_value.vf);
+                    node->number_bytes = 8;
                     break;
 
                 case (' '): // blank keyword value, set it to NULL string

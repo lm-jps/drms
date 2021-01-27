@@ -248,6 +248,43 @@ static inline int drms_ismissing(DRMS_Value_t *val)
     return ans;
 }
 
+static inline int drms_ismissing2(DRMS_Type_t type, DRMS_Type_Value_t *val)
+{
+    int ans = -1;
+
+    switch(type)
+    {
+        case DRMS_TYPE_CHAR:
+            ans = drms_ismissing_char(val->char_val);
+            break;
+        case DRMS_TYPE_SHORT:
+            ans = drms_ismissing_short(val->short_val);
+            break;
+        case DRMS_TYPE_INT:
+            ans = drms_ismissing_int(val->int_val);
+            break;
+        case DRMS_TYPE_LONGLONG:
+            ans = drms_ismissing_longlong(val->longlong_val);
+            break;
+        case DRMS_TYPE_FLOAT:
+            ans = drms_ismissing_float(val->float_val);
+            break;
+        case DRMS_TYPE_TIME:
+            ans = drms_ismissing_time(val->time_val);
+            break;
+        case DRMS_TYPE_DOUBLE:
+            ans = drms_ismissing_double(val->double_val);
+            break;
+        case DRMS_TYPE_STRING:
+            ans = drms_ismissing_string(val->string_val);
+            break;
+        default:
+            fprintf(stderr, "Unsupported data type %d.\n", (int)type);
+    }
+
+    return ans;
+}
+
 #ifdef ICCCOMP
 #pragma warning (default : 1572)
 #endif
