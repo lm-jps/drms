@@ -58,6 +58,12 @@ typedef char cfitsio_keyword_datatype_t;
 
 typedef enum
 {
+		CFITSIO_KEYWORD_SPECIAL_TYPE_HISTORY = 0,
+		CFITSIO_KEYWORD_SPECIAL_TYPE_COMMENT
+} cfitsio_special_keyword_t;
+
+typedef enum
+{
 		CFITSIO_FILE_STATE_EMPTY = 0,     /* no fptr, initial cfitsio_file state */
 		CFITSIO_FILE_STATE_UNINITIALIZED,   /* has an fptr, but no header or image or table was created (fits_create_...() not called) */
 		CFITSIO_FILE_STATE_INITIALIZED    /* has an fptr, fits_create...() also called */

@@ -210,6 +210,9 @@ static int FE_cast_type_to_fits_key_type(FE_Keyword_ExtType_t cast_type, cfitsio
     return err;
 }
 
+/* parse a DRMS_Keyword_t into pieces that can be used to construct a CFITSIO_KEYWORD; the resulting
+ * CFITSIO_KEYWORD is for export purposes only; the DRMS_Keyword_t::description will be shortened
+ * so that it will fit on a FITS card */
 static int DRMSKeyValToFITSKeyVal(DRMS_Keyword_t *key, cfitsio_keyword_datatype_t *fitstype, int *number_bytes, void **fitsval, char **format, char **comment, char **unit)
 {
    int err = 0;
@@ -2085,116 +2088,135 @@ int fitsexport_getmappedextkeyname(DRMS_Keyword_t *key, const char *class, Exput
    const char *potential = NULL;
    int vstat = 0;
 
-   /* 1 - Try KeyMap. */
-   if (map != NULL)
-   {
-      potential = exputl_keymap_extname(map, key->info->name);
-      if (potential)
-      {
-         vstat = fitsexport_fitskeycheck(potential);
+   /* attempt to determine the FITS keyword name that the input DRMS keyword name maps to; there are five different
+    * methods that we use to do the mapping; the order of methods is prioritized, and we only attempt the subsequent
+    * method if the one with the immediately higher priority fails to produce a valid FITS keyword name;
+    * we use `fitsexport_fitskeycheck()` to check the validity of the name produced by a method */
 
-         if (vstat != 1)
-         {
-            snprintf(nameOut, size, "%s", potential);
-            success = 1;
-         }
-      }
-   }
+    /* 1 - Try KeyMap. */
+    if (map != NULL)
+    {
+        potential = exputl_keymap_extname(map, key->info->name);
+        if (potential)
+        {
+            vstat = fitsexport_fitskeycheck(potential);
 
-   /* 2 - Try KeyMapClass. */
-   if (!success && class != NULL)
-   {
-      potential = exputl_keymap_classextname(class, key->info->name);
-      if (potential)
-      {
-         vstat = fitsexport_fitskeycheck(potential);
+            if (vstat != 1)
+            {
+                snprintf(nameOut, size, "%s", potential);
+                success = 1;
+            }
+        }
+    }
 
-         if (vstat != 1)
-         {
-            snprintf(nameOut, size, "%s", potential);
-            success = 1;
-         }
-      }
-   }
+    /* 2 - Try KeyMapClass. */
+    if (!success && class != NULL)
+    {
+        potential = exputl_keymap_classextname(class, key->info->name);
+        if (potential)
+        {
+            vstat = fitsexport_fitskeycheck(potential);
+
+            if (vstat != 1)
+            {
+                snprintf(nameOut, size, "%s", potential);
+                success = 1;
+            }
+        }
+    }
 
     if (!success)
     {
-      /* Now try the map- and class-independent schemes. */
-      char *pot = NULL;
-      char *psep = NULL;
-      char *desc = strdup(key->info->description);
-      char *pFitsName = NULL;
-      *nameOut = '\0';
+        /* Now try the map- and class-independent schemes. */
+        char *pot = NULL;
+        char *psep = NULL;
+        char *desc = strdup(key->info->description);
+        char *pFitsName = NULL;
+        *nameOut = '\0';
 
-      /* 1 - Try keyword name in description field. */
-      if (desc)
-      {
-          pFitsName = strtok(desc, " ");
-
-    if (pFitsName)
-    {
-        int len = strlen(pFitsName);
-
-        if (len > 2 && pFitsName[0] == '[' && pFitsName[len - 1] == ']')
+        /* 3 - Try keyword name in description field. */
+        if (desc)
         {
-            if (len - 2 < size)
+            /* checking for the presence of the corresponding FITS keyword name and possible data type cast;
+            * if these exist, then they are present in a '['<X>[:<Y>]']' substring at the start of the description field;
+            * <X> is the FITS keyword name
+            * <Y> is the FITS data type to cast to
+            */
+            pFitsName = strtok(desc, " ");
+
+            if (pFitsName)
             {
-                pot = (char *)malloc(sizeof(char) * size);
-                if (pot)
-          		  {
-            		     memcpy(pot, pFitsName + 1, len - 2);
-            		     pot[len - 2] = '\0';
+                int len = strlen(pFitsName); /* length of first substring (which may or may not be '['<X>[':'<Y>]']') */
 
-                     if (comment_out)
-                     {
-                         /* save the part of the comment that does not have the cast */
-                         snprintf(comment_out, comment_out_sz, "%s {%s}", &desc[len + 1], pot);
-                     }
+                if (len > 2 && pFitsName[0] == '[' && pFitsName[len - 1] == ']')
+                {
+                    /* there is a '['<X>[':'<Y>]']' substring at the start of the description field */
+                    if (len - 2 < size)
+                    {
+                        /* '['<X>[':'<Y>]']' fits in the output buffer */
+                        pot = (char *)malloc(sizeof(char) * size);
+                        if (pot)
+                  		  {
+                            memcpy(pot, pFitsName + 1, len - 2); /* copy the <X>[':'<Y>]' from '['<X>[':'<Y>]']' */
+                            pot[len - 2] = '\0';
 
-                     /* The description might contain [X:Y], where
-                      * X is the external keyword name, and Y is the
-                      * external keyword cast. There could be a ':' */
-                     if (fitsexport_keyword_getcast(key) != kFE_Keyword_ExtType_None)
-                     {
-                        psep = strchr(pot, ':');
-                        *psep = '\0';
-                     }
+                            if (comment_out)
+                            {
+                                /* save the part of the comment that does not have the cast;
+                                 * save this into the output buffer:
+                                 *  <comment minus '['<X>[':'<Y>]']'> ' ' '{'<X>[':'<Y>]'}'
+                                 */
+                                snprintf(comment_out, comment_out_sz, "%s {%s}", &desc[len + 1], pot);
+                            }
 
-                     vstat = fitsexport_fitskeycheck(pot);
+                            /* The description might contain [X:Y], where
+                             * X is the external keyword name, and Y is the
+                             * external keyword cast. There could be a ':'
+                             */
+                            if (fitsexport_keyword_getcast(key) != kFE_Keyword_ExtType_None)
+                            {
+                                /* strip off the ':'<Y> - it does exist */
+                                psep = strchr(pot, ':');
+                                *psep = '\0';
+                                /* pot now has <X> */
+                            }
 
-                     if (vstat != 1)
-                     {
-                        snprintf(nameOut, size, "%s", pot);
-                        success = 1;
-                     }
+                             vstat = fitsexport_fitskeycheck(pot);
 
-                    free(pot);
-          		  }
+                             if (vstat != 1)
+                             {
+                                snprintf(nameOut, size, "%s", pot);
+                                success = 1;
+                             }
+
+                            free(pot);
+                  		  }
+                    }
+                }
             }
-	    }
-	 }
 
-	 free(desc);
-      }
+            free(desc);
+        }
 
-      /* 2 - Try DRMS name (must be upper case). */
-      if (!success)
-      {
-	 char nbuf[DRMS_MAXKEYNAMELEN];
+        /* 2 - Try DRMS name (must be upper case); it may be a valid FITS keyword name; this method is used for
+         * almost all DRMS names */
+        if (!success)
+        {
+            char nbuf[DRMS_MAXKEYNAMELEN];
 
-	 snprintf(nbuf, sizeof(nbuf), "%s", key->info->name);
-	 strtoupper(nbuf);
+            snprintf(nbuf, sizeof(nbuf), "%s", key->info->name);
+            strtoupper(nbuf);
 
-	 vstat = fitsexport_fitskeycheck(nbuf);
+            vstat = fitsexport_fitskeycheck(nbuf);
 
-         if (vstat != 1)
-         {
-            snprintf(nameOut, size, "%s", nbuf);
-            success = 1;
-         }
-      }
+            if (vstat != 1)
+            {
+                snprintf(nameOut, size, "%s", nbuf);
+                success = 1;
+            }
+        }
 
-      /* 3 - Use default rule. */
+        /* 3 - Use default rule. */
         if (!success)
         {
             char actualKeyName[DRMS_MAXKEYNAMELEN];

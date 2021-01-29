@@ -2144,6 +2144,7 @@ int DoIt(void)
         {
             if (skipTarCreation && expRS->n > 1 && !dump_keywords_only)
             {
+                fprintf(stderr, "cannot skip tar creation (-s flag) when specified record set contains more than one record\n");
                 expStatus = ExpToStdoutStatus_MoreThanOneFileToExport;
             }
             else
