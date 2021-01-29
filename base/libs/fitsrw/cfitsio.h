@@ -54,6 +54,8 @@ typedef char cfitsio_keyword_datatype_t;
 #define CFITSIO_KEYWORD_COMMENT          "COMMENT"
 #define CFITSIO_KEYWORD_CONTINUE         "CONTINUE"
 
+#define CFITSIO_KEYWORD_COMMENT_MISSING  "MISSING"
+
 #define CFITSIO_MAX_BINTABLE_WIDTH    1024
 
 typedef enum

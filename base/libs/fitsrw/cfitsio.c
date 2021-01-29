@@ -9,6 +9,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <regex.h>
 #include "fitsio.h"
 #include "cfitsio.h"
 #include "jsoc.h"
@@ -331,11 +332,11 @@ static int Cf_write_key_null(fitsfile *fptr, const char *keyord_name, const char
 
     if (*keyword_comment != '\0')
     {
-        snprintf(comment, sizeof(comment), "[%s] (MISSING) %s", *keyword_unit != '\0' ? keyword_unit : "none", keyword_comment);
+        snprintf(comment, sizeof(comment), "[%s] (%s) %s", *keyword_unit != '\0' ? keyword_unit : "none", CFITSIO_KEYWORD_COMMENT_MISSING, keyword_comment);
     }
     else
     {
-        snprintf(comment, sizeof(comment), "[%s] (MISSING)", *keyword_unit != '\0' ? keyword_unit : "none");
+        snprintf(comment, sizeof(comment), "[%s] (%s)", *keyword_unit != '\0' ? keyword_unit : "none", CFITSIO_KEYWORD_COMMENT_MISSING);
     }
 
     fits_write_key_null(fptr, keyord_name, comment, &cfiostat);
@@ -667,7 +668,6 @@ static int Cf_write_header_key(fitsfile *fptr, CFITSIO_KEYWORD *key)
     char comment[FLEN_COMMENT];
     char cfiostat_msg[FLEN_STATUS];
     int err = CFITSIO_SUCCESS;
-
 
     /* the keyword comment has this format:
      *   [<unit>] commentary {<corresponding DRMS keyword name>}
@@ -2789,13 +2789,74 @@ int cfitsio_update_comment_key(CFITSIO_FILE *file, CFITSIO_KEYWORD *keyword)
     return err;
 }
 
+static int cfitsio_strip_keyword_unit_and_missing(const char *comment, char *stripped_comment, char *unit, char *missing)
+{
+    char *working_comment = NULL;
+    regex_t reg_expression;
+    const char *keyword_comment_pattern = "^[ ]*(\\[([[:print:]]+)\\][ ]+)?(\\(([[:print:]]+)\\)[ ]+)?([[:print:]]*)$"; /* comment with unit (a failure to match means the whole string is a comment) */
+    regmatch_t matches[6]; /* index 0 is the entire string */
+    int err = CFITSIO_SUCCESS;
+
+    if (regcomp(&reg_expression, keyword_comment_pattern, REG_EXTENDED) != 0)
+    {
+        err = CFITSIO_ERROR_LIBRARY;
+    }
+    else
+    {
+        working_comment = strdup(comment);
+
+        if (!working_comment)
+        {
+            err = CFITSIO_ERROR_OUT_OF_MEMORY;
+        }
+
+        if (err == CFITSIO_SUCCESS)
+        {
+            if (regexec(&reg_expression, working_comment, sizeof(matches) / sizeof(matches[0]), matches, 0) == 0)
+            {
+                /* matches */
+                if (matches[2].rm_so != -1)
+                {
+                    /* has unit */
+                    memcpy(unit, (void *)&working_comment[matches[2].rm_so], matches[2].rm_eo - matches[2].rm_so);
+                }
+
+                if (matches[4].rm_so != -1)
+                {
+                    /* has missing */
+                    memcpy(missing, (void *)&working_comment[matches[4].rm_so], matches[4].rm_eo - matches[4].rm_so);
+                }
+
+                snprintf(stripped_comment, FLEN_COMMENT, "%s", (char *)&working_comment[matches[5].rm_so]); /* copy to end of comment string*/
+            }
+            else
+            {
+                /* does not match, has no unit */
+                //snprintf(stripped_comment, FLEN_COMMENT, "%s", comment);
+                //*unit = '\0';
+                err = CFITSIO_ERROR_ARGS;
+            }
+        }
+
+        regfree(&reg_expression);
+    }
+
+    if (working_comment)
+    {
+        free(working_comment);
+        working_comment = NULL;
+    }
+
+    return err;
+}
+
 /* read key `key`->key_name from `file`, and initialize `key` with values read from `file`;
  * always uses 8 bytes for ints and floats;
- * IMPORTANT! this will not read HISTORY/COMMENT keywords since the only way to read
- * those types of keywords is with fits_read_card(..., "HISTORY/COMMENT", ...)
  */
 int cfitsio_read_header_key(CFITSIO_FILE *file, CFITSIO_KEYWORD *key)
 {
+    char keyword_name[CFITSIO_MAX_KEYNAME + 1];
+    cfitsio_keyword_datatype_t keyword_type = '\0';
     int number_keys = -1;
     int is_history_or_comment = 0;
     char *include_list = NULL;
@@ -2806,11 +2867,18 @@ int cfitsio_read_header_key(CFITSIO_FILE *file, CFITSIO_KEYWORD *key)
     size_t sz_history_or_comment = FLEN_CARD + 1;
     char comment[CFITSIO_MAX_STR] = {0};
     char unit[FLEN_COMMENT] = {0};
+    char missing[FLEN_COMMENT] = {0};
     int cfiostat = 0;
     char cfiostat_msg[FLEN_STATUS];
     int err = CFITSIO_SUCCESS;
 
-    memset(&key->key_value, '\0', sizeof(CFITSIO_KEY_VALUE));
+    /* in order to read a keyword from a fits file, the essential information is the keyword name and the keyword data type;
+     * save those before overwriting them with a memory wipe */
+    snprintf(keyword_name, sizeof(keyword_name), "%s", key->key_name);
+    keyword_type = key->key_type;
+    memset(key, 0, sizeof(CFITSIO_KEYWORD));
+    snprintf(key->key_name, sizeof(key->key_name), "%s", keyword_name);
+    key->key_type = keyword_type;
 
     /* make sure we have at least one keyowrd in `file` */
     if (fits_get_hdrspace(file->fptr, &number_keys, NULL, &cfiostat))
@@ -2830,93 +2898,32 @@ int cfitsio_read_header_key(CFITSIO_FILE *file, CFITSIO_KEYWORD *key)
     if (err == CFITSIO_SUCCESS)
     {
         /* must special-case HISTORY/COMMENT; we need to call fits_read_card() repeatedly until FITSIO returns KEY_NO_EXIST */
-        if (strcasecmp(key->key_name, CFITSIO_KEYWORD_HISTORY) == 0 || strcasecmp(key->key_name, CFITSIO_KEYWORD_COMMENT) == 0)
+        if (strcasecmp(keyword_name, CFITSIO_KEYWORD_HISTORY) == 0)
         {
             is_history_or_comment = 1;
-            include_list = (char *)&key->key_name;
-
-            while (err == CFITSIO_SUCCESS)
-            {
-                if (fits_find_nextkey(file->fptr, (char **)&include_list, 1, NULL, 0, card, &cfiostat))
-                {
-                    if (cfiostat == KEY_NO_EXIST)
-                    {
-                        /* no more HISTORY/COMMENT records - error if we never found any, but we check for this below */
-                        cfiostat = 0;
-                        break;
-                    }
-                    else
-                    {
-                        err = CFITSIO_ERROR_LIBRARY;
-                    }
-                }
-                else
-                {
-                    if (history_or_comment == NULL)
-                    {
-                        history_or_comment = calloc(1, sz_history_or_comment);
-                        if (!history_or_comment)
-                        {
-                            err = CFITSIO_ERROR_OUT_OF_MEMORY;
-                        }
-                    }
-                    else
-                    {
-                        /* we always delimit HISTORY/COMMENT lines with newline characters so that we can preserve
-                         * the allocation of these strings among FITS records  */
-                        history_or_comment = base_strcatalloc(history_or_comment, "\n", &sz_history_or_comment);
-                    }
-
-                    if (err == CFITSIO_SUCCESS)
-                    {
-                        /* the value of a HISTORY/COMMENT keyword is actually in the comment field */
-                        if (fits_parse_value(card, card_value, card_comment, &cfiostat))
-                        {
-                            err = CFITSIO_ERROR_LIBRARY;
-                        }
-                        else
-                        {
-                            history_or_comment = base_strcatalloc(history_or_comment, card_comment, &sz_history_or_comment);
-                            if (!history_or_comment)
-                            {
-                                err = CFITSIO_ERROR_OUT_OF_MEMORY;
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (err == CFITSIO_SUCCESS)
-            {
-                if (history_or_comment)
-                {
-                    /* HISTORY/COMMENT found */
-                    key->key_value.vs = history_or_comment;
-                    history_or_comment = NULL; // yoink!
-                }
-                else
-                {
-                    fprintf(stderr, "keyword %s not found\n", key->key_name);
-                    err = CFITSIO_ERROR_ARGS;
-                }
-            }
+            err = cfitsio_read_history_key(file, key); /* no unit to deal with */
         }
-        else if (key->key_type == CFITSIO_KEYWORD_DATATYPE_STRING)
+        else if ( strcasecmp(keyword_name, CFITSIO_KEYWORD_COMMENT) == 0)
+        {
+            is_history_or_comment = 1;
+            err = cfitsio_read_comment_key(file, key); /* no unit to deal with */
+        }
+        else if (keyword_type == CFITSIO_KEYWORD_DATATYPE_STRING)
         {
             /* any string could be a long string (> 68 chars) so use fits_read_key_longstr() */
-            fits_read_key_longstr(file->fptr, key->key_name, &key->key_value.vs, comment, &cfiostat);
+            fits_read_key_longstr(file->fptr, keyword_name, &key->key_value.vs, comment, &cfiostat);
         }
-        else if (key->key_type == CFITSIO_KEYWORD_DATATYPE_LOGICAL)
+        else if (keyword_type == CFITSIO_KEYWORD_DATATYPE_LOGICAL)
         {
-            fits_read_key_log(file->fptr, key->key_name, &key->key_value.vl, comment, &cfiostat);
+            fits_read_key_log(file->fptr, keyword_name, &key->key_value.vl, comment, &cfiostat);
         }
-        else if (key->key_type == CFITSIO_KEYWORD_DATATYPE_INTEGER)
+        else if (keyword_type == CFITSIO_KEYWORD_DATATYPE_INTEGER)
         {
-            fits_read_key_lnglng(file->fptr, key->key_name, &key->key_value.vi, comment, &cfiostat);
+            fits_read_key_lnglng(file->fptr, keyword_name, &key->key_value.vi, comment, &cfiostat);
         }
-        else if (key->key_type == CFITSIO_KEYWORD_DATATYPE_FLOAT)
+        else if (keyword_type == CFITSIO_KEYWORD_DATATYPE_FLOAT)
         {
-            fits_read_key_dbl(file->fptr, key->key_name, &key->key_value.vf, comment, &cfiostat);
+            fits_read_key_dbl(file->fptr, keyword_name, &key->key_value.vf, comment, &cfiostat);
         }
         else
         {
@@ -2944,25 +2951,17 @@ int cfitsio_read_header_key(CFITSIO_FILE *file, CFITSIO_KEYWORD *key)
     {
         if (!is_history_or_comment)
         {
+            /* must deal with unit inside comment field */
             if (*comment != '\0')
             {
-                snprintf(key->key_comment, sizeof(key->key_comment), "%s", comment);
-                fits_read_key_unit(file->fptr, key->key_name, unit, &cfiostat);
-            }
-
-            if (cfiostat)
-            {
-                err = CFITSIO_ERROR_LIBRARY;
-            }
-            else
-            {
-                if (*unit != '\0')
+                /* strip any unit substring that may exist; the unit string goes in key->key_unit instead */
+                err = cfitsio_strip_keyword_unit_and_missing(comment, key->key_comment, key->key_unit, missing);
+                if (*missing != '\0')
                 {
-                    snprintf(key->key_unit, sizeof(key->key_unit), "%s", unit);
-                }
-                else
-                {
-                    snprintf(key->key_unit, sizeof(key->key_unit), "none");
+                    if (strcasecmp(missing, CFITSIO_KEYWORD_COMMENT_MISSING) == 0)
+                    {
+                        key->is_missing = 1;
+                    }
                 }
             }
         }
@@ -2971,7 +2970,7 @@ int cfitsio_read_header_key(CFITSIO_FILE *file, CFITSIO_KEYWORD *key)
     if (cfiostat != 0)
     {
         fits_get_errstatus(cfiostat, cfiostat_msg);
-        fprintf(stderr, "[ cfitsio_read_header_key() ] unable to read keyword '%s'\n", key->key_name);
+        fprintf(stderr, "[ cfitsio_read_header_key() ] unable to read keyword '%s'\n", keyword_name);
         fprintf(stderr, "CFITSIO error: %s\n", cfiostat_msg);
         /* err will be set (if cfiostat != 0 ==> err)*/
     }
@@ -3004,11 +3003,11 @@ static int Cf_update_key_null(fitsfile *fptr, const char *keyord_name, const cha
 
     if (*keyword_comment != '\0')
     {
-        snprintf(comment, sizeof(comment), "[%s] (MISSING) %s", *keyword_unit != '\0' ? keyword_unit : "none", keyword_comment);
+        snprintf(comment, sizeof(comment), "[%s] (%s) %s", *keyword_unit != '\0' ? keyword_unit : "none", CFITSIO_KEYWORD_COMMENT_MISSING, keyword_comment);
     }
     else
     {
-        snprintf(comment, sizeof(comment), "[%s] (MISSING)", *keyword_unit != '\0' ? keyword_unit : "none");
+        snprintf(comment, sizeof(comment), "[%s] (%s)", *keyword_unit != '\0' ? keyword_unit : "none", CFITSIO_KEYWORD_COMMENT_MISSING);
     }
 
     fits_update_key_null(fptr, keyord_name, comment, &cfiostat);
