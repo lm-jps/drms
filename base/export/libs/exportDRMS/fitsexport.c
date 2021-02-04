@@ -57,7 +57,7 @@ int DateHndlr(void *keyin, void **fitskeys, void **key_out, void *nameout, void 
 
 int CommHndlr(void *keyin, void **fitskeys, void **key_out, void *nameout, void *extra);
 
-int WCSHandler(void *keyin, void **fitskeys, void **key_out, void *nameout, void *extra);
+int WCSHandler(void *keyin, void **fitskeys, void **key_out, void *nameout, void *comment_stem_in);
 
 /* A reserved keyword with no export handler is one that is prohibited from being exported. */
 #define A(X,Y,Z) Z,
@@ -210,103 +210,376 @@ static int FE_cast_type_to_fits_key_type(FE_Keyword_ExtType_t cast_type, cfitsio
     return err;
 }
 
+/* allocs `*short_comment_out` */
+static int parse_short_comment(const char *full_comment, char **short_comment_out)
+{
+    int err = 0;
+    char *ptr_comment = NULL;
+    const char *separator = NULL;
+
+    /* strip off full description from short description; full_comment + strlen(full_comment) is the index
+     * to the null terminator */
+    *short_comment_out = calloc(sizeof(char), strlen(full_comment) + 1);
+    if (!*short_comment_out)
+    {
+        err = 1;
+        fprintf(stderr, "[ parse_short_comment() out of memory\n]");
+    }
+
+    for (ptr_comment = *short_comment_out, separator = full_comment; separator < full_comment + strlen(full_comment); separator++)
+    {
+        if (*separator == '-')
+        {
+            if (separator + 1 < full_comment + strlen(full_comment))
+            {
+                /* is there a second '-' following this one? */
+                if (*(separator + 1) == '-')
+                {
+                    *ptr_comment++ = *separator++;
+                }
+                else
+                {
+                    /* this is a true separator */
+                    *ptr_comment-- = '\0';
+
+                    /* strip off trailing white space */
+                    while (ptr_comment >= *short_comment_out && isspace(*ptr_comment))
+                    {
+                        *ptr_comment-- = '\0';
+                    }
+
+                    break;
+                }
+            }
+        }
+        else
+        {
+            *ptr_comment++ = *separator;
+        }
+    }
+
+    return err;
+}
+
+static int parse_keyword_description(const char *description, char **comment_out, char **cast_out, char **cast_name_out, char **cast_type_out)
+{
+    int err = 0;
+    char *ptr_cast = NULL;
+    size_t length_cast = 0;
+    char *external_comment = NULL;
+    char *cast = NULL;
+    char *cast_name = NULL;
+    char *cast_type = NULL;
+    char *separator = NULL;
+    char *working_description = NULL;
+
+    if (!description || *description == '\0')
+    {
+        err = 1;
+    }
+
+    if (!err)
+    {
+        working_description = strdup(description);
+        if (!working_description)
+        {
+            err = 1;
+            fprintf(stderr, "[ parse_keyword_description() ] out of memory\n");
+        }
+    }
+
+    if (!err)
+    {
+        /* checking for the presence of the corresponding FITS keyword name and possible data type cast;
+        * if these exist, then they are present in a '['<X>[:<Y>]']' substring at the start of the description field;
+        * <X> is the FITS keyword name
+        * <Y> is the FITS data type to cast to
+        */
+        ptr_cast = strtok(working_description, " ");
+
+        if (ptr_cast)
+        {
+            length_cast = strlen(ptr_cast); /* length of first substring (which may or may not be '['<X>[':'<Y>]']') */
+
+            if (length_cast > 2 && ptr_cast[0] == '[' && ptr_cast[length_cast - 1] == ']')
+            {
+                /* there is a '['<X>[':'<Y>]']' substring (a cast) at the start of the description field */
+                cast = (char *)calloc(sizeof(char), length_cast + 1);
+                if (cast)
+                {
+                    /* separate cast from comment */
+                    memcpy(cast, ptr_cast + 1, length_cast - 2); /* copy the <X>[':'<Y>]' from '['<X>[':'<Y>]']' */
+                    cast[length_cast - 2] = '\0';
+
+                    /* separate cast name from cast type */
+                    cast_name = strdup(cast);
+                    if (!cast_name)
+                    {
+                        err = 1;
+                        fprintf(stderr, "[ parse_keyword_description() ] out of memory\n");
+                    }
+
+                    if (!err)
+                    {
+                        separator = strchr(cast_name, ':');
+
+                        if (separator)
+                        {
+                            *separator = '\0';
+                            cast_type = strdup(separator + 1);
+                            if (!cast_type)
+                            {
+                                err = 1;
+                                fprintf(stderr, "[ parse_keyword_description() ] out of memory\n");
+                            }
+                        }
+                    }
+
+                    if (!err)
+                    {
+                        /* save the part of the comment that does not have the cast;
+                         * save this into `external_comment`:
+                         *  <comment minus '['<X>[':'<Y>]']'> ' ' '{'<X>[':'<Y>]'}'
+                         */
+                        external_comment = (char *)calloc(sizeof(char), strlen(description) + 1);
+                        if (external_comment)
+                        {
+                            snprintf(external_comment, strlen(description) + 1, "%s", &working_description[length_cast + 1]);
+                        }
+                        else
+                        {
+                            err = 1;
+                            fprintf(stderr, "[ parse_keyword_description() ] out of memory\n");
+                        }
+                    }
+                }
+                else
+                {
+                    err = 1;
+                    fprintf(stderr, "[ parse_keyword_description() ] out of memory\n");
+                }
+            }
+            else
+            {
+                external_comment = strdup(description);
+                if (!external_comment)
+                {
+                    err = 1;
+                    fprintf(stderr, "[ parse_keyword_description() ] out of memory\n");
+                }
+            }
+        }
+    }
+
+    if (comment_out)
+    {
+        *comment_out = external_comment; /* yoink! */
+    }
+    else
+    {
+        if (external_comment)
+        {
+            free(external_comment);
+            external_comment = NULL;
+        }
+    }
+
+    if (cast_out)
+    {
+        *cast_out = cast; /* yoink! */
+    }
+    else
+    {
+        if (cast)
+        {
+            free(cast);
+            cast = NULL;
+        }
+    }
+
+    if (cast_name_out)
+    {
+        *cast_name_out = cast_name; /* yoink! */
+    }
+    else
+    {
+        if (cast)
+        {
+            free(cast_name);
+            cast_name = NULL;
+        }
+    }
+
+    if (cast_type_out)
+    {
+        *cast_type_out = cast_type; /* yoink! */
+    }
+    else
+    {
+        if (cast_type)
+        {
+            free(cast_type);
+            cast_type = NULL;
+        }
+    }
+
+    if (working_description)
+    {
+        free(working_description);
+        working_description = NULL;
+    }
+
+    return err;
+}
+
+FE_Keyword_ExtType_t fitsexport_get_external_type(const char *cast_str)
+{
+    FE_Keyword_ExtType_t type = kFE_Keyword_ExtType_None;
+    int type_index;
+
+    for (type_index = 0; type_index < (int)kFE_Keyword_ExtType_End; type_index++)
+    {
+        if (strcasecmp(cast_str, FE_Keyword_ExtType_Strings[type_index]) == 0)
+        {
+            break;
+        }
+    }
+
+    if (type_index != kFE_Keyword_ExtType_End)
+    {
+        type = (FE_Keyword_ExtType_t)type_index;
+    }
+
+    return type;
+}
+
 /* parse a DRMS_Keyword_t into pieces that can be used to construct a CFITSIO_KEYWORD; the resulting
  * CFITSIO_KEYWORD is for export purposes only; the DRMS_Keyword_t::description will be shortened
- * so that it will fit on a FITS card */
-static int DRMSKeyValToFITSKeyVal(DRMS_Keyword_t *key, cfitsio_keyword_datatype_t *fitstype, int *number_bytes, void **fitsval, char **format, char **comment, char **unit)
+ * so that it will fit on a FITS card and returned in `comment` */
+static int DRMSKeyValToFITSKeyVal(DRMS_Keyword_t *key, const char *comment_external_in, cfitsio_keyword_datatype_t *fitstype, int *number_bytes, void **fitsval, char **format, char **short_comment_out, char **unit)
 {
    int err = 0;
-   char *separator = NULL;
+   const char *comment_to_parse = NULL;
+   char *cast_type = NULL;
    DRMS_Type_Value_t *valin = &key->value;
    DRMS_Value_t type_and_value;
    char unit_new[CFITSIO_MAX_COMMENT] = {0};
    void *res = NULL;
    int status = DRMS_SUCCESS;
-   FE_Keyword_ExtType_t casttype = fitsexport_keyword_getcast(key);
+   FE_Keyword_ExtType_t external_type = kFE_Keyword_ExtType_None;
 
     if (valin && fitstype && format)
     {
         if (format)
         {
             *format = strdup(key->info->format);
-        }
-
-        if (comment)
-        {
-            if (*key->info->description != '\0')
+            if (!*format)
             {
-                *comment = strdup(key->info->description);
-
-                /* strip off full description from short description */
-                separator = index(*comment, '-');
-                if (separator)
-                {
-                    *separator-- = '\0';
-
-                    /* strip off trailing white space */
-                    while (separator >= *comment && isspace(*separator))
-                    {
-                        *separator-- = '\0';
-                    }
-                }
-            }
-            else
-            {
-                *comment = NULL;
+                err = 1;
+                fprintf(stderr, "[ DRMSKeyValToFITSKeyVal() ] out of memory\n");
             }
         }
 
-        if (fitstype)
+        if (!err)
         {
-            if (casttype == kFE_Keyword_ExtType_None)
+            if (comment_external_in && *comment_external_in != '\0')
             {
-                err = DRMSKeyTypeToFITSKeyType(key->info->type, fitstype);
-                if (number_bytes)
-                {
-                    if (key->info->type == DRMS_TYPE_CHAR)
-                    {
-                        *number_bytes = 1;
-                    }
-                    else if (key->info->type == DRMS_TYPE_SHORT)
-                    {
-                        *number_bytes = 2;
-                    }
-                    else if (key->info->type == DRMS_TYPE_INT)
-                    {
-                        *number_bytes = 4;
-                    }
-                    else if (key->info->type == DRMS_TYPE_LONGLONG)
-                    {
-                        *number_bytes = 8;
-                    }
-                    else if (key->info->type == DRMS_TYPE_FLOAT)
-                    {
-                        *number_bytes = 4;
-                    }
-                    else if (key->info->type == DRMS_TYPE_DOUBLE)
-                    {
-                        *number_bytes = 8;
-                    }
-                    else if (key->info->type == DRMS_TYPE_TIME)
-                    {
-                        *number_bytes = 8;
-                    }
-                }
+                comment_to_parse = comment_external_in;
             }
             else
             {
-                err = FE_cast_type_to_fits_key_type(casttype, fitstype);
+                comment_to_parse = key->info->description;
+            }
 
-                /* if we casted to an int or float type, use max bytes */
-                if (*fitstype == CFITSIO_KEYWORD_DATATYPE_INTEGER || *fitstype == CFITSIO_KEYWORD_DATATYPE_FLOAT)
+            err = parse_keyword_description(comment_to_parse, NULL, NULL, NULL, &cast_type);
+        }
+
+        if (!err)
+        {
+            if (cast_type && *cast_type != '\0')
+            {
+                external_type = fitsexport_get_external_type(cast_type);
+            }
+        }
+
+        if (!err)
+        {
+            if (short_comment_out)
+            {
+                if (*comment_to_parse != '\0')
                 {
-                    *number_bytes = 8;
+                    /* allocs *short_comment_out */
+                    err = parse_short_comment(comment_to_parse, short_comment_out);
+                }
+                else
+                {
+                    *short_comment_out = NULL;
                 }
             }
         }
 
         if (!err)
         {
+            /* determine number of bytes for value */
+            if (fitstype)
+            {
+                if (external_type == kFE_Keyword_ExtType_None)
+                {
+                    err = DRMSKeyTypeToFITSKeyType(key->info->type, fitstype);
+                    if (!err)
+                    {
+                        if (number_bytes)
+                        {
+                            if (key->info->type == DRMS_TYPE_CHAR)
+                            {
+                                *number_bytes = 1;
+                            }
+                            else if (key->info->type == DRMS_TYPE_SHORT)
+                            {
+                                *number_bytes = 2;
+                            }
+                            else if (key->info->type == DRMS_TYPE_INT)
+                            {
+                                *number_bytes = 4;
+                            }
+                            else if (key->info->type == DRMS_TYPE_LONGLONG)
+                            {
+                                *number_bytes = 8;
+                            }
+                            else if (key->info->type == DRMS_TYPE_FLOAT)
+                            {
+                                *number_bytes = 4;
+                            }
+                            else if (key->info->type == DRMS_TYPE_DOUBLE)
+                            {
+                                *number_bytes = 8;
+                            }
+                            else if (key->info->type == DRMS_TYPE_TIME)
+                            {
+                                *number_bytes = 8;
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    err = FE_cast_type_to_fits_key_type(external_type, fitstype);
+
+                    if (!err)
+                    {
+                        /* if we casted to an int or float type, use max bytes */
+                        if (*fitstype == CFITSIO_KEYWORD_DATATYPE_INTEGER || *fitstype == CFITSIO_KEYWORD_DATATYPE_FLOAT)
+                        {
+                            *number_bytes = 8;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!err)
+        {
+            /* determine FITS keyword value */
             /* if valin is the missing value, then the output value should be NULL */
             type_and_value.type = key->info->type;
             type_and_value.value = *valin;
@@ -319,12 +592,12 @@ static int DRMSKeyValToFITSKeyVal(DRMS_Keyword_t *key, cfitsio_keyword_datatype_
             {
                 /* If the keyword being exported to FITS is a reserved keyword, then
                  * drop into specialized code to handle that reserved keyword. */
-                if (casttype != kFE_Keyword_ExtType_None)
+                if (external_type != kFE_Keyword_ExtType_None)
                 {
                     /* cast specified in key's description field */
                     if (key->info->type != DRMS_TYPE_RAW)
                     {
-                        switch (casttype)
+                        switch (external_type)
                         {
                            case kFE_Keyword_ExtType_Integer:
                              res = malloc(sizeof(long long));
@@ -354,7 +627,7 @@ static int DRMSKeyValToFITSKeyVal(DRMS_Keyword_t *key, cfitsio_keyword_datatype_
                              }
                              break;
                            default:
-                             fprintf(stderr, "Unsupported FITS type '%d'.\n", (int)casttype);
+                             fprintf(stderr, "[ DRMSKeyValToFITSKeyVal() ] unsupported FITS type '%d'\n", (int)external_type);
                              err = 1;
                              break;
                         }
@@ -362,7 +635,7 @@ static int DRMSKeyValToFITSKeyVal(DRMS_Keyword_t *key, cfitsio_keyword_datatype_
                     else
                     {
                         /* This shouldn't happen, unless somebody mucked with key->info->description. */
-                        fprintf(stderr, "DRMS_TYPE_RAW is not supported.\n");
+                        fprintf(stderr, "[ DRMSKeyValToFITSKeyVal() ] DRMS_TYPE_RAW is not supported.\n");
                         err = 1;
                     }
                 }
@@ -406,22 +679,31 @@ static int DRMSKeyValToFITSKeyVal(DRMS_Keyword_t *key, cfitsio_keyword_datatype_
                         res = (void *)strdup(valin->string_val);
                         break;
                       default:
-                        fprintf(stderr, "unsupported DRMS type '%d'\n", (int)key->info->type);
+                        fprintf(stderr, "[ DRMSKeyValToFITSKeyVal() ] unsupported DRMS type '%d'\n", (int)key->info->type);
                         err = 1;
                         break;
                     }
                 }
             }
 
-            if (unit)
+            if (!err)
             {
-                if (*unit_new != '\0')
+                if (unit)
                 {
-                    *unit = strdup(unit_new);
-                }
-                else
-                {
-                    *unit = strdup(key->info->unit);
+                    if (*unit_new != '\0')
+                    {
+                        *unit = strdup(unit_new);
+                    }
+                    else
+                    {
+                        *unit = strdup(key->info->unit);
+                    }
+
+                    if (!*unit)
+                    {
+                        err = 1;
+                        fprintf(stderr, "[ DRMSKeyValToFITSKeyVal() ] out of memory\n");
+                    }
                 }
             }
         }
@@ -445,7 +727,7 @@ static int DRMSKeyValToFITSKeyVal(DRMS_Keyword_t *key, cfitsio_keyword_datatype_
     return err;
 }
 
-int DateHndlr(void *keyin, void **fitskeys, void **fits_key_out, void *nameout, void *comment_out)
+int DateHndlr(void *keyin, void **fitskeys, void **fits_key_out, void *nameout, void *comment_in)
 {
    DRMS_Keyword_t *key = (DRMS_Keyword_t *)keyin;
    int err = 0;
@@ -457,7 +739,7 @@ int DateHndlr(void *keyin, void **fitskeys, void **fits_key_out, void *nameout, 
       /* unit (time zone) must be ISO - if not, don't export it */
       char unitbuf[DRMS_MAXUNITLEN];
       char *comment = NULL;
-      char *separator = NULL;
+      char *short_comment = NULL;
       int fitsrwRet = 0;
 
       snprintf(unitbuf, sizeof(unitbuf), "%s", key->info->unit);
@@ -477,41 +759,31 @@ int DateHndlr(void *keyin, void **fitskeys, void **fits_key_out, void *nameout, 
                tbuf[strlen(tbuf) - 1] = '\0';
             }
 
-            if (comment_out)
+            if (comment_in && *(char *)comment_in != '\0')
             {
-                comment = strdup((char *)comment_out);
+                comment = (char *)comment_in;
             }
             else if (*key->info->description != '\0')
             {
-                comment = strdup(key->info->description);
+                comment = key->info->description;
             }
 
             /* strip off full description from short description */
             if (comment)
             {
-                separator = index(comment, '-');
-                if (separator)
-                {
-                    *separator-- = '\0';
-
-                    /* strip off trailing white space */
-                    while (separator >= comment && isspace(*separator))
-                    {
-                        *separator-- = '\0';
-                    }
-                }
+                parse_short_comment(comment, &short_comment);
             }
 
-            if (CFITSIO_SUCCESS != (fitsrwRet = cfitsio_append_header_key((CFITSIO_KEYWORD**)fitskeys, (char *)nameout, kFITSRW_Type_String, 0, (void *)tbuf, *key->info->format != '\0' ?  key->info->format : NULL, comment, unitbuf, (CFITSIO_KEYWORD **)fits_key_out)))
+            if (CFITSIO_SUCCESS != (fitsrwRet = cfitsio_append_header_key((CFITSIO_KEYWORD**)fitskeys, (char *)nameout, kFITSRW_Type_String, 0, (void *)tbuf, *key->info->format != '\0' ?  key->info->format : NULL, short_comment, unitbuf, (CFITSIO_KEYWORD **)fits_key_out)))
             {
                fprintf(stderr, "FITSRW returned '%d'.\n", fitsrwRet);
                err = 2;
             }
 
-            if (comment)
+            if (short_comment)
             {
-                free(comment);
-                comment = NULL;
+                free(short_comment);
+                short_comment = NULL;
             }
          }
          else
@@ -620,13 +892,13 @@ int CommHndlr(void *keyin, void **fitskeys, void **fits_key_out, void *nameout, 
 }
 
 /* set the default value for WCS keywords that have missing values */
-int WCSHandler(void *keyin, void **fitskeys, void **key_out, void *nameout, void *extra)
+int WCSHandler(void *keyin, void **fitskeys, void **key_out, void *nameout, void *comment_stem_in)
 {
     int err = 0;
     int fitsrw_error = CFITSIO_SUCCESS;
     DRMS_Keyword_t *key = (DRMS_Keyword_t *)keyin;
     const DRMS_Type_Value_t *val = drms_keyword_getvalue(key);
-    char *keyword_stem = (char *)extra;
+    char **comment_stem = comment_stem_in;
     void *override_fits_keyword_value = NULL;
     double wcs_float_value = 0; /* since all floats are doubles at the CFITSIO level */
     cfitsio_keyword_datatype_t fits_keyword_type = CFITSIO_KEYWORD_DATATYPE_NONE;
@@ -636,15 +908,15 @@ int WCSHandler(void *keyin, void **fitskeys, void **key_out, void *nameout, void
     char *fits_keyword_comment = NULL;
     char *fits_keyword_unit = NULL;
 
-    if (!keyword_stem || *keyword_stem == '\0')
+    if (!comment_stem[1] || *comment_stem[1] == '\0')
     {
-        keyword_stem = key->info->name;
+        comment_stem[1] = key->info->name;
     }
 
     if (drms_ismissing2(key->info->type, &key->value))
     {
         /* use appropriate default value for each type of WCS keyword */
-        if (strcasecmp(kFITSRESERVED[kRWK_cripx], keyword_stem) == 0)
+        if (strcasecmp(kFITSRESERVED[kRWK_cripx], comment_stem[1]) == 0)
         {
             /* type is floating point; default is 0.0 */
             if (key->info->type != DRMS_TYPE_FLOAT && key->info->type != DRMS_TYPE_DOUBLE)
@@ -658,7 +930,7 @@ int WCSHandler(void *keyin, void **fitskeys, void **key_out, void *nameout, void
                 override_fits_keyword_value = &wcs_float_value;
             }
         }
-        else if (strcasecmp(kFITSRESERVED[kRWK_crval], keyword_stem) == 0)
+        else if (strcasecmp(kFITSRESERVED[kRWK_crval], comment_stem[1]) == 0)
         {
             /* type is floating point; default is 0.0 */
             if (key->info->type != DRMS_TYPE_FLOAT && key->info->type != DRMS_TYPE_DOUBLE)
@@ -672,7 +944,7 @@ int WCSHandler(void *keyin, void **fitskeys, void **key_out, void *nameout, void
                 override_fits_keyword_value = &wcs_float_value;
             }
         }
-        else if (strcasecmp(kFITSRESERVED[kRWK_cdelt], keyword_stem) == 0)
+        else if (strcasecmp(kFITSRESERVED[kRWK_cdelt], comment_stem[1]) == 0)
         {
             /* type is floating point; default is 1.0 */
             if (key->info->type != DRMS_TYPE_FLOAT && key->info->type != DRMS_TYPE_DOUBLE)
@@ -686,7 +958,7 @@ int WCSHandler(void *keyin, void **fitskeys, void **key_out, void *nameout, void
                 override_fits_keyword_value = &wcs_float_value;
             }
         }
-        else if (strcasecmp(kFITSRESERVED[kRWK_crota], keyword_stem) == 0)
+        else if (strcasecmp(kFITSRESERVED[kRWK_crota], comment_stem[1]) == 0)
         {
             /* type is floating point; default is 0.0 */
             if (key->info->type != DRMS_TYPE_FLOAT && key->info->type != DRMS_TYPE_DOUBLE)
@@ -700,7 +972,7 @@ int WCSHandler(void *keyin, void **fitskeys, void **key_out, void *nameout, void
                 override_fits_keyword_value = &wcs_float_value;
             }
         }
-        else if (strcasecmp(kFITSRESERVED[kRWK_crder], keyword_stem) == 0)
+        else if (strcasecmp(kFITSRESERVED[kRWK_crder], comment_stem[1]) == 0)
         {
             /* type is floating point; default is 0.0 */
             if (key->info->type != DRMS_TYPE_FLOAT && key->info->type != DRMS_TYPE_DOUBLE)
@@ -714,7 +986,7 @@ int WCSHandler(void *keyin, void **fitskeys, void **key_out, void *nameout, void
                 override_fits_keyword_value = &wcs_float_value;
             }
         }
-        else if (strcasecmp(kFITSRESERVED[kRWK_csyer], keyword_stem) == 0)
+        else if (strcasecmp(kFITSRESERVED[kRWK_csyer], comment_stem[1]) == 0)
         {
             /* type is floating point; default is 0.0 */
             if (key->info->type != DRMS_TYPE_FLOAT && key->info->type != DRMS_TYPE_DOUBLE)
@@ -736,7 +1008,8 @@ int WCSHandler(void *keyin, void **fitskeys, void **key_out, void *nameout, void
 
     if (!err)
     {
-        err = DRMSKeyValToFITSKeyVal(key, &fits_keyword_type, &number_bytes, &fits_keyword_value, &fits_keyword_format, &fits_keyword_comment, &fits_keyword_unit);
+        /* comment_stem[0] - contains no internal info */
+        err = DRMSKeyValToFITSKeyVal(key, comment_stem[0], &fits_keyword_type, &number_bytes, &fits_keyword_value, &fits_keyword_format, &fits_keyword_comment, &fits_keyword_unit);
     }
 
     if (!err)
@@ -1940,14 +2213,17 @@ int fitsexport_exportkey(DRMS_Keyword_t *key, CFITSIO_KEYWORD **fitskeys, CFITSI
 int fitsexport_mapexportkey(DRMS_Keyword_t *key, const char *clname, Exputl_KeyMap_t *map, CFITSIO_KEYWORD **fitskeys, CFITSIO_KEYWORD **fits_key)
 {
     int stat = DRMS_SUCCESS;
+    void *extra = NULL;
 
     if (key && fitskeys)
     {
         char nameout[16];
-        char comment_out[DRMS_MAXCOMMENTLEN] = {0};
+        char comment_external[DRMS_MAXCOMMENTLEN] = {0};
 
-        if (fitsexport_getmappedextkeyname(key, clname, map, nameout, sizeof(nameout), comment_out, sizeof(comment_out)))
+        /* removes internal information (like external keyword name) from key->info->description */
+        if (fitsexport_getmappedextkeyname(key, clname, map, nameout, sizeof(nameout), comment_external, sizeof(comment_external)))
         {
+            char *wcs_extra[2];
             int fitsrwRet = 0;
             cfitsio_keyword_datatype_t fitskwtype = CFITSIO_KEYWORD_DATATYPE_NONE;
             int number_bytes = -1;
@@ -1972,6 +2248,7 @@ int fitsexport_mapexportkey(DRMS_Keyword_t *key, const char *clname, Exputl_KeyM
                 const char *indexed_keyword_pattern = "^([A-Za-z])+[0-9]+$";
                 regmatch_t matches[2]; /* index 0 is the entire string */
 
+                /* ART - do this compilation only once per module run! */
                 if (regcomp(&reg_expression, indexed_keyword_pattern, REG_EXTENDED) != 0)
                 {
                     stat = DRMS_ERROR_FITSRW;
@@ -1997,8 +2274,21 @@ int fitsexport_mapexportkey(DRMS_Keyword_t *key, const char *clname, Exputl_KeyM
                     {
                         if (ExportHandlers[*ikey])
                         {
+                            if (ExportHandlers[*ikey] == DateHndlr)
+                            {
+                                /* comment has no internal info */
+                                extra = comment_external;
+                            }
+                            else if (ExportHandlers[*ikey]  == WCSHandler)
+                            {
+                                /* comment has no internal info */
+                                wcs_extra[0] = comment_external;
+                                wcs_extra[1] = keyword_stem;
+                                extra = wcs_extra;
+                            }
+
                             /* A handler exists for this reserved keyword - okay to export it. */
-                            rv = (*(ExportHandlers[*ikey]))(keywval, (void **)fitskeys, (void *)fits_key, (void *)nameout, keyword_stem);
+                            rv = (*(ExportHandlers[*ikey]))(keywval, (void **)fitskeys, (void *)fits_key, (void *)nameout, extra);
 
                             if (rv == 2)
                             {
@@ -2017,7 +2307,9 @@ int fitsexport_mapexportkey(DRMS_Keyword_t *key, const char *clname, Exputl_KeyM
                     }
                     else
                     {
-                        if ((rv = DRMSKeyValToFITSKeyVal(keywval, &fitskwtype, &number_bytes, &fitskwval, &format, &fitskw_comment, &fitskw_unit)) == 0)
+                        /* returns short-version comment */
+                        /* comment_external has no internal info */
+                        if ((rv = DRMSKeyValToFITSKeyVal(keywval, comment_external, &fitskwtype, &number_bytes, &fitskwval, &format, &fitskw_comment, &fitskw_unit)) == 0)
                         {
                             if (CFITSIO_SUCCESS != (fitsrwRet = cfitsio_append_header_key(fitskeys, nameout, fitskwtype, number_bytes, fitskwval, format, fitskw_comment, fitskw_unit, fits_key)))
                             {
@@ -2082,11 +2374,37 @@ int fitsexport_getextkeyname(DRMS_Keyword_t *key, char *nameOut, int size)
 }
 
 /* Same as above, but try a KeyMap first, then a KeyMapClass */
+/* `comment_out` - if the comment has information that should not be exported (internal informaton), like a keyword cast, or the
+ * FITS export name, then the comment, minus the internal information, will be returned in `comment_out`
+ */
 int fitsexport_getmappedextkeyname(DRMS_Keyword_t *key, const char *class, Exputl_KeyMap_t *map, char *nameOut, int size, char *comment_out, int comment_out_sz)
 {
    int success = 0;
    const char *potential = NULL;
    int vstat = 0;
+   char *parsed_comment = NULL;
+   char *parsed_cast_name = NULL;
+   char *parsed_cast_type = NULL;
+
+   /* one thing we always have to do is to parse out the internal information (like the [X:Y] cast), regardless
+    * of method we use for determining the external keyword name */
+   parse_keyword_description(key->info->description, &parsed_comment, NULL, &parsed_cast_name, &parsed_cast_type);
+
+   if (comment_out && parsed_comment && *parsed_comment != '\0')
+   {
+       if (parsed_cast_name && *parsed_cast_name && strcasecmp(parsed_cast_name, key->info->name) != 0)
+       {
+           /* save the part of the comment that does not have the cast;
+            * save this into the output buffer; save DRMS keyword name
+            *  <comment minus '['<X>[':'<Y>]']'> ' ' '{'<DRMS keyword name>}'
+            */
+           snprintf(comment_out, comment_out_sz, "%s {%s}", parsed_comment, key->info->name);
+       }
+       else
+       {
+          snprintf(comment_out, comment_out_sz, "%s", parsed_comment);
+       }
+   }
 
    /* attempt to determine the FITS keyword name that the input DRMS keyword name maps to; there are five different
     * methods that we use to do the mapping; the order of methods is prioritized, and we only attempt the subsequent
@@ -2128,74 +2446,36 @@ int fitsexport_getmappedextkeyname(DRMS_Keyword_t *key, const char *class, Exput
     if (!success)
     {
         /* Now try the map- and class-independent schemes. */
-        char *pot = NULL;
-        char *psep = NULL;
-        char *desc = strdup(key->info->description);
-        char *pFitsName = NULL;
-        *nameOut = '\0';
 
         /* 3 - Try keyword name in description field. */
-        if (desc)
+        /* checking for the presence of the corresponding FITS keyword name and possible data type cast;
+        * if these exist, then they are present in a '['<X>[:<Y>]']' substring at the start of the description field;
+        * <X> is the FITS keyword name
+        * <Y> is the FITS data type to cast to
+        */
+        if (parsed_cast_name && *parsed_cast_name != '\0')
         {
-            /* checking for the presence of the corresponding FITS keyword name and possible data type cast;
-            * if these exist, then they are present in a '['<X>[:<Y>]']' substring at the start of the description field;
-            * <X> is the FITS keyword name
-            * <Y> is the FITS data type to cast to
-            */
-            pFitsName = strtok(desc, " ");
-
-            if (pFitsName)
+            /* '['<X>[:<Y>]']' exists (`parsed_cast_name` == X) */
+            if (parsed_cast_type && *parsed_cast_type != '\0')
             {
-                int len = strlen(pFitsName); /* length of first substring (which may or may not be '['<X>[':'<Y>]']') */
-
-                if (len > 2 && pFitsName[0] == '[' && pFitsName[len - 1] == ']')
+                /* <Y> exists (`parsed_cast_type` == Y) */
+                if (fitsexport_get_external_type(parsed_cast_type) == kFE_Keyword_ExtType_None)
                 {
-                    /* there is a '['<X>[':'<Y>]']' substring at the start of the description field */
-                    if (len - 2 < size)
-                    {
-                        /* '['<X>[':'<Y>]']' fits in the output buffer */
-                        pot = (char *)malloc(sizeof(char) * size);
-                        if (pot)
-                  		  {
-                            memcpy(pot, pFitsName + 1, len - 2); /* copy the <X>[':'<Y>]' from '['<X>[':'<Y>]']' */
-                            pot[len - 2] = '\0';
-
-                            if (comment_out)
-                            {
-                                /* save the part of the comment that does not have the cast;
-                                 * save this into the output buffer:
-                                 *  <comment minus '['<X>[':'<Y>]']'> ' ' '{'<X>[':'<Y>]'}'
-                                 */
-                                snprintf(comment_out, comment_out_sz, "%s {%s}", &desc[len + 1], pot);
-                            }
-
-                            /* The description might contain [X:Y], where
-                             * X is the external keyword name, and Y is the
-                             * external keyword cast. There could be a ':'
-                             */
-                            if (fitsexport_keyword_getcast(key) != kFE_Keyword_ExtType_None)
-                            {
-                                /* strip off the ':'<Y> - it does exist */
-                                psep = strchr(pot, ':');
-                                *psep = '\0';
-                                /* pot now has <X> */
-                            }
-
-                             vstat = fitsexport_fitskeycheck(pot);
-
-                             if (vstat != 1)
-                             {
-                                snprintf(nameOut, size, "%s", pot);
-                                success = 1;
-                             }
-
-                            free(pot);
-                  		  }
-                    }
+                    /* bad cast type */
+                    vstat = 1;
                 }
             }
 
-            free(desc);
+            if (vstat == 0)
+            {
+                vstat = fitsexport_fitskeycheck(parsed_cast_name);
+
+                if (vstat != 1)
+                {
+                   snprintf(nameOut, size, "%s", parsed_cast_name);
+                   success = 1;
+                }
+            }
         }
 
         /* 2 - Try DRMS name (must be upper case); it may be a valid FITS keyword name; this method is used for
@@ -2220,8 +2500,8 @@ int fitsexport_getmappedextkeyname(DRMS_Keyword_t *key, const char *class, Exput
         if (!success)
         {
             char actualKeyName[DRMS_MAXKEYNAMELEN];
+            char *pot = (char *)malloc(sizeof(char) * size);
 
-            pot = (char *)malloc(sizeof(char) * size);
             if (pot)
             {
                 snprintf(actualKeyName, sizeof(actualKeyName), "%s", key->info->name);
@@ -2255,7 +2535,25 @@ int fitsexport_getmappedextkeyname(DRMS_Keyword_t *key, const char *class, Exput
        * will be made in DRMSKeyValToFITSKeyVal(). */
    }
 
-   return success;
+    if (parsed_comment)
+    {
+        free(parsed_comment);
+        parsed_comment = NULL;
+    }
+
+    if (parsed_cast_name)
+    {
+        free(parsed_cast_name);
+        parsed_cast_name = NULL;
+    }
+
+    if (parsed_cast_type)
+    {
+        free(parsed_cast_type);
+        parsed_cast_type = NULL;
+    }
+
+    return success;
 }
 
 int fitsexport_fitskeycheck(const char *fitsName)
@@ -2733,37 +3031,6 @@ int fitsexport_mapimportkey(CFITSIO_KEYWORD *fitskey,
    return stat;
 }
 
-FE_Keyword_ExtType_t fitsexport_keyword_getcast(DRMS_Keyword_t *key)
-{
-   FE_Keyword_ExtType_t type = kFE_Keyword_ExtType_None;
-   char *pcast = NULL;
-   int icast;
-
-   if (key && key->info->description)
-   {
-      pcast = strchr(key->info->description, ':');
-      if (pcast)
-      {
-         pcast++;
-
-         for (icast = 0; icast < (int)kFE_Keyword_ExtType_End; icast++)
-         {
-            if (strcasecmp(pcast, FE_Keyword_ExtType_Strings[icast]) == 0)
-            {
-               break;
-            }
-         }
-
-         if (icast != kFE_Keyword_ExtType_End)
-         {
-            type = (FE_Keyword_ExtType_t)icast;
-         }
-      }
-   }
-
-   return type;
-}
-
 /* state
  *   -1 - error
  *    0 - begin (haven't parsed '[' yet)
@@ -2901,7 +3168,7 @@ int fitsexport_getmappedextkeyvalue(DRMS_Keyword_t *key, char **fitsKwString)
     /* if key is a linked-keyword, then resolve link */
     keyWithVal = drms_keyword_lookup(key->record, key->info->name, 1);
 
-    if ((DRMSKeyValToFITSKeyVal(keyWithVal, &fitsKwType, &number_bytes, &fitsKwVal, &fitsKwFormat, &fitskw_comment, &fitskw_unit)) == 0)
+    if ((DRMSKeyValToFITSKeyVal(keyWithVal, NULL, &fitsKwType, &number_bytes, &fitsKwVal, &fitsKwFormat, &fitskw_comment, &fitskw_unit)) == 0)
     {
         if (cfitsio_create_header_key(dummy, fitsKwType, number_bytes, fitsKwVal, fitsKwFormat, fitskw_comment, fitskw_unit, &cfitsioKey) == 0)
         {
