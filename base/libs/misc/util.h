@@ -121,6 +121,7 @@ static inline int IsNegHugeVal(double d)
 int base_floatIsEqual(const float val1, const float val2);
 int base_doubleIsEqual(const double val1, const double val2);
 int base_nsAndTab(const char *name, char **ns, char **tab);
+int base_strip_whitespace(const char *string_in, char **string_out);
 
 #ifdef ICCCOMP
 #pragma warning (default : 1572)

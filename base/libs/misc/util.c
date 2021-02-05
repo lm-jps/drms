@@ -13,6 +13,7 @@
 #include <sys/statvfs.h>
 #include <ctype.h>
 #include <dirent.h>
+#include <regex.h>
 #include "util.h"
 #include "xassert.h"
 #include "xmem.h"
@@ -23,7 +24,7 @@
 #define ISDIGIT(X) (X >= 0x30 && X <= 0x39)
 #define DRMS_MAXNAMELEN 32
 
-char *kKEYNAMERESERVED[] = 
+char *kKEYNAMERESERVED[] =
 {
    "_index",
    "ALL",
@@ -189,7 +190,7 @@ void *base_strcatalloc(char *dst, const char *src, size_t *sizedst)
     size_t dstlen = strlen(dst);
     void *retstr = NULL;
     void *tmp = NULL;
-    
+
     while (srclen > *sizedst - dstlen - 1)
     {
         if (!tmp)
@@ -208,21 +209,21 @@ void *base_strcatalloc(char *dst, const char *src, size_t *sizedst)
             break;
         }
     }
-    
+
     if (!retstr)
     {
         retstr = dst;
     }
-    
+
     if (retstr)
     {
         base_strlcat(retstr, src, *sizedst);
     }
-    
+
     return retstr;
 }
 
-/* Returns a newly allocated string that contains the original string with all instances of 
+/* Returns a newly allocated string that contains the original string with all instances of
  * the 'repl' string replaced with the string 'with'. */
 char *base_strreplace(const char *text, const char *orig, const char *repl)
 {
@@ -244,7 +245,7 @@ char *base_strreplace(const char *text, const char *orig, const char *repl)
       replacement = (repl == NULL ? "" : repl);
       lenrepl = strlen(replacement);
 
-      for (count = 0, pc = strstr(text, orig), ins = pc; ins && (pc = strstr(ins, orig)); count++) 
+      for (count = 0, pc = strstr(text, orig), ins = pc; ins && (pc = strstr(ins, orig)); count++)
       {
          ins = pc + lenorig;
       }
@@ -274,9 +275,9 @@ char *base_strreplace(const char *text, const char *orig, const char *repl)
    return result;
 }
 
-/* Returns a newly allocated string that contains the original string ('text') with all instances of 
- * the 'orig' string replaced with the string 'repl'. 
- * 
+/* Returns a newly allocated string that contains the original string ('text') with all instances of
+ * the 'orig' string replaced with the string 'repl'.
+ *
  * This is a case-insenstive version of base_strreplace(). */
 char *base_strcasereplace(const char *text, const char *orig, const char *repl)
 {
@@ -289,26 +290,26 @@ char *base_strcasereplace(const char *text, const char *orig, const char *repl)
     size_t lenrepl;  // length of replacement substring
     size_t lenprefix; // distance between repl and end of last repl
     int count;    // number of instances of the 'repl' string in 'orig'
-    
+
     XASSERT(text && orig && strlen(orig) > 0);
-    
+
     if (text && orig && strlen(orig) > 0)
     {
         lenorig = strlen(orig);
         replacement = (repl == NULL ? "" : repl);
         lenrepl = strlen(replacement);
-        
-        for (count = 0, pc = strcasestr(text, orig), ins = pc; ins && (pc = strcasestr(ins, orig)); count++) 
+
+        for (count = 0, pc = strcasestr(text, orig), ins = pc; ins && (pc = strcasestr(ins, orig)); count++)
         {
             ins = pc + lenorig;
         }
-        
+
         if (count > 0)
         {
             result = malloc(strlen(text) + (lenrepl - lenorig) * count + 1);
             pc = result;
             pcin = text;
-            
+
             while (count--)
             {
                 ins = strcasestr(pcin, orig);
@@ -319,7 +320,7 @@ char *base_strcasereplace(const char *text, const char *orig, const char *repl)
                 pc += lenrepl;
                 pcin += lenprefix + lenorig;
             }
-            
+
             strncpy(pc, pcin, strlen(pcin));
             *(pc + strlen(pcin)) = '\0';
         }
@@ -328,18 +329,18 @@ char *base_strcasereplace(const char *text, const char *orig, const char *repl)
             result = strdup(text);
         }
     }
-    
+
     return result;
 }
 
 void base_strcasereplace_inplace(char **text, const char *orig, const char *repl)
 {
     char *replacement = NULL;
-    
+
     if (text)
     {
         replacement = base_strcasereplace(*text, orig, repl);
-                
+
         if (replacement)
         {
             /* if replacement != NULL, then *text != NULL */
@@ -352,7 +353,7 @@ void base_strcasereplace_inplace(char **text, const char *orig, const char *repl
 int convert_int_field(char *field, int len)
 {
   char *buf;
-  
+
   buf = alloca(len+1);
   memcpy(buf,field,len);
   return atoi(buf);
@@ -361,7 +362,7 @@ int convert_int_field(char *field, int len)
 long convert_long_field(char *field, int len)
 {
   char *buf;
-  
+
   buf = alloca(len+1);
   memcpy(buf,field,len);
   return atol(buf);
@@ -370,7 +371,7 @@ long convert_long_field(char *field, int len)
 float convert_float_field(char *field, int len)
 {
   char *buf;
-  
+
   buf = alloca(len+1);
   memcpy(buf,field,len);
   return (float)atof(buf);
@@ -379,7 +380,7 @@ float convert_float_field(char *field, int len)
 double convert_double_field(char *field, int len)
 {
   char *buf;
-  
+
   buf = alloca(len+1);
   memcpy(buf,field,len);
   return atof(buf);
@@ -389,7 +390,7 @@ double convert_double_field(char *field, int len)
 void convert_string_field(char *field, int len, char *output, int maxlen)
 {
   int l;
-  
+
   l = (len>maxlen?maxlen:len);
   strncpy(output,field,l);
   output[l] = '\0';
@@ -437,7 +438,7 @@ int copyfile(const char *inputfile, const char *outputfile)
   XASSERT(bufferorig);
   buffer = bufferorig;
   buffer = buffer + (align - ((unsigned long)buffer % align));
-  
+
 #else
   buffer = malloc(BUFSIZE);
   XASSERT(buffer);
@@ -622,7 +623,7 @@ int GenerateDRMSKeyName(const char *fitsName, char *drmsName, int size)
            {
               /* FITS keyword name starts with an hyphen */
               if (pcOut + 2 <= drmsName + size)
-              { 
+              {
                  *pcOut++ = '_';
                  *pcOut++ = '_';
                  state = kKwCharNew;
@@ -637,7 +638,7 @@ int GenerateDRMSKeyName(const char *fitsName, char *drmsName, int size)
            {
               /* FITS keyword name starts with a numeral */
               if (pcOut + 2 <= drmsName + size)
-              { 
+              {
                  *pcOut++ = '_';
                  *pcOut++ = *pcIn;
                  state = kKwCharNew;
@@ -676,7 +677,7 @@ int GenerateDRMSKeyName(const char *fitsName, char *drmsName, int size)
               state = kKwCharNew;
            }
            break;
-	    
+
       } /* switch */
 
       if (state != kKwCharError)
@@ -688,7 +689,7 @@ int GenerateDRMSKeyName(const char *fitsName, char *drmsName, int size)
 
    *pcOut = '\0';
 
-   /* if drmsName is a reserved DRMS keyword, then prepend with an underscore 
+   /* if drmsName is a reserved DRMS keyword, then prepend with an underscore
     * because it must be valid otherwise */
    if (!error && DRMSKeyNameValidationStatus(drmsName) == 2)
    {
@@ -732,7 +733,7 @@ int GenerateDRMSKeyName(const char *fitsName, char *drmsName, int size)
       }
    }
 
-  
+
    return !error;
 }
 
@@ -760,7 +761,7 @@ int RemoveDir(const char *pathname, int maxrec)
          int nFiles = -1;
 
          /* delete all non-dir files */
-         if ((nFiles = scandir(pbuf, &fileList, NULL, NULL)) > 0 && 
+         if ((nFiles = scandir(pbuf, &fileList, NULL, NULL)) > 0 &&
              fileList != NULL)
          {
             int fileIndex = 0;
@@ -772,9 +773,9 @@ int RemoveDir(const char *pathname, int maxrec)
                {
                   char *oneFile = entry->d_name;
                   char dirEntry[PATH_MAX] = {0};
-                  snprintf(dirEntry, 
-                           sizeof(dirEntry), 
-                           "%s%s", 
+                  snprintf(dirEntry,
+                           sizeof(dirEntry),
+                           "%s%s",
                            pbuf,
                            oneFile);
                   if (*dirEntry !=  '\0' && !stat(dirEntry, &stBuf) && status == 0)
@@ -803,7 +804,7 @@ int RemoveDir(const char *pathname, int maxrec)
 
                fileIndex++;
             }
-         }	
+         }
 
          /* delete the directory */
          if (status == 0)
@@ -909,17 +910,17 @@ size_t CopyFile(const char *src, const char *dst, int *ioerr)
                struct dirent *entry = NULL;
                char srcFile[PATH_MAX];
                char dstFile[PATH_MAX];
-               
+
                nfiles = scandir(src, &fileList, NULL, NULL);
-               
+
                for (ifile = 0 ; ifile < nfiles; ifile++)
                {
                    entry = fileList[ifile];
-                   
+
                    if (entry != NULL)
                    {
                        char *oneFile = entry->d_name;
-                       
+
                        if (strcmp(oneFile, ".") != 0 && strcmp(oneFile, "..") != 0)
                        {
                            /* Recursive call. */
@@ -933,7 +934,7 @@ size_t CopyFile(const char *src, const char *dst, int *ioerr)
                        entry = NULL;
                    }
                }
-               
+
                if (fileList)
                {
                    free(fileList);
@@ -990,13 +991,13 @@ int base_cleanup_go(const char *explicit)
 {
     int error = 0;
     BASE_Cleanup_t *cu = NULL;
-    
+
     if (gCleanup)
     {
         if (explicit && *explicit)
         {
             cu = hcon_lookup(gCleanup, explicit);
-            
+
             if (cu)
             {
                 (*(cu->free))(cu->item);
@@ -1015,14 +1016,14 @@ int base_cleanup_go(const char *explicit)
             char **toRemove = NULL;
             int ielem;
             int ntotal;
-            
+
             ntotal = gCleanup->num_total;
-            
+
             if (gCleanup && ntotal > 0)
             {
                 toRemove = calloc(gCleanup->num_total, sizeof(char *));
             }
-            
+
             if (toRemove)
             {
                 ielem = 0;
@@ -1039,10 +1040,10 @@ int base_cleanup_go(const char *explicit)
                         error = 1;
                         break;
                     }
-                    
+
                     ielem++;
                 }
-                
+
                 for (ielem = 0; ielem < ntotal; ielem++)
                 {
                     if (toRemove[ielem])
@@ -1052,7 +1053,7 @@ int base_cleanup_go(const char *explicit)
                         toRemove[ielem] = NULL;
                     }
                 }
-                
+
                 free(toRemove);
                 toRemove = NULL;
             }
@@ -1061,11 +1062,11 @@ int base_cleanup_go(const char *explicit)
                 fprintf(stderr, "Out of memory in base_cleanup_go().\n");
                 error = 1;
             }
-            
+
             hiter_destroy(&hiter);
         }
     }
-    
+
     return error;
 }
 
@@ -1094,9 +1095,9 @@ int base_isvers(const char *vers, const char *minvers)
     long long minor;
     long long minmajor;
     long long minminor;
-    
+
     int ok = 1;
-    
+
     if (*vers == '\0')
     {
         ok = 0;
@@ -1125,35 +1126,35 @@ int base_isvers(const char *vers, const char *minvers)
         fprintf(stderr, "Invalid version string '%s'.\n", vers);
         ok = 0;
     }
-    
+
     return ok;
 }
 
 int base_floatIsEqual(const float val1, const float val2)
 {
-    union 
+    union
     {
         int32_t integer;
         float singlePrecFP;
     } conv1, conv2;
-    
+
     conv1.singlePrecFP = val1;
     conv2.singlePrecFP = val2;
-    
+
     return (conv1.integer == conv2.integer);
 }
 
 int base_doubleIsEqual(const double val1, const double val2)
 {
-    union 
+    union
     {
         int64_t integer;
         float doublePrecFP;
     } conv1, conv2;
-    
+
     conv1.doublePrecFP = val1;
     conv2.doublePrecFP = val2;
-    
+
     return (conv1.integer == conv2.integer);
 }
 
@@ -1163,7 +1164,7 @@ int base_nsAndTab(const char *name, char **ns, char **tab)
     char *nspace = strdup(name);
     char *pc = strrchr(nspace, '.');
 
-    if (pc) 
+    if (pc)
     {
         *pc = '\0';
     }
@@ -1178,5 +1179,51 @@ int base_nsAndTab(const char *name, char **ns, char **tab)
         *tab = strdup(++pc);
     }
 
-    return err;   
+    return err;
+}
+
+/* strip leading and trailing whitespace */
+int base_strip_whitespace(const char *string_in, char **string_out)
+{
+    int err = 0;
+    static regex_t *reg_expression = NULL;
+    const char *pattern = "^[[:space:]]*([[:print:]]+)[[:space:]]*$";
+    regmatch_t matches[2]; /* index 0 is the entire string */
+
+    if (!reg_expression)
+    {
+        /* ART - not going to bother freeing this! */
+        reg_expression = calloc(1, sizeof(regex_t));
+        if (regcomp(reg_expression, pattern, REG_EXTENDED) != 0)
+        {
+            err = 1;
+        }
+    }
+
+    if (!err)
+    {
+        if (regexec(reg_expression, string_in, sizeof(matches) / sizeof(matches[0]), matches, 0) == 0)
+        {
+            if (matches[1].rm_so != -1)
+            {
+                *string_out = calloc(matches[1].rm_eo - matches[1].rm_so + 1, sizeof(char));
+                memcpy(*string_out, string_in + matches[1].rm_so, matches[1].rm_eo - matches[1].rm_so);
+            }
+        }
+        else
+        {
+            /* no match, or failure */
+            if (*string_in == '\0')
+            {
+                *string_out = strdup(string_in);
+            }
+            else
+            {
+                *string_out = NULL;
+                err = 1;
+            }
+        }
+    }
+
+    return err;
 }
