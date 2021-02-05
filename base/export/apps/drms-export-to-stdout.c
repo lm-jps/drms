@@ -106,7 +106,7 @@ static void GetOptionValue(ModuleArgs_Type_t type, const char *key, void *result
         {
             const char *innards = NULL;
 
-            innards = params_get_str(&cmdparams, (char *)key); /* stupid cmdparams does not make this parameter const */
+            innards = params_get_str(&cmdparams, (char *)key);
             if (strcmp(innards, " "))
             {
                 *(const char **)result = innards;
@@ -120,7 +120,7 @@ static void GetOptionValue(ModuleArgs_Type_t type, const char *key, void *result
             LinkedList_t *list = NULL;
             int iElem;
 
-            nElems = cmdparams_get_strarr(&cmdparams, (char *)key, &strings, NULL); /* stupid cmdparams does not make this parameter const */
+            nElems = cmdparams_get_strarr(&cmdparams, (char *)key, &strings, NULL);
 
             if (nElems != 0 && (nElems != 1 || strcmp(strings[0], " ")))
             {
@@ -129,7 +129,7 @@ static void GetOptionValue(ModuleArgs_Type_t type, const char *key, void *result
                 {
                     for (iElem = 0; iElem < nElems; iElem++)
                     {
-                        list_llinserttail(list, strings[iElem]);
+                        list_llinserttail(list, &(strings[iElem]));
                     }
 
                     *(LinkedList_t **)result = list;
@@ -2066,7 +2066,7 @@ int DoIt(void)
                 iComp = 0;
                 while ((cparmNode = list_llnext(cparmsStrings)) != NULL)
                 {
-                    cparmStr = *(char **)cparmNode;
+                    cparmStr = *(char **)cparmNode->data;
 
                     segCompression[iComp] = -1; /* not set */
 
