@@ -55,6 +55,9 @@ typedef char cfitsio_keyword_datatype_t;
 #define CFITSIO_KEYWORD_CONTINUE         "CONTINUE"
 
 #define CFITSIO_KEYWORD_COMMENT_MISSING  "MISSING"
+#define CFITSIO_KEYWORD_UNIT_NONE        "none"
+#define CFITSIO_KEYWORD_UNIT_NA          "na"
+#define CFITSIO_KEYWORD_UNIT_NSLASHA     "n/a"
 
 #define CFITSIO_MAX_BINTABLE_WIDTH    1024
 

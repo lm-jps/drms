@@ -323,23 +323,75 @@ static int Cf_stream_and_close_file(fitsfile **fptr)
     return err;
 }
 
+/* returns 1 if NULL, 0 otherwise */
+static int is_keyword_unit_null(const char *keyword_unit)
+{
+    int answer = -1; // -1 means error
+    char *stripped = NULL;
+
+    answer = base_strip_whitespace(keyword_unit, &stripped);
+    if (answer == 1)
+    {
+        answer = -1;
+    }
+
+    if (answer != -1)
+    {
+        answer = (strcasecmp(stripped, CFITSIO_KEYWORD_UNIT_NONE) == 0 || strcasecmp(stripped, CFITSIO_KEYWORD_UNIT_NA) == 0 || strcasecmp(stripped, CFITSIO_KEYWORD_UNIT_NSLASHA) == 0 || *stripped == '\0');
+    }
+
+    if (stripped)
+    {
+        free(stripped);
+        stripped = NULL;
+    }
+
+    return answer;
+}
+
 static int Cf_write_key_null(fitsfile *fptr, const char *keyord_name, const char *keyword_comment, const char *keyword_unit)
 {
-    char comment[FLEN_COMMENT];
+    char *comment = NULL;
+    size_t sz_comment = FLEN_COMMENT + 1;
+    int omit_unit = -1;
     int cfiostat = 0;
     char cfiostat_msg[FLEN_STATUS];
     int err = CFITSIO_SUCCESS;
 
-    if (*keyword_comment != '\0')
+    comment = calloc(sz_comment, sizeof(char));
+    if (!comment)
     {
-        snprintf(comment, sizeof(comment), "[%s] (%s) %s", *keyword_unit != '\0' ? keyword_unit : "none", CFITSIO_KEYWORD_COMMENT_MISSING, keyword_comment);
-    }
-    else
-    {
-        snprintf(comment, sizeof(comment), "[%s] (%s)", *keyword_unit != '\0' ? keyword_unit : "none", CFITSIO_KEYWORD_COMMENT_MISSING);
+        err = CFITSIO_ERROR_OUT_OF_MEMORY;
     }
 
-    fits_write_key_null(fptr, keyord_name, comment, &cfiostat);
+    if (!err)
+    {
+        /* if unit is 'none' or 'na' or missing, then omit [<unit>] */
+        if (!is_keyword_unit_null(keyword_unit))
+        {
+            base_strcatalloc(comment, "[", &sz_comment);
+            base_strcatalloc(comment, keyword_unit, &sz_comment);
+            base_strcatalloc(comment, "] ", &sz_comment);
+        }
+
+        base_strcatalloc(comment, "(", &sz_comment);
+        base_strcatalloc(comment, CFITSIO_KEYWORD_COMMENT_MISSING, &sz_comment);
+        base_strcatalloc(comment, ")", &sz_comment);
+
+        if (*keyword_comment != '\0')
+        {
+            base_strcatalloc(comment, " ", &sz_comment);
+            base_strcatalloc(comment, keyword_comment, &sz_comment);
+        }
+
+        fits_write_key_null(fptr, keyord_name, comment, &cfiostat);
+    }
+
+    if (comment)
+    {
+        free(comment);
+        comment = NULL;
+    }
 
     if (cfiostat)
     {
@@ -741,7 +793,10 @@ static int Cf_write_header_key(fitsfile *fptr, CFITSIO_KEYWORD *key)
         {
             if (!is_history_or_comment)
             {
-                fits_write_key_unit(fptr, key->key_name, key->key_unit, &cfiostat);
+                if (!is_keyword_unit_null(key->key_unit))
+                {
+                    fits_write_key_unit(fptr, key->key_name, key->key_unit, &cfiostat);
+                }
             }
         }
     }
@@ -2996,21 +3051,46 @@ int cfitsio_write_header_keys(CFITSIO_FILE *file, char **header, CFITSIO_KEYWORD
 
 static int Cf_update_key_null(fitsfile *fptr, const char *keyord_name, const char *keyword_comment, const char *keyword_unit)
 {
-    char comment[FLEN_COMMENT];
+    char *comment = NULL;
+    size_t sz_comment = FLEN_COMMENT + 1;
     int cfiostat = 0;
     char cfiostat_msg[FLEN_STATUS];
     int err = CFITSIO_SUCCESS;
 
-    if (*keyword_comment != '\0')
+    comment = calloc(sz_comment, sizeof(char));
+    if (!comment)
     {
-        snprintf(comment, sizeof(comment), "[%s] (%s) %s", *keyword_unit != '\0' ? keyword_unit : "none", CFITSIO_KEYWORD_COMMENT_MISSING, keyword_comment);
-    }
-    else
-    {
-        snprintf(comment, sizeof(comment), "[%s] (%s)", *keyword_unit != '\0' ? keyword_unit : "none", CFITSIO_KEYWORD_COMMENT_MISSING);
+        err = CFITSIO_ERROR_OUT_OF_MEMORY;
     }
 
-    fits_update_key_null(fptr, keyord_name, comment, &cfiostat);
+    if (!err)
+    {
+        /* if unit is 'none' or 'na' or missing, then omit [<unit>] */
+        if (!is_keyword_unit_null(keyword_unit))
+        {
+            base_strcatalloc(comment, "[", &sz_comment);
+            base_strcatalloc(comment, keyword_unit, &sz_comment);
+            base_strcatalloc(comment, "] ", &sz_comment);
+        }
+
+        base_strcatalloc(comment, "(", &sz_comment);
+        base_strcatalloc(comment, CFITSIO_KEYWORD_COMMENT_MISSING, &sz_comment);
+        base_strcatalloc(comment, ")", &sz_comment);
+
+        if (*keyword_comment != '\0')
+        {
+            base_strcatalloc(comment, " ", &sz_comment);
+            base_strcatalloc(comment, keyword_comment, &sz_comment);
+        }
+
+        fits_update_key_null(fptr, keyord_name, comment, &cfiostat);
+    }
+
+    if (comment)
+    {
+        free(comment);
+        comment = NULL;
+    }
 
     if (cfiostat)
     {
@@ -3099,7 +3179,10 @@ int cfitsio_update_header_key(CFITSIO_FILE *file, CFITSIO_KEYWORD *key)
         {
             if (!is_history_or_comment)
             {
-                fits_write_key_unit(file->fptr, key->key_name, key->key_unit, &cfiostat);
+                if (!is_keyword_unit_null(key->key_unit))
+                {
+                    fits_write_key_unit(file->fptr, key->key_name, key->key_unit, &cfiostat);
+                }
             }
         }
     }
