@@ -4011,20 +4011,16 @@ int cfitsio_free_image_info(CFITSIO_IMAGE_INFO** image_info)
 static int cfitsio_read_keylist_and_image_info(fitsfile* fptr, CFITSIO_KEYWORD** keylistout, CFITSIO_IMAGE_INFO** image_info)
 {
     char card[FLEN_CARD];
+    int key_class = -1;
     int status = 0;
     int nkeys;
     int error_code = CFITSIO_FAIL;
-
-
     CFITSIO_KEYWORD* node, *last, *kptr;
-
     char key_name[FLEN_KEYWORD];
     char key_value[FLEN_VALUE];
-
+    char *long_string = NULL;
     int len, i;
-
     CFITSIO_KEYWORD *keylist = NULL;
-
     int currHDU = 0;
     int val = 0;
 
@@ -4044,14 +4040,17 @@ static int cfitsio_read_keylist_and_image_info(fitsfile* fptr, CFITSIO_KEYWORD**
 
     for(i=1; i<=nkeys; i++)
     {
-        if(fits_read_record(fptr, i, card, &status))
+        if (fits_read_record(fptr, i, card, &status))
         {
             error_code = CFITSIO_ERROR_LIBRARY;
             goto error_exit;
         }
 
-        if (fits_get_keyclass(card) == TYP_CMPRS_KEY)
+        key_class = fits_get_keyclass(card);
+
+        if (key_class == TYP_CMPRS_KEY || key_class == TYP_CONT_KEY)
         {
+            /* use fits_read_key_longstr() to deal with `CONTINUE` cards */
             continue;
         }
 
@@ -4116,49 +4115,83 @@ static int cfitsio_read_keylist_and_image_info(fitsfile* fptr, CFITSIO_KEYWORD**
             }
             else
             {
-                node->key_type = ' ';
+                node->is_missing = 1;
+                node->key_type = kFITSRW_Type_String;
+                node->key_value.vs = NULL;
             }
 
-            switch(node->key_type)
+            if (!node->is_missing)
             {
-                case ('X'): //complex number is stored as string, for now.
-                case (kFITSRW_Type_String): //Trip off ' ' around cstring?
-                    node->key_value.vs = strdup(key_value);
-                    break;
+                switch(node->key_type)
+                {
+                    case ('X'): //complex number is stored as string, for now.
+                    case (kFITSRW_Type_String): //Trip off ' ' around cstring?
+                        /* ugh - could be a 'long string'; must use fits_read_key_longstr() to read, or parse
+                         * CONTINUE; the index `i` contains the keynum (number of the record) */
+                        fits_read_key_longstr(fptr, node->key_name, &long_string, NULL, &status);
+                        node->key_value.vs = strdup(long_string);
+                        if (long_string)
+                        {
+                            fits_free_memory(long_string, &status);
+                            long_string = NULL;
+                        }
 
-                case (kFITSRW_Type_Logical):
-                    if (key_value[0]=='0')
-                    {
-                        node->key_value.vl = 0;
-                    }
-                    else
-                    {
-                        node->key_value.vl = 1;
-                    }
-                    break;
+                        break;
 
-                case (kFITSRW_Type_Integer):
-                    /* ART - FITSIO uses something much more complex (it will convert a string value to a long long, for example) -
-                     * uses strtoll() on integer strings */
-                    sscanf(key_value,"%lld", &node->key_value.vi);
-                    node->number_bytes = 8;
-                    break;
+                    case (kFITSRW_Type_Logical):
+                        if (key_value[0]=='0')
+                        {
+                            node->key_value.vl = 0;
+                        }
+                        else
+                        {
+                            node->key_value.vl = 1;
+                        }
+                        break;
 
-                case (kFITSRW_Type_Float):
-                    /* ART - FITSIO uses something much more complex (it will convert a string value to a double, for example) -
-                     * uses strtod() on float strings */
-                    sscanf(key_value,"%lf", &node->key_value.vf);
-                    node->number_bytes = 8;
-                    break;
+                    case (kFITSRW_Type_Integer):
+                        /* ART - FITSIO uses something much more complex (it will convert a string value to a long long, for example) -
+                         * uses strtoll() on integer strings */
+                        sscanf(key_value,"%lld", &node->key_value.vi);
 
-                case (' '): // blank keyword value, set it to NULL string
-                    node->key_type = kFITSRW_Type_String;
-                    node->key_value.vs = NULL;
-                    node->is_missing = 1;
-                    break;
-                default :
-                    DEBUGMSG((stderr,"Key of unknown type detected [%s][%c]?\n", key_value, node->key_type));
-                    break;
+                        if (node->key_value.vi <= (long long)SCHAR_MAX && node->key_value.vi >= (long long)SCHAR_MIN)
+                        {
+                            node->number_bytes = 1;
+                        }
+                        else if (node->key_value.vi <= (long long)SHRT_MAX && node->key_value.vi >= (long long)SHRT_MIN)
+                        {
+                            node->number_bytes = 2;
+                        }
+                        else if (node->key_value.vi <= (long long)INT_MAX && node->key_value.vi >= (long long)INT_MIN)
+                        {
+                            node->number_bytes = 4;
+                        }
+                        else
+                        {
+                            node->number_bytes = 8;
+                        }
+                        break;
+
+                    case (kFITSRW_Type_Float):
+                        /* ART - FITSIO uses something much more complex (it will convert a string value to a double, for example) -
+                         * uses strtod() on float strings */
+                        sscanf(key_value,"%lf", &node->key_value.vf);
+
+                        if (node->key_value.vf <= (double)FLT_MAX && node->key_value.vf >= (double)-FLT_MAX)
+                        {
+                            node->number_bytes = 4;
+                        }
+                        else
+                        {
+                            node->number_bytes = 8;
+                        }
+
+                        break;
+
+                    default :
+                        DEBUGMSG((stderr,"Key of unknown type detected [%s][%c]?\n", key_value, node->key_type));
+                        break;
+                }
             }
 
             fits_read_key_unit(fptr, node->key_name, node->key_unit, &status);

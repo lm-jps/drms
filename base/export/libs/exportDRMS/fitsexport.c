@@ -2565,126 +2565,150 @@ static int FITSKeyValToDRMSKeyVal(CFITSIO_KEYWORD *fitskey, DRMS_Type_t *type, D
 {
    int err = 0;
 
-   if (fitskey && type &&value &&casttype)
-   {
-      if (*(fitskey->key_format) != '\0')
-      {
-         *format = strdup(fitskey->key_format);
+    if (fitskey && type &&value &&casttype)
+    {
+        if (*(fitskey->key_format) != '\0')
+        {
+            *format = strdup(fitskey->key_format);
+        }
+
+        switch (fitskey->key_type)
+        {
+            case kFITSRW_Type_String:
+            {
+                if (fitskey->is_missing)
+                {
+                    value->string_val = strdup(DRMS_MISSING_STRING);
+                }
+                else
+                {
+                    /* FITS-file string values will have single quotes and
+                    * may have leading or trailing spaces; strip those. */
+                    char *strval = strdup((fitskey->key_value).vs);
+                    char *pb = strval;
+                    char *pe = pb + strlen(pb) - 1;
+
+                    if (*pb == '\'' && *pe == '\'')
+                    {
+                        *pe = '\0';
+                        pe--;
+                        pb++;
+                    }
+
+                    while (*pb == ' ')
+                    {
+                        pb++;
+                    }
+
+                    while (*pe == ' ')
+                    {
+                        *pe = '\0';
+                        pe--;
+                    }
+
+                    value->string_val = strdup(pb);
+
+                    if (strval)
+                    {
+                        free(strval);
+                    }
+                }
+
+                *type = DRMS_TYPE_STRING;
+                *casttype = kFE_Keyword_ExtType_String;
+            }
+            break;
+
+        case kFITSRW_Type_Logical:
+            if (fitskey->is_missing)
+            {
+                value->char_val = DRMS_MISSING_CHAR;
+            }
+            else
+            {
+                /* Arbitrarily choose DRMS_TYPE_CHAR to store FITS logical type */
+                if ((fitskey->key_value).vl == 1)
+                {
+                    value->char_val = 1;
+                }
+                else
+                {
+                    value->char_val = 0;
+                }
+            }
+
+            *type = DRMS_TYPE_CHAR;
+            *casttype = kFE_Keyword_ExtType_Logical;
+            break;
+
+        case kFITSRW_Type_Integer:
+        {
+            long long intval = (fitskey->key_value).vi;
+
+            if (fitskey->number_bytes == 1)
+            {
+                value->char_val = fitskey->is_missing ? DRMS_MISSING_CHAR : (char)intval;
+                *type = DRMS_TYPE_CHAR;
+            }
+            else if (fitskey->number_bytes == 2)
+            {
+                value->short_val = fitskey->is_missing ? DRMS_MISSING_SHORT : (short)intval;
+                *type = DRMS_TYPE_SHORT;
+            }
+            else if (fitskey->number_bytes == 4)
+            {
+                value->int_val = fitskey->is_missing ? DRMS_MISSING_INT : (int)intval;
+                *type = DRMS_TYPE_INT;
+            }
+            else if (fitskey->number_bytes == 8)
+            {
+                value->longlong_val = fitskey->is_missing ? DRMS_MISSING_LONGLONG : intval;
+                *type = DRMS_TYPE_LONGLONG;
+            }
+            else
+            {
+                fprintf(stderr, "[ FITSKeyValToDRMSKeyVal() ] FITS integer keyword number_bytes not defined\n");
+                err = 1;
+            }
+
+            *casttype = kFE_Keyword_ExtType_Integer;
+        }
+        break;
+
+        case kFITSRW_Type_Float:
+        {
+            double floatval = (fitskey->key_value).vf;
+
+            if (fitskey->number_bytes == 4)
+            {
+                value->float_val = fitskey->is_missing ? DRMS_MISSING_FLOAT : (float)floatval;
+                *type = DRMS_TYPE_FLOAT;
+            }
+            else if (fitskey->number_bytes == 8)
+            {
+                value->double_val = fitskey->is_missing ? DRMS_MISSING_DOUBLE : floatval;
+                *type = DRMS_TYPE_DOUBLE;
+            }
+            else
+            {
+                fprintf(stderr, "[ FITSKeyValToDRMSKeyVal() ] FITS float keyword number_bytes not defined\n");
+                err = 1;
+            }
+
+            *casttype = kFE_Keyword_ExtType_Float;
+        }
+        break;
+
+        default:
+            fprintf(stderr, "unsupported FITS type '%c'\n", fitskey->key_type);
+            break;
       }
-
-      switch (fitskey->key_type)
-      {
-         case kFITSRW_Type_String:
-           {
-              /* FITS-file string values will have single quotes and
-               * may have leading or trailing spaces; strip those. */
-
-              char *strval = strdup((fitskey->key_value).vs);
-              char *pb = strval;
-              char *pe = pb + strlen(pb) - 1;
-
-              if (*pb == '\'' && *pe == '\'')
-              {
-                 *pe = '\0';
-                 pe--;
-                 pb++;
-              }
-
-              while (*pb == ' ')
-              {
-                 pb++;
-              }
-
-              while (*pe == ' ')
-              {
-                 *pe = '\0';
-                 pe--;
-              }
-
-              value->string_val = strdup(pb);
-
-              if (strval)
-              {
-                 free(strval);
-              }
-
-              *type = DRMS_TYPE_STRING;
-              *casttype = kFE_Keyword_ExtType_String;
-           }
-           break;
-         case kFITSRW_Type_Logical:
-           /* Arbitrarily choose DRMS_TYPE_CHAR to store FITS logical type */
-           if ((fitskey->key_value).vl == 1)
-           {
-              value->char_val = 1;
-           }
-           else
-           {
-              value->char_val = 0;
-           }
-           *type = DRMS_TYPE_CHAR;
-           *casttype = kFE_Keyword_ExtType_Logical;
-           break;
-         case kFITSRW_Type_Integer:
-           {
-              long long intval = (fitskey->key_value).vi;
-
-              if (intval <= (long long)SCHAR_MAX &&
-                  intval >= (long long)SCHAR_MIN)
-              {
-                 value->char_val = (char)intval;
-                 *type = DRMS_TYPE_CHAR;
-              }
-              else if (intval <= (long long)SHRT_MAX &&
-                       intval >= (long long)SHRT_MIN)
-              {
-                 value->short_val = (short)intval;
-                 *type = DRMS_TYPE_SHORT;
-              }
-              else if (intval <= (long long)INT_MAX &&
-                       intval >= (long long)INT_MIN)
-              {
-                 value->int_val = (int)intval;
-                 *type = DRMS_TYPE_INT;
-              }
-              else
-              {
-                 value->longlong_val = intval;
-                 *type = DRMS_TYPE_LONGLONG;
-              }
-
-              *casttype = kFE_Keyword_ExtType_Integer;
-           }
-           break;
-         case kFITSRW_Type_Float:
-           {
-              double floatval = (fitskey->key_value).vf;
-
-              if (floatval <= (double)FLT_MAX &&
-                  floatval >= (double)-FLT_MAX)
-              {
-                 value->float_val = (float)floatval;
-                 *type = DRMS_TYPE_FLOAT;
-              }
-              else
-              {
-                 value->double_val = floatval;
-                 *type = DRMS_TYPE_DOUBLE;
-              }
-
-              *casttype = kFE_Keyword_ExtType_Float;
-           }
-           break;
-         default:
-           fprintf(stderr, "Unsupported FITS type '%c'.\n", fitskey->key_type);
-           break;
-      }
-   }
-   else
-   {
-      fprintf(stderr, "FITSKeyValToDRMSKeyVal() - Invalid argument.\n");
-      err = 1;
-   }
+    }
+    else
+    {
+        fprintf(stderr, "FITSKeyValToDRMSKeyVal() - invalid argument\n");
+        err = 1;
+    }
 
    return err;
 }
