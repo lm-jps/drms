@@ -1113,7 +1113,7 @@ static int list_series_info(DRMS_Env_t *drms_env, DRMS_Record_t *rec, json_t *jr
                     {
                         if (USE_FITS_NAMES_FOR_COLUMNS && useFitsKeyNames)
                         {
-                           if (fitsexport_getmappedextkeyname(skey, NULL, NULL, fitsName, sizeof(fitsName), NULL, 0) && *fitsName != '\0')
+                           if (fitsexport_getmappedextkeyname(skey, NULL, NULL, fitsName, sizeof(fitsName), NULL, 0, NULL) && *fitsName != '\0')
                             {
                                 keyNameOut = fitsName;
                             }
@@ -1178,7 +1178,7 @@ static int list_series_info(DRMS_Env_t *drms_env, DRMS_Record_t *rec, json_t *jr
                     /* pkey is not an index keyword */
                     if (USE_FITS_NAMES_FOR_COLUMNS && useFitsKeyNames)
                     {
-                        if (fitsexport_getmappedextkeyname(pkey, NULL, NULL, fitsName, sizeof(fitsName), NULL, 0) && *fitsName != '\0')
+                        if (fitsexport_getmappedextkeyname(pkey, NULL, NULL, fitsName, sizeof(fitsName), NULL, 0, NULL) && *fitsName != '\0')
                         {
                             keyNameOut = fitsName;
                         }
@@ -1272,7 +1272,7 @@ static int list_series_info(DRMS_Env_t *drms_env, DRMS_Record_t *rec, json_t *jr
                 {
                     if (USE_FITS_NAMES_FOR_COLUMNS && useFitsKeyNames)
                     {
-                        if (fitsexport_getmappedextkeyname(skey, NULL, NULL, fitsName, sizeof(fitsName), NULL, 0) && *fitsName != '\0')
+                        if (fitsexport_getmappedextkeyname(skey, NULL, NULL, fitsName, sizeof(fitsName), NULL, 0, NULL) && *fitsName != '\0')
                         {
                             keyNameOut = fitsName;
                         }
@@ -1300,7 +1300,7 @@ static int list_series_info(DRMS_Env_t *drms_env, DRMS_Record_t *rec, json_t *jr
                 {
                     if (USE_FITS_NAMES_FOR_COLUMNS && useFitsKeyNames)
                     {
-                        if (fitsexport_getmappedextkeyname(key, NULL, NULL, fitsName, sizeof(fitsName), NULL, 0) && *fitsName != '\0')
+                        if (fitsexport_getmappedextkeyname(key, NULL, NULL, fitsName, sizeof(fitsName), NULL, 0, NULL) && *fitsName != '\0')
                         {
                             keyNameOut = fitsName;
                         }
@@ -1397,7 +1397,7 @@ if (DEBUG) fprintf(stderr,"   starting all keywords\n");
                 keyinfo = json_new_object();
                 XASSERT(keyinfo);
 
-                if (fitsexport_getmappedextkeyname(key, NULL, NULL, fitsName, sizeof(fitsName), NULL, 0) && *fitsName != '\0')
+                if (fitsexport_getmappedextkeyname(key, NULL, NULL, fitsName, sizeof(fitsName), NULL, 0, NULL) && *fitsName != '\0')
                 {
                     keyNameOut = fitsName;
                 }
@@ -1433,7 +1433,7 @@ if (DEBUG) fprintf(stderr,"   starting all keywords\n");
 
                     if (!error)
                     {
-                        if (fitsexport_getmappedextkeyname(linkedkw, NULL, NULL, fitsName, sizeof(fitsName), NULL, 0) && *fitsName != '\0')
+                        if (fitsexport_getmappedextkeyname(linkedkw, NULL, NULL, fitsName, sizeof(fitsName), NULL, 0, NULL) && *fitsName != '\0')
                         {
                             keyNameOut = fitsName;
                         }
@@ -3248,7 +3248,7 @@ int DoIt(void)
                         DRMS_Keyword_t *keyWithVal = NULL;
 
                         /* get keyword name from template keyword */
-                        if (fitsexport_getmappedextkeyname(keyTemplate, NULL, NULL, fitsName, sizeof(fitsName), NULL, 0) && *fitsName != '\0')
+                        if (fitsexport_getmappedextkeyname(keyTemplate, NULL, NULL, fitsName, sizeof(fitsName), NULL, 0, NULL) && *fitsName != '\0')
                         {
                             keyNameOut = fitsName;
                         }
@@ -3820,7 +3820,7 @@ int DoIt(void)
                                     }
 
                                     /* get keyword name from template keyword */
-                                    if (fitsexport_getmappedextkeyname(keyTemplate, NULL, NULL, fitsName, sizeof(fitsName), NULL, 0) && *fitsName != '\0')
+                                    if (fitsexport_getmappedextkeyname(keyTemplate, NULL, NULL, fitsName, sizeof(fitsName), NULL, 0, NULL) && *fitsName != '\0')
                                     {
                                         keyNameOut = fitsName;
                                     }
