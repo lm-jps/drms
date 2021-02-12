@@ -509,10 +509,13 @@ static int copy_columns(DRMS_Env_t *env, const char *source_series, const char *
         {
             if (columns)
             {
+                /* reads link columns too */
                 column_list = drms_db_columns(source_template, NULL, columns, NULL, &num_columns, NULL);
             }
             else
             {
+                /* the user did not specify a column list, but we need to do this for the set operation needed;
+                 * drms_field_list WILL select all db columns */
                 column_list = drms_field_list(source_template, 1, &num_columns);
             }
 
