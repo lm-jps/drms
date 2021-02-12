@@ -531,6 +531,7 @@ static int CreateRecordProtoFromFitsAgg(DRMS_Env_t *env,
 
                     /* generate a valid drms keyword (fits might not be valid) */
                     if (!fitsexport_getmappedintkeyname(sKey->info->name,
+                                                        sKey->info->description,
                                                         exputl_keymap_getclname(fitsclass),
                                                         NULL,
                                                         drmsKeyName,
@@ -895,6 +896,7 @@ static DRMS_RecordSet_t *CreateRecordsFromDSDSKeylist(DRMS_Env_t *env,
            while (stat == DRMS_SUCCESS && kl && ((sKey = kl->elem) != NULL))
            {
                if (!fitsexport_getmappedintkeyname(sKey->info->name,
+                                                   sKey->info->description,
                                                    exputl_keymap_getclname(fitsclass),
                                                    NULL,
                                                    drmsKeyName,
@@ -1024,11 +1026,7 @@ static DRMS_RecordSet_t *OpenPlainFileRecords(DRMS_Env_t *env,
 	    nPkeys = 0;
 	    while(pkeyname != NULL)
 	    {
-	       if (!fitsexport_getmappedintkeyname(pkeyname,
-                                                   exputl_keymap_getclname(fitsclass),
-                                                   NULL,
-                                                   drmsKeyName,
-                                                   sizeof(drmsKeyName)))
+	       if (!fitsexport_getmappedintkeyname(pkeyname, NULL, exputl_keymap_getclname(fitsclass), NULL, drmsKeyName, sizeof(drmsKeyName)))
 	       {
 		  *drmsKeyName = '\0';
 		  stat = DRMS_ERROR_INVALIDDATA;
@@ -1876,9 +1874,14 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *record
                         {
                             /* ans is a segment name */
                             snprintf(aseg, sizeof(aseg), "%s", ans);
-                            hcon_insert_lower(goodsegcont, aseg, aseg);
                             segment = hcon_lookup_lower(&recTempl->segments, aseg); /* don't use drms_segment_lookup - follows links */
-                            hcon_insert_lower(set_template_segs[iSet], aseg, &segment);
+                            if (segment)
+                            {
+                                /* the bozo could have specified a non-existent segment */
+                                hcon_insert_lower(goodsegcont, aseg, aseg);
+                                hcon_insert_lower(set_template_segs[iSet], aseg, &segment);
+                            }
+
                             filter_segs = 1;
                         }
                         while ((ans = strtok_r(NULL, " ,;:{}", &lasts)) != NULL);
@@ -6047,7 +6050,7 @@ DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *se
 
             /* Copy keyword structs from template. If the keyword data type is a string, then we have to deep copy
              * the string value, which then becomes the default value of the keyword instance.
-             * keys == 0 ==> all keys, list_llgetnitems(keys) == 0 ==> no keys. */
+             * keys == 0 ==> all keys, hcon_size(keys) == 0 ==> no keys. */
             if (!keys)
             {
                 /* Copy all keyword structs. This will perform a deep-copy. */
@@ -6095,7 +6098,7 @@ DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *se
 
             hiter_free(&hit);
 
-            /* Copy segment structs from template. segs == 0 ==> all segs, list_llgetnitems(segs) == 0 ==> no segs. */
+            /* Copy segment structs from template. segs == 0 ==> all segs, hcon_size(segs) == 0 ==> no segs. */
             if (!segs)
             {
                 /* Copy all segment structs. */
