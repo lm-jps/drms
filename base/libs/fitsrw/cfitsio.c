@@ -2847,16 +2847,22 @@ int cfitsio_update_comment_key(CFITSIO_FILE *file, CFITSIO_KEYWORD *keyword)
 static int cfitsio_strip_keyword_unit_and_missing(const char *comment, char *stripped_comment, char *unit, char *missing)
 {
     char *working_comment = NULL;
-    regex_t reg_expression;
+    static regex_t *reg_expression = NULL;
     const char *keyword_comment_pattern = "^[ ]*(\\[([[:print:]]+)\\][ ]+)?(\\(([[:print:]]+)\\)[ ]+)?([[:print:]]*)$"; /* comment with unit (a failure to match means the whole string is a comment) */
     regmatch_t matches[6]; /* index 0 is the entire string */
     int err = CFITSIO_SUCCESS;
 
-    if (regcomp(&reg_expression, keyword_comment_pattern, REG_EXTENDED) != 0)
+    if (!reg_expression)
     {
-        err = CFITSIO_ERROR_LIBRARY;
+        /* ART - this does not get freed! */
+        reg_expression = calloc(1, sizeof(regex_t));
+        if (regcomp(reg_expression, keyword_comment_pattern, REG_EXTENDED) != 0)
+        {
+            err = CFITSIO_ERROR_LIBRARY;
+        }
     }
-    else
+
+    if (err == CFITSIO_SUCCESS)
     {
         working_comment = strdup(comment);
 
@@ -2864,36 +2870,34 @@ static int cfitsio_strip_keyword_unit_and_missing(const char *comment, char *str
         {
             err = CFITSIO_ERROR_OUT_OF_MEMORY;
         }
+    }
 
-        if (err == CFITSIO_SUCCESS)
+    if (err == CFITSIO_SUCCESS)
+    {
+        if (regexec(reg_expression, working_comment, sizeof(matches) / sizeof(matches[0]), matches, 0) == 0)
         {
-            if (regexec(&reg_expression, working_comment, sizeof(matches) / sizeof(matches[0]), matches, 0) == 0)
+            /* matches */
+            if (matches[2].rm_so != -1)
             {
-                /* matches */
-                if (matches[2].rm_so != -1)
-                {
-                    /* has unit */
-                    memcpy(unit, (void *)&working_comment[matches[2].rm_so], matches[2].rm_eo - matches[2].rm_so);
-                }
-
-                if (matches[4].rm_so != -1)
-                {
-                    /* has missing */
-                    memcpy(missing, (void *)&working_comment[matches[4].rm_so], matches[4].rm_eo - matches[4].rm_so);
-                }
-
-                snprintf(stripped_comment, FLEN_COMMENT, "%s", (char *)&working_comment[matches[5].rm_so]); /* copy to end of comment string*/
+                /* has unit */
+                memcpy(unit, (void *)&working_comment[matches[2].rm_so], matches[2].rm_eo - matches[2].rm_so);
             }
-            else
+
+            if (matches[4].rm_so != -1)
             {
-                /* does not match, has no unit */
-                //snprintf(stripped_comment, FLEN_COMMENT, "%s", comment);
-                //*unit = '\0';
-                err = CFITSIO_ERROR_ARGS;
+                /* has missing */
+                memcpy(missing, (void *)&working_comment[matches[4].rm_so], matches[4].rm_eo - matches[4].rm_so);
             }
+
+            snprintf(stripped_comment, FLEN_COMMENT, "%s", (char *)&working_comment[matches[5].rm_so]); /* copy to end of comment string*/
         }
-
-        regfree(&reg_expression);
+        else
+        {
+            /* does not match, has no unit */
+            //snprintf(stripped_comment, FLEN_COMMENT, "%s", comment);
+            //*unit = '\0';
+            err = CFITSIO_ERROR_ARGS;
+        }
     }
 
     if (working_comment)
