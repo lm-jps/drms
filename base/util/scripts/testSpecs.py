@@ -3,9 +3,10 @@
 import sys
 from subprocess import check_output, CalledProcessError
 import shlex
+import datetime
 
-SHOW_INFO_BIN_PROD = '/home/jsoc/cvs/Development/JSOC/bin/linux_avx/show_info'
-# SHOW_INFO_BIN_PROD = '/home/jsoc/cvs/Development/JSOC_20190626_141005/_linux_avx/base/util/apps/show_info'
+
+SHOW_INFO_BIN_PROD = '/home/jsoc/cvs/Development/JSOC/_linux_avx/base/util/apps/show_info'
 # SHOW_INFO_BIN_DEV = '/home/arta/jsoctrees/JSOC/bin/linux_avx/show_info'
 SHOW_INFO_BIN_DEV = '/home/arta/jsoctrees/JSOC/bin/linux_avx/show_info'
 
@@ -28,7 +29,7 @@ hmi.Lw_720s[2019.2.18/1d][?sunum>1137903162?] -i n=-725 key=eatme,t_rec seg=magn
 # nrecs == 0
 hmi.M_720s[] -i key=eatme,t_rec seg=magnetogram,blah
 hmi.Lw_720s[]{magnetogram} -i key=eatme,t_rec seg=magnetogram,blah
-hmi.Lw_720s[?sunum>1175537273?] -i key=eatme,t_rec seg=magnetogram,blah
+hmi.Lw_720s[?sunum>1222698819?] -i key=eatme,t_rec seg=magnetogram,blah
 hmi.Lw_720s[2017.2.18/12m] -i key=eatme,t_rec seg=magnetogram,blah
 hmi.Lw_720s[2019.2.18/30h][?sunum>1137907037?] -iK key=eatme,t_rec seg=magnetogram,blah
 hmi.lw_720s[^][1] -i
@@ -39,26 +40,26 @@ hmi.lw_720s[][4] -c
 # links
 # nrecs != 0
 hmi.rdvfitsc_fd30 -i n=-22 key=eatme,magnetogram,t_rec
-hmi.rdvfitsc_fd30[?sunum>1176337646?] -i n=-22 key=eatme,magnetogram,t_rec seg=fit.out,blah
+hmi.rdvfitsc_fd30[?sunum>1222698819?] -i n=-22 key=eatme,magnetogram,t_rec seg=fit.out,blah
 hmi.rdvfitsc_fd30[]{fit.out} -i n=-25 key=eatme,t_rec seg=fit.out,blah
 hmi.rdvfitsc_fd30[2218]{fit.out} -iK n=-25 key=eatme,t_rec seg=fit.out,blah
 hmi.rdvfitsc_fd30 -i n=-22 -a seg=fit.out,blah
-hmi.rdvfitsc_fd30[2218][?sunum>1176337646?] -i n=-22 -A key=eatme,magnetogram,t_rec
+hmi.rdvfitsc_fd30[2218][?sunum>1222698819?] -i n=-22 -A key=eatme,magnetogram,t_rec
 hmi.rdvfitsc_fd30[]{fit.out} -i n=-25 -K key=eatme,t_rec seg=fit.out,blah
-aia.lev1_euv_12s -iK n=-25 key=AGT1SVZ,t_rec seg=image,blah
+# aia.lev1_euv_12s -iK n=-25 key=AGT1SVZ,t_rec seg=image,blah
 # nrecs = 0
 ######## hmi.rdvfitsc_fd30[] -i key=eatme,magnetogram,t_rec
-hmi.rdvfitsc_fd30[?sunum>1176337646?] -i key=eatme,magnetogram,t_rec seg=fit.out,blah
+hmi.rdvfitsc_fd30[?sunum>1222698819?] -i key=eatme,magnetogram,t_rec seg=fit.out,blah
 hmi.rdvfitsc_fd30[]{fit.out} -i key=eatme,t_rec seg=fit.out,blah
 hmi.rdvfitsc_fd30[2218]{fit.out} -iK key=eatme,t_rec seg=fit.out,blah
 ######## hmi.rdvfitsc_fd30[] -i -a seg=fit.out,blah
-hmi.rdvfitsc_fd30[2218][?sunum>1176337646?] -i -A key=eatme,magnetogram,t_rec
+hmi.rdvfitsc_fd30[2218][?sunum>1222698819?] -i -A key=eatme,magnetogram,t_rec
 ## hmi.rdvfitsc_fd30[]{fit.out} -i -K key=eatme,t_rec seg=fit.out,blah
 hmi.rdvfitsc_fd30[2218][^] -i
 hmi.rdvfitsc_fd30[^] -c
 -iK key=eatme,Apode_f,t_rec seg=fit.out,blah sunum=1178218311,1178218318,1178218314,1178218319,1178218317,1178218323,1178218324,1178218329,1178218330,1178218368
 -iK key=eatme,t_rec seg=fit.out,blah sunum=1178218311,1178218318,11788319,1178218317,11782118324,1178218329,1178218330,1178218368
-aia.lev1_euv_12s[2015.5.5] -iK key=AGT1SVZ,t_rec seg=image,blah\
+# aia.lev1_euv_12s[2015.5.5] -iK key=AGT1SVZ,t_rec seg=image,blah\
 '''
 
 SHOW_INFO_SPECS_SHADOW = '''\
@@ -99,19 +100,20 @@ hmi.m_720s[?sunum>1169888819?] -i key=eatme,t_rec seg=magnetogram,blah
 hmi.m_720s[?sunum>1148128819?]{magnetogram,duh} -i key=eatme,t_rec seg=magnetogram,blah
 # queryStringB - links
 # nrecs != 0
-hmi.rdvfitsc_fd15[?sunum>1172698819?] -i n=-22 key=eatme,magnetogram,t_rec
-hmi.rdvfitsc_fd15[?sunum>1172698819?] -i n=-22 key=eatme,magnetogram,t_rec seg=fit.out,blah
-hmi.rdvfitsc_fd15[?sunum>1172698819?]{fit.out} -i n=-25 key=eatme,t_rec seg=fit.out,blah
-hmi.rdvfitsc_fd15[?sunum>1172698819?]{fit.out} -i n=-25 -a seg=fit.out,blah
-hmi.rdvfitsc_fd15[?sunum>1172698819?]{fit.out} -i n=-25 -A key=eatme,t_rec
-hmi.rdvfitsc_fd15[?sunum>1172698819?]{fit.out} -i n=-25 -K key=eatme,t_rec seg=fit.out,blah
+hmi.rdvfitsc_fd15[?sunum>1222698819?] -i n=-22 key=eatme,magnetogram,t_rec
+hmi.rdvfitsc_fd15[?sunum>1222698819?] -i n=-22 key=eatme,magnetogram,t_rec seg=fit.out,blah
+hmi.rdvfitsc_fd15[?sunum>1222698819?]{fit.out} -i n=-25 key=eatme,t_rec seg=fit.out,blah
+hmi.rdvfitsc_fd15[?sunum>1222698819?]{fit.out} -i n=-25 -a seg=fit.out,blah
+hmi.rdvfitsc_fd15[?sunum>1222698819?]{fit.out} -i n=-25 -A key=eatme,t_rec
+hmi.rdvfitsc_fd15[?sunum>1222698819?]{fit.out} -i n=-25 -K key=eatme,t_rec seg=fit.out,blah
 # nrecs == 0
-hmi.rdvfitsc_fd15[?sunum>1172698819?] -i key=eatme,magnetogram,t_rec
-hmi.rdvfitsc_fd15[?sunum>1172698819?] -i key=eatme,magnetogram,t_rec seg=fit.out,blah
-hmi.rdvfitsc_fd15[?sunum>1172698819?]{fit.out} -i key=eatme,t_rec seg=fit.out,blah
-hmi.rdvfitsc_fd15[?sunum>1172698819?]{fit.out} -i -a seg=fit.out,blah
-hmi.rdvfitsc_fd15[?sunum>1172698819?]{fit.out} -i -A key=eatme,t_rec
-hmi.rdvfitsc_fd15[?sunum>1172698819?]{fit.out} -i -K key=eatme,t_rec seg=fit.out,blah
+hmi.rdvfitsc_fd15[?sunum>1222698819?] -i key=eatme,magnetogram,t_rec
+hmi.rdvfitsc_fd15[?sunum>1222698819?] -i key=eatme,magnetogram,t_rec seg=fit.out,blah
+hmi.rdvfitsc_fd15[?sunum>1222698819?]{fit.out} -i key=eatme,t_rec seg=fit.out,blah
+# SLOW - too slow with original code
+# hmi.rdvfitsc_fd15[?sunum>1222698819?]{fit.out} -i -a seg=fit.out,blah
+hmi.rdvfitsc_fd15[?sunum>1222698819?]{fit.out} -i -A key=eatme,t_rec
+hmi.rdvfitsc_fd15[?sunum>1222698819?]{fit.out} -i -K key=eatme,t_rec seg=fit.out,blah
 # queryStringC - no links
 # nrecs != 0
 hmi.m_720s[2015.6.7/2h] -i n=-22 key=eatme,magnetogram,t_rec
@@ -180,12 +182,12 @@ hmi.m_720s[?sunum>1148128819?]{magnetogram,duh} -c n=-225 key=eatme,t_rec seg=ma
 hmi.m_720s[?sunum>1169888819?] -c key=eatme,t_rec seg=magnetogram,blah
 hmi.m_720s[?sunum>1148128819?]{magnetogram,duh} -c key=eatme,t_rec seg=magnetogram,blah
 # drms_series_nrecords_querystringB - links
-hmi.rdvfitsc_fd15[?sunum>1172698819?] -c n=-22 key=eatme,magnetogram,t_rec seg=fit.out,blah
-hmi.rdvfitsc_fd15[?sunum>1172698819?]{fit.out} -c n=-25 -a seg=fit.out,blah
-hmi.rdvfitsc_fd15[?sunum>1172698819?]{fit.out} -c n=-25 -K key=eatme,t_rec seg=fit.out,blah
-hmi.rdvfitsc_fd15[?sunum>1172698819?] -c key=eatme,magnetogram,t_rec
-hmi.rdvfitsc_fd15[?sunum>1172698819?]{fit.out} -c -A key=eatme,t_rec
-hmi.rdvfitsc_fd15[?sunum>1172698819?]{fit.out} -c -K key=eatme,t_rec seg=fit.out,blah
+hmi.rdvfitsc_fd15[?sunum>1222698819?] -c n=-22 key=eatme,magnetogram,t_rec seg=fit.out,blah
+hmi.rdvfitsc_fd15[?sunum>1222698819?]{fit.out} -c n=-25 -a seg=fit.out,blah
+hmi.rdvfitsc_fd15[?sunum>1222698819?]{fit.out} -c n=-25 -K key=eatme,t_rec seg=fit.out,blah
+hmi.rdvfitsc_fd15[?sunum>1222698819?] -c key=eatme,magnetogram,t_rec
+hmi.rdvfitsc_fd15[?sunum>1222698819?]{fit.out} -c -A key=eatme,t_rec
+hmi.rdvfitsc_fd15[?sunum>1222698819?]{fit.out} -c -K key=eatme,t_rec seg=fit.out,blah
 # drms_series_nrecords_querystringC - no links
 hmi.m_720s[][1] -c
 hmi.m_720s[][2] -c key=eatme,t_rec seg=magnetogram,blah
@@ -254,9 +256,9 @@ hmi.rdvfitsc_fd15[2214]{fit.out} -P -K key=eatme,t_rec seg=fit.out,blah
 '''
 
 SHOW_INFO_COUNTRECS = '''\
-hmi.m_720s[2015.2.20/48m]
-hmi.rdvfitsc_fd15[$][]
-hmi.lw_720s[][1]\
+-c hmi.m_720s[2015.2.20/48m]
+-c hmi.rdvfitsc_fd15[$][]
+-c hmi.lw_720s[][1]\
 '''
 
 SHOW_INFO_DONTFOLLOWLINKS = '''\
@@ -274,10 +276,10 @@ hmi.rdvfitsc_fd15 -iC n=-22 key=eatme,magnetogram,t_rec
 hmi.m_720s[?sunum>1148128819?]{magnetogram,duh} -iC n=-225 key=eatme,t_rec seg=magnetogram,blah
 hmi.m_720s[?sunum>1169888819?] -iC key=eatme,t_rec seg=magnetogram,blah
 hmi.m_720s[?sunum>1148128819?]{magnetogram,duh} -i key=eatme,t_rec seg=magnetogram,blah
-hmi.rdvfitsc_fd15[?sunum>1172698819?] -iC n=-22 key=eatme,magnetogram,t_rec
-hmi.rdvfitsc_fd15[?sunum>1172698819?]{fit.out} -iC n=-25 key=eatme,t_rec seg=fit.out,blah
-hmi.rdvfitsc_fd15[?sunum>1172698819?]{fit.out} -iC n=-25 -A key=eatme,t_rec
-hmi.rdvfitsc_fd15[?sunum>1172698819?]{fit.out} -iC key=eatme,t_rec seg=fit.out,blah
+hmi.rdvfitsc_fd15[?sunum>1222698819?] -iC n=-22 key=eatme,magnetogram,t_rec
+hmi.rdvfitsc_fd15[?sunum>1222698819?]{fit.out} -iC n=-25 key=eatme,t_rec seg=fit.out,blah
+hmi.rdvfitsc_fd15[?sunum>1222698819?]{fit.out} -iC n=-25 -A key=eatme,t_rec
+hmi.rdvfitsc_fd15[?sunum>1222698819?]{fit.out} -iC key=eatme,t_rec seg=fit.out,blah
 hmi.m_720s[2015.6.7/2h] -iC n=-225 key=eatme,t_rec seg=magnetogram,blah
 hmi.m_720s[2015.6.7/2h]{magnetogram,duh} -iC n=-225 key=eatme,t_rec seg=magnetogram,blah
 hmi.m_720s[2015.6.7/2h] -iC key=eatme,t_rec seg=magnetogram,blah
@@ -297,10 +299,10 @@ hmi.rdvfitsc_fd15[2214][?sunum>1147883536?] -iC key=eatme,magnetogram,t_rec
 hmi.rdvfitsc_fd15[2214][?sunum>1147883536?] -iC key=eatme,magnetogram,t_rec seg=fit.out,blah
 hmi.m_720s[$][] -iC -a seg=magnetogram,blah
 hmi.m_720s[$][] -iC -A key=eatme,t_rec
-hmi.rdvfitsc_fd30[2218][?sunum>1176337646?] -i n=-22 -AC key=eatme,magnetogram,t_rec
+hmi.rdvfitsc_fd30[2218][?sunum>1222698819?] -i n=-22 -AC key=eatme,magnetogram,t_rec
 hmi.rdvfitsc_fd30[]{fit.out} -iC n=-25 -K key=eatme,t_rec seg=fit.out,blah
-aia.lev1_euv_12s -iKC n=-25 key=AGT1SVZ,t_rec seg=image,blah
-hmi.rdvfitsc_fd30[?sunum>1176337646?] -iC key=eatme,magnetogram,t_rec seg=fit.out,blah
+# aia.lev1_euv_12s -iKC n=-25 key=AGT1SVZ,t_rec seg=image,blah
+hmi.rdvfitsc_fd30[?sunum>1222698819?] -iC key=eatme,magnetogram,t_rec seg=fit.out,blah
 hmi.m_720s[]{magnetogram} -i n=-225 -PC -A key=eatme,t_rec
 hmi.m_720s[]{magnetogram} -i n=-225 -PC -A -K key=eatme,t_rec
 -iPCK n=-25 key=eatme,magnetogram,t_rec sunum=1176547403,1177540424,1177535037,1177536023,1177533599,1177853705,1177859055,1177854243,1177859303,1178166133,1178161926,1178166445,1178160904,1178458353,1178458876,1178461075,1178457657
@@ -308,6 +310,54 @@ hmi.m_720s[]{magnetogram} -i n=-225 -PC -A -K key=eatme,t_rec
 hmi.rdvfitsc_fd15[$][1] -PC
 hmi.rdvfitsc_fd15[2214]{fit.out} -PC n=-25 -K key=eatme,t_rec seg=fit.out,blah
 hmi.rdvfitsc_fd15[][^][] -PC\
+'''
+
+SHOW_INFO_PIPELINES = '''\
+key=T_OBS -q 'hmi.lev0a[? FSN < 200000000 ?][? T_OBS > 0 ?]' n=-1
+key=T_OBS -q 'aia.lev0[? FSN < 200000000 ?][? T_OBS > 0 ?]' n=-1
+-q key=T_OBS 'hmi.MHarp_720s_nrt[][$][? T_OBS > 0 ?]' -c
+-q key=T_OBS 'hmi.MHarp_720s_nrt[][$][? T_OBS > 0 ?]'
+-q key=T_OBS 'hmi.MHarp_720s_nrt[][$][? T_OBS > 0 ?]' n=-1
+-q key=T_REC 'hmi.MHarp_720s_nrt[][$][? T_OBS > 0 ?]' n=-1
+-q key=t_obs 'iris.lev0[? FSN != 8421504 ?][? t_obs > 0 ?]' n=-1 | sed s/-/./g | sed s/T/_/ | cut -c1-19
+-q iris.lev0[:#$] key=date
+-q key=t_obs iris.lev1_nrt[$] | sed s/-/./g | sed s/T/_/ | cut -c1-19
+-q iris.lev1_nrt[$] key=date
+-q key=T_OBS hmi.lev1_nrt[$]
+-q key=T_REC hmi.lev1_nrt[$]
+-q key=T_OBS hmi.V_45s_nrt[$]
+-q key=T_REC hmi.V_45s_nrt[$]
+-q key=T_OBS hmi.V_720s_nrt[$]
+-q key=T_REC hmi.V_720s_nrt[$]
+#-q key=T_OBS hmi_images[$]
+#-q key=T_REC hmi_images[$]
+-q key=T_OBS hmi.lev1[$]
+-q key=T_REC hmi.lev1[$]
+-q key=T_OBS hmi.cosmic_rays[$]
+-q key=T_REC hmi.cosmic_rays[$]
+-q key=T_OBS hmi.V_45s[$]
+-q key=T_REC hmi.V_45s[$]
+-q key=T_OBS hmi.V_720s[$]
+-q key=T_REC hmi.V_720s[$]
+-q key=T_OBS aia.lev1_nrt2[$]
+-q key=T_REC aia.lev1_nrt2[$]
+-q key=T_OBS aia_test.lev1p5[$]
+-q key=T_REC aia_test.lev1p5[$]
+-q key=T_OBS aia.lev1[$]
+-q key=T_REC aia.lev1[$]
+aia.lev1[$] -q key=T_REC JSOC_DBHOST=hmidb2 JSOC_DBUSER=production
+aia.lev1[$] -q key=T_REC JSOC_DBHOST=hmidb JSOC_DBUSER=production
+-cq 'aia.lev0[? t_obs > 1390000000 ?][? datamin=0 ?][? camera=1 ?]'
+-cq 'aia.lev0[? t_obs > 1390000000 ?][? datamin=0 ?][? camera=2 ?]'
+-cq 'aia.lev0[? t_obs > 1390000000 ?][? datamin=0 ?][? camera=3 ?]'
+-cq 'aia.lev0[? t_obs > 1390000000 ?][? datamin=0 ?][? camera=4 ?]'
+-cq 'hmi.lev0a[? t_obs > 1390000000 ?][? datamin=0 ?][? camera=1 ?]'
+-cq 'hmi.lev0a[? t_obs > 1390000000 ?][? datamin=0 ?][? camera=2 ?]'
+-cq 'hmi.lev0a[? t_obs > 1390000000 ?][? datamin=0 ?][? camera=1 ?]'
+-cq 'hmi.lev0a[? t_obs > 1390000000 ?][? datamin=0 ?][? camera=2 ?]'
+-i 'hmi.lev0a[? t_obs > 1390000000 ?][? datamin<0 ?]' key=datamin
+-cq iris.lev0[62801362-62801962][?datamin=0?][?camera=1?]
+-cq iris.lev0[62801362-62801962][?datamin=0?][?camera=2?]\
 '''
 
 allPassed = True
@@ -318,22 +368,29 @@ specs3 = [ line for line in SHOW_INFO_SPECS_WEIRD.split('\n') if line[0] != '#' 
 specs4 = [ line for line in SHOW_INFO_PATHS.split('\n') if line[0] != '#' ]
 specs5 = [ line for line in SHOW_INFO_COUNTRECS.split('\n') if line[0] != '#' ]
 specs6 = [ line for line in SHOW_INFO_DONTFOLLOWLINKS.split('\n') if line[0] != '#' ]
+specs7 = [ line for line in SHOW_INFO_PIPELINES.split('\n') if line[0] != '#' ]
 
 allSpecs = []
-allSpecs.extend(specs1)
-allSpecs.extend(specs2)
-allSpecs.extend(specs3)
-allSpecs.extend(specs4)
-allSpecs.extend(specs5)
+#allSpecs.extend(specs1)
+#allSpecs.extend(specs2)
+#allSpecs.extend(specs3)
+#allSpecs.extend(specs4)
+#allSpecs.extend(specs5)
 allSpecs.extend(specs6)
+#allSpecs.extend(specs7)
 
 outProd = None
 outDev = None
 
 for spec in allSpecs:
-    quotedSpec = ' '.join([ shlex.quote(arg) for arg in spec.split(' ') ])
+    analyzer = shlex.shlex(spec, posix=True, punctuation_chars='|')
+    analyzer.whitespace_split = True
+    analyzer.commenters = ''
+    parsed = list(analyzer)
+    quotedSpec = ' '.join([ element if len(element) == 1 and element in analyzer.punctuation_chars else shlex.quote(element) for element in parsed ])
     passed = False
     errMsg = bytearray(b'')
+
     print('testing ' + spec + ': ', end='')
     if COMPARE:
         sys.stdout.flush()
@@ -343,7 +400,10 @@ for spec in allSpecs:
     if COMPARE:
         try:
             cmd = SHOW_INFO_BIN_PROD + ' ' + quotedSpec
+            start_time = datetime.datetime.now()
             out = check_output(cmd, shell=True)
+            end_time = datetime.datetime.now()
+            print('prod runtime is ' + str(end_time - start_time) + '; ', end='')
             if out:
                 outProd = out.decode()
         except CalledProcessError as exc:
@@ -353,11 +413,17 @@ for spec in allSpecs:
 
     try:
         cmd = SHOW_INFO_BIN_DEV + ' ' + quotedSpec
+        start_time = datetime.datetime.now()
         out = check_output(cmd, shell=True)
+        end_time = datetime.datetime.now()
+        print('dev runtime is ' + str(end_time - start_time))
         if out:
             outDev = out.decode()
+        passed = True
     except CalledProcessError as exc:
         errMsg.extend(b'[ dev ] failed to run properly' + cmd.encode())
+        import traceback
+        print(traceback.format_exc(8))
         if exc.output:
             outDev = exc.output.decode()
 
@@ -372,8 +438,12 @@ for spec in allSpecs:
         else:
             print('failed ' + errMsg.decode())
             allPassed = False
+    else:
+        if not passed:
+            print('failed ' + errMsg.decode())
 
-        if allPassed:
-            print('** PASSED all tests **')
-        else:
-            print('** FAILED at least one test **')
+if COMPARE:
+    if allPassed:
+        print('** PASSED all tests **')
+    else:
+        print('** FAILED at least one test **')
