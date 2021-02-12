@@ -210,8 +210,9 @@ static int FE_cast_type_to_fits_key_type(FE_Keyword_ExtType_t cast_type, cfitsio
     return err;
 }
 
-/* allocs `*short_comment_out` */
-static int parse_short_comment(const char *full_comment, char **short_comment_out)
+/* allocs `*short_comment_out`; `braced_information` contains info that should be appended to the short comment
+ * (if there is a short-comment version) - this is usually the DRMS keyword name */
+static int parse_short_comment(const char *full_comment, const char *braced_information, char **short_comment_out)
 {
     int err = 0;
     char *ptr_comment = NULL;
@@ -246,6 +247,18 @@ static int parse_short_comment(const char *full_comment, char **short_comment_ou
                     while (ptr_comment >= *short_comment_out && isspace(*ptr_comment))
                     {
                         *ptr_comment-- = '\0';
+                    }
+
+                    if (braced_information && *braced_information != '\0')
+                    {
+                        /* move one past end of short comment */
+                        ptr_comment++;
+
+                        /* append braced information (like DRMS keyword name) */
+                        if (ptr_comment + strlen(braced_information) + 3 < *short_comment_out + strlen(full_comment) + 1)
+                        {
+                            sprintf(ptr_comment, " {%s}", braced_information);
+                        }
                     }
 
                     break;
@@ -455,8 +468,8 @@ FE_Keyword_ExtType_t fitsexport_get_external_type(const char *cast_str)
 
 /* parse a DRMS_Keyword_t into pieces that can be used to construct a CFITSIO_KEYWORD; the resulting
  * CFITSIO_KEYWORD is for export purposes only; the DRMS_Keyword_t::description will be shortened
- * so that it will fit on a FITS card and returned in `comment` */
-static int DRMSKeyValToFITSKeyVal(DRMS_Keyword_t *key, const char *comment_external_in, cfitsio_keyword_datatype_t *fitstype, int *number_bytes, void **fitsval, char **format, char **short_comment_out, char **unit)
+ * so that it will fit on a FITS card and returned in `short_comment_out` */
+static int DRMSKeyValToFITSKeyVal(DRMS_Keyword_t *key, const char *braced_informaton, const char *comment_external_in, cfitsio_keyword_datatype_t *fitstype, int *number_bytes, void **fitsval, char **format, char **short_comment_out, char **unit)
 {
    int err = 0;
    const char *comment_to_parse = NULL;
@@ -509,7 +522,7 @@ static int DRMSKeyValToFITSKeyVal(DRMS_Keyword_t *key, const char *comment_exter
                 if (*comment_to_parse != '\0')
                 {
                     /* allocs *short_comment_out */
-                    err = parse_short_comment(comment_to_parse, short_comment_out);
+                    err = parse_short_comment(comment_to_parse, braced_informaton, short_comment_out);
                 }
                 else
                 {
@@ -730,6 +743,7 @@ static int DRMSKeyValToFITSKeyVal(DRMS_Keyword_t *key, const char *comment_exter
 int DateHndlr(void *keyin, void **fitskeys, void **fits_key_out, void *nameout, void *comment_in)
 {
    DRMS_Keyword_t *key = (DRMS_Keyword_t *)keyin;
+   const char *fits_name = (const char *)nameout;
    int err = 0;
 
    /* Write the implicit DATE keyword, but only if it has a value (if it is non-missing) */
@@ -771,7 +785,7 @@ int DateHndlr(void *keyin, void **fitskeys, void **fits_key_out, void *nameout, 
             /* strip off full description from short description */
             if (comment)
             {
-                parse_short_comment(comment, &short_comment);
+                parse_short_comment(comment, strcasecmp(key->info->name, fits_name) == 0 ? NULL : key->info->name, &short_comment);
             }
 
             if (CFITSIO_SUCCESS != (fitsrwRet = cfitsio_append_header_key((CFITSIO_KEYWORD**)fitskeys, (char *)nameout, kFITSRW_Type_String, 0, (void *)tbuf, *key->info->format != '\0' ?  key->info->format : NULL, short_comment, unitbuf, (CFITSIO_KEYWORD **)fits_key_out)))
@@ -1009,7 +1023,7 @@ int WCSHandler(void *keyin, void **fitskeys, void **key_out, void *nameout, void
     if (!err)
     {
         /* comment_stem[0] - contains no internal info */
-        err = DRMSKeyValToFITSKeyVal(key, comment_stem[0], &fits_keyword_type, &number_bytes, &fits_keyword_value, &fits_keyword_format, &fits_keyword_comment, &fits_keyword_unit);
+        err = DRMSKeyValToFITSKeyVal(key, strcasecmp(key->info->name, nameout) == 0 ? NULL : key->info->name, comment_stem[0], &fits_keyword_type, &number_bytes, &fits_keyword_value, &fits_keyword_format, &fits_keyword_comment, &fits_keyword_unit);
     }
 
     if (!err)
@@ -2219,9 +2233,11 @@ int fitsexport_mapexportkey(DRMS_Keyword_t *key, const char *clname, Exputl_KeyM
     {
         char nameout[16];
         char comment_external[DRMS_MAXCOMMENTLEN] = {0};
+        int names_differ = -1;
 
-        /* removes internal information (like external keyword name) from key->info->description */
-        if (fitsexport_getmappedextkeyname(key, clname, map, nameout, sizeof(nameout), comment_external, sizeof(comment_external)))
+        /* removes internal information (like external keyword name) from key->info->description; appends braced information
+         * to comment if needed */
+        if (fitsexport_getmappedextkeyname(key, clname, map, nameout, sizeof(nameout), comment_external, sizeof(comment_external), &names_differ))
         {
             char *wcs_extra[2];
             int fitsrwRet = 0;
@@ -2244,20 +2260,24 @@ int fitsexport_mapexportkey(DRMS_Keyword_t *key, const char *clname, Exputl_KeyM
                 FE_ReservedKeys_t *ikey = NULL;
                 char keyword_stem[16] = {0};
                 int indexed = 0;
-                regex_t reg_expression;
+                static regex_t *reg_expression = NULL;
                 const char *indexed_keyword_pattern = "^([A-Za-z])+[0-9]+$";
                 regmatch_t matches[2]; /* index 0 is the entire string */
 
-                /* ART - do this compilation only once per module run! */
-                if (regcomp(&reg_expression, indexed_keyword_pattern, REG_EXTENDED) != 0)
+                /* ART - this does not get freed! */
+                if (!reg_expression)
                 {
-                    stat = DRMS_ERROR_FITSRW;
+                    reg_expression = calloc(1, sizeof(regex_t));
+                    if (regcomp(reg_expression, indexed_keyword_pattern, REG_EXTENDED) != 0)
+                    {
+                        stat = DRMS_ERROR_FITSRW;
+                    }
                 }
 
                 if (stat == DRMS_SUCCESS)
                 {
                     snprintf(keyword_stem, sizeof(keyword_stem), "%s", key->info->name);
-                    if (regexec(&reg_expression, keyword_stem, sizeof(matches) / sizeof(matches[0]), matches, 0) == 0)
+                    if (regexec(reg_expression, keyword_stem, sizeof(matches) / sizeof(matches[0]), matches, 0) == 0)
                     {
                         /* match, indexed */
                         indexed = 1;
@@ -2266,10 +2286,7 @@ int fitsexport_mapexportkey(DRMS_Keyword_t *key, const char *clname, Exputl_KeyM
                         keyword_stem[matches[1].rm_eo] = '\0';
                     }
 
-                    regfree(&reg_expression);
-
                     /* since WCS keywords can be indexed, remove the index part before checking for a handler */
-
                     if (gReservedFits && (ikey = (FE_ReservedKeys_t *)hcon_lookup_lower(gReservedFits, keyword_stem)))
                     {
                         if (ExportHandlers[*ikey])
@@ -2309,7 +2326,7 @@ int fitsexport_mapexportkey(DRMS_Keyword_t *key, const char *clname, Exputl_KeyM
                     {
                         /* returns short-version comment */
                         /* comment_external has no internal info */
-                        if ((rv = DRMSKeyValToFITSKeyVal(keywval, comment_external, &fitskwtype, &number_bytes, &fitskwval, &format, &fitskw_comment, &fitskw_unit)) == 0)
+                        if ((rv = DRMSKeyValToFITSKeyVal(keywval, strcasecmp(key->info->name, nameout) == 0 ? NULL : key->info->name, comment_external, &fitskwtype, &number_bytes, &fitskwval, &format, &fitskw_comment, &fitskw_unit)) == 0)
                         {
                             if (CFITSIO_SUCCESS != (fitsrwRet = cfitsio_append_header_key(fitskeys, nameout, fitskwtype, number_bytes, fitskwval, format, fitskw_comment, fitskw_unit, fits_key)))
                             {
@@ -2370,14 +2387,17 @@ int fitsexport_mapexportkey(DRMS_Keyword_t *key, const char *clname, Exputl_KeyM
 
 int fitsexport_getextkeyname(DRMS_Keyword_t *key, char *nameOut, int size)
 {
-   return fitsexport_getmappedextkeyname(key, NULL, NULL, nameOut, size, NULL, 0);
+   return fitsexport_getmappedextkeyname(key, NULL, NULL, nameOut, size, NULL, 0, NULL);
 }
 
 /* Same as above, but try a KeyMap first, then a KeyMapClass */
 /* `comment_out` - if the comment has information that should not be exported (internal informaton), like a keyword cast, or the
  * FITS export name, then the comment, minus the internal information, will be returned in `comment_out`
  */
-int fitsexport_getmappedextkeyname(DRMS_Keyword_t *key, const char *class, Exputl_KeyMap_t *map, char *nameOut, int size, char *comment_out, int comment_out_sz)
+
+/* `long_comment_out` contains the name of the DRMS keyword in the trailing `{}`; this is needed for round-tripping
+ */
+int fitsexport_getmappedextkeyname(DRMS_Keyword_t *key, const char *class, Exputl_KeyMap_t *map, char *nameOut, int size, char *long_comment_out, size_t long_comment_out_sz, int *names_differ)
 {
    int success = 0;
    const char *potential = NULL;
@@ -2389,22 +2409,6 @@ int fitsexport_getmappedextkeyname(DRMS_Keyword_t *key, const char *class, Exput
    /* one thing we always have to do is to parse out the internal information (like the [X:Y] cast), regardless
     * of method we use for determining the external keyword name */
    parse_keyword_description(key->info->description, &parsed_comment, NULL, &parsed_cast_name, &parsed_cast_type);
-
-   if (comment_out && parsed_comment && *parsed_comment != '\0')
-   {
-       if (parsed_cast_name && *parsed_cast_name && strcasecmp(parsed_cast_name, key->info->name) != 0)
-       {
-           /* save the part of the comment that does not have the cast;
-            * save this into the output buffer; save DRMS keyword name
-            *  <comment minus '['<X>[':'<Y>]']'> ' ' '{'<DRMS keyword name>}'
-            */
-           snprintf(comment_out, comment_out_sz, "%s {%s}", parsed_comment, key->info->name);
-       }
-       else
-       {
-          snprintf(comment_out, comment_out_sz, "%s", parsed_comment);
-       }
-   }
 
    /* attempt to determine the FITS keyword name that the input DRMS keyword name maps to; there are five different
     * methods that we use to do the mapping; the order of methods is prioritized, and we only attempt the subsequent
@@ -2527,13 +2531,36 @@ int fitsexport_getmappedextkeyname(DRMS_Keyword_t *key, const char *class, Exput
         }
    }
 
-   if (success && vstat == 2)
-   {
-      /* Got a valid keyword name, but it is reserved and MAY require special processing.
-       * Of course we disallow writing some reserved keywords altogether (Like NAXIS).
-       * We don't know at this point if the reserved keyword can be exported - that decision
-       * will be made in DRMSKeyValToFITSKeyVal(). */
-   }
+    if (success && vstat == 2)
+    {
+        /* Got a valid keyword name, but it is reserved and MAY require special processing.
+         * Of course we disallow writing some reserved keywords altogether (Like NAXIS).
+         * We don't know at this point if the reserved keyword can be exported - that decision
+         * will be made in DRMSKeyValToFITSKeyVal(). */
+    }
+
+    if (success && names_differ)
+    {
+        *names_differ = 0;
+    }
+
+    if (success && long_comment_out && parsed_comment && *parsed_comment != '\0')
+    {
+        if (*nameOut != '\0' && *key->info->name != '\0' && strcasecmp(nameOut, key->info->name) != 0)
+        {
+            /* append DRMS keyword name if it differs from the FITS keyword named */
+            snprintf(long_comment_out, long_comment_out_sz, "%s {%s}", parsed_comment, key->info->name);
+
+            if (names_differ)
+            {
+                *names_differ = 1;
+            }
+        }
+        else
+        {
+            snprintf(long_comment_out, long_comment_out_sz, "%s", parsed_comment);
+        }
+    }
 
     if (parsed_comment)
     {
@@ -2713,44 +2740,81 @@ static int FITSKeyValToDRMSKeyVal(CFITSIO_KEYWORD *fitskey, DRMS_Type_t *type, D
    return err;
 }
 
-int fitsexport_getintkeyname(const char *keyname, char *nameOut, int size)
+int fitsexport_getintkeyname(const char *keyname, const char *fits_keyword_comment, char *nameOut, int size)
 {
-   int success = 0;
-   char *potential = NULL;
+    int success = 0;
+    char *potential = NULL;
+    const char *keyword_comment_pattern = "^([[:print:]]*[ ]+)?\\{([[:print:]]+)\\}$";
+    static regex_t *reg_expression = NULL;
+    regmatch_t matches[3]; /* index 0 is the entire string */
+    char braced_informaton[16] = {0};
 
-   *nameOut = '\0';
+    *nameOut = '\0';
 
-   /* 1 - Try FITS name. */
-   if (base_drmskeycheck(keyname) == 0)
-   {
-      strcpy(nameOut, keyname);
-      success = 1;
-   }
+    /* 1 - use name saved in the trailing {<DRMS keyword name>} field */
+    if (!reg_expression)
+    {
+        /* ART - this does not get freed! */
+        reg_expression = calloc(1, sizeof(regex_t));
+        if (regcomp(reg_expression, keyword_comment_pattern, REG_EXTENDED) != 0)
+        {
+            success = 0;
+            reg_expression = NULL;
+        }
+    }
 
-   /* 2 - Use default rule. */
-   if (!success)
-   {
-      potential = (char *)malloc(sizeof(char) * size);
-      if (potential)
-      {
-	 if (GenerateDRMSKeyName(keyname, potential, size))
-	 {
-	    strcpy(nameOut, potential);
-	    success = 1;
-	 }
+    if (reg_expression && fits_keyword_comment)
+    {
+        if (regexec(reg_expression, fits_keyword_comment, sizeof(matches) / sizeof(matches[0]), matches, 0) == 0)
+        {
+            /* match */
+            if (matches[2].rm_so != -1)
+            {
+                /* has braced information */
+                if (matches[2].rm_eo - matches[2].rm_so < sizeof(braced_informaton))
+                {
+                    memcpy(braced_informaton, (void *)&fits_keyword_comment[matches[2].rm_so], matches[2].rm_eo - matches[2].rm_so);
+                    if (base_drmskeycheck(braced_informaton) == 0)
+                    {
+                       strcpy(nameOut, keyname);
+                       success = 1;
+                    }
+                }
+            }
+        }
+    }
 
-	 free(potential);
-      }
-   }
+    /* 2 - Try FITS name. */
+    if (!success)
+    {
+        if (base_drmskeycheck(keyname) == 0)
+        {
+            strcpy(nameOut, keyname);
+            success = 1;
+        }
+    }
 
-   return success;
+    /* 3 - Use default rule. */
+    if (!success)
+    {
+        potential = (char *)malloc(sizeof(char) * size);
+
+        if (potential)
+        {
+            if (GenerateDRMSKeyName(keyname, potential, size))
+            {
+                strcpy(nameOut, potential);
+                success = 1;
+            }
+
+            free(potential);
+        }
+    }
+
+    return success;
 }
 
-int fitsexport_getmappedintkeyname(const char *keyname,
-                                   const char *class,
-                                   Exputl_KeyMap_t *map,
-                                   char *nameOut,
-                                   int size)
+int fitsexport_getmappedintkeyname(const char *keyname, const char *fits_keyword_comment, const char *class, Exputl_KeyMap_t *map, char *nameOut, int size)
 {
    int success = 0;
    const char *potential = NULL;
@@ -2782,7 +2846,7 @@ int fitsexport_getmappedintkeyname(const char *keyname,
    {
       /* Now try the map- and class-independent schemes. */
       char buf[DRMS_MAXKEYNAMELEN];
-      success = fitsexport_getintkeyname(keyname, buf, sizeof(buf));
+      success = fitsexport_getintkeyname(keyname, fits_keyword_comment, buf, sizeof(buf));
       if (success)
       {
 	 strncpy(nameOut, buf, size);
@@ -2903,7 +2967,7 @@ int fitsexport_mapimportkey(CFITSIO_KEYWORD *fitskey,
             }
          }
 
-         if (fitsexport_getmappedintkeyname(fitskey->key_name, clname, map, nameout, sizeof(nameout)))
+         if (fitsexport_getmappedintkeyname(fitskey->key_name, fitskey->key_comment, clname, map, nameout, sizeof(nameout)))
          {
             DRMS_Type_t drmskwtype;
             DRMS_Type_Value_t drmskwval;
@@ -3192,7 +3256,7 @@ int fitsexport_getmappedextkeyvalue(DRMS_Keyword_t *key, char **fitsKwString)
     /* if key is a linked-keyword, then resolve link */
     keyWithVal = drms_keyword_lookup(key->record, key->info->name, 1);
 
-    if ((DRMSKeyValToFITSKeyVal(keyWithVal, NULL, &fitsKwType, &number_bytes, &fitsKwVal, &fitsKwFormat, &fitskw_comment, &fitskw_unit)) == 0)
+    if ((DRMSKeyValToFITSKeyVal(keyWithVal, NULL, NULL, &fitsKwType, &number_bytes, &fitsKwVal, &fitsKwFormat, &fitskw_comment, &fitskw_unit)) == 0)
     {
         if (cfitsio_create_header_key(dummy, fitsKwType, number_bytes, fitsKwVal, fitsKwFormat, fitskw_comment, fitskw_unit, &cfitsioKey) == 0)
         {
