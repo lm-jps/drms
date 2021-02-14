@@ -57,6 +57,8 @@
 #define MAX_STRAIGHT_EXPORT_SIZE 100000     // 100GB
 #define MAX_UNCOMPRESSING_EXPORT_SIZE 10000 // 10GB
 
+#define EXPORT_REQUEST_STATUS_INTERVENTION 25
+
 #define kExportSeries "jsoc.export"
 #define kExportSeriesNew "jsoc.export_new"
 #define kExportUser "jsoc.export_user"
@@ -78,6 +80,7 @@
 #define kArgFile	"file"
 #define kArgTestmode    "t"
 #define kArgOnlineOnly  "o"
+#define ARG_OMIT_QUALITY_CHECK "q"
 #define kArgPassthrough "p"
 #define kOpSeriesList	"series_list"	// show_series
 #define kOpSeriesStruct	"series_struct"	// jsoc_info, series structure, ike show_info -l -s
@@ -129,6 +132,7 @@ ModuleArgs_t module_args[] =
   {ARG_FLAG, kArgDontGenWebPage, NULL, "if set, print to stdout HTML headers."},
   {ARG_FLAG, kArgOnlineOnly, "1", "-o, Only process normal request if all requested SUs are online."},
   {ARG_FLAG, "h", "0", "help - show usage"},
+  {ARG_FLAG, ARG_OMIT_QUALITY_CHECK, NULL, "if set, then do not automatically add the quality-check filter to the record-set specifcation"},
   {ARG_STRING, "QUERY_STRING", kNotSpecified, "AJAX query from the web"},
   {ARG_STRING, "REMOTE_ADDR", "0.0.0.0", "Remote IP address"},
   {ARG_STRING, "SERVER_NAME", "ServerName", "JSOC Server Name"},
@@ -396,6 +400,7 @@ static void CleanUp(int64_t **psunumarr, SUM_info_t ***infostructs, char **webar
 #define JSONDIE2(msg,info) {die(dojson,msg,info,"4",&sunumarr,&infostructs,&webarglist,&series,&paths,&susize,arrsize,userhandle);return(1);}
 #define JSONDIE3(msg,info) {die(dojson,msg,info,"6",&sunumarr,&infostructs,&webarglist,&series,&paths,&susize,arrsize,userhandle);return(1);}
 #define JSONDIE7(msg) {die(dojson,msg,"","7",&sunumarr,&infostructs,&webarglist,&series,&paths,&susize,arrsize,userhandle);return(1);}
+#define JSONDIE25(msg,info) {die(dojson,msg,info,"25",&sunumarr,&infostructs,&webarglist,&series,&paths,&susize,arrsize,userhandle);return(0);}
 
 int fileupload = 0;
 static int gGenWebPage = 1; /* For the die() function. */
@@ -1545,6 +1550,7 @@ int DoIt(void)
   int passthrough = 0;
   int genWebPage = 1;
   int requireOnline = 1;
+  int omit_quality_check = 0;
   char *errorreply;
   int64_t *sunumarr = NULL; /* array of 64-bit sunums provided in the'sunum=...' argument. */
   int nsunums;
@@ -1683,6 +1689,7 @@ int DoIt(void)
             SetWebArg(req, kArgTestmode, &webarglist, &webarglistsz);
             SetWebArg(req, kArgPassthrough, &webarglist, &webarglistsz);
             SetWebArg(req, kArgOnlineOnly, &webarglist, &webarglistsz);
+            SetWebArg(req, ARG_OMIT_QUALITY_CHECK, &webarglist, &webarglistsz);
             SetWebArg(req, kArgDontGenWebPage, &webarglist, &webarglistsz);
 
             qEntryFree(req);
@@ -1746,6 +1753,7 @@ int DoIt(void)
   passthrough = cmdparams_isflagset(&cmdparams, kArgPassthrough);
   genWebPage = (cmdparams_isflagset(&cmdparams, kArgDontGenWebPage) == 0);
   requireOnline = cmdparams_isflagset(&cmdparams, kArgOnlineOnly);
+  omit_quality_check = cmdparams_isflagset(&cmdparams, ARG_OMIT_QUALITY_CHECK);
 
   gGenWebPage = genWebPage;
 
@@ -2902,8 +2910,13 @@ int DoIt(void)
         int segcount = 0;
         int irec;
         int all_online = 1;
+        int record_is_online = -1;
+        int non_exportable_SU = -1;
+        int intervention_needed = -1;
         int all_nearline = 0;
         char dsquery[DRMS_MAXQUERYLEN];
+        char *tmp_recordset = NULL;
+        size_t sz_tmp_recordset = 0;
         char *p;
         char *file, *filename;
         int filesize;
@@ -3033,9 +3046,10 @@ int DoIt(void)
 
         list_llfree(&pending_request_ids);
 
-    size=0;
-    strncpy(dsquery,dsin,DRMS_MAXQUERYLEN);
-    fileupload = strncmp(dsquery, "*file*", 6) == 0;
+        size=0;
+        strncpy(dsquery,dsin,DRMS_MAXQUERYLEN);
+        fileupload = strncmp(dsquery, "*file*", 6) == 0;
+
     if (fileupload)  // recordset passed as uploaded file
       {
       file = (char *)cmdparams_get_str (&cmdparams, kArgFile, NULL);
@@ -3127,6 +3141,8 @@ int DoIt(void)
         int iset;
         int firstlastExists = 0;
         const char *setName = NULL;
+        char *seriesname = NULL;
+        DRMS_Record_t *series_template = NULL;
 
         if (drms_record_parserecsetspec_plussegs(dsquery, &allvers, &sets, &settypes, &snames, &filts, &segs, &nsets, &rsinfo) == DRMS_SUCCESS)
         {
@@ -3141,7 +3157,6 @@ int DoIt(void)
             char *query = NULL;
             char *pkwhere = NULL;
             char *npkwhere = NULL;
-            char *seriesname = NULL;
             int filter;
             int mixed;
             HContainer_t *firstlast = NULL;
@@ -3151,6 +3166,8 @@ int DoIt(void)
             if (nsets > 0)
             {
                 setName = snames[0];
+                sz_tmp_recordset = strlen(dsquery) + 1;
+                tmp_recordset = calloc(sz_tmp_recordset, sizeof(char));
             }
 
             for (iset = 0; iset < nsets; iset++)
@@ -3200,6 +3217,44 @@ int DoIt(void)
                     }
                 }
 
+                if (!omit_quality_check)
+                {
+                    series_template = drms_template_record(drms_env, seriesname, &status);
+
+                    if (status != DRMS_SUCCESS)
+                    {
+                        snprintf(mbuf, sizeof(mbuf), "cannot export series '%s' - it does not exist\n", seriesname);
+                        JSONDIE(mbuf);
+                    }
+
+                    if (hcon_member_lower(&series_template->keywords, "quality"))
+                    {
+                        if (tmp_recordset)
+                        {
+                            tmp_recordset = base_strcatalloc(tmp_recordset, seriesname, &sz_tmp_recordset);
+                            if (filts && filts[iset] && *filts[iset] != '\0')
+                            {
+                                tmp_recordset = base_strcatalloc(tmp_recordset, filts[iset], &sz_tmp_recordset);
+                            }
+
+                            /* force quality check; just add it! this works! */
+                            tmp_recordset = base_strcatalloc(tmp_recordset, "[? (quality::bit(32) & X'80000000')::int = 0 ?]", &sz_tmp_recordset);
+
+                            if (segs && segs[iset] && *segs[iset] != '\0')
+                            {
+                                tmp_recordset = base_strcatalloc(tmp_recordset, "{", &sz_tmp_recordset);
+                                tmp_recordset = base_strcatalloc(tmp_recordset, segs[iset], &sz_tmp_recordset);
+                                tmp_recordset = base_strcatalloc(tmp_recordset, "}", &sz_tmp_recordset);
+                            }
+
+                            if (iset + 1 < nsets)
+                            {
+                                tmp_recordset = base_strcatalloc(tmp_recordset, ",", &sz_tmp_recordset);
+                            }
+                        }
+                    }
+                }
+
                 if (query)
                 {
                     free(query);
@@ -3237,88 +3292,95 @@ int DoIt(void)
             JSONDIE(mbuf);
         }
 
-    if (rcountlimit == 0)
-    {
-        rs = drms_open_records(drms_env, dsquery, &status);
-    }
-    else
-    {
-        // rcountlimit specified via "n=" parameter in process field.
-        rs = drms_open_nrecords (drms_env, dsquery, rcountlimit, &status);
-    }
-
-    if (!rs)
-    {
-        int tmpstatus = status;
-        rcount = drms_count_records(drms_env, dsquery, &status);
-        if (status == 0)
+        if (tmp_recordset)
         {
-            // open_records failed but query is OK so probably too many records for memory limit.
-            char errmsg[100];
-
-            sprintf(errmsg, "%d is too many records in one request.", rcount);
-            drms_record_freerecsetspecarr_plussegs(&allvers, &sets, &settypes, &snames, &filts, &segs, nsets);
-            JSONDIE2("Can not open RecordSet ",errmsg);
+            snprintf(dsquery, sizeof(dsquery), "%s", tmp_recordset);
+            free(tmp_recordset);
+            tmp_recordset = NULL;
         }
-        status = tmpstatus;
-        drms_record_freerecsetspecarr_plussegs(&allvers, &sets, &settypes, &snames, &filts, &segs, nsets);
-        JSONDIE2("Can not open RecordSet, bad query or too many records: ", dsquery);
-    }
 
-    /* We've got the records to be exported open already - if the user has used a FIRSTLAST symbol, like '$' or '^',
-     * then convert the record-set specification to one that contains a list of recnums. There are some bugs in
-     * jsoc_export_manage having to do with characters like '$' gumming up DB queries and shell command-lines. Let's
-     * get rid of these characters as much as possible as upstream as possible.
-     *
-     * Even if there is no first-last symbol, we still want to convert to a record list so that we can create
-     * a hash of the record-set query so that we can effectively compare export requests for identity.
-     * Do not use dsquery as is for this purpose. It may have wildcards, like '$', in it which make it difficult to perform
-     * future comparisons, i.e., dsquery is not canonical. To convert dsquery to the canonical form, we have to open the
-     * records (drms_open_records()) and make a list of recnums for each series described by dsquery.
-     */
-    char *newSpec = NULL;
-    size_t szNewSpec = DRMS_MAXQUERYLEN;
-    char recnumStr[64];
-
-    newSpec = calloc(1, szNewSpec);
-
-    if (newSpec) newSpec = base_strcatalloc(newSpec, setName, &szNewSpec);
-    if (newSpec) newSpec = base_strcatalloc(newSpec, "[", &szNewSpec);
-
-    for (irec = 0; irec < rs->n && newSpec; irec++)
-    {
-        snprintf(recnumStr, sizeof(recnumStr), "%lld", rs->records[irec]->recnum);
-
-        if (irec == 0)
+        if (rcountlimit == 0)
         {
-            newSpec = base_strcatalloc(newSpec, ":#" , &szNewSpec);
+            rs = drms_open_records(drms_env, dsquery, &status);
         }
         else
         {
-            newSpec = base_strcatalloc(newSpec, ",#" , &szNewSpec);
+            // rcountlimit specified via "n=" parameter in process field.
+            rs = drms_open_nrecords (drms_env, dsquery, rcountlimit, &status);
         }
 
-        if (newSpec) newSpec = base_strcatalloc(newSpec, recnumStr, &szNewSpec);
-    }
+        if (!rs)
+        {
+            int tmpstatus = status;
+            rcount = drms_count_records(drms_env, dsquery, &status);
+            if (status == 0)
+            {
+                // open_records failed but query is OK so probably too many records for memory limit.
+                char errmsg[100];
 
-    if (newSpec) newSpec = base_strcatalloc(newSpec, "]", &szNewSpec);
+                sprintf(errmsg, "%d is too many records in one request.", rcount);
+                drms_record_freerecsetspecarr_plussegs(&allvers, &sets, &settypes, &snames, &filts, &segs, nsets);
+                JSONDIE2("Can not open RecordSet ",errmsg);
+            }
+            status = tmpstatus;
+            drms_record_freerecsetspecarr_plussegs(&allvers, &sets, &settypes, &snames, &filts, &segs, nsets);
+            JSONDIE2("Can not open RecordSet, bad query or too many records: ", dsquery);
+        }
 
-    if (segs && segs[0])
-    {
-        if (newSpec) newSpec = base_strcatalloc(newSpec, segs[0], &szNewSpec);
-    }
+        /* We've got the records to be exported open already - if the user has used a FIRSTLAST symbol, like '$' or '^',
+         * then convert the record-set specification to one that contains a list of recnums. There are some bugs in
+         * jsoc_export_manage having to do with characters like '$' gumming up DB queries and shell command-lines. Let's
+         * get rid of these characters as much as possible as upstream as possible.
+         *
+         * Even if there is no first-last symbol, we still want to convert to a record list so that we can create
+         * a hash of the record-set query so that we can effectively compare export requests for identity.
+         * Do not use dsquery as is for this purpose. It may have wildcards, like '$', in it which make it difficult to perform
+         * future comparisons, i.e., dsquery is not canonical. To convert dsquery to the canonical form, we have to open the
+         * records (drms_open_records()) and make a list of recnums for each series described by dsquery.
+         */
+        char *newSpec = NULL;
+        size_t szNewSpec = DRMS_MAXQUERYLEN;
+        char recnumStr[64];
 
-    if (!newSpec)
-    {
-        JSONDIE("Out of memory.\n");
-    }
+        newSpec = calloc(1, szNewSpec);
 
-    if (firstlastExists)
-    {
-        snprintf(dsquery, sizeof(dsquery), "%s", newSpec);
-    }
+        if (newSpec) newSpec = base_strcatalloc(newSpec, setName, &szNewSpec);
+        if (newSpec) newSpec = base_strcatalloc(newSpec, "[", &szNewSpec);
 
-    rcount = rs->n;
+        for (irec = 0; irec < rs->n && newSpec; irec++)
+        {
+            snprintf(recnumStr, sizeof(recnumStr), "%lld", rs->records[irec]->recnum);
+
+            if (irec == 0)
+            {
+                newSpec = base_strcatalloc(newSpec, ":#" , &szNewSpec);
+            }
+            else
+            {
+                newSpec = base_strcatalloc(newSpec, ",#" , &szNewSpec);
+            }
+
+            if (newSpec) newSpec = base_strcatalloc(newSpec, recnumStr, &szNewSpec);
+        }
+
+        if (newSpec) newSpec = base_strcatalloc(newSpec, "]", &szNewSpec);
+
+        if (segs && segs[0])
+        {
+            if (newSpec) newSpec = base_strcatalloc(newSpec, segs[0], &szNewSpec);
+        }
+
+        if (!newSpec)
+        {
+            JSONDIE("Out of memory.\n");
+        }
+
+        if (firstlastExists)
+        {
+            snprintf(dsquery, sizeof(dsquery), "%s", newSpec);
+        }
+
+        rcount = rs->n;
 
         /* Check for duplicate exports within the last DUP_EXPORT_WINDOW hours. If a duplicate is found, then simply return the
          * request ID to the caller. Use the most recent duplicate. */
@@ -3497,45 +3559,47 @@ int DoIt(void)
 // then only check each seg if needed.
     all_online = 1;
     all_nearline = 1;
-
+    non_exportable_SU = 0;
+    intervention_needed = 0;
     compressedStorage = -1;
-    for (irec=0; irec < rcount; irec++)
-      {
-      // Must check each segment since some may be linked and/or offline.
-      DRMS_Record_t *rec = drms_recordset_fetchnext(drms_env, rs, &status, NULL, NULL);
 
-      if (!rec)
-      {
-         /* Exit rec loop - last record was fetched last time. */
-         break;
-      }
+    /* iterate through all records and all segments; if `reject_if_offline` is false, then
+     * if `record_is_online` is false, remove the record from the requested record set */
+    for (irec = 0; irec < rcount; irec++)
+    {
+        // Must check each segment since some may be linked and/or offline.
+        DRMS_Segment_t *seg = NULL;
+        HIterator_t *segp = NULL;
+        DRMS_Record_t *tRec = NULL;
+        DRMS_Record_t *segrec = NULL;
+        SUM_info_t *sinfo = NULL;
+        DRMS_Segment_t *tSeg = NULL;
+        DRMS_Record_t *rec = drms_recordset_fetchnext(drms_env, rs, &status, NULL, NULL);
 
-      DRMS_Segment_t *seg;
-      HIterator_t *segp = NULL;
+        if (!rec)
+        {
+            /* Exit rec loop - last record was fetched last time. */
+            break;
+        }
 
+        if (*rec->seriesinfo->seriesname != '\0')
+        {
+            snprintf(series_lower, sizeof(series_lower), "%s", rec->seriesinfo->seriesname);
+            strtolower(series_lower);
+        }
 
-      if (*rec->seriesinfo->seriesname != '\0')
-      {
-          snprintf(series_lower, sizeof(series_lower), "%s", rec->seriesinfo->seriesname);
-          strtolower(series_lower);
-      }
+        // Disallow exporting jsoc.export* series
+        if (strncmp(rec->seriesinfo->seriesname, "jsoc.export", 11)== 0)
+        {
+            JSONDIE("Export}} of jsoc_export series not allowed.");
+        }
 
-      // Disallow exporting jsoc.export* series
-      if (strncmp(rec->seriesinfo->seriesname, "jsoc.export", 11)== 0)
-      {
-          JSONDIE("Export of jsoc_export series not allowed.");
-      }
-      // ART - hack: force all_nearline true if the series is iris.lev1 for all records; eventually
-      // we will need to talk to SUMS to figure out if
-      else if (!series_lower || !IsNearlineSeries(series_lower))
-      {
-          all_nearline = 0;
-      }
-
-          DRMS_Record_t *tRec = NULL;
-          DRMS_Record_t *segrec = NULL;
-          SUM_info_t *sinfo = NULL;
-          DRMS_Segment_t *tSeg = NULL;
+        // ART - hack: force all_nearline true if the series is iris.lev1 for all records; eventually
+        // we will need to talk to SUMS to figure out if
+        else if (!series_lower || !IsNearlineSeries(series_lower))
+        {
+            all_nearline = 0;
+        }
 
           /* Don't follow links when obtaining the segments.
            * If you do that, and there is a problem following the
@@ -3547,8 +3611,10 @@ int DoIt(void)
            * loop to terminate.
            */
 
-      while (seg = drms_record_nextseg(rec, &segp, 0))
-      {
+        record_is_online = 1;
+
+        while (seg = drms_record_nextseg(rec, &segp, 0))
+        {
             /* If this is a linked segment, then follow the link. */
             if (seg->info->islink)
             {
@@ -3601,6 +3667,8 @@ int DoIt(void)
               /* There was a request for an sunum of -1. */
               all_online = 0;
               all_nearline = 0;
+              record_is_online = 0;
+              non_exportable_SU = 1;
 
               /* There is no SU. Break out of segment loop. */
               break;
@@ -3612,6 +3680,9 @@ int DoIt(void)
               // no longer die here, leave it to the export process to deal with missing segments
               all_online = 0;
               all_nearline = 0;
+              record_is_online = 0;
+              non_exportable_SU = 1;
+
               /* Bad SUNUM. Break out of segment loop. */
               break;
           }
@@ -3621,6 +3692,7 @@ int DoIt(void)
                * do since we cannot bring the SU online in jsoc_fetch (it is a CGI program that needs to return quickly) and SUMS does
                * not store file-size info within the SU. We should break out of the segment loop here anyway - there is no SU. */
               all_online = 0;
+              record_is_online = 0;
               // all_nearline = ?; we need a new SUMS table to provide this informaton
               /* Use sinfo to get SU size info. Must cast double to 64-bit integer - SUMS design problem. */
               size += (long long)sinfo->bytes;
@@ -3642,7 +3714,7 @@ int DoIt(void)
               drms_segment_filename(tSeg, path);
               if (stat(path, &buf) != 0)
               { // segment specified file is not present.
-                  // it is an error if the record and QUALITY >=0 but no file matching
+                  // it is a WARNING if the record and QUALITY >=0 but no file matching
                   // the segment file name unless the filename is empty.
                   if (*(tSeg->filename))
                   {
@@ -3682,23 +3754,49 @@ int DoIt(void)
                   }
               }
           }
-      } // segment loop
+        } // segment loop
 
-      if (compressedStorage == -1)
-      {
-          /* No segment was stored compressed. */
-          compressedStorage = 0;
-      }
+        if (requireOnline && !all_online && !all_nearline)
+        {
+            if (non_exportable_SU)
+            {
+                /* invalid SU - this isn't really expected if the QUALITY flag check is part of the export request */
+                if (sinfo->sunum)
+                {
+                    char sunum_buf[64];
 
-      if (segp)
-      {
-          hiter_free(segp);
-          free(segp);
-          segp = NULL;
-      }
-      } // record loop
-    if (size > 0 && size < 1024*1024) size = 1024*1024;
-    size /= 1024*1024;
+                    snprintf(sunum_buf, sizeof(sunum_buf), "%lld", sinfo->sunum);
+                    JSONDIE2("One or more Storage Units are invalid", sunum_buf);
+                }
+                else
+                {
+                    JSONDIE("One or more records contain no Storage Units");
+                }
+            }
+            else
+            {
+                /* we are not going to be able to complete the export, so leave the record loop now */
+                intervention_needed = 1;
+                break;
+            }
+        }
+
+        if (compressedStorage == -1)
+        {
+            /* No segment was stored compressed. */
+            compressedStorage = 0;
+        }
+
+        if (segp)
+        {
+            hiter_free(segp);
+            free(segp);
+            segp = NULL;
+        }
+    } // record loop
+
+        if (size > 0 && size < 1024*1024) size = 1024*1024;
+        size /= 1024*1024;
 
     // Exit if no records found
     if ((strcmp(method,"url_quick")==0 && (strcmp(protocol,kOptProtocolAsIs)==0 || strcmp(protocol,kOptProtocolSuAsIs)==0) || strcmp(protocol,"su")==0) && segcount == 0)
@@ -3871,101 +3969,99 @@ int DoIt(void)
   	}
       CleanUp(&sunumarr, &infostructs, &webarglist, &series, &paths, &susize, arrsize, userhandle);
       return(0);
-      }
+    } /* end url quick */
 
-     // Check for offline data, if only_online flag is set then return an error
-     // to the user.
+        // Must do full export processing, unless intervention is needed; if intervention is needed, then still
+        // create the record in jsoc.export_new so the person checking for intervention can see the
+        // record set that had the issue
 
-    if (requireOnline && !all_online && !all_nearline)
-      {
-      JSONDIE2("Some requested records are offline, try again later: ", dsquery);
-      }
+        // Get RequestID
+        char jsocFetchPath[PATH_MAX];
+        char reqidGenPath[PATH_MAX];
+        char *binPath = NULL;
 
-     // Must do full export processing
+        memset(jsocFetchPath, '\0', sizeof(jsocFetchPath));
 
-    // Get RequestID
-    char jsocFetchPath[PATH_MAX];
-    char reqidGenPath[PATH_MAX];
-    char *binPath = NULL;
-
-    memset(jsocFetchPath, '\0', sizeof(jsocFetchPath));
-
-    /* This call to GetJsocRequestID is in kOpExpRequest. */
-    if (readlink("/proc/self/exe", jsocFetchPath, sizeof(jsocFetchPath)) == -1)
-    {
-        JSONDIE("Cannot obtain jsoc_fetch path.\n");
-    }
-    else
-    {
-        binPath = dirname(jsocFetchPath); // can modify jsocFetchPath
-        snprintf(reqidGenPath, sizeof(reqidGenPath), "%s/GetJsocRequestID", binPath);
-    }
-
-    FILE *fp = popen(reqidGenPath, "r");
-
-    if (fp)
-    {
-        if (fscanf(fp, "%s", new_requestid) != 1)
+        /* This call to GetJsocRequestID is in kOpExpRequest. */
+        if (readlink("/proc/self/exe", jsocFetchPath, sizeof(jsocFetchPath)) == -1)
         {
+            JSONDIE("Cannot obtain jsoc_fetch path.\n");
+        }
+        else
+        {
+            binPath = dirname(jsocFetchPath); // can modify jsocFetchPath
+            snprintf(reqidGenPath, sizeof(reqidGenPath), "%s/GetJsocRequestID", binPath);
+        }
+
+        FILE *fp = popen(reqidGenPath, "r");
+
+        if (fp)
+        {
+            if (fscanf(fp, "%s", new_requestid) != 1)
+            {
+                pclose(fp);
+                JSONDIE("Cant get new RequestID");
+            }
+
             pclose(fp);
+        }
+        else
+        {
             JSONDIE("Cant get new RequestID");
         }
 
-        pclose(fp);
-    }
-    else
-    {
-        JSONDIE("Cant get new RequestID");
-    }
-
-     if (strcmp(dbhost, SERVER) == 0)
-     {
-        if (passthrough)
+        if (strcmp(dbhost, SERVER) == 0)
         {
-           /* Denote a pass-through export by inserting an X in the request ID. We need to distinguish this type of export
-            * from an internal export (even though use the internal database) because the export web page needs to distinguish
-            * them. */
-           strcat(new_requestid, "_X");
+            if (passthrough)
+            {
+                /* Denote a pass-through export by inserting an X in the request ID. We need to distinguish this type of export
+                * from an internal export (even though use the internal database) because the export web page needs to distinguish
+                * them. */
+                strcat(new_requestid, "_X");
+            }
+
+            strcat(new_requestid, "_IN");
         }
 
-        strcat(new_requestid, "_IN");
-     }
+        requestid = new_requestid;
 
-     requestid = new_requestid;
+        /* Insert a row into jsoc.export_md5 for this new request. If there is a failure in jsoc_export_manage, we'll have to
+         * delete this row. */
+        char cmd[DRMS_MAXQUERYLEN];
 
-    /* Insert a row into jsoc.export_md5 for this new request. If there is a failure in jsoc_export_manage, we'll have to
-     * delete this row. */
-    char cmd[DRMS_MAXQUERYLEN];
-    char timeStrBuf[64];
+        if (!intervention_needed)
+        {
+            /* if intervention is needed, then all we want to do is to add a record to jsoc.export_new (with status = X) */
+            char timeStrBuf[64];
+            time_t secs;
+            struct tm *currentUT;
 
-    time_t secs;
-    struct tm *currentUT;
+            secs = time(NULL);
+            currentUT = gmtime(&secs);
 
-    secs = time(NULL);
-    currentUT = gmtime(&secs);
+            strftime(timeStrBuf, sizeof(timeStrBuf), "%Y-%m-%d %H:%M:%S UTC", currentUT);
+            snprintf(cmd, sizeof(cmd), "INSERT INTO jsoc.export_md5 (md5, requestid, exporttime) VALUES('%s', '%s', '%s')", md5Str, requestid, timeStrBuf);
+            if (drms_dms(drms_env->session, NULL, cmd))
+            {
+               fprintf(stderr, "Failure obtaining estimated completion time and size: %s.\n", cmd);
+               JSONDIE("Cant save new export-request hash.");
+            }
 
-    strftime(timeStrBuf, sizeof(timeStrBuf), "%Y-%m-%d %H:%M:%S UTC", currentUT);
-    snprintf(cmd, sizeof(cmd), "INSERT INTO jsoc.export_md5 (md5, requestid, exporttime) VALUES('%s', '%s', '%s')", md5Str, requestid, timeStrBuf);
-    if (drms_dms(drms_env->session, NULL, cmd))
-    {
-       fprintf(stderr, "Failure obtaining estimated completion time and size: %s.\n", cmd);
-       JSONDIE("Cant save new export-request hash.");
-    }
-
-    // Log this export request
-    if (1)
-      {
-      char exportlogfile[1000];
-      char timebuf[50];
-      FILE *exportlog;
-      sprintf(exportlogfile, "/home/jsoc/exports/tmp/%s.reqlog", requestid);
-      exportlog = fopen(exportlogfile, "w");
-      sprint_ut(timebuf, fetch_time);
-      fprintf(exportlog,"XXXX New export request started at %s\n", timebuf);
-      fprintf(exportlog,"REMOTE_ADDR=%s\nHTTP_REFERER=%s\nREQUEST_METHOD=%s\nQUERY_STRING=%s\n",
-         getenv("REMOTE_ADDR"), getenv("HTTP_REFERER"), getenv("REQUEST_METHOD"), getenv("QUERY_STRING"));
-      fclose(exportlog);
-      }
+            // Log this export request
+            if (1)
+            {
+                char exportlogfile[1000];
+                char timebuf[50];
+                FILE *exportlog;
+                sprintf(exportlogfile, "/home/jsoc/exports/tmp/%s.reqlog", requestid);
+                exportlog = fopen(exportlogfile, "w");
+                sprint_ut(timebuf, fetch_time);
+                fprintf(exportlog,"XXXX New export request started at %s\n", timebuf);
+                fprintf(exportlog,"REMOTE_ADDR=%s\nHTTP_REFERER=%s\nREQUEST_METHOD=%s\nQUERY_STRING=%s\n",
+                getenv("REMOTE_ADDR"), getenv("HTTP_REFERER"), getenv("REQUEST_METHOD"), getenv("QUERY_STRING"));
+                fclose(exportlog);
+            }
+        }
 
         /* jsoc_fetch no longer manages jsoc.export_user; instead, when the user registers an email address,
          * they also register a user name, and a snail-mail address too; these values are stored in jsoc.export_user_info
@@ -3973,29 +4069,45 @@ int DoIt(void)
          * the exportdata.html text box, the user-name and snail text boxes get filled and made read-only; they can
          * register their name and snail only if they are also registering a new email address */
 
-     // Create new record in export control series
-     // This will be copied into the cluster-side series on first use.
-    if ( !requestid || !*requestid || strcmp(requestid, "none") == 0)
-      JSONDIE("Must have valid requestID - internal error.");
-    if (strcmp(dsin, "Not Specified") == 0)
-      JSONDIE("Must have Recordset specified");
+        // Create new record in export control series
+        // This will be copied into the cluster-side series on first use.
+        if ( !requestid || !*requestid || strcmp(requestid, "none") == 0)
+        {
+            JSONDIE("Must have valid requestID - internal error.");
+        }
+
+        if (strcmp(dsin, "Not Specified") == 0)
+        {
+            JSONDIE("Must have Recordset specified");
+        }
+
         /* jsoc.export_new */
         /* We are in kOpExpRequest. */
-     exprec = drms_create_record(drms_env, kExportSeriesNew, DRMS_PERMANENT, &status);
-     if (!exprec)
-      JSONDIE("Cant create new export control record");
+        exprec = drms_create_record(drms_env, kExportSeriesNew, DRMS_PERMANENT, &status);
+        if (!exprec)
+        {
+            JSONDIE("Cant create new export control record");
+        }
 
-     drms_setkey_string(exprec, "RequestID", requestid);
-     drms_setkey_string(exprec, "DataSet", dsquery);
-     drms_setkey_string(exprec, "Processing", process);
-     drms_setkey_string(exprec, "Protocol", protocol);
-     drms_setkey_string(exprec, "FilenameFmt", filenamefmt);
-     drms_setkey_string(exprec, "Method", method);
-     drms_setkey_string(exprec, "Format", format);
-     drms_setkey_time(exprec, "ReqTime", fetch_time);
-     drms_setkey_time(exprec, "EstTime", fetch_time+10); // Crude guess for now
-     drms_setkey_longlong(exprec, "Size", (int)size);
-     drms_setkey_int(exprec, "Status", (testmode ? 12 : 2));
+        drms_setkey_string(exprec, "RequestID", requestid);
+        drms_setkey_string(exprec, "DataSet", dsquery);
+        drms_setkey_string(exprec, "Processing", process);
+        drms_setkey_string(exprec, "Protocol", protocol);
+        drms_setkey_string(exprec, "FilenameFmt", filenamefmt);
+        drms_setkey_string(exprec, "Method", method);
+        drms_setkey_string(exprec, "Format", format);
+        drms_setkey_time(exprec, "ReqTime", fetch_time);
+        drms_setkey_time(exprec, "EstTime", fetch_time+10); // Crude guess for now
+        drms_setkey_longlong(exprec, "Size", (int)size);
+
+        if (intervention_needed)
+        {
+            drms_setkey_int(exprec, "Status", (int)EXPORT_REQUEST_STATUS_INTERVENTION);
+        }
+        else
+        {
+            drms_setkey_int(exprec, "Status", (testmode ? 12 : 2));
+        }
 
         /* we are in kOpExpRequest */
         /* set `requestor` column in jsoc.export_new; requestorid is also id in jsoc.export_user_info - the two tables can be joined;
@@ -4005,15 +4117,27 @@ int DoIt(void)
          */
         drms_setkey_int(exprec, "requestor", requestorid);
 
-     /* insert new row into the pending-requests table (if the user is exempt, then there could be other rows in this table) */
-     snprintf(cmd, sizeof(cmd), "INSERT INTO %s(address, ip_address, request_id, start_time) VALUES('%s', '%s', '%s', CURRENT_TIMESTAMP)", EXPORT_PENDING_REQUESTS_TABLE, notify, ipAddress, requestid);
-     if (drms_dms(drms_env->session, NULL, cmd))
-     {
-        fprintf(stderr, "WARNING: Failure inserting row into %s [%s]\n", EXPORT_PENDING_REQUESTS_TABLE, cmd);
-        /* don't kill the whole export if we can't insert into the pending list; the worst that happens is that
-         * we won't protect against users submitting too many export requests */
-     }
-     } // End of kOpExpRequest setup
+        if (intervention_needed)
+        {
+            if (exprec)
+            {
+                drms_close_record(exprec, DRMS_INSERT_RECORD);
+            }
+
+            JSONDIE25("One or more data files are offline; please send a request for help to jsoc@sun.stanford.edu and we will place the requested data online, and then you may try again; ", requestid);
+        }
+        else
+        {
+            /* insert new row into the pending-requests table (if the user is exempt, then there could be other rows in this table) */
+            snprintf(cmd, sizeof(cmd), "INSERT INTO %s(address, ip_address, request_id, start_time) VALUES('%s', '%s', '%s', CURRENT_TIMESTAMP)", EXPORT_PENDING_REQUESTS_TABLE, notify, ipAddress, requestid);
+            if (drms_dms(drms_env->session, NULL, cmd))
+            {
+                fprintf(stderr, "WARNING: Failure inserting row into %s [%s]\n", EXPORT_PENDING_REQUESTS_TABLE, cmd);
+                /* don't kill the whole export if we can't insert into the pending list; the worst that happens is that
+                * we won't protect against users submitting too many export requests */
+            }
+        }
+    } // End of kOpExpRequest setup
 
     /*  op == exp_repeat  */
     else if (strcmp(op,kOpExpRepeat) == 0)
