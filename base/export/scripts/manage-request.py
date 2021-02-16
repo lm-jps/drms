@@ -12,16 +12,23 @@
 #   dbuser (optional) - The database account to be used when connecting to the database. The default is the value of the WEB_DBUSER parameter in DRMSParams.
 #   checkonly (optional) - If set to 1, then no attept is made to register an unregistered email. In this case, if no error occurs then the possible return status codes are RV_REGISTEREDADDRESS, RV_REGISTRATIONPENDING, or RV_UNREGISTEREDADDRESS. The default is False (unknown addresses are registered).
 
+# Testing:
+#   to test providing CGI arguments, set `TEST_CGI` to True, and then provide a single QUERY_STRING-like argument, like:
+#   manage-request.py 'address=person@domain&operation=check'
+
 import sys
 import os
 from datetime import datetime, timedelta
 import json
 import psycopg2
+import cgi
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../include'))
 from drmsparams import DRMSParams, DPError, DPMissingParameterError
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../base/libs/py'))
 from drmsCmdl import CmdlParser
 
+#test
+TEST_CGI = False
 
 # error codes
 MR_ERROR_UNKNOWN = -1
@@ -41,19 +48,19 @@ MR_STATUS_REQUEST_CANCELED = 3
 # classes
 class Arguments(object):
 
-    def __init__(self, parser):
+    def __init__(self, parser, args=None):
         # This could raise in a few places. Let the caller handle these exceptions.
         self.parser = parser
 
         # Parse the arguments.
-        self.parse()
+        self.parse(args)
 
         # Set all args.
         self.set_all_args()
 
-    def parse(self):
+    def parse(self, args=None):
         try:
-            self.parsed_args = self.parser.parse_args()
+            self.parsed_args = self.parser.parse_args(args)
         except Exception as exc:
             if len(exc.args) == 2:
                 type, msg = exc
@@ -80,6 +87,51 @@ class Arguments(object):
         # store in instance dict
         for name, value in vars(self.parsed_args).items():
             setattr(self, name, value)
+
+    @classmethod
+    def get_arguments(cls, program_args, drms_params):
+        try:
+            dbhost = drms_params.get_required('SERVER')
+            dbport = drms_params.get_required('DRMSPGPORT')
+            dbname = drms_params.get_required('DBNAME')
+            dbuser = drms_params.get_required('WEB_DBUSER')
+        except DPMissingParameterError as exc:
+            raise ParameterError(str(exc))
+
+        # check for arguments from cgi form
+        args = None
+
+        if program_args is not None and len(program_args > 0):
+            args = program_args
+        elif TEST_CGI or 'REQUEST_METHOD' in os.environ or 'QUERY_STRING' in os.environ:
+            # if this script is executed in a CGI context, then one of these two environment variables will
+            # be set; if REQUEST_METHOD is set, then cgi uses the REQUEST_METHOD value to determine if the
+            # arguments are from stdin (post) or QUERY_STRING/sys.argv[1] (get); if REQUEST_METHOD is 'get'
+            # and QUERY_STRING does not exist, then a QUERY_STRING-like argument is expected in sys.argv[1];
+            # if REQUEST_METHOD is not set, then cgi.FieldStorage() assumes get semantics (using QUERY_STRING/
+            # sys.argv[1])
+            form = cgi.FieldStorage()
+
+            if form:
+                args = []
+                for key in form.keys():
+                    val = form.getvalue(key)
+                    # any optional arguments will appear as X=1 in the cgi command line
+                    args.append(key + '=' + val)
+
+        parser = CmdlParser(usage='%(prog)s address=<registered email address> operation=<check, cancel> [ --dbhost=<db host> ] [ --dbport=<db port> ] [ --dbname=<db name> ] [ --dbuser=<db user>] ')
+        # all arguments are considered optional in argparse (see `prefix_chars`); we can therefore do this:
+        # parser.add_argument('-H', 'H', '--dbhost', ...)
+        parser.add_argument('A', 'address', help='the export-registered email address', metavar='<email address>', dest='address', required=True)
+        parser.add_argument('O', 'operation', help='the export-request operation to perform (check, cancel)', metavar='<operation>', dest='op', default='check', required=True)
+        parser.add_argument('-H', 'H', '--dbhost', help='the host machine of the database that is used to manage pending export requests', metavar='<db host>', dest='dbhost', default=dbhost)
+        parser.add_argument('-P', 'P', '--dbport', help='The port on the host machine that is accepting connections for the database', metavar='<db host port>', dest='dbport', default=dbport)
+        parser.add_argument('-N', 'N', '--dbname', help='the name of the database used to manage pending export requests', metavar='<db name>', dest='dbname', default=dbname)
+        parser.add_argument('-U', 'U', '--dbuser', help='the name of the database user account', metavar='<db user>', dest='dbuser', default=dbuser)
+
+        arguments = Arguments(parser, args)
+
+        return arguments
 
 
 # exceptions
@@ -282,30 +334,28 @@ class CancelResponse(Response):
     def __init__(self, address='UNKNOWN_EXPORT_USER', request_id='UNKNOWN_REQUEST_ID', start_time='UNKNOWN_START_TIME'):
         super().__init__(error_code=MR_STATUS_REQUEST_CANCELED, msg='existing export request for export user ' + address + ' [ request_id=' + request_id + ', start_time=' + start_time.strftime('%Y-%m-%d %T') + ' ] ' + 'was canceled')
 
+# wrapper functions for use in a flask app
+def check(address):
+    return check_or_cancel({ 'address' : address, 'operation' : 'check' })
 
-if __name__ == "__main__":
+def cancel(address):
+    return check_or_cancel({ 'address' : address, 'operation' : 'cancel' })
+
+def check_or_cancel(**kwargs):
+    args = None
+
+    if len(kwargs) > 0:
+        args = []
+        for key, value in kwargs.items():
+            args.append(key + '=' + val)
+
     try:
         drms_params = DRMSParams()
+
         if drms_params is None:
             raise ParameterError(msg='unable to locate DRMS parameters file (drmsparams.py)')
 
-        try:
-            dbhost = drms_params.get_required('SERVER')
-            dbport = drms_params.get_required('DRMSPGPORT')
-            dbname = drms_params.get_required('DBNAME')
-            dbuser = drms_params.get_required('WEB_DBUSER')
-        except DPMissingParameterError as exc:
-            raise ParameterError(str(exc))
-
-        parser = CmdlParser(usage='%(prog)s address=<registered email address> operation=<check, cancel> [ --dbhost=<db host> ] [ --dbport=<db port> ] [ --dbname=<db name> ] [ --dbuser=<db user>] ')
-        parser.add_argument('A', 'address', help='the export-registered email address', metavar='<email address>', dest='address', required=True)
-        parser.add_argument('O', 'operation', help='the export-request operation to perform (check, cancel)', metavar='<operation>', dest='op', default='check', required=True)
-        parser.add_argument('-H', '--dbhost', help='the host machine of the database that is used to manage pending export requests', metavar='<db host>', dest='dbhost', default=dbhost)
-        parser.add_argument('-P', '--dbport', help='The port on the host machine that is accepting connections for the database', metavar='<db host port>', dest='dbport', default=dbport)
-        parser.add_argument('-N', '--dbname', help='the name of the database used to manage pending export requests', metavar='<db name>', dest='dbname', default=dbname)
-        parser.add_argument('-U', '--dbuser', help='the name of the database user account', metavar='<db user>', dest='dbuser', default=dbuser)
-
-        arguments = Arguments(parser)
+        arguments = Arguments.get_arguments(args, drms_params)
 
         try:
             operation = OperationFactory(operation=arguments.op, address=arguments.address, table=drms_params.EXPORT_PENDING_REQUESTS_TABLE, timeout=drms_params.EXPORT_PENDING_REQUESTS_TIME_OUT)
@@ -330,5 +380,12 @@ if __name__ == "__main__":
     # Do not print application/json here. This script may be called outside of a CGI context.
     print(json.dumps(json_response))
 
+
+if __name__ == "__main__":
+    check_or_cancel()
+
     # Always return 0. If there was an error, an error code (the 'status' property) and message (the 'statusMsg' property) goes in the returned HTML.
     sys.exit(0)
+else:
+    # stuff run when this module is loaded into another module
+    pass
