@@ -286,78 +286,94 @@ static int parse_keyword_description(const char *description, char **comment_out
     char *separator = NULL;
     char *working_description = NULL;
 
-    if (!description || *description == '\0')
+    if (!description)
     {
+        fprintf(stderr, "[ parse_keyword_description() ] invalid arguments\n");
         err = 1;
     }
 
     if (!err)
     {
-        working_description = strdup(description);
-        if (!working_description)
+        if (*description == '\0')
         {
-            err = 1;
-            fprintf(stderr, "[ parse_keyword_description() ] out of memory\n");
+            external_comment = strdup("");
         }
-    }
-
-    if (!err)
-    {
-        /* checking for the presence of the corresponding FITS keyword name and possible data type cast;
-        * if these exist, then they are present in a '['<X>[:<Y>]']' substring at the start of the description field;
-        * <X> is the FITS keyword name
-        * <Y> is the FITS data type to cast to
-        */
-        ptr_cast = strtok(working_description, " ");
-
-        if (ptr_cast)
+        else
         {
-            length_cast = strlen(ptr_cast); /* length of first substring (which may or may not be '['<X>[':'<Y>]']') */
-
-            if (length_cast > 2 && ptr_cast[0] == '[' && ptr_cast[length_cast - 1] == ']')
+            if (!err)
             {
-                /* there is a '['<X>[':'<Y>]']' substring (a cast) at the start of the description field */
-                cast = (char *)calloc(sizeof(char), length_cast + 1);
-                if (cast)
+                working_description = strdup(description);
+                if (!working_description)
                 {
-                    /* separate cast from comment */
-                    memcpy(cast, ptr_cast + 1, length_cast - 2); /* copy the <X>[':'<Y>]' from '['<X>[':'<Y>]']' */
-                    cast[length_cast - 2] = '\0';
+                    err = 1;
+                    fprintf(stderr, "[ parse_keyword_description() ] out of memory\n");
+                }
+            }
 
-                    /* separate cast name from cast type */
-                    cast_name = strdup(cast);
-                    if (!cast_name)
+            if (!err)
+            {
+                /* checking for the presence of the corresponding FITS keyword name and possible data type cast;
+                * if these exist, then they are present in a '['<X>[:<Y>]']' substring at the start of the description field;
+                * <X> is the FITS keyword name
+                * <Y> is the FITS data type to cast to
+                */
+                ptr_cast = strtok(working_description, " ");
+
+                if (ptr_cast)
+                {
+                    length_cast = strlen(ptr_cast); /* length of first substring (which may or may not be '['<X>[':'<Y>]']') */
+
+                    if (length_cast > 2 && ptr_cast[0] == '[' && ptr_cast[length_cast - 1] == ']')
                     {
-                        err = 1;
-                        fprintf(stderr, "[ parse_keyword_description() ] out of memory\n");
-                    }
-
-                    if (!err)
-                    {
-                        separator = strchr(cast_name, ':');
-
-                        if (separator)
+                        /* there is a '['<X>[':'<Y>]']' substring (a cast) at the start of the description field */
+                        cast = (char *)calloc(sizeof(char), length_cast + 1);
+                        if (cast)
                         {
-                            *separator = '\0';
-                            cast_type = strdup(separator + 1);
-                            if (!cast_type)
+                            /* separate cast from comment */
+                            memcpy(cast, ptr_cast + 1, length_cast - 2); /* copy the <X>[':'<Y>]' from '['<X>[':'<Y>]']' */
+                            cast[length_cast - 2] = '\0';
+
+                            /* separate cast name from cast type */
+                            cast_name = strdup(cast);
+                            if (!cast_name)
                             {
                                 err = 1;
                                 fprintf(stderr, "[ parse_keyword_description() ] out of memory\n");
                             }
-                        }
-                    }
 
-                    if (!err)
-                    {
-                        /* save the part of the comment that does not have the cast;
-                         * save this into `external_comment`:
-                         *  <comment minus '['<X>[':'<Y>]']'> ' ' '{'<X>[':'<Y>]'}'
-                         */
-                        external_comment = (char *)calloc(sizeof(char), strlen(description) + 1);
-                        if (external_comment)
-                        {
-                            snprintf(external_comment, strlen(description) + 1, "%s", &working_description[length_cast + 1]);
+                            if (!err)
+                            {
+                                separator = strchr(cast_name, ':');
+
+                                if (separator)
+                                {
+                                    *separator = '\0';
+                                    cast_type = strdup(separator + 1);
+                                    if (!cast_type)
+                                    {
+                                        err = 1;
+                                        fprintf(stderr, "[ parse_keyword_description() ] out of memory\n");
+                                    }
+                                }
+                            }
+
+                            if (!err)
+                            {
+                                /* save the part of the comment that does not have the cast;
+                                 * save this into `external_comment`:
+                                 *  <comment minus '['<X>[':'<Y>]']'> ' ' '{'<X>[':'<Y>]'}'
+                                 */
+                                external_comment = (char *)calloc(sizeof(char), strlen(description) + 1);
+                                if (external_comment)
+                                {
+                                    snprintf(external_comment, strlen(description) + 1, "%s", &working_description[length_cast + 1]);
+                                }
+                                else
+                                {
+                                    err = 1;
+                                    fprintf(stderr, "[ parse_keyword_description() ] out of memory\n");
+                                }
+                            }
                         }
                         else
                         {
@@ -365,20 +381,15 @@ static int parse_keyword_description(const char *description, char **comment_out
                             fprintf(stderr, "[ parse_keyword_description() ] out of memory\n");
                         }
                     }
-                }
-                else
-                {
-                    err = 1;
-                    fprintf(stderr, "[ parse_keyword_description() ] out of memory\n");
-                }
-            }
-            else
-            {
-                external_comment = strdup(description);
-                if (!external_comment)
-                {
-                    err = 1;
-                    fprintf(stderr, "[ parse_keyword_description() ] out of memory\n");
+                    else
+                    {
+                        external_comment = strdup(description);
+                        if (!external_comment)
+                        {
+                            err = 1;
+                            fprintf(stderr, "[ parse_keyword_description() ] out of memory\n");
+                        }
+                    }
                 }
             }
         }
