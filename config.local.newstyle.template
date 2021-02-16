@@ -207,6 +207,10 @@ q:SUMSERVER                                  drms
 # the DRMS database user account that cgi programs access when they need to read from or write to database relations.
 q:WEB_DBUSER                                 apache
 
+# # Ephemeris tables for rings project
+q:JPL_EPHEM_TABLEDIR                    /opt/netdrms/tables
+q:SOHO_EPHEM_TABLE                      /opt/netdrms/tables
+
 __MAKE__
 # The parameters in this section are used to create make variables. For example, the line
 # 'POSTGRES_LIB  pq' will cause a make variable named POSTGRES_LIB to be created and to

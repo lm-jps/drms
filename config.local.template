@@ -340,8 +340,11 @@ SUMS_MT_CLIENT_RESP_TIMEOUT        1440
 
 # The Slony server configure file. This is used only if you are generating Slony logs to distribute DRMS series data
 # to subscribing mirror sites.
-SLONY_CONFIG                       /home/jsoc/cvs/Development/JSOC/proj/replication/etc/repserver.cfg
+SLONY_CONFIG                       /opt/netdrms/proj/replication/etc/repserver.cfg
 
+# Ephemeris tables for rings project
+JPL_EPHEM_TABLEDIR                 /opt/netdrms/tables
+SOHO_EPHEM_TABLE                   /opt/netdrms/tables
 
 ###############################
 
