@@ -1304,8 +1304,7 @@ int fitsexport_mapexport_tofile(DRMS_Segment_t *seg, const char *cparms, const c
 int fitsexport_mapexport_tofile2(DRMS_Record_t *rec, DRMS_Segment_t *seg, long long row_number, const char *cparms, /* NULL for stdout */ const char *clname, const char *mapfile, const char *fileout, /* "-" for stdout */ char **actualfname, /* NULL for stdout */ unsigned long long *expsize, /* NULL for stdout */ export_callback_func_t callback) //ISS fly-tar - fitsfile * for stdout
 {
     int status = DRMS_SUCCESS;
-    CFITSIO_KEYWORD *fitskeys = NULL;
-    int num_keys = 0;
+    CFITSIO_KEYWORD *fitskeys = NULL; int num_keys = 0;
     LinkedList_t *ttypes = NULL;
     LinkedList_t *tforms = NULL;
     char *ttype = NULL;
@@ -1315,6 +1314,7 @@ int fitsexport_mapexport_tofile2(DRMS_Record_t *rec, DRMS_Segment_t *seg, long l
     DRMS_Segment_t *tgtseg = NULL;
     DRMS_Segment_t *actualSeg = NULL;
     char realfileout[DRMS_MAXPATHLEN];
+    char file_specification[DRMS_MAXPATHLEN]; /* <fits file> [ '[' <fits compression specification> ']' ] */
     CFITSIO_FILE *out_file = NULL; /* exported fitsfile; if streaming, then this is also in-memory-only, otherwise
                                     * when closed, the fitsfile will be written to disk (to realfileout) */
     int close_out_file = 0; /* if we are streaming or using the callback method, then do not close out_file */
@@ -1459,13 +1459,11 @@ int fitsexport_mapexport_tofile2(DRMS_Record_t *rec, DRMS_Segment_t *seg, long l
                     char *old_headsum = NULL;
                     char *new_headsum = NULL;
                     void *addr = NULL;
-                    DRMS_Segment_t *actualSeg = NULL;
                     CFITSIO_FILE *disk_file = NULL; /* in-memory-only fitsfile of existing file on disk */
                     CFITSIO_HEADER *oldFitsHeader = NULL; /* in-memory-only fitsfile header of existing file on disk (no image) */
                     CFITSIO_HEADER *newFitsHeader = NULL; /* in-memory-only fitsfile header of file formed from fitskeys (no image) */
                     CFITSIO_FILE *updated_file = NULL; /* in-memory-only fitsfile to which disk_file content has been copied and updated */
                     CFITSIO_KEYWORD *headsum_key = NULL;
-
 
                     snprintf(sums_file, sizeof(sums_file), "%s", filename);
 
@@ -1718,11 +1716,32 @@ int fitsexport_mapexport_tofile2(DRMS_Record_t *rec, DRMS_Segment_t *seg, long l
                                     }
                                     else
                                     {
-                                        /* create a new file - realfileout is the file to export onto disk (not streaming); the fitsfile
-                                         * will be cached */
+                                        /* create a new file - `realfileout` is the file to export onto disk (not streaming); the fitsfile
+                                         * will be cached; use the FITS compression-string specification in `cparms`, if it exists,
+                                         * otherwise */
+                                        if (cparms)
+                                        {
+                                            if (cparms == '\0')
+                                            {
+                                                /* way to indicate no compression */
+                                                snprintf(file_specification, sizeof(file_specification), "%s", realfileout);
+                                            }
+                                            else
+                                            {
+                                                snprintf(file_specification, sizeof(file_specification), "%s[%s]", realfileout, cparms);
+                                            }
+                                        }
+                                        else if (actualSeg && actualSeg->cparms && *actualSeg->cparms != '\0')
+                                        {
+                                            snprintf(file_specification, sizeof(file_specification), "%s[%s]", realfileout, actualSeg->cparms);
+                                        }
+                                        else
+                                        {
+                                            snprintf(file_specification, sizeof(file_specification), "%s", realfileout);
+                                        }
 
                                         /* create the fptr, but do not write any keywords (no bitpipx, naxis, naxes) */
-                                        if (cfitsio_create_file(&out_file, realfileout, CFITSIO_FILE_TYPE_IMAGE, NULL, NULL, NULL))
+                                        if (cfitsio_create_file(&out_file, file_specification, CFITSIO_FILE_TYPE_IMAGE, NULL, NULL, NULL))
                                         {
                                             status = DRMS_ERROR_FITSRW;
                                         }

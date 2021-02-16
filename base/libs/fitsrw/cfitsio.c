@@ -2018,13 +2018,13 @@ int cfitsio_create_image(CFITSIO_FILE *file, CFITSIO_IMAGE_INFO *image_info)
     int err = CFITSIO_SUCCESS;
     int cfiostat = 0; /* MUST start with no-error status, else CFITSIO will fail */
     char cfiostat_msg[FLEN_STATUS];
-    int fits_compression_type = 0;
 
     err = Cf_create_file_object(file->fptr, CFITSIO_FILE_TYPE_IMAGE, image_info);
     if (err == CFITSIO_SUCCESS)
     {
         file->state = CFITSIO_FILE_STATE_INITIALIZED;
         file->type = CFITSIO_FILE_TYPE_IMAGE;
+        file->compression_type = image_info->export_compression_type;
     }
 
     if (cfiostat)
@@ -2057,10 +2057,11 @@ int cfitsio_create_bintable(CFITSIO_FILE *file, CFITSIO_BINTABLE_INFO *bintable_
 int cfitsio_create_file(CFITSIO_FILE **out_file, const char *file_name, cfitsio_file_type_t file_type, CFITSIO_IMAGE_INFO *image_info, CFITSIO_BINTABLE_INFO *bintable_info, CFITSIO_COMPRESSION_TYPE *export_compression_type)
 {
     int file_created = 0;
+    int fits_compression_type = 0; /* of the out file */
+    CFITSIO_COMPRESSION_TYPE cfitsio_compression_type = CFITSIO_COMPRESSION_NONE; /* of the out file */
     int cfiostat = 0; /* MUST start with no-error status, else CFITSIO will fail */
     char cfiostat_msg[FLEN_STATUS];
     int err = CFITSIO_SUCCESS;
-
 
     XASSERT(out_file);
     if (file_type != CFITSIO_FILE_TYPE_UNKNOWN)
@@ -2100,7 +2101,10 @@ int cfitsio_create_file(CFITSIO_FILE **out_file, const char *file_name, cfitsio_
             }
             else
             {
-                (*out_file)->fptr = fitsrw_getfptr(0, file_name, 1, &err, &file_created);
+                if (!err)
+                {
+                    (*out_file)->fptr = fitsrw_getfptr(0, file_name, 1, &err, &file_created);
+                }
 
                 if (!err)
                 {
@@ -2113,14 +2117,14 @@ int cfitsio_create_file(CFITSIO_FILE **out_file, const char *file_name, cfitsio_
 
             if (!err)
             {
-                /* has fptr */
+                /* has fptr, but the fits_() to make an image or bintable HDU has not been called */
                 (*out_file)->state = CFITSIO_FILE_STATE_UNINITIALIZED;
 
                 if (file_created)
                 {
                     if (export_compression_type)
                     {
-                        if (file_type == CFITSIO_FILE_TYPE_IMAGE)
+                        if (file_type != CFITSIO_FILE_TYPE_IMAGE)
                         {
                             fprintf(stderr, "[ cfitsio_create_file() ] can only compress image FITS files\n");
                             err = CFITSIO_ERROR_ARGS;
@@ -2138,15 +2142,52 @@ int cfitsio_create_file(CFITSIO_FILE **out_file, const char *file_name, cfitsio_
                     {
                         (*out_file)->type = CFITSIO_FILE_TYPE_IMAGE;
 
-                        if (export_compression_type)
+                        if ((*out_file)->in_memory)
                         {
-                            /* must set before cfitsio_create_image() */
-                            (*out_file)-> export_compression_type = *export_compression_type;
-                            image_info->export_compression_type = *export_compression_type;
+                            if (export_compression_type)
+                            {
+                                /* must set before cfitsio_create_image() */
+                                (*out_file)->export_compression_type = *export_compression_type;
+                            }
+                        }
+                        else
+                        {
+                            /* since we are creating a file on disk, a compressed file will have been created if
+                             * `file_name` contained such a fits compression specification string; in this case
+                             * we will need to update the compression type and export compression type of */
+                            if (!err)
+                            {
+                                if (export_compression_type)
+                                {
+                                    /* caller specified the export compression type */
+                                    (*out_file)->export_compression_type = *export_compression_type;
+                                }
+                                else
+                                {
+                                    /* caller did not specify the export compression type; use the out file's compression type */
+
+                                    /* data compression type */
+                                    /* can't call Cf_get_compression_type() because fits_create_img() has not been
+                                     * called; but we can call Cf_get_export_compression_type() - apparently, creating
+                                     * a fits file with a compression-specification calls fits_set_compression_type() */
+                                    err = Cf_get_export_compression_type((*out_file)->fptr, &fits_compression_type);
+
+                                    if (!err)
+                                    {
+                                        err = Cf_map_compression_type(fits_compression_type, &cfitsio_compression_type);
+                                    }
+
+                                    if (!err)
+                                    {
+                                        (*out_file)->export_compression_type = cfitsio_compression_type;
+                                    }
+                                }
+                            }
                         }
 
                         if (image_info)
                         {
+                            image_info->export_compression_type = (*out_file)->export_compression_type;
                             err = cfitsio_create_image(*out_file, image_info);
                         }
                     }
@@ -2584,7 +2625,6 @@ int cfitsio_copy_file(CFITSIO_FILE *source_in, CFITSIO_FILE *dest_in, int copy_h
     int fits_export_compression_type = 0;
     int err = CFITSIO_SUCCESS;
 
-
     if (copy_header_only)
     {
         fits_copy_header(source_in->fptr, dest_in->fptr, &cfiostat); /* if dest_in->in_memory, writes header into memory */
@@ -2635,6 +2675,11 @@ int cfitsio_copy_file(CFITSIO_FILE *source_in, CFITSIO_FILE *dest_in, int copy_h
             if (cfiostat)
             {
                 err = CFITSIO_ERROR_LIBRARY;
+            }
+
+            if (!err)
+            {
+                dest_in->compression_type = dest_in->export_compression_type;
             }
         }
 

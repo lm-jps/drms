@@ -227,7 +227,7 @@ ModuleArgs_t module_args[] =
      {ARG_STRING, kArg_path, kNotSpecified, "Path to which fits files are output."},
      {ARG_STRING, kArg_clname, kNotSpecified, "Export key map class."},
      {ARG_STRING, kArg_kmfile, kNotSpecified, "Export key map file."},
-     {ARG_STRING, kArg_cparms, kNotSpecified, "FITS-stanford compression string used to compress exported image."},
+     {ARG_STRING, kArg_cparms, kNotSpecified, "FITS-standard compression string used to compress exported image."},
      {ARG_INT, kArg_n, "0", "Record count limit."},
      {ARG_END}
 };
