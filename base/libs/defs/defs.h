@@ -24,5 +24,6 @@ extern void InitGDefs();
 
 void defs_term();
 const char *defs_getval(const char *key);
+const char *drms_build_root(void);
 
 #endif /* _DEFS_H */

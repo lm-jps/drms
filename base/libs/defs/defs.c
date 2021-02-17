@@ -43,3 +43,9 @@ const char *defs_getval(const char *key)
 
    return ret;
 }
+
+/* make_basic.mk sets this macro so it is available from libdrms */
+const char *drms_build_root(void)
+{
+    return DRMS_MAKE_ROOT_DIRECTORY;
+}
