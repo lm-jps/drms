@@ -57,9 +57,4 @@ static inline const char *jsoc_getversion(char *verstr, int size, int *isdev)
     return jsoc_version;
 }
 
-static inline const char *jsoc_get_make_root(void)
-{
-    return DRMS_MAKE_ROOT_DIRECTORY;
-}
-
 #endif
