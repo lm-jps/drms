@@ -5,7 +5,8 @@
 #define _DRMS_FITSRW_H
 
 #include "drms_types.h"
-#include "cfitsio.h"
+
+struct cfitsio_image_info;
 
 DRMS_Array_t *drms_fitsrw_read(DRMS_Env_t *env,
                                const char *filename,
@@ -14,30 +15,30 @@ DRMS_Array_t *drms_fitsrw_read(DRMS_Env_t *env,
                                int *status);
 void drms_fitsrw_freekeys(HContainer_t **keywords);
 int drms_fitsrw_readslice(DRMS_Env_t *env,
-                          const char *filename, 
+                          const char *filename,
                           int naxis,
                           int *start,
                           int *end,
                           DRMS_Array_t **arr);
 int drms_fitsrw_writeslice(DRMS_Env_t *env,
                            DRMS_Segment_t *seg,
-                           const char *filename, 
+                           const char *filename,
                            int naxis,
                            int *start,
                            int *end,
                            DRMS_Array_t *arrayout);
 int drms_fitsrw_writeslice_ext(DRMS_Env_t *env,
                                DRMS_Segment_t *seg,
-                               const char *filename, 
+                               const char *filename,
                                int naxis,
                                int *start,
                                int *end,
                                int *finaldims,
                                DRMS_Array_t *arrayout);
-int drms_fitsrw_GetSimpleFromInfo(CFITSIO_IMAGE_INFO *info);
-int drms_fitsrw_GetExtendFromInfo(CFITSIO_IMAGE_INFO *info);
-long long drms_fitsrw_GetBlankFromInfo(CFITSIO_IMAGE_INFO *info);
-double drms_fitsrw_GetBscaleFromInfo(CFITSIO_IMAGE_INFO *info);
-double drms_fitsrw_GetBzeroFromInfo(CFITSIO_IMAGE_INFO *info);
+int drms_fitsrw_GetSimpleFromInfo(struct cfitsio_image_info *info);
+int drms_fitsrw_GetExtendFromInfo(struct cfitsio_image_info *info);
+long long drms_fitsrw_GetBlankFromInfo(struct cfitsio_image_info *info);
+double drms_fitsrw_GetBscaleFromInfo(struct cfitsio_image_info *info);
+double drms_fitsrw_GetBzeroFromInfo(struct cfitsio_image_info *info);
 
 #endif /* _DRMS_FITSRW_H */

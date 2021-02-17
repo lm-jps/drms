@@ -2,7 +2,6 @@
 #include "drms.h"
 #include "drms_priv.h"
 #include "xmem.h"
-#include "cfitsio.h"
 #include "drms_fitsrw.h"
 #include "atoinc.h"
 #include "fitsexport.h"

@@ -7,9 +7,7 @@
 #define _DRMS_KEYWORD_H
 
 #include "drms_types.h"
-#include "cfitsio.h"
 #include "keymap.h"
-#include "drms_fitsrw.h"
 #include "drms.h"
 
 void drms_keyword_print(DRMS_Keyword_t *key);

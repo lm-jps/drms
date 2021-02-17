@@ -156,7 +156,7 @@ typedef struct cfitsio_keyword
 } CFITSIO_KEYWORD;
 
 
-typedef	struct cfitsio_image_info
+struct cfitsio_image_info
 {
       // Require keys for re-creating image
       int bitpix;
@@ -175,7 +175,9 @@ typedef	struct cfitsio_image_info
                               *   changed, then the NAXISn keyword must be updated when the fits file is closed. */
       char fhash[PATH_MAX];  /* key to fitsfile ptr stored in gFFPtrInfo */
 			CFITSIO_COMPRESSION_TYPE export_compression_type; /* used when creating an image only */
-} CFITSIO_IMAGE_INFO;
+};
+
+typedef struct cfitsio_image_info CFITSIO_IMAGE_INFO;
 
 struct __CFITSIO_BINTABLE_TTYPE_struct__
 {
