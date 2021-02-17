@@ -1764,7 +1764,7 @@ static int Cf_get_file_type(fitsfile *fptr, int *type)
 
 int cfitsio_get_file_state(CFITSIO_FILE *file, cfitsio_file_state_t *state)
 {
-    int fits_file_type = -2;
+    cfitsio_file_type_t fits_file_type = CFITSIO_FILE_TYPE_UNKNOWN;
     int is_initialized = -1;
     int err = CFITSIO_SUCCESS;
 
@@ -1782,7 +1782,7 @@ int cfitsio_get_file_state(CFITSIO_FILE *file, cfitsio_file_state_t *state)
             }
             else
             {
-                err = cfitsio_get_file_type_from_fitsfile((CFITSIO_FITSFILE)file->fptr, (cfitsio_file_type_t *)&fits_file_type, &is_initialized, NULL);
+                err = cfitsio_get_file_type_from_fitsfile((CFITSIO_FITSFILE)file->fptr, &fits_file_type, &is_initialized, NULL);
                 if (err == CFITSIO_SUCCESS)
                 {
                     if (is_initialized)
@@ -1979,7 +1979,6 @@ int cfitsio_get_file_type_from_fitsfile(CFITSIO_FITSFILE fits_file, cfitsio_file
 
 int cfitsio_get_file_type(CFITSIO_FILE *file, cfitsio_file_type_t *type)
 {
-    int fits_file_type = -1;
     int err = CFITSIO_SUCCESS;
 
     /* first check the `type` field (it could be the case that a file was created, but the type was never set) */
@@ -2305,7 +2304,6 @@ int cfitsio_set_fitsfile(CFITSIO_FILE *file, CFITSIO_FITSFILE fptr, int in_memor
     int fits_compression_type = 0;
     int fits_export_compression_type = 0;
     int fits_file_state_initialized = -1;
-    int fits_file_type = -1;
     cfitsio_file_state_t cfitsio_file_state = CFITSIO_FILE_STATE_EMPTY;
     cfitsio_file_type_t cfistio_file_type = CFITSIO_FILE_TYPE_UNKNOWN;
     CFITSIO_COMPRESSION_TYPE cfitsio_compression_type = CFITSIO_COMPRESSION_NONE;
@@ -2444,7 +2442,7 @@ static int Cf_copy_file(fitsfile *source, fitsfile *dest, CFITSIO_COMPRESSION_TY
     const long long DATA_CHUNK_SIZE = 4096;
     int err = CFITSIO_SUCCESS;
     int old_hdu_index = 0;
-    cfitsio_file_type_t file_type_from_fptr = -2;
+    cfitsio_file_type_t file_type_from_fptr = CFITSIO_FILE_TYPE_UNKNOWN;
     int is_initialized = -1;
     CFITSIO_IMAGE_INFO image_info = {0};
     CFITSIO_BINTABLE_INFO bintable_info = {0};
@@ -2607,7 +2605,7 @@ static int Cf_copy_file(fitsfile *source, fitsfile *dest, CFITSIO_COMPRESSION_TY
                 break;
             default:
                 fprintf(stderr, "[ Cf_copy_file() ] invalid file type %d\n", (int)file_type_from_fptr);
-                err == CFITSIO_ERROR_ARGS;
+                err = CFITSIO_ERROR_ARGS;
         }
     }
 
