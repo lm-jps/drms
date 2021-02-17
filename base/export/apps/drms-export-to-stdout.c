@@ -1972,6 +1972,45 @@ static ExpToStdoutStatus_t ExportRecordSetToStdout(DRMS_Env_t *env, int makeTar,
     return expStatus;
 }
 
+/* the cfitsio compression type enum is defined in image_info_def.h */
+static ExpToStdoutStatus_t Compression_string_to_cfitsio_type(const char *compression_type, CFITSIO_COMPRESSION_TYPE *cfitsio_compression_type)
+{
+    ExpToStdoutStatus_t exp_status = ExpToStdoutStatus_Success;
+
+    if (strcasecmp(compression_type, COMPRESSION_NONE) == 0)
+    {
+        *cfitsio_compression_type = CFITSIO_COMPRESSION_NONE;
+    }
+    else if (strcasecmp(compression_type, COMPRESSION_RICE) == 0)
+    {
+        *cfitsio_compression_type = CFITSIO_COMPRESSION_RICE;
+    }
+    else if (strcasecmp(compression_type, COMPRESSION_GZIP1) == 0)
+    {
+        *cfitsio_compression_type = CFITSIO_COMPRESSION_GZIP1;
+    }
+    else if (strcasecmp(compression_type, COMPRESSION_GZIP2) == 0)
+    {
+        /* fitsio may not support this type (available >= version 3.27) */
+        *cfitsio_compression_type = CFITSIO_COMPRESSION_GZIP2;
+    }
+    else if (strcasecmp(compression_type, COMPRESSION_PLIO) == 0)
+    {
+        *cfitsio_compression_type = CFITSIO_COMPRESSION_PLIO;
+    }
+    else if (strcasecmp(compression_type, COMPRESSION_HCOMP) == 0)
+    {
+        *cfitsio_compression_type = CFITSIO_COMPRESSION_HCOMP;
+    }
+    else
+    {
+        fprintf(stderr, "[ Compression_string_to_cfitsio_type() ] invalid compression-type string %s\n", compression_type);
+        exp_status = ExpToStdoutStatus_Cfitsio;
+    }
+
+    return exp_status;
+}
+
 int DoIt(void)
 {
     ExpToStdoutStatus_t expStatus = ExpToStdoutStatus_Success;
@@ -2070,38 +2109,13 @@ int DoIt(void)
 
                     segCompression[iComp] = -1; /* not set */
 
-                    if (strcasecmp(cparmStr, COMPRESSION_NONE) == 0)
-                    {
-                        segCompression[iComp] = CFITSIO_COMPRESSION_NONE;
-                    }
-                    else if (strcasecmp(cparmStr, COMPRESSION_RICE) == 0)
-                    {
-                        segCompression[iComp] = CFITSIO_COMPRESSION_RICE;
-                    }
-                    else if (strcasecmp(cparmStr, COMPRESSION_GZIP1) == 0)
-                    {
-                        segCompression[iComp] = CFITSIO_COMPRESSION_GZIP1;
-                    }
-#if CFITSIO_MAJOR >= 4 || (CFITSIO_MAJOR == 3 && CFITSIO_MINOR >= 27)
-                    else if (strcasecmp(cparmStr, COMPRESSION_GZIP2) == 0)
-                    {
-                        segCompression[iComp] = CFITSIO_COMPRESSION_GZIP2;
-                    }
-#endif
-                    else if (strcasecmp(cparmStr, COMPRESSION_PLIO) == 0)
-                    {
-                        segCompression[iComp] = CFITSIO_COMPRESSION_PLIO;
-                    }
-                    else if (strcasecmp(cparmStr, COMPRESSION_HCOMP) == 0)
-                    {
-                        segCompression[iComp] = CFITSIO_COMPRESSION_HCOMP;
-                    }
-                    else
+                    if (Compression_string_to_cfitsio_type(cparmStr, &segCompression[iComp]) != ExpToStdoutStatus_Success)
                     {
                         if (sizeof(generalErrorBuf) - strlen(generalErrorBuf) > 0)
                         {
                             snprintf(generalErrorBuf + strlen(generalErrorBuf), sizeof(generalErrorBuf) - strlen(generalErrorBuf), "invalid compression-string argument element %s\n", cparmStr);
                         }
+
                         expStatus = ExpToStdoutStatus_InvalidArgs;
                         break;
                     }

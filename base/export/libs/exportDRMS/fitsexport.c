@@ -175,7 +175,7 @@ static int DRMSKeyTypeToFITSKeyType(DRMS_Type_t drms_type, cfitsio_keyword_datat
             *fits_type = 'C';
             break;
         default:
-            fprintf(stderr, "unsupported DRMS type '%d'.\n", drms_type);
+            fprintf(stderr, "unsupported DRMS type '%d'.\n", (int)drms_type);
             err = 1;
             break;
     }
@@ -202,7 +202,7 @@ static int FE_cast_type_to_fits_key_type(FE_Keyword_ExtType_t cast_type, cfitsio
             *fits_type = CFITSIO_KEYWORD_DATATYPE_LOGICAL;
             break;
         default:
-            fprintf(stderr, "unsupported fits-export cast type '%d'.\n", cast_type);
+            fprintf(stderr, "unsupported fits-export cast type '%d'.\n", (int)cast_type);
             err = 1;
             break;
     }
@@ -733,7 +733,7 @@ static int DRMSKeyValToFITSKeyVal(DRMS_Keyword_t *key, const char *braced_inform
         }
         else
         {
-            fprintf(stderr, "[ DRMSKeyValToFITSKeyVal() ] cannot convert DRMS keyword type '%c' to a FITS keyword type\n", key->info->type);
+            fprintf(stderr, "[ DRMSKeyValToFITSKeyVal() ] cannot convert DRMS keyword type '%s' to a FITS keyword type\n", drms_type2str(key->info->type));
         }
     }
     else
@@ -857,7 +857,6 @@ int CommHndlr(void *keyin, void **fitskeys, void **fits_key_out, void *nameout, 
             {
                 char *pc = tmp;
                 char *pout = NULL;
-                int nelem = 0;
 
                 sbuf = malloc(sizeof(char) * strlen(tmp) + 1);
                 pout = sbuf;
@@ -922,7 +921,6 @@ int WCSHandler(void *keyin, void **fitskeys, void **key_out, void *nameout, void
     int err = 0;
     int fitsrw_error = CFITSIO_SUCCESS;
     DRMS_Keyword_t *key = (DRMS_Keyword_t *)keyin;
-    const DRMS_Type_Value_t *val = drms_keyword_getvalue(key);
     char **comment_stem = comment_stem_in;
     void *override_fits_keyword_value = NULL;
     double wcs_float_value = 0; /* since all floats are doubles at the CFITSIO level */
@@ -1458,12 +1456,10 @@ int fitsexport_mapexport_tofile2(DRMS_Record_t *rec, DRMS_Segment_t *seg, long l
                     int has_headsum = 0;
                     char *old_headsum = NULL;
                     char *new_headsum = NULL;
-                    void *addr = NULL;
                     CFITSIO_FILE *disk_file = NULL; /* in-memory-only fitsfile of existing file on disk */
                     CFITSIO_HEADER *oldFitsHeader = NULL; /* in-memory-only fitsfile header of existing file on disk (no image) */
                     CFITSIO_HEADER *newFitsHeader = NULL; /* in-memory-only fitsfile header of file formed from fitskeys (no image) */
                     CFITSIO_FILE *updated_file = NULL; /* in-memory-only fitsfile to which disk_file content has been copied and updated */
-                    CFITSIO_KEYWORD *headsum_key = NULL;
 
                     snprintf(sums_file, sizeof(sums_file), "%s", filename);
 
@@ -1883,7 +1879,7 @@ int fitsexport_mapexport_tofile2(DRMS_Record_t *rec, DRMS_Segment_t *seg, long l
                         if (num_keys > CFITSIO_MAX_BINTABLE_WIDTH)
                         {
                             fprintf(stderr, "[ fitsexport_mapexport_tofile2() too many columns in bintable (maximum is %d)]\n", CFITSIO_MAX_BINTABLE_WIDTH);
-                            status == DRMS_ERROR_FITSRW;
+                            status = DRMS_ERROR_FITSRW;
                         }
                     }
 
@@ -1927,7 +1923,7 @@ int fitsexport_mapexport_tofile2(DRMS_Record_t *rec, DRMS_Segment_t *seg, long l
                         if (num_keys > CFITSIO_MAX_BINTABLE_WIDTH)
                         {
                             fprintf(stderr, "[ fitsexport_mapexport_tofile2() too many columns in bintable (maximum is %d)]\n", CFITSIO_MAX_BINTABLE_WIDTH);
-                            status == DRMS_ERROR_FITSRW;
+                            status = DRMS_ERROR_FITSRW;
                         }
                     }
 
@@ -2289,7 +2285,6 @@ int fitsexport_mapexportkey(DRMS_Keyword_t *key, const char *clname, Exputl_KeyM
             {
                 FE_ReservedKeys_t *ikey = NULL;
                 char keyword_stem[16] = {0};
-                int indexed = 0;
                 static regex_t *reg_expression = NULL;
                 const char *indexed_keyword_pattern = "^([A-Za-z])+[0-9]+$";
                 regmatch_t matches[2]; /* index 0 is the entire string */
@@ -2310,9 +2305,6 @@ int fitsexport_mapexportkey(DRMS_Keyword_t *key, const char *clname, Exputl_KeyM
                     if (regexec(reg_expression, keyword_stem, sizeof(matches) / sizeof(matches[0]), matches, 0) == 0)
                     {
                         /* match, indexed */
-                        indexed = 1;
-
-                        /* what a pain in the ass C is - just null-terminate/truncate at character after end of match */
                         keyword_stem[matches[1].rm_eo] = '\0';
                     }
 
@@ -2704,22 +2696,22 @@ static int FITSKeyValToDRMSKeyVal(CFITSIO_KEYWORD *fitskey, DRMS_Type_t *type, D
 
             if (fitskey->number_bytes == 1)
             {
-                value->char_val = fitskey->is_missing ? DRMS_MISSING_CHAR : (char)intval;
+                value->char_val = (fitskey->is_missing ? DRMS_MISSING_CHAR : (char)intval);
                 *type = DRMS_TYPE_CHAR;
             }
             else if (fitskey->number_bytes == 2)
             {
-                value->short_val = fitskey->is_missing ? DRMS_MISSING_SHORT : (short)intval;
+                value->short_val = (fitskey->is_missing ? DRMS_MISSING_SHORT : (short)intval);
                 *type = DRMS_TYPE_SHORT;
             }
             else if (fitskey->number_bytes == 4)
             {
-                value->int_val = fitskey->is_missing ? DRMS_MISSING_INT : (int)intval;
+                value->int_val = (fitskey->is_missing ? DRMS_MISSING_INT : (int)intval);
                 *type = DRMS_TYPE_INT;
             }
             else if (fitskey->number_bytes == 8)
             {
-                value->longlong_val = fitskey->is_missing ? DRMS_MISSING_LONGLONG : intval;
+                value->longlong_val = (fitskey->is_missing ? DRMS_MISSING_LONGLONG : intval);
                 *type = DRMS_TYPE_LONGLONG;
             }
             else

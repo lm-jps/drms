@@ -1424,11 +1424,14 @@ static int cfitsio_map_compression_type(CFITSIO_COMPRESSION_TYPE cfitsio_compres
             case CFITSIO_COMPRESSION_GZIP1:
                 *fits_compression_type = GZIP_1;
                 break;
-#if CFITSIO_MAJOR >= 4 || (CFITSIO_MAJOR == 3 && CFITSIO_MINOR >= 27)
             case CFITSIO_COMPRESSION_GZIP2:
+#if CFITSIO_MAJOR >= 4 || (CFITSIO_MAJOR == 3 && CFITSIO_MINOR >= 27)
                 *fits_compression_type = GZIP_2;
-                break;
+#else
+                fprintf(stderr, "[ cfitsio_map_compression_type() ] FITSIO does not support cfitsio compression type %d\n", (int)cfitsio_compression_type);
+                err = CFITSIO_ERROR_LIBRARY;
 #endif
+                break;
             case CFITSIO_COMPRESSION_PLIO:
                 *fits_compression_type = PLIO_1;
                 break;

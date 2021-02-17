@@ -11,9 +11,11 @@ enum __CFITSIO_COMPRESSION_TYPE_enum__
 		CFITSIO_COMPRESSION_NONE = 0,
     CFITSIO_COMPRESSION_RICE = 1,
     CFITSIO_COMPRESSION_GZIP1 = 2,
-#if CFITSIO_MAJOR >= 4 || (CFITSIO_MAJOR == 3 && CFITSIO_MINOR >= 27)
+    /* cfitsio supports gzip2 only #if CFITSIO_MAJOR >= 4 || (CFITSIO_MAJOR == 3 && CFITSIO_MINOR >= 27)
+     * do not introduce FITSIO macros here - we do not want to require a dependency on FITSIO for all
+     * DRMS code that includes cfitsio.h or tawrw.h (which is virtually all code); if there is an attempt
+     * to use gzip2 in cfitsio code when FITSIO does not support it, an error will occur at runtime */
     CFITSIO_COMPRESSION_GZIP2 = 3,
-#endif
     CFITSIO_COMPRESSION_PLIO = 4,
     CFITSIO_COMPRESSION_HCOMP = 5
 };
