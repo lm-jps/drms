@@ -2,12 +2,13 @@
 #include "drms_priv.h"
 #include "cfitsio.h"
 #include "tasrw.h"
+#include "drms_fitsrw.h"
 
 int drms_fitstas_create(DRMS_Env_t *env,
-                        const char *filename, 
+                        const char *filename,
                         const char *comp,
-                        DRMS_Type_t type, 
-                        int naxis, 
+                        DRMS_Type_t type,
+                        int naxis,
                         int *axis,
                         double bzero,
                         double bscale)
@@ -25,7 +26,7 @@ int drms_fitstas_create(DRMS_Env_t *env,
       arr.bzero = bzero;
       arr.bscale = bscale;
 
-      /* If bzero == 0.0 and bscale == 1.0, then the TAS file has physical units 
+      /* If bzero == 0.0 and bscale == 1.0, then the TAS file has physical units
        * (data are NOT 'raw'). */
       if (bzero == 0.0 && bscale == 1.0)
       {
@@ -40,7 +41,7 @@ int drms_fitstas_create(DRMS_Env_t *env,
       {
          if (fitsrw_writeintfile(env->verbose, filename, &info, NULL, comp, NULL) != CFITSIO_SUCCESS)
          {
-            fprintf(stderr, "couldn't create FITS TAS file '%s'\n", filename); 
+            fprintf(stderr, "couldn't create FITS TAS file '%s'\n", filename);
             status = DRMS_ERROR_CANTCREATETASFILE;
          }
          else
@@ -62,7 +63,7 @@ int drms_fitstas_create(DRMS_Env_t *env,
              * we need to set this value to 0.
              */
             int fitsrwErr = CFITSIO_SUCCESS;
-            
+
             if (fitsrw_initializeTAS(env->verbose, filename) != CFITSIO_SUCCESS)
             {
                 fprintf(stderr, "could not initialize FITS TAS file '%s'\n", filename);
@@ -72,7 +73,7 @@ int drms_fitstas_create(DRMS_Env_t *env,
       }
       else
       {
-         fprintf(stderr, "couldn't set FITS TAS file image info\n"); 
+         fprintf(stderr, "couldn't set FITS TAS file image info\n");
          status = DRMS_ERROR_CANTCREATETASFILE;
       }
    }
@@ -85,7 +86,7 @@ int drms_fitstas_create(DRMS_Env_t *env,
 }
 
 int drms_fitstas_readslice(DRMS_Env_t *env,
-                           const char *filename, 
+                           const char *filename,
                            int naxis,
                            int *axis,
                            int *lower,
@@ -130,7 +131,7 @@ int drms_fitstas_readslice(DRMS_Env_t *env,
 /* Array may be converted in calling function, but not here */
 int drms_fitstas_writeslice(DRMS_Env_t *env,
                             DRMS_Segment_t *seg,
-                            const char *filename, 
+                            const char *filename,
                             int naxis,
                             int *axis,
                             int *lower,
@@ -159,13 +160,13 @@ int drms_fitstas_writeslice(DRMS_Env_t *env,
    start[naxis] = slotnum;
    end[naxis] = slotnum;
 
-    /* No need to specify final image size. drms_create_records() will have already 
+    /* No need to specify final image size. drms_create_records() will have already
      * created an "empty" image of final dimensions. */
    status = drms_fitsrw_writeslice(env, seg, filename, naxis, start, end, arrayout);
 
    if (status == DRMS_SUCCESS)
    {
-      /* arrayout->bzero and arrayout->bscale must be saved, if an appropriately named 
+      /* arrayout->bzero and arrayout->bscale must be saved, if an appropriately named
        * keyword exists.  The TAS FITS file cannot save record-and-segment-specific
        * keywords.*/
       char kw[DRMS_MAXKEYNAMELEN];

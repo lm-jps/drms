@@ -37,6 +37,7 @@
 #include "drms_dsdsapi.h"
 #include "cfitsio.h"
 #include "fitsexport.h"
+#include "drms_fitsrw.h"
 
 
 /******** helper functions that don't get exported as part of API ********/

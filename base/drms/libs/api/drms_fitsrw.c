@@ -1,7 +1,9 @@
 #include "drms.h"
 #include "drms_priv.h"
+#include "cfitsio.h"
 #include "tasrw.h"
 #include "fitsexport.h"
+
 
 const char kSIMPLE[] = "SIMPLE";
 const char kBITPIX[] = "BITPIX";
@@ -115,7 +117,7 @@ void drms_fitsrw_ShootBlanks(DRMS_Array_t *arr, long long blank)
    }
 }
 
-int drms_fitsrw_CreateDRMSArray(CFITSIO_IMAGE_INFO *info, void *data, DRMS_Array_t **arrout)
+int drms_fitsrw_CreateDRMSArray(TASRW_IMAGE_INFO *info, void *data, DRMS_Array_t **arrout)
 {
    DRMS_Array_t *retarr = NULL;
    int err = 0;
@@ -210,14 +212,14 @@ int drms_fitsrw_CreateDRMSArray(CFITSIO_IMAGE_INFO *info, void *data, DRMS_Array
    return err;
 }
 
-int drms_fitsrw_SetImageInfo(DRMS_Array_t *arr, CFITSIO_IMAGE_INFO *info)
+int drms_fitsrw_SetImageInfo(DRMS_Array_t *arr, TASRW_IMAGE_INFO *info)
 {
     int err = 0;
     int ia;
 
     if (info)
     {
-        memset(info, 0, sizeof(CFITSIO_IMAGE_INFO));
+        memset(info, 0, sizeof(TASRW_IMAGE_INFO));
         info->bitpix = drms_fitsrw_Type2Bitpix(arr->type, &err);
 
         if (!err)
@@ -282,7 +284,7 @@ int drms_fitsrw_SetImageInfo(DRMS_Array_t *arr, CFITSIO_IMAGE_INFO *info)
     return err;
 }
 
-int drms_fitsrw_GetSimpleFromInfo(CFITSIO_IMAGE_INFO *info)
+int drms_fitsrw_GetSimpleFromInfo(TASRW_IMAGE_INFO *info)
 {
     if (info->bitfield & kInfoPresent_SIMPLE)
     {
@@ -295,7 +297,7 @@ int drms_fitsrw_GetSimpleFromInfo(CFITSIO_IMAGE_INFO *info)
     }
 }
 
-int drms_fitsrw_GetExtendFromInfo(CFITSIO_IMAGE_INFO *info)
+int drms_fitsrw_GetExtendFromInfo(TASRW_IMAGE_INFO *info)
 {
     if (info->bitfield & kInfoPresent_EXTEND)
     {
@@ -308,7 +310,7 @@ int drms_fitsrw_GetExtendFromInfo(CFITSIO_IMAGE_INFO *info)
     }
 }
 
-long long drms_fitsrw_GetBlankFromInfo(CFITSIO_IMAGE_INFO *info)
+long long drms_fitsrw_GetBlankFromInfo(TASRW_IMAGE_INFO *info)
 {
     if (info->bitfield & kInfoPresent_BLANK)
     {
@@ -338,7 +340,7 @@ long long drms_fitsrw_GetBlankFromInfo(CFITSIO_IMAGE_INFO *info)
     }
 }
 
-double drms_fitsrw_GetBscaleFromInfo(CFITSIO_IMAGE_INFO *info)
+double drms_fitsrw_GetBscaleFromInfo(TASRW_IMAGE_INFO *info)
 {
     if (info->bitfield & kInfoPresent_BSCALE)
     {
@@ -351,7 +353,7 @@ double drms_fitsrw_GetBscaleFromInfo(CFITSIO_IMAGE_INFO *info)
     }
 }
 
-double drms_fitsrw_GetBzeroFromInfo(CFITSIO_IMAGE_INFO *info)
+double drms_fitsrw_GetBzeroFromInfo(TASRW_IMAGE_INFO *info)
 {
     if (info->bitfield & kInfoPresent_BZERO)
     {
@@ -381,7 +383,7 @@ DRMS_Array_t *drms_fitsrw_read(DRMS_Env_t *env,
                                int *status)
 {
    int statusint = DRMS_SUCCESS;
-   CFITSIO_IMAGE_INFO *info = NULL;
+   TASRW_IMAGE_INFO *info = NULL;
    void *image = NULL;
    CFITSIO_KEYWORD* keylist = NULL;
    CFITSIO_KEYWORD* fitskey = NULL;
@@ -492,7 +494,7 @@ int drms_fitsrw_readslice(DRMS_Env_t *env,
                           DRMS_Array_t **arr)
 {
    int status = DRMS_SUCCESS;
-   CFITSIO_IMAGE_INFO *info = NULL;
+   TASRW_IMAGE_INFO *info = NULL;
    void *image = NULL;
    int fitsrwstat = CFITSIO_SUCCESS;
 
@@ -501,7 +503,7 @@ int drms_fitsrw_readslice(DRMS_Env_t *env,
 
    /* This call really should take naxis as a parameter so that it knows how many values
     * are in start and end. */
-   fitsrwstat = fitsrw_readslice(env->verbose, filename, start, end, &info, &image);
+   fitsrwstat = fitsrw_readslice(env->verbose, filename, start, end, (TASRW_ImageInfo_t *)&info, &image);
 
    if (fitsrwstat != CFITSIO_SUCCESS)
    {
@@ -537,7 +539,7 @@ int drms_fitsrw_write(DRMS_Env_t *env,
                       DRMS_Array_t *arr)
 {
    int status = DRMS_SUCCESS;
-   CFITSIO_IMAGE_INFO imginfo;
+   TASRW_IMAGE_INFO imginfo;
    void *image = NULL;
    CFITSIO_KEYWORD *keylist = NULL;
    CFITSIO_KEYWORD *fits_key = NULL;
@@ -625,7 +627,7 @@ int drms_fitsrw_writeslice_ext(DRMS_Env_t *env,
    struct stat stbuf;
    if (stat(filename, &stbuf) == -1)
    {
-      CFITSIO_IMAGE_INFO info;
+      TASRW_IMAGE_INFO info;
       DRMS_Array_t arr;
       int usearrout;
       int idim;

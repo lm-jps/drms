@@ -262,10 +262,10 @@ static void Cf_close_file(fitsfile **fptr, int drop_content)
     if (fptr && *fptr)
     {
         /* if fitsfile is cached, remove from cache and close file; cannot currently drop data if the file is cached */
-        if (!fitsrw_getfpinfo_ext(*fptr, &fpinfo))
+        if (!fitsrw_getfpinfo_ext((TASRW_FilePtr_t)*fptr, (TASRW_FilePtrInfo_t)&fpinfo))
         {
             /* writes FITS keyword data and image checksums */
-            fitsrw_closefptr(0, *fptr);
+            fitsrw_closefptr(0, (TASRW_FilePtr_t)*fptr);
         }
         else
         {
@@ -300,10 +300,10 @@ static int Cf_stream_and_close_file(fitsfile **fptr)
     if (fptr && *fptr)
     {
         /* if fitsfile is cached, remove from cache and close file; cannot currently drop data if the file is cached */
-        if (!fitsrw_getfpinfo_ext(*fptr, &fpinfo))
+        if (!fitsrw_getfpinfo_ext((TASRW_FilePtr_t)*fptr, (TASRW_FilePtrInfo_t)&fpinfo))
         {
             /* writes FITS keyword data and image checksums */
-            fitsrw_closefptr(0, *fptr);
+            fitsrw_closefptr(0, (TASRW_FilePtr_t)*fptr);
         }
         else
         {
@@ -2103,7 +2103,7 @@ int cfitsio_create_file(CFITSIO_FILE **out_file, const char *file_name, cfitsio_
             {
                 if (!err)
                 {
-                    (*out_file)->fptr = fitsrw_getfptr(0, file_name, 1, &err, &file_created);
+                    (*out_file)->fptr = (fitsfile *)fitsrw_getfptr(0, file_name, 1, &err, &file_created);
                 }
 
                 if (!err)
@@ -3623,7 +3623,7 @@ int cfitsio_open_file(const char *path, CFITSIO_FILE **file, int writeable)
 
             if (!err)
             {
-                fptr = fitsrw_getfptr(0, path, (writeable != 0), &err, &fileCreated);
+                fptr = (fitsfile *)fitsrw_getfptr(0, path, (writeable != 0), &err, &fileCreated);
                 XASSERT(!fileCreated);
 
                 if (!fptr)
@@ -4478,7 +4478,7 @@ int fitsrw_readintfile(int verbose,
    int fileCreated = 0;
 
    // Move directly to first image
-   fptr = fitsrw_getfptr(verbose, fits_filename, 0, &status, &fileCreated);
+   fptr = (fitsfile *)fitsrw_getfptr(verbose, fits_filename, 0, &status, &fileCreated);
 
    XASSERT(!fileCreated);
 
@@ -4560,7 +4560,7 @@ int fitsrw_readintfile(int verbose,
    if (fptr)
    {
        /* We're reading a file, so don't worry about errors. */
-       fitsrw_closefptr(verbose, fptr);
+       fitsrw_closefptr(verbose, (TASRW_FilePtr_t)fptr);
    }
 
    //---------------------------------  BYTE_IMG --------------------------------------------------
@@ -4628,7 +4628,7 @@ error_exit:
    if (fptr)
    {
        /* There is some other error, so don't worry about any error having to do with not closing the file pointer. */
-       fitsrw_closefptr(verbose, fptr);
+       fitsrw_closefptr(verbose, (TASRW_FilePtr_t)fptr);
    }
 
    return error_code;
@@ -4749,7 +4749,7 @@ int fitsrw_writeintfile(int verbose,
 
    status = 0; // first thing!
 
-   fptr = fitsrw_getfptr(verbose, filename, 1, &status, &fileCreated);
+   fptr = (fitsfile *)fitsrw_getfptr(verbose, filename, 1, &status, &fileCreated);
 
    if (!fptr)
    {
@@ -5029,7 +5029,7 @@ int fitsrw_writeintfile(int verbose,
       CFITSIO_IMAGE_INFO fpinfo;
       CFITSIO_IMAGE_INFO fpinfonew;
 
-      if (fitsrw_getfpinfo_ext(fptr, &fpinfo))
+      if (fitsrw_getfpinfo_ext((TASRW_FilePtr_t)fptr, (TASRW_FilePtrInfo_t)&fpinfo))
       {
          fprintf(stderr, "Invalid fitsfile pointer '%p'.\n", fptr);
          error_code = CFITSIO_ERROR_FILE_IO;
@@ -5039,14 +5039,14 @@ int fitsrw_writeintfile(int verbose,
          fpinfonew = *image_info;
          snprintf(fpinfonew.fhash, sizeof(fpinfonew.fhash), "%s", fpinfo.fhash);
 
-         if (fitsrw_setfpinfo_ext(fptr, &fpinfonew))
+         if (fitsrw_setfpinfo_ext((TASRW_FilePtr_t)fptr, (TASRW_FilePtrInfo_t)&fpinfonew))
          {
             fprintf(stderr, "Unable to update file pointer information.\n");
             error_code = CFITSIO_ERROR_FILE_IO;
          }
          else
          {
-            if ((status = fitsrw_closefptr(verbose, fptr)) != 0)
+            if ((status = fitsrw_closefptr(verbose, (TASRW_FilePtr_t)fptr)) != 0)
             {
                error_code = CFITSIO_ERROR_FILE_IO;
             }
@@ -5081,7 +5081,7 @@ error_exit:
     if (fptr)
     {
         /* There was some other error, so dont' worry about any errors having to do with closing the file. */
-        fitsrw_closefptr(verbose, fptr);
+        fitsrw_closefptr(verbose, (TASRW_FilePtr_t)fptr);
     }
 
     return error_code;
@@ -5351,7 +5351,7 @@ int fitsrw_read(int verbose,
        * is made */
       status = 0;
 
-      fptr = fitsrw_getfptr(verbose, fnamedup, 0, &status, &fileCreated);
+      fptr = (fitsfile *)fitsrw_getfptr(verbose, fnamedup, 0, &status, &fileCreated);
       XASSERT(!fileCreated);
 
       if (!fptr)
@@ -5435,7 +5435,7 @@ int fitsrw_read(int verbose,
 
    if(fptr)
    {
-       status = fitsrw_closefptr(verbose, fptr);
+       status = fitsrw_closefptr(verbose, (TASRW_FilePtr_t)fptr);
        if (status)
        {
            error_code = CFITSIO_ERROR_FILE_IO;
@@ -5609,7 +5609,7 @@ int fitsrw_write3(int verbose, const char *filein, CFITSIO_IMAGE_INFO *info, voi
             else
             {
                 /* calls fits_create_file(), store the CFITSIO_IMAGE_INFO in the global hash */
-                fptr = fitsrw_getfptr(verbose, filename, 1, &err, &fileCreated);
+                fptr = (fitsfile *)fitsrw_getfptr(verbose, filename, 1, &err, &fileCreated);
 
                 if (!fptr)
                 {
@@ -5774,7 +5774,7 @@ int fitsrw_write3(int verbose, const char *filein, CFITSIO_IMAGE_INFO *info, voi
 
 
             /* this will fetch the hash key for the cached CFITSIO_IMAGE_INFO */
-            if (fitsrw_getfpinfo_ext(fptr, &fpinfo))
+            if (fitsrw_getfpinfo_ext((TASRW_FilePtr_t)fptr, (TASRW_FilePtrInfo_t)&fpinfo))
             {
                 fprintf(stderr, "Invalid fitsfile pointer '%p'.\n", fptr);
                 err = CFITSIO_ERROR_FILE_IO;
@@ -5796,14 +5796,14 @@ int fitsrw_write3(int verbose, const char *filein, CFITSIO_IMAGE_INFO *info, voi
 
                 snprintf(fpinfonew.fhash, sizeof(fpinfonew.fhash), "%s", fpinfo.fhash);
 
-                if (fitsrw_setfpinfo_ext(fptr, &fpinfonew))
+                if (fitsrw_setfpinfo_ext((TASRW_FilePtr_t)fptr, (TASRW_FilePtrInfo_t)&fpinfonew))
                 {
                     fprintf(stderr, "Unable to update file pointer information.\n");
                     err = CFITSIO_ERROR_FILE_IO;
                 }
                 else
                 {
-                    if (fitsrw_closefptr(verbose, fptr))
+                    if (fitsrw_closefptr(verbose, (TASRW_FilePtr_t)fptr))
                     {
                         err = CFITSIO_ERROR_FILE_IO;
                     }

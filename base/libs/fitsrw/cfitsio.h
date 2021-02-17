@@ -83,25 +83,6 @@ typedef enum
 		CFITSIO_FILE_TYPE_BINTABLE
 } cfitsio_file_type_t;
 
-/* compression enum */
-enum __CFITSIO_COMPRESSION_TYPE_enum__
-{
-#if 0
-		/* the FITSIO documentation is misleading; you cannot have compression undefined; images are uncompressed by default */
-		CFITSIO_COMPRESSION_UNSET = -1,
-#endif
-		CFITSIO_COMPRESSION_NONE = 0,
-    CFITSIO_COMPRESSION_RICE = 1,
-    CFITSIO_COMPRESSION_GZIP1 = 2,
-#if CFITSIO_MAJOR >= 4 || (CFITSIO_MAJOR == 3 && CFITSIO_MINOR >= 27)
-    CFITSIO_COMPRESSION_GZIP2 = 3,
-#endif
-    CFITSIO_COMPRESSION_PLIO = 4,
-    CFITSIO_COMPRESSION_HCOMP = 5
-};
-
-typedef enum __CFITSIO_COMPRESSION_TYPE_enum__ CFITSIO_COMPRESSION_TYPE;
-
 //****************************************************************************
 // External contants defined in DRMS
 
@@ -155,27 +136,13 @@ typedef struct cfitsio_keyword
 
 } CFITSIO_KEYWORD;
 
-
-struct cfitsio_image_info
-{
-      // Require keys for re-creating image
-      int bitpix;
-      int naxis;
-      long naxes[CFITSIO_MAX_DIM];
-
-      // For drms_segment() validity checking
-      unsigned int bitfield; /* describes which of the following are present */
-      int simple;            /* bit 0 (least significant bit) */
-      int extend;            /* bit 1 */
-      long long blank;       /* bit 2 */
-      double bscale;         /* bit 3 */
-      double bzero;          /* bit 4 */
-                             /* bit 5 - this bit is the dirty bit; if set then this means that the value of
-                              *   naxes[naxis - 1] has changed since the fits file was created; if the value has
-                              *   changed, then the NAXISn keyword must be updated when the fits file is closed. */
-      char fhash[PATH_MAX];  /* key to fitsfile ptr stored in gFFPtrInfo */
-			CFITSIO_COMPRESSION_TYPE export_compression_type; /* used when creating an image only */
-};
+/* ART - I put the definition of the image info struct in a separate header that
+ * can be used for both CFITSIO_IMAGE_INFO and TASRW_IMAGE_INFO (but with slightly
+ * different definitions) */
+#undef CFITSIO_API
+#define CFITSIO_API
+#include "image_info_def.h"
+#undef CFITSIO_API
 
 typedef struct cfitsio_image_info CFITSIO_IMAGE_INFO;
 
