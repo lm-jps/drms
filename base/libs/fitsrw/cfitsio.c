@@ -369,19 +369,19 @@ static int Cf_write_key_null(fitsfile *fptr, const char *keyord_name, const char
         /* if unit is 'none' or 'na' or missing, then omit [<unit>] */
         if (!is_keyword_unit_null(keyword_unit))
         {
-            base_strcatalloc(comment, "[", &sz_comment);
-            base_strcatalloc(comment, keyword_unit, &sz_comment);
-            base_strcatalloc(comment, "] ", &sz_comment);
+            comment = base_strcatalloc(comment, "[", &sz_comment);
+            comment = base_strcatalloc(comment, keyword_unit, &sz_comment);
+            comment = base_strcatalloc(comment, "] ", &sz_comment);
         }
 
-        base_strcatalloc(comment, "(", &sz_comment);
-        base_strcatalloc(comment, CFITSIO_KEYWORD_COMMENT_MISSING, &sz_comment);
-        base_strcatalloc(comment, ")", &sz_comment);
+        comment = base_strcatalloc(comment, "(", &sz_comment);
+        comment = base_strcatalloc(comment, CFITSIO_KEYWORD_COMMENT_MISSING, &sz_comment);
+        comment = base_strcatalloc(comment, ")", &sz_comment);
 
         if (*keyword_comment != '\0')
         {
-            base_strcatalloc(comment, " ", &sz_comment);
-            base_strcatalloc(comment, keyword_comment, &sz_comment);
+            comment = base_strcatalloc(comment, " ", &sz_comment);
+            comment = base_strcatalloc(comment, keyword_comment, &sz_comment);
         }
 
         fits_write_key_null(fptr, keyord_name, comment, &cfiostat);
@@ -3118,19 +3118,19 @@ static int Cf_update_key_null(fitsfile *fptr, const char *keyord_name, const cha
         /* if unit is 'none' or 'na' or missing, then omit [<unit>] */
         if (!is_keyword_unit_null(keyword_unit))
         {
-            base_strcatalloc(comment, "[", &sz_comment);
-            base_strcatalloc(comment, keyword_unit, &sz_comment);
-            base_strcatalloc(comment, "] ", &sz_comment);
+            comment = base_strcatalloc(comment, "[", &sz_comment);
+            comment = base_strcatalloc(comment, keyword_unit, &sz_comment);
+            comment = base_strcatalloc(comment, "] ", &sz_comment);
         }
 
-        base_strcatalloc(comment, "(", &sz_comment);
-        base_strcatalloc(comment, CFITSIO_KEYWORD_COMMENT_MISSING, &sz_comment);
-        base_strcatalloc(comment, ")", &sz_comment);
+        comment = base_strcatalloc(comment, "(", &sz_comment);
+        comment = base_strcatalloc(comment, CFITSIO_KEYWORD_COMMENT_MISSING, &sz_comment);
+        comment = base_strcatalloc(comment, ")", &sz_comment);
 
         if (*keyword_comment != '\0')
         {
-            base_strcatalloc(comment, " ", &sz_comment);
-            base_strcatalloc(comment, keyword_comment, &sz_comment);
+            comment = base_strcatalloc(comment, " ", &sz_comment);
+            comment = base_strcatalloc(comment, keyword_comment, &sz_comment);
         }
 
         fits_update_key_null(fptr, keyord_name, comment, &cfiostat);
