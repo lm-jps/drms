@@ -1717,7 +1717,7 @@ int fitsexport_mapexport_tofile2(DRMS_Record_t *rec, DRMS_Segment_t *seg, long l
                                          * otherwise */
                                         if (cparms)
                                         {
-                                            if (cparms == '\0')
+                                            if (*cparms == '\0')
                                             {
                                                 /* way to indicate no compression */
                                                 snprintf(file_specification, sizeof(file_specification), "%s", realfileout);
