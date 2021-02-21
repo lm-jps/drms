@@ -5097,6 +5097,18 @@ static int IsCachedRecord(DRMS_Env_t *env, DRMS_Record_t *rec)
    return ans;
 }
 
+static int IsTemplateRecord(DRMS_Record_t *rec)
+{
+    int answer = 0;
+
+    if (rec && rec->env && rec->seriesinfo && *rec->seriesinfo->seriesname != '\0')
+    {
+        answer = hcon_member_lower(&rec->env->series_cache, rec->seriesinfo->seriesname);
+    }
+
+    return answer;
+}
+
 /* Call drms_free_record for each record in a record set. */
 /* ART: This function is for records that have been cached (inv env->record_cache). It is not
  * for headless records. It won't free records of that type. */
@@ -5242,9 +5254,15 @@ void drms_free_records(DRMS_RecordSet_t *rs)
                 rs->records[i] = NULL;
                 TrackerInsertRec(tracker, delrec);
             }
+            else if (IsTemplateRecord(rs->records[i]))
+            {
+                /* do not free template records; those are freed in just before termination in drms_free_env() */
+            }
             else
             {
-                /* now deletes record struct w/o looking in cache */
+                /* this record is neither in the global record cache (records return by drms_open_records(), etc.), nor
+                 * is in the template-record series cache; it can be freed fully; drms_free_record() will
+                 * call the non-template versions of the keyword/link/segment freeing functions */
                 if (rs->records[i])
                 {
                     drms_free_record(rs->records[i]);
@@ -5385,9 +5403,15 @@ void drms_free_records(DRMS_RecordSet_t *rs)
                     rs->records[i] = NULL;
                     TrackerInsertRec(tracker, delrec);
                 }
+                else if (IsTemplateRecord(rs->records[i]))
+                {
+                    /* do not free template records; those are freed in just before termination in drms_free_env() */
+                }
                 else
                 {
-                    /* now deletes record struct w/o looking in cache */
+                    /* this record is neither in the global record cache (records return by drms_open_records(), etc.), nor
+                     * is in the template-record series cache; it can be freed fully; drms_free_record() will
+                     * call the non-template versions of the keyword/link/segment freeing functions */
                     if (rs->records[i])
                     {
                         drms_free_record(rs->records[i]);
@@ -5621,13 +5645,14 @@ int drms_closeall_records(DRMS_Env_t *env, int action)
   return status;
 }
 
-
 /* Remove a record from the record cache and free any memory
    allocated for it. */
 /* ART: this function NOW frees non-env-cached records too */
 void drms_free_record(DRMS_Record_t *rec)
 {
    char hashkey[DRMS_MAXHASHKEYLEN];
+   int is_template_record = -1;
+
    XASSERT(rec);
 #ifdef DEBUG
    printf("freeing '%s':%lld\n", rec->seriesinfo->seriesname, rec->recnum);
@@ -5651,9 +5676,18 @@ void drms_free_record(DRMS_Record_t *rec)
     }
     else
     {
-        /* the template records are not in the record_cache - they are in the series_cache */
-        drms_free_record_struct(rec);
-        free(rec);
+        if (IsTemplateRecord(rec))
+        {
+            /* the template records are not in the record_cache - they are in the series_cache;
+             * do not free the record struct; the module-terminating code will call drms_free_template_record_struct()
+             * on all (template) records in the series cache */
+        }
+        else
+        {
+            /* does not free any series-wide allocations (the seriesinfo struct, keywordinfo struct, etc.) */
+            drms_free_record_struct(rec);
+            free(rec);
+        }
     }
 }
 
@@ -9386,7 +9420,7 @@ void drms_destroy_jsdtemplate_record(DRMS_Record_t **rec)
     }
 }
 
-/* Free the body of a template record data structure. */
+/* Free the body of a template record data structure; called from drms_free_env() on each template-record struct */
 void drms_free_template_record_struct(DRMS_Record_t *rec)
 {
   /* Free malloc'ed data segments, links and keywords. */
@@ -9408,40 +9442,46 @@ void drms_free_template_record_struct(DRMS_Record_t *rec)
   }
 }
 
-/* Free the body of a record data structure. */
+/* Free the body of a record data structure; do not call this on a template record -
+ * a check is performed to prevent this from happening */
 void drms_free_record_struct(DRMS_Record_t *rec)
 {
-  /* Free malloc'ed data segments, links and keywords. */
-  XASSERT(rec);
-  if ( rec->init == 1 ) /* Don't try to free uninitialized templates. */
-  {
-    hcon_free(&rec->links);
-    hcon_free(&rec->segments);
-    hcon_free(&rec->keywords);
-    hcon_destroy(&rec->keyword_aliases);
+    /* Free malloc'ed data segments, links and keywords. */
+    XASSERT(rec);
 
-    free(rec->sessionns);
-
-    if (rec->suinfo)
+    if (!IsTemplateRecord(rec))
     {
-       free(rec->suinfo);
-       rec->suinfo = NULL;
-    }
+        if ( rec->init == 1 ) /* Don't try to free uninitialized templates. */
+        {
+            hcon_free(&rec->links);
+            hcon_free(&rec->segments);
+            hcon_free(&rec->keywords);
+            hcon_destroy(&rec->keyword_aliases);
 
-    if (rec->env && !rec->env->session->db_direct && rec->su)
-    {
-      --rec->su->refcount;
-      if (rec->su->refcount == 0)
-      {
+            free(rec->sessionns);
+
+            if (rec->suinfo)
+            {
+                free(rec->suinfo);
+                rec->suinfo = NULL;
+            }
+
+            if (rec->env && !rec->env->session->db_direct && rec->su)
+            {
+                --rec->su->refcount;
+
+                if (rec->su->refcount == 0)
+                {
 #ifdef DEBUG
-	printf("drms_free_record_struct: freeing unit sunum=%lld, sudir='%s'\n",
-	       rec->su->sunum,rec->su->sudir);
+                    printf("drms_free_record_struct: freeing unit sunum=%lld, sudir='%s'\n",
+                    rec->su->sunum,rec->su->sudir);
 #endif
-	drms_freeunit(rec->env, rec->su);
-	rec->su = NULL;
-      }
+                    drms_freeunit(rec->env, rec->su);
+                    rec->su = NULL;
+                }
+            }
+        }
     }
-  }
 }
 
 /* Copy the body of a record structure. */
