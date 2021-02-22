@@ -2063,6 +2063,7 @@ int cfitsio_create_file(CFITSIO_FILE **out_file, const char *file_name, cfitsio_
     CFITSIO_COMPRESSION_TYPE cfitsio_compression_type = CFITSIO_COMPRESSION_NONE; /* of the out file */
     int cfiostat = 0; /* MUST start with no-error status, else CFITSIO will fail */
     char cfiostat_msg[FLEN_STATUS];
+    struct stat stat_buf;
     int err = CFITSIO_SUCCESS;
 
     XASSERT(out_file);
@@ -2103,6 +2104,15 @@ int cfitsio_create_file(CFITSIO_FILE **out_file, const char *file_name, cfitsio_
             }
             else
             {
+                /* since we are CREATING a file, if the file exists, first delete it; do not call
+                 * fitsrw_getfptr() before doing so, otherwise, we will get a fitsfile * to an
+                 * existing file, and we would then attempt to write over this file without
+                 * first 'emptying' it */
+                if (stat(file_name, &stat_buf) == 0)
+                {
+                    unlink(file_name);
+                }
+
                 if (!err)
                 {
                     (*out_file)->fptr = (fitsfile *)fitsrw_getfptr(0, file_name, 1, &err, &file_created);
