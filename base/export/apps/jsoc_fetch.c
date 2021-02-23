@@ -3242,9 +3242,7 @@ int DoIt(void)
 
                             if (segs && segs[iset] && *segs[iset] != '\0')
                             {
-                                tmp_recordset = base_strcatalloc(tmp_recordset, "{", &sz_tmp_recordset);
                                 tmp_recordset = base_strcatalloc(tmp_recordset, segs[iset], &sz_tmp_recordset);
-                                tmp_recordset = base_strcatalloc(tmp_recordset, "}", &sz_tmp_recordset);
                             }
 
                             if (iset + 1 < nsets)
