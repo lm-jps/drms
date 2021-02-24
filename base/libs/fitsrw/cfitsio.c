@@ -1364,12 +1364,11 @@ static int Cf_map_compression_type(int fits_compression_type, CFITSIO_COMPRESSIO
                   */
                 *cfitsio_compression_type = CFITSIO_COMPRESSION_NONE;
                 break;
-#if 0
-            /* this is a bug in the FITSIO documentation; NOCOMPRESS does NOT mean uncompressed */
+            /* Ugh - can't understand FITIO; this may be a bug in the FITSIO documentation; NOCOMPRESS does NOT mean
+             * uncompressed, sometimes; sometimes 0 means uncompressed */
             case NOCOMPRESS:
                 *cfitsio_compression_type = CFITSIO_COMPRESSION_NONE;
                 break;
-#endif
             case RICE_1:
                 *cfitsio_compression_type = CFITSIO_COMPRESSION_RICE;
                 break;
@@ -2112,16 +2111,18 @@ int cfitsio_create_file(CFITSIO_FILE **out_file, const char *file_name, cfitsio_
                  * ack - FITSIO 'file names' can have stuff appended to the actual filename, like
                  * the string "[compress Rice]" in myfile.fits[compress Rice]; so we have to use
                  * FITSIO to delete the file (which we cannot do without first opening it!) */
-                if (!fits_open_file(&existing_file.fptr, file_name, READONLY, &cfiostat))
+                memset(&existing_file, '\0', sizeof(CFITSIO_FILE));
+                if (fits_open_file(&existing_file.fptr, file_name, READONLY, &cfiostat))
+                {
+                    /* file does not exist - this will set cfiostat != 0 */
+                    cfiostat = 0;
+                }
+                else
                 {
                     /* file exists - can we delete it if it was opened for reading-only? */
                     if (fits_delete_file(existing_file.fptr, &cfiostat))
                     {
                         err = CFITSIO_ERROR_LIBRARY;
-                    }
-                    else
-                    {
-                        cfiostat = 0;
                     }
                 }
 
