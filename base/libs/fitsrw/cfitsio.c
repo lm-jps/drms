@@ -2063,7 +2063,7 @@ int cfitsio_create_file(CFITSIO_FILE **out_file, const char *file_name, cfitsio_
     CFITSIO_COMPRESSION_TYPE cfitsio_compression_type = CFITSIO_COMPRESSION_NONE; /* of the out file */
     int cfiostat = 0; /* MUST start with no-error status, else CFITSIO will fail */
     char cfiostat_msg[FLEN_STATUS];
-    struct stat stat_buf;
+    CFITSIO_FILE existing_file;
     int err = CFITSIO_SUCCESS;
 
     XASSERT(out_file);
@@ -2107,10 +2107,22 @@ int cfitsio_create_file(CFITSIO_FILE **out_file, const char *file_name, cfitsio_
                 /* since we are CREATING a file, if the file exists, first delete it; do not call
                  * fitsrw_getfptr() before doing so, otherwise, we will get a fitsfile * to an
                  * existing file, and we would then attempt to write over this file without
-                 * first 'emptying' it */
-                if (stat(file_name, &stat_buf) == 0)
+                 * first 'emptying' it
+                 *
+                 * ack - FITSIO 'file names' can have stuff appended to the actual filename, like
+                 * the string "[compress Rice]" in myfile.fits[compress Rice]; so we have to use
+                 * FITSIO to delete the file (which we cannot do without first opening it!) */
+                if (!fits_open_file(&existing_file.fptr, file_name, READONLY, &cfiostat))
                 {
-                    unlink(file_name);
+                    /* file exists - can we delete it if it was opened for reading-only? */
+                    if (fits_delete_file(existing_file.fptr, &cfiostat))
+                    {
+                        err = CFITSIO_ERROR_LIBRARY;
+                    }
+                    else
+                    {
+                        cfiostat = 0;
+                    }
                 }
 
                 if (!err)
