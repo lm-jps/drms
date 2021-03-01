@@ -3162,6 +3162,8 @@ int DoIt(void)
             HContainer_t *firstlast = NULL;
             HContainer_t *pkwhereNFL = NULL;
             int recnumq;
+            static regex_t *quality_reg_expression = NULL;
+            const char *quality_pattern = NULL;
 
             if (nsets > 0)
             {
@@ -3229,25 +3231,50 @@ int DoIt(void)
 
                     if (hcon_member_lower(&series_template->keywords, "quality"))
                     {
-                        if (tmp_recordset)
+                        /* scan the record-set specification (sets[iset]) looking for 'quality'; if there, do nothing, otherwise
+                         * force a check for image existence into the record-set specification */
+                        if (!quality_reg_expression)
                         {
-                            tmp_recordset = base_strcatalloc(tmp_recordset, seriesname, &sz_tmp_recordset);
-                            if (filts && filts[iset] && *filts[iset] != '\0')
+                            quality_pattern = "\\[(\\?|\\?[[:print:]]*\\W)quality(\\?|\\W[[:print:]]*\\?)\\]";
+
+                            /* ART - this does not get freed! */
+                            quality_reg_expression = calloc(1, sizeof(regex_t));
+                            if (quality_reg_expression)
                             {
-                                tmp_recordset = base_strcatalloc(tmp_recordset, filts[iset], &sz_tmp_recordset);
+                                if (regcomp(quality_reg_expression, quality_pattern, REG_EXTENDED | REG_ICASE) != 0)
+                                {
+                                    JSONDIE2("cannot compile regular expression", quality_pattern);
+                                }
                             }
-
-                            /* force quality check; just add it! this works! */
-                            tmp_recordset = base_strcatalloc(tmp_recordset, "[? (quality::bit(32) & X'80000000')::int = 0 ?]", &sz_tmp_recordset);
-
-                            if (segs && segs[iset] && *segs[iset] != '\0')
+                            else
                             {
-                                tmp_recordset = base_strcatalloc(tmp_recordset, segs[iset], &sz_tmp_recordset);
+                                JSONDIE("out of memory");
                             }
+                        }
 
-                            if (iset + 1 < nsets)
+                        if(regexec(quality_reg_expression, sets[iset], 0, NULL, 0) != 0)
+                        {
+                            /* no match - no 'quality' substring in specification */
+                            if (tmp_recordset)
                             {
-                                tmp_recordset = base_strcatalloc(tmp_recordset, ",", &sz_tmp_recordset);
+                                tmp_recordset = base_strcatalloc(tmp_recordset, seriesname, &sz_tmp_recordset);
+                                if (filts && filts[iset] && *filts[iset] != '\0')
+                                {
+                                    tmp_recordset = base_strcatalloc(tmp_recordset, filts[iset], &sz_tmp_recordset);
+                                }
+
+                                /* force quality check; just add it! this works! */
+                                tmp_recordset = base_strcatalloc(tmp_recordset, "[? drms.image_exists(quality) ?]", &sz_tmp_recordset);
+
+                                if (segs && segs[iset] && *segs[iset] != '\0')
+                                {
+                                    tmp_recordset = base_strcatalloc(tmp_recordset, segs[iset], &sz_tmp_recordset);
+                                }
+
+                                if (iset + 1 < nsets)
+                                {
+                                    tmp_recordset = base_strcatalloc(tmp_recordset, ",", &sz_tmp_recordset);
+                                }
                             }
                         }
                     }
