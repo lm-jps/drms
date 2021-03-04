@@ -177,7 +177,7 @@ void drms_destroy_jsdtemplate_record(DRMS_Record_t **rec);
 /* Populate a record structure with the meta-data for record number "recnum"
    from its series (given by record->seriesinfo.seriesname). */
 
-char *drms_query_string(DRMS_Env_t *env, const char *seriesname, char *where, const char *pkwhere, const char *npkwhere, int filter, int mixed, DRMS_QueryType_t qtype, void *data, const char *fl, int allvers, HContainer_t *firstlast, HContainer_t *pkwhereNFL, int recnumq, int cursor, int openLinks, long long *limit);
+char *drms_query_string(DRMS_Env_t *env, const char *seriesname, char *where, const char *pkwhere, const char *npkwhere, int filter, int mixed, DRMS_QueryType_t qtype, void *data, HContainer_t *keys, HContainer_t *segs, int allvers, HContainer_t *firstlast, HContainer_t *pkwhereNFL, int recnumq, int cursor, int openLinks, long long *limit);
 
 /**
 xxx

@@ -19,6 +19,7 @@
 #endif
 
 #define kMAXRSETSPEC (DRMS_MAXSERIESNAMELEN + DRMS_MAXQUERYLEN + 128)
+#define STRING_KEYWORD_LIST "string_keyword_list"
 
 static void *ghDSDS = NULL;
 static int gAttemptedDSDS = 0;
@@ -1458,7 +1459,6 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *record
     char *psl = NULL;
     char *lasts = NULL;
     char *ans = NULL;
-    HContainer_t *goodsegcont = NULL;
     int filter_keys = 0;
     int filter_segs = 0;
     DB_Text_Result_t *tres = NULL;
@@ -1796,8 +1796,6 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *record
 
                     if (unsorted && hcon_size(unsorted) > 0)
                     {
-
-
                         /* do not use hcon_copy - it calls hcon_init() again
                          * hcon_copy(set_template_keys[iSet], unsorted);
                          */
@@ -1818,18 +1816,7 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *record
                             *psl = '\0';
                         }
 
-                        TIME(stat = drms_recordset_query(env,
-                                                         actualSet,
-                                                         &query,
-                                                         &pkwhere,
-                                                         &npkwhere,
-                                                         &seriesname,
-                                                         &filter,
-                                                         &mixed,
-                                                         NULL,
-                                                         &firstlast,
-                                                         &pkwhereNFL,
-                                                         &recnumq));
+                        TIME(stat = drms_recordset_query(env, actualSet, &query, &pkwhere, &npkwhere, &seriesname, &filter, &mixed, NULL, &firstlast, &pkwhereNFL, &recnumq));
 
                         if (actualSet)
                         {
@@ -1859,15 +1846,6 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *record
                         char aseg[DRMS_MAXSEGNAMELEN];
 
                         set_template_segs[iSet] = hcon_create(sizeof(DRMS_Segment_t *), DRMS_MAXSEGNAMELEN, NULL, NULL, NULL, NULL, 0);
-
-                        goodsegcont = hcon_create(DRMS_MAXSEGNAMELEN,
-                                                  DRMS_MAXSEGNAMELEN,
-                                                  NULL,
-                                                  NULL,
-                                                  NULL,
-                                                  NULL,
-                                                  0);
-
                         ans = strtok_r(seglist, " ,;:{}", &lasts);
 
                         do
@@ -1878,7 +1856,6 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *record
                             if (segment)
                             {
                                 /* the bozo could have specified a non-existent segment */
-                                hcon_insert_lower(goodsegcont, aseg, aseg);
                                 hcon_insert_lower(set_template_segs[iSet], aseg, &segment);
                             }
 
@@ -1934,23 +1911,7 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *record
                     {
                         /* one query per query set (sets are delimited by commas) */
                         long long limit = 0;
-                        char *selquery = drms_query_string(env,
-                                                           seriesname,
-                                                           query,
-                                                           pkwhere,
-                                                           npkwhere,
-                                                           filter,
-                                                           mixed,
-                                                           (klist) ? DRMS_QUERY_PARTIAL : DRMS_QUERY_ALL,
-                                                           NULL,
-                                                           (klist) ? (const char *)unsorted : NULL,
-                                                           allvers[iSet] == 'y',
-                                                           firstlast,
-                                                           pkwhereNFL,
-                                                           recnumq,
-                                                           cursor,
-                                                           openlinks,
-                                                           &limit);
+                        char *selquery = drms_query_string(env, seriesname, query, pkwhere, npkwhere, filter, mixed, (filter_keys || filter_segs) ? DRMS_QUERY_PARTIAL : DRMS_QUERY_ALL, NULL, filter_keys ? unsorted : NULL, filter_segs ? set_template_segs[iSet] : NULL, allvers[iSet] == 'y', firstlast, pkwhereNFL, recnumq, cursor, openlinks, &limit);
                         list_llinserttail(llist, &selquery);
                     }
 
@@ -2002,11 +1963,6 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *record
                     }
 
                     /* return final lists used for all SQL */
-                    if (goodsegcont)
-                    {
-                        hcon_destroy(&goodsegcont);
-                    }
-
                     if (unsorted)
                     {
                         hcon_destroy(&unsorted);
@@ -5916,10 +5872,11 @@ DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *se
         drms_link_getpidx(template); /* Make sure links have pidx's set. */
     }
 
-  series_lower = strdup(seriesname);
-  strtolower(series_lower);
+    series_lower = strdup(seriesname);
+    strtolower(series_lower);
 
-  char *query = NULL;
+    char *query = NULL;
+    int do_partial = 0;
 
     if (qoverride)
     {
@@ -5938,7 +5895,8 @@ DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *se
     }
     else
     {
-        query = drms_query_string(env, seriesname, where, pkwhere, npkwhere, filter, mixed, keys && hcon_size(keys) > 0 ? DRMS_QUERY_PARTIAL : (nrecs == 0 ? DRMS_QUERY_ALL : DRMS_QUERY_N), &nrecs, (char *)keys /* overload this argument */, allvers, firstlast, pkwhereNFL, recnumq, cursor, fetchLinkedRecords, &limit);
+        do_partial = (keys && hcon_size(keys) > 0) || (segs && hcon_size(segs) > 0);
+        query = drms_query_string(env, seriesname, where, pkwhere, npkwhere, filter, mixed, do_partial ? DRMS_QUERY_PARTIAL : (nrecs == 0 ? DRMS_QUERY_ALL : DRMS_QUERY_N), &nrecs, keys, segs, allvers, firstlast, pkwhereNFL, recnumq, cursor, fetchLinkedRecords, &limit);
     }
 
     if (env->verbose)
@@ -6295,7 +6253,7 @@ DRMS_RecordSet_t *drms_retrieve_records(DRMS_Env_t *env,
 }
 
 /* prepared - A prepared statement when combined with argin that results in the retrieval of db information needed to create the DRMS records specified by the statement and argin. */
-static DRMS_RecordSet_t *drms_retrieve_records_prepared_query(DRMS_Env_t *env, const char *seriesName, DRMS_Record_t *templRec, const char *prepared, HContainer_t *goodsegcont, unsigned int nElems, int nArgs, DB_Type_t *intype, void **argin, int *status)
+static DRMS_RecordSet_t *drms_retrieve_records_prepared_query(DRMS_Env_t *env, const char *seriesName, DRMS_Record_t *templRec, const char *prepared, HContainer_t *goodsegcont /* deprecated */, unsigned int nElems, int nArgs, DB_Type_t *intype, void **argin, int *status)
 {
     DB_Binary_Result_t *bres = NULL;
     DB_Binary_Result_t **pBres = NULL; /* pointer to bres */
@@ -6435,65 +6393,6 @@ static DRMS_RecordSet_t *drms_retrieve_records_prepared_query(DRMS_Env_t *env, c
         if (istat == DRMS_SUCCESS)
         {
             rv = rvMerge;
-
-            if (goodsegcont && rv && rv->n > 0)
-            {
-                const char **keynames = NULL;
-                int nsegs = 0;
-                HIterator_t *hit = NULL;
-                int iseg;
-                const char *hkey = NULL;
-
-                for (iRec = 0; iRec < rv->n; iRec++)
-                {
-                    /* Iterate through records, removing unrequested segments */
-                    nsegs = hcon_size(&(rv->records[iRec]->segments));
-
-                    if (nsegs > 0)
-                    {
-                        keynames = (const char **)malloc(sizeof(const char *) * nsegs);
-
-                        if (keynames)
-                        {
-                            hit = hiter_create(&(rv->records[iRec]->segments));
-                            if (hit)
-                            {
-                                iseg = 0;
-                                while (hiter_extgetnext(hit, &hkey) != NULL)
-                                {
-                                    /* Put the names in a list - can't delete from a container while
-                                     * iterating through it. */
-                                    if (!hcon_lookup(goodsegcont, hkey))
-                                    {
-                                        keynames[iseg] = hkey;
-                                        iseg++;
-                                    }
-                                }
-
-                                nsegs = iseg;
-                                hiter_destroy(&hit);
-                            }
-                        }
-                        else
-                        {
-                            istat = DRMS_ERROR_OUTOFMEMORY;
-                            break;
-                        }
-
-                        for (iseg = 0; iseg < nsegs; iseg++)
-                        {
-                            hkey = keynames[iseg];
-                            hcon_remove(&(rv->records[iRec]->segments), hkey);
-                        }
-
-                        if (keynames)
-                        {
-                            free(keynames);
-                            keynames = NULL;
-                        }
-                    }
-                } /* record loop */
-            }
         }
 
         if (istat == DRMS_SUCCESS && rv)
@@ -7775,7 +7674,7 @@ DRMS_RecordSet_t *drms_record_retrievelinks(DRMS_Env_t *env, DRMS_RecordSet_t *r
     return rvMerge;
 }
 
-char *drms_query_string(DRMS_Env_t *env, const char *seriesname, char *where, const char *pkwhere, const char *npkwhere, int filter, int mixed, DRMS_QueryType_t qtype, void *data, /* specific to qtype */ const char *fl, int allvers, HContainer_t *firstlast, HContainer_t *pkwhereNFL, int recnumq, int cursor, int openLinks, long long *limit)
+char *drms_query_string(DRMS_Env_t *env, const char *seriesname, char *where, const char *pkwhere, const char *npkwhere, int filter, int mixed, DRMS_QueryType_t qtype, void *data, HContainer_t *keys, HContainer_t *segs, int allvers, HContainer_t *firstlast, HContainer_t *pkwhereNFL, int recnumq, int cursor, int openLinks, long long *limit)
 {
     DRMS_Record_t *template;
     char *field_list = NULL;
@@ -8015,48 +7914,63 @@ char *drms_query_string(DRMS_Env_t *env, const char *seriesname, char *where, co
   case DRMS_QUERY_FL:
     /* intentional fall-through */
   case DRMS_QUERY_ALL:
-    if (qtype == DRMS_QUERY_PARTIAL)
-    {
-        /* And now we have to take the keyword list that started as a comma-separated string, became a linked list, and
-         * then got reverted back into a comma-separated string, and convert it to a associative array.
-         * Since we only really care about keywords at this point, I'm just going to implement this for keywords.
-         * If we want a segment filter or a link filter down the road, then I'll implement those too. */
-         if (fl)
-         {
-            HContainer_t *keys = (HContainer_t *)fl;
+        if (qtype == DRMS_QUERY_PARTIAL)
+        {
+            /* And now we have to take the keyword list that started as a comma-separated string, became a linked list, and
+            * then got reverted back into a comma-separated string, and convert it to a associative array.
+            * Since we only really care about keywords at this point, I'm just going to implement this for keywords.
+            * If we want a segment filter or a link filter down the road, then I'll implement those too. */
+            if (keys || segs)
+            {
+                recsize = partialRecordMemsize(template, NULL, keys, segs);
+                if (!recsize)
+                {
+                    goto bailout;
+                }
 
-            recsize = partialRecordMemsize(template, NULL, keys, NULL);
+                field_list = columnList(template, NULL, keys, segs, openLinks, NULL, NULL);
+            }
+            else
+            {
+                /* No filters provided - default to DRMS_QUERY_ALL behavior. */
+                field_list = drms_field_list(template, openLinks, NULL);
+                recsize = partialRecordMemsize(template, NULL, NULL, NULL);
+            }
+        }
+        else if (qtype == DRMS_QUERY_FL)
+        {
+            /* field_list is a list of column names in the series identified by `template`; it is stored under a special
+             * container key */
+            if (keys && hcon_size(keys) > 0)
+            {
+                field_list = strdup(*(char **)hcon_lookup_lower(keys, STRING_KEYWORD_LIST));
+                if (!field_list)
+                {
+                    fprintf(stderr, "[ drms_query_string() ] unable to retrieve field list (DRMS_QUERY_FL)\n");
+                    goto bailout;
+                }
+            }
+            else
+            {
+                goto bailout;
+            }
+
+            recsize = drms_keylist_memsize(template, field_list);
+
             if (!recsize)
             {
                 goto bailout;
             }
 
-            field_list = columnList(template, NULL, keys, NULL, openLinks, NULL, NULL);
+            unique = *(int *)(data);
         }
         else
         {
-            /* No filters provided - default to DRMS_QUERY_ALL behavior. */
             field_list = drms_field_list(template, openLinks, NULL);
-            recsize = partialRecordMemsize(template, NULL, NULL, NULL);
+            recsize = drms_record_memsize(template);
         }
-    }
-    else if (qtype == DRMS_QUERY_FL)
-    {
-       field_list = strdup(fl);
-       recsize = drms_keylist_memsize(template, field_list);
-       if (!recsize) {
-          goto bailout;
-       }
 
-       unique = *(int *)(data);
-    }
-    else
-    {
-       field_list = drms_field_list(template, openLinks, NULL);
-       recsize = drms_record_memsize(template);
-    }
-
-      {
+        {
           if (*limit == 0)
           {
               *limit = (long long)((1.1e6*env->query_mem)/recsize);
@@ -9548,7 +9462,9 @@ void drms_copy_record_struct(DRMS_Record_t *dst, DRMS_Record_t *src)
 
 
 /* Populate the keyword, link, and data descriptors in the
-   record structure with the result from a database query. */
+ * record structure with the result from a database query.
+ * ASSUMES ALL column fields exist in `rec`
+ */
 int drms_populate_record(DRMS_Env_t *env, DRMS_Record_t *rec, long long recnum, int openLinks)
 {
   int stat;
@@ -9691,7 +9607,7 @@ int drms_populate_records(DRMS_Env_t *env, DRMS_RecordSet_t *rs, DB_Binary_Resul
            }
         }
 
-        /* Populate keywords. */
+        /* populate keywords - keywords not desired have already been excluded from the SQL SELECT statement */
         if (hcon_size(&rec->keywords) > 0)
         {
             while ((key = drms_record_nextkey(rec, &last, 0)) )
@@ -9713,76 +9629,80 @@ int drms_populate_records(DRMS_Env_t *env, DRMS_RecordSet_t *rs, DB_Binary_Resul
                 }
             }
 
-        if (last)
+            if (last)
+            {
+                hiter_destroy(&last);
+            }
+        }
+
+        /* segment fields - segments not desired have already been removed from the SQL select statement */
+        if (hcon_size(&rec->segments) > 0)
         {
-            hiter_destroy(&last);
+            /* This function has parts that are conditional on the series version being
+             * greater than or equal to version 2.0. */
+            DRMS_SeriesVersion_t vers2_0 = {"2.0", ""};
+            DRMS_SeriesVersion_t vers2_1 = {"2.1", ""};
+            char kbuf[DRMS_MAXKEYNAMELEN];
+            DRMS_Keyword_t *segkey = NULL;
+
+            while((seg = drms_record_nextseg(rec, &last, 0)) != NULL)
+            {
+                /* iterating through subset of db table columns */
+                segnum = seg->info->segnum;
+                seg->record = rec; /* parent link */
+
+                /* segment file name stored as column "sg_XXX_file */
+                db_binary_field_getstr(qres, row, col++, DRMS_MAXSEGFILENAME, seg->filename);
+                if (seg->info->scope == DRMS_VARDIM)
+                {
+                    /* segment dim names are stored as columns "sg_XXX_axisXXX" */
+                    for (i=0; i<seg->info->naxis; i++)
+                    {
+                        seg->axis[i] = db_binary_field_getint(qres, row, col++);
+                    }
+                }
+
+                if (drms_series_isvers(rec->seriesinfo, &vers2_0))
+                {
+                    /* compression parameters are stored as keywords cparms_sgXXX - these
+                     * keywords should have been populated in the keywords section just above. */
+                    snprintf(kbuf, sizeof(kbuf), "cparms_sg%03d", segnum);
+
+                    segkey = hcon_lookup_lower(&(rec->keywords), kbuf);
+                    if (segkey)
+                    {
+                        snprintf(seg->cparms, DRMS_MAXCPARMS, "%s", segkey->value.string_val);
+                    }
+                }
+
+                if (drms_series_isvers(rec->seriesinfo, &vers2_1))
+                {
+                    /* segment-specific bzero and bscale keywords are used to populate
+                    * the segment structure */
+                    snprintf(kbuf, sizeof(kbuf), "%s_bzero", seg->info->name);
+
+                    segkey = hcon_lookup_lower(&(rec->keywords), kbuf);
+                    if (segkey)
+                    {
+                        seg->bzero = segkey->value.double_val;
+                    }
+
+                    snprintf(kbuf, sizeof(kbuf), "%s_bscale", seg->info->name);
+
+                    segkey = hcon_lookup_lower(&(rec->keywords), kbuf);
+                    if (segkey)
+                    {
+                        seg->bscale = segkey->value.double_val;
+                    }
+                }
+            }
+
+            if (last)
+            {
+                hiter_destroy(&last);
+            }
         }
     }
-
-    /* Segment fields. */
-    if (hcon_size(&rec->segments) > 0)
-    {
-       /* This function has parts that are conditional on the series version being
-	* greater than or equal to version 2.0. */
-      DRMS_SeriesVersion_t vers2_0 = {"2.0", ""};
-      DRMS_SeriesVersion_t vers2_1 = {"2.1", ""};
-      char kbuf[DRMS_MAXKEYNAMELEN];
-      DRMS_Keyword_t *segkey = NULL;
-
-      while( (seg = drms_record_nextseg(rec, &last, 0)) )
-      {
-         segnum = seg->info->segnum;
-	seg->record = rec; /* parent link. */
-	/* Segment file name stored as column "sg_XXX_file */
-	db_binary_field_getstr(qres, row, col++, DRMS_MAXSEGFILENAME, seg->filename);
-	if (seg->info->scope==DRMS_VARDIM)
-	{
-	  /* segment dim names are stored as columns "sg_XXX_axisXXX" */
-	  for (i=0; i<seg->info->naxis; i++)
-	    seg->axis[i] = db_binary_field_getint(qres, row, col++);
-	}
-	if (drms_series_isvers(rec->seriesinfo, &vers2_0))
-	{
-	   /* compression parameters are stored as keywords cparms_sgXXX - these
-	    * keywords should have been populated in the keywords section just above. */
-
-	   snprintf(kbuf, sizeof(kbuf), "cparms_sg%03d", segnum);
-
-	   segkey = hcon_lookup_lower(&(rec->keywords), kbuf);
-	   if (segkey)
-	   {
-	      snprintf(seg->cparms, DRMS_MAXCPARMS, "%s", segkey->value.string_val);
-	   }
-	}
-
-        if (drms_series_isvers(rec->seriesinfo, &vers2_1))
-        {
-           /* segment-specific bzero and bscale keywords are used to populate
-            * the segment structure */
-           snprintf(kbuf, sizeof(kbuf), "%s_bzero", seg->info->name);
-
-           segkey = hcon_lookup_lower(&(rec->keywords), kbuf);
-           if (segkey)
-           {
-              seg->bzero = segkey->value.double_val;
-           }
-
-           snprintf(kbuf, sizeof(kbuf), "%s_bscale", seg->info->name);
-
-           segkey = hcon_lookup_lower(&(rec->keywords), kbuf);
-           if (segkey)
-           {
-              seg->bscale = segkey->value.double_val;
-           }
-        }
-      }
-
-      if (last)
-      {
-         hiter_destroy(&last);
-      }
-    }
-  }
 
 #ifndef DRMS_CLIENT
   drms_unlock_server(env);
@@ -11997,7 +11917,8 @@ int ParseRecSetDescInternal(const char *recsetsStr, char **allvers, char ***sets
                              * convert an explicit time constant into an internal DRMS TIME
                              * expressed as a double constant. */
                             char *rparen = strchr(pc+2, ')');
-                            char temptime[100];
+                            char temptime[512]; /* timeio.c assumes that this buffer is exactly 256 chars in size */
+                            memset(temptime, '\0', sizeof(temptime));
                             if (!rparen || rparen - pc > 40) // leave room for microsecs
                             {
                                 fprintf(stderr,"Time conversion error starting at %s\n",pc+2);
@@ -14308,7 +14229,7 @@ int drms_count_records(DRMS_Env_t *env, const char *recordsetname, int *status)
                         goto failure;
                     }
 
-                    query = drms_query_string(env, seriesname, where, pkwhere, npkwhere, filter, mixed, DRMS_QUERY_COUNT, NULL, NULL, allvers, firstlast, pkwhereNFL, recnumq, 0, 0, &limit);
+                    query = drms_query_string(env, seriesname, where, pkwhere, npkwhere, filter, mixed, DRMS_QUERY_COUNT, NULL, NULL, NULL, allvers, firstlast, pkwhereNFL, recnumq, 0, 0, &limit);
 
                     if (!query)
                     {
@@ -14405,6 +14326,17 @@ failure:
     return(0);
 }
 
+static void FreeStringKeywordList(const void *value)
+{
+    char *tofree = *((char **)value);
+
+    if (tofree)
+    {
+        free(tofree);
+        tofree = NULL;
+    }
+}
+
 /* Columns are stored contiguously in DRMS_Array_t::data */
 DRMS_Array_t *drms_record_getvector(DRMS_Env_t *env,
                                     const char *recordsetname,
@@ -14413,15 +14345,15 @@ DRMS_Array_t *drms_record_getvector(DRMS_Env_t *env,
                                     int unique,
                                     int *status)
 {
-   int stat, filter, mixed;
-   char *query=NULL, *where=NULL, *seriesname=NULL;
-   char *pkwhere = NULL;
-   char *npkwhere = NULL;
+    int stat, filter, mixed;
+    char *query=NULL, *where=NULL, *seriesname=NULL;
+    char *pkwhere = NULL;
+    char *npkwhere = NULL;
     HContainer_t *pkwhereNFL = NULL;
-   int count = 0;
-   int keys = 0;
-   DB_Binary_Result_t *bres=NULL;
-   DRMS_Array_t *vectors=NULL;
+    int count = 0;
+    int number_keys = 0;
+    DB_Binary_Result_t *bres=NULL;
+    DRMS_Array_t *vectors=NULL;
     HContainer_t *firstlast = NULL;
     int recnumq;
 
@@ -14436,7 +14368,8 @@ DRMS_Array_t *drms_record_getvector(DRMS_Env_t *env,
     int nsets = 0;
     DRMS_RecQueryInfo_t rsinfo; /* Filled in by parser as it encounters elements. */
     long long limit = 0;
-
+    HContainer_t *keys = NULL;
+    char *string_key_list = NULL;
 
     /* You cannot call drms_recordset_query() on recordsetname. recordsetname has not been parsed at all.
      * It might be an @file, or a comma-separated list of record-set specifications. */
@@ -14464,26 +14397,30 @@ DRMS_Array_t *drms_record_getvector(DRMS_Env_t *env,
                    goto failure;
                 }
 
-                query = drms_query_string(env,
-                                          seriesname,
-                                          where,
-                                          pkwhere,
-                                          npkwhere,
-                                          filter,
-                                          mixed,
-                                          DRMS_QUERY_FL,
-                                          &unique,
-                                          keylist,
-                                          allvers[iSet] == 'y',
-                                          firstlast,
-                                          pkwhereNFL,
-                                          recnumq,
-                                          0,
-                                          0,
-                                          &limit);
+                /* keylist is a comma-separated list of keyword names */
+                if (keylist)
+                {
+                    keys = hcon_create(sizeof(char *), 128, FreeStringKeywordList, NULL, NULL, NULL, 0);
+                    if (keys)
+                    {
+                        string_key_list = strdup(keylist);
+                        hcon_insert_lower(keys, STRING_KEYWORD_LIST, &string_key_list);
+                    }
+                }
+
+                if (!keys)
+                {
+                    fprintf(stderr, "[ drms_record_getvector() ] unable to create series keyword list\n");
+                    goto failure;
+                }
+
+                query = drms_query_string(env, seriesname, where, pkwhere, npkwhere, filter, mixed, DRMS_QUERY_FL, &unique, keys, NULL, allvers[iSet] == 'y', firstlast, pkwhereNFL, recnumq, 0, 0, &limit);
+
+                hcon_destroy(&keys);
+
                 if (!query)
                 {
-                   goto failure;
+                    goto failure;
                 }
 
                 if (env->verbose)
@@ -14522,12 +14459,12 @@ DRMS_Array_t *drms_record_getvector(DRMS_Env_t *env,
                         stat = DRMS_QUERY_TRUNCATED;
                     }
 
-                    dims[0] = keys = bres->num_cols;
+                    dims[0] = number_keys = bres->num_cols;
                     dims[1] = count = bres->num_rows;
                     vectors = drms_array_create(type, 2, dims, NULL, &stat);
                     if (stat) goto failure;
                     drms_array2missing(vectors);
-                    for (col=0; col<keys; col++)
+                    for (col = 0; col < number_keys; col++)
                     {
                         DB_Type_t db_type = bres->column[col].type;
                         for (row=0; row<count; row++)
