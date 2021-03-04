@@ -463,7 +463,7 @@ static int copy_columns(DRMS_Env_t *env, const char *source_series, const char *
                 {
                     /* `query` select columns from `source_table`*/
                     limit = num_records + 1; /* force limit to be all records (plus 1 to avoid truncation error) */
-                    query = drms_query_string(env, source_template->seriesinfo->seriesname, where, pkwhere, npkwhere, filter, mixed, DRMS_QUERY_ALL, NULL, NULL, allvers, firstlast, pkwhereNFL, recnumq, 1, 1, &limit);
+                    query = drms_query_string(env, source_template->seriesinfo->seriesname, where, pkwhere, npkwhere, filter, mixed, DRMS_QUERY_ALL, NULL, NULL, NULL, allvers, firstlast, pkwhereNFL, recnumq, 1, 1, &limit);
 
                     if (query)
                     {
@@ -527,11 +527,12 @@ static int copy_columns(DRMS_Env_t *env, const char *source_series, const char *
                     limit = num_records + 1; /* force limit to be all records (plus 1 to avoid truncation error) */
                     if (columns)
                     {
-                        query = drms_query_string(env, source_template->seriesinfo->seriesname, where, pkwhere, npkwhere, filter, mixed, DRMS_QUERY_PARTIAL, NULL, (char *)columns, allvers, firstlast, pkwhereNFL, recnumq, 1, 1, &limit);
+                        /* `columns` is an HContainer_t of template keyword structs */
+                        query = drms_query_string(env, source_template->seriesinfo->seriesname, where, pkwhere, npkwhere, filter, mixed, DRMS_QUERY_PARTIAL, NULL, columns, NULL, allvers, firstlast, pkwhereNFL, recnumq, 1, 1, &limit);
                     }
                     else
                     {
-                        query = drms_query_string(env, source_template->seriesinfo->seriesname, where, pkwhere, npkwhere, filter, mixed, DRMS_QUERY_ALL, NULL, NULL, allvers, firstlast, pkwhereNFL, recnumq, 1, 1, &limit);
+                        query = drms_query_string(env, source_template->seriesinfo->seriesname, where, pkwhere, npkwhere, filter, mixed, DRMS_QUERY_ALL, NULL, NULL, NULL, allvers, firstlast, pkwhereNFL, recnumq, 1, 1, &limit);
                     }
 
                     if (query)
