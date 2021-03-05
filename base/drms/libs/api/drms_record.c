@@ -1911,7 +1911,7 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *record
                     {
                         /* one query per query set (sets are delimited by commas) */
                         long long limit = 0;
-                        char *selquery = drms_query_string(env, seriesname, query, pkwhere, npkwhere, filter, mixed, (filter_keys || filter_segs) ? DRMS_QUERY_PARTIAL : DRMS_QUERY_ALL, NULL, filter_keys ? unsorted : NULL, filter_segs ? set_template_segs[iSet] : NULL, allvers[iSet] == 'y', firstlast, pkwhereNFL, recnumq, cursor, openlinks, &limit);
+                        char *selquery = drms_query_string(env, seriesname, query, pkwhere, npkwhere, filter, mixed, DRMS_QUERY_ALL, NULL, filter_keys ? unsorted : NULL, filter_segs ? set_template_segs[iSet] : NULL, allvers[iSet] == 'y', firstlast, pkwhereNFL, recnumq, cursor, openlinks, &limit);
                         list_llinserttail(llist, &selquery);
                     }
 
@@ -5876,7 +5876,6 @@ DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *se
     strtolower(series_lower);
 
     char *query = NULL;
-    int do_partial = 0;
 
     if (qoverride)
     {
@@ -5895,8 +5894,7 @@ DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *se
     }
     else
     {
-        do_partial = (keys && hcon_size(keys) > 0) || (segs && hcon_size(segs) > 0);
-        query = drms_query_string(env, seriesname, where, pkwhere, npkwhere, filter, mixed, do_partial ? DRMS_QUERY_PARTIAL : (nrecs == 0 ? DRMS_QUERY_ALL : DRMS_QUERY_N), &nrecs, keys, segs, allvers, firstlast, pkwhereNFL, recnumq, cursor, fetchLinkedRecords, &limit);
+        query = drms_query_string(env, seriesname, where, pkwhere, npkwhere, filter, mixed, nrecs == 0 ? DRMS_QUERY_ALL : DRMS_QUERY_N, &nrecs, keys, segs, allvers, firstlast, pkwhereNFL, recnumq, cursor, fetchLinkedRecords, &limit);
     }
 
     if (env->verbose)
@@ -7909,18 +7907,44 @@ char *drms_query_string(DRMS_Env_t *env, const char *seriesname, char *where, co
           field_list = strdup("count(recnum)");
       }
     break;
-  case DRMS_QUERY_PARTIAL:
-    /* intentional fall-through */
-  case DRMS_QUERY_FL:
-    /* intentional fall-through */
-  case DRMS_QUERY_ALL:
-        if (qtype == DRMS_QUERY_PARTIAL)
+    case DRMS_QUERY_FL:
+        /* field_list is a list of column names in the series identified by `template`; it is stored under a special
+         * container key */
+        if (keys && hcon_size(keys) > 0)
         {
+            field_list = strdup(*(char **)hcon_lookup_lower(keys, STRING_KEYWORD_LIST));
+            if (!field_list)
+            {
+                fprintf(stderr, "[ drms_query_string() ] unable to retrieve field list (DRMS_QUERY_FL)\n");
+                goto bailout;
+            }
+        }
+        else
+        {
+            goto bailout;
+        }
+
+        recsize = drms_keylist_memsize(template, field_list);
+
+        if (!recsize)
+        {
+            goto bailout;
+        }
+
+        unique = *(int *)(data);
+        /* intentional fall-through */
+  case DRMS_QUERY_PARTIAL:
+        /* intentional fall-through - synonmyous with DRMS_QUERY_ALL now (`keys` and `segs` determine full vs partial) */
+  case DRMS_QUERY_ALL:
+        if (qtype != DRMS_QUERY_FL)
+        {
+            /* using a combo of case and if statements just so I don't have to make any big strutural changes at this point */
+
             /* And now we have to take the keyword list that started as a comma-separated string, became a linked list, and
             * then got reverted back into a comma-separated string, and convert it to a associative array.
             * Since we only really care about keywords at this point, I'm just going to implement this for keywords.
             * If we want a segment filter or a link filter down the road, then I'll implement those too. */
-            if (keys || segs)
+            if ((keys && hcon_size(keys) > 0) || (segs && hcon_size(segs) > 0))
             {
                 recsize = partialRecordMemsize(template, NULL, keys, segs);
                 if (!recsize)
@@ -7936,38 +7960,6 @@ char *drms_query_string(DRMS_Env_t *env, const char *seriesname, char *where, co
                 field_list = drms_field_list(template, openLinks, NULL);
                 recsize = partialRecordMemsize(template, NULL, NULL, NULL);
             }
-        }
-        else if (qtype == DRMS_QUERY_FL)
-        {
-            /* field_list is a list of column names in the series identified by `template`; it is stored under a special
-             * container key */
-            if (keys && hcon_size(keys) > 0)
-            {
-                field_list = strdup(*(char **)hcon_lookup_lower(keys, STRING_KEYWORD_LIST));
-                if (!field_list)
-                {
-                    fprintf(stderr, "[ drms_query_string() ] unable to retrieve field list (DRMS_QUERY_FL)\n");
-                    goto bailout;
-                }
-            }
-            else
-            {
-                goto bailout;
-            }
-
-            recsize = drms_keylist_memsize(template, field_list);
-
-            if (!recsize)
-            {
-                goto bailout;
-            }
-
-            unique = *(int *)(data);
-        }
-        else
-        {
-            field_list = drms_field_list(template, openLinks, NULL);
-            recsize = drms_record_memsize(template);
         }
 
         {
@@ -8144,12 +8136,30 @@ char *drms_query_string(DRMS_Env_t *env, const char *seriesname, char *where, co
   case DRMS_QUERY_N:
       {
           /* n=XX */
-          field_list = drms_field_list(template, openLinks, NULL);
-          recsize = drms_record_memsize(template);
+
+          /* the same partial record logic applies to DRMS_QUERY_N as it does for DRMS_QUERY_ALL and DRMS_QUERY_PARTIAL */
+          if ((keys && hcon_size(keys) > 0) || (segs && hcon_size(segs) > 0))
+          {
+              recsize = partialRecordMemsize(template, NULL, keys, segs);
+              if (!recsize)
+              {
+                  goto bailout;
+              }
+
+              field_list = columnList(template, NULL, keys, segs, openLinks, NULL, NULL);
+          }
+          else
+          {
+              /* No filters provided - default to DRMS_QUERY_ALL behavior. */
+              field_list = drms_field_list(template, openLinks, NULL);
+              recsize = partialRecordMemsize(template, NULL, NULL, NULL);
+          }
+
           if (*limit == 0)
           {
               *limit = (long long)((1.1e6*env->query_mem)/recsize);
           }
+
           nrecs = *(int *)(data);
 
           if (!allvers)
@@ -11008,9 +11018,9 @@ size_t partialRecordMemsize(DRMS_Record_t *rec, HContainer_t *links, HContainer_
      * is initialized. */
     allocSize += DRMS_MAXHASHKEYLEN + sizeof(DRMS_Record_t) + hConElementSize + 3 * sizeof(Table_t);
 
-    /* There is also a copy of the DRMS_Record_t in the DRMS_RecordSet_t struct! The link, keyword, and seg containers
-     * are deep copied as well. */
-    allocSize += sizeof(DRMS_Record_t) + 3 * sizeof(Table_t);
+    /* there is only one copy of each instantiated record - it resides in the record cache; so do
+     * not add to `allocSize` more than once
+     */
 
     /* Link struct allocation. */
     if (links)
@@ -11023,9 +11033,8 @@ size_t partialRecordMemsize(DRMS_Record_t *rec, HContainer_t *links, HContainer_
             /* hcon key is strlen(<link name>) - use DRMS_MAXLINKNAMELEN
              * hcon val is DRMS_Link_t struct
              * hcon allocates an hcon element to hold these values
-             * There are two copies of the DRMS_Record_t too.
              */
-            allocSize += 2 * (sizeof(DRMS_Link_t) + DRMS_MAXLINKNAMELEN + hConElementSize);
+            allocSize += (sizeof(DRMS_Link_t) + DRMS_MAXLINKNAMELEN + hConElementSize);
         }
         hiter_free(&hit);
     }
@@ -11039,9 +11048,8 @@ size_t partialRecordMemsize(DRMS_Record_t *rec, HContainer_t *links, HContainer_
             /* hcon key is strlen(<link name>) - use DRMS_MAXLINKNAMELEN
              * hcon val is DRMS_Link_t struct
              * hcon allocates an hcon element to hold these values
-             * There are two copies of the DRMS_Record_t too.
              */
-            allocSize += 2 * (sizeof(DRMS_Link_t) + DRMS_MAXLINKNAMELEN + hConElementSize);
+            allocSize += (sizeof(DRMS_Link_t) + DRMS_MAXLINKNAMELEN + hConElementSize);
         }
         hiter_free(&hit);
     }
@@ -11055,8 +11063,8 @@ size_t partialRecordMemsize(DRMS_Record_t *rec, HContainer_t *links, HContainer_
             keyword = *pkeyword;
 
             /* Do not include DRMS_KeywordInfo_t - there is only one, and it is in the template record.
-             * There are two copies of the DRMS_Record_t too. */
-            allocSize += 2 * (sizeof(DRMS_Keyword_t) + DRMS_MAXKEYNAMELEN + hConElementSize);
+             */
+            allocSize += (sizeof(DRMS_Keyword_t) + DRMS_MAXKEYNAMELEN + hConElementSize);
 
             if (!keyword->info->islink && !drms_keyword_isconstant(keyword))
             {
@@ -11082,8 +11090,8 @@ size_t partialRecordMemsize(DRMS_Record_t *rec, HContainer_t *links, HContainer_
         while((keyword = (DRMS_Keyword_t *)hiter_getnext(&hit)) != NULL)
         {
             /* Do not include DRMS_KeywordInfo_t - there is only one, and it is in the template record.
-             * There are two copies of the DRMS_Record_t too. */
-            allocSize += 2 * (sizeof(DRMS_Keyword_t) + DRMS_MAXKEYNAMELEN + hConElementSize);
+             */
+            allocSize += (sizeof(DRMS_Keyword_t) + DRMS_MAXKEYNAMELEN + hConElementSize);
 
             if (!keyword->info->islink && !drms_keyword_isconstant(keyword))
             {
@@ -11112,8 +11120,8 @@ size_t partialRecordMemsize(DRMS_Record_t *rec, HContainer_t *links, HContainer_
             segment = *psegment;
 
             /* Do not include DRMS_SegmentInfo_t - there is only one, and it is in the template record.
-             * There are two copies of the DRMS_Record_t too. */
-            allocSize += 2 * (sizeof(DRMS_Segment_t) + DRMS_MAXSEGNAMELEN + hConElementSize);
+             */
+            allocSize += (sizeof(DRMS_Segment_t) + DRMS_MAXSEGNAMELEN + hConElementSize);
         }
         hiter_free(&hit);
     }
@@ -11123,8 +11131,8 @@ size_t partialRecordMemsize(DRMS_Record_t *rec, HContainer_t *links, HContainer_
         while((segment = (DRMS_Segment_t *)hiter_getnext(&hit)) != NULL)
         {
             /* Do not include DRMS_SegmentInfo_t - there is only one, and it is in the template record.
-             * There are two copies of the DRMS_Record_t too. */
-            allocSize += 2 * (sizeof(DRMS_Segment_t) + DRMS_MAXSEGNAMELEN + hConElementSize);
+             */
+            allocSize += (sizeof(DRMS_Segment_t) + DRMS_MAXSEGNAMELEN + hConElementSize);
         }
         hiter_free(&hit);
     }
