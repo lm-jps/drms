@@ -3319,7 +3319,11 @@ int DoIt(void)
 
         if (tmp_recordset)
         {
-            snprintf(dsquery, sizeof(dsquery), "%s", tmp_recordset);
+            if (*tmp_recordset != '\0')
+            {
+                snprintf(dsquery, sizeof(dsquery), "%s", tmp_recordset);
+            }
+
             free(tmp_recordset);
             tmp_recordset = NULL;
         }
