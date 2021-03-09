@@ -155,7 +155,7 @@ while(1) {
       $mail = "Mail -s \"$name on $HOST Not Found\"";
       #$SENDMAILTO = "jsoc_users, jima2344\@gmail.com";
       #$SENDMAILTO = "jim, hao, jeneen, jima2344\@gmail.com";
-      $SENDMAILTO = "thailand, jeneen, kehcheng";
+      $SENDMAILTO = "thailand@sun.stanford.edu, jeneen@sun.stanford.edu, kehcheng@sun.stanford.edu";
       $cmd = "echo \"No $name on $ENV{'HOST'}. Will restart one...\" | $mail $SENDMAILTO";
       system $cmd;
     }
