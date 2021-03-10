@@ -293,7 +293,7 @@ KEY *getdo_1(KEY *params)
   uint32_t tapeback;
   uint64_t uid, sunum;
   enum clnt_stat status;
-  int reqcnt, i, offline, group, storeset, offcnt, getvers;
+  int reqcnt, i, offline, group, storeset=-9999, offcnt, getvers;
   char *call_err, *cptr, *wd;
   char scmd[96], errstr[80];
   double bytes;
@@ -380,21 +380,24 @@ KEY *getdo_1(KEY *params)
             bytes = getkey_double(retlist, nametmp);
 	    //------
             //storeset = JSOC;         /* always use JSOC set for now */
-	    // get storeset from sum_partn_avail table; code copied from allocdo_1; kehcheng 2020.03.11
-	    //
-	      if(!findkey(params, "group")) {	//use storeset 0 if no group
-		storeset = 0;
-	      }
-	      else {				//query sum_arch_group db table
-		group = getkey_int(params, "group");
-		status = SUMLIB_SumsetGet(group, &storeset); //default storeset is 0
-		if(!status) {
-		  write_log("Error ret from SUMLIB_SumsetGet() for group=%d, user=%s\n",
-			     group, GETKEY_str(params, "USER"));
+	    // get storeset from sum_partn_avail table  kehcheng 2021.03.10
+	    if (storeset == -9999) {
+		sprintf(nametmp, "dsix_%d", i);
+		sunum = getkey_uint64(params, nametmp);
+		KEY *foo = newkeylist();
+		status = SUMLIB_InfoGet(sunum, &foo);
+		if (!status) {		// success
+		    group = getkey_int(foo, "storage_group");
+		    status = SUMLIB_SumsetGet(group, &storeset);
+		    if (!status) {	// failure; use default storeset
+			storeset = 0;
+		    }
+		} else {		// failure; use default storeset
+		    storeset = 0;
 		}
-	      }
+		freekeylist(&foo);
+	    }
 	    //-------
-
             if((status=SUMLIB_PavailGet(bytes,storeset,uid,0,&retlist))) {
               write_log("***Can't alloc storage for retrieve uid = %lu\n", uid);
               freekeylist(&retlist);
