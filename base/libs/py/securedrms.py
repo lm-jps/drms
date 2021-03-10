@@ -88,6 +88,7 @@ from urllib.error import URLError
 from urllib.parse import urlencode, urlparse, urlunparse, urljoin
 from urllib.request import Request, urlopen
 import uuid
+from subprocess import check_output, CalledProcessError
 
 # third party imports
 import pandas
@@ -98,7 +99,8 @@ import drms
 from drms import utils
 from drms.client import Client as DRMSClient, ExportRequest, SeriesInfo
 from drms.config import ServerConfig, register_server
-from drms.error import DrmsQueryError, DrmsExportError, DrmsOperationNotSupported
+# from drms.error import DrmsQueryError, DrmsExportError, DrmsOperationNotSupported
+from .exceptions import DrmsQueryError, DrmsExportError, DrmsOperationNotSupported
 from drms.json import HttpJsonClient, HttpJsonRequest
 from drms.utils import _split_arg
 
@@ -125,6 +127,8 @@ __all__ = [
     'SSHClient',
     'SSHJsonClient',
     'SSHJsonRequest',
+    'SSHOnTheFlyNonstopDownloader',
+    'SSHOnTheFlyOnestopDownloader',
     'SSHOnTheFlyDownloader'
 ]
 
@@ -181,6 +185,14 @@ class SecureDRMSResponseError(SecureDRMSError):
         super().__init__(msg)
         self.msg = msg
 
+class SecureDRMSSystemError(SecureDRMSError):
+    '''
+    an OS error was encountered, such as a file IO error
+    '''
+    def __init__(self, msg):
+        super().__init__(msg)
+        self.msg = msg
+
 class SecureDRMSTimeOutError(SecureDRMSError):
     '''
     '''
@@ -191,6 +203,14 @@ class SecureDRMSTimeOutError(SecureDRMSError):
 class SecureDRMSUrlError(SecureDRMSError):
     '''
     unable to open URL
+    '''
+    def __init__(self, msg):
+        super().__init__(msg)
+        self.msg = msg
+
+class SecureDRMSChildProcessError(SecureDRMSError):
+    '''
+    error running child process
     '''
     def __init__(self, msg):
         super().__init__(msg)
@@ -249,6 +269,8 @@ class SecureServerConfig(ServerConfig):
 
     Attributes
     ----------
+        download_directory : str
+            `download_directory` contains the client path to which exported files are downloaded
         has_full_export_system : bool
             If `has_full_export_system` is True, the server has a fully-implemented export system. This implies the existence of an export-system-manager instance which monitors and manages export-system database tables and submits export requests to a queueing system for processing.
         http_download_baseurl : str
@@ -397,6 +419,7 @@ class SecureServerConfig(ServerConfig):
     '''
     __configs = {}
     __valid_keys = set([
+        'download_directory',
         'has_full_export_system',
         'http_download_baseurl',
         'ftp_download_baseurl',
@@ -585,6 +608,8 @@ class SecureServerConfig(ServerConfig):
                     return self.ssh_export_fits is not None and self.ssh_parse_recset is not None and self.ssh_base_bin is not None
                 elif op == 'export_from_id':
                     return self.ssh_jsoc_info_internal is not None and self.ssh_parse_recset is not None and self.ssh_jsoc_fetch_internal is not None and self.ssh_base_bin is not None
+                elif op == 'export_package':
+                    return self.ssh_export_fits is not None and self.ssh_parse_recset is not None and self.ssh_jsoc_fetch_internal is not None and self.ssh_base_bin is not None
                 elif op == 'info':
                     return self.ssh_jsoc_info_internal is not None and self.ssh_parse_recset is not None and self.ssh_base_bin is not None
                 elif op == 'keys':
@@ -609,6 +634,8 @@ class SecureServerConfig(ServerConfig):
                     return self.ssh_export_fits is not None and self.ssh_parse_recset is not None and self.ssh_base_bin is not None
                 elif op == 'export_from_id':
                     return self.ssh_jsoc_info is not None and self.ssh_parse_recset is not None and self.ssh_jsoc_fetch is not None and self.ssh_base_bin is not None
+                elif op == 'export_package':
+                    return self.ssh_export_fits is not None and self.ssh_parse_recset is not None and self.ssh_base_bin is not None
                 elif op == 'info':
                     return self.ssh_jsoc_info is not None and self.ssh_parse_recset is not None and self.ssh_base_bin is not None
                 elif op == 'keys':
@@ -1096,7 +1123,7 @@ class BasicAccessOnTheFlyDownloader(OnTheFlyDownloader):
         return super(SecureExportRequest, self._secure_export_request).urls
 
 
-class SSHOnTheFlyDownloader(OnTheFlyDownloader):
+class SSHOnTheFlyOnestopDownloader(OnTheFlyDownloader):
     '''
     a class to manage the SSH download of synchronous exports; instances can be used to download content to a specified local directory
 
@@ -1110,13 +1137,15 @@ class SSHOnTheFlyDownloader(OnTheFlyDownloader):
         Parameters
         ----------
         secure_export_request : object (SecureExportRequest)
-            the SecureExportRequest object that created the BasicAccessOnTheFlyDownloader instance
+            the SecureExportRequest object that created the SSHOnTheFlyOnestopDownloader instance
         export_data : object (pandas.DataFrame)
             a ('record', 'filename')-pandas.DataFrame with one row per DRMS record:
                 `record` - the record-set specification for a single DRMS record
                 `filename` - the name of the associated data file inside the tar file
         tarfile : str
             absolute server path to the synchronous tar file created on the server
+
+
         remote_user : str
             the unix account the ssh command runs as
         remote_host : str
@@ -1130,12 +1159,12 @@ class SSHOnTheFlyDownloader(OnTheFlyDownloader):
         self._remote_user = remote_user
         self._remote_host = remote_host
         self._remote_port = remote_port
+        self._defer_package = defer_package
         self._open_archive = None
 
         super().__init__(secure_export_request, export_data, debug)
 
-    # public methods
-    def download(self, *, out_dir, index=None, fname_from_rec=False, remove_tar=False, verbose=None):
+    def _download_tar_file(self, *, out_dir, index=None, fname_from_rec=False, remove_tar=False, verbose=None):
         '''
         download the tar file from the server to `out_dir`, and then extract individual data files to `out_dir`; `index` can be used to select the set of files to extract; if `index` is an integer value, then the data file for the record indexed by the value in the self._export_data pandas.DataFrame is extracted; multiple files can be extracted by providing a list of integer values; a value of None causes all files to be extracted
 
@@ -1307,6 +1336,13 @@ class SSHOnTheFlyDownloader(OnTheFlyDownloader):
         # return (record_spec, basename_local_tarfile, local_path), one row per DRMS record - in the parent class, the second column would normally be URL of the tar file (for tarfile exports); in this class, the tarfile exists locally, if it has not been removed, and its name is local_tarfile (if the tarfile has been removed, then local_tarfile is None)
         return dl_data
 
+    # public methods
+    def download(self, *, out_dir, index=None, fname_from_rec=False, remove_tar=False, verbose=None):
+        if out_dir is None:
+            raise SecureDRMSArgumentError('missing argument `out_dir`')
+
+        return self._download_tar_file(out_dir=out_dir, index=index, fname_from_rec=fname_from_rec, remove_tar=remove_tar, verbose=verbose)
+
     def generate_download_url(self):
         '''
         not supported in SSHClients
@@ -1320,6 +1356,302 @@ class SSHOnTheFlyDownloader(OnTheFlyDownloader):
     def urls(self):
         raise SecureDRMSMethodError('[ urls ] urls not relevant to an SSH configuration')
 
+class SSHOnTheFlyNonstopDownloader(OnTheFlyDownloader):
+    '''
+    a subclass that both generates the export package and streams it back to the client; there is no intermediate step of creating a server-side package file
+    '''
+    def __init__(self, secure_export_request, server_response, remote_user, remote_host, remote_port, debug=False):
+        '''
+        Parameters
+        ----------
+        secure_export_request : object (SecureExportRequest)
+            the SecureExportRequest object that created the SSHOnTheFlyNonstopDownloader instance
+        server_response : obj
+            the data returned to the client in response to the client.export_package() call; it looks like this
+            {
+                "status" : 0,
+                "on-the-fly-command" : cmd_list,
+                "package" : download_path,
+                "json_response" : "jsoc/file_list.json"
+            }
+        [ debug : bool ]
+            if True, print debugging statements (default is False)
+        '''
+        self._drms_server_response_file = server_response['json_response'] # file in tar with json response
+        self._on_the_fly_command = server_response['on-the-fly-command']
+        self._tar_file = server_response['package'] # absolute path to tar file on client
+        self._remote_user = remote_user
+        self._remote_host = remote_host
+        self._remote_port = remote_port
+        self._tar_file_obj = None # file object (_tar_file)
+        self._open_archive = None # tarfile obj representing an open archive
+
+        # export_data is None at the moment, since we have yet to download the tar file yet (and the export data
+        # are in the jsoc/file_list.json file inside the archive); the export data are in a (record, filename) DataFrame
+        # created from the 'data' attribute in the jsoc/file_list.json file
+        super().__init__(secure_export_request, None, debug) # second arg is export_data, it does not yet exist
+
+    def _remove_tar_file(self):
+        if self._debug:
+            print('[ SSHOnTheFlyNonstopDownloader._remove_tar_file ] closing and removing tar file')
+
+        if os.path.exists(self._tar_file):
+            # the tar is in memory - release it (or remove all references to the memory buffer for async garbage-collection)
+            if self._open_archive is not None:
+                self._open_archive.close()
+                self._open_archive = None
+
+            if self._tar_fileobj is not None:
+                self._tar_fileobj.close()
+                self._tar_fileobj = None
+
+            self._content = None
+
+            # remove the tar, locally
+            os.remove(self._tar_file)
+            self._tar_file = None
+
+    def _download_tar_file(self):
+        if self._debug:
+            print('[ SSHOnTheFlyNonstopDownloader._download_tar_file ] downloading tar file')
+
+        if not os.path.exists(self._tar_file):
+            self._tar_file_obj = open(self._tar_file, mode='w+b')
+            try:
+                ssh_cmd_list = [ '/usr/bin/ssh', '-p', str(self._remote_port), self._remote_user + '@' + self._remote_host, shlex.quote('/bin/bash -c ' + shlex.quote(' '.join(self._on_the_fly_command))) ]
+
+                if self._debug:
+                    print('[ SSHOnTheFlyNonstopDownloader._download_tar_file ] running ssh command: {cmd}'.format(cmd=' '.join(ssh_cmd_list)))
+
+                child = pexpect.spawn(' '.join(ssh_cmd_list), maxread=512)
+                password_attempted = False
+                password_failed = False
+
+                # if we are running a synchronous export command, it could take a few minutes for it to complete - increase
+                # the timeout from the default value of 30 seconds
+
+                cached_data = b''
+                while True:
+                    index = child.expect([ '(\r\n)*password:', '\r\n', pexpect.EOF ])
+                    if index == 0:
+                        if self._debug:
+                            print('[ SSHOnTheFlyNonstopDownloader._download_tar_file ] received password prompt')
+
+                        # user was prompted to enter password
+                        password = self._secure_export_request._client._json.get_password(user_and_host=self._remote_user + '@' + self._remote_host, first_try=(not password_failed))
+                        child.sendline(password.encode('UTF8'))
+                        password_attempted = True
+                    elif index == 1:
+                        # JFC! the tty turns all newline chars (\n - 0x0A) into CR/LF (\r\n - 0x0A 0x0D)
+                        if password_attempted:
+                            # blow away cache - this is the newline after the password was sent
+                            cached_data = b''
+                        else:
+                            # tricky, this could be the data, or a message before asking for a password again
+                            if len(cached_data) > 0:
+                                self._tar_file_obj.write(cached_data)
+                                cached_data = b''
+                                self._tar_file_obj.write(child.before + b'\n') # write ONLY \n
+
+                                # at this point, copy all input to output, HOWEVER still gotta deal with
+                                # newlines!
+                                while True:
+                                    index = child.expect([ '\r\n', pexpect.EOF ])
+                                    if index == 0:
+                                        self._tar_file_obj.write(child.before + b'\n')
+                                    else:
+                                        self._tar_file_obj.write(child.before)
+                                        break
+                                break # completely done transferring data
+                            else:
+                                cached_data = child.before + b'\n'
+
+                        password_attempted = False
+                    else:
+                        if self._debug:
+                            print('[ SSHOnTheFlyNonstopDownloader._download_tar_file ] received EOF')
+
+                        # since the stdout stream takes the form [ password: ] <data>, if we are here, then we
+                        # are past the password, and we should write all bytes to disk (using the tar file obj)
+                        if self._debug:
+                            print('[ SSHOnTheFlyNonstopDownloader._download_tar_file ] reading data from child, writing to local tar file')
+
+                        if len(cached_data) > 0:
+                            self._tar_file_obj.write(cached_data)
+                            cached_data = b''
+
+                        self._tar_file_obj.write(child.before)
+
+                        break
+
+                if self._debug:
+                    print('[ SSHOnTheFlyNonstopDownloader._download_tar_file ] DONE reading data from child')
+
+
+            except AttributeError:
+                # a configuration parameter is missing (like ssh_remote_user or ssh_remote_host or ssh_remote_port
+                import traceback
+                raise SecureDRMSConfigurationError(traceback.format_exc(1))
+            except pexpect.exceptions.TIMEOUT:
+                raise SecureDRMSTimeOutError('time-out waiting server to respond')
+
+    def _download_and_open_tar_file(self):
+        if self._export_data is not None:
+            raise SecureDRMSArgumentError('package has already been downloaded and opened')
+
+        if self._tar_file_obj is None:
+            self._download_tar_file()
+
+        # seek to beginning of file
+        self._tar_file_obj.seek(0)
+
+        if self._debug:
+            print('[ SSHOnTheFlyNonstopDownloader._download_and_open_tar_file ] opening tar file')
+
+        # the package has been successfully downloaded to the client
+
+
+        # the tarfile is actually in memory - use self.data and stick into a fileobj
+        io_file = io.BytesIO(self._tar_file_obj.read()) # a binary-stream implementaton
+
+        if self._open_archive is None:
+            # file obj must be open for this to work; so if we want to keep the archive open between calls to
+            # download() we have to keep both self._tar_fileobj and self._open_archive open (and keep them outside
+            # of the
+            self._open_archive = tarfile.open(fileobj=io_file, mode='r')
+
+        if self._export_data is None:
+            fin = self._open_archive.extractfile(self._drms_server_response_file)
+            json_dict = load(fin)
+
+        columns = [ 'record', 'filename' ]
+        self._export_data = pandas.DataFrame(json_dict['data'], columns=columns)
+
+        if self._debug:
+            print('[ SSHOnTheFlyNonstopDownloader._download_and_open_tar_file ] extracted (record, filename) export data from file_list.json inside streamed archive')
+
+    def _extract_data(self, *, out_dir, index=None, fname_from_rec=False, remove_tar=False, verbose=None):
+        if self._debug:
+            print('[ SSHOnTheFlyNonstopDownloader._extract_data ] extracting data from open tar file')
+
+        if self._export_data is None:
+            raise SecureDRMSArgumentError('package has has not been downloaded')
+
+        # two columns, record and filename (inside the tar file)
+        if index is not None:
+            dl_data = self._export_data.iloc[index].copy()
+        else:
+            dl_data = self._export_data.copy()
+
+        out_paths = []
+        for irec in range(len(dl_data)):
+            row = dl_data.iloc[irec]
+            filename = None
+
+            if fname_from_rec:
+                # if fname_from_rec is None or False, then use the filenames saved in the tar file; otherwise, generate names based upon the series and record prime-key values in the record name
+                filename = self._secure_export_request.client.filename_from_export_record(row.record, old_fname=row.filename)
+
+            if filename is None:
+                # use the filename in the tar file
+                filename = row.filename
+
+            dest_path_unique = self._secure_export_request._next_available_filename(os.path.join(out_dir, filename))
+            dest_path_unique_tmp = os.path.join(out_dir, '.' + os.path.basename(dest_path_unique))
+
+            if verbose:
+                print('Extracting file {filenum} of {total}...'.format(filenum=str(irec + 1), total=str(len(dl_data))))
+                print('    record: ' + row.record)
+                print('  filename: ' + row.filename)
+
+            try:
+                if self._debug:
+                    print('[ SSHOnTheFlyNonstopDownloader._extract_data ] extracting file {file} to {dest}'.format(file=row['filename'], dest=dest_path_unique))
+
+                with self._open_archive.extractfile(row['filename']) as fin, open(dest_path_unique_tmp, 'wb') as fout:
+                    while True:
+                        data_bytes = fin.read(8192)
+                        if data_bytes == b'':
+                            break
+
+                        bytes_written = 0
+                        while bytes_written < len(data_bytes):
+                            bytes_written += fout.write(data_bytes)
+
+                # rename the temp file back to final destination (dest_path_unique)
+                os.rename(dest_path_unique_tmp, dest_path_unique)
+            except:
+                dest_path_unique = None
+
+                if verbose:
+                    print('  -> Error: Could not extract file')
+
+            out_paths.append(dest_path_unique)
+
+        if remove_tar:
+            self._remove_tar_file()
+
+        # the tar file is in memory - no filename
+        dl_data['filename'] = None
+        dl_data['download'] = out_paths
+
+        # return (single_record_spec, None, local_path_of_data_file) - in the parent class, the second column would normally be URL of the tarfile; however, no such file exists since the tarfile was generated synchronous (no Storage Unit was created)
+        return dl_data
+
+    def download(self, *, out_dir=None, index=None, fname_from_rec=False, remove_tar=False, verbose=None):
+        '''
+        Parameters
+        ----------
+        [ out_dir : str ]
+            the directory to which the data files are to be extracted; defaults to self._tar_file, the path determined by export_package()
+        '''
+        if self._debug:
+            print('[ SSHOnTheFlyNonstopDownloader.download ] downloading and opening package file, extracting data')
+        try:
+            self._download_and_open_tar_file()
+            if out_dir is None:
+                data_file_directory = self._tar_file
+            else:
+                data_file_directory = out_dir
+            dl_data = self._extract_data(out_dir=data_file_directory, index=index, fname_from_rec=fname_from_rec, remove_tar=remove_tar, verbose=verbose)
+            return dl_data
+        except OSError as error:
+            raise SecureDRMSSystemError(error.strerror)
+
+    def extract(self, *, out_dir, index=None, fname_from_rec=False, remove_tar=False, verbose=None):
+        '''
+            extract one or more fits files from the downloaded, and possibly in memory, archive
+
+            Parameters
+            ----------
+            out_dir : str
+                the directory to which the data files are to be extracted
+        '''
+        if self._debug:
+            print('[ SSHOnTheFlyNonstopDownloader.extract ] extracting data from open package file')
+        return self._extract_data(out_dir=out_dir, index=index, fname_from_rec=fname_from_rec, remove_tar=remove_tar, verbose=verbose)
+
+    def remove_package(self):
+        '''
+            remove package from local storage
+        '''
+        if self._debug:
+            print('[ SSHOnTheFlyNonstopDownloader.remove_package ] closing and removing package file')
+        return self._remove_tar_file()
+
+    @property
+    def raw_data(self):
+        '''
+        Return Value
+        ------------
+        object (bytes):
+            a byte string of content (the tar file)
+        '''
+        # binary data
+        if self._content is None:
+            self._content = self._tar_file.read() # a bytes object (self._tarfile must have some stream implementation in it); CANNOT seek()
+
+        return self._content
 
 class SecureExportRequest(ExportRequest):
     '''
@@ -1352,7 +1684,7 @@ class SecureExportRequest(ExportRequest):
 
     not all attributes are always present; they are export-method-dependent
     '''
-    def __init__(self, server_response, secure_client, remote_user=None, remote_host=None, remote_port=None, on_the_fly=True, debug=False):
+    def __init__(self, server_response, secure_client, remote_user=None, remote_host=None, remote_port=None, on_the_fly=True, defer_package=True, debug=False):
         '''
         Parameters
         ----------
@@ -1409,6 +1741,11 @@ class SecureExportRequest(ExportRequest):
             the unix account the ssh command runs as; although this is indicated as optional, it is actually required for an synchronous export from a SSHClient secure_client
         [ remote_host : str ]
             the server accepting ssh requests; although this is indicated as optional, it is actually required for an synchronous export from a SSHClient secure_client
+        [ on_the_fly : bool ]
+            if True, then the export request is processed asynchronously
+        [ defer_package : bool ]
+            if True, then download() creates package and downloads it, otherwise, download() downloads
+            the package that was previously created on the server
         [ remote_port : int ]
             the port of the server to which ssh requests are sent; although this is indicated as optional, it is actually required for an synchronous export from a SSHClient secure_client
         [ debug : bool ]
@@ -1417,7 +1754,8 @@ class SecureExportRequest(ExportRequest):
         # if the DRMS server supports formal exports (has_full_export_system == True) and the user has chosen an export method that makes use of the full export system (url, url_quick, url-tar, ftp, ftp-tar) or synchronous_export == False (in which case the method cannot be url_direct) then the parent-class (ExportRequest) code will be used to download data files; and if the user has chosen either the ftp or ftp-tar export method, then a tar file will be created on the server, and the ExportRequest.download() method will download the tar file to the local directory specified by the user; when a tar file is created, jsoc_export_make_index creates a 'tarfile' attribute that appears in the JSON response to the ExportRequest.export_from_id() call; the tarfile attribute specifies the location of the tar file on the server, and this attribute is used by ExportRequest.download() to create a URL path to the tar file
         # otherwise if the DRMS server does not support formal exports OR the user has specified synchronous_export == True in SecureExportRequest.export() OR the user called SecureExportRequest.export_fits(), then the server performs a synchronous export; if the user is employing an SSHClient, a tar file is created on the server whose path is stored in server_response['tarfile']; if the user is employing a BasicAccessClient, then no tar file is ever created on the server - instead a stream is created, over which the content of a tar file is sent directly into the securedrms.py memory; opening the url in server_response['url'] causing this tar-file streaming to occur
 
-        # initialize parent first - needed for self.data; `server_response` must be a json dict with a 'data' attribute
+        # initialize parent first - needed for self.data; `server_response` must be a json dict with a 'data' attribute;
+        # if server_response['data'] ==> 'data' not in self (the case for BasicAccessOnTheFlyDownloader and SSHOnTheFlyNonstopDownloader, but not SSHOnTheFlyOnestopDownloader)
         super().__init__(server_response, secure_client)
 
         self._on_the_fly = on_the_fly
@@ -1430,9 +1768,16 @@ class SecureExportRequest(ExportRequest):
         if self._on_the_fly:
             # self.data calls ExportRequest.data() - a (record, filename) DataFrame
             if self._isssh:
-                self._downloader = SSHOnTheFlyDownloader(self, self.data, server_response['tarfile'], remote_user, remote_host, remote_port, debug)
+                if defer_package:
+                    # the package does not yet exist; it will be created on the client during the execution of the download() method;
+                    # at that time, the data attribute will also be created
+                    self._downloader = SSHOnTheFlyNonstopDownloader(self, server_response, remote_user, remote_host, remote_port, debug)
+                else:
+                    # the package exists on the server; the data attribute exists (in parent)
+                    self._downloader = SSHOnTheFlyOnestopDownloader(self, self.data, server_response['tarfile'], remote_user, remote_host, remote_port, debug)
             else:
-                # ugh - at this point, we have no response data attribute (we need to stream the tarfile down first)
+                # the package does not yet exist; it will be created on the client during the execution of the download() method;
+                # at that time, the data attribute will also be created
                 self._downloader = BasicAccessOnTheFlyDownloader(self, server_response['url'], debug)
         else:
             self._downloader = None
@@ -1467,14 +1812,14 @@ class SecureExportRequest(ExportRequest):
     # end private methods
 
     # public methods
-    def download(self, directory, index=None, fname_from_rec=None, remove_tar=False, verbose=None):
+    def download(self, directory=None, index=None, fname_from_rec=None, remove_tar=False, verbose=None):
         '''
         download the data files or tar file of data files to a local directory
 
         Parameters
         ----------
-        directory : str
-            the directory to which data files are to be extracted
+        [ directory : str ]
+            the directory to which data files are to be extracted; the package file local directory will be used by default
         [ index : int or list ]
             either an integer value, or a list of integer values, or None; the integer values refer to the indexes of the data files in the tar file that are to be extracted; if None (default) then all data files are extracted
         [ fname_from_rec : bool ]
@@ -1493,7 +1838,10 @@ class SecureExportRequest(ExportRequest):
             return super().download(directory, index, fname_from_rec, verbose)
 
         # synchronous
-        out_dir = os.path.abspath(directory)
+        if directory is not None:
+            out_dir = os.path.abspath(directory)
+        else:
+            out_dir = None
 
         # make a list out of index
         if numpy.isscalar(index):
@@ -1980,6 +2328,18 @@ class SSHJsonClient(object):
 
         return SSHJsonRequest(cmds, self, self._server.encoding, self._server.ssh_remote_user, self._server.ssh_remote_host, self._server.ssh_remote_port, self._debug)
 
+    def _package_json_extractor(self, package_path):
+        extraction_cmd = [ '/bin/tar', 'xOf', package_path, 'jsoc/file_list.json' ]
+        try:
+            resp = check_output(extraction_cmd)
+            json_response = resp.decode('utf-8')
+        except ValueError as exc:
+            raise SecureDRMSChildProcessError('[ _package_json_extractor ] invalid command-line arguments: ' + ' '.join(extraction_cmd))
+        except CalledProcessError as exc:
+            raise SecureDRMSChildProcessError("[ _package_json_extractor ] command '" + ' '.join(extraction_cmd) + "' returned non-zero status code " + str(exc.returncode))
+
+        return json_response
+
     def _run_cmd(self, *, cmd_list):
         '''
         create the SSHJsonRequest object and 'get' its 'data' property (which causes the interface SSH command to be execute)
@@ -2248,6 +2608,69 @@ class SSHJsonClient(object):
 
         # add the server tar-file name; response is a dict (made from the JSON-string server response)
         response['tarfile'] = tar_file
+
+        return response
+
+    def exp_package(self, *, spec, download_directory, filename_fmt=None):
+        '''
+        synchronously export FITS files contained by DRMS records specified by `spec`; unlike export(), this method does not require the presence of the formal export system and no export Storage Unit will be created on the server; the FITS files are archived to a temporary tar file, which is placed on the server's temp directory
+
+        Parameters
+        ----------
+        spec : str
+            a DRMS record-set specification (e.g., 'hmi.M_720s[2018.3.2_00:00_TAI]{magnetogram}'); the DRMS data segments to which `spec` refers must be of FITS protocol
+        download_directory : str
+            the local directory to which the package will be downloaded
+        [ filename_fmt : str ]
+            custom filename template string to use when generating the names for exported files that appear in the tar file; if None (the default), then '{seriesname}.{recnum:%%lld}.{segment}' is used
+
+        Return Value
+        ------------
+        dict
+            a dict representing the JSON response to the export_fits web-application; the 'method' attribute will be set to 'url_direct',  'requestid' will be None since a format export request was never created, and 'dir' will be None since no export Storage Unit is created; to the server's response is added the 'tarfile' attribute, which is the path to the server's temporary tar file; example return value:
+            {
+                "status" : 0,
+                "on-the-fly-command" : [ '/home/jsoc/cvs/Development/JSOC/bin/linux_avx/drms-export-to-stout', 'a=0', 's=0', 'e=1', spec='hmi.rdMAI_fd30[2231][210][255.0]', ffmt='hmi.rdMAI_fd30.{CarrRot}.{CMLon}.{LonHG}.{LatHG}.{LonCM}.{segment}', 'DRMS_DBUTF8CLIENTENCODING=1' ],
+                "package" : "/tmp/.46680c4a-c004-4b67-9d7c-0d65412d8c94.tar",
+                "json_response" : "jsoc/file_list.json"
+            }
+        '''
+        cmd_list = [ os.path.join(self._server.ssh_base_bin, self._server.ssh_export_fits), 'a=0', 's=0', 'e=1' ]
+
+        cmd_list.append(shlex.quote('spec=' + spec))
+
+        if filename_fmt is not None and len(filename_fmt) > 0:
+            cmd_list.append(shlex.quote('ffmt=' + filename_fmt))
+
+        if self._server.encoding.lower() == 'utf8':
+            cmd_list.append('DRMS_DBUTF8CLIENTENCODING=1')
+
+        if self._use_internal:
+            if self._server.ssh_export_fits_internal_args is not None:
+                cmd_list.extend([ key + '=' + str(val) for key, val in self._server.ssh_export_fits_internal_args.items() ])
+        else:
+            if self._server.ssh_export_fits_args is not None:
+                cmd_list.extend([ key + '=' + str(val) for key, val in self._server.ssh_export_fits_args.items() ])
+
+        tar_file = str(uuid.uuid4()) + '.tar'
+        download_path = os.path.join(download_directory, tar_file)
+
+        # do not call self._run_cmd() - we are not executing ssh just yet; do that when the user calls
+        # SSHClient.download()
+        response = {
+            "status" : 0,
+            "on-the-fly-command" : cmd_list,
+            "package" : download_path,
+            "json_response" : "jsoc/file_list.json"
+        }
+
+        # the response json looks like:
+        # {
+        #      "status" : 0,
+        #      "on-the-fly-command" : [ "/home/jsoc/cvs/Development/JSOC/bin/linux_avx/drms-export-to-stdout", "a=0", "s=0", "e=1", spec="hmi.M_720s[2017.12.03_01:12:00_TAI][3]{magnetogram}", "ffmt=hmi.M_720s.{T_REC:A}.{CAMERA}.{segment}", DRMS_DBUTF8CLIENTENCODING=1", JSOC_DBHOST" : "hmidb", "JSOC_DBUSER" : "production", "maxfilesize" : 4294967296 ],
+        #      "package" : "/tmp/.46680c4a-c004-4b67-9d7c-0d65412d8c94.tar",
+        #      "json_response" : "jsoc/file_list.json"
+        # }
 
         return response
 
@@ -3002,6 +3425,12 @@ class SecureClient(DRMSClient):
         # returns a SecureExportRequest
         return self._execute(self._export_fits, **args)
 
+    def export_package(self, spec, download_directory, filename_fmt=None):
+        args = { 'api_name' : 'export_package', 'download_directory' : download_directory, 'spec' : spec, 'filename_fmt' : filename_fmt }
+
+        # returns a SecureExportRequest
+        return self._execute(self._export_package, **args)
+
     def export_from_id(self, requestid):
         '''
         for asynchronous exports, obtain from the server request disposition information and create an ExportRequest instance, which can then be used to check on the pending export status, and to download files whose export has completed
@@ -3238,7 +3667,7 @@ class BasicAccessClient(SecureClient):
         # we are going to run drms-export-to-stdout on the server
         resp = self._json.exp_fits(spec, filename_fmt)
 
-        return SecureExportRequest(resp, self, remote_user=None, remote_host=None, remote_port=None, on_the_fly=True, debug=self.debug)
+        return SecureExportRequest(resp, self, remote_user=None, remote_host=None, remote_port=None, on_the_fly=True, defer_package=True, debug=self.debug)
 
     def _series(self, regex=None, full=False):
         if self._use_internal or self._server.web_show_series_wrapper is None:
@@ -3311,7 +3740,12 @@ class SSHClient(SecureClient):
         # we are going to run drms-export-to-stdout on the server
         resp = self._json.exp_fits(spec, filename_fmt)
 
-        return SecureExportRequest(resp, self, remote_user=self._config.ssh_remote_user, remote_host=self._config.ssh_remote_host, remote_port=self._config.ssh_remote_port, on_the_fly=True, debug=self.debug)
+        return SecureExportRequest(resp, self, remote_user=self._config.ssh_remote_user, remote_host=self._config.ssh_remote_host, remote_port=self._config.ssh_remote_port, on_the_fly=True, defer_package=False, debug=self.debug)
+
+    def _export_package(self, spec, download_directory, filename_fmt):
+        dummy_series_response = self._json.exp_package(spec=spec, download_directory=download_directory, filename_fmt=filename_fmt)
+
+        return SecureExportRequest(dummy_series_response, self, remote_user=self._config.ssh_remote_user, remote_host=self._config.ssh_remote_host, remote_port=self._config.ssh_remote_port, on_the_fly=True, defer_package=True, debug=self.debug)
 
     def _series(self, regex=None, full=False):
         if self._use_internal or self._server.ssh_show_series_wrapper is None:
@@ -3479,6 +3913,7 @@ signal.signal(signal.SIGHUP, SecureClientFactory.terminator)
 
 # register secure JSOC DRMS server
 SecureServerConfig.register_server(SecureServerConfig(
+    download_directory='/tmp',
     name='__JSOC',
     web_baseurl='http://jsoc.stanford.edu/cgi-bin/ajax/',
     web_baseurl_internal='http://jsoc2.stanford.edu/cgi-bin/ajax/',
@@ -3507,8 +3942,8 @@ SecureServerConfig.register_server(SecureServerConfig(
     },
     has_full_export_system=False,
     server_tmp='/tmp',
-    ssh_base_bin='/home/jsoc/cvs/Development/waystation/netdrms-9.3-plus-fits-headers/bin/linux_avx',
-    ssh_base_script='/home/jsoc/cvs/Development/waystation/netdrms-9.3-plus-fits-headers/scripts',
+    ssh_base_bin='/home/jsoc/cvs/Development/JSOC/bin/linux_avx',
+    ssh_base_script='/home/jsoc/cvs/Development/JSOC/scripts',
     ssh_check_email='checkAddress.py',
     ssh_check_email_addresstab='jsoc.export_addresses',
     ssh_check_email_domaintab='jsoc.export_addressdomains',
