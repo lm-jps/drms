@@ -89,6 +89,7 @@ from urllib.parse import urlencode, urlparse, urlunparse, urljoin
 from urllib.request import Request, urlopen
 import uuid
 from subprocess import check_output, CalledProcessError
+import asyncio
 
 # third party imports
 import pandas
@@ -1462,7 +1463,43 @@ class SSHOnTheFlyNonstopDownloader(OnTheFlyDownloader):
         # created from the 'data' attribute in the jsoc/file_list.json file
         super().__init__(secure_export_request, None, debug) # second arg is export_data, it does not yet exist
 
+    async def _write_tar_file(self, command_string):
+        if self._tar_file_obj is None:
+            raise SecureDRMSArgumentError('must first open tar file before attempting to write to it')
+
+        if self._debug:
+            print('[ SSHOnTheFlyNonstopDownloader._write_tar_file ] starting child process')
+
+            proc = await asyncio.subprocess.create_subprocess_shell(command_string, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE)
+
+        if self._debug:
+            print('[ SSHOnTheFlyNonstopDownloader._write_tar_file ] interacting with child process')
+
+        self._tar_file_obj.write(await proc.stdout.read())
+        await proc.wait()
+
+        if self._debug:
+            print('[ SSHOnTheFlyNonstopDownloader._write_tar_file ] child process terminated')
+
     def _download_tar_file(self):
+        # this really executes a program on the DRMS server; theoretically, it could be called more than once
+        if self._debug:
+            print('[ SSHOnTheFlyNonstopDownloader._download_tar_file ] downloading tar file')
+
+        if not os.path.exists(self._tar_file):
+            self._tar_file_obj = open(self._tar_file, mode='w+b')
+            ssh_cmd_list = [ '/usr/bin/ssh', '-p', str(self._remote_port), self._remote_user + '@' + self._remote_host, shlex.quote('/bin/bash -c ' + shlex.quote(' '.join(self._on_the_fly_command))) ]
+
+            if self._debug:
+                print('[ SSHOnTheFlyNonstopDownloader._download_tar_file ] running ssh command: {cmd}'.format(cmd=' '.join(ssh_cmd_list)))
+
+            # use asyncio
+            asyncio.run(self._write_tar_file(' '.join(ssh_cmd_list)))
+
+            if self._debug:
+                print('[ SSHOnTheFlyNonstopDownloader._download_tar_file ] DONE reading data from child')
+
+    def _download_tar_file_old(self):
         if self._debug:
             print('[ SSHOnTheFlyNonstopDownloader._download_tar_file ] downloading tar file')
 
