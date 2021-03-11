@@ -66,7 +66,6 @@ Password:
 
 # standard library imports
 import base64
-from contextlib import ExitStack
 import getpass
 import importlib
 import inspect
@@ -904,7 +903,7 @@ class BasicAccessOnTheFlyDownloader(OnTheFlyDownloader):
         self._on_the_flyURL = url
         self._response = None
         self._content = None
-        self._tar_fileobj = None
+        self._tar_file_obj = None
         self._open_archive = None
 
         # export_data is None at the moment, since we have yet to download the tar file yet (and the export data
@@ -980,15 +979,15 @@ class BasicAccessOnTheFlyDownloader(OnTheFlyDownloader):
             except URLError as exc:
                 raise SecureDRMSUrlError('[ BasicAccessOnTheFlyDownloader.download() ] troubles opening URL ' + url)
 
-        if self._tar_fileobj is None:
+        if self._tar_file_obj is None:
             # the tarfile is actually in memory - use self.data and stick into a fileobj
-            self._tar_fileobj = io.BytesIO(self.raw_data) # a binary-stream implementaton
+            self._tar_file_obj = io.BytesIO(self.raw_data) # a binary-stream implementaton
 
         if self._open_archive is None:
             # file obj must be open for this to work; so if we want to keep the archive open between calls to
-            # download() we have to keep both self._tar_fileobj and self._open_archive open (and keep them outside
+            # download() we have to keep both self._tar_file_obj and self._open_archive open (and keep them outside
             # of the
-            self._open_archive = tarfile.open(fileobj=self._tar_fileobj, mode='r')
+            self._open_archive = tarfile.open(fileobj=self._tar_file_obj, mode='r')
 
         if self._export_data is None:
             fin = self._open_archive.extractfile('jsoc/file_list.json')
@@ -1057,9 +1056,9 @@ class BasicAccessOnTheFlyDownloader(OnTheFlyDownloader):
                 self._open_archive.close()
                 self._open_archive = None
 
-            if self._tar_fileobj is not None:
-                self._tar_fileobj.close()
-                self._tar_fileobj = None
+            if self._tar_file_obj is not None:
+                self._tar_file_obj.close()
+                self._tar_file_obj = None
 
             self._content = None
             self._response = None
@@ -1592,9 +1591,9 @@ class SSHOnTheFlyNonstopDownloader(OnTheFlyDownloader):
                 self._open_archive.close()
                 self._open_archive = None
 
-            if self._tar_fileobj is not None:
-                self._tar_fileobj.close()
-                self._tar_fileobj = None
+            if self._tar_file_obj is not None:
+                self._tar_file_obj.close()
+                self._tar_file_obj = None
 
             # remove the tar, locally
             os.remove(self._tar_file)
@@ -1620,13 +1619,13 @@ class SSHOnTheFlyNonstopDownloader(OnTheFlyDownloader):
 
         if self._open_archive is None:
             # file obj must be open for this to work; so if we want to keep the archive open between calls to
-            # download() we have to keep both self._tar_fileobj and self._open_archive open (and keep them outside
+            # download() we have to keep both self._tar_file_obj and self._open_archive open (and keep them outside
             # of the
             self._open_archive = tarfile.open(fileobj=io_file, mode='r')
 
         if self._export_data is None:
-            fin = self._open_archive.extractfile(self._drms_server_response_file)
-            json_dict = load(fin)
+            with self._open_archive.extractfile(self._drms_server_response_file) as f_response:
+                json_dict = load(f_response)
 
         columns = [ 'record', 'filename' ]
         self._export_data = pandas.DataFrame(json_dict['data'], columns=columns)
