@@ -1469,7 +1469,7 @@ class SSHOnTheFlyNonstopDownloader(OnTheFlyDownloader):
         if self._debug:
             print('[ SSHOnTheFlyNonstopDownloader._write_tar_file ] starting child process')
 
-            proc = await asyncio.subprocess.create_subprocess_shell(command_string, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE)
+        proc = await asyncio.subprocess.create_subprocess_shell(command_string, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE)
 
         if self._debug:
             print('[ SSHOnTheFlyNonstopDownloader._write_tar_file ] interacting with child process')
