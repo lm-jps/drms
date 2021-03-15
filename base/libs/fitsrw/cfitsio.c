@@ -741,7 +741,7 @@ static int Cf_write_header_key(fitsfile *fptr, CFITSIO_KEYWORD *key)
             if (strcmp(key->key_name, CFITSIO_KEYWORD_HISTORY) == 0)
             {
                 is_history_or_comment = 1;
-                //fits_write_history(fptr, key->key_value.vs, &cfiostat);
+
                 if (*key->key_value.vs != '\0')
                 {
                     err = Cf_write_history_or_comment_key(fptr, CFITSIO_KEYWORD_SPECIAL_TYPE_HISTORY, key->key_value.vs);
@@ -750,7 +750,7 @@ static int Cf_write_header_key(fitsfile *fptr, CFITSIO_KEYWORD *key)
             else if (strcmp(key->key_name, CFITSIO_KEYWORD_COMMENT) == 0)
             {
                 is_history_or_comment = 1;
-                //fits_write_comment(fptr, key->key_value.vs, &cfiostat);
+
                 if (*key->key_value.vs != '\0')
                 {
                     err = Cf_write_history_or_comment_key(fptr, CFITSIO_KEYWORD_SPECIAL_TYPE_COMMENT, key->key_value.vs);
@@ -2864,8 +2864,11 @@ int cfitsio_update_history_key(CFITSIO_FILE *file, CFITSIO_KEYWORD *keyword)
 
     if (err == CFITSIO_SUCCESS)
     {
-        /* then, write HISTORY cards */
-        err = cfitsio_write_history_key(file, keyword);
+        if (*keyword->key_value.vs != '\0')
+        {
+            /* then, write HISTORY cards */
+            err = cfitsio_write_history_key(file, keyword);
+        }
     }
 
     return err;
@@ -2876,7 +2879,7 @@ int cfitsio_read_comment_key(CFITSIO_FILE *file, CFITSIO_KEYWORD *keyword_out)
     char *value = NULL;
     int err = CFITSIO_SUCCESS;
 
-    err = Cf_read_history_or_comment_key(file->fptr, CFITSIO_KEYWORD_SPECIAL_TYPE_HISTORY, &value);
+    err = Cf_read_history_or_comment_key(file->fptr, CFITSIO_KEYWORD_SPECIAL_TYPE_COMMENT, &value);
     if (err == CFITSIO_SUCCESS)
     {
         keyword_out->key_value.vs = value;
@@ -2894,7 +2897,7 @@ int cfitsio_read_comment_key(CFITSIO_FILE *file, CFITSIO_KEYWORD *keyword_out)
 
 int cfitsio_write_comment_key(CFITSIO_FILE *file, CFITSIO_KEYWORD *keyword)
 {
-    return Cf_write_history_or_comment_key(file->fptr, CFITSIO_KEYWORD_SPECIAL_TYPE_HISTORY, keyword->key_value.vs);
+    return Cf_write_history_or_comment_key(file->fptr, CFITSIO_KEYWORD_SPECIAL_TYPE_COMMENT, keyword->key_value.vs);
 }
 
 int cfitsio_update_comment_key(CFITSIO_FILE *file, CFITSIO_KEYWORD *keyword)
@@ -2906,8 +2909,11 @@ int cfitsio_update_comment_key(CFITSIO_FILE *file, CFITSIO_KEYWORD *keyword)
 
     if (err == CFITSIO_SUCCESS)
     {
-        /* then, write HISTORY cards */
-        err = cfitsio_write_comment_key(file, keyword);
+        if (*keyword->key_value.vs != '\0')
+        {
+            /* then, write COMMENT cards */
+            err = cfitsio_write_comment_key(file, keyword);
+        }
     }
 
     return err;
@@ -3195,35 +3201,19 @@ int cfitsio_update_header_key(CFITSIO_FILE *file, CFITSIO_KEYWORD *key)
         {
             is_history_or_comment = 1;
 
-            if (*key->key_value.vs != '\0')
-            {
-                /* ARGH - FITSIO! this will silently fail if the history keyword value is the empty string;
-                 * then later code that tries to read the history code will fail */
-                // XXX - need to break on newlines (if they exist)
-                // fits_write_history(file->fptr, key->key_value.vs, &cfiostat);
-                err = cfitsio_update_history_key(file, key);
-            }
-            else
-            {
-                err = CFITSIO_ERROR_ARGS;
-            }
+            /* ARGH - FITSIO!; fits_write_history() will silently fail if the history keyword value is the empty string;
+             * then later code that tries to read the history keyword will fail; so simply delete the history
+             * keywords if the keyword value is the empty string */
+            err = cfitsio_update_history_key(file, key);
         }
         else if (!strcmp(key->key_name,"COMMENT"))
         {
             is_history_or_comment = 1;
 
-            if (*key->key_value.vs != '\0')
-            {
-                /* ARGH - FITSIO! this will silently fail if the comment keyword value is the empty string;
-                 * then later code that tries to read the comment code will fail */
-                // XXX
-                // fits_write_comment(file->fptr, key->key_value.vs, &cfiostat);
-                err = cfitsio_update_comment_key(file, key);
-            }
-            else
-            {
-                err = CFITSIO_ERROR_ARGS;
-            }
+            /* ARGH - FITSIO!; fits_write_comment() will silently fail if the comment keyword value is the empty string;
+             * then later code that tries to read the comment keyword will fail; so simply delete the comment
+             * keywords if the keyword value is the empty string */
+            err = cfitsio_update_comment_key(file, key);
         }
         else if (key->key_type == CFITSIO_KEYWORD_DATATYPE_STRING)
         {
@@ -3731,7 +3721,9 @@ int cfitsio_read_headsum(CFITSIO_FILE *file, char **headsum)
             if (cfiostat == KEY_NO_EXIST)
             {
                 /* this is OK; not all files will have a HEADSUM yet */
+#if 0
                 fprintf(stderr, "[ cfitsio_read_headsum() ] NOTE: FITS file %s does not contain a HEADSUM keyword\n", file->fptr->Fptr->filename);
+#endif
                 cfiostat = 0;
             }
             else
