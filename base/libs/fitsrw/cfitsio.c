@@ -781,7 +781,13 @@ static int Cf_write_header_key(fitsfile *fptr, CFITSIO_KEYWORD *key)
             /* a NaN value implies a missing value; write a keyword with no value (null) */
 
             /* prints 17 decimal places, if needed */
-            fits_write_key_dbl(fptr, key->key_name, key->key_value.vf, -17, key->key_comment ? key->key_comment : NULL, &cfiostat);
+            if (fits_write_key_dbl(fptr, key->key_name, key->key_value.vf, -17, key->key_comment ? key->key_comment : NULL, &cfiostat))
+            {
+                fprintf(stderr, "[ Cf_write_header_key() ] NOTE: invalid value for DRMS floating-point keyword %s; continuing\n", key->key_name);
+                key->is_missing = 1;
+                err = Cf_write_key_null(fptr, key->key_name, key->key_comment, key->key_unit);
+                cfiostat = 0;
+            }
         }
         else
         {
