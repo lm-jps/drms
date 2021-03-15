@@ -130,7 +130,7 @@ def dump_namespace_sql(arguments, namespace):
         raise SSChildProcessError('failure calling ' +  ' '.join(error.cmd))
 
 def dump_table_sql(arguments, series_table):
-    command = [ os.path.join(arguments.drms_bin, PROGRAM_CREATE_TABLE), 'in=' + series_table, 'out=' + series_table, 'owner=' + arguments.db_user ]
+    command = [ os.path.join(arguments.drms_bin, PROGRAM_CREATE_TABLE), 'in=' + series_table, 'out=' + series_table, 'owner=' + arguments.owner ]
 
     try:
         # pipe directly to stdout
