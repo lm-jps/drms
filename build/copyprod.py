@@ -32,6 +32,7 @@ sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../in
 from drmsparams import DRMSParams
 
 # DEBUG = True
+DRY_RUN = False
 
 # hard code a bunch of stuff since I don't have time to do this correctly
 if 'DEBUG' in globals():
@@ -48,7 +49,6 @@ if 'DEBUG' in globals():
     STOP_SUMS_DAEMON = 'stop-mt-sums.py'
     INSTANCES_FILE = os.path.join('/', 'tmp', 'arta', 'testinstances.txt')
     SUMS_LOG_FILE = os.path.join('/', 'tmp', 'arta', 'testsumslog.txt')
-
 else:
     PROD_ROOTDIR = os.path.join('/', 'home', 'jsoc', 'cvs', 'Development')
     JSOC_ROOTDIR = 'JSOC'
@@ -62,7 +62,6 @@ else:
     START_SUMS_DAEMON = 'start-mt-sums.py'
     STOP_SUMS_DAEMON = 'stop-mt-sums.py'
     # INSTANCES_FILE = 'testinstances.txt'
-    # SUMS_LOG_FILE = '/usr/local/logs/SUM/testsumslog.txt'
 
 
 RV_SUCCESS = 0
@@ -176,8 +175,11 @@ try:
             # instance was listening to
             cmdList = [ sys.executable, os.path.join(PROD_ROOTDIR, JSOC_ROOTDIR, SUMS_SOURCE_DIR, STOP_SUMS_DAEMON), 'daemon=' + existingProdSumsd, '--quiet' ]
             ConditionalAppend(cmdList, ConditionalConstruction('--instancesfile=', 'INSTANCES_FILE', ''))
-            ConditionalAppend(cmdList, ConditionalConstruction('--logfile=', 'SUMS_LOG_FILE', ''))
-            print('stopping SUMS (if instances are running), running on k1: ' + ' '.join(cmdList))
+
+            if DRY_RUN:
+                print(f'[ DRY_RUN] stopping SUMS (if instances are running), running on k1 `{" ".join(cmdList)}`')
+            else:
+                print(f'stopping SUMS (if instances are running), running on k1 `{" ".join(cmdList)}`')
 
             # gotta run this on the SUMS server; get production's password
 
@@ -187,46 +189,77 @@ try:
                 pword = getpass.getpass()
 
             sshCmdList = [ '/usr/bin/ssh', SUMS_USER + '@' + SUMS_SERVER, ' '.join(cmdList) ]
-            child = pexpect.spawn(' '.join(sshCmdList))
-            child.expect('password:')
-            child.sendline(pword.encode('UTF8'))
-            child.expect(pexpect.EOF)
-            resp = child.before
 
-            portsTerminated = json.loads(resp.decode('UTF8'))['terminated']
-            print(os.path.join(PROD_ROOTDIR, JSOC_ROOTDIR, SUMS_SOURCE_DIR, STOP_SUMS_DAEMON) + ' ran properly')
+            if DRY_RUN:
+                print(f'[ DRY RUN ] stopping SUMS: running `{" ".join(sshCmdList)}`')
+            else:
+                child = pexpect.spawn(' '.join(sshCmdList))
+                child.expect('password:')
+                child.sendline(pword.encode('UTF8'))
+                child.expect(pexpect.EOF)
+                resp = child.before
 
-            if len(portsTerminated) > 0:
-                print('stopped instance(s)s of ' + existingProdSumsd + ' listening on port(s) ' + ','.join([ str(port) for port in portsTerminated ]))
+                portsTerminated = json.loads(resp.decode('UTF8'))['terminated']
+                print(os.path.join(PROD_ROOTDIR, JSOC_ROOTDIR, SUMS_SOURCE_DIR, STOP_SUMS_DAEMON) + ' ran properly')
+
+                if len(portsTerminated) > 0:
+                    print('stopped instance(s)s of ' + existingProdSumsd + ' listening on port(s) ' + ','.join([ str(port) for port in portsTerminated ]))
 
             # copy files from the waystation to a temporary directory
             if not os.path.exists(JSOC_ROOTDIR_NEW):
-                os.makedirs(JSOC_ROOTDIR_NEW, exist_ok=True)
+                if DRY_RUN:
+                    print(f'[ DRY RUN ] making temporary JSOC directory `{JSOC_ROOTDIR_NEW}`' )
+                else:
+                    os.makedirs(JSOC_ROOTDIR_NEW, exist_ok=True)
 
-            print('copying from the waystation (' + os.path.join(WAYSTATION, JSOC_ROOTDIR) + ') to a new JSOC directory (' + JSOC_ROOTDIR_NEW + ')')
             cmdList = [ 'rsync', '-alu', os.path.join(WAYSTATION, JSOC_ROOTDIR, ''), JSOC_ROOTDIR_NEW ] # '' is to add trailing slash
-            print('running ' + ' '.join(cmdList))
-            check_call(cmdList)
-            print('recursively setting to user jsoc the group for the new JSOC directory')
+            if DRY_RUN:
+                print(f'[ DRY RUN ] copying files: from `{os.path.join(WAYSTATION, JSOC_ROOTDIR)}` to `{JSOC_ROOTDIR_NEW}`')
+                print(f'[ DRY RUN ] running {" ".join(cmdList)}')
+            else:
+                print(f'copying from the waystation ({os.path.join(WAYSTATION, JSOC_ROOTDIR)}) to a new JSOC directory ({JSOC_ROOTDIR_NEW})')
+                print(f'running {" ".join(cmdList)}')
+                check_call(cmdList)
+
             cmdList = [ 'chgrp', '-Rh', 'jsoc', JSOC_ROOTDIR_NEW ]
-            print('running ' + ' '.join(cmdList))
-            check_call(cmdList)
-            print('recursively removing group write on the new JSOC directory')
+            if DRY_RUN:
+                print('[ DRY RUN ] setting group owner to `jsoc`')
+                print(f'[ DRY RUN ] running {" ".join(cmdList)}')
+            else:
+                print('recursively setting to user jsoc the group for the new JSOC directory')
+                print(f'running {" ".join(cmdList)}')
+                check_call(cmdList)
+
             cmdList = [ 'chmod', '-R', 'g-w', JSOC_ROOTDIR_NEW ]
-            print('running ' + ' '.join(cmdList))
-            check_call(cmdList)
+            if DRY_RUN:
+                print('[ DRY RUN ] removing group write')
+                print(f'[ DRY RUN] running {" ".join(cmdList)}')
+            else:
+                print('recursively removing group write on the new JSOC directory')
+                print(f'running {" ".join(cmdList)}')
+                check_call(cmdList)
 
             # rename the production tree to save it
             newProdSumsdDir = JSOC_ROOTDIR + '_' + datetime.now().strftime('%Y%m%d_%H%M%S')
             newProdSumsd = os.path.join(PROD_ROOTDIR, newProdSumsdDir, SUMS_SOURCE_DIR, SUMS_DAEMON)
-            print('renaming ' + JSOC_ROOTDIR + ' to ' + newProdSumsdDir)
+
             cmdList = [ 'mv', JSOC_ROOTDIR, newProdSumsdDir ]
-            print('running ' + ' '.join(cmdList))
-            check_call(cmdList)
-            print('renaming ' + JSOC_ROOTDIR_NEW + ' to ' + JSOC_ROOTDIR)
+            if DRY_RUN:
+                print(f'[ DRY RUN ] renaming the production tree: from `{JSOC_ROOTDIR}` to `{newProdSumsdDir}`')
+                print(f'[ DRY RUN] running {" ".join(cmdList)}')
+            else:
+                print(f'renaming `{JSOC_ROOTDIR}` to `{newProdSumsdDir}`')
+                print(f'running {" ".join(cmdList)}')
+                check_call(cmdList)
+
             cmdList = [ 'mv', JSOC_ROOTDIR_NEW, JSOC_ROOTDIR ]
-            print('running ' + ' '.join(cmdList))
-            check_call(cmdList)
+            if DRY_RUN:
+                print(f'[ DRY RUN ] renaming the new tree: from `{JSOC_ROOTDIR_NEW}` to `{JSOC_ROOTDIR}`')
+                print(f'[ DRY RUN ] running {" ".join(cmdList)}')
+            else:
+                print(f'renaming `{JSOC_ROOTDIR_NEW}` to `{JSOC_ROOTDIR}`')
+                print(f'running {" ".join(cmdList)}')
+                check_call(cmdList)
 
             if newSUMSPort is not None and len(portsTerminated) > 0:
                 # the Development/JSOC sumsd.py was stopped for at least one port, AND we are changing the SUMS port;
@@ -235,8 +268,13 @@ try:
                 cmdList = [ sys.executable, os.path.join(PROD_ROOTDIR, JSOC_ROOTDIR, SUMS_SOURCE_DIR, START_SUMS_DAEMON), 'daemon=' + newProdSumsd, '--ports=' + ','.join([ str(port) for port in portsTerminated ]), '--quiet' ]
                 ConditionalAppend(cmdList, ConditionalConstruction('--instancesfile=', 'INSTANCES_FILE', ''))
                 ConditionalAppend(cmdList, ConditionalConstruction('--logfile=', 'SUMS_LOG_FILE', ''))
-                print('restarting the production SUMS daemon(s) on port(s) ' + ','.join([ str(port) for port in portsTerminated ]))
-                print('running on k1' + ' '.join(cmdList))
+
+                if DRY_RUN:
+                    print(f'[ DRY RUN ] restarting the production SUMS daemon(s) on port(s) `{",".join([ str(port) for port in portsTerminated ])}`')
+                    print(f'[ DRY RUN ] running on k1 `{" ".join(cmdList)}`')
+                else:
+                    print(f'restarting the production SUMS daemon(s) on port(s) `{",".join([ str(port) for port in portsTerminated ])}`')
+                    print(f'running on k1 `{" ".join(cmdList)}`')
 
                 # gotta run this on the SUMS server
 
@@ -245,7 +283,42 @@ try:
                     pword = getpass.getpass()
 
                 sshCmdList = [ '/usr/bin/ssh', SUMS_USER + '@' + SUMS_SERVER, ' '.join(cmdList) ]
-                print('running on ' + SUMS_SERVER + ' '.join(sshCmdList))
+                if DRY_RUN:
+                    print(f'[ DRY_RUN] running `{" ".join(sshCmdList)}`')
+                else:
+                    print(f'running `{" ".join(sshCmdList)}`')
+                    child = pexpect.spawn(' '.join(sshCmdList))
+                    child.expect('password:')
+                    child.sendline(pword.encode('UTF8'))
+                    child.expect(pexpect.EOF)
+                    resp = child.before
+
+                    pidsStarted = json.loads(resp.decode('UTF8'))['started'] # list of ints
+                    print(os.path.join(PROD_ROOTDIR, JSOC_ROOTDIR, SUMS_SOURCE_DIR, START_SUMS_DAEMON) + ' ran properly')
+                    print('started pids ' + ','.join([ str(pid) for pid in pidsStarted ]))
+
+            # start a sumsd.py instance using the current production sumsd.py source file and latest port number;
+            # use the latest port number (if the port number changed, this will be the new port number, if it will be the old port number);
+            # the SUMSD_LISTENPORT parameter value will always be the latest port number
+            cmdList = [ sys.executable, os.path.join(PROD_ROOTDIR, JSOC_ROOTDIR, SUMS_SOURCE_DIR, START_SUMS_DAEMON), 'daemon=' + os.path.join(PROD_ROOTDIR, JSOC_ROOTDIR, SUMS_SOURCE_DIR, SUMS_DAEMON), '--ports=' + str(latestPort), '--quiet' ]
+            ConditionalAppend(cmdList, ConditionalConstruction('--instancesfile=', 'INSTANCES_FILE', ''))
+            ConditionalAppend(cmdList, ConditionalConstruction('--logfile=', 'SUMS_LOG_FILE', ''))
+
+            if DRY_RUN:
+                print(f'[ DRY_RUN] re-starting SUMS, running on k1 `{" ".join(cmdList)}`')
+            else:
+                print(f'starting SUMS, running on k1 `{" ".join(cmdList)}`')
+
+            # gotta run this on the SUMS server
+            if pword is None:
+                print('please enter password for ' + SUMS_USER + '@' + SUMS_SERVER)
+                pword = getpass.getpass()
+
+            sshCmdList = [ '/usr/bin/ssh', SUMS_USER + '@' + SUMS_SERVER, ' '.join(cmdList) ]
+            if DRY_RUN:
+                print(f'[ DRY_RUN] running `{" ".join(sshCmdList)}`')
+            else:
+                print(f'running `{" ".join(sshCmdList)}`')
                 child = pexpect.spawn(' '.join(sshCmdList))
                 child.expect('password:')
                 child.sendline(pword.encode('UTF8'))
@@ -255,30 +328,6 @@ try:
                 pidsStarted = json.loads(resp.decode('UTF8'))['started'] # list of ints
                 print(os.path.join(PROD_ROOTDIR, JSOC_ROOTDIR, SUMS_SOURCE_DIR, START_SUMS_DAEMON) + ' ran properly')
                 print('started pids ' + ','.join([ str(pid) for pid in pidsStarted ]))
-
-            # start a sumsd.py instance using the current production sumsd.py source file and latest port number;
-            # use the latest port number (if the port number changed, this will be the new port number, if it will be the old port number);
-            # the SUMSD_LISTENPORT parameter value will always be the latest port number
-            cmdList = [ sys.executable, os.path.join(PROD_ROOTDIR, JSOC_ROOTDIR, SUMS_SOURCE_DIR, START_SUMS_DAEMON), 'daemon=' + os.path.join(PROD_ROOTDIR, JSOC_ROOTDIR, SUMS_SOURCE_DIR, SUMS_DAEMON), '--ports=' + str(latestPort), '--quiet' ]
-            ConditionalAppend(cmdList, ConditionalConstruction('--instancesfile=', 'INSTANCES_FILE', ''))
-            ConditionalAppend(cmdList, ConditionalConstruction('--logfile=', 'SUMS_LOG_FILE', ''))
-
-            # gotta run this on the SUMS server
-            if pword is None:
-                print('please enter password for ' + SUMS_USER + '@' + SUMS_SERVER)
-                pword = getpass.getpass()
-
-            sshCmdList = [ '/usr/bin/ssh', SUMS_USER + '@' + SUMS_SERVER, ' '.join(cmdList) ]
-            print('running on ' + SUMS_SERVER + ' '.join(sshCmdList))
-            child = pexpect.spawn(' '.join(sshCmdList))
-            child.expect('password:')
-            child.sendline(pword.encode('UTF8'))
-            child.expect(pexpect.EOF)
-            resp = child.before
-
-            pidsStarted = json.loads(resp.decode('UTF8'))['started'] # list of ints
-            print(os.path.join(PROD_ROOTDIR, JSOC_ROOTDIR, SUMS_SOURCE_DIR, START_SUMS_DAEMON) + ' ran properly')
-            print('started pids ' + ','.join([ str(pid) for pid in pidsStarted ]))
 
 except CalledProcessError as exc:
     if exc.output:
