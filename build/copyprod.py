@@ -261,11 +261,15 @@ try:
                 print(f'running {" ".join(cmdList)}')
                 check_call(cmdList)
 
+            starting_py_bin = drmsParams.get('BIN_PY3')
+            if starting_py_bin is None
+                starting_py_bin = sys.executable
+
             if newSUMSPort is not None and len(portsTerminated) > 0:
                 # the Development/JSOC sumsd.py was stopped for at least one port, AND we are changing the SUMS port;
                 # restart the SUMS instances that were shutdown earlier using the new date dir for sumsd.py, with the OLD port numbers
                 # start-mt-sums.sh will edit the master file that lists running SUMS processes
-                cmdList = [ sys.executable, os.path.join(PROD_ROOTDIR, JSOC_ROOTDIR, SUMS_SOURCE_DIR, START_SUMS_DAEMON), 'daemon=' + newProdSumsd, '--ports=' + ','.join([ str(port) for port in portsTerminated ]), '--quiet' ]
+                cmdList = [ starting_py_bin, os.path.join(PROD_ROOTDIR, JSOC_ROOTDIR, SUMS_SOURCE_DIR, START_SUMS_DAEMON), 'daemon=' + newProdSumsd, '--ports=' + ','.join([ str(port) for port in portsTerminated ]), '--quiet' ]
                 ConditionalAppend(cmdList, ConditionalConstruction('--instancesfile=', 'INSTANCES_FILE', ''))
                 ConditionalAppend(cmdList, ConditionalConstruction('--logfile=', 'SUMS_LOG_FILE', ''))
 
@@ -277,7 +281,6 @@ try:
                     print(f'running on k1 `{" ".join(cmdList)}`')
 
                 # gotta run this on the SUMS server
-
                 if pword is None:
                     print('please enter password for ' + SUMS_USER + '@' + SUMS_SERVER)
                     pword = getpass.getpass()
@@ -300,7 +303,7 @@ try:
             # start a sumsd.py instance using the current production sumsd.py source file and latest port number;
             # use the latest port number (if the port number changed, this will be the new port number, if it will be the old port number);
             # the SUMSD_LISTENPORT parameter value will always be the latest port number
-            cmdList = [ sys.executable, os.path.join(PROD_ROOTDIR, JSOC_ROOTDIR, SUMS_SOURCE_DIR, START_SUMS_DAEMON), 'daemon=' + os.path.join(PROD_ROOTDIR, JSOC_ROOTDIR, SUMS_SOURCE_DIR, SUMS_DAEMON), '--ports=' + str(latestPort), '--quiet' ]
+            cmdList = [ starting_py_bin, os.path.join(PROD_ROOTDIR, JSOC_ROOTDIR, SUMS_SOURCE_DIR, START_SUMS_DAEMON), 'daemon=' + os.path.join(PROD_ROOTDIR, JSOC_ROOTDIR, SUMS_SOURCE_DIR, SUMS_DAEMON), '--ports=' + str(latestPort), '--quiet' ]
             ConditionalAppend(cmdList, ConditionalConstruction('--instancesfile=', 'INSTANCES_FILE', ''))
             ConditionalAppend(cmdList, ConditionalConstruction('--logfile=', 'SUMS_LOG_FILE', ''))
 
