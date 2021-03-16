@@ -262,7 +262,7 @@ try:
                 check_call(cmdList)
 
             starting_py_bin = drmsParams.get('BIN_PY3')
-            if starting_py_bin is None
+            if starting_py_bin is None:
                 starting_py_bin = sys.executable
 
             if newSUMSPort is not None and len(portsTerminated) > 0:
