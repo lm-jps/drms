@@ -1,0 +1,194 @@
+                       Release Notes JSOC V9.41        05APR2021
+                       ------------------------        ---------
+
+
+The DRMS/NetDRMS release is a set of source files, each with a defined
+internal version number. The JSOC identifies this set of files with
+a CVS tag. The code in a JSOC release is guaranteed to compile on internal
+cluster nodes (e.g., n04 and solar3). The resulting executable code has been tested
+and verified to work properly on supported systems.
+
+There are several ways to use this release. If you have internal access to JSOC
+lab machines, you can use the official release code available at /home/jsoc/cvs/JSOC. This
+path is a link to the directory containing the current release (JSOC_9-41). The code and
+binary files therein will not change until the next official release.
+
+If you have internal access to JSOC lab machines and wish to use the same software
+that the JSOC uses to generate production data, use the software in /home/jsoc/cvs/Development/JSOC.
+The JSOC production pipelines often require minor, yet critical, changes that occur
+relatively frequently - sufficiently frequent to render full releases impractical. The "Development"
+code tree fills this niche. "Development" is a bit of a misnomer - the code in this tree
+is stable and is more like a minor release. This is in contrast to the code in
+/home/jsoc/cvs/JSOC which composes a major release.
+
+To use these internal binaries, you can run them directly,
+"/home/jsoc/cvs/JSOC/Development/bin/linux_x86_64/show_info -j hmi.M_45s",
+for example. Or you can put /home/jsoc/cvs/JSOC/Development/bin/linux_x86_64 in
+your path environment variable.
+
+You can instead build your own executables - even if you do not have access to lab machines.
+If you do have lab access, you can "check out" a fresh copy of the release source files by
+running
+
+$ cd <directory of releases>
+$ /home/jsoc/dlsource.pl -r Ver_9-41 # to obtain JSOC 9.41
+$ /home/jsoc/dlsource.pl -f net -r NetDRMS_Ver_9-41 # to obtain NetDRMS 9.41
+
+These commands will create a directory named "JSOC" that will contain the release
+source files. After checking out the source files, you would then configure and build by running
+
+$ cd JSOC
+$ ./configure
+$ make
+
+If instead of downloading a new source-code tree, you can update an existing one by running
+
+$ $ cd <release root directory>
+$ /home/jsoc/dlsource.pl -r Ver_9-41 -o update # to update to JSOC 9.41
+$ /home/jsoc/dlsource.pl -r NetDRMS_Ver_9-41 -o update # to update to NetDRMS 9.41
+
+If you do not have lab access, you can still download the NetDRMS release. Detailed
+instructions are at http://jsoc.stanford.edu/jsocwiki/DRMSSetup#install-netdrms.
+
+Additional Info
+---------------
+Use the Apache CVS gui to see diffs between file revisions. For example, go to http://jsoc2.stanford.edu/cvs/JSOC/base/drms/
+and click on the name in the File column and then click on "diffs to previous #" to see the diffs.
+
+Changes since previous release (V9.3 -  February 19, 2010)
+----------------------------------------------------------
+New features:
++ add database functions to register and unregister export-system users
++ add database functions to add, edit, and delete export-user information
++ add database functions to look up an export user by their user ID
++ add pending-export-request tracking
++ prevent an export user from issuing multiple, simultaneous export requests; limit the number of simultaneous export requests issued from one IP address
++ add a list of users exempt from export request limitations
++ modify the export-page UI to allow the user to cancel pending export requests; the 'submit' button becomes a 'cancel' button during the time interval when a submitted request is cancel-able
++ add a timeout for python SUMS' response to client requests
++ upgrade the configuration localization script to use python 3
++ add DRMS_MAKE_ROOT_DIRECTORY, a C macro, and jsoc_get_make_root() to allow DRMS users to obtain the root of the DRMS code tree where the executables and other binaries were built; this is used by the rings project
++ force static linkage of the CFITSIO library
++ remove all RPC dependencies when the DRMS parameter SUMS_USEMTSUMS_ALL is set to 1 (i.e., when the python SUMS is used exclusively for all SUMS services)
++ add a DRMS argument, DRMS_ARG_PRINT_SQL, to print relevant SQL commands without executing them
++ add drms_dms_quiet(), a new version of drms_dms(), that does not print error messages; this is used by dscp
++ add a parameter to dscp to specify the set of DRMS keywords on which to operate
++ make exported FITS header files FITS-compliant
++ replace remaining homegrown FITS-keyword writing code with FITSIO functions designed to print keyword values
++ support long strings (FITSIO CONTINUE keywords) in FITS header text values; write the LONGWARN FITS keyword to indicate this
++ if a call to fits_write_key_dbl() fails because the floating-point argument is not supported (e.g., it is a NaN or Inf), then write the FITS nul value instead
++ conform to the FITS tradition of specifying the keyword physical unit in the keyword comment
++ handle the case where a user is attempting to overwrite a FITS file with a file whose filename uses FITSIO extended filename syntax
++ when creating a FITS disk file, if the file already exists, first delete it
++ support exporting FITS binary tables of DRMS keyword metadata
++ write a checksum of DRMS-keyword values in the exported FITS file header so the export system can quickly determine if the header is up-to-date; this checksum is saved in the HEADSUM FITS keyword
++ support empty-string DRMS keyword comments - they are valid
++ when exporting a DRMS keyword to a FITS keyword whose name does not match, save the DRMS keyword name in curly braces in the keyword comment; upon import, map the FITS keyword name to DRMS keyword name if a DRMS keyword name is present in curly braces
++ support DRMS keyword aliases; if [<name>] appears at the start of the keyword <X> description column in the database, then <name> is an alias for <X> and can be used everywhere <X> can be used in DRMS
++ support the printing of keyword values as hexadecimal strings to make round-tripping through the database lossless (for binary data, like floating-point values); this change affects show_info, set_info, and jsoc_info
++ optimize dscp to use faster, database SQL statements when possible
++ optimize memory usage of DRMS records for DRMS commands that operate on only a subset of keywords, segments, links
++ drop all temporary database tables as soon as possible (do not wait for the transaction to complete)
++ optimize the shadow-table creation code - make table indexes after the table has been populated, not before it has been populated
++ enhance the efficiency of subscription code that creates series dump files
++ support the specification, by time range or any prime-key values, of DRMS records whose Storage Units are subject to remote SUMS download; this allows NetDRMS users with DRMS series subscriptions to limit which SUs are downloaded (most remote sites do not want to download all old data - they are generally interested in recent data)
++ disable Nagle's algorithm when sending small packets as messages in response to NetDRMS client subscription requests
++ enhance the efficiency of the client subscription code when ingesting SQL files
++ remote SUMS no longer fails if a request contains an invalid SUNUM
++ remote SUMS now checks for manual request deletion outside of remote SUMS
++ add the flag '-e' to drms-export-to-stdout - this captures stderr and saves it into the resulting tar file so that error messages do not get sent back to applications/clients (like securemdrms.py) not expecting such messages
++ implement code to store each export user's information in jsoc.export_user_info (instead of saving the user's information anew during each export request)
++ in the email-registration code, make all email address comparisons case-insensitive
++ modify the email-registration code to add new user information into jsoc.export_user_info
++ track the user/user-IP-address for all pending export requests; limit the number of simultaneous requests per user and per IP address
++ enhance the efficiency of duplicate-export-request-checking code
++ force jsoc_fetch to add an image quality filter (for relevant series) if a check is not provided by the user
++ update several production script to run under Python 3 instead of Python 2
++ enhance the efficiency of jsoc_info by calling SUM_info() once for many SUs instead of calling SUM_get() many times, each for a single SU
++ add the '-s' flag to jsoc_info and jsocextfetch.py to suppress the printing of HTTP headers; this allows a user to call jsoc_info and jsocextfetch.py to receive a valid JSON object response
++ parameterize the webserver used by the drms export CGI wrapper for drms-export-to-stdout
++ update manage-requests.py so that it operates in a Flask environment
++ implement a script to create a snapshot of a DRMS series database table; this script takes a DRMS record-set specification as input so that the user can obtain a snapshot of a subset of existing records
++ add a '--json' flag to showextseries.py so that it can be used by securedrms.py, which expects JSON responses
++ compile all C POSIX regular expressions one time, not each time they are used
++ fully support the reading/writing of DRMS missing values from/to FITS files
++ implement a new utility function to strip whitespace from both ends of a string
++ update the python library file locking code to overwrite lock-file content if the lock file exists and has content (instead of appending new content)
++ create an SSH mode for securedrms.py; this mode can be used when the user has SSH-access to the server
++ for the SSH mode of securedrms.py, support streaming of exported tar files (client.export_fits()); use drms-export-to-stdout and do not create an intermediate tar file on the server
++ support multiple clients in securedrms.py
++ when securedrms.py calls drms-export-to-stdout, provide the '-e' flag to suppress stderr messages
++ when securedrms.py calls jsoc_info, provide the '-s' flag to suppress the printing of HTTP headers
++ support ctrl-d and sigint to gracefully shut down securedrms.py
++ enhance the efficiency of the code in securedrms.py that downloads tar files of FITS files; the new code uses the asyncio package of python to achieve very good speeds
++ make securedrms.py adhere to PEP styling
++ document in detail securedrms.py
++ make the 'ports' parameter to start-mt-sums.py optional instead of required; use the SUMSD_LISTENPORT config.local parameter by default; document this updated usage
++ use pexpect for communication between start-mt-sums.py and the SUMS server machine
++ provide Worker.__run() as a 'target' to the parent threading class so that Python SUMS has control over memory clean up instead of relying upon the Python interpreter to do so; before this change, the interpreter could hold on to allocated memory indefinitely, causing a type of memory leak
++ implement drms_keyword_update - this is a module that updates a specified set of DRMS Keyword values for the specified set of DRMS Records
++ implement several 'shortcuts' in dscp that use SQL directly, when possible, to copy data series record information
++ add a new argument, 'link', to show_info; if a valid link is provided, then all record information displayed is for linked records, not the specified ones
++ make a configuration option to allow the user to specify the python used by copyprod.py
++ make copyprod.py use pexpect to interact with start-mt-sums.py and stop-mt-sums.py so that copyprod.py can monitor for specific output strings
++ make copyprod.py always stop the 'old' running python SUMS, and then start the 'new' python SUMS when updating the production code tree (MOVING sumsd.py no longer works due to the addition of a multiprocessing function)
++ remove support for solarmail from export system
++ speed up the export code that determines the number of records in a record set (do not examine records, just count them)
++ implement the streaming of on-line FITS files in the export system (the 'url_direct' method)
++ make improvements to the export-system email registration process
++ add config.local.newstyle.template to NetDRMS release so NetDRMS can be configured with a config.local that has the same format at the JSOC-specific configuration file configsdp.txt
++ modify exportmanage.pl to periodically delete export-request hashes (used to track duplicate requests) and to clear pending request database rows for requests that never completed
+
+Bug fixes:
++ clean up the include file chain involving the CFITSIO, fitsrw, drms_fitsrw code layers; remove unused branches that lead to unneeded dependencies
++ fix a buffer overrun in masterlists
++ make declaration and definition signatures of drms_dms_array() match
++ in the DRMS database library, make string parameters const when they should be
++ fix memory corruption in DRMS-record-handling code
++ modify client code to not free DRMS series template records directly
++ fix a memory leak in DRMS-record-iteration code
++ fix manage-subscription code that holds locks for too long
++ do not assume that the user creating the database functions (during NetDRMS set-up) is running the top-level function-creation SQL script from the directory containing the lower-level function-creation scripts
++ fix the synchronization between remote SUMS' scp and downloader thread
++ fix issues with tracking remote SUMS requests in internal lists
++ fix an invalid memory read in drms-export-to-stdout
++ fix a failure to dump an entire write buffer to stdout
++ fix FITS compression issues when the export code is not streaming FITS files
++ fix a greedy export-processing-step parser
++ make ingest_from_fits omit all 'recnum' keyword FITS keywords
++ modify jsocextinfo.py to avoid a parameter name collision
++ fix memory corruption in the FITSIO-wrapper code
++ in Python SUMS, correctly check the return of the send() system call
++ completely remove RPC dependencies from the non-RPC branch of code in the SUMS interface library
++ the SUM_NUMSUM SUMS variable must have some value, even for the Python SUMS code branch
++ fix two issues with Python SUMS where it was closing a session without first sending a response to the client
++ use the correct class's MAX_MSG_BUFSIZE in message-handling code
++ change the sum_main database table's username column definition from varchar(10) to varchar(32) since a linux user name can be 32 characters long; this was a problem for a NetDRMS site
++ properly handle the case where dscp is used on an input series that has no DRMS Segments
++ fix memory corruption in show_info
++ fix a typo in copyprod.py
++ update the call in copyprod.py to start-mt-sums.py to include '--ports', not 'ports', to accord with the change to start-mt-sums.py parameters
++ fix several race conditions (use callbacks instead) in export code
++ fix the active HTTP request count in the export system
++ fix broken-UI problems in the export-system registration code
++ add missing color definitions to the export-system web pages
++ modify arithtool to defer the writing of segments until after the date keyword has been written
++ fix a buffer overrun in exportmanage.pl
+
+Project-specific modifications:
++ remove the HARP project from the x86_64 build
++ remove maprojbrfromblos from all builds
++ clean-up the sharps modules
++ localize the ephemeris tables used by the rings project
++ fix bugs in the CGEM project
++ fix bugs in the global helioseismology project
++ fix bugs in the AIA level-1 production code
++ make the level-0 production code generate FITS files that contain keyword metadata
++ remove some personal information from production scripts
++ fix bugs in some magnetic-team projects
++ modify some magnetic-team code to support changes to CRLN_OBS
++ change the bitmap threshold in the sharps projects
++ add time-distances projects to standard builds
++ add support for CRLN_OBS and CALVER64 modifications to the export-processing programs
++ make the CGEM project code avx-only
++ add support for CRLN_OBS and HGLN_OBS in level-1 data series
