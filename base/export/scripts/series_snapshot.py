@@ -61,14 +61,20 @@ class SSArguments(object):
 
     def __init__(self):
         self.parsed_arguments = self.parse_arguments()
+        self.validate_arguments()
         self.ingest_arguments()
 
     def parse_arguments(self, arguments=None):
         # arguments == None ==> sys.argv
         return self.__parser.parse_args(arguments)
 
+    def validate_arguments(self):
+        args_dict = vars(self.parsed_arguments)
+        if args_dict['create_namespace'] and not args_dict['create_table']:
+            raise SSArgumentsError('if creating the namespace, then you must also create the table')
+
     def ingest_arguments(self):
-        for key,val in list(vars(self.parsed_arguments).items()):
+        for key,val in vars(self.parsed_arguments).items():
             if not hasattr(self, key):
                 setattr(self, key, val)
             else:
@@ -208,9 +214,7 @@ if __name__ == "__main__":
         if arguments.create_namespace:
             dump_namespace_sql(arguments, namespace)
 
-            # dump table-creation sql
-            dump_table_sql(arguments, series)
-        elif not arguments.create_table:
+        if arguments.create_table:
             # dump table-creation sql
             dump_table_sql(arguments, series)
 
