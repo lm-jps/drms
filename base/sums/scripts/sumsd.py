@@ -1704,12 +1704,19 @@ class AllocResponse(Response):
 class SUFileOwnerModUpdater(object):
     _updater_lock = None
     _updater_lock_path = None
-    _update_lock_type = None
+    _updater_lock_type = None
     _thread_lock = threading.Lock()
 
-    def __init__(self):
+    def __init__(self, log=None):
         if self._updater_lock is None:
             raise SUFileOwnerModUpdaterException('cannot instantiate updater for ' + self.__class__.__name__ + '; lock file not set')
+
+        self._log = log
+        if self._log:
+            log.write_debug([ '[ SUFileOwnerModUpdater.__init__ ] creating {updater_type} updater'.format(updater_type=str(self)) ])
+
+    def __str__(self):
+        return self.__class__.__name__
 
     @classmethod
     def set_lock_file(cls, *, lock_path, type):
@@ -1728,9 +1735,20 @@ class SUFileOwnerModUpdater(object):
         if cls._thread_lock:
             cls._thread_lock.release()
 
+    @classmethod
+    def create_updater(cls, worker):
+        if worker.log:
+            worker.log.write_debug([ '[ SUFileOwnerModUpdater.create_updater ]'])
+        if cls._updater_lock_type == 'put':
+            return PutFileUpdater(log=worker.log)
+        elif cls._updater_lock_type == 'chmown':
+            return SumChmownUpdater(chmown_path=worker.chmown_path, log=worker.log)
+        else:
+            raise ArgsException('[ SUFileOwnerModUpdater.create_updater ] must specify lock type before creating file owner/privileges updater')
+
 class SumChmownUpdater(SUFileOwnerModUpdater):
-    def __init__(self, *, chmown_path):
-        super(SumChmownUpdater, self).__init__()
+    def __init__(self, *, chmown_path, log=None):
+        super(SumChmownUpdater, self).__init__(log)
         self._chmown_path = chmown_path
 
     def update(self, su_path):
@@ -1739,6 +1757,7 @@ class SumChmownUpdater(SUFileOwnerModUpdater):
 
         self._updater_lock.acquireLock() # file lock
         try:
+            self._log.write_debug([ '[ SumChmownUpdater.update ] running {cmd}'.format(cmd=' '.join(cmd_list)) ])
             check_call(cmd_list)
         except CalledProcessError as exc:
             raise SumsChmownException('failure calling ' +  self.sum_chmown_path)
@@ -1747,8 +1766,8 @@ class SumChmownUpdater(SUFileOwnerModUpdater):
             self._updater_lock.close(False)
 
 class PutFileUpdater(SUFileOwnerModUpdater):
-    def __init__(self):
-        super(PutFileUpdater, self).__init__()
+    def __init__(self, log=None):
+        super(PutFileUpdater, self).__init__(log)
 
     def update(self, su_path):
         # we are inside thread lock
@@ -1757,20 +1776,23 @@ class PutFileUpdater(SUFileOwnerModUpdater):
         try:
             dir, file = os.path.split(self._updater_lock_path)
             tmp_file = os.path.join(dir, '.' + file)
+            self._log.write_debug([ '[ PutFileUpdater.update ] acquiring updater lock' ])
             self._updater_lock.acquireLock()
             try:
                 # lock file is open for appending
                 if os.path.exists(tmp_file):
+                    self._log.write_debug([ '[ PutFileUpdater.update ] temporary put file {tmp_file} exists; copying to put file {lock_file}'.format(tmp_file=tmp_file, lock_file=self._updater_lock_path) ])
                     # a tmp file exists; we have the lock now, so write its contents to the lock file
                     with open(tmp_file, mode='r') as fin:
                         for block in iter(partial(fin.read, 1024), ''):
-                            # block is text
+                            # block is text; write SU to lock file
                             self._updater_lock.write_to_file(block)
 
                     # delete the tmp file
                     unlink(tmp_file)
 
-                # now write current SUNUM
+                # now write current SU to lock file
+                self._log.write_debug([ '[ PutFileUpdater.update ] writing SU {su} to {lock_file}'.format(su=su_path, lock_file=self._updater_lock_path) ])
                 self._updater_lock.write_to_file(su_path)
             except OSError as error:
                 xxx
@@ -1801,7 +1823,7 @@ class PutResponse(Response):
     def __init__(self, request, status, dest=None):
         super(PutResponse, self).__init__(request, status)
 
-        self._file_owner_mod_updater = self._create_updater()
+        self._file_owner_mod_updater = SUFileOwnerModUpdater.create_updater(self.request.worker)
 
         try:
             # We have to change ownership of the SU files to the production user - ACK! This is really bad design. It seems like
@@ -1846,6 +1868,7 @@ class PutResponse(Response):
                 sus.append(suStr)
 
                 if self._file_owner_mod_updater is not None:
+                    self.request.worker.log.write_debug([ '[ PutResponse.__init__ ] calling SU ownership/privs updater' ])
                     # must acquire thread lock since update() will acquire file lock
                     self._file_owner_mod_updater.acquire_thread_lock()
                     try:
@@ -1948,12 +1971,6 @@ class PutResponse(Response):
             self.exeDbCmdNoResult()
 
             raise
-
-    def _create_updater(self):
-        if self._update_lock_type == 'put':
-            self._file_owner_mod_updater = PutFileUpdater()
-        elif self._update_lock_type == 'chmown':
-            self._file_owner_mod_updater = SumChmownUpdater(chmown_path=self.request.worker.chmown_path)
 
     def _stringify(self):
         if not hasattr(self, 'rspDict'):
@@ -2838,11 +2855,6 @@ if __name__ == "__main__":
         put_file_path = sumsDrmsParams.get('SUMS_PUT_FILE')
         sum_chmown_path = os.path.join(sumsDrmsParams.get('SUMBIN_BASEDIR'), 'sum_chmown')
 
-        if put_file_path is not None:
-            SUFileOwnerModUpdater.set_lock_file(lock_path=put_file_path, type='put')
-        elif sum_chmown_path is not None and os.path.exists(sum_chmown_path):
-            SUFileOwnerModUpdater.set_lock_file(lock_path=os.path.join(sumsDrmsParams.get('DRMS_LOCK_DIR'), SUMS_CHMOWN_LOCK_FILE), type='chmown')
-
         Worker.setMaxThreads(int(arguments.getArg('maxconn')))
         pid = os.getpid()
 
@@ -2858,6 +2870,16 @@ if __name__ == "__main__":
             raise LogException('unable to initialize logging')
 
         log.write_critical([ 'starting sumsd.py server' ])
+
+        if put_file_path is not None:
+            log.write_debug([ '[ __main__ ] initializing updater lock file {lock_file} for put'.format(lock_file=put_file_path) ])
+            SUFileOwnerModUpdater.set_lock_file(lock_path=put_file_path, type='put')
+        elif sum_chmown_path is not None and os.path.exists(sum_chmown_path):
+            lock_path=os.path.join(sumsDrmsParams.get('DRMS_LOCK_DIR'), SUMS_CHMOWN_LOCK_FILE)
+            log.write_debug([ '[ __main__ ] initializing updater lock file {lock_file} for chmown'.format(lock_file=lock_path) ])
+            SUFileOwnerModUpdater.set_lock_file(lock_file=lock_path, type='chmown')
+        else:
+            log.write_warning([ '[ __main__ ] no file owner/priv updater specified' ])
 
         thContainer = [ arguments, str(pid), log ]
         with TerminationHandler(thContainer) as th:
