@@ -18,6 +18,7 @@ import uuid
 import logging
 import argparse
 import inspect
+from functools import partial
 from subprocess import check_call, CalledProcessError
 from multiprocessing import Process, Lock
 from multiprocessing.sharedctypes import Value
@@ -28,6 +29,7 @@ sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../..
 from drmsparams import DRMSParams
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../base/libs/py'))
 from drmsCmdl import CmdlParser
+from drmsLock import DrmsLock
 
 if sys.version_info < (3, 2):
     raise Exception('you must run the 3.2 release, or a more recent release, of Python')
@@ -71,7 +73,8 @@ RV_GENERATERESPONSE = 19
 RV_IMPLEMENTATION = 20
 RV_TAPEREQUEST = 21
 RV_SUMSCHMOWN = 22
-RV_UNKNOWNERROR = 23
+RV_SU_OWNER_MOD_FILE_UPDATER = 23
+RV_UNKNOWNERROR = 24
 
 
 # Request types
@@ -108,6 +111,8 @@ IS_ALIVE = 'is-alive'
 
 # Maximum number of DB rows returned
 MAX_MTSUMS_NSUS = 32768
+
+SUMS_CHMOWN_LOCK_FILE = '.sum_chmown_lock'
 
 def terminator(*args):
     # Raise the SystemExit exception (which will be caught by the __exit__() method below).
@@ -151,11 +156,11 @@ class TerminationHandler(object):
     # __exit__() will be bypassed if a SIGTERM signal is received. Use the signal handler installed in the
     # __enter__() call to handle SIGTERM.
     def __exit__(self, etype, value, traceback):
-        self.log.writeInfo([ 'TerminationHandler.__exit__() called' ])
+        self.log.write_info([ 'TerminationHandler.__exit__() called' ])
 
         # clean up DB connections
         DBConnection.closeAll()
-        self.log.writeInfo([ 'termination handler closed all DB connections' ])
+        self.log.write_info([ 'termination handler closed all DB connections' ])
 
         # wait for Worker threads to exit
         while True:
@@ -176,7 +181,7 @@ class TerminationHandler(object):
                 # can't hold worker lock here - when the worker terminates, it acquires the same lock;
                 # due to a race condition in tList (we had to release the tList lock), we have to check
                 # to see if the worker is alive before joining it.
-                self.log.writeInfo([ 'termination handler waiting for worker ' +  worker.getID() + ' to terminate' ])
+                self.log.write_info([ 'termination handler waiting for worker ' +  worker.getID() + ' to terminate' ])
                 worker.join() # will block, possibly for ever
 
         if etype == self.Break:
@@ -285,31 +290,31 @@ class Log(object):
         frame, fileName, lineNo, fxn, context, index = inspect.stack()[2]
         return os.path.basename(fileName) + ':' + str(lineNo) + ': ' + msg
 
-    def writeDebug(self, text):
+    def write_debug(self, text):
         if self.log:
             for line in text:
                 self.log.debug(self.__prependFrameInfo(line))
             self.fileHandler.flush()
 
-    def writeInfo(self, text):
+    def write_info(self, text):
         if self.log:
             for line in text:
                 self.log.info(self.__prependFrameInfo(line))
         self.fileHandler.flush()
 
-    def writeWarning(self, text):
+    def write_warning(self, text):
         if self.log:
             for line in text:
                 self.log.warning(self.__prependFrameInfo(line))
             self.fileHandler.flush()
 
-    def writeError(self, text):
+    def write_error(self, text):
         if self.log:
             for line in text:
                 self.log.error(self.__prependFrameInfo(line))
             self.fileHandler.flush()
 
-    def writeCritical(self, text):
+    def write_critical(self, text):
         if self.log:
             for line in text:
                 self.log.critical(self.__prependFrameInfo(line))
@@ -454,6 +459,12 @@ class SumsChmownException(SDException):
     def __init__(self, msg):
         super(SumsChmownException, self).__init__(msg)
 
+class SUFileOwnerModUpdaterException(SDException):
+
+    retcode = RV_SU_OWNER_MOD_FILE_UPDATER
+    def __init__(self, msg):
+        super(SUFileOwnerModUpdaterException, self).__init__(msg)
+
 
 class DBConnection(object):
     connList = [] # list of existing DB connections
@@ -509,7 +520,7 @@ class DBConnection(object):
 
         try:
             self.conn = psycopg2.connect(host=self.host, port=self.port, database=self.database, user=self.user)
-            self.log.writeInfo([ 'user ' + self.user + ' successfully connected to ' + self.database + ' database: ' + self.host + ':' + str(self.port) + ' - id ' + self.id ])
+            self.log.write_info([ 'user ' + self.user + ' successfully connected to ' + self.database + ' database: ' + self.host + ':' + str(self.port) + ' - id ' + self.id ])
         except psycopg2.DatabaseError as exc:
             # Closes the cursor and connection
             if hasattr(exc, 'diag') and hasattr(exc.diag, 'message_primary'):
@@ -526,7 +537,7 @@ class DBConnection(object):
         finally:
             DBConnection.connListLock.release()
 
-        self.log.writeDebug([ 'added connection ' + self.id + ' to connection list and free connection list' ])
+        self.log.write_debug([ 'added connection ' + self.id + ' to connection list and free connection list' ])
 
     def closeConnection(self):
         if not self.conn:
@@ -536,13 +547,13 @@ class DBConnection(object):
             DBConnection.connListLock.acquire()
             try:
                 self.conn.close()
-                self.log.writeInfo([ 'closed DB connection ' + self.id ])
+                self.log.write_info([ 'closed DB connection ' + self.id ])
 
                 if self in DBConnection.connListFree:
                     DBConnection.connListFree.remove(self)
-                    self.log.writeDebug([ 'removed DB connection ' + self.id + ' from free connection list'])
+                    self.log.write_debug([ 'removed DB connection ' + self.id + ' from free connection list'])
                 DBConnection.connList.remove(self)
-                self.log.writeDebug([ 'removed DB connection ' + self.id + ' from connection list'])
+                self.log.write_debug([ 'removed DB connection ' + self.id + ' from connection list'])
 
             finally:
                 DBConnection.connListLock.release()
@@ -1204,11 +1215,11 @@ class Response(object):
             self.rspDict = { 'status' : self.data['status'] }
 
     def exeDbCmd(self):
-        self.request.worker.log.writeDebug([ 'db command is: ' + self.cmd ])
+        self.request.worker.log.write_debug([ 'db command is: ' + self.cmd ])
         self.request.worker.dbconn.exeCmd(self.cmd, self.dbRes, True)
 
     def exeDbCmdNoResult(self):
-        self.request.worker.log.writeDebug([ 'db command is: ' + self.cmd ])
+        self.request.worker.log.write_debug([ 'db command is: ' + self.cmd ])
         self.request.worker.dbconn.exeCmd(self.cmd, None, False)
 
 
@@ -1234,7 +1245,7 @@ class ErrorResponse(Response):
         super(ErrorResponse, self).__init__(request, status)
         msg = 'Unable to create ' + request.reqType + ' response: ' + errMsg
 
-        request.worker.log.writeDebug([ 'error: status (' + str(status) + '), msg (' + msg + ')' ])
+        request.worker.log.write_debug([ 'error: status (' + str(status) + '), msg (' + msg + ')' ])
 
         self.data['errmsg'] = msg
 
@@ -1458,7 +1469,7 @@ class GetResponse(Response):
         if self.request.data.touch:
             if self.request.data.retention < 0:
                 # If the retention value is negative, then set the effective_date to max(today + -retention, current effective date).
-                # WTAF! effective_date is a DB string! A string! It has the format YYYYMMDDHHMM - no time zone. Use DB's timestamp
+                # The effective_date is a DB string - a string! It has the format YYYYMMDDHHMM - no time zone. Use DB's timestamp
                 # functions to use math on effective_date.
                 #
                 # A status of 8 implies a read-only SU. Add "3 days grace".
@@ -1536,7 +1547,7 @@ class GetResponse(Response):
                 else:
                     # If the DRMS does not have a tape system, then archive_status should never be anything other than 'N'. But
                     # just to be sure, check the tape-system attribute of SUMS.
-                    if self.request.worker.hasTapeSys and self.info[str(sunum)]['archived']:
+                    if self.request.worker.has_tape_sys and self.info[str(sunum)]['archived']:
                         self.info[str(sunum)]['readfromtape'] = True
                     else:
                         self.info[str(sunum)]['readfromtape'] = False
@@ -1578,7 +1589,7 @@ class AllocResponse(Response):
         # is mapped to a partition set id (an integer)
         #
         # for a system with a single partition set, the partition set has an id of 0
-        if self.request.worker.hasMultPartSets:
+        if self.request.worker.has_mult_part_sets:
             if hasattr(self.request.data, 'sugroup'):
                 self.dbRes = []
                 self.cmd = 'SELECT sum_set FROM ' + SUM_ARCH_GROUP + ' WHERE group_id = ' + str(self.request.data.sugroup)
@@ -1622,12 +1633,12 @@ class AllocResponse(Response):
             proc.join(2) # timeout after 2 seconds
 
             if proc.exitcode is None:
-                self.request.worker.log.writeWarning([ 'os.statvfs(' + row[0] + ') did not terminate; skipping partition' ])
+                self.request.worker.log.write_warning([ 'os.statvfs(' + row[0] + ') did not terminate; skipping partition' ])
                 proc.terminate()
                 continue
 
             if availBytes.value >= self.request.data.numbytes:
-                self.request.worker.log.writeDebug([ 'partition ' + row[0] + ' has sufficient disk space; added to available list' ])
+                self.request.worker.log.write_debug([ 'partition ' + row[0] + ' has sufficient disk space; added to available list' ])
                 partitions.append(row[0])
 
         # if the request contains a SUNUM, then that SUNUM becomes the id of the SU being allocated; otherwise,
@@ -1648,7 +1659,7 @@ class AllocResponse(Response):
         # partitions.
         randIndex = random.randint(0, len(partitions) - 1)
         partition = partitions[randIndex]
-        self.request.worker.log.writeDebug([ 'partition ' + partition + ' was randomly chosen to satisfy allocation request' ])
+        self.request.worker.log.write_debug([ 'partition ' + partition + ' was randomly chosen to satisfy allocation request' ])
         sudir = os.path.join(partition, 'D' + str(sunum))
 
         try:
@@ -1684,7 +1695,7 @@ class AllocResponse(Response):
         # but there were filesys changes that have to be undone
         if os.path.exists(self.data['sudir']):
             shutil.rmtree(self.data['sudir'])
-        self.request.worker.log.writeDebug([ 'undid alloc mkdir for client ' + str(self.request.worker.getID()) ])
+        self.request.worker.log.write_debug([ 'undid alloc mkdir for client ' + str(self.request.worker.getID()) ])
 
     @classmethod
     def __callStatvfs(cls, suPartitionPath, rv):
@@ -1692,10 +1703,107 @@ class AllocResponse(Response):
         if fsStats is not None and hasattr(fsStats, 'f_bsize') and hasattr(fsStats, 'f_bavail'):
             rv.value = fsStats.f_bsize * fsStats.f_bavail
 
+class SUFileOwnerModUpdater(object):
+    _updater_lock = None
+    _updater_lock_path = None
+    _update_lock_type = None
+    _thread_lock = threading.Lock()
+
+    def __init__(self):
+        if self._updater_lock is None:
+            raise SUFileOwnerModUpdaterException('cannot instantiate updater for ' + self.__class__.__name__ + '; lock file not set')
+
+    @classmethod
+    def set_lock_file(cls, *, lock_path, type):
+        # create lock file so that only one sum_chmown at a time, or one user editing put_file in 10 seconds
+        cls._updater_lock = DrmsLock(lock_path, None, True) # None ==> do not automatically write content to file, True ==> retry 10 times
+        cls._updater_lock_path = lock_path
+        cls._updater_lock_type = type
+
+    @classmethod
+    def acquire_thread_lock(cls):
+        if cls._thread_lock:
+            cls._thread_lock.acquire()
+
+    @classmethod
+    def release_thread_lock(cls):
+        if cls._thread_lock:
+            cls._thread_lock.release()
+
+class SumChmownUpdater(SUFileOwnerModUpdater):
+    def __init__(self, *, chmown_path):
+        super(SumChmownUpdater, self).__init__()
+        self._chmown_path = chmown_path
+
+    def update(self, su_path):
+        # we are inside thread lock
+        cmd_list = [ self._chmown_path, su_path ]
+
+        self._updater_lock.acquireLock() # file lock
+        try:
+            check_call(cmd_list)
+        except CalledProcessError as exc:
+            raise SumsChmownException('failure calling ' +  self.sum_chmown_path)
+        finally:
+            self._updater_lock.releaseLock()
+            self._updater_lock.close(False)
+
+class PutFileUpdater(SUFileOwnerModUpdater):
+    def __init__(self):
+        super(PutFileUpdater, self).__init__()
+
+    def update(self, su_path):
+        # we are inside thread lock
+        # write to tmp file in case we cannot acquire lock; then the next time lock IS acquired, copy from tmp file to lock file
+        write_to_tmp = False
+        try:
+            dir, file = os.path.split(self._updater_lock_path)
+            tmp_file = os.path.join(dir, '.' + file)
+            self._updater_lock.acquireLock()
+            try:
+                # lock file is open for appending
+                if os.path.exists(tmp_file):
+                    # a tmp file exists; we have the lock now, so write its contents to the lock file
+                    with open(tmp_file, mode='r') as fin:
+                        for block in iter(partial(fin.read, 1024), ''):
+                            # block is text
+                            self._updater_lock.write_to_file(block)
+
+                    # delete the tmp file
+                    unlink(tmp_file)
+
+                # now write current SUNUM
+                self._updater_lock.write_to_file(su_path)
+            except OSError as error:
+                xxx
+
+            finally:
+                self._updater_lock.releaseLock()
+                self._updater_lock.close(False)
+        except Exception as error:
+            if len(error.args) == 2:
+                type, msg = error
+                if type == 'drmsLock':
+                    # could not obtain lock (after trying for 10 seconds); write to tmp file
+                    write_to_tmp = True
+                else:
+                    raise
+            else:
+                raise
+
+        if write_to_tmp:
+            try:
+                with open(tmp_file, mode='a') as f_tmp:
+                    tmp_file.write(su_path)
+            except OSError:
+                xxx
+
 
 class PutResponse(Response):
     def __init__(self, request, status, dest=None):
         super(PutResponse, self).__init__(request, status)
+
+        self._file_owner_mod_updater = self._create_updater()
 
         try:
             # We have to change ownership of the SU files to the production user - ACK! This is really bad design. It seems like
@@ -1723,10 +1831,10 @@ class PutResponse(Response):
                 raise DBCommandException('unexpected DB response to cmd: ' + self.cmd)
 
             if self.dbRes[0][0] != len(partitionsNoDupes):
-                self.request.worker.log.writeDebug([ 'number of unique partitions in request: ' + str(len(partitionsNoDupes)), 'number of matching partitions in DB: ' + str(self.dbRes[0][0])] )
+                self.request.worker.log.write_debug([ 'number of unique partitions in request: ' + str(len(partitionsNoDupes)), 'number of matching partitions in DB: ' + str(self.dbRes[0][0])] )
                 raise ArgsException('one or more invalid paritition paths')
 
-            if self.request.worker.hasTapeSys:
+            if self.request.worker.has_tape_sys:
                 apStatus = DAAP
             else:
                 apStatus = DADP
@@ -1734,18 +1842,18 @@ class PutResponse(Response):
             # This horrible program operates on a single SU at a time, so we have to call it in a loop.
             sudirs = []
             sus = []
-            sumChmownPath = os.path.join(self.request.worker.sumsBinDir, 'sum_chmown')
             for elem in self.request.data.sudirsNoDupes:
                 [(suStr, path)] = elem.items()
                 sudirs.append(path)
                 sus.append(suStr)
 
-                cmdList = [ sumChmownPath, path ]
-
-                try:
-                    check_call(cmdList)
-                except CalledProcessError as exc:
-                    raise SumsChmownException('failure calling ' +  sumChmownPath)
+                if self._file_owner_mod_updater is not None:
+                    # must acquire thread lock since update() will acquire file lock
+                    self._file_owner_mod_updater.acquire_thread_lock()
+                    try:
+                        self._file_owner_mod_updater.update(path)
+                    finally:
+                        self._file_owner_mod_updater.release_thread_lock()
 
             # If all file permission and ownership changes succeed, then commit the SUs to the SUMS database.
 
@@ -1781,7 +1889,7 @@ class PutResponse(Response):
                 # default to storage set 0 for all groups
                 storageSet[group] = 0
 
-            if self.request.worker.hasMultPartSets:
+            if self.request.worker.has_mult_part_sets:
                 self.dbRes = []
                 self.cmd = 'SELECT group_id, sum_set FROM ' + SUM_ARCH_GROUP + ' WHERE group_id IN (' + ','.join(allStorageGroups) + ')'
                 self.exeDbCmd()
@@ -1814,11 +1922,11 @@ class PutResponse(Response):
             # Set apstatus: if SUMS_TAPE_AVAILABLE ==> DAAP (4), else DADP (2), set archsub to one of DAAPERM, DAAEDDP, or DAADP,
             # depending on flags, set effective_date to tdays in the future (with format "%04d%02d%02d%02d%02d"). safe_id is 0
             # (it looks obsolete). Insert all of this into sum_partn_alloc.
-            if self.request.data.archivetype == 'permanent+archive' and self.request.worker.hasTapeSys:
+            if self.request.data.archivetype == 'permanent+archive' and self.request.worker.has_tape_sys:
                 archsub = DAAPERM
             elif self.request.data.archivetype == 'temporary+noarchive':
                 archsub = DAAEDDP
-            elif self.request.data.archivetype == 'temporary+archive' and self.request.worker.hasTapeSys:
+            elif self.request.data.archivetype == 'temporary+archive' and self.request.worker.has_tape_sys:
                 archsub = DAADP
             else:
                 archsub = DAAEDDP
@@ -1843,6 +1951,12 @@ class PutResponse(Response):
 
             raise
 
+    def _create_updater(self):
+        if self._update_lock_type == 'put':
+            self._file_owner_mod_updater = PutFileUpdater()
+        elif self._update_lock_type == 'chmown':
+            self._file_owner_mod_updater = SumChmownUpdater(chmown_path=self.request.worker.chmown_path)
+
     def _stringify(self):
         if not hasattr(self, 'rspDict'):
             super(PutResponse, self)._createRspDict()
@@ -1851,6 +1965,7 @@ class PutResponse(Response):
         # all DB changes will be rolled back on error, so no DB changes to do here;
         # but sum_chmown was called - ugh, punt!
         pass
+
 
 class DeleteseriesResponse(Response):
     def __init__(self, request, status, dest=None):
@@ -2104,7 +2219,7 @@ class Message(object):
                 num_bytes_sent_total += num_bytes_sent
             except socket.timeout as exc:
                 if self.log:
-                    self.log.writeDebug([ 'waiting for client ' + self.peer_name + ' to receive response...' ])
+                    self.log.write_debug([ 'waiting for client ' + self.peer_name + ' to receive response...' ])
 
         # then send the actual message
         num_bytes_sent_total = 0
@@ -2119,10 +2234,10 @@ class Message(object):
                 num_bytes_sent_total += num_bytes_sent
             except socket.timeout as exc:
                 if self.log:
-                    self.log.writeDebug([ 'waiting for client ' + self.peer_name + ' to receive response...' ])
+                    self.log.write_debug([ 'waiting for client ' + self.peer_name + ' to receive response...' ])
 
         if self.log:
-            self.log.writeDebug([ 'sent ' + str(num_bytes_sent_total) + ' bytes response to client ' + self.peer_name ])
+            self.log.write_debug([ 'sent ' + str(num_bytes_sent_total) + ' bytes response to client ' + self.peer_name ])
 
     def receive(self):
         # First, receive length of message.
@@ -2144,7 +2259,7 @@ class Message(object):
                 num_bytes_received_total += len(bytes_received)
             except socket.timeout as exc:
                 if self.log:
-                    self.log.writeDebug([ 'waiting for client ' + self.peer_name + ' to send request...' ])
+                    self.log.write_debug([ 'waiting for client ' + self.peer_name + ' to send request...' ])
 
         # Convert hex string to number.
         num_bytes_message = int(all_bytes_received.decode('UTF-8'), 16)
@@ -2164,10 +2279,10 @@ class Message(object):
                 all_bytes_received += bytes_received
                 num_bytes_received_total += len(bytes_received)
             except socket.timeout as exc:
-                self.log.writeDebug([ 'waiting for client ' + self.peer_name + ' to send request...' ])
+                self.log.write_debug([ 'waiting for client ' + self.peer_name + ' to send request...' ])
 
         if self.log:
-            self.log.writeDebug([ 'received ' + str(num_bytes_received_total) + ' bytes request from client ' + self.peer_name ])
+            self.log.write_debug([ 'received ' + str(num_bytes_received_total) + ' bytes request from client ' + self.peer_name ])
 
         # Return a bytes object (not a string). The unjsonize function will need a str object for input.
         return all_bytes_received
@@ -2180,24 +2295,24 @@ class Worker(threading.Thread):
     maxThreads = 32 # Default. Can be overriden with the Worker.setMaxThreads() method.
     eventMaxThreads = threading.Event() # Event fired when the number of threads decreases below threshold.
 
-    def __init__(self, sock, hasTapeSys, hasMultPartSets, sumsBinDir, timeout, log):
+    def __init__(self, *, sock, has_tape_sys, has_mult_part_sets, timeout, chmown_path, log):
         threading.Thread.__init__(self, target=self.__run)
         # Could raise. Handle in the code that creates the thread.
-        if sock is None or sumsBinDir is None or log is None:
-            raise ArgsException('Worker thread constructor: neither sock nor sumsBinDir nor log can be None')
+        if sock is None or log is None:
+            raise ArgsException('Worker thread constructor: neither sock nor log can be None')
 
         self.sock = sock
-        self.hasTapeSys = hasTapeSys
-        self.hasMultPartSets = hasMultPartSets
-        self.sumsBinDir = sumsBinDir
-        self.clientResponseTimeout = timeout
+        self.has_tape_sys = has_tape_sys
+        self.has_mult_part_sets = has_mult_part_sets
+        self.client_response_timeout = timeout
+        self.chmown_path = chmown_path
         self.log = log
         self.reqFactory = None
         self.msgLock = threading.Lock()
         self.messageSent = True # disable alive server until we receive a request
         self.aliveServer = None
 
-        self.log.writeDebug([ 'successfully instantiated worker for connection ' + str(self.sock.getpeername()) ])
+        self.log.write_debug([ 'successfully instantiated worker for connection ' + str(self.sock.getpeername()) ])
 
     def __run(self):
         try:
@@ -2214,11 +2329,11 @@ class Worker(threading.Thread):
                 self.peerName = peerName
 
                 # obtain a DB session - blocks until that happens
-                self.log.writeDebug([ 'client ' + peerName + ' is waiting for a DB connection' ])
+                self.log.write_debug([ 'client ' + peerName + ' is waiting for a DB connection' ])
 
                 self.dbconn = DBConnection.nextOpenConnection()
 
-                self.log.writeDebug([ 'client ' + peerName + ' obtained DB connection ' + self.dbconn.getID() ])
+                self.log.write_debug([ 'client ' + peerName + ' obtained DB connection ' + self.dbconn.getID() ])
 
                 while True:
                     # The client must pass in some identifying information (other than their IP address).
@@ -2274,9 +2389,9 @@ class Worker(threading.Thread):
                                     raise SessionRolledbackException('cannot process a ' + self.request.getType() + ' request - the SUMS session must be closed or rolled back by client ' + peerName)
 
                         if self.log.log.getEffectiveLevel() == logging.INFO:
-                            self.log.writeInfo([ 'new ' + self.request.reqType + ' request from process ' + str(self.clientInfo.data.pid) + ' by user ' + self.clientInfo.data.user + ' at ' + peerName + ':' + str(self.request) ])
+                            self.log.write_info([ 'new ' + self.request.reqType + ' request from process ' + str(self.clientInfo.data.pid) + ' by user ' + self.clientInfo.data.user + ' at ' + peerName + ':' + str(self.request) ])
                         else:
-                            self.log.writeInfo([ 'new ' + self.request.reqType + ' request from process ' + str(self.clientInfo.data.pid) + ' by user ' + self.clientInfo.data.user + ' at ' + peerName + ':' + repr(self.request) ])
+                            self.log.write_info([ 'new ' + self.request.reqType + ' request from process ' + str(self.clientInfo.data.pid) + ' by user ' + self.clientInfo.data.user + ' at ' + peerName + ':' + repr(self.request) ])
 
                         json_string = self.generateResponse() # a str object; generating a response can modify the DB and commit changes
 
@@ -2326,20 +2441,20 @@ class Worker(threading.Thread):
                         json_string = self.generateErrorResponse(RESPSTATUS_SESSIONROLLEDBACK, str(exc))
                     except GenerateResponseException as exc:
                         rollback = True
-                        self.log.writeError([ 'failure creating response' ])
-                        self.log.writeError([ str(exc) ])
+                        self.log.write_error([ 'failure creating response' ])
+                        self.log.write_error([ str(exc) ])
                         import traceback
-                        self.log.writeError([ traceback.format_exc(3) ])
+                        self.log.write_error([ traceback.format_exc(3) ])
                         json_string = self.generateErrorResponse(RESPSTATUS_GENRESPONSE, str(exc))
                     except Exception as exc:
                         # should never get here, but in case I missed somethinig
                         rollback = True
                         import traceback
-                        self.log.writeError([ traceback.format_exc(5) ])
+                        self.log.write_error([ traceback.format_exc(5) ])
                         json_string = self.generateErrorResponse(RESPSTATUS_SERVICEREQUEST, str(exc))
 
                     if hasattr(self, 'response') and self.response:
-                        self.log.writeDebug([ 'response:' + str(self.response) ])
+                        self.log.write_debug([ 'response:' + str(self.response) ])
                     # Send results back on the socket, which is connected to a single DRMS module. By sending the results
                     # back, the client request is completed. We want to construct a list of "SUM_info" objects. Each object
                     # { sunum:12592029, onlineloc:'/SUM52/D12592029', ...}
@@ -2350,7 +2465,7 @@ class Worker(threading.Thread):
                     try:
                         self.send_json(json_string) # expects a str object; can block if the socket buffer is full (the client needs to read
                                                     # from the socket; if the client terminates, this will unblock a blocked write too)
-                        self.log.writeDebug([ 'sent response to ' + peerName ])
+                        self.log.write_debug([ 'sent response to ' + peerName ])
                     finally:
                         self.messageSent = True
                         self.msgLock.release()
@@ -2386,22 +2501,22 @@ class Worker(threading.Thread):
                     # the client closed their end of the socket (they shutdown the write half of the socket);
                     # so the client most likely called shutdown() followed by close(); however, the client could
                     # have crashed before shutting down the connection, in which case, it will implicitly be shut down
-                    self.log.writeDebug([ 'client ' + peerName + ' properly terminated connection' ])
+                    self.log.write_debug([ 'client ' + peerName + ' properly terminated connection' ])
                 else:
-                    self.log.writeDebug([ 'client ' + peerName + ' sent extraneous data over socket connection (ignoring)' ])
+                    self.log.write_debug([ 'client ' + peerName + ' sent extraneous data over socket connection (ignoring)' ])
             except SocketConnectionException as exc:
                 # Don't send message back - we can't communicate with the client properly, so only log a message on the server side.
-                self.log.writeError([ 'there was a problem communicating with client ' + peerName ])
-                self.log.writeError([ str(exc) ])
+                self.log.write_error([ 'there was a problem communicating with client ' + peerName ])
+                self.log.write_error([ str(exc) ])
                 rollback = True
             except SendMsgException as exc:
                 # Don't send message back - we can't communicate with the client properly, so only log a message on the server side.
-                self.log.writeError([ 'there was a problem communicating with client ' + peerName ])
-                self.log.writeError([ str(exc) ])
+                self.log.write_error([ 'there was a problem communicating with client ' + peerName ])
+                self.log.write_error([ str(exc) ])
                 rollback = True
             except Exception as exc:
                 import traceback
-                self.log.writeError([ traceback.format_exc(5) ])
+                self.log.write_error([ traceback.format_exc(5) ])
                 rollback = True
 
             # if for some reason the client is still waiting for data to be sent, send it an EOF; also, if the client is somehow
@@ -2426,14 +2541,14 @@ class Worker(threading.Thread):
         finally:
             # stop the alive server
             if self.aliveServer and self.aliveServer.is_alive():
-                self.log.writeDebug([ 'stopping alive server for client ' + peerName ])
+                self.log.write_debug([ 'stopping alive server for client ' + peerName ])
                 self.aliveServer.stop()
                 self.aliveServer.join(5.0) # should stop quickly since the worker is not holding the msgLock
 
             # We need to check the class tList variable to update it, so we need to acquire the lock.
             try:
                 Worker.lockTList()
-                self.log.writeDebug([ 'class Worker acquired Worker lock for client ' + peerName ])
+                self.log.write_debug([ 'class Worker acquired Worker lock for client ' + peerName ])
                 Worker.tList.remove(self) # This thread is no longer one of the running threads.
                 if len(Worker.tList) == Worker.maxThreads - 1:
                     # Fire event so that main thread can add new SUs to the download queue.
@@ -2442,18 +2557,18 @@ class Worker(threading.Thread):
                     Worker.eventMaxThreads.clear()
             except Exception as exc:
                 import traceback
-                self.log.writeError([ 'there was a problem closing the Worker thread for client ' + speerName ])
-                self.log.writeError([ traceback.format_exc(0) ])
+                self.log.write_error([ 'there was a problem closing the Worker thread for client ' + speerName ])
+                self.log.write_error([ traceback.format_exc(0) ])
             finally:
                 Worker.unlockTList()
-                self.log.writeDebug([ 'class Worker released Worker lock for client ' + peerName ])
+                self.log.write_debug([ 'class Worker released Worker lock for client ' + peerName ])
 
                 # do not close DB connection, but release it for the next worker
                 self.dbconn.release()
-                self.log.writeDebug([ 'worker released DB connection ' + self.dbconn.getID() + ' for client ' + peerName ])
+                self.log.write_debug([ 'worker released DB connection ' + self.dbconn.getID() + ' for client ' + peerName ])
 
                 # always close the server-side of client-socket pair
-                self.log.writeDebug([ 'closing the server side of client socket ' + peerName ])
+                self.log.write_debug([ 'closing the server side of client socket ' + peerName ])
                 self.sock.close()
 
     def getID(self):
@@ -2478,7 +2593,7 @@ class Worker(threading.Thread):
         #
         # The pid is a JSON number, which could be a double string. But the client
         # will make sure that the number is a 32-bit integer.
-        self.log.writeDebug([ self.getID() + ' extracting client info' ])
+        self.log.write_debug([ self.getID() + ' extracting client info' ])
 
         clientInfo = Unjsonizer(msg)
 
@@ -2522,7 +2637,7 @@ class Worker(threading.Thread):
     # returns a bytes
     def receive_msg(self):
         # big timeout when receiving (client might be processing)
-        message = Message(msg=None, sock=self.sock, timeout=self.clientResponseTimeout * 60, peer_name=self.getID(), log=self.log)
+        message = Message(msg=None, sock=self.sock, timeout=self.client_response_timeout * 60, peer_name=self.getID(), log=self.log)
         return message.receive()
 
     # json_string is a str
@@ -2536,8 +2651,8 @@ class Worker(threading.Thread):
 
     # Must acquire Worker lock BEFORE calling newThread() since newThread() will append to tList (the Worker threads will be deleted from tList as they complete).
     @staticmethod
-    def newThread(sock, hasTapeSys, hasMultPartSets, sumsBinDir, timeout, log):
-        worker = Worker(sock, hasTapeSys, hasMultPartSets, sumsBinDir, timeout, log)
+    def newThread(sock, has_tape_sys, has_mult_part_sets, timeout, chmown_path, log):
+        worker = Worker(sock=sock, has_tape_sys=has_tape_sys, has_mult_part_sets=has_mult_part_sets, timeout=timeout, chmown_path=None, log=log)
         Worker.tList.append(worker)
         worker.start()
 
@@ -2593,7 +2708,7 @@ class AliveServer(threading.Thread):
                     # do not send an alive response if the worker has already sent a response
                     json_string = self.worker.getRequest().generateAliveResponse().getJSON()
                     self.worker.send_json(json_string) # expects a str object; can hang if client does not read AND socket buffer is full
-                    self.worker.log.writeDebug([ 'sent is-alive to ' + self.worker.getID() ])
+                    self.worker.log.write_debug([ 'sent is-alive to ' + self.worker.getID() ])
             finally:
                 self.worker.msgLock.release()
 
@@ -2651,10 +2766,10 @@ class TestClient(threading.Thread):
             self.dumpsInfoList(response)
         except Exception as exc:
             import traceback
-            log.writeError([ 'client ' + str(self.sock.getsockname()) + ' had a problem communicating with the server' ])
-            log.writeError([ traceback.format_exc(0) ])
+            log.write_error([ 'client ' + str(self.sock.getsockname()) + ' had a problem communicating with the server' ])
+            log.write_error([ traceback.format_exc(0) ])
         finally:
-            self.log.writeDebug([ 'closing test client socket' ])
+            self.log.write_debug([ 'closing test client socket' ])
             self.sock.shutdown(socket.SHUT_RDWR)
             self.sock.close()
 
@@ -2669,26 +2784,26 @@ class TestClient(threading.Thread):
 
     def dumpsInfoList(self, infoList):
         for infoDict in infoList:
-            self.log.writeDebug(['sunum=' + str(infoDict['sunum'])])
-            self.log.writeDebug(['path=' + infoDict['onlineLoc']])
-            self.log.writeDebug(['status=' + infoDict['onlineStatus']])
-            self.log.writeDebug(['archstatus=' + infoDict['archiveStatus']])
-            self.log.writeDebug(['ack=' + infoDict['offsiteAck']])
-            self.log.writeDebug(['comment=' + infoDict['historyComment']])
-            self.log.writeDebug(['series=' + infoDict['owningSeries']])
-            self.log.writeDebug(['group=' + str(infoDict['storageGroup'])])
-            self.log.writeDebug(['size=' + str(infoDict['bytes'])])
-            self.log.writeDebug(['create=' + infoDict['creatDate']])
-            self.log.writeDebug(['user=' + infoDict['username']])
-            self.log.writeDebug(['tape=' + infoDict['archTape']])
-            self.log.writeDebug(['tapefn=' + str(infoDict['archTapeFn'])])
-            self.log.writeDebug(['tapedate=' + infoDict['archTapeDate']])
-            self.log.writeDebug(['safetape=' + infoDict['safeTape']])
-            self.log.writeDebug(['safetapefn=' + str(infoDict['safeTapeFn'])])
-            self.log.writeDebug(['safetapedate=' + infoDict['safeTapeDate']])
-            self.log.writeDebug(['pastatus=' + str(infoDict['paStatus'])])
-            self.log.writeDebug(['pasubstatus=' + str(infoDict['paSubstatus'])])
-            self.log.writeDebug(['effdate=' + infoDict['effectiveDate']])
+            self.log.write_debug(['sunum=' + str(infoDict['sunum'])])
+            self.log.write_debug(['path=' + infoDict['onlineLoc']])
+            self.log.write_debug(['status=' + infoDict['onlineStatus']])
+            self.log.write_debug(['archstatus=' + infoDict['archiveStatus']])
+            self.log.write_debug(['ack=' + infoDict['offsiteAck']])
+            self.log.write_debug(['comment=' + infoDict['historyComment']])
+            self.log.write_debug(['series=' + infoDict['owningSeries']])
+            self.log.write_debug(['group=' + str(infoDict['storageGroup'])])
+            self.log.write_debug(['size=' + str(infoDict['bytes'])])
+            self.log.write_debug(['create=' + infoDict['creatDate']])
+            self.log.write_debug(['user=' + infoDict['username']])
+            self.log.write_debug(['tape=' + infoDict['archTape']])
+            self.log.write_debug(['tapefn=' + str(infoDict['archTapeFn'])])
+            self.log.write_debug(['tapedate=' + infoDict['archTapeDate']])
+            self.log.write_debug(['safetape=' + infoDict['safeTape']])
+            self.log.write_debug(['safetapefn=' + str(infoDict['safeTapeFn'])])
+            self.log.write_debug(['safetapedate=' + infoDict['safeTapeDate']])
+            self.log.write_debug(['pastatus=' + str(infoDict['paStatus'])])
+            self.log.write_debug(['pasubstatus=' + str(infoDict['paSubstatus'])])
+            self.log.write_debug(['effdate=' + infoDict['effectiveDate']])
 
 def extractAddresses(family):
      addresses = []
@@ -2722,6 +2837,14 @@ if __name__ == "__main__":
 
         arguments = Arguments(parser)
 
+        put_file_path = sumsDrmsParams.get('SUMS_PUT_FILE')
+        sum_chmown_path = os.path.join(sumsDrmsParams.get('SUMBIN_BASEDIR'), 'sum_chmown')
+
+        if put_file_path is not None:
+            SUFileOwnerModUpdater.set_lock_file(lock_path=put_file_path, type='put')
+        elif sum_chmown_path is not None and os.path.exists(sum_chmown_path):
+            SUFileOwnerModUpdater.set_lock_file(lock_path=os.path.join(sumsDrmsParams.get('DRMS_LOCK_DIR'), SUMS_CHMOWN_LOCK_FILE), type='chmown')
+
         Worker.setMaxThreads(int(arguments.getArg('maxconn')))
         pid = os.getpid()
 
@@ -2736,7 +2859,7 @@ if __name__ == "__main__":
         except exc:
             raise LogException('unable to initialize logging')
 
-        log.writeCritical([ 'starting sumsd.py server' ])
+        log.write_critical([ 'starting sumsd.py server' ])
 
         thContainer = [ arguments, str(pid), log ]
         with TerminationHandler(thContainer) as th:
@@ -2754,7 +2877,7 @@ if __name__ == "__main__":
                         proto = oneAddrInfo[2]
 
                         try:
-                            log.writeInfo([ 'attempting to create socket with family ' + str(family) + ' and socket type ' + str(sockType) ])
+                            log.write_info([ 'attempting to create socket with family ' + str(family) + ' and socket type ' + str(sockType) ])
                             serverSock = socket.socket(family, sockType, proto)
 
                             # by default, serverSock is a blocking socket; set a timeout
@@ -2762,12 +2885,12 @@ if __name__ == "__main__":
                             # operations for a client that is taking too long (and holding
                             # a Worker potentially indefinitely)
                             serverSock.settimeout(1.0)
-                            log.writeInfo([ 'successfully created socket with family ' + str(family) + ' and socket type ' + str(sockType) ])
+                            log.write_info([ 'successfully created socket with family ' + str(family) + ' and socket type ' + str(sockType) ])
                         except OSError:
                             import traceback
 
-                            log.writeWarning([ traceback.format_exc(5) ])
-                            log.writeWarning([ 'trying next address (could not create socket)' ])
+                            log.write_warning([ traceback.format_exc(5) ])
+                            log.write_warning([ 'trying next address (could not create socket)' ])
                             if serverSock:
                                 serverSock.close()
                             continue
@@ -2775,14 +2898,14 @@ if __name__ == "__main__":
                         # now try binding
                         try:
                             serverSock.bind(('', arguments.getArg('listenport')))
-                            log.writeInfo([ 'successfully bound socket to address ' + str(serverSock.getsockname()) + ':' + str(arguments.getArg('listenport')) ])
+                            log.write_info([ 'successfully bound socket to address ' + str(serverSock.getsockname()) + ':' + str(arguments.getArg('listenport')) ])
                             bound = True
                             break # we're good!
                         except OSError:
                             import traceback
 
-                            log.writeWarning([ traceback.format_exc(5) ])
-                            log.writeWarning([ 'trying next address (could not bind address)' ])
+                            log.write_warning([ traceback.format_exc(5) ])
+                            log.write_warning([ 'trying next address (could not bind address)' ])
                             if serverSock:
                                 serverSock.close()
                             continue
@@ -2794,10 +2917,10 @@ if __name__ == "__main__":
                 try:
                     serverSock.listen(128)
                 except OSError:
-                    log.writeError([ 'could not create socket to listen for client requests' ])
+                    log.write_error([ 'could not create socket to listen for client requests' ])
                     raise
 
-                log.writeCritical([ 'listening for client requests on ' + str(serverSock.getsockname()) ])
+                log.write_critical([ 'listening for client requests on ' + str(serverSock.getsockname()) ])
             except Exception as exc:
                 if len(exc.args) > 0:
                     raise SocketConnectionException(str(exc.args[0]))
@@ -2827,14 +2950,14 @@ if __name__ == "__main__":
                         continue
                     else:
                         (clientSock, address) = serverSock.accept()
-                        log.writeCritical([ 'accepting a client request from ' + str(clientSock.getpeername()) + ', connected to server ' + str(clientSock.getsockname()) ])
+                        log.write_critical([ 'accepting a client request from ' + str(clientSock.getpeername()) + ', connected to server ' + str(clientSock.getsockname()) ])
 
                         while True:
                             Worker.lockTList()
                             try:
                                 if Worker.freeThreadExists():
-                                    log.writeDebug([ 'instantiating a Worker for client ' + str(address) ])
-                                    Worker.newThread(clientSock, int(sumsDrmsParams.get('SUMS_TAPE_AVAILABLE')) == 1, int(sumsDrmsParams.get('SUMS_MULTIPLE_PARTNSETS')) == 1, sumsDrmsParams.get('SUMBIN_BASEDIR'), int(sumsDrmsParams.get('SUMS_MT_CLIENT_RESP_TIMEOUT')), log)
+                                    log.write_debug([ 'instantiating a Worker for client ' + str(address) ])
+                                    Worker.newThread(clientSock, int(sumsDrmsParams.get('SUMS_TAPE_AVAILABLE')) == 1, int(sumsDrmsParams.get('SUMS_MULTIPLE_PARTNSETS')) == 1, int(sumsDrmsParams.get('SUMS_MT_CLIENT_RESP_TIMEOUT')), sum_chmown_path, log)
                                     break # The finally clause will ensure the Worker lock is released.
                             finally:
                                 # ensures the tList lock is released, even if a KeyboardInterrupt occurs while the
@@ -2853,7 +2976,7 @@ if __name__ == "__main__":
             pollObj.unregister(serverSock)
 
             # kill server socket
-            log.writeCritical([ 'closing server socket' ])
+            log.write_critical([ 'closing server socket' ])
             serverSock.shutdown(socket.SHUT_RDWR)
             serverSock.close()
 
@@ -2861,7 +2984,7 @@ if __name__ == "__main__":
     except TerminationException as exc:
         msg = str(exc)
         if log:
-            log.writeCritical([ msg ])
+            log.write_critical([ msg ])
         else:
             print(msg, file=sys.stderr)
 
@@ -2869,7 +2992,7 @@ if __name__ == "__main__":
     except SDException as exc:
         msg = str(exc)
         if log:
-            log.writeError([ msg ])
+            log.write_error([ msg ])
         else:
             print(msg, file=sys.stderr)
 
@@ -2878,14 +3001,14 @@ if __name__ == "__main__":
         import traceback
         msg = traceback.format_exc(5)
         if log:
-            log.writeError([ msg ])
+            log.write_error([ msg ])
         else:
             print(msg, file=sys.stderr)
         rv = RV_UNKNOWNERROR
 
 msg = 'exiting with return code ' + str(rv)
 if log:
-    log.writeCritical([ msg ])
+    log.write_critical([ msg ])
 else:
     print(msg, file=sys.stderr)
 
