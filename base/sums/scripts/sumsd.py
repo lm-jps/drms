@@ -73,7 +73,7 @@ RV_GENERATERESPONSE = 19
 RV_IMPLEMENTATION = 20
 RV_TAPEREQUEST = 21
 RV_SUMSCHMOWN = 22
-RV_SU_OWNER_MOD_FILE_UPDATER = 23
+RV_SU_FILE_OWNER_MOD_UPDATER = 23
 RV_UNKNOWNERROR = 24
 
 
@@ -323,7 +323,9 @@ class Log(object):
 class SDException(Exception):
 
     def __init__(self, msg):
-        super(SDException, self).__init__(msg)
+        frame, file_name, line_number, method, context, index = inspect.stack()[2]
+        decorated_msg = '[ exception at line {line_number} ] {msg}'.format(line_number=line_number, msg=msg.rstrip('\n'))
+        super(SDException, self).__init__(decorated_msg)
 
 class ParamsException(SDException):
 
@@ -461,7 +463,7 @@ class SumsChmownException(SDException):
 
 class SUFileOwnerModUpdaterException(SDException):
 
-    retcode = RV_SU_OWNER_MOD_FILE_UPDATER
+    retcode = RV_SU_FILE_OWNER_MOD_UPDATER
     def __init__(self, msg):
         super(SUFileOwnerModUpdaterException, self).__init__(msg)
 
@@ -521,13 +523,9 @@ class DBConnection(object):
         try:
             self.conn = psycopg2.connect(host=self.host, port=self.port, database=self.database, user=self.user)
             self.log.write_info([ 'user ' + self.user + ' successfully connected to ' + self.database + ' database: ' + self.host + ':' + str(self.port) + ' - id ' + self.id ])
-        except psycopg2.DatabaseError as exc:
+        except psycopg2.OperationalError as exc:
             # Closes the cursor and connection
-            if hasattr(exc, 'diag') and hasattr(exc.diag, 'message_primary'):
-                msg = exc.diag.message_primary
-            else:
-                msg = 'Unable to connect to the database (no, I do not know why).'
-            raise DBConnectionException(msg)
+            raise DBConnectionException(str(exc))
 
         # must add to the list of connections and free connections
         DBConnection.connListLock.acquire()
