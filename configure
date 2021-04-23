@@ -3,6 +3,8 @@
 # The system configuration for configure script
 set PERLBIN = ""
 set PYBIN = "python3"
+set DRMSEXPORT_WEBAPP_DIR = "proj/export/webapps/drmsexport"
+set PY_LIBS_DIR = "base/libs/py"
 
 if ($PERLBIN == "") then
     if (-x /home/jsoc/bin/linux_x86_64/activeperl) then
@@ -279,6 +281,12 @@ endif
             exit 1
         endif
 
+        # copy drmsparams.py and securedrms.py into drmsexport web app project directory
+        if (-e ${LOCALIZATIONDIR}/drmsparams.py && -e ${PY_LIBS_DIR}/securedrms.py && -e ${DRMSEXPORT_WEBAPP_DIR}) then
+            echo "copying drmsparams.py and securedrms.py to drmsexport package scaffolding"
+            cp ${LOCALIZATIONDIR}/drmsparams.py ${DRMSEXPORT_WEBAPP_DIR}/drmsparams.py
+            cp ${PY_LIBS_DIR}/securedrms.py ${DRMSEXPORT_WEBAPP_DIR}/securedrms.py
+        endif
     endif # End reset localization
 
     echo "Setting links to scripts..."
