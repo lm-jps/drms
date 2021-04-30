@@ -2618,7 +2618,7 @@ class ReqTable(object):
     def get(self, requestids=None):
         toRet = []
 
-        if not requestids:
+        if requestids is None:
             return [ self.reqDict[key] for (key, val) in self.reqDict.items() ]
 
         for arequestid in requestids:
