@@ -97,6 +97,7 @@ show_info
 #include "printk.h"
 #include "exputil.h"
 #include "qDecoder.h"
+#include "jsmn.h"
 #include "fitsexport.h"
 
 char *MISSING_KEY_NAME = "???";
@@ -107,6 +108,22 @@ char *INVALID = "invalid";
 char *INVALID_SEG = "InvalidSegName";
 
 #define USE_FITS_NAMES_FOR_COLUMNS (0)
+
+/* processing argument macros */
+#define ARG_PROCESSING_JSON "processing"
+#define PROCESSING_STEP_NAME_LEN 32
+#define PROCESSING_STEP_VALUE_LEN 64
+
+/* processing argument handler-function type */
+typedef void *(*p_fn_size_ratio_handler)(void *data);
+
+/* processing argument processing-step list node */
+struct _processing_step_node_data_
+{
+    char step[PROCESSING_STEP_NAME_LEN];
+    HContainer_t arguments;
+};
+
 
 /* invalidObj is used simply for a fixed address to denote that a keyword, segment, or link struct is bad */
 char invalidObj;
@@ -861,27 +878,27 @@ IF YOU ADD A NEW ARGUMENT: 1. Add a corresponding line of code in the from_web b
  *******/
 ModuleArgs_t module_args[] =
 {
-  {ARG_STRING, "op", "Not Specified", "<Operation>, values are: series_struct, rs_summary, or rs_list "},
-  {ARG_STRING, "ds", "Not Specified", "<record_set query>"},
-  {ARG_STRING, "key", "Not Specified", "<comma delimited keyword list>, keywords or special values: **ALL**, **NONE**, *recnum*, *sunum*, *size*, *online*, *retain*, *archive*, *recdir*, *logdir*, *dirmtime*, *spec*"},
-  {ARG_STRING, "link", "Not Specified", "<comma delimited linkname list>, links or special values: **ALL**, **NONE**"},
-  {ARG_STRING, "seg", "Not Specified", "<comma delimited segment list>, segnames or special values: **ALL**, **NONE** "},
-  {ARG_STRING, "userhandle", "Not Specified", "Unique request identifier to allow possible user kill of this program."},
-  {ARG_FLAG, "B", NULL, "print floating-point values as hexadecimal strings"},
+    {ARG_STRING, "op", "Not Specified", "<Operation>, values are: series_struct, rs_summary, or rs_list "},
+    {ARG_STRING, "ds", "Not Specified", "<record_set query>"},
+    {ARG_STRING, "key", "Not Specified", "<comma delimited keyword list>, keywords or special values: **ALL**, **NONE**, *recnum*, *sunum*, *size*, *online*, *retain*, *archive*, *recdir*, *logdir*, *dirmtime*, *spec*"},
+    {ARG_STRING, "link", "Not Specified", "<comma delimited linkname list>, links or special values: **ALL**, **NONE**"},
+    {ARG_STRING, "seg", "Not Specified", "<comma delimited segment list>, segnames or special values: **ALL**, **NONE** "},
+    {ARG_STRING, "userhandle", "Not Specified", "Unique request identifier to allow possible user kill of this program."},
+    {ARG_STRINGS, ARG_PROCESSING_JSON, "Not Specified", "A JSON object of processing steps to be applied to the input record-set upon export; if provided, then the ratio of the processed image size to the original image size will be printed when op == series_struct."},
+    {ARG_FLAG, "B", NULL, "print floating-point values as hexadecimal strings"},
     {ARG_FLAG, "l", NULL, "Follow links to linked segments."},
     {ARG_FLAG, "M", NULL, "print floating-point values with maximum precision determined by DB"},
-  {ARG_INT, "n", "0", "RecordSet Limit"},
-  {ARG_FLAG, "h", "0", "help - show usage"},
-  {ARG_FLAG, "R", "0", "Show record query"},
-  {ARG_FLAG, "z", "0", "emit JSON output"},
-  {ARG_FLAG, "o", "0", "print additional DRMS information when op==series_struct"},
+    {ARG_INT, "n", "0", "RecordSet Limit"},
+    {ARG_FLAG, "h", "0", "help - show usage"},
+    {ARG_FLAG, "R", "0", "Show record query"},
+    {ARG_FLAG, "o", "0", "print additional DRMS information when op==series_struct"},
     {ARG_FLAG, "f", NULL, "print FITS keyword names, instead of DRMS keyword names"},
     {ARG_FLAG, "r", NULL, "do NOT display run time"},
     {ARG_FLAG, "s", NULL, "suppress HTTP headers"},
-  {ARG_STRING, "QUERY_STRING", "Not Specified", "AJAX query from the web"},
-  {ARG_STRING, "REMOTE_ADDR", "0.0.0.0", "Remote IP address"},
-  {ARG_STRING, "SERVER_NAME", "ServerName", "JSOC Server Name"},
-  {ARG_END}
+    {ARG_STRING, "QUERY_STRING", "Not Specified", "AJAX query from the web"},
+    {ARG_STRING, "REMOTE_ADDR", "0.0.0.0", "Remote IP address"},
+    {ARG_STRING, "SERVER_NAME", "ServerName", "JSOC Server Name"},
+    {ARG_END}
 };
 
 char *module_name = "jsoc_info";
@@ -895,7 +912,6 @@ int nice_intro ()
 	"op=<command> ds=<recordset query> {n=<rslimit>} {key=<keylist>} {seg=<segment_list>}\n"
         "  details are:\n"
 	"-h -> print this message\n"
-	"-z -> emit json output, default at present.\n"
 	"-R -> include record query.\n"
 	"op=<command> tell which ajax function to execute, values are: series_struct, rs_summary, or rs_list \n"
 	"ds=<recordset query> as <series>{[record specifier]} - required\n"
@@ -2117,6 +2133,579 @@ static void free_log_dir(void *data)
     }
 }
 
+/* define supported processing steps */
+#define PROCESSING_STEP_DATA(X) #X,
+char *PROCESSING_STEPS[] =
+{
+   #include "processing.h"
+   "end"
+};
+#undef PROCESSING_STEP_DATA
+
+/* define handler function */
+#define PROCESSING_STEP_DATA(X) void *X ## _handler(void *data);
+  #include "processing.h"
+#undef PROCESSING_STEP_DATA
+
+/* define array of pointers to handler function */
+#define PROCESSING_STEP_DATA(X) X ## _handler,
+p_fn_size_ratio_handler PROCESSING_HANDLERS[] =
+{
+   #include "processing.h"
+   NULL
+};
+#undef PROCESSING_STEP_DATA
+
+void *to_ptr_handler(void *data)
+{
+    static Hash_Table_t *special_args = NULL; /* just the names of the special arguments, not the values */
+    static float ratio = -1;
+
+    /* data passed in */
+    HContainer_t *arguments = (HContainer_t *)data;
+    char *operation = NULL;
+
+    operation = *(char **)hcon_lookup_lower(arguments, "operation");
+
+    if (operation)
+    {
+        if (strcasecmp(operation, "special_args") == 0)
+        {
+            /* return the special args for this step (there are no special args for this step) */
+            return special_args;
+        }
+    }
+
+    ratio = 1.0;
+
+    return &ratio;
+}
+
+void *aia_scale_handler(void *data)
+{
+    static Hash_Table_t *special_args = NULL; /* just the names of the special arguments, not the values */
+    static float ratio = -1;
+
+    /* data passed in */
+    HContainer_t *arguments = (HContainer_t *)data;
+    char *operation = NULL;
+
+    operation = (char *)hcon_lookup_lower(arguments, "operation");
+
+    if (operation)
+    {
+        if (strcasecmp(operation, "special_args") == 0)
+        {
+            /* return the special args for this step (there are no special args for this step) */
+            return special_args;
+        }
+    }
+
+    ratio = 1.0;
+
+    return &ratio;
+}
+
+void *rebin_handler(void *data)
+{
+    static Hash_Table_t *special_args = NULL; /* just the names of the special arguments, not the values */
+    static float ratio = -1;
+
+    HContainer_t *arguments = (HContainer_t *)data;
+    char *operation = NULL;
+    char *scaling_factor_str = NULL;
+    float scaling_factor = -1;
+
+    operation = (char *)hcon_lookup_lower(arguments, "operation");
+
+    if (operation)
+    {
+        if (strcasecmp(operation, "special_args") == 0)
+        {
+            /* return the special args for this step */
+            if (!special_args)
+            {
+                special_args = calloc(1, sizeof(Hash_Table_t));
+                hash_init(special_args, 89, 0, (int (*)(const void *, const void *))strcmp, hash_universal_hash);
+                hash_insert(special_args, "scale", "T");
+            }
+
+            return special_args;
+        }
+    }
+
+    scaling_factor_str = (char *)hcon_lookup_lower(arguments, "scale");
+    sscanf(scaling_factor_str, "%f", &scaling_factor);
+
+    ratio = scaling_factor * scaling_factor;
+
+    return &ratio;
+}
+
+void *resize_handler(void *data)
+{
+    static Hash_Table_t *special_args = NULL; /* just the names of the special arguments, not the values */
+    static float ratio = -1;
+
+    /* data passed in */
+    HContainer_t *arguments = (HContainer_t *)data;
+    char *operation = NULL;
+    char *target_scale_str = NULL;
+    float target_scale = -1;
+    char *template_rec_str = NULL;
+    DRMS_Record_t *template_rec = NULL;
+    int drms_status = DRMS_SUCCESS;
+    DRMS_RecordSet_t *open_records = NULL;
+    char cdelt1_name[DRMS_MAXKEYNAMELEN] = {0};
+    float cdelt1 = -1;
+
+    operation = (char *)hcon_lookup_lower(arguments, "operation");
+
+    if (operation)
+    {
+        if (strcasecmp(operation, "special_args") == 0)
+        {
+            /* return the special args for this step */
+            if (!special_args)
+            {
+                special_args = calloc(1, sizeof(Hash_Table_t));
+                hash_init(special_args, 89, 0, (int (*)(const void *, const void *))strcmp, hash_universal_hash);
+                hash_insert(special_args, "scale_to", "T");
+            }
+
+            return special_args;
+        }
+    }
+
+    target_scale_str = (char *)hcon_lookup_lower(arguments, "scale_to");
+    sscanf(target_scale_str, "%f", &target_scale);
+    template_rec_str = (char *)hcon_lookup_lower(arguments, "template_rec");
+    sscanf(template_rec_str, "%p", &(void *)template_rec);
+
+    /* get newest record from series */
+    /* ugh - cannot specify both a key list and n=XX, so we have to fetch all keys */
+    open_records = drms_open_records2(template_rec->env, template_rec->seriesinfo->seriesname, NULL, 0, -1, 0, &drms_status);
+    cdelt1 = drms_getkey_float(open_records->records[0], "cdelt1", &drms_status);
+
+    drms_close_records(open_records, DRMS_FREE_RECORD);
+
+    if (target_scale == 0 || !isfinite(cdelt1))
+    {
+        ratio = -1;
+    }
+    else
+    {
+        ratio = cdelt1 / target_scale;
+    }
+
+    return &ratio;
+}
+
+void *im_patch_handler(void *data)
+{
+    static Hash_Table_t *special_args = NULL; /* just the names of the special arguments, not the values */
+    static float ratio = -1;
+
+    /* data passed in */
+    HContainer_t *arguments = (HContainer_t *)data;
+    char *operation = NULL;
+    char *new_dim_x_str = NULL;
+    int new_dim_x = -1;
+    char *new_dim_y_str = NULL;
+    int new_dim_y = -1;
+    char *template_rec_str = NULL;
+    DRMS_Record_t *template_rec = NULL;
+    int drms_status = DRMS_SUCCESS;
+    DRMS_RecordSet_t *open_records = NULL;
+    DRMS_Segment_t *segment = NULL;
+    int orig_dim_x = -1;
+    int orig_dim_y = -1;
+
+    operation = (char *)hcon_lookup_lower(arguments, "operation");
+
+    if (operation)
+    {
+        if (strcasecmp(operation, "special_args") == 0)
+        {
+            /* return the special args for this step */
+            if (!special_args)
+            {
+                special_args = calloc(1, sizeof(Hash_Table_t));
+                hash_init(special_args, 89, 0, (int (*)(const void *, const void *))strcmp, hash_universal_hash);
+                hash_insert(special_args, "width", "T");
+                hash_insert(special_args, "height", "T");
+            }
+
+            return special_args;
+        }
+    }
+
+    new_dim_x_str = (char *)hcon_lookup_lower(arguments, "width");
+    sscanf(new_dim_x_str, "%d", &new_dim_x);
+    new_dim_y_str = (char *)hcon_lookup_lower(arguments, "height");
+    sscanf(new_dim_y_str, "%d", &new_dim_y);
+    template_rec_str = (char *)hcon_lookup_lower(arguments, "template_rec");
+    sscanf(template_rec_str, "%p", &(void *)template_rec);
+    open_records = drms_open_records2(template_rec->env, template_rec->seriesinfo->seriesname, NULL, 0, -1, 0, &drms_status);
+    segment = drms_segment_lookupnum(open_records->records[0], 0);
+    orig_dim_x = segment->axis[0]; /* from first record's segment dims */
+    orig_dim_y = segment->axis[1]; /* from first record's segment dims */
+
+    drms_close_records(open_records, DRMS_FREE_RECORD);
+
+    if (orig_dim_x == 0 || orig_dim_y == 0)
+    {
+        ratio = -1;
+    }
+
+    ratio = (float)(new_dim_x * new_dim_y) / (float)(orig_dim_x * orig_dim_y);
+
+    return &ratio;
+}
+
+void *map_proj_handler(void *data)
+{
+    static Hash_Table_t *special_args = NULL; /* just the names of the special arguments, not the values */
+    static float ratio = -1;
+
+    /* data passed in */
+    HContainer_t *arguments = (HContainer_t *)data;
+    char *operation = NULL;
+    char *new_dim_x_str = NULL;
+    int new_dim_x = -1;
+    char *new_dim_y_str = NULL;
+    int new_dim_y = -1;
+    char *template_rec_str = NULL;
+    DRMS_Record_t *template_rec = NULL;
+    int drms_status = DRMS_SUCCESS;
+    DRMS_RecordSet_t *open_records = NULL;
+    DRMS_Segment_t *segment = NULL;
+    int orig_dim_x = -1;
+    int orig_dim_y = -1;
+
+    operation = (char *)hcon_lookup_lower(arguments, "operation");
+
+    if (operation)
+    {
+        if (strcasecmp(operation, "special_args") == 0)
+        {
+            /* return the special args for this step */
+            if (!special_args)
+            {
+                special_args = calloc(1, sizeof(Hash_Table_t));
+                hash_init(special_args, 89, 0, (int (*)(const void *, const void *))strcmp, hash_universal_hash);
+                hash_insert(special_args, "cols", "T");
+                hash_insert(special_args, "rows", "T");
+            }
+
+            return special_args;
+        }
+    }
+
+    new_dim_x_str = (char *)hcon_lookup_lower(arguments, "cols");
+    sscanf(new_dim_x_str, "%d", &new_dim_x);
+    new_dim_y_str = (char *)hcon_lookup_lower(arguments, "rows");
+    sscanf(new_dim_y_str, "%d", &new_dim_y);
+    template_rec_str = (char *)hcon_lookup_lower(arguments, "template_rec");
+    sscanf(template_rec_str, "%p", &(void *)template_rec);
+    open_records = drms_open_records2(template_rec->env, template_rec->seriesinfo->seriesname, NULL, 0, -1, 0, &drms_status);
+    segment = drms_segment_lookupnum(open_records->records[0], 0);
+    orig_dim_x = segment->axis[0]; /* from first record's segment dims */
+    orig_dim_y = segment->axis[1]; /* from first record's segment dims */
+
+    drms_close_records(open_records, DRMS_FREE_RECORD);
+
+    if (orig_dim_x == 0 || orig_dim_y == 0)
+    {
+        ratio = -1;
+    }
+
+    ratio = (float)(new_dim_x * new_dim_y) / (float)(orig_dim_x * orig_dim_y);
+    return &ratio;
+}
+
+HContainer_t *g_processing_steps = NULL;
+
+float get_size_ratio(struct _processing_step_node_data_ *node_data, DRMS_Record_t *template_rec)
+{
+    /* get index */
+    int index = -1;
+    float ratio = -1;
+    p_fn_size_ratio_handler handler = NULL;
+    char template_rec_str[32];
+
+    index = *(int *)hcon_lookup_lower(g_processing_steps, node_data->step);
+
+    if (index >= 0)
+    {
+        /* get handler */
+        handler = PROCESSING_HANDLERS[index];
+
+        /* add template rec to args */
+        snprintf(template_rec_str, sizeof(template_rec_str), "%p", template_rec);
+        hcon_insert_lower(&node_data->arguments, "template_rec", template_rec_str);
+
+        ratio = *(float *)handler((void *)&node_data->arguments);
+
+        /* -1 means a ratio cannot be calculated */
+        return ratio;
+    }
+    else
+    {
+        fprintf(stderr, "[ get_size_ratio ] unable to get size ratio for processing step %s\n", node_data->step);
+        return -1.0;
+    }
+}
+
+/* validate processing steps */
+static int get_processing_step_index(const char *step)
+{
+    int step_index = -1;
+    void *found = NULL;
+    int err = 0;
+
+    if (!g_processing_steps)
+    {
+        /* create - key --> name, val --> index into PROCESSING_STEPS, PROCESSING_HANLDERS, PROCESSING_ARGUMENTS */
+        g_processing_steps = hcon_create(sizeof(int), PROCESSING_STEP_NAME_LEN, NULL, NULL, NULL, NULL, 0);
+
+        if (g_processing_steps)
+        {
+            /* populate */
+            step_index = 0;
+            while (strcmp(PROCESSING_STEPS[step_index], "end") != 0)
+            {
+                hcon_insert_lower(g_processing_steps, PROCESSING_STEPS[step_index], &step_index);
+                step_index++;
+            }
+        }
+        else
+        {
+            err = 1;
+        }
+    }
+
+    if (g_processing_steps)
+    {
+        if ((found = hcon_lookup_lower(g_processing_steps, step)) != NULL)
+        {
+            step_index = *(int *)found;
+        }
+    }
+
+    return step_index;
+}
+
+static Hash_Table_t *get_special_args(const char *step)
+{
+    int step_index = -1;
+    p_fn_size_ratio_handler handler = NULL;
+    HContainer_t arguments;
+    char value[PROCESSING_STEP_VALUE_LEN] = {0};
+    Hash_Table_t *special_args = NULL;
+
+    /* get index */
+    step_index = get_processing_step_index(step);
+
+    if (step_index >= 0)
+    {
+        /* get handler */
+        handler = PROCESSING_HANDLERS[step_index];
+
+        /* add `operation` and `special_args` */
+        hcon_init(&arguments, PROCESSING_STEP_VALUE_LEN, PROCESSING_STEP_NAME_LEN, NULL, NULL);
+        snprintf(value, sizeof(value), "special_args");
+        hcon_insert_lower(&arguments, "operation", value);
+
+        /* get and return set of special args */
+        special_args = (Hash_Table_t *)handler((void *)&arguments);
+        hcon_free(&arguments);
+        return special_args;
+    }
+    else
+    {
+        fprintf(stderr, "[ get_special_args ] unable to get special_args for processing step %s\n", step);
+        return NULL;
+    }
+
+    return NULL;
+}
+
+static int get_processing_list(const char *processing_json, LinkedList_t **processing_list)
+{
+    /* validate and insert processing-step info from processing argument */
+    int err = 0;
+    LinkedList_t *list = NULL;
+    int elem;
+    jsmn_parser parser;
+    jsmntok_t *tokens = NULL;
+    size_t sz_jstokens = 1024;
+    jsmnerr_t parse_result = 0;
+    int token_index = -1;
+    int num_steps = -1;
+    char step_name[PROCESSING_STEP_NAME_LEN] = {0};
+    struct _processing_step_node_data_ node = {0}; /* stays empty - a template of sorts */
+    ListNode_t *list_node = NULL;
+    struct _processing_step_node_data_ *node_data = NULL; /* data inside a list node */
+    int property_obj_token_index = -1;
+    jsmntok_t *property_obj_token = NULL;
+    Hash_Table_t *special_args = NULL;
+    char property_name[PROCESSING_STEP_NAME_LEN];
+    char property_value[PROCESSING_STEP_VALUE_LEN];
+
+    /* processing is a json object that represents a set of processing steps; each step is represented by a an object that
+     * contains the keys/values:
+     *   {
+     *      "resize" :
+     *      {
+     *          "regrid" : true,
+     *          "do_stretchmarks" : false,
+     *          "center_to" : false,
+     *          "rescale" : true,
+     *          "scale_to" : 2
+     *      },
+     *      "map_proj" :
+     *      {
+     *          "map" : "carree",
+     *          "clon" : 350.553131,
+     *          "clat" : 69,
+     *          "scale" : 0.0301,
+     *          "cols" : 22,
+     *          "rows" : 44
+     *      }
+     *   }
+     */
+
+    tokens = calloc(1, sizeof(jsmntok_t) * sz_jstokens);
+
+    if (tokens)
+    {
+        jsmn_init(&parser);
+        parse_result = jsmn_parse(&parser, processing_json, tokens, sz_jstokens);
+
+        if (parse_result == JSMN_ERROR_NOMEM || parse_result == JSMN_ERROR_INVAL || parse_result == JSMN_ERROR_PART)
+        {
+           /* Did not allocate enough tokens to hold parsing results. There shouldn't be 512 tokens in the response, only 2,
+            * so error out. */
+            err = 1;
+        }
+        else if (parse_result != JSMN_SUCCESS)
+        {
+            err = 1;
+        }
+        else
+        {
+            token_index = 0;
+
+            if (tokens[token_index].type != JSMN_OBJECT)
+            {
+                /* no root object */
+                err = 1;
+            }
+            else
+            {
+                /* loop over root objects (one for each processing step); I'm going to guess that
+                 * res is the total number of tokens returned */
+
+                /* first step name */
+                token_index++;
+
+                /* size() of the root obj is 2x the actual number of processing steps because each step has a name token and
+                 * an object token */
+                for (num_steps = 0; num_steps * 2 < tokens[0].size; token_index++, num_steps++)
+                {
+                    snprintf(step_name, sizeof(step_name), "%.*s", tokens[token_index].end - tokens[token_index].start, processing_json + tokens[token_index].start);
+                    /* token.end is the index of the char after the last char in the token */
+
+                    /* validate step; creates the mapping from step name to index into PROCESSING_STEPS, PROCESSING_HANDLERS, and PROCESSING_ARGUMENTS */
+                    if (get_processing_step_index(step_name) == -1)
+                    {
+                        fprintf(stderr, "invalid processing step %s\n", step_name);
+                        err = 1;
+                        break;
+                    }
+                    else
+                    {
+                        if (!list)
+                        {
+                            list = list_llcreate(sizeof(struct _processing_step_node_data_), NULL);
+
+                            if (!list)
+                            {
+                                err = 1;
+                                break;
+                            }
+                        }
+
+                        /* insert empty list node */
+                        list_node = list_llinserttail(list, &node);
+
+                        /* initialize node for this step */
+                        node_data = (struct _processing_step_node_data_ *)list_node->data;
+                        snprintf(node_data->step, sizeof(node_data->step), "%s", step_name);
+                        hcon_init(&node_data->arguments, PROCESSING_STEP_VALUE_LEN, PROCESSING_STEP_NAME_LEN, NULL, NULL);
+                    }
+
+                    /* step property object */
+                    token_index++;
+                    property_obj_token = &tokens[token_index];
+                    property_obj_token_index = token_index;
+
+                    if (property_obj_token->type != JSMN_OBJECT)
+                    {
+                        err = 1;
+                        break;
+                    }
+
+                    /* extract special argument needed for calculating size ratio; sets up special-args hash for `step_name` step */
+                    special_args = get_special_args(step_name); /* Hash_Table_t */
+
+                    if (special_args)
+                    {
+                        /* examine properties */
+                        if (property_obj_token->size > 0)
+                        {
+                            /* name of first property */
+                            token_index++;
+
+                            for (; token_index < property_obj_token_index + property_obj_token->size; token_index++)
+                            {
+                                snprintf(property_name, sizeof(property_name), "%.*s", tokens[token_index].end - tokens[token_index].start, processing_json + tokens[token_index].start);
+
+                                /* property value */
+                                token_index++;
+
+                                if (hash_member(special_args, property_name))
+                                {
+                                    snprintf(property_value, sizeof(property_value), "%.*s", tokens[token_index].end - tokens[token_index].start, processing_json + tokens[token_index].start);
+                                    hcon_insert_lower(&node_data->arguments, property_name, property_value);
+                                }
+                            }
+
+                            /* we are now pointing at either the name of the next step, or one past last token; the token pointer
+                             * will be advanced by 1 when we go to the next iteration of the outer loop, so subtract 1 now */
+                            token_index--;
+                        }
+                    }
+                    else
+                    {
+                        /* either no special args, or getting them failed */
+
+                        /* skip over to the next step name token */
+                        token_index += property_obj_token->size;
+                    }
+                }
+            }
+        }
+    }
+
+    if (!err)
+    {
+        *processing_list = list;
+    }
+
+    return err;
+}
 
 /* Module main function. */
 int DoIt(void)
@@ -2146,6 +2735,10 @@ int DoIt(void)
   json_t *recArray = NULL;
     char *jsonOut = NULL;
     char *final_json = NULL;
+    const char *processing_json = NULL;
+    LinkedList_t *processing_steps = NULL;
+    ListNode_t *node = NULL;
+    struct _processing_step_node_data_ *node_data = NULL;
 
     int missingKeyNumber = 0;
     int missingSegNumber = 0;
@@ -2238,10 +2831,7 @@ int DoIt(void)
             if (SetWebArg(req, "f", &webarglist, &webarglistsz)) JSONDIE("Bad QUERY_STRING");
             if (SetWebArg(req, "r", &webarglist, &webarglistsz)) JSONDIE("Bad QUERY_STRING");
             if (SetWebArg(req, "s", &webarglist, &webarglistsz)) JSONDIE("Bad QUERY_STRING");
-
-
-            /* force json output */
-            cmdparams_set (&cmdparams,"z", "1");
+            if (SetWebArg(req, ARG_PROCESSING_JSON, &webarglist, &webarglistsz)) JSONDIE("Bad QUERY_STRING");
 
             qEntryFree(req);
         }
@@ -2267,6 +2857,15 @@ int DoIt(void)
   segs_listed = strcmp (seglist, "Not Specified");
   links_listed = strcmp (linklist, "Not Specified");
   userhandle = cmdparams_get_str (&cmdparams, "userhandle", NULL);
+
+    processing_json = cmdparams_get_str(&cmdparams, ARG_PROCESSING_JSON, NULL);
+
+    /* suck in processing argument values into the returned list */
+    if (get_processing_list(processing_json, &processing_steps))
+    {
+        JSONDIE("invalid processing list argument");
+    }
+
     followLinks = cmdparams_isflagset(&cmdparams, "l");
     binary = cmdparams_isflagset(&cmdparams, "B");
     max_precision = cmdparams_isflagset(&cmdparams, "M");
@@ -2292,7 +2891,11 @@ int DoIt(void)
     char *p, *seriesname;
     json_t *jroot;
     DRMS_Record_t *rec;
+    float size_ratio = 1.0;
+    float step_size_ratio = 0;
+    char size_ratio_str[32];
     int status=0;
+
     /* Only want keyword info so get only the template record for drms series or first record for other data */
     seriesname = strdup (in);
     if ((p = index(seriesname,'['))) *p = '\0';
@@ -2329,6 +2932,26 @@ int DoIt(void)
        {
           JSONDIE("problem with database query");
        }
+    }
+
+    if (processing_steps)
+    {
+        list_llreset(processing_steps);
+        while ((node = list_llnext(processing_steps)) != NULL)
+        {
+            node_data = (struct _processing_step_node_data_ *)node->data;
+            step_size_ratio = get_size_ratio(node_data, rec);
+            if (step_size_ratio < 0)
+            {
+                size_ratio = -1;
+                break;
+            }
+
+            size_ratio *= step_size_ratio;
+        }
+
+        snprintf(size_ratio_str, sizeof(size_ratio_str), "%f", size_ratio);
+        json_insert_pair_into_object(jroot, "processing_size_ratio", json_new_number(size_ratio_str));
     }
 
     if (!skipRunTime)
