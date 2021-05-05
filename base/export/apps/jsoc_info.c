@@ -69,6 +69,37 @@ Comma-separated list of link names.  For each link listed the links target
 record query is displayed.  The psuedo link name **ALL** results in all links to be
 displayed.  The default is the same as **NONE**.
 
+\param processing
+A JSON string that defines a single object - the string must start/end with curly braces.
+The JSON defines a sequence of processing steps to be applied to the images in the series
+identified in the `ds` argument. For each step, a property with the processing-step name
+must exist. The value of this property is a JSON object that represents the processing-
+program arguments to be used during data processing. The properties of this object are
+the processing-program arguments, and the values are the processing-program argument
+values. An example of this argument is
+
+{
+    "resize" :
+    {
+        "regrid" : true,
+        "do_stretchmarks" : false,
+        "center_to" : false,
+        "rescale" : true,
+        "scale_to" : 2
+    },
+    "map_proj" :
+    {
+        "map" : "carree",
+        "clon" : 350.553131,
+        "clat" : 69,
+        "scale" : 0.0301,
+        "cols" : 22,
+        "rows" : 44
+    }
+}
+
+The names of the processing steps are defined in the processing.h file.
+
 \sa
 show_info
 
@@ -114,6 +145,8 @@ char *INVALID_SEG = "InvalidSegName";
 #define PROCESSING_STEP_NAME_LEN 32
 #define PROCESSING_STEP_VALUE_LEN 64
 
+HContainer_t *g_processing_steps = NULL;
+
 /* processing argument handler-function type */
 typedef void *(*p_fn_size_ratio_handler)(void *data);
 
@@ -124,6 +157,11 @@ struct _processing_step_node_data_
     HContainer_t arguments;
 };
 
+static void free_step_node(const void *data)
+{
+    struct _processing_step_node_data_ *node_data = (struct _processing_step_node_data_ *)data;
+    hcon_free(&node_data->arguments);
+}
 
 /* invalidObj is used simply for a fixed address to denote that a keyword, segment, or link struct is bad */
 char invalidObj;
@@ -884,7 +922,7 @@ ModuleArgs_t module_args[] =
     {ARG_STRING, "link", "Not Specified", "<comma delimited linkname list>, links or special values: **ALL**, **NONE**"},
     {ARG_STRING, "seg", "Not Specified", "<comma delimited segment list>, segnames or special values: **ALL**, **NONE** "},
     {ARG_STRING, "userhandle", "Not Specified", "Unique request identifier to allow possible user kill of this program."},
-    {ARG_STRINGS, ARG_PROCESSING_JSON, "Not Specified", "A JSON object of processing steps to be applied to the input record-set upon export; if provided, then the ratio of the processed image size to the original image size will be printed when op == series_struct."},
+    {ARG_STRINGS, ARG_PROCESSING_JSON, "Not Specified", "A JSON object of processing steps to be applied to the input record-set upon export; if provided, then the ratio of the processed image size to the original image size will be printed when op == series_struct (in the processing_size_ratio property)."},
     {ARG_FLAG, "B", NULL, "print floating-point values as hexadecimal strings"},
     {ARG_FLAG, "l", NULL, "Follow links to linked segments."},
     {ARG_FLAG, "M", NULL, "print floating-point values with maximum precision determined by DB"},
@@ -2142,12 +2180,12 @@ char *PROCESSING_STEPS[] =
 };
 #undef PROCESSING_STEP_DATA
 
-/* define handler function */
-#define PROCESSING_STEP_DATA(X) void *X ## _handler(void *data);
+/* define processing-step handler functions */
+#define PROCESSING_STEP_DATA(X) static void *X ## _handler(void *data);
   #include "processing.h"
 #undef PROCESSING_STEP_DATA
 
-/* define array of pointers to handler function */
+/* define array of pointers to the processing-step handler functions */
 #define PROCESSING_STEP_DATA(X) X ## _handler,
 p_fn_size_ratio_handler PROCESSING_HANDLERS[] =
 {
@@ -2156,7 +2194,9 @@ p_fn_size_ratio_handler PROCESSING_HANDLERS[] =
 };
 #undef PROCESSING_STEP_DATA
 
-void *to_ptr_handler(void *data)
+/* PROCESSING-STEP HANDLER FUNCTIONS
+ */
+static void *to_ptr_handler(void *data)
 {
     static Hash_Table_t *special_args = NULL; /* just the names of the special arguments, not the values */
     static float ratio = -1;
@@ -2181,7 +2221,7 @@ void *to_ptr_handler(void *data)
     return &ratio;
 }
 
-void *aia_scale_handler(void *data)
+static void *aia_scale_handler(void *data)
 {
     static Hash_Table_t *special_args = NULL; /* just the names of the special arguments, not the values */
     static float ratio = -1;
@@ -2206,7 +2246,7 @@ void *aia_scale_handler(void *data)
     return &ratio;
 }
 
-void *rebin_handler(void *data)
+static void *rebin_handler(void *data)
 {
     static Hash_Table_t *special_args = NULL; /* just the names of the special arguments, not the values */
     static float ratio = -1;
@@ -2242,7 +2282,7 @@ void *rebin_handler(void *data)
     return &ratio;
 }
 
-void *resize_handler(void *data)
+static void *resize_handler(void *data)
 {
     static Hash_Table_t *special_args = NULL; /* just the names of the special arguments, not the values */
     static float ratio = -1;
@@ -2256,7 +2296,6 @@ void *resize_handler(void *data)
     DRMS_Record_t *template_rec = NULL;
     int drms_status = DRMS_SUCCESS;
     DRMS_RecordSet_t *open_records = NULL;
-    char cdelt1_name[DRMS_MAXKEYNAMELEN] = {0};
     float cdelt1 = -1;
 
     operation = (char *)hcon_lookup_lower(arguments, "operation");
@@ -2285,9 +2324,17 @@ void *resize_handler(void *data)
     /* get newest record from series */
     /* ugh - cannot specify both a key list and n=XX, so we have to fetch all keys */
     open_records = drms_open_records2(template_rec->env, template_rec->seriesinfo->seriesname, NULL, 0, -1, 0, &drms_status);
-    cdelt1 = drms_getkey_float(open_records->records[0], "cdelt1", &drms_status);
 
-    drms_close_records(open_records, DRMS_FREE_RECORD);
+    if (open_records && drms_status == DRMS_SUCCESS)
+    {
+        cdelt1 = drms_getkey_float(open_records->records[0], "cdelt1", &drms_status);
+        drms_close_records(open_records, DRMS_FREE_RECORD);
+    }
+    else
+    {
+        fprintf(stderr, "[ resize_handler ] unable to open most recent record in series `%s`\n", template_rec->seriesinfo->seriesname);
+        ratio = -1;
+    }
 
     if (target_scale == 0 || !isfinite(cdelt1))
     {
@@ -2301,7 +2348,7 @@ void *resize_handler(void *data)
     return &ratio;
 }
 
-void *im_patch_handler(void *data)
+static void *im_patch_handler(void *data)
 {
     static Hash_Table_t *special_args = NULL; /* just the names of the special arguments, not the values */
     static float ratio = -1;
@@ -2347,23 +2394,43 @@ void *im_patch_handler(void *data)
     template_rec_str = (char *)hcon_lookup_lower(arguments, "template_rec");
     sscanf(template_rec_str, "%p", &(void *)template_rec);
     open_records = drms_open_records2(template_rec->env, template_rec->seriesinfo->seriesname, NULL, 0, -1, 0, &drms_status);
-    segment = drms_segment_lookupnum(open_records->records[0], 0);
-    orig_dim_x = segment->axis[0]; /* from first record's segment dims */
-    orig_dim_y = segment->axis[1]; /* from first record's segment dims */
 
-    drms_close_records(open_records, DRMS_FREE_RECORD);
-
-    if (orig_dim_x == 0 || orig_dim_y == 0)
+    if (open_records && drms_status == DRMS_SUCCESS)
     {
+        segment = drms_segment_lookupnum(open_records->records[0], 0);
+
+        if (segment)
+        {
+            orig_dim_x = segment->axis[0]; /* from first record's segment dims */
+            orig_dim_y = segment->axis[1]; /* from first record's segment dims */
+
+            if (orig_dim_x == 0 || orig_dim_y == 0)
+            {
+                ratio = -1;
+            }
+            else
+            {
+                ratio = (float)(new_dim_x * new_dim_y) / (float)(orig_dim_x * orig_dim_y);
+            }
+        }
+        else
+        {
+            fprintf(stderr, "[ im_patch_handler ] unable to locate first segment in series `%s`\n", template_rec->seriesinfo->seriesname);
+            ratio = -1;
+        }
+
+        drms_close_records(open_records, DRMS_FREE_RECORD);
+    }
+    else
+    {
+        fprintf(stderr, "[ im_patch_handler ] unable to open most recent record in series `%s`\n", template_rec->seriesinfo->seriesname);
         ratio = -1;
     }
-
-    ratio = (float)(new_dim_x * new_dim_y) / (float)(orig_dim_x * orig_dim_y);
 
     return &ratio;
 }
 
-void *map_proj_handler(void *data)
+static void *map_proj_handler(void *data)
 {
     static Hash_Table_t *special_args = NULL; /* just the names of the special arguments, not the values */
     static float ratio = -1;
@@ -2409,24 +2476,51 @@ void *map_proj_handler(void *data)
     template_rec_str = (char *)hcon_lookup_lower(arguments, "template_rec");
     sscanf(template_rec_str, "%p", &(void *)template_rec);
     open_records = drms_open_records2(template_rec->env, template_rec->seriesinfo->seriesname, NULL, 0, -1, 0, &drms_status);
-    segment = drms_segment_lookupnum(open_records->records[0], 0);
-    orig_dim_x = segment->axis[0]; /* from first record's segment dims */
-    orig_dim_y = segment->axis[1]; /* from first record's segment dims */
 
-    drms_close_records(open_records, DRMS_FREE_RECORD);
-
-    if (orig_dim_x == 0 || orig_dim_y == 0)
+    if (open_records && drms_status == DRMS_SUCCESS)
     {
+        segment = drms_segment_lookupnum(open_records->records[0], 0);
+
+        if (segment)
+        {
+            orig_dim_x = segment->axis[0]; /* from first record's segment dims */
+            orig_dim_y = segment->axis[1]; /* from first record's segment dims */
+
+            if (orig_dim_x == 0 || orig_dim_y == 0)
+            {
+                ratio = -1;
+            }
+            else
+            {
+                ratio = (float)(new_dim_x * new_dim_y) / (float)(orig_dim_x * orig_dim_y);
+            }
+        }
+        else
+        {
+            fprintf(stderr, "[ im_patch_handler ] unable to locate first segment in series `%s`\n", template_rec->seriesinfo->seriesname);
+            ratio = -1;
+        }
+
+        drms_close_records(open_records, DRMS_FREE_RECORD);
+    }
+    else
+    {
+        fprintf(stderr, "[ im_patch_handler ] unable to open most recent record in series `%s`\n", template_rec->seriesinfo->seriesname);
         ratio = -1;
     }
 
-    ratio = (float)(new_dim_x * new_dim_y) / (float)(orig_dim_x * orig_dim_y);
     return &ratio;
 }
 
-HContainer_t *g_processing_steps = NULL;
+/* END PROCESSING-STEP HANDLER FUNCTIONS
+ */
 
-float get_size_ratio(struct _processing_step_node_data_ *node_data, DRMS_Record_t *template_rec)
+/* for a single processing step, returns the ratio of post-processing image size to pre-processing size;
+ * returns -1.0 upon error (which includes non-finite computation values, division by zero, etc.); the
+ * node data contain the processing-program arguments needed to calculate the ratio - these data
+ * are passed to the processing-step handler; the template record is also passed to the handler, even
+ * though the specific handler may not need it */
+static float get_size_ratio(struct _processing_step_node_data_ *node_data, DRMS_Record_t *template_rec)
 {
     /* get index */
     int index = -1;
@@ -2457,7 +2551,9 @@ float get_size_ratio(struct _processing_step_node_data_ *node_data, DRMS_Record_
     }
 }
 
-/* validate processing steps */
+/* in the global `g_processing_steps` associative array, store the index of each processing step listed in PROCESSING_STEPS;
+ * returns the index for processing-step `step` if `step` is a valid processing step; returns -1 otherwise
+ */
 static int get_processing_step_index(const char *step)
 {
     int step_index = -1;
@@ -2496,6 +2592,9 @@ static int get_processing_step_index(const char *step)
     return step_index;
 }
 
+/* calls the processing-step handler for processing step `step` with the `operation` argument of `special_args` to
+ * obtain the Hash_Table_t of processing-step program special arguments (the program arguments needed for a size-
+ * ratio calculation); returns the hash table if it is located, or NULL otherwise */
 static Hash_Table_t *get_special_args(const char *step)
 {
     int step_index = -1;
@@ -2531,12 +2630,16 @@ static Hash_Table_t *get_special_args(const char *step)
     return NULL;
 }
 
+/* parses the JSON `processing` program argument; for each step in this argument, extracts the special arguments
+ * (the program arguments needed for a size-ratio calculation) and returns, in a list, an associative array of
+ * these arguments' key-value pairs; each node in the returned list contains the associate array for a single
+ * processing step
+ */
 static int get_processing_list(const char *processing_json, LinkedList_t **processing_list)
 {
     /* validate and insert processing-step info from processing argument */
     int err = 0;
     LinkedList_t *list = NULL;
-    int elem;
     jsmn_parser parser;
     jsmntok_t *tokens = NULL;
     size_t sz_jstokens = 1024;
@@ -2585,12 +2688,13 @@ static int get_processing_list(const char *processing_json, LinkedList_t **proce
 
         if (parse_result == JSMN_ERROR_NOMEM || parse_result == JSMN_ERROR_INVAL || parse_result == JSMN_ERROR_PART)
         {
-           /* Did not allocate enough tokens to hold parsing results. There shouldn't be 512 tokens in the response, only 2,
-            * so error out. */
+           /* did not allocate enough tokens to hold parsing results; */
+            fprintf(stderr, "[ get_processing_list ] exceeded maximum number of JSON tokens in `%s` argument\n", ARG_PROCESSING_JSON);
             err = 1;
         }
         else if (parse_result != JSMN_SUCCESS)
         {
+            fprintf(stderr, "[ get_processing_list ] invalid JSON in `%s` argument\n", ARG_PROCESSING_JSON);
             err = 1;
         }
         else
@@ -2600,6 +2704,7 @@ static int get_processing_list(const char *processing_json, LinkedList_t **proce
             if (tokens[token_index].type != JSMN_OBJECT)
             {
                 /* no root object */
+                fprintf(stderr, "[ get_processing_list ] `%s` argument must contain JSON with a root object\n", ARG_PROCESSING_JSON);
                 err = 1;
             }
             else
@@ -2620,7 +2725,7 @@ static int get_processing_list(const char *processing_json, LinkedList_t **proce
                     /* validate step; creates the mapping from step name to index into PROCESSING_STEPS, PROCESSING_HANDLERS, and PROCESSING_ARGUMENTS */
                     if (get_processing_step_index(step_name) == -1)
                     {
-                        fprintf(stderr, "invalid processing step %s\n", step_name);
+                        fprintf(stderr, "[ get_processing_list ] invalid processing step `%s`\n", step_name);
                         err = 1;
                         break;
                     }
@@ -2628,10 +2733,11 @@ static int get_processing_list(const char *processing_json, LinkedList_t **proce
                     {
                         if (!list)
                         {
-                            list = list_llcreate(sizeof(struct _processing_step_node_data_), NULL);
+                            list = list_llcreate(sizeof(struct _processing_step_node_data_), (ListFreeFn_t)free_step_node);
 
                             if (!list)
                             {
+                                fprintf(stderr, "[ get_processing_list ] out of memory creating list\n");
                                 err = 1;
                                 break;
                             }
@@ -2653,6 +2759,7 @@ static int get_processing_list(const char *processing_json, LinkedList_t **proce
 
                     if (property_obj_token->type != JSMN_OBJECT)
                     {
+                        fprintf(stderr, "[ get_processing_list ] each processing step must have an object of processing-program key-value properties; no such object for `%s`\n", step_name);
                         err = 1;
                         break;
                     }
@@ -2860,10 +2967,13 @@ int DoIt(void)
 
     processing_json = cmdparams_get_str(&cmdparams, ARG_PROCESSING_JSON, NULL);
 
-    /* suck in processing argument values into the returned list */
-    if (get_processing_list(processing_json, &processing_steps))
+    if (strcmp(processing_json,"Not Specified") != 0)
     {
-        JSONDIE("invalid processing list argument");
+        /* suck in processing argument values into the returned list */
+        if (get_processing_list(processing_json, &processing_steps))
+        {
+            JSONDIE("invalid processing list argument");
+        }
     }
 
     followLinks = cmdparams_isflagset(&cmdparams, "l");
@@ -2940,7 +3050,7 @@ int DoIt(void)
         while ((node = list_llnext(processing_steps)) != NULL)
         {
             node_data = (struct _processing_step_node_data_ *)node->data;
-            step_size_ratio = get_size_ratio(node_data, rec);
+            step_size_ratio = get_size_ratio(node_data, rec); /* rec --> template record */
             if (step_size_ratio < 0)
             {
                 size_ratio = -1;
@@ -2952,6 +3062,8 @@ int DoIt(void)
 
         snprintf(size_ratio_str, sizeof(size_ratio_str), "%f", size_ratio);
         json_insert_pair_into_object(jroot, "processing_size_ratio", json_new_number(size_ratio_str));
+
+        list_llfree(&processing_steps);
     }
 
     if (!skipRunTime)
