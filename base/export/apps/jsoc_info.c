@@ -2393,7 +2393,7 @@ static void *im_patch_handler(void *data)
     sscanf(new_dim_y_str, "%d", &new_dim_y);
     template_rec_str = (char *)hcon_lookup_lower(arguments, "template_rec");
     sscanf(template_rec_str, "%p", &(void *)template_rec);
-    open_records = drms_open_records2(template_rec->env, template_rec->seriesinfo->seriesname, NULL, 0, -1, 0, &drms_status);
+    open_records = drms_open_records2(template_rec->env, template_rec->seriesinfo->seriesname, NULL, 0, -1, 1, &drms_status);
 
     if (open_records && drms_status == DRMS_SUCCESS)
     {
