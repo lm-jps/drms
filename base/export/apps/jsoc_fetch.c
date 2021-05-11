@@ -406,46 +406,72 @@ int fileupload = 0;
 static int gGenWebPage = 1; /* For the die() function. */
 
 int die(int dojson, const char *msg, const char *info, const char *cgistat, int64_t **psunumarr, SUM_info_t ***infostructs, char **webarglist, char ***series, char ***paths, char ***susize, int arrsize, const char *userhandle)
-  {
-  char *msgjson;
-  char *json;
-  char message[10000];
-  json_t *jroot = json_new_object();
-if (DEBUG) fprintf(stderr,"%s%s\n",msg,info);
-  strcpy(message,msg);
-  strcat(message,info);
-  if (dojson)
-    {
-    msgjson = string_to_json(message);
-    json_insert_pair_into_object(jroot, "status", json_new_number(cgistat));
-    json_insert_pair_into_object(jroot, "error", json_new_string(msgjson));
-    json_tree_to_string(jroot,&json);
+{
+    char *msgjson = NULL;
+    char *json = NULL;
+    char message[4096] = {0};
+    json_t *jroot = json_new_object();
 
-    if (gGenWebPage)
+    if (DEBUG)
     {
-        if (fileupload)  // The returned json should be in the implied <body> tag for iframe requests.
-            printf("Content-type: text/html\n\n");
-        else
-            printf("Content-type: application/json\n\n");
+        fprintf(stderr,"%s%s\n",msg,info);
     }
 
-    printf("%s\n",json);
-    }
-  else
+    if (msg && *msg != '\0')
     {
-    if (gGenWebPage)
+        snprintf(message, sizeof(message), "%s", msg);
+    }
+
+    if(info && *info != '\0')
     {
-        printf("Content-type: text/plain\n\n");
+        snprintf(message + strlen(message), sizeof(message) - strlen(message), "%s", info);
     }
 
-    printf("status=%s\nerror=%s\n", cgistat, message);
+    if (dojson)
+    {
+        msgjson = json_escape(message); /* allocs */
+
+        if (msgjson)
+        {
+            json_insert_pair_into_object(jroot, "status", json_new_number(cgistat));
+            json_insert_pair_into_object(jroot, "error", json_new_string(msgjson));
+            free(msgjson);
+            msgjson = NULL;
+        }
+
+        json_tree_to_string(jroot, &json);
+
+        if (gGenWebPage)
+        {
+            if (fileupload)
+            {
+                // The returned json should be in the implied <body> tag for iframe requests.
+                printf("Content-type: text/html\n\n");
+            }
+            else
+            {
+                printf("Content-type: application/json\n\n");
+            }
+        }
+
+        printf("%s\n", json);
     }
-  fflush(stdout);
+    else
+    {
+        if (gGenWebPage)
+        {
+            printf("Content-type: text/plain\n\n");
+        }
 
-  CleanUp(psunumarr, infostructs, webarglist, series, paths, susize, arrsize, userhandle);
+        printf("status=%s\nerror=%s\n", cgistat, message);
+    }
 
-  return(1);
-  }
+    fflush(stdout);
+
+    CleanUp(psunumarr, infostructs, webarglist, series, paths, susize, arrsize, userhandle);
+
+    return(1);
+}
 
 static int JsonCommitFn(DRMS_Record_t **exprec,
                         int ro,
@@ -1568,8 +1594,8 @@ int DoIt(void)
   DRMS_RecordSet_t *exports;
   DRMS_Record_t *exprec = NULL;  // Why was the name changed from export_log ??
   char new_requestid[200];
-  char status_query[1000];
-  char msgbuf[128];
+  char status_query[1024] = {0};
+  char msgbuf[128] = {0};
   SUM_info_t **infostructs = NULL;
   char *webarglist = NULL;
   size_t webarglistsz;
@@ -1719,8 +1745,7 @@ int DoIt(void)
 
   if (status != CMDPARAMS_SUCCESS)
   {
-     snprintf(msgbuf, sizeof(msgbuf),
-              "Invalid argument on entry, '%s=%s'.\n", kArgSunum, cmdparams_get_str(&cmdparams, kArgSunum, NULL));
+     snprintf(msgbuf, sizeof(msgbuf), "Invalid argument on entry, '%s=%s'.\n", kArgSunum, cmdparams_get_str(&cmdparams, kArgSunum, NULL));
      JSONDIE(msgbuf);
   }
 
@@ -1811,8 +1836,7 @@ int DoIt(void)
        /* Use the ds field - should be an array of numbers. */
        if (!cmdparams_set(&cmdparams, kArgSunum, dsin))
        {
-          snprintf(msgbuf, sizeof(msgbuf),
-                   "Invalid argument in exp_su, '%s=%s'.\n", kArgDs, dsin);
+          snprintf(msgbuf, sizeof(msgbuf), "Invalid argument in exp_su, '%s=%s'.\n", kArgDs, dsin);
           JSONDIE(msgbuf);
        }
 
@@ -1820,8 +1844,7 @@ int DoIt(void)
 
        if (status != CMDPARAMS_SUCCESS)
        {
-          snprintf(msgbuf, sizeof(msgbuf),
-                   "Invalid argument in exp_su, '%s=%s'.\n", kArgDs, dsin);
+          snprintf(msgbuf, sizeof(msgbuf), "Invalid argument in exp_su, '%s=%s'.\n", kArgDs, dsin);
           JSONDIE(msgbuf);
        }
     }
@@ -2914,7 +2937,7 @@ int DoIt(void)
         int non_exportable_SU = -1;
         int intervention_needed = -1;
         int all_nearline = 0;
-        char dsquery[DRMS_MAXQUERYLEN];
+        char dsquery[DRMS_MAXQUERYLEN] = {0};
         char *tmp_recordset = NULL;
         size_t sz_tmp_recordset = 0;
         char *p;
@@ -2923,7 +2946,7 @@ int DoIt(void)
         DRMS_RecordSet_t *rs;
         int compressedStorage;
         int compressedDownload;
-        char dieStr[1024];
+        char dieStr[1024] = {0};
         int caStatus = 0;
         int clStatus = 0; /* assume passed test */
         HContainer_t *argsCont = NULL;
@@ -3129,7 +3152,7 @@ int DoIt(void)
         // before we reach this point in code. Let's catch bad-series errors here
         // so we can tell the user that they're trying to export a non-existent
         // series.
-        char mbuf[1024];
+        char mbuf[1024] = {0};
         char *allvers = NULL;
         char **sets = NULL;
         DRMS_RecordSetType_t *settypes = NULL; /* a maximum doesn't make sense */
@@ -3345,11 +3368,11 @@ int DoIt(void)
             if (status == 0)
             {
                 // open_records failed but query is OK so probably too many records for memory limit.
-                char errmsg[100];
+                char errmsg[128] = {0};
 
                 sprintf(errmsg, "%d is too many records in one request.", rcount);
                 drms_record_freerecsetspecarr_plussegs(&allvers, &sets, &settypes, &snames, &filts, &segs, nsets);
-                JSONDIE2("Can not open RecordSet ",errmsg);
+                JSONDIE2("Can not open RecordSet ", errmsg);
             }
             status = tmpstatus;
             drms_record_freerecsetspecarr_plussegs(&allvers, &sets, &settypes, &snames, &filts, &segs, nsets);
@@ -3792,7 +3815,7 @@ int DoIt(void)
                 /* invalid SU - this isn't really expected if the QUALITY flag check is part of the export request */
                 if (sinfo->sunum)
                 {
-                    char sunum_buf[64];
+                    char sunum_buf[64] = {0};
 
                     snprintf(sunum_buf, sizeof(sunum_buf), "%lld", sinfo->sunum);
                     JSONDIE2("One or more Storage Units are invalid", sunum_buf);
@@ -3941,11 +3964,11 @@ int DoIt(void)
       {
       if (0 && segcount == 1) // If only one file then do immediate delivery of that file.
         {
-           char sfpath[DRMS_MAXPATHLEN];
+           char sfpath[DRMS_MAXPATHLEN] = {0};
            int sfret = send_file(rs->records[0], 0, sfpath, sizeof(sfpath));
            if (sfret == 1)
            {
-              JSONDIE2("Can not open file for export: ",sfpath);
+              JSONDIE2("Can not open file for export: ", sfpath);
            }
            else
            {
@@ -4290,7 +4313,7 @@ int DoIt(void)
   // op = exp_status, kOpExpStatus,  Implied here
     if (strcmp(op,kOpExpStatus) == 0)
     {
-        char mybuf[128];
+        char mybuf[128] = {0};
 
         // There is no case statement for kOpExpStatus above. We need to read in exprec
         // here.
