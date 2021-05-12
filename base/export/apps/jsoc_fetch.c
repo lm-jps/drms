@@ -1423,7 +1423,7 @@ static int CheckUserLoad(DRMS_Env_t *env, const char *address, const char *ipAdd
     char pending_request[32] = {0};
     int rv = -1;
 
-    WriteLog(log_file, "[ CheckUserLoad ] checking user load");
+    WriteLog(log_file, "[ CheckUserLoad ] checking user load\n");
 
     /* look for pending request in EXPORT_PENDING_REQUESTS_TABLE - address is primary key, index on ipAddress exists too */
     if (address)
@@ -1453,7 +1453,7 @@ static int CheckUserLoad(DRMS_Env_t *env, const char *address, const char *ipAdd
         if ((bres = drms_query_bin(env->session, command)) == NULL)
         {
             fprintf(stderr, "DB query failure [%s]\n", command);
-            WriteLog(log_file, "[ CheckUserLoad ] db query error `%s`", command);
+            WriteLog(log_file, "[ CheckUserLoad ] db query error `%s`\n", command);
             rv = 1;
         }
         else
@@ -1475,20 +1475,20 @@ static int CheckUserLoad(DRMS_Env_t *env, const char *address, const char *ipAdd
 
                 if (exempt)
                 {
-                    WriteLog(log_file, "[ CheckUserLoad ] address %s is exempt from pending-request limit", address);
+                    WriteLog(log_file, "[ CheckUserLoad ] address %s is exempt from pending-request limit\n", address);
                     rv = 0;
                 }
                 else
                 {
                     /* an existing request is pending for this user and it has not timed out */
-                    WriteLog(log_file, "[ CheckUserLoad ] at least one pending request exists for %s", address);
+                    WriteLog(log_file, "[ CheckUserLoad ] at least one pending request exists for %s\n", address);
                     rv = 2;
                 }
             }
             else
             {
                 /* either no pending request, or a pending request has timed out */
-                WriteLog(log_file, "[ CheckUserLoad ] no (un-timed-out) pending request for %s", address);
+                WriteLog(log_file, "[ CheckUserLoad ] no (un-timed-out) pending request for %s\n", address);
                 rv = 0;
             }
         }
@@ -1501,7 +1501,7 @@ static int CheckUserLoad(DRMS_Env_t *env, const char *address, const char *ipAdd
          * users with the same IP address to get around the limits imposed on email addresses */
         if (ipAddress)
         {
-            WriteLog(log_file, "[ CheckUserLoad ] checking IP-address limit for %s", ipAddress);
+            WriteLog(log_file, "[ CheckUserLoad ] checking IP-address limit for %s\n", ipAddress);
             snprintf(command, sizeof(command), "SELECT count(*) FROM %s WHERE ip_address = '%s' AND CURRENT_TIMESTAMP - start_time < interval '%d minutes'", EXPORT_PENDING_REQUESTS_TABLE, ipAddress, timeOutInterval);
 
             if ((bres = drms_query_bin(env->session, command)) == NULL)
@@ -1517,13 +1517,13 @@ static int CheckUserLoad(DRMS_Env_t *env, const char *address, const char *ipAdd
                     if (db_binary_field_getlonglong(bres, 0, 0) > 10)
                     {
                         /* 10 existing requests are pending for this IP address that have not timed out */
-                        WriteLog(log_file, "[ CheckUserLoad ] too many pending requests for %s", ipAddress);
+                        WriteLog(log_file, "[ CheckUserLoad ] too many pending requests for %s\n", ipAddress);
                         rv = 3;
                     }
                     else
                     {
                         /* either no pending request, or a pending request has timed out */
-                        WriteLog(log_file, "[ CheckUserLoad ] fewer pending requests than limit for ip address `%s`", ipAddress);
+                        WriteLog(log_file, "[ CheckUserLoad ] fewer pending requests than limit for ip address `%s`\n", ipAddress);
                         rv = 0;
                     }
                 }
@@ -1531,7 +1531,7 @@ static int CheckUserLoad(DRMS_Env_t *env, const char *address, const char *ipAdd
                 {
                     /* this should never happen - count() should return a single row */
                     fprintf(stderr, "DB query failure [%s] - did not return any rows\n", command);
-                    WriteLog(log_file, "[ CheckUserLoad ] no rows returned for ip address `%s`", ipAddress);
+                    WriteLog(log_file, "[ CheckUserLoad ] no rows returned for ip address `%s`\n", ipAddress);
                     rv = 1;
                 }
             }
@@ -1550,7 +1550,7 @@ static int CheckUserLoad(DRMS_Env_t *env, const char *address, const char *ipAdd
         rv = 1;
     }
 
-    WriteLog(log_file, "[ CheckUserLoad ] return value is %d", rv);
+    WriteLog(log_file, "[ CheckUserLoad ] return value is %d\n", rv);
 
     return rv;
 }
@@ -4107,8 +4107,13 @@ int DoIt(void)
             snprintf(cmd, sizeof(cmd), "INSERT INTO jsoc.export_md5 (md5, requestid, exporttime) VALUES('%s', '%s', '%s')", md5Str, requestid, timeStrBuf);
             if (drms_dms(drms_env->session, NULL, cmd))
             {
-               fprintf(stderr, "Failure obtaining estimated completion time and size: %s.\n", cmd);
-               JSONDIE("Cant save new export-request hash.");
+                WriteLog(lfname, "unable to insert `%s` into export md5 table\n", md5Str);
+                fprintf(stderr, "Failure obtaining estimated completion time and size: %s.\n", cmd);
+                JSONDIE("Cant save new export-request hash.");
+            }
+            else
+            {
+                WriteLog(lfname, "successfully insertd `%s` into export md5 table\n", md5Str);
             }
 
             // Log this export request
