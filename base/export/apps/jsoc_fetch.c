@@ -63,6 +63,8 @@
 #define kExportSeriesNew "jsoc.export_new"
 #define kExportUser "jsoc.export_user"
 
+#define MAX_REQUEST_ID_LEN 32
+
 #define kArgOp		"op"
 #define kArgRequestid	"requestid"
 #define kArgDs		"ds"
@@ -396,9 +398,22 @@ static void CleanUp(int64_t **psunumarr, SUM_info_t ***infostructs, char **webar
  * is called from the sub-function.
  * PHS - but the return value of sub-functions should be checked!
  */
+
+/* status == 4: these are export failures; this can happen when jsoc_fetch is called to initiate an export request
+ * (op == `exp_request`) or to check the status of a request (op == `exp_status`)
+ */
 #define JSONDIE(msg) {die(dojson,msg,"","4",&sunumarr,&infostructs,&webarglist,&series,&paths,&susize,arrsize,userhandle);return(1);}
 #define JSONDIE2(msg,info) {die(dojson,msg,info,"4",&sunumarr,&infostructs,&webarglist,&series,&paths,&susize,arrsize,userhandle);return(1);}
+
+/* the export manager has not yet run so the export request has not yet been copied into jsoc.export_new; this occurs when
+ * a user makes an `exp_status` request right after making an `exp_request` call
+ *
+ * !!! the original cause of this error is now obsolete !!! jsoc_fetch now check jsoc.export_new if the export cannot be located
+ * in jsoc.export - if located there, it will return a status of 1 (export pending)
+ */
 #define JSONDIE3(msg,info) {die(dojson,msg,info,"6",&sunumarr,&infostructs,&webarglist,&series,&paths,&susize,arrsize,userhandle);return(1);}
+
+/* status == 7 : the user has encountered a per-user or per-ip-address limit */
 #define JSONDIE7(msg) {die(dojson,msg,"","7",&sunumarr,&infostructs,&webarglist,&series,&paths,&susize,arrsize,userhandle);return(1);}
 #define JSONDIE25(msg,info) {die(dojson,msg,info,"25",&sunumarr,&infostructs,&webarglist,&series,&paths,&susize,arrsize,userhandle);return(0);}
 
@@ -678,16 +693,21 @@ static void FreeLogs(void *val)
 
 static void LocalTime(char *buf, int sz)
 {
-   time_t sounnecessarilycomplicated;
+   time_t cal_time;
    struct tm *ltime = NULL;
 
-   time(&sounnecessarilycomplicated);
-   ltime = localtime(&sounnecessarilycomplicated);
+   time(&cal_time);
+   ltime = localtime(&cal_time);
 
    *buf = '\0';
    if (ltime)
    {
       snprintf(buf, sz, "%s", asctime(ltime));
+      if (strlen(buf) > 0)
+      {
+          /* strip trailing newline */
+          buf[strlen(buf) - 1] = '\0';
+      }
    }
 }
 
@@ -699,6 +719,9 @@ static void WriteLog(const char *logpath, const char *format, ...)
     struct stat stbuf;
     int mustchmodlck = 0;
     int mustchmodlog = 0;
+    char local_time_str[128] = {0};
+
+    LocalTime(local_time_str, sizeof(local_time_str));
 
     if (stat(kLockFile, &stbuf) != 0)
     {
@@ -792,6 +815,7 @@ static void WriteLog(const char *logpath, const char *format, ...)
                     // Now we can do the actual writing.
                     va_list ap;
 
+                    fprintf(*pfptr, "[ %s ] ", local_time_str);
                     va_start(ap, format);
                     vfprintf(*pfptr, format, ap);
                     va_end(ap);
@@ -1024,7 +1048,7 @@ static char *GetExistReqID(DRMS_Env_t *env, const char *md5, int window, TIME *t
     DB_Text_Result_t *tresInner = NULL;
     int istat;
     char *end = NULL;
-    long long status;
+    long long status = -1;
     long long sunum;
     SUM_info_t *infostruct = NULL;
 
@@ -1049,6 +1073,7 @@ static char *GetExistReqID(DRMS_Env_t *env, const char *md5, int window, TIME *t
                     /* We now need to extract the estimated completion time (we can't actually provide an accurate estimate),
                      * and the SUNUM of the pending/complete original export SU. This will allow us to provide estimates to
                      * the export requestor. Account for obsolete DRMS records. */
+
                     snprintf(cmd, sizeof(cmd), "SELECT status, esttime, size, sunum FROM jsoc.export T2 WHERE recnum = (SELECT max(recnum) AS recnum FROM jsoc.export T1 WHERE T1.requestid = '%s')", id);
 
                     if ((tresInner = drms_query_txt(drms_env->session, cmd)) == NULL)
@@ -1058,11 +1083,52 @@ static char *GetExistReqID(DRMS_Env_t *env, const char *md5, int window, TIME *t
                     }
                     else
                     {
-                        if (tresInner->num_rows == 1 && tresInner->num_cols == 4)
+                        if (tresInner->num_rows != 1 || tresInner->num_cols != 4)
                         {
-                            status = strtoll(tresInner->field[0][0], &end, 10);
+                            /* There is a request in jsoc.export_md5 for this hash, but there is no such request in jsoc.export. Treat
+                             * this as if there is no such request in jsoc.export_md5 and have the user start a new export request. */
 
-                            if (end != tresInner->field[0][0] && (status == 0 || status == 1 || status == 2 || status == 12))
+                            /* the thing is, the export request might still be in jsoc.export_new (with status == 2,12); so we have
+                             * to try both series
+                             */
+                            db_free_text_result(tresInner);
+                            tresInner = NULL;
+
+                            snprintf(cmd, sizeof(cmd), "SELECT status, esttime, size, sunum FROM jsoc.export_new T2 WHERE recnum = (SELECT max(recnum) AS recnum FROM jsoc.export_new T1 WHERE T1.requestid = '%s')", id);
+
+                            if ((tresInner = drms_query_txt(drms_env->session, cmd)) == NULL)
+                            {
+                                fprintf(stderr, "Failure obtaining estimated completion time and size: %s.\n", cmd);
+                                istat = DRMS_ERROR_BADDBQUERY;
+                            }
+                            else if (tresInner->num_rows != 1 || tresInner->num_cols != 4)
+                            {
+                                istat = DRMS_ERROR_BADDBQUERY;
+                            }
+                            else
+                            {
+                                /* status must be 2 or 12 in jsoc.export_new (not 1) */
+                                status = strtoll(tresInner->field[0][0], &end, 10);
+                                if (end == tresInner->field[0][0] || (status != 2 && status != 12))
+                                {
+                                    istat = DRMS_ERROR_BADDBQUERY;
+                                }
+                            }
+                        }
+
+                        if (istat == DRMS_SUCCESS)
+                        {
+                            /* status must be 0, 1, 3, 4, 5, 7, 25 in jsoc.export (not 2 or 12) */
+                            if (status == -1)
+                            {
+                                status = strtoll(tresInner->field[0][0], &end, 10);
+                                if (end == tresInner->field[0][0] || (status != 0 && status != 1 && status != 3 && status != 4 && status != 5 && status != 7 && status != 25))
+                                {
+                                    istat = DRMS_ERROR_BADDBQUERY;
+                                }
+                            }
+
+                            if (istat == DRMS_SUCCESS)
                             {
                                 /* Make sure that the SU is online. */
                                 sunum = strtoll(tresInner->field[0][3], &end, 10);
@@ -1113,12 +1179,6 @@ static char *GetExistReqID(DRMS_Env_t *env, const char *md5, int window, TIME *t
                                 /* Couldn't get status from jsoc.export - we need to do a fresh export. */
                                 istat = DRMS_ERROR_BADDBQUERY;
                             }
-                        }
-                        else
-                        {
-                            /* There is a request in jsoc.export_md5 for this hash, but there is no such request in jsoc.export. Treat
-                             * this as if there is no such request in jsoc.export_md5 and have the user start a new export request. */
-                            istat = DRMS_ERROR_BADDBQUERY;
                         }
 
                         if (tresInner)
@@ -1420,7 +1480,7 @@ static int CheckUserLoad(DRMS_Env_t *env, const char *address, const char *ipAdd
     int max_requests = 0;
     int exempt = 0;
     int row = 0;
-    char pending_request[32] = {0};
+    char pending_request_id[MAX_REQUEST_ID_LEN] = {0};
     int rv = -1;
 
     WriteLog(log_file, "[ CheckUserLoad ] checking user load\n");
@@ -1465,10 +1525,9 @@ static int CheckUserLoad(DRMS_Env_t *env, const char *address, const char *ipAdd
 
                 for (row = 0; row < bres->num_rows; row++)
                 {
-                    /* extract response (request_id returns a string) */
-                    db_binary_field_getstr(bres, row, 0, sizeof(pending_request), pending_request);
-
-                    list_llinserttail(pending_request_ids, pending_request);
+                    /* extract response (request_id returns a string); calls snprintf() so pending_request_id is null-terminated */
+                    db_binary_field_getstr(bres, row, 0, sizeof(pending_request_id), pending_request_id);
+                    list_llinserttail(pending_request_ids, pending_request_id);
                 }
 
                 exempt = (bres->num_rows <= max_requests);
@@ -1602,6 +1661,7 @@ int DoIt(void)
   char *web_query;
   int from_web = 0;
   int status;
+  int status_override = -1;
   int dodataobj=1, dojson=1, dotxt=0, dohtml=0, doxml=0;
   DRMS_RecordSet_t *exports;
   DRMS_Record_t *exprec = NULL;  // Why was the name changed from export_log ??
@@ -3027,8 +3087,13 @@ int DoIt(void)
             JSONDIE2(dieStr, "");
         }
 
-        pending_request_ids = list_llcreate(sizeof(pending_request_ids), NULL);
+        pending_request_ids = list_llcreate(MAX_REQUEST_ID_LEN, NULL);
         pending_requests = calloc(1, pending_requests_sz);
+
+        if (!pending_requests)
+        {
+            JSONDIE2("[ %s] out of memory", kOpExpRequest);
+        }
 
         /* we know that the user is a registered export user - now reject the user if they have a pending request */
         if (instanceID >= 0)
@@ -3080,8 +3145,9 @@ int DoIt(void)
         }
 
         list_llfree(&pending_request_ids);
+        pending_request_ids = NULL;
 
-        size=0;
+        size = 0;
         strncpy(dsquery,dsin,DRMS_MAXQUERYLEN);
         fileupload = strncmp(dsquery, "*file*", 6) == 0;
 
@@ -4331,6 +4397,7 @@ int DoIt(void)
     if (strcmp(op,kOpExpStatus) == 0)
     {
         char mybuf[128] = {0};
+        int drms_status = DRMS_SUCCESS;
 
         // There is no case statement for kOpExpStatus above. We need to read in exprec
         // here.
@@ -4375,12 +4442,43 @@ int DoIt(void)
         LogReqInfo(lfname, instanceID, fileupload, op, dsin, requestid, dbhost, from_web, webarglist, fetch_time);
 
         // Must check jsoc.export, NOT jsoc.export_new.
-        sprintf(status_query, "%s[%s]", kExportSeries, requestid);
+        snprintf(status_query, sizeof(status_query), "%s[%s]", kExportSeries, requestid);
         exports = drms_open_records(drms_env, status_query, &status);
+
         if (!exports)
-            JSONDIE3("Cant locate export series: ", status_query);
-        if (exports->n < 1)
-            JSONDIE3("Cant locate export request: ", status_query);
+        {
+            /* this should never happen */
+            JSONDIE2("unable to open export DRMS record for ID `%s`", requestid);
+        }
+        else if (exports->n < 1)
+        {
+            /* `exp_request` request was made before the request was copied to jsoc.export; issue a pending response */
+            snprintf(status_query, sizeof(status_query), "%s[%s]", kExportSeriesNew, requestid);
+            exports = drms_open_records(drms_env, status_query, &status);
+
+            if (!exports)
+            {
+                /* this should never happen */
+                JSONDIE2("unable to open export DRMS record for ID `%s`", requestid);
+            }
+            else if (exports->n < 1)
+            {
+                JSONDIE2("invalid export DRMS record for ID `%s`", requestid);
+            }
+            else
+            {
+                /* status should be 2, 12 in jsoc.export_new; gets set to 1 when the request is copied into jsoc.export */
+                status = drms_getkey_int(exports->records[0], "Status", &drms_status);
+                if (drms_status != DRMS_SUCCESS || (status != 2 && status != 12))
+                {
+                    JSONDIE2("invalid export DRMS record for ID `%s`", requestid);
+                }
+
+                /* return a pending-request status (status == 1) */
+                status_override = 1;
+            }
+        }
+
         exprec = exports->records[0];
         exports->records[0] = NULL; // Detach this record from the record-set so we can free record-set, but not exprec.
         drms_close_records(exports, DRMS_FREE_RECORD);
@@ -4399,25 +4497,25 @@ int DoIt(void)
 
     /* generate HTML to send to web user */
 
-  if (strcmp(requestid, kNotSpecified) == 0)
-  {
-      // ART - must save exprec first (it was created in one of the case blocks above).
-      JSONCOMMIT("RequestID must be provided", &exprec, !insertexprec);
-  }
+    if (strcmp(requestid, kNotSpecified) == 0)
+    {
+        // ART - must save exprec first (it was created in one of the case blocks above).
+        JSONCOMMIT("RequestID must be provided", &exprec, !insertexprec);
+    }
 
     // export_series, exp_rec is jsoc.export_new; no need to call drms_open_records(), exprec is already available
     // actually, there is no need to use exprec - these values are in memory already - ART
 
-  status     = drms_getkey_int(exprec, "Status", NULL);
-  process = drms_getkey_string(exprec, "Processing", NULL);
-  protocol   = drms_getkey_string(exprec, "Protocol", NULL);
-  filenamefmt = drms_getkey_string(exprec, "FilenameFmt", NULL);
-  method     = drms_getkey_string(exprec, "Method", NULL);
-  format     = drms_getkey_string(exprec, "Format", NULL);
-  reqtime    = drms_getkey_time(exprec, "ReqTime", NULL);
-  esttime    = drms_getkey_time(exprec, "EstTime", NULL); // Crude guess for now
-  size       = drms_getkey_longlong(exprec, "Size", NULL);
-  char *export_errmsg = drms_getkey_string(exprec, "errmsg", NULL);
+    status = (status_override < 0) ? drms_getkey_int(exprec, "Status", NULL) : status_override;
+    process = drms_getkey_string(exprec, "Processing", NULL);
+    protocol   = drms_getkey_string(exprec, "Protocol", NULL);
+    filenamefmt = drms_getkey_string(exprec, "FilenameFmt", NULL);
+    method     = drms_getkey_string(exprec, "Method", NULL);
+    format     = drms_getkey_string(exprec, "Format", NULL);
+    reqtime    = drms_getkey_time(exprec, "ReqTime", NULL);
+    esttime    = drms_getkey_time(exprec, "EstTime", NULL); // Crude guess for now
+    size       = drms_getkey_longlong(exprec, "Size", NULL);
+    char *export_errmsg = drms_getkey_string(exprec, "errmsg", NULL);
 
   // Do special actions on status
   switch (status)
