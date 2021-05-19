@@ -128,8 +128,8 @@ show_info
 #include "printk.h"
 #include "exputil.h"
 #include "qDecoder.h"
-#include "jsmn.h"
 #include "fitsexport.h"
+#include "processing.h"
 
 char *MISSING_KEY_NAME = "???";
 char *MISSING_KEY_VALUE = "???";
@@ -142,26 +142,6 @@ char *INVALID_SEG = "InvalidSegName";
 
 /* processing argument macros */
 #define ARG_PROCESSING_JSON "processing"
-#define PROCESSING_STEP_NAME_LEN 32
-#define PROCESSING_STEP_VALUE_LEN 64
-
-HContainer_t *g_processing_steps = NULL;
-
-/* processing argument handler-function type */
-typedef void *(*p_fn_size_ratio_handler)(void *data);
-
-/* processing argument processing-step list node */
-struct _processing_step_node_data_
-{
-    char step[PROCESSING_STEP_NAME_LEN];
-    HContainer_t arguments;
-};
-
-static void free_step_node(const void *data)
-{
-    struct _processing_step_node_data_ *node_data = (struct _processing_step_node_data_ *)data;
-    hcon_free(&node_data->arguments);
-}
 
 /* invalidObj is used simply for a fixed address to denote that a keyword, segment, or link struct is bad */
 char invalidObj;
@@ -172,7 +152,7 @@ do  {	\
   char *msgjson;	\
   char *json;	\
   json_t *jroot = json_new_object();	\
-  msgjson = string_to_json(msg);	\
+  msgjson = json_escape_string(msg);	\
   json_insert_pair_into_object(jroot, "status", json_new_number("1"));	\
   json_insert_pair_into_object(jroot, "error", json_new_string(msgjson));	\
   json_tree_to_string(jroot,&json);	\
@@ -241,15 +221,10 @@ static int isInvalidLink(DRMS_Link_t *link)
     return 1;
 }
 
-static char *string_to_json(const char *in)
+static char *json_escape_string(const char *in)
 {
-    // for json vers 0.9 no longer uses wide chars
-    char *new = NULL;
-
-
-    new = strdup(in);
-    new = json_escape(new);
-    return new;
+    /* allocs */
+    return json_escape((char *)in);
 }
 
 void manage_userhandle(int register_handle, const char *handle)
@@ -922,7 +897,7 @@ ModuleArgs_t module_args[] =
     {ARG_STRING, "link", "Not Specified", "<comma delimited linkname list>, links or special values: **ALL**, **NONE**"},
     {ARG_STRING, "seg", "Not Specified", "<comma delimited segment list>, segnames or special values: **ALL**, **NONE** "},
     {ARG_STRING, "userhandle", "Not Specified", "Unique request identifier to allow possible user kill of this program."},
-    {ARG_STRINGS, ARG_PROCESSING_JSON, "Not Specified", "A JSON object of processing steps to be applied to the input record-set upon export; if provided, then the ratio of the processed image size to the original image size will be printed when op == series_struct (in the processing_size_ratio property)."},
+    {ARG_STRING, ARG_PROCESSING_JSON, "Not Specified", "A JSON object of processing steps to be applied to the input record-set upon export; if provided, then the ratio of the processed image size to the original image size will be printed when op == series_struct (in the processing_size_ratio property)."},
     {ARG_FLAG, "B", NULL, "print floating-point values as hexadecimal strings"},
     {ARG_FLAG, "l", NULL, "Follow links to linked segments."},
     {ARG_FLAG, "M", NULL, "print floating-point values with maximum precision determined by DB"},
@@ -1038,22 +1013,22 @@ char *drms_getseriesowner(DRMS_Env_t *drms_env, char *series, int *status)
 
 static json_t *createJsonStringVal(const char *text)
 {
+    /* must free returned json_t; generally that is done when json_free_value() is called on the root json object */
     json_t *rv = NULL;
-    char *escText = NULL;
-    char *jsonLibShouldReallyDeclareThisConst = NULL;
+    char *escaped_text = NULL;
 
     if (text && *text != '\0')
     {
-        jsonLibShouldReallyDeclareThisConst = strdup(text);
-        JSOC_INFO_ASSERT(jsonLibShouldReallyDeclareThisConst, "out of memory");
-        escText = string_to_json(jsonLibShouldReallyDeclareThisConst);
-        JSOC_INFO_ASSERT(escText, "out of memory");
-        rv = json_new_string(escText);
-        JSOC_INFO_ASSERT(rv, "out of memory");
-        free(escText);
-        escText = NULL;
-        free(jsonLibShouldReallyDeclareThisConst);
-        jsonLibShouldReallyDeclareThisConst = NULL;
+        /* allocates new string */
+        escaped_text = json_escape((char *)text);
+        JSOC_INFO_ASSERT(escaped_text != NULL, "out of memory");
+
+        /* allocates new string */
+        rv = json_new_string(escaped_text);
+        JSOC_INFO_ASSERT(rv != NULL, "out of memory");
+
+        free(escaped_text);
+        escaped_text = NULL;
     }
 
     return rv;
@@ -1068,7 +1043,7 @@ static int list_series_info(DRMS_Env_t *drms_env, DRMS_Record_t *rec, json_t *jr
     DRMS_Link_t *link;
     HIterator_t *last = NULL;
     char intstring[100];
-    char *notework;
+    char *notework = NULL;
     char *owner;
     json_t *indexarray = NULL;
     json_t *primearray = NULL;
@@ -1087,7 +1062,7 @@ static int list_series_info(DRMS_Env_t *drms_env, DRMS_Record_t *rec, json_t *jr
     DRMS_Keyword_t *skey = NULL; /* slot key */
 
     /* add description from seriesinfo */
-    notework = string_to_json(rec->seriesinfo->description);
+    notework = json_escape(rec->seriesinfo->description);
     json_insert_pair_into_object(jroot, "note", json_new_string(notework));
     free(notework);
     /* add retention, unitsize, archive, and tapegroup integers */
@@ -1113,7 +1088,7 @@ static int list_series_info(DRMS_Env_t *drms_env, DRMS_Record_t *rec, json_t *jr
 
     if (wantowner)
     {
-        owner = string_to_json(drms_getseriesowner(drms_env, rec->seriesinfo->seriesname, &status));
+        owner = json_escape(drms_getseriesowner(drms_env, rec->seriesinfo->seriesname, &status));
         json_insert_pair_into_object(jroot, "owner", json_new_string(owner));
         free(owner);
     }
@@ -1418,11 +1393,11 @@ if (DEBUG) fprintf(stderr,"   starting all keywords\n");
     {
         DRMS_Record_t *jsdTemplate = NULL;
         DRMS_Keyword_t *jsdKeys = NULL;
-        char *typeStr = NULL;
-        char *scopeStr = NULL;
-        char *defStr = NULL;
-        char *unitsStr = NULL;
-        char *noteStr = NULL;
+        char typeStr[16] = {0};
+        char scopeStr[16] = {0};
+        char defStr[128] = {0};
+        char unitsStr[DRMS_MAXUNITLEN] = {0};
+        char noteStr[DRMS_MAXCOMMENTLEN] = {0};
 
         jsdTemplate = drms_create_jsdtemplate_record(drms_env, rec->seriesinfo->seriesname, &status);
         if (!jsdTemplate || status != DRMS_SUCCESS)
@@ -1511,11 +1486,8 @@ if (DEBUG) fprintf(stderr,"   starting all keywords\n");
                     /* accumulate strings for keytype, default, units, and description from link target */
                     if (lnkstat == DRMS_SUCCESS && linkedkw)
                     {
-                        typeStr = strdup(drms_type2str(linkedkw->info->type));
-                        scopeStr = strdup(drms_keyword_getrecscopestr(linkedkw, NULL));
-
-                        JSOC_INFO_ASSERT(typeStr, "out of memory");
-                        JSOC_INFO_ASSERT(scopeStr, "out of memory");
+                        snprintf(typeStr, sizeof(typeStr), "%s", drms_type2str(linkedkw->info->type));
+                        snprintf(scopeStr, sizeof(scopeStr), "%s", drms_keyword_getrecscopestr(linkedkw, NULL));
 
                         fitsexport_getmappedextkeyvalue(linkedkw, &fitsValue);
 
@@ -1532,46 +1504,36 @@ if (DEBUG) fprintf(stderr,"   starting all keywords\n");
                             error = 1;
                         }
 
-                        defStr = strdup(rawval);
-                        JSOC_INFO_ASSERT(defStr, "out of memory");
-                        unitsStr = strdup(linkedkw->info->unit);
-                        JSOC_INFO_ASSERT(unitsStr, "out of memory");
+                        snprintf(defStr, sizeof(defStr), "%s", rawval);
+                        snprintf(unitsStr, sizeof(unitsStr), "%s", linkedkw->info->unit);
+
                         /* if present keyword has description, use it.  else use target keyword description. */
                         if (*(key->info->description) == '\0' || *(key->info->description) == ' ')
                         {
-                            noteStr = strdup(linkedkw->info->description);
+                            snprintf(noteStr, sizeof(noteStr), "%s", linkedkw->info->description);
                         }
                         else
                         {
-                            noteStr = strdup(key->info->description);
+                            snprintf(noteStr, sizeof(noteStr), "%s", key->info->description);
                         }
-
-                        JSOC_INFO_ASSERT(noteStr, "out of memory");
                     }
                     else
                     {
-                        typeStr = strdup("link");
-                        JSOC_INFO_ASSERT(typeStr, "out of memory");
+                        snprintf(typeStr, sizeof(typeStr), "link");
 
                         // but scopework and notework are now not initialized, but they are used below --> memory corruption;
                         // write something that will help the user debug
-                        scopeStr = strdup("error following link");
-                        JSOC_INFO_ASSERT(scopeStr, "out of memory");
-                        defStr = string_to_json("error following link");
-                        JSOC_INFO_ASSERT(defStr, "out of memory");
-                        unitsStr = string_to_json("error following link");
-                        JSOC_INFO_ASSERT(unitsStr, "out of memory");
-                        noteStr = string_to_json("error following link");
-                        JSOC_INFO_ASSERT(noteStr, "out of memory");
+                        snprintf(scopeStr, sizeof(scopeStr), "error following link");
+                        snprintf(defStr, sizeof(defStr), "error following link");
+                        snprintf(unitsStr, sizeof(unitsStr), "error following link");
+                        snprintf(noteStr, sizeof(noteStr), "error following link");
                     }
                 }
                 else
                 {
                     /* accumulate strings for keytype, default val, units, and description from template record */
-                    typeStr = strdup(drms_type2str(key->info->type));
-                    JSOC_INFO_ASSERT(typeStr, "out of memory");
-                    scopeStr = strdup(drms_keyword_getrecscopestr(key, NULL));
-                    JSOC_INFO_ASSERT(scopeStr, "out of memory");
+                    snprintf(typeStr, sizeof(typeStr), drms_type2str(key->info->type));
+                    snprintf(scopeStr, sizeof(scopeStr), "%s", drms_keyword_getrecscopestr(key, NULL));
 
                     fitsexport_getmappedextkeyvalue(key, &fitsValue);
 
@@ -1588,12 +1550,8 @@ if (DEBUG) fprintf(stderr,"   starting all keywords\n");
                         error = 1;
                     }
 
-                    defStr = strdup(rawval);
-                    JSOC_INFO_ASSERT(defStr, "out of memory");
-                    unitsStr = strdup(key->info->unit);
-                    JSOC_INFO_ASSERT(unitsStr, "out of memory");
-                    noteStr = strdup(key->info->description);
-                    JSOC_INFO_ASSERT(noteStr, "out of memory");
+                    snprintf(unitsStr, sizeof(unitsStr), "%s", key->info->unit);
+                    snprintf(noteStr, sizeof(noteStr), "%s", key->info->description);
                 }
 
                 jsonVal = createJsonStringVal(typeStr);
@@ -1663,7 +1621,7 @@ if (DEBUG) fprintf(stderr,"   starting keyword %s\n",key->info->name);
                 char linknames[100], *tmpstr;
                 json_t *linkinfo;
                 sprintf(linknames,"%s->%s", key->info->linkname, key->info->target_key);
-                tmpstr = string_to_json(linknames);
+                tmpstr = json_escape_string(linknames);
                 linkinfo = json_new_string(tmpstr);
                 json_insert_pair_into_object(keyinfo, "linkinfo", linkinfo);
                 free(tmpstr);
@@ -1676,15 +1634,15 @@ if (DEBUG) fprintf(stderr,"   starting keyword %s\n",key->info->name);
                 if (lnkstat == DRMS_SUCCESS && linkedkw)
                 {
                     keytype = json_new_string(drms_type_names[linkedkw->info->type]);
-                    scopework = string_to_json((char *)drms_keyword_getrecscopestr(linkedkw, NULL));
+                    scopework = json_escape_string((char *)drms_keyword_getrecscopestr(linkedkw, NULL));
                     drms_keyword_snprintfval2(linkedkw, rawval, sizeof(rawval), max_precision, binary);
-                    defvalwork = string_to_json(rawval);
-                    unitswork = string_to_json(linkedkw->info->unit);
+                    defvalwork = json_escape_string(rawval);
+                    unitswork = json_escape_string(linkedkw->info->unit);
                     /* if present keyword has description, use it.  else use target keyword description. */
                     if (*(key->info->description) == '\0' || *(key->info->description) == ' ')
-                        notework = string_to_json(linkedkw->info->description);
+                        notework = json_escape_string(linkedkw->info->description);
                     else
-                        notework = string_to_json(key->info->description);
+                        notework = json_escape_string(key->info->description);
                 }
                 else
                 {
@@ -1692,10 +1650,10 @@ if (DEBUG) fprintf(stderr,"   starting keyword %s\n",key->info->name);
 
                     // but scopework and notework are now not initialized, but they are used below --> memory corruption;
                     // write something that will help the user debug
-                    scopework = string_to_json("error following link");
-                    defvalwork = string_to_json("error following link");
-                    unitswork = string_to_json("error following link");
-                    notework = string_to_json("error following link");
+                    scopework = json_escape_string("error following link");
+                    defvalwork = json_escape_string("error following link");
+                    unitswork = json_escape_string("error following link");
+                    notework = json_escape_string("error following link");
                 }
             }
             else
@@ -1703,13 +1661,13 @@ if (DEBUG) fprintf(stderr,"   starting keyword %s\n",key->info->name);
                 /* accumulate strings for keytype, default val, units, and description from template record */
                 keytype = json_new_string(drms_type_names[key->info->type]);
                 if (persegment)
-                    scopework = string_to_json("segment");
+                    scopework = json_escape_string("segment");
                 else
-                    scopework = string_to_json((char *)drms_keyword_getrecscopestr(key, NULL));
+                    scopework = json_escape_string((char *)drms_keyword_getrecscopestr(key, NULL));
                 drms_keyword_snprintfval2(key, rawval, sizeof(rawval), max_precision, binary);
-                defvalwork = string_to_json(rawval);
-                unitswork = string_to_json(key->info->unit);
-                notework = string_to_json(key->info->description);
+                defvalwork = json_escape_string(rawval);
+                unitswork = json_escape_string(key->info->unit);
+                notework = json_escape_string(key->info->description);
             }
 
             json_insert_pair_into_object(keyinfo, "type", keytype);
@@ -1811,7 +1769,7 @@ if (DEBUG) fprintf(stderr," done with keywords, start segments\n");
 		}
             json_insert_pair_into_object(seginfo, "dims", json_new_string(diminfo));
             }
-      notework = string_to_json(seg->info->description);
+      notework = json_escape_string(seg->info->description);
       json_insert_pair_into_object(seginfo, "note", json_new_string(notework));
       free(notework);
       json_insert_child(segarray, seginfo);
@@ -1838,7 +1796,7 @@ if (DEBUG) fprintf(stderr," link: %s\n",link->info->name);
       json_insert_pair_into_object(linkinfo, "name", json_new_string(link->info->name));
       json_insert_pair_into_object(linkinfo, "target", json_new_string(link->info->target_series));
       json_insert_pair_into_object(linkinfo, "kind", json_new_string(link->info->type == STATIC_LINK ? "STATIC" : "DYNAMIC"));
-      notework = string_to_json(link->info->description);
+      notework = json_escape_string(link->info->description);
       json_insert_pair_into_object(linkinfo, "note", json_new_string(notework));
       free(notework);
       json_insert_child(linkarray,linkinfo);
@@ -1857,133 +1815,149 @@ if (DEBUG) fprintf(stderr," link: %s\n",link->info->name);
 }
 
 static int get_series_stats(DRMS_Record_t *rec, json_t *jroot)
-  {
-  DRMS_RecordSet_t *rs;
-  int nprime;
-  int status;
-  char query[DRMS_MAXQUERYLEN];
-  json_t *interval = json_new_object();
-
-  nprime = rec->seriesinfo->pidx_num;
-  if (nprime > 0)
-    sprintf(query,"%s[^]", rec->seriesinfo->seriesname);
-  else
-    sprintf(query,"%s[:#^]", rec->seriesinfo->seriesname);
-  rs = drms_open_nrecords(rec->env, query, 1, &status);
-
-  if (status == DRMS_ERROR_QUERYFAILED)
-  {
-     if (rs)
-     {
-        drms_free_records(rs);
-     }
-
-     return status;
-  }
-
-      /* Print shadow-table status. */
-      int shadowStat;
-      char shadowStr[16];
-      int hasShadow;
-
-      if (wantowner)
-      {
-          /* Use the -o flag to also control the display of the HasShadow property. IDL users have not updated
-           * the interface to jsoc_info to expect additional properties (and it must be that
-           * they are not using a JSON parser - if they were, then additional properties would
-           * not be a problem). -o means "print ownership information", but we are also going to
-           * use it to control the printing of shadow-table disposition. */
-          hasShadow= drms_series_shadowexists(rec->env, rec->seriesinfo->seriesname, &shadowStat);
-
-          if (shadowStat)
-          {
-              snprintf(shadowStr, sizeof(shadowStr), "?");
-          }
-          else
-          {
-              snprintf(shadowStr, sizeof(shadowStr), "%s", hasShadow ? "yes" : "no");
-          }
-      }
-
-  if (!rs || rs->n < 1)
-    {
-    json_insert_pair_into_object(interval, "FirstRecord", json_new_string("NA"));
-    json_insert_pair_into_object(interval, "FirstRecnum", json_new_string("NA"));
-    json_insert_pair_into_object(interval, "LastRecord", json_new_string("NA"));
-    json_insert_pair_into_object(interval, "LastRecnum", json_new_string("NA"));
-    json_insert_pair_into_object(interval, "MaxRecnum", json_new_number("0"));
-    if (wantowner)
-    {
-        json_insert_pair_into_object(interval, "HasShadow", json_new_string(shadowStr));
-    }
-
-    if (rs) drms_free_records(rs);
-    json_insert_pair_into_object(jroot, "Interval", interval);
-    return DRMS_SUCCESS;
-    }
-  else
-    {
-    char recquery[DRMS_MAXQUERYLEN];
-    char *jsonquery;
-    char val[100];
+{
+    DRMS_RecordSet_t *record_set = NULL;
+    int nprime;
     int status;
-    drms_sprint_rec_query(recquery,rs->records[0]);
-    jsonquery = string_to_json(recquery);
-    status = json_insert_pair_into_object(interval, "FirstRecord", json_new_string(jsonquery));
-if (status != JSON_OK) fprintf(stderr, "json_insert_pair_into_object, status=%d, text=%s\n",status,jsonquery);
-    free(jsonquery);
-    sprintf(val,"%lld", rs->records[0]->recnum);
-    json_insert_pair_into_object(interval, "FirstRecnum", json_new_number(val));
-    drms_free_records(rs);
+    char query[DRMS_MAXQUERYLEN];
+    json_t *interval = json_new_object();
 
+    nprime = rec->seriesinfo->pidx_num;
     if (nprime > 0)
-      sprintf(query,"%s[$]", rec->seriesinfo->seriesname);
+      sprintf(query,"%s[^]", rec->seriesinfo->seriesname);
     else
-      sprintf(query,"%s[:#$]", rec->seriesinfo->seriesname);
-    rs = drms_open_nrecords(rec->env, query, -1, &status);
+      sprintf(query,"%s[:#^]", rec->seriesinfo->seriesname);
+    record_set = drms_open_nrecords(rec->env, query, 1, &status);
 
     if (status == DRMS_ERROR_QUERYFAILED)
     {
-       if (rs)
-       {
-          drms_free_records(rs);
-       }
+        if (record_set)
+        {
+            drms_close_records(record_set, DRMS_FREE_RECORD);
+        }
 
-       return status;
+        return status;
     }
 
-    drms_sprint_rec_query(recquery,rs->records[0]);
-    jsonquery = string_to_json(recquery);
-    json_insert_pair_into_object(interval, "LastRecord", json_new_string(jsonquery));
-    free(jsonquery);
-    sprintf(val,"%lld", rs->records[0]->recnum);
-    json_insert_pair_into_object(interval, "LastRecnum", json_new_number(val));
-    drms_free_records(rs);
+    /* Print shadow-table status. */
+    int shadowStat;
+    char shadowStr[16];
+    int hasShadow;
 
-    sprintf(query,"%s[:#$]", rec->seriesinfo->seriesname);
-    rs = drms_open_records(rec->env, query, &status);
-
-    if (status == DRMS_ERROR_QUERYFAILED)
-    {
-       if (rs)
-       {
-          drms_free_records(rs);
-       }
-
-       return status;
-    }
-
-    sprintf(val,"%lld", rs->records[0]->recnum);
-    json_insert_pair_into_object(interval, "MaxRecnum", json_new_number(val));
     if (wantowner)
     {
-        json_insert_pair_into_object(interval, "HasShadow", json_new_string(shadowStr));
+        /* Use the -o flag to also control the display of the HasShadow property. IDL users have not updated
+         * the interface to jsoc_info to expect additional properties (and it must be that
+         * they are not using a JSON parser - if they were, then additional properties would
+         * not be a problem). -o means "print ownership information", but we are also going to
+         * use it to control the printing of shadow-table disposition. */
+        hasShadow = drms_series_shadowexists(rec->env, rec->seriesinfo->seriesname, &shadowStat);
+
+        if (shadowStat)
+        {
+            snprintf(shadowStr, sizeof(shadowStr), "?");
+        }
+        else
+        {
+            snprintf(shadowStr, sizeof(shadowStr), "%s", hasShadow ? "yes" : "no");
+        }
     }
-    drms_free_records(rs);
+
+    if (!record_set || record_set->n < 1)
+    {
+        json_insert_pair_into_object(interval, "FirstRecord", json_new_string("NA"));
+        json_insert_pair_into_object(interval, "FirstRecnum", json_new_string("NA"));
+        json_insert_pair_into_object(interval, "LastRecord", json_new_string("NA"));
+        json_insert_pair_into_object(interval, "LastRecnum", json_new_string("NA"));
+        json_insert_pair_into_object(interval, "MaxRecnum", json_new_number("0"));
+        if (wantowner)
+        {
+            json_insert_pair_into_object(interval, "HasShadow", json_new_string(shadowStr));
+        }
+
+        if (record_set)
+        {
+            drms_close_records(record_set, DRMS_FREE_RECORD);
+        }
+
+        json_insert_pair_into_object(jroot, "Interval", interval);
+        return DRMS_SUCCESS;
     }
-  json_insert_pair_into_object(jroot, "Interval", interval);
-  return 0;
-  }
+    else
+    {
+        char recquery[DRMS_MAXQUERYLEN];
+        char *jsonquery;
+        char val[100];
+        int status;
+
+        drms_sprint_rec_query(recquery, record_set->records[0]);
+        jsonquery = json_escape_string(recquery);
+        status = json_insert_pair_into_object(interval, "FirstRecord", json_new_string(jsonquery));
+        if (status != JSON_OK)
+        {
+            fprintf(stderr, "json_insert_pair_into_object, status=%d, text=%s\n",status,jsonquery);
+        }
+
+        free(jsonquery);
+        sprintf(val,"%lld", record_set->records[0]->recnum);
+        json_insert_pair_into_object(interval, "FirstRecnum", json_new_number(val));
+        drms_close_records(record_set, DRMS_FREE_RECORD);
+        record_set = NULL;
+
+        if (nprime > 0)
+          sprintf(query,"%s[$]", rec->seriesinfo->seriesname);
+        else
+          sprintf(query,"%s[:#$]", rec->seriesinfo->seriesname);
+
+        record_set = drms_open_nrecords(rec->env, query, -1, &status);
+
+        if (status == DRMS_ERROR_QUERYFAILED)
+        {
+            if (record_set)
+            {
+                drms_close_records(record_set, DRMS_FREE_RECORD);
+            }
+
+            return status;
+        }
+
+        drms_sprint_rec_query(recquery, record_set->records[0]);
+        jsonquery = json_escape_string(recquery);
+        json_insert_pair_into_object(interval, "LastRecord", json_new_string(jsonquery));
+        free(jsonquery);
+        snprintf(val, sizeof(val), "%lld", record_set->records[0]->recnum);
+        json_insert_pair_into_object(interval, "LastRecnum", json_new_number(val));
+        drms_close_records(record_set, DRMS_FREE_RECORD);
+        record_set = NULL;
+
+        sprintf(query,"%s[:#$]", rec->seriesinfo->seriesname);
+        record_set = drms_open_records(rec->env, query, &status);
+
+        if (status == DRMS_ERROR_QUERYFAILED)
+        {
+           if (record_set)
+           {
+              drms_close_records(record_set, DRMS_FREE_RECORD);
+           }
+
+           return status;
+        }
+
+        sprintf(val,"%lld", record_set->records[0]->recnum);
+        json_insert_pair_into_object(interval, "MaxRecnum", json_new_number(val));
+
+        if (wantowner)
+        {
+            json_insert_pair_into_object(interval, "HasShadow", json_new_string(shadowStr));
+        }
+
+        drms_close_records(record_set, DRMS_FREE_RECORD);
+        record_set = NULL;
+    }
+
+    json_insert_pair_into_object(jroot, "Interval", interval);
+    return 0;
+}
 
 void json_insert_runtime(json_t *jroot, double StartTime)
   {
@@ -2011,6 +1985,8 @@ void report_summary(const char *host, double StartTime, const char *remote_IP, c
   char *logfile = calloc(1, PATH_MAX);
   char *lockfile = calloc(1, PATH_MAX);
 
+  if (logfile && lockfile)
+  {
   base_strlcat(logfile, EXPORT_LOG_DIR, PATH_MAX);
 
   if (logfile[strlen(logfile) - 1] != '/')
@@ -2078,6 +2054,10 @@ void report_summary(const char *host, double StartTime, const char *remote_IP, c
   else
     {
        fprintf(stderr, "Unable to open lock file for writing: %s.\n", lockfile);
+    }
+
+    free(logfile);
+    free(lockfile);
     }
 }
 
@@ -2171,679 +2151,281 @@ static void free_log_dir(void *data)
     }
 }
 
-/* define supported processing steps */
-#define PROCESSING_STEP_DATA(X) #X,
-char *PROCESSING_STEPS[] =
+static int print_series_information(DRMS_Env_t *drms_env, const char *series, int follow_links, int use_fits_key_names, int max_precision, int binary, LinkedList_t *processing_steps, int skip_run_time, double start_time, int print_HTTP_header)
 {
-   #include "processing.h"
-   "end"
-};
-#undef PROCESSING_STEP_DATA
+    const char *error_msg = NULL;
+    json_t *jroot = NULL;
+    DRMS_Record_t *template_record = NULL;
+    DRMS_Segment_t *template_segment = NULL;
+    ListNode_t *node = NULL;
+    struct _processing_step_node_data_ *node_data = NULL;
+    float size_ratio = 1.0;
+    float step_size_ratio = 0;
+    char size_ratio_str[32];
+    HIterator_t hit;
+    char *json = NULL;
+    char *formatted_json = NULL;
+    int status = DRMS_SUCCESS;
 
-/* define processing-step handler functions */
-#define PROCESSING_STEP_DATA(X) static void *X ## _handler(void *data);
-  #include "processing.h"
-#undef PROCESSING_STEP_DATA
+    /* Only want keyword info so get only the template record for drms series or first record for other data */
+    template_record = drms_template_record(drms_env, series, &status);
 
-/* define array of pointers to the processing-step handler functions */
-#define PROCESSING_STEP_DATA(X) X ## _handler,
-p_fn_size_ratio_handler PROCESSING_HANDLERS[] =
-{
-   #include "processing.h"
-   NULL
-};
-#undef PROCESSING_STEP_DATA
-
-/* PROCESSING-STEP HANDLER FUNCTIONS
- */
-static void *to_ptr_handler(void *data)
-{
-    static Hash_Table_t *special_args = NULL; /* just the names of the special arguments, not the values */
-    static float ratio = -1;
-
-    /* data passed in */
-    HContainer_t *arguments = (HContainer_t *)data;
-    char *operation = NULL;
-
-    operation = *(char **)hcon_lookup_lower(arguments, "operation");
-
-    if (operation)
+    if (status == DRMS_ERROR_QUERYFAILED)
     {
-        if (strcasecmp(operation, "special_args") == 0)
+        error_msg = DB_GetErrmsg(drms_env->session->db_handle);
+
+        if (error_msg)
         {
-            /* return the special args for this step (there are no special args for this step) */
-            return special_args;
-        }
-    }
-
-    ratio = 1.0;
-
-    return &ratio;
-}
-
-static void *aia_scale_handler(void *data)
-{
-    static Hash_Table_t *special_args = NULL; /* just the names of the special arguments, not the values */
-    static float ratio = -1;
-
-    /* data passed in */
-    HContainer_t *arguments = (HContainer_t *)data;
-    char *operation = NULL;
-
-    operation = (char *)hcon_lookup_lower(arguments, "operation");
-
-    if (operation)
-    {
-        if (strcasecmp(operation, "special_args") == 0)
-        {
-            /* return the special args for this step (there are no special args for this step) */
-            return special_args;
-        }
-    }
-
-    ratio = 1.0;
-
-    return &ratio;
-}
-
-static void *rebin_handler(void *data)
-{
-    static Hash_Table_t *special_args = NULL; /* just the names of the special arguments, not the values */
-    static float ratio = -1;
-
-    HContainer_t *arguments = (HContainer_t *)data;
-    char *operation = NULL;
-    char *scaling_factor_str = NULL;
-    float scaling_factor = -1;
-
-    operation = (char *)hcon_lookup_lower(arguments, "operation");
-
-    if (operation)
-    {
-        if (strcasecmp(operation, "special_args") == 0)
-        {
-            /* return the special args for this step */
-            if (!special_args)
-            {
-                special_args = calloc(1, sizeof(Hash_Table_t));
-                hash_init(special_args, 89, 0, (int (*)(const void *, const void *))strcmp, hash_universal_hash);
-                hash_insert(special_args, "scale", "T");
-            }
-
-            return special_args;
-        }
-    }
-
-    scaling_factor_str = (char *)hcon_lookup_lower(arguments, "scale");
-    sscanf(scaling_factor_str, "%f", &scaling_factor);
-
-    ratio = scaling_factor * scaling_factor;
-
-    return &ratio;
-}
-
-static void *resize_handler(void *data)
-{
-    static Hash_Table_t *special_args = NULL; /* just the names of the special arguments, not the values */
-    static float ratio = -1;
-
-    /* data passed in */
-    HContainer_t *arguments = (HContainer_t *)data;
-    char *operation = NULL;
-    char *target_scale_str = NULL;
-    float target_scale = -1;
-    char *template_rec_str = NULL;
-    DRMS_Record_t *template_rec = NULL;
-    int drms_status = DRMS_SUCCESS;
-    DRMS_RecordSet_t *open_records = NULL;
-    float cdelt1 = -1;
-
-    operation = (char *)hcon_lookup_lower(arguments, "operation");
-
-    if (operation)
-    {
-        if (strcasecmp(operation, "special_args") == 0)
-        {
-            /* return the special args for this step */
-            if (!special_args)
-            {
-                special_args = calloc(1, sizeof(Hash_Table_t));
-                hash_init(special_args, 89, 0, (int (*)(const void *, const void *))strcmp, hash_universal_hash);
-                hash_insert(special_args, "scale_to", "T");
-            }
-
-            return special_args;
-        }
-    }
-
-    target_scale_str = (char *)hcon_lookup_lower(arguments, "scale_to");
-    sscanf(target_scale_str, "%f", &target_scale);
-    template_rec_str = (char *)hcon_lookup_lower(arguments, "template_rec");
-    sscanf(template_rec_str, "%p", &(void *)template_rec);
-
-    /* get newest record from series */
-    /* ugh - cannot specify both a key list and n=XX, so we have to fetch all keys */
-    open_records = drms_open_records2(template_rec->env, template_rec->seriesinfo->seriesname, NULL, 0, -1, 0, &drms_status);
-
-    if (open_records && drms_status == DRMS_SUCCESS)
-    {
-        cdelt1 = drms_getkey_float(open_records->records[0], "cdelt1", &drms_status);
-        drms_close_records(open_records, DRMS_FREE_RECORD);
-    }
-    else
-    {
-        fprintf(stderr, "[ resize_handler ] unable to open most recent record in series `%s`\n", template_rec->seriesinfo->seriesname);
-        ratio = -1;
-    }
-
-    if (target_scale == 0 || !isfinite(cdelt1))
-    {
-        ratio = -1;
-    }
-    else
-    {
-        ratio = cdelt1 / target_scale;
-    }
-
-    return &ratio;
-}
-
-static void *im_patch_handler(void *data)
-{
-    static Hash_Table_t *special_args = NULL; /* just the names of the special arguments, not the values */
-    static float ratio = -1;
-
-    /* data passed in */
-    HContainer_t *arguments = (HContainer_t *)data;
-    char *operation = NULL;
-    char *new_dim_x_str = NULL;
-    int new_dim_x = -1;
-    char *new_dim_y_str = NULL;
-    int new_dim_y = -1;
-    char *template_rec_str = NULL;
-    DRMS_Record_t *template_rec = NULL;
-    int drms_status = DRMS_SUCCESS;
-    DRMS_RecordSet_t *open_records = NULL;
-    DRMS_Segment_t *segment = NULL;
-    int orig_dim_x = -1;
-    int orig_dim_y = -1;
-
-    operation = (char *)hcon_lookup_lower(arguments, "operation");
-
-    if (operation)
-    {
-        if (strcasecmp(operation, "special_args") == 0)
-        {
-            /* return the special args for this step */
-            if (!special_args)
-            {
-                special_args = calloc(1, sizeof(Hash_Table_t));
-                hash_init(special_args, 89, 0, (int (*)(const void *, const void *))strcmp, hash_universal_hash);
-                hash_insert(special_args, "width", "T");
-                hash_insert(special_args, "height", "T");
-            }
-
-            return special_args;
-        }
-    }
-
-    new_dim_x_str = (char *)hcon_lookup_lower(arguments, "width");
-    sscanf(new_dim_x_str, "%d", &new_dim_x);
-    new_dim_y_str = (char *)hcon_lookup_lower(arguments, "height");
-    sscanf(new_dim_y_str, "%d", &new_dim_y);
-    template_rec_str = (char *)hcon_lookup_lower(arguments, "template_rec");
-    sscanf(template_rec_str, "%p", &(void *)template_rec);
-    open_records = drms_open_records2(template_rec->env, template_rec->seriesinfo->seriesname, NULL, 0, -1, 1, &drms_status);
-
-    if (open_records && drms_status == DRMS_SUCCESS)
-    {
-        segment = drms_segment_lookupnum(open_records->records[0], 0);
-
-        if (segment)
-        {
-            orig_dim_x = segment->axis[0]; /* from first record's segment dims */
-            orig_dim_y = segment->axis[1]; /* from first record's segment dims */
-
-            if (orig_dim_x == 0 || orig_dim_y == 0)
-            {
-                ratio = -1;
-            }
-            else
-            {
-                ratio = (float)(new_dim_x * new_dim_y) / (float)(orig_dim_x * orig_dim_y);
-            }
+            JSONDIE((char *)error_msg);
         }
         else
         {
-            fprintf(stderr, "[ im_patch_handler ] unable to locate first segment in series `%s`\n", template_rec->seriesinfo->seriesname);
-            ratio = -1;
-        }
-
-        drms_close_records(open_records, DRMS_FREE_RECORD);
-    }
-    else
-    {
-        fprintf(stderr, "[ im_patch_handler ] unable to open most recent record in series `%s`\n", template_rec->seriesinfo->seriesname);
-        ratio = -1;
-    }
-
-    return &ratio;
-}
-
-static void *map_proj_handler(void *data)
-{
-    static Hash_Table_t *special_args = NULL; /* just the names of the special arguments, not the values */
-    static float ratio = -1;
-
-    /* data passed in */
-    HContainer_t *arguments = (HContainer_t *)data;
-    char *operation = NULL;
-    char *new_dim_x_str = NULL;
-    int new_dim_x = -1;
-    char *new_dim_y_str = NULL;
-    int new_dim_y = -1;
-    char *template_rec_str = NULL;
-    DRMS_Record_t *template_rec = NULL;
-    int drms_status = DRMS_SUCCESS;
-    DRMS_RecordSet_t *open_records = NULL;
-    DRMS_Segment_t *segment = NULL;
-    int orig_dim_x = -1;
-    int orig_dim_y = -1;
-
-    operation = (char *)hcon_lookup_lower(arguments, "operation");
-
-    if (operation)
-    {
-        if (strcasecmp(operation, "special_args") == 0)
-        {
-            /* return the special args for this step */
-            if (!special_args)
-            {
-                special_args = calloc(1, sizeof(Hash_Table_t));
-                hash_init(special_args, 89, 0, (int (*)(const void *, const void *))strcmp, hash_universal_hash);
-                hash_insert(special_args, "cols", "T");
-                hash_insert(special_args, "rows", "T");
-            }
-
-            return special_args;
+            JSONDIE("problem with database query");
         }
     }
-
-    new_dim_x_str = (char *)hcon_lookup_lower(arguments, "cols");
-    sscanf(new_dim_x_str, "%d", &new_dim_x);
-    new_dim_y_str = (char *)hcon_lookup_lower(arguments, "rows");
-    sscanf(new_dim_y_str, "%d", &new_dim_y);
-    template_rec_str = (char *)hcon_lookup_lower(arguments, "template_rec");
-    sscanf(template_rec_str, "%p", &(void *)template_rec);
-    open_records = drms_open_records2(template_rec->env, template_rec->seriesinfo->seriesname, NULL, 0, -1, 0, &drms_status);
-
-    if (open_records && drms_status == DRMS_SUCCESS)
+    else if (status != DRMS_SUCCESS)
     {
-        segment = drms_segment_lookupnum(open_records->records[0], 0);
+        JSONDIE("series not found");
+    }
 
-        if (segment)
+    jroot = json_new_object();
+
+    if (!jroot)
+    {
+        JSONDIE("[ print_series_information ] out of memory");
+    }
+
+    list_series_info(drms_env, template_record, jroot, follow_links, use_fits_key_names, max_precision, binary);
+
+    if (get_series_stats(template_record, jroot) == DRMS_ERROR_QUERYFAILED)
+    {
+        error_msg = DB_GetErrmsg(drms_env->session->db_handle);
+
+        if (error_msg)
         {
-            orig_dim_x = segment->axis[0]; /* from first record's segment dims */
-            orig_dim_y = segment->axis[1]; /* from first record's segment dims */
-
-            if (orig_dim_x == 0 || orig_dim_y == 0)
-            {
-                ratio = -1;
-            }
-            else
-            {
-                ratio = (float)(new_dim_x * new_dim_y) / (float)(orig_dim_x * orig_dim_y);
-            }
+            JSONDIE((char *)error_msg);
         }
         else
         {
-            fprintf(stderr, "[ im_patch_handler ] unable to locate first segment in series `%s`\n", template_rec->seriesinfo->seriesname);
-            ratio = -1;
+            JSONDIE("problem with database query");
         }
-
-        drms_close_records(open_records, DRMS_FREE_RECORD);
-    }
-    else
-    {
-        fprintf(stderr, "[ im_patch_handler ] unable to open most recent record in series `%s`\n", template_rec->seriesinfo->seriesname);
-        ratio = -1;
     }
 
-    return &ratio;
-}
-
-/* END PROCESSING-STEP HANDLER FUNCTIONS
- */
-
-/* for a single processing step, returns the ratio of post-processing image size to pre-processing size;
- * returns -1.0 upon error (which includes non-finite computation values, division by zero, etc.); the
- * node data contain the processing-program arguments needed to calculate the ratio - these data
- * are passed to the processing-step handler; the template record is also passed to the handler, even
- * though the specific handler may not need it */
-static float get_size_ratio(struct _processing_step_node_data_ *node_data, DRMS_Record_t *template_rec)
-{
-    /* get index */
-    int index = -1;
-    float ratio = -1;
-    p_fn_size_ratio_handler handler = NULL;
-    char template_rec_str[32];
-
-    index = *(int *)hcon_lookup_lower(g_processing_steps, node_data->step);
-
-    if (index >= 0)
+    if (processing_steps)
     {
-        /* get handler */
-        handler = PROCESSING_HANDLERS[index];
+        /* if the series has segments, then apply the processing steps to the first segment; can't use
+         * drms_segment_lookupnum() since it will attempt to follow link and return NULL */
+        hiter_new_sort(&hit, &template_record->segments, drms_segment_ranksort);
+        template_segment = (DRMS_Segment_t *)hiter_getnext(&hit);
 
-        /* add template rec to args */
-        snprintf(template_rec_str, sizeof(template_rec_str), "%p", template_rec);
-        hcon_insert_lower(&node_data->arguments, "template_rec", template_rec_str);
-
-        ratio = *(float *)handler((void *)&node_data->arguments);
-
-        /* -1 means a ratio cannot be calculated */
-        return ratio;
-    }
-    else
-    {
-        fprintf(stderr, "[ get_size_ratio ] unable to get size ratio for processing step %s\n", node_data->step);
-        return -1.0;
-    }
-}
-
-/* in the global `g_processing_steps` associative array, store the index of each processing step listed in PROCESSING_STEPS;
- * returns the index for processing-step `step` if `step` is a valid processing step; returns -1 otherwise
- */
-static int get_processing_step_index(const char *step)
-{
-    int step_index = -1;
-    void *found = NULL;
-    int err = 0;
-
-    if (!g_processing_steps)
-    {
-        /* create - key --> name, val --> index into PROCESSING_STEPS, PROCESSING_HANLDERS, PROCESSING_ARGUMENTS */
-        g_processing_steps = hcon_create(sizeof(int), PROCESSING_STEP_NAME_LEN, NULL, NULL, NULL, NULL, 0);
-
-        if (g_processing_steps)
+        if (template_segment && template_segment->info->islink)
         {
-            /* populate */
-            step_index = 0;
-            while (strcmp(PROCESSING_STEPS[step_index], "end") != 0)
+            template_segment = drms_template_segment_followlink(template_segment, &status);
+            if (status != DRMS_SUCCESS)
             {
-                hcon_insert_lower(g_processing_steps, PROCESSING_STEPS[step_index], &step_index);
-                step_index++;
+                /* act as if the `processing` argument was not provided; cannot calculate size ratio without linked segment */
+                template_segment = NULL;
             }
         }
-        else
+
+        hiter_free(&hit);
+
+        if (template_segment)
         {
-            err = 1;
-        }
-    }
-
-    if (g_processing_steps)
-    {
-        if ((found = hcon_lookup_lower(g_processing_steps, step)) != NULL)
-        {
-            step_index = *(int *)found;
-        }
-    }
-
-    return step_index;
-}
-
-/* calls the processing-step handler for processing step `step` with the `operation` argument of `special_args` to
- * obtain the Hash_Table_t of processing-step program special arguments (the program arguments needed for a size-
- * ratio calculation); returns the hash table if it is located, or NULL otherwise */
-static Hash_Table_t *get_special_args(const char *step)
-{
-    int step_index = -1;
-    p_fn_size_ratio_handler handler = NULL;
-    HContainer_t arguments;
-    char value[PROCESSING_STEP_VALUE_LEN] = {0};
-    Hash_Table_t *special_args = NULL;
-
-    /* get index */
-    step_index = get_processing_step_index(step);
-
-    if (step_index >= 0)
-    {
-        /* get handler */
-        handler = PROCESSING_HANDLERS[step_index];
-
-        /* add `operation` and `special_args` */
-        hcon_init(&arguments, PROCESSING_STEP_VALUE_LEN, PROCESSING_STEP_NAME_LEN, NULL, NULL);
-        snprintf(value, sizeof(value), "special_args");
-        hcon_insert_lower(&arguments, "operation", value);
-
-        /* get and return set of special args */
-        special_args = (Hash_Table_t *)handler((void *)&arguments);
-        hcon_free(&arguments);
-        return special_args;
-    }
-    else
-    {
-        fprintf(stderr, "[ get_special_args ] unable to get special_args for processing step %s\n", step);
-        return NULL;
-    }
-
-    return NULL;
-}
-
-/* parses the JSON `processing` program argument; for each step in this argument, extracts the special arguments
- * (the program arguments needed for a size-ratio calculation) and returns, in a list, an associative array of
- * these arguments' key-value pairs; each node in the returned list contains the associate array for a single
- * processing step
- */
-static int get_processing_list(const char *processing_json, LinkedList_t **processing_list)
-{
-    /* validate and insert processing-step info from processing argument */
-    int err = 0;
-    LinkedList_t *list = NULL;
-    jsmn_parser parser;
-    jsmntok_t *tokens = NULL;
-    size_t sz_jstokens = 1024;
-    jsmnerr_t parse_result = 0;
-    int token_index = -1;
-    int num_steps = -1;
-    char step_name[PROCESSING_STEP_NAME_LEN] = {0};
-    struct _processing_step_node_data_ node = {0}; /* stays empty - a template of sorts */
-    ListNode_t *list_node = NULL;
-    struct _processing_step_node_data_ *node_data = NULL; /* data inside a list node */
-    int property_obj_token_index = -1;
-    jsmntok_t *property_obj_token = NULL;
-    Hash_Table_t *special_args = NULL;
-    char property_name[PROCESSING_STEP_NAME_LEN];
-    char property_value[PROCESSING_STEP_VALUE_LEN];
-
-    /* processing is a json object that represents a set of processing steps; each step is represented by a an object that
-     * contains the keys/values:
-     *   {
-     *      "resize" :
-     *      {
-     *          "regrid" : true,
-     *          "do_stretchmarks" : false,
-     *          "center_to" : false,
-     *          "rescale" : true,
-     *          "scale_to" : 2
-     *      },
-     *      "map_proj" :
-     *      {
-     *          "map" : "carree",
-     *          "clon" : 350.553131,
-     *          "clat" : 69,
-     *          "scale" : 0.0301,
-     *          "cols" : 22,
-     *          "rows" : 44
-     *      }
-     *   }
-     */
-
-    tokens = calloc(1, sizeof(jsmntok_t) * sz_jstokens);
-
-    if (tokens)
-    {
-        jsmn_init(&parser);
-        parse_result = jsmn_parse(&parser, processing_json, tokens, sz_jstokens);
-
-        if (parse_result == JSMN_ERROR_NOMEM || parse_result == JSMN_ERROR_INVAL || parse_result == JSMN_ERROR_PART)
-        {
-           /* did not allocate enough tokens to hold parsing results; */
-            fprintf(stderr, "[ get_processing_list ] exceeded maximum number of JSON tokens in `%s` argument\n", ARG_PROCESSING_JSON);
-            err = 1;
-        }
-        else if (parse_result != JSMN_SUCCESS)
-        {
-            fprintf(stderr, "[ get_processing_list ] invalid JSON in `%s` argument\n", ARG_PROCESSING_JSON);
-            err = 1;
-        }
-        else
-        {
-            token_index = 0;
-
-            if (tokens[token_index].type != JSMN_OBJECT)
+            list_llreset(processing_steps);
+            while ((node = list_llnext(processing_steps)) != NULL)
             {
-                /* no root object */
-                fprintf(stderr, "[ get_processing_list ] `%s` argument must contain JSON with a root object\n", ARG_PROCESSING_JSON);
-                err = 1;
-            }
-            else
-            {
-                /* loop over root objects (one for each processing step); I'm going to guess that
-                 * res is the total number of tokens returned */
-
-                /* first step name */
-                token_index++;
-
-                /* size() of the root obj is 2x the actual number of processing steps because each step has a name token and
-                 * an object token */
-                for (num_steps = 0; num_steps * 2 < tokens[0].size; token_index++, num_steps++)
+                node_data = (struct _processing_step_node_data_ *)node->data;
+                step_size_ratio = get_processing_size_ratio(node_data, template_segment);
+                if (step_size_ratio < 0)
                 {
-                    snprintf(step_name, sizeof(step_name), "%.*s", tokens[token_index].end - tokens[token_index].start, processing_json + tokens[token_index].start);
-                    /* token.end is the index of the char after the last char in the token */
-
-                    /* validate step; creates the mapping from step name to index into PROCESSING_STEPS, PROCESSING_HANDLERS, and PROCESSING_ARGUMENTS */
-                    if (get_processing_step_index(step_name) == -1)
-                    {
-                        fprintf(stderr, "[ get_processing_list ] invalid processing step `%s`\n", step_name);
-                        err = 1;
-                        break;
-                    }
-                    else
-                    {
-                        if (!list)
-                        {
-                            list = list_llcreate(sizeof(struct _processing_step_node_data_), (ListFreeFn_t)free_step_node);
-
-                            if (!list)
-                            {
-                                fprintf(stderr, "[ get_processing_list ] out of memory creating list\n");
-                                err = 1;
-                                break;
-                            }
-                        }
-
-                        /* insert empty list node */
-                        list_node = list_llinserttail(list, &node);
-
-                        /* initialize node for this step */
-                        node_data = (struct _processing_step_node_data_ *)list_node->data;
-                        snprintf(node_data->step, sizeof(node_data->step), "%s", step_name);
-                        hcon_init(&node_data->arguments, PROCESSING_STEP_VALUE_LEN, PROCESSING_STEP_NAME_LEN, NULL, NULL);
-                    }
-
-                    /* step property object */
-                    token_index++;
-                    property_obj_token = &tokens[token_index];
-                    property_obj_token_index = token_index;
-
-                    if (property_obj_token->type != JSMN_OBJECT)
-                    {
-                        fprintf(stderr, "[ get_processing_list ] each processing step must have an object of processing-program key-value properties; no such object for `%s`\n", step_name);
-                        err = 1;
-                        break;
-                    }
-
-                    /* extract special argument needed for calculating size ratio; sets up special-args hash for `step_name` step */
-                    special_args = get_special_args(step_name); /* Hash_Table_t */
-
-                    if (special_args)
-                    {
-                        /* examine properties */
-                        if (property_obj_token->size > 0)
-                        {
-                            /* name of first property */
-                            token_index++;
-
-                            for (; token_index < property_obj_token_index + property_obj_token->size; token_index++)
-                            {
-                                snprintf(property_name, sizeof(property_name), "%.*s", tokens[token_index].end - tokens[token_index].start, processing_json + tokens[token_index].start);
-
-                                /* property value */
-                                token_index++;
-
-                                if (hash_member(special_args, property_name))
-                                {
-                                    snprintf(property_value, sizeof(property_value), "%.*s", tokens[token_index].end - tokens[token_index].start, processing_json + tokens[token_index].start);
-                                    hcon_insert_lower(&node_data->arguments, property_name, property_value);
-                                }
-                            }
-
-                            /* we are now pointing at either the name of the next step, or one past last token; the token pointer
-                             * will be advanced by 1 when we go to the next iteration of the outer loop, so subtract 1 now */
-                            token_index--;
-                        }
-                    }
-                    else
-                    {
-                        /* either no special args, or getting them failed */
-
-                        /* skip over to the next step name token */
-                        token_index += property_obj_token->size;
-                    }
+                    size_ratio = -1;
+                    break;
                 }
+
+                size_ratio *= step_size_ratio;
             }
+        }
+
+        snprintf(size_ratio_str, sizeof(size_ratio_str), "%f", size_ratio);
+        json_insert_pair_into_object(jroot, "processing_size_ratio", json_new_number(size_ratio_str));
+
+        list_llfree(&processing_steps);
+    }
+
+    if (!skip_run_time)
+    {
+        json_insert_runtime(jroot, start_time);
+    }
+
+    json_insert_pair_into_object(jroot, "status", json_new_number("0"));
+    json_tree_to_string(jroot, &json);
+    json_free_value(&jroot);
+
+    if (json)
+    {
+        formatted_json = json_format_string(json);
+        free(json);
+    }
+
+    if (formatted_json)
+    {
+        /* send the output json back to client */
+        if (print_HTTP_header)
+        {
+            printf("Content-type: application/json\n\n");
+        }
+
+        printf("%s\n", formatted_json);
+        fflush(stdout);
+        free(formatted_json);
+    }
+    else
+    {
+        JSONDIE("[ print_series_information ] out of memory");
+    }
+
+    return 0;
+}
+
+/* `recordset_spec` has not segment filter */
+static int print_recordset_summary(DRMS_Env_t *drms_env, int max_recs, const char *recordset_spec_no_segs, const char *recordset_spec, int skip_run_time, double start_time, int print_HTTP_header)
+{
+    json_t *jroot = json_new_object();
+    int count = 0;
+    int status = DRMS_SUCCESS;
+    int countlimit = abs(max_recs);
+    char val[128] = {0};
+    DRMS_RecordSet_t *recordset = NULL;
+    const char *error_msg = NULL;
+    char *json = NULL;
+    char *formatted_json = NULL;
+
+    if (countlimit != 0)
+    {
+        recordset = drms_open_nrecords(drms_env, (char *)recordset_spec_no_segs, max_recs, &status);
+
+        if (status == DRMS_ERROR_QUERYFAILED)
+        {
+            error_msg = DB_GetErrmsg(drms_env->session->db_handle);
+
+            if (error_msg)
+            {
+                JSONDIE((char *)error_msg); /* does not exit DoIt() */
+            }
+            else
+            {
+                JSONDIE("problem with database query"); /* does not exit DoIt() */
+            }
+        }
+        else if (status == DRMS_SUCCESS)
+        {
+            if (recordset)
+            {
+                count = recordset->n;
+            }
+            else
+            {
+                drms_close_records(recordset, DRMS_FREE_RECORD);
+                JSONDIE("unable to open records");
+            }
+        }
+
+        drms_close_records(recordset, DRMS_FREE_RECORD);
+    }
+    else
+    {
+        count = drms_count_records(drms_env, (char *)recordset_spec_no_segs, &status);
+
+        if (status == DRMS_ERROR_QUERYFAILED)
+        {
+            error_msg = DB_GetErrmsg(drms_env->session->db_handle);
+
+            if (error_msg)
+            {
+                JSONDIE((char *)error_msg);
+            }
+            else
+            {
+                JSONDIE("problem with database query");
+            }
+        }
+        else if (status != DRMS_SUCCESS)
+        {
+            JSONDIE("series not found");
         }
     }
 
-    if (!err)
+    /* send the output json back to client */
+    snprintf(val, sizeof(val), "%d", count);
+    json_insert_pair_into_object(jroot, "count", json_new_number(val));
+
+    if (!skip_run_time)
     {
-        *processing_list = list;
+        json_insert_runtime(jroot, start_time);
     }
 
-    return err;
+    json_insert_pair_into_object(jroot, "status", json_new_number("0"));
+    json_tree_to_string(jroot, &json);
+    json_free_value(&jroot);
+
+    if (json)
+    {
+        formatted_json = json_format_string(json);
+        free(json);
+    }
+
+    if (formatted_json)
+    {
+        /* send the output json back to client */
+        if (print_HTTP_header)
+        {
+            printf("Content-type: application/json\n\n");
+        }
+
+        printf("%s\n", formatted_json);
+        fflush(stdout);
+        free(formatted_json);
+    }
+    else
+    {
+        JSONDIE("out of memory");
+    }
+
+    return 0;
 }
 
 /* Module main function. */
 int DoIt(void)
-  {
-  const char *op;
-  const char *in;
-  char *keylist;
-  char *seglist;
-  char *linklist;
-  char *web_query;
-  const char *Remote_Address;
-  const char *Server;
-  int followLinks = 0;
-  int binary = 0;
-  int max_precision = 0;
-  int from_web, keys_listed, segs_listed, links_listed;
-  int max_recs = 0;
-  struct timeval thistv;
-  double StartTime;
-  CleanerData_t cleaner;
-  int useFitsKeyNames = 0;
-  int skipRunTime = 0;
-  int printHTTPHeaders = 1;
-  LinkedList_t *reqSegs = NULL;
-  LinkedList_t *reqKeys = NULL;
-  LinkedList_t *reqLinks = NULL;
-  json_t *recArray = NULL;
+{
+    const char *op = NULL;
+    const char *in = NULL;
+    char *keylist = NULL;
+    char *seglist = NULL;
+    char *linklist = NULL;
+    char *web_query = NULL;
+    const char *Remote_Address = NULL;
+    const char *Server = NULL;
+    int followLinks = 0;
+    int binary = 0;
+    int max_precision = 0;
+    int from_web, keys_listed, segs_listed, links_listed;
+    int max_recs = 0;
+    struct timeval thistv;
+    double StartTime;
+    CleanerData_t cleaner;
+    int useFitsKeyNames = 0;
+    int skipRunTime = 0;
+    int printHTTPHeaders = 1;
+    LinkedList_t *reqSegs = NULL;
+    LinkedList_t *reqKeys = NULL;
+    LinkedList_t *reqLinks = NULL;
+    json_t *recArray = NULL;
     char *jsonOut = NULL;
     char *final_json = NULL;
     const char *processing_json = NULL;
     LinkedList_t *processing_steps = NULL;
+    DRMS_Segment_t *template_segment = NULL;
     ListNode_t *node = NULL;
     struct _processing_step_node_data_ *node_data = NULL;
 
@@ -2853,6 +2435,20 @@ int DoIt(void)
     char missingKeyNameBuf[DRMS_MAXKEYNAMELEN] = { 0 };
     char missingSegNameBuf[DRMS_MAXSEGNAMELEN] = { 0 };
     char missingLinkNameBuf[DRMS_MAXLINKNAMELEN] = { 0 };
+
+    char *allvers = NULL;
+    char **sets = NULL;
+    DRMS_RecordSetType_t *settypes = NULL; /* a maximum doesn't make sense */
+    char **snames = NULL;
+    char **filts = NULL;
+    char **segs = NULL;
+    int nsets = 0;
+    DRMS_RecQueryInfo_t rsinfo; /* Filled in by parser as it encounters elements. */
+
+    char no_segment_recordset_spec[DRMS_MAXQUERYLEN] = {0};
+
+    char error_msg[512] = {0};
+    int return_value = -1;
 
   if (nice_intro ()) return (0);
 
@@ -2995,190 +2591,32 @@ int DoIt(void)
   else
     userhandle = "NoHandle";
 
-  /*  op == series_struct  */
-  if (strcmp(op,"series_struct") == 0)
+    /* parse record-set specifications */
+    if (drms_record_parserecsetspec_plussegs(in, &allvers, &sets, &settypes, &snames, &filts, &segs, &nsets, &rsinfo) != DRMS_SUCCESS)
     {
-    char *p, *seriesname;
-    json_t *jroot;
-    DRMS_Record_t *rec;
-    float size_ratio = 1.0;
-    float step_size_ratio = 0;
-    char size_ratio_str[32];
-    int status=0;
-
-    /* Only want keyword info so get only the template record for drms series or first record for other data */
-    seriesname = strdup (in);
-    if ((p = index(seriesname,'['))) *p = '\0';
-    if ((p = index(seriesname,'{'))) *p = '\0';
-    rec = drms_template_record (drms_env, seriesname, &status);
-
-        if (status == DRMS_ERROR_QUERYFAILED)
-        {
-            const char *emsg = DB_GetErrmsg(drms_env->session->db_handle);
-
-            if (emsg)
-            {
-                JSONDIE((char *)emsg);
-            }
-            else
-            {
-                JSONDIE("problem with database query");
-            }
-        }
-        else if (status)
-            JSONDIE("series not found");
-
-    jroot = json_new_object();
-    list_series_info(drms_env, rec, jroot, followLinks, useFitsKeyNames, max_precision, binary);
-    if (get_series_stats(rec, jroot) == DRMS_ERROR_QUERYFAILED)
-    {
-       const char *emsg = DB_GetErrmsg(drms_env->session->db_handle);
-
-       if (emsg)
-       {
-          JSONDIE((char *)emsg);
-       }
-       else
-       {
-          JSONDIE("problem with database query");
-       }
+        snprintf(error_msg, sizeof(error_msg), "invalid record-set specification `%s`", in);
+        JSONDIE(error_msg); /* exits DoIt() */
     }
 
-    if (processing_steps)
+    if (nsets > 1)
     {
-        list_llreset(processing_steps);
-        while ((node = list_llnext(processing_steps)) != NULL)
-        {
-            node_data = (struct _processing_step_node_data_ *)node->data;
-            step_size_ratio = get_size_ratio(node_data, rec); /* rec --> template record */
-            if (step_size_ratio < 0)
-            {
-                size_ratio = -1;
-                break;
-            }
-
-            size_ratio *= step_size_ratio;
-        }
-
-        snprintf(size_ratio_str, sizeof(size_ratio_str), "%f", size_ratio);
-        json_insert_pair_into_object(jroot, "processing_size_ratio", json_new_number(size_ratio_str));
-
-        list_llfree(&processing_steps);
+        snprintf(error_msg, sizeof(error_msg), "invalid record-set specification `%s`; the records must belong to a single data series", in);
+        JSONDIE(error_msg); /* exits DoIt() */
     }
 
-    if (!skipRunTime)
+    if (strcmp(op,"series_struct") == 0)
     {
-        json_insert_runtime(jroot, StartTime);
+        /* returns 1 if JSONDIE was called, 0 otherwise */
+        return_value = print_series_information(drms_env, snames[0], followLinks, useFitsKeyNames, max_precision, binary, processing_steps, skipRunTime, StartTime, printHTTPHeaders);
     }
-    json_insert_pair_into_object(jroot, "status", json_new_number("0"));
-    json_tree_to_string(jroot, &jsonOut);
-    final_json = json_format_string(jsonOut);
-    free(jsonOut);
-
-    if (printHTTPHeaders)
+    else if (strcmp(op,"rs_summary") == 0)
     {
-    /* send the output json back to client */
-        printf("Content-type: application/json\n\n");
+        snprintf(no_segment_recordset_spec, sizeof(no_segment_recordset_spec), "%s%s", snames[0], filts[0]);
+
+        /* returns 1 if JSONDIE was called, 0 otherwise */
+        return_value = print_recordset_summary(drms_env, max_recs, no_segment_recordset_spec, in, skipRunTime, StartTime, printHTTPHeaders);
     }
-
-    printf("%s\n",final_json);
-    free(final_json);
-    fflush(stdout);
-    free(seriesname);
-    manage_userhandle(0, userhandle);
-    // report_summary(Server, StartTime, Remote_Address, op, in, max_recs, 0);
-    return(0);
-    }
-
-  /*  op == rs_summary  */
-  if (strcmp(op,"rs_summary") == 0)
-    {
-    json_t *jroot = json_new_object();
-    int count=0, status=0;
-    int countlimit = abs(max_recs);
-    char val[100];
-    /* get series count */
-    char *bracket = index(in, '{');
-    if (bracket)
-	*bracket = '\0';
-    if (countlimit)
-      {
-      DRMS_RecordSet_t *recordset = drms_open_nrecords (drms_env, in, max_recs, &status);
-
-          if (status == DRMS_ERROR_QUERYFAILED)
-          {
-              const char *emsg = DB_GetErrmsg(drms_env->session->db_handle);
-
-              if (emsg)
-              {
-                  JSONDIE((char *)emsg);
-              }
-              else
-              {
-                  JSONDIE("problem with database query");
-              }
-          }
-
-          if (recordset)
-          {
-              count = recordset->n;
-          }
-          else
-          {
-              drms_close_records(recordset, DRMS_FREE_RECORD);
-              JSONDIE("unable to open records");
-          }
-
-      drms_close_records(recordset, DRMS_FREE_RECORD);
-      }
-    else
-      count = drms_count_records(drms_env, (char *)in, &status);
-    if (bracket)
-	*bracket = '{';
-    if (status == DRMS_ERROR_QUERYFAILED)
-    {
-        const char *emsg = DB_GetErrmsg(drms_env->session->db_handle);
-
-        if (emsg)
-        {
-            JSONDIE((char *)emsg);
-        }
-        else
-        {
-            JSONDIE("problem with database query");
-        }
-    }
-    else if (status)
-        JSONDIE("series not found");
-
-    /* send the output json back to client */
-    sprintf(val, "%d", count);
-    json_insert_pair_into_object(jroot, "count", json_new_number(val));
-    if (!skipRunTime)
-    {
-        json_insert_runtime(jroot, StartTime);
-    }
-    json_insert_pair_into_object(jroot, "status", json_new_number("0"));
-    json_tree_to_string(jroot, &jsonOut);
-    final_json = json_format_string(jsonOut);
-    free(jsonOut);
-
-    /* send the output json back to client */
-    if (printHTTPHeaders)
-    {
-        printf("Content-type: application/json\n\n");
-    }
-
-    printf("%s\n",final_json);
-    free(final_json);
-    fflush(stdout);
-    report_summary(Server, StartTime, Remote_Address, op, in, max_recs, 0);
-    manage_userhandle(0, userhandle);
-    return(0);
-    }
-
-  /*  op == rs_list  */
-  if (strcmp(op,"rs_list") == 0)
+    else if (strcmp(op,"rs_list") == 0)
     {
     int wantRecInfo = cmdparams_get_int(&cmdparams, "R", NULL);
     DRMS_RecordSet_t *recordset = NULL;
@@ -3378,8 +2816,6 @@ int DoIt(void)
         }
     }
 
-    free (seglist);
-
     /* get list of keywords to print for each record */
     /* Depending on the set of keywords to print, we will know whether or not
      * we need to call SUM_infoEx(). Here's the list of keys that necessitate
@@ -3484,7 +2920,7 @@ int DoIt(void)
             }
         }
     }
-    free (keylist);
+
 
     /* get list of links to print for each record */
     nlinks = 0;
@@ -3533,7 +2969,6 @@ int DoIt(void)
             }
         }
       }
-    free (linklist);
 
     if (!useFitsKeyNames)
     {
@@ -4079,7 +3514,7 @@ int DoIt(void)
             if (wantRecInfo)
             {
                 drms_sprint_rec_query(recquery,rec);
-                jsonquery = string_to_json(recquery);
+                jsonquery = json_escape_string(recquery);
                 json_insert_pair_into_object(recobj, "name", json_new_string(jsonquery));
                 free(jsonquery);
             }
@@ -4248,7 +3683,7 @@ int DoIt(void)
                         snprintf(path, sizeof(path), "NoDataDirectory");
                     }
 
-                    jsonval = string_to_json(path);
+                    jsonval = json_escape_string(path);
                     val = json_new_string(jsonval);
                     free(jsonval);
                 }
@@ -4258,11 +3693,11 @@ int DoIt(void)
 
                     if (logdir)
                     {
-                        jsonval = string_to_json(logdir);
+                        jsonval = json_escape_string(logdir);
                     }
                     else
                     {
-                        jsonval = string_to_json("NO LOG");
+                        jsonval = json_escape_string("NO LOG");
                     }
 
                     val = json_new_string(jsonval);
@@ -4290,7 +3725,7 @@ int DoIt(void)
                         snprintf(timebuf, sizeof(timebuf), "NA");
                     }
 
-                    jsonval = string_to_json(timebuf);
+                    jsonval = json_escape_string(timebuf);
                     val = json_new_string(jsonval);
                     free(jsonval);
                 }
@@ -4307,17 +3742,17 @@ int DoIt(void)
                     rec_key_ikey = drms_keyword_lookup (rec, keys[ikey], 1);
                     if (!rec_key_ikey)
                     {
-                        jsonval = string_to_json("Invalid KeyLink");
+                        jsonval = json_escape_string("Invalid KeyLink");
                     }
                     else if (drms_ismissing_keyval(rec_key_ikey) && strcmp(keys[ikey],"QUALITY") != 0)
                     {
-                        jsonval = string_to_json("MISSING");
+                        jsonval = json_escape_string("MISSING");
                     }
                     else
                     {
                         drms_keyword_snprintfval2(rec_key_ikey, rawval, sizeof(rawval), max_precision, binary);
                         /* always report keyword values as strings */
-                        jsonval = string_to_json(rawval);
+                        jsonval = json_escape_string(rawval);
                     }
 
                     val = json_new_string(jsonval);
@@ -4724,7 +4159,7 @@ int DoIt(void)
                         snprintf(path, sizeof(path), "NoDataDirectory");
                     }
 
-                    jsonpath = string_to_json(path);
+                    jsonpath = json_escape_string(path);
                     json_insert_child(thissegval, json_new_string(jsonpath));
                     free(jsonpath);
                     online = strncmp(path, "/SUM",4) == 0;
@@ -4741,7 +4176,7 @@ int DoIt(void)
                         strcat(dims, dimval);
                     }
 
-                    jsondims = string_to_json(dims);
+                    jsondims = json_escape_string(dims);
                     json_insert_child(thissegdim, json_new_string(jsondims));
                     free(jsondims);
 
@@ -4754,7 +4189,7 @@ int DoIt(void)
                     /* cparms */
                     if (strlen(rec_seg_iseg->cparms))
                     {
-                        jsonkeyval = string_to_json(rec_seg_iseg->cparms);
+                        jsonkeyval = json_escape_string(rec_seg_iseg->cparms);
                         json_insert_child(thissegcparms, json_new_string(jsonkeyval));
                         free(jsonkeyval);
                     }
@@ -4768,7 +4203,7 @@ int DoIt(void)
                         drms_keyword_snprintfval2(anckey, keybuf, sizeof(keybuf), max_precision, binary);
 
                         /* always report keyword values as strings */
-                        jsonkeyval = string_to_json(keybuf);
+                        jsonkeyval = json_escape_string(keybuf);
                         json_insert_child(thissegbzero, json_new_string(jsonkeyval));
                         free(jsonkeyval);
                     }
@@ -4783,7 +4218,7 @@ int DoIt(void)
                         drms_keyword_snprintfval2(anckey, keybuf, sizeof(keybuf), max_precision, binary);
 
                         /* always report keyword values as strings */
-                        jsonkeyval = string_to_json(keybuf);
+                        jsonkeyval = json_escape_string(keybuf);
                         json_insert_child(thissegbscale, json_new_string(jsonkeyval));
                         free(jsonkeyval);
                     }
@@ -4797,10 +4232,10 @@ int DoIt(void)
                         DRMS_Segment_t *segment = hcon_lookup_lower(&rec->segments, segs[iseg]);
                         if (segment && segment->info->islink)
                         nosegmsg = "BadSegLink";
-                        jsonpath = string_to_json(nosegmsg);
+                        jsonpath = json_escape_string(nosegmsg);
                         json_insert_child(thissegval, json_new_string(jsonpath));
                         free(jsonpath);
-                        jsondims = string_to_json("NA");
+                        jsondims = json_escape_string("NA");
                         json_insert_child(thissegdim, json_new_string(jsondims));
                         free(jsondims);
                     }
@@ -5138,10 +4573,19 @@ int DoIt(void)
 
     json_free_value(&jroot);
 
-    if (log_dirs)
-    {
-        hcon_destroy(&log_dirs);
-    }
+        if (log_dirs)
+        {
+            hcon_destroy(&log_dirs);
+        }
+
+        drms_destroy_jsdtemplate_record(&jsdTemplate);
+
+        report_summary(Server, StartTime, Remote_Address, op, in, max_recs, 0);
+        manage_userhandle(0, userhandle);
+        return_value = 0;
+    } /* rs_list */
+
+    drms_record_freerecsetspecarr_plussegs(&allvers, &sets, &settypes, &snames, &filts, &segs, nsets);
 
     if (reqLinks)
     {
@@ -5158,13 +4602,23 @@ int DoIt(void)
         list_llfree(&reqKeys);
     }
 
-    drms_destroy_jsdtemplate_record(&jsdTemplate);
+    if (linklist)
+    {
+        free (linklist);
+    }
+
+    if (seglist)
+    {
+        free (seglist);
+    }
+
+    if (keylist)
+    {
+        free (keylist);
+    }
 
     report_summary(Server, StartTime, Remote_Address, op, in, max_recs, 0);
     manage_userhandle(0, userhandle);
-    return(0);
-    } /* rs_list */
 
-    manage_userhandle(0, userhandle);
-    return(0);
-  }
+    return return_value;
+}

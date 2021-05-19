@@ -5055,11 +5055,16 @@ static int IsCachedRecord(DRMS_Env_t *env, DRMS_Record_t *rec)
 
 static int IsTemplateRecord(DRMS_Record_t *rec)
 {
+    DRMS_Record_t *template = NULL;
     int answer = 0;
 
     if (rec && rec->env && rec->seriesinfo && *rec->seriesinfo->seriesname != '\0')
     {
-        answer = hcon_member_lower(&rec->env->series_cache, rec->seriesinfo->seriesname);
+        template = hcon_lookup_lower(&rec->env->series_cache, rec->seriesinfo->seriesname);
+        if (template)
+        {
+            answer = (template == rec);
+        }
     }
 
     return answer;

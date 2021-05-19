@@ -20,7 +20,7 @@
 #define kShadowColNRecs "nrecords"
 #define kShadowTrig "updateshadowtrig"
 #define kShadowTrigFxn "updateshadow"
-#define kLimitCutoff 100000
+#define kLimitCutoff 50000
 
 #if (defined TRACKSHADOWS && TRACKSHADOWS)
     #define kShadowTrackTab "drms.shadowtrack"
@@ -7006,6 +7006,8 @@ char *drms_series_n_querystringFL(DRMS_Env_t *env, const char *series, const cha
                 }
             }
         }
+
+        free(lcseries);
     }
 
     if (status)
