@@ -6,7 +6,7 @@ d		:= $(dir)
 # Local variables
 LIBEXPDRMS	:= $(d)/libexpdrms.a
 
-OBJ_$(d)	:= $(addprefix $(d)/, fitsexport.o)
+OBJ_$(d)	:= $(addprefix $(d)/, fitsexport.o processing.o)
 
 LIBEXPDRMS_OBJ	:= $(OBJ_$(d))
 
