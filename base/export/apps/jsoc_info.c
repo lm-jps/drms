@@ -2409,7 +2409,10 @@ int DoIt(void)
     int followLinks = 0;
     int binary = 0;
     int max_precision = 0;
-    int from_web, keys_listed, segs_listed, links_listed;
+    int from_web = 0;
+    int keys_listed = 0;
+    int segs_listed = 0;
+    int links_listed = 0;
     int max_recs = 0;
     struct timeval thistv;
     double StartTime;
@@ -2446,6 +2449,7 @@ int DoIt(void)
     DRMS_RecQueryInfo_t rsinfo; /* Filled in by parser as it encounters elements. */
 
     char no_segment_recordset_spec[DRMS_MAXQUERYLEN] = {0};
+    int requires_series_template = 0;
 
     char error_msg[512] = {0};
     int return_value = -1;
@@ -2598,7 +2602,16 @@ int DoIt(void)
         JSONDIE(error_msg); /* exits DoIt() */
     }
 
-    if (nsets > 1)
+    /* `series_struct` and `rs_summary` require that the records in the record set are all from a single series; for `rs_list`, the
+     * situation is much more complicated - this requirement is true only if the user has specified at least one of these conditions:
+     *   key=**ALL** (keys_listed + key == **ALL**)
+     *   seg=**ALL** (segs_listed + seg == **ALL**)
+     *   link=*ALL** (links_listed + link == **ALL**)
+     *   useFitsKeyNames + (keyslisted || segs_listed || links_listed)
+     */
+    requires_series_template = (keys_listed || segs_listed || links_listed) && (useFitsKeyNames || (strstr(keylist, "**ALL**") != NULL) || (strstr(seglist, "**ALL**") != NULL) || (strstr(linklist, "**ALL**") != NULL));
+
+    if (requires_series_template && nsets > 1)
     {
         snprintf(error_msg, sizeof(error_msg), "invalid record-set specification `%s`; the records must belong to a single data series", in);
         JSONDIE(error_msg); /* exits DoIt() */
@@ -2620,16 +2633,20 @@ int DoIt(void)
     {
     int wantRecInfo = cmdparams_get_int(&cmdparams, "R", NULL);
     DRMS_RecordSet_t *recordset = NULL;
-    DRMS_Record_t *rec, *template;
+    DRMS_Record_t *rec = NULL;
+    DRMS_Record_t *series_template = NULL;
     DRMS_RecChunking_t cstat = kRecChunking_None;
-    char seriesname[DRMS_MAXQUERYLEN];
+    char seriesname[DRMS_MAXSERIESNAMELEN];
     char *keys[1000];
     char *segs[1000];
     char *links[1000];
-    int ikey, nkeys = 0;
-    int iseg, nsegs = 0;
+    int ikey = 0;
+    int nkeys = 0;
+    int iseg = 0;
+    int nsegs = 0;
     int allSegs = 0; /* did the user provide **ALL** for the seglist? */
-    int ilink, nlinks = 0;
+    int ilink = 0;
+    int nlinks = 0;
     char count[100];
     json_t *jroot, **keyvals = NULL, **segvals = NULL, **segdims = NULL, **linkvals = NULL, *recinfo = NULL;
     json_t **segcparms = NULL;
@@ -2639,13 +2656,12 @@ int DoIt(void)
     int irec, nrecs;
     int record_set_staged = 0;
     int sum_info_called = 0;
-    char *lbracket;
     int sumInfoStr = 0;
     jroot = json_new_object();
     DRMS_Record_t *jsdTemplate = NULL;
-    DRMS_Segment_t *segTemplate = NULL;
-    DRMS_Keyword_t *keyTemplate = NULL;
-    DRMS_Link_t *linkTemplate = NULL;
+    DRMS_Segment_t *segment_template = NULL;
+    DRMS_Keyword_t *keyword_template = NULL;
+    DRMS_Link_t *link_template = NULL;
     HIterator_t *last = NULL;
     const char *keyNameOut = NULL;
     const char *valOut = NULL;
@@ -2660,11 +2676,6 @@ int DoIt(void)
     ListNode_t *lnLink = NULL;
     HContainer_t *log_dirs = NULL;
 
-    /* Get template record */
-    strcpy(seriesname, in);
-    lbracket = index(seriesname, '[');
-    if (lbracket) *lbracket = '\0';
-    template = drms_template_record(drms_env, seriesname, &status);
     if (status == DRMS_ERROR_QUERYFAILED)
     {
        const char *emsg = DB_GetErrmsg(drms_env->session->db_handle);
@@ -2756,7 +2767,8 @@ int DoIt(void)
 
         if (useFitsKeyNames)
         {
-            nsegs = populateSegList(seglist, followLinks, template, recordset, &record_set_staged, &requisition, reqSegs, &allSegs);
+            series_template = drms_template_record(drms_env, snames[0], &status);
+            nsegs = populateSegList(seglist, followLinks, series_template, recordset, &record_set_staged, &requisition, reqSegs, &allSegs);
         }
         else
         {
@@ -2773,7 +2785,8 @@ int DoIt(void)
 
                 allSegs = 1;
 
-                while ((seg = drms_record_nextseg(template, &last, 0)))
+                series_template = drms_template_record(drms_env, snames[0], &status);
+                while ((seg = drms_record_nextseg(series_template, &last, 0)))
                 {
                     oseg = seg; /* Original seg. */
 
@@ -2843,7 +2856,8 @@ int DoIt(void)
 
         if (useFitsKeyNames)
         {
-            nkeys = populateKeyList(keylist, reqSegs, template, &jsdTemplate, recordset, &record_set_staged, &requisition, reqKeys);
+            series_template = drms_template_record(drms_env, snames[0], &status);
+            nkeys = populateKeyList(keylist, reqSegs, series_template, &jsdTemplate, recordset, &record_set_staged, &requisition, reqKeys);
         }
         else
         {
@@ -2859,8 +2873,9 @@ int DoIt(void)
                 if (strcmp(thiskey, "**ALL**") == 0)
                 {
                     DRMS_Keyword_t *key;
+                    series_template = drms_template_record(drms_env, snames[0], &status);
 
-                    while ((key = drms_record_nextkey(template, &last, 0)))
+                    while ((key = drms_record_nextkey(series_template, &last, 0)))
                     {
                         if (!drms_keyword_getimplicit(key))
                         {
@@ -2938,7 +2953,8 @@ int DoIt(void)
 
         if (useFitsKeyNames)
         {
-            nlinks = populateLinkList(linklist, template, reqLinks);
+            series_template = drms_template_record(drms_env, snames[0], &status);
+            nlinks = populateLinkList(linklist, series_template, reqLinks);
         }
         else
         {
@@ -2953,9 +2969,12 @@ int DoIt(void)
                 if (strcmp(thislink, "**ALL**")==0)
                 {
                     DRMS_Link_t *link;
+                    series_template = drms_template_record(drms_env, snames[0], &status);
 
-                    while ((link = drms_record_nextlink(template, &last)))
+                    while ((link = drms_record_nextlink(series_template, &last)))
+                    {
                         links[nlinks++] = strdup (link->info->name);
+                    }
 
                     if (last)
                     {
@@ -3118,7 +3137,6 @@ int DoIt(void)
                 size_t szPath = DRMS_MAXPATHLEN;
                 SUM_info_t *sinfo = NULL;
                 long long numBytes = -1;
-                DRMS_Segment_t *segTemplate = NULL;
                 DRMS_Segment_t *seg = NULL;
                 char seg_file_name[PATH_MAX] = {0};
 
@@ -3139,8 +3157,8 @@ int DoIt(void)
 
                             while ((lnSeg = list_llnext(reqSegs)) != NULL)
                             {
-                                segTemplate = *((DRMS_Segment_t **)(lnSeg->data));
-                                seg = drms_segment_lookup(rec, segTemplate->info->name);
+                                segment_template = *((DRMS_Segment_t **)(lnSeg->data));
+                                seg = drms_segment_lookup(rec, segment_template->info->name);
 
                                 if (seg && seg->record)
                                 {
@@ -3391,19 +3409,19 @@ int DoIt(void)
             list_llreset(reqKeys);
             while ((lnKey = list_llnext(reqKeys)) != NULL)
             {
-                keyTemplate = *((DRMS_Keyword_t **)(lnKey->data));
+                keyword_template = *((DRMS_Keyword_t **)(lnKey->data));
                 keyNameOut = NULL;
                 valOut = NULL;
                 badKey = 0;
                 missingKeyName = 0;
 
-                if (isInvalidKey(keyTemplate))
+                if (isInvalidKey(keyword_template))
                 {
                     badKey = 1;
 
-                    if (keyTemplate && keyTemplate->info && *(keyTemplate->info->name) != '\0')
+                    if (keyword_template && keyword_template->info && *(keyword_template->info->name) != '\0')
                     {
-                        keyNameOut = keyTemplate->info->name;
+                        keyNameOut = keyword_template->info->name;
                     }
                     else
                     {
@@ -3413,24 +3431,24 @@ int DoIt(void)
                 else
                 {
                     /* do not print segment-specific keys here - they go in the segment objects */
-                    if (!drms_keyword_getperseg(keyTemplate))
+                    if (!drms_keyword_getperseg(keyword_template))
                     {
                         DRMS_Keyword_t *keyWithVal = NULL;
 
                         /* get keyword name from template keyword */
-                        if (fitsexport_getmappedextkeyname(keyTemplate, NULL, NULL, fitsName, sizeof(fitsName), NULL, 0, NULL) && *fitsName != '\0')
+                        if (fitsexport_getmappedextkeyname(keyword_template, NULL, NULL, fitsName, sizeof(fitsName), NULL, 0, NULL) && *fitsName != '\0')
                         {
                             keyNameOut = fitsName;
                         }
                         else
                         {
-                            fprintf(stderr, "Unable to map DRMS keyword name %s to FITS keyword name.\n", keyTemplate->info->name);
+                            fprintf(stderr, "Unable to map DRMS keyword name %s to FITS keyword name.\n", keyword_template->info->name);
                             missingKeyName = 1;
                         }
 
                         /* key is the template keyword, but we need the actual keyword from the current record;
                          * follow the link if the keyword is a linked keyword */
-                        keyWithVal = drms_keyword_lookup(rec, keyTemplate->info->name, 1);
+                        keyWithVal = drms_keyword_lookup(rec, keyword_template->info->name, 1);
 
                         if (keyWithVal)
                         {
@@ -3773,7 +3791,6 @@ int DoIt(void)
             json_t *keywordArray = NULL;
             char *pch = NULL;
             json_t *segObj = NULL;
-            DRMS_Segment_t *segTemplate = NULL;
             DRMS_Segment_t *seg = NULL;
             DRMS_Keyword_t *key = NULL;
             int segNum = 0;
@@ -3793,20 +3810,20 @@ int DoIt(void)
             while ((lnSeg = list_llnext(reqSegs)) != NULL)
             {
                 badSeg = 0;
-                segTemplate = *((DRMS_Segment_t **)(lnSeg->data));
+                segment_template = *((DRMS_Segment_t **)(lnSeg->data));
 
                 segObj = json_new_object();
                 JSOC_INFO_ASSERT(segObj, "out of memory");
 
-                if (isInvalidSeg(segTemplate))
+                if (isInvalidSeg(segment_template))
                 {
                     /* the segment is not defined in this series */
                     badSeg = 1;
 
                     /* name */
-                    if (segTemplate && segTemplate->info && *(segTemplate->info->name) != '\0')
+                    if (segment_template && segment_template->info && *(segment_template->info->name) != '\0')
                     {
-                        jsonVal = createJsonStringVal(segTemplate->info->name);
+                        jsonVal = createJsonStringVal(segment_template->info->name);
                     }
                     else
                     {
@@ -3826,10 +3843,10 @@ int DoIt(void)
                 {
                     /* the segment IS defined in this series, but the current record may not have a segment struct (because
                      * the user provided the segment filter in curly braces section of the record-set specification) */
-                    segNum = segTemplate->info->segnum;
+                    segNum = segment_template->info->segnum;
 
                     /* segment info from actual record */
-                    seg = drms_segment_lookup(rec, segTemplate->info->name);
+                    seg = drms_segment_lookup(rec, segment_template->info->name);
 
                     if (seg)
                     {
@@ -3840,7 +3857,7 @@ int DoIt(void)
                         /* a record does not always have a segment */
 
                         /* name */
-                        jsonVal = createJsonStringVal(segTemplate->info->name);
+                        jsonVal = createJsonStringVal(segment_template->info->name);
                         json_insert_pair_into_object(segObj, "name", jsonVal);
                         jsonVal = NULL;
 
@@ -3904,7 +3921,7 @@ int DoIt(void)
                         }
 
                         /* bzero */
-                        snprintf(keyName, sizeof(keyName), "%s_bzero", segTemplate->info->name);
+                        snprintf(keyName, sizeof(keyName), "%s_bzero", segment_template->info->name);
                         anckey = drms_keyword_lookup(rec, keyName, 1);
 
                         if (anckey)
@@ -3932,7 +3949,7 @@ int DoIt(void)
                         }
 
                         /* bscale */
-                        snprintf(keyName, sizeof(keyName), "%s_bscale", segTemplate->info->name);
+                        snprintf(keyName, sizeof(keyName), "%s_bscale", segment_template->info->name);
                         anckey = drms_keyword_lookup(rec, keyName, 1);
 
                         if (anckey)
@@ -3963,20 +3980,20 @@ int DoIt(void)
                         list_llreset(reqKeys);
                         while ((lnKey = list_llnext(reqKeys)) != NULL)
                         {
-                            keyTemplate = *((DRMS_Keyword_t **)(lnKey->data));
+                            keyword_template = *((DRMS_Keyword_t **)(lnKey->data));
                             badKey = 0;
                             keyNameOut = NULL;
                             valOut = NULL;
                             missingKeyName = 0;
 
-                            if (isInvalidKey(keyTemplate))
+                            if (isInvalidKey(keyword_template))
                             {
                                 /* bad keys have already been handled, in the record-key code; skip this one */
                                 badKey = 1;
                             }
                             else
                             {
-                                if (drms_keyword_getperseg(keyTemplate))
+                                if (drms_keyword_getperseg(keyword_template))
                                 {
                                     DRMS_Keyword_t *keyWithVal = NULL;
 
@@ -3990,18 +4007,18 @@ int DoIt(void)
                                     }
 
                                     /* get keyword name from template keyword */
-                                    if (fitsexport_getmappedextkeyname(keyTemplate, NULL, NULL, fitsName, sizeof(fitsName), NULL, 0, NULL) && *fitsName != '\0')
+                                    if (fitsexport_getmappedextkeyname(keyword_template, NULL, NULL, fitsName, sizeof(fitsName), NULL, 0, NULL) && *fitsName != '\0')
                                     {
                                         keyNameOut = fitsName;
                                     }
                                     else
                                     {
-                                        fprintf(stderr, "Unable to map DRMS keyword name %s to FITS keyword name.\n", keyTemplate->info->name);
+                                        fprintf(stderr, "Unable to map DRMS keyword name %s to FITS keyword name.\n", keyword_template->info->name);
                                         missingKeyName = 1;
                                     }
 
                                     /* key is from the jsd template, which does not include the _xxx suffix */
-                                    snprintf(keyName, sizeof(keyName), "%s_%03d", keyTemplate->info->name, segNum);
+                                    snprintf(keyName, sizeof(keyName), "%s_%03d", keyword_template->info->name, segNum);
 
                                     /* key is the template keyword, but we need the actual keyword from the current record;
                                      * follow the link if the keyword is a linked keyword */
@@ -4088,12 +4105,12 @@ int DoIt(void)
 
                         /* could be missing target record (we followed tried following links); since we know that this segment is
                          * valid, we must find the segment struct in the parent series, unless #1 above is true */
-                        testSeg = hcon_lookup_lower(&rec->segments, segTemplate->info->name);
+                        testSeg = hcon_lookup_lower(&rec->segments, segment_template->info->name);
 
                         if (testSeg)
                         {
                             /* #2 above */
-                            jsonVal = createJsonStringVal(segTemplate->info->name);
+                            jsonVal = createJsonStringVal(segment_template->info->name);
                             json_insert_pair_into_object(segObj, "name", jsonVal);
 
                             jsonVal = createJsonStringVal("BadSegLink");
@@ -4108,7 +4125,7 @@ int DoIt(void)
                             {
                                 /* the user specified a segment in the seglist that IS part of the series, but it is NOT
                                  * in the curly braces clause */
-                                jsonVal = createJsonStringVal(segTemplate->info->name);
+                                jsonVal = createJsonStringVal(segment_template->info->name);
                                 json_insert_pair_into_object(segObj, "name", jsonVal);
 
                                 jsonVal = createJsonStringVal(INVALID_SEG);
@@ -4246,7 +4263,6 @@ int DoIt(void)
         if (useFitsKeyNames)
         {
             json_t *linkArray = NULL;
-            DRMS_Link_t *linkTemplate = NULL;
             DRMS_Link_t *link = NULL;
             json_t *linkObj = NULL;
             DRMS_Record_t *linkedRec = NULL;
@@ -4262,7 +4278,7 @@ int DoIt(void)
             list_llreset(reqLinks);
             while ((lnLink = list_llnext(reqLinks)) != NULL)
             {
-                linkTemplate = *((DRMS_Link_t **)(lnLink->data));
+                link_template = *((DRMS_Link_t **)(lnLink->data));
                 badLink = 0;
                 valOut = NULL;
                 *linkSpec = '\0';
@@ -4270,31 +4286,31 @@ int DoIt(void)
                 linkObj = json_new_object();
                 JSOC_INFO_ASSERT(linkObj, "out of memory");
 
-                if (isInvalidLink(linkTemplate))
+                if (isInvalidLink(link_template))
                 {
                     badLink = 1;
 
-                    if (linkTemplate && linkTemplate->info && *(linkTemplate->info->name) != '\0')
+                    if (link_template && link_template->info && *(link_template->info->name) != '\0')
                     {
-                        valOut = linkTemplate->info->name;
+                        valOut = link_template->info->name;
                     }
                     else
                     {
                         missingLinkName = 1;
                     }
                 }
-                else if (!(linkTemplate->info) || *(linkTemplate->info->name) == '\0')
+                else if (!(link_template->info) || *(link_template->info->name) == '\0')
                 {
                     missingLinkName = 1;
                     badLink = 1;
                 }
                 else
                 {
-                    valOut = linkTemplate->info->name;
+                    valOut = link_template->info->name;
 
                     /* unlike the case for keywords and segments, DRMS does not have a lookup function for
                      * links */
-                    link = hcon_lookup_lower(&rec->links, linkTemplate->info->name);
+                    link = hcon_lookup_lower(&rec->links, link_template->info->name);
 
                     if (!link || !link->info)
                     {
@@ -4302,7 +4318,7 @@ int DoIt(void)
                     }
                     else
                     {
-                        linkedRec = drms_link_follow(rec, linkTemplate->info->name, &status);
+                        linkedRec = drms_link_follow(rec, link_template->info->name, &status);
 
                         if (!linkedRec || !linkedRec->seriesinfo || *(linkedRec->seriesinfo->seriesname) == '\0')
                         {
@@ -4432,21 +4448,21 @@ int DoIt(void)
         list_llreset(reqKeys);
         while ((lnKey = list_llnext(reqKeys)) != NULL)
         {
-            keyTemplate = *((DRMS_Keyword_t **)(lnKey->data));
+            keyword_template = *((DRMS_Keyword_t **)(lnKey->data));
 
-            if (isInvalidKey(keyTemplate))
+            if (isInvalidKey(keyword_template))
             {
                 /* remove from list so that the keyword is ignored in the per-segment code */
                 list_llremove(reqKeys, lnKey);
 
-                if (keyTemplate)
+                if (keyword_template)
                 {
-                    if (keyTemplate->info)
+                    if (keyword_template->info)
                     {
-                        free(keyTemplate->info);
+                        free(keyword_template->info);
                     }
 
-                    free(keyTemplate); /* invalid keys were allocated */
+                    free(keyword_template); /* invalid keys were allocated */
                 }
 
                 list_llfreenode(&lnKey);
@@ -4456,21 +4472,21 @@ int DoIt(void)
         list_llreset(reqSegs);
         while ((lnSeg = list_llnext(reqSegs)) != NULL)
         {
-            segTemplate = *((DRMS_Segment_t **)(lnSeg->data));
+            segment_template = *((DRMS_Segment_t **)(lnSeg->data));
 
-            if (isInvalidSeg(segTemplate))
+            if (isInvalidSeg(segment_template))
             {
                 /* remove from list so that the keyword is ignored in the per-segment code */
                 list_llremove(reqSegs, lnSeg);
 
-                if (segTemplate)
+                if (segment_template)
                 {
-                    if (segTemplate->info)
+                    if (segment_template->info)
                     {
-                        free(segTemplate->info);
+                        free(segment_template->info);
                     }
 
-                    free(segTemplate); /* invalid segs were allocated */
+                    free(segment_template); /* invalid segs were allocated */
                 }
 
                 list_llfreenode(&lnSeg);
@@ -4480,20 +4496,20 @@ int DoIt(void)
         list_llreset(reqLinks);
         while ((lnLink = list_llnext(reqLinks)) != NULL)
         {
-            linkTemplate = *((DRMS_Link_t **)(lnLink->data));
+            link_template = *((DRMS_Link_t **)(lnLink->data));
 
-            if (isInvalidLink(linkTemplate))
+            if (isInvalidLink(link_template))
             {
                 list_llremove(reqLinks, lnLink);
 
-                if (linkTemplate)
+                if (link_template)
                 {
-                    if (linkTemplate->info)
+                    if (link_template->info)
                     {
-                        free(linkTemplate->info);
+                        free(link_template->info);
                     }
 
-                    free(linkTemplate); /* invalid linkd were allocated */
+                    free(link_template); /* invalid linkd were allocated */
                 }
 
                 list_llfreenode(&lnLink);
