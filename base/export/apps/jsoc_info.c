@@ -149,16 +149,16 @@ const char *userhandle = NULL;
 
 #define JSONDIE(msg) \
 do  {	\
-  char *msgjson;	\
-  char *json;	\
-  json_t *jroot = json_new_object();	\
-  msgjson = json_escape_string(msg);	\
-  json_insert_pair_into_object(jroot, "status", json_new_number("1"));	\
-  json_insert_pair_into_object(jroot, "error", json_new_string(msgjson));	\
-  json_tree_to_string(jroot,&json);	\
+  char *jsondie_msgjson;	\
+  char *jsondie_json;	\
+  json_t *jsondie_jroot = json_new_object();	\
+  jsondie_msgjson = json_escape_string(msg);	\
+  json_insert_pair_into_object(jsondie_jroot, "status", json_new_number("1"));	\
+  json_insert_pair_into_object(jsondie_jroot, "error", json_new_string(jsondie_msgjson));	\
+  json_tree_to_string(jsondie_jroot, &jsondie_json);	\
   printf("Content-type: application/json\n\n");	\
-  printf("%s\n",json);	\
-  free(json); \
+  printf("%s\n",jsondie_json);	\
+  free(jsondie_json); \
   fflush(stdout);	\
   manage_userhandle(0, userhandle); \
   return(1);	\
@@ -229,8 +229,6 @@ static char *json_escape_string(const char *in)
 
 void manage_userhandle(int register_handle, const char *handle)
 {
-    char cmd[1024];
-
     if (register_handle) // add handle and PID to current processing table
     {
         long PID = getpid();
@@ -555,8 +553,6 @@ static int populateLinkList(const char *listOfLinks, DRMS_Record_t *template, Li
         }
         else if (strcmp(currentLink, "**ALL**")==0)
         {
-            DRMS_Link_t *link = NULL;
-
             JSOC_INFO_ASSERT(last == NULL, "about to leak");
             while ((linkTemplate = drms_record_nextlink(template, &last)) != NULL)
             {
@@ -630,7 +626,6 @@ static int GetLogDirs(DRMS_Env_t *env, DRMS_Record_t **recs, int nrecs, HContain
     /* assumes that all records in recs are from the same series (so the namespace is consistent); recs is a subset
      * of records from a record-set with potentially many subsets */
     int err = 0;
-    int drms_status = DRMS_SUCCESS;
     int irec;
     HContainer_t *session_ids = NULL;
     LinkedList_t *ns_session_ids = NULL;
@@ -839,9 +834,7 @@ static const char *GetLogDir(DRMS_Record_t *rec, HContainer_t *log_dirs)
 {
     char log_id[128];
     char **p_log_dir = NULL;
-    LinkedList_t **p_ns_session_ids = NULL;
     const char *ret = NULL;
-
 
     snprintf(log_id, sizeof(log_id), "%s:%llu", rec->sessionns, rec->sessionid);
 
@@ -987,7 +980,6 @@ char *drms_getseriesowner(DRMS_Env_t *drms_env, char *series, int *status)
    {
    char *nspace = NULL;
    char *relname = NULL;
-   int istat = DRMS_SUCCESS;
    DB_Text_Result_t *qres = NULL;
    static char owner[256];
    owner[0] = '\0';
@@ -1106,11 +1098,10 @@ static int list_series_info(DRMS_Env_t *drms_env, DRMS_Record_t *rec, json_t *jr
     {
         int i;
         json_t *primeinfo = NULL;
-        char *jsonstr;
 
         for (i=0; i<npkeys; i++)
         {
-            json_t *primeinfo = json_new_object();
+            primeinfo = json_new_object();
             XASSERT(primeinfo);
             DRMS_Keyword_t *pkey = NULL;
             DRMS_Keyword_t *stepKey = NULL;
@@ -1371,11 +1362,7 @@ if (DEBUG) fprintf(stderr,"   starting all keywords\n");
 
     json_t *keyinfo= NULL;
     json_t *keytype = NULL;
-    json_t *defval = NULL;
-    json_t *recscope = NULL;
     char rawval[128];
-    char *jsonstr = NULL;
-    char *typework = NULL;
     char *scopework = NULL;
     char *unitswork = NULL;
     char *defvalwork = NULL;
@@ -1392,7 +1379,6 @@ if (DEBUG) fprintf(stderr,"   starting all keywords\n");
     if (useFitsKeyNames)
     {
         DRMS_Record_t *jsdTemplate = NULL;
-        DRMS_Keyword_t *jsdKeys = NULL;
         char typeStr[16] = {0};
         char scopeStr[16] = {0};
         char defStr[128] = {0};
@@ -1445,7 +1431,6 @@ if (DEBUG) fprintf(stderr,"   starting all keywords\n");
                 {
                     /* provide link name and target keyword name */
                     char keylinkMap[DRMS_MAXLINKNAMELEN + DRMS_MAXKEYNAMELEN + 16];
-                    char *tmpstr = NULL;
                     json_t *linkinfo = NULL;
                     int lnkstat = DRMS_SUCCESS;
                     DRMS_Keyword_t *linkedkw = NULL;
@@ -1888,7 +1873,6 @@ static int get_series_stats(DRMS_Record_t *rec, json_t *jroot)
         char recquery[DRMS_MAXQUERYLEN];
         char *jsonquery;
         char val[100];
-        int status;
 
         drms_sprint_rec_query(recquery, record_set->records[0]);
         jsonquery = json_escape_string(recquery);
@@ -2099,7 +2083,6 @@ static int SetWebArg(Q_ENTRY *req, const char *key, char **arglist, size_t *size
 
 static long long GetSegFileSize(DRMS_Record_t *rec, const char *segment)
 {
-    char size[64];
     struct stat stat_buf;
     long long num_bytes = -1;
     DRMS_Segment_t *seg = NULL;
@@ -2288,7 +2271,7 @@ static int print_series_information(DRMS_Env_t *drms_env, const char *series, in
     return 0;
 }
 
-/* `recordset_spec` has not segment filter */
+/* `recordset_spec` has no segment filter */
 static int print_recordset_summary(DRMS_Env_t *drms_env, int max_recs, const char *recordset_spec_no_segs, const char *recordset_spec, int skip_run_time, double start_time, int print_HTTP_header)
 {
     json_t *jroot = json_new_object();
@@ -2428,9 +2411,6 @@ int DoIt(void)
     char *final_json = NULL;
     const char *processing_json = NULL;
     LinkedList_t *processing_steps = NULL;
-    DRMS_Segment_t *template_segment = NULL;
-    ListNode_t *node = NULL;
-    struct _processing_step_node_data_ *node_data = NULL;
 
     int missingKeyNumber = 0;
     int missingSegNumber = 0;
@@ -2448,7 +2428,9 @@ int DoIt(void)
     int nsets = 0;
     DRMS_RecQueryInfo_t rsinfo; /* Filled in by parser as it encounters elements. */
 
-    char no_segment_recordset_spec[DRMS_MAXQUERYLEN] = {0};
+    int set_index = 0;
+    char *no_segment_recordset_spec = NULL;
+    size_t sz_spec = 128;
     int requires_series_template = 0;
 
     char error_msg[512] = {0};
@@ -2609,7 +2591,7 @@ int DoIt(void)
      *   link=*ALL** (links_listed + link == **ALL**)
      *   useFitsKeyNames + (keyslisted || segs_listed || links_listed)
      */
-    requires_series_template = (keys_listed || segs_listed || links_listed) && (useFitsKeyNames || (strstr(keylist, "**ALL**") != NULL) || (strstr(seglist, "**ALL**") != NULL) || (strstr(linklist, "**ALL**") != NULL));
+    requires_series_template = ( (strcmp(op, "series_struct") == 0) || ((strcmp(op,"rs_list") == 0) && (keys_listed || segs_listed || links_listed) && (useFitsKeyNames || (strstr(keylist, "**ALL**") != NULL) || (strstr(seglist, "**ALL**") != NULL) || (strstr(linklist, "**ALL**") != NULL))) );
 
     if (requires_series_template && nsets > 1)
     {
@@ -2617,26 +2599,43 @@ int DoIt(void)
         JSONDIE(error_msg); /* exits DoIt() */
     }
 
-    if (strcmp(op,"series_struct") == 0)
+    if (strcmp(op, "series_struct") == 0)
     {
         /* returns 1 if JSONDIE was called, 0 otherwise */
         return_value = print_series_information(drms_env, snames[0], followLinks, useFitsKeyNames, max_precision, binary, processing_steps, skipRunTime, StartTime, printHTTPHeaders);
     }
-    else if (strcmp(op,"rs_summary") == 0)
+    else if (strcmp(op, "rs_summary") == 0)
     {
-        snprintf(no_segment_recordset_spec, sizeof(no_segment_recordset_spec), "%s%s", snames[0], filts[0]);
+        /* remove the segment filter(s) */
+        sz_spec = 128;
+        no_segment_recordset_spec = calloc(1, sz_spec);
+
+        if (!no_segment_recordset_spec)
+        {
+            JSONDIE("[ rs_summary ] out of memory");
+        }
+        for (set_index = 0; set_index < nsets; set_index++)
+        {
+            if (set_index > 0)
+            {
+                no_segment_recordset_spec = base_strcatalloc(no_segment_recordset_spec, ",", &sz_spec);
+            }
+
+            no_segment_recordset_spec = base_strcatalloc(no_segment_recordset_spec, snames[set_index], &sz_spec);
+            no_segment_recordset_spec = base_strcatalloc(no_segment_recordset_spec, filts[set_index], &sz_spec);
+        }
 
         /* returns 1 if JSONDIE was called, 0 otherwise */
         return_value = print_recordset_summary(drms_env, max_recs, no_segment_recordset_spec, in, skipRunTime, StartTime, printHTTPHeaders);
+
     }
-    else if (strcmp(op,"rs_list") == 0)
+    else if (strcmp(op, "rs_list") == 0)
     {
     int wantRecInfo = cmdparams_get_int(&cmdparams, "R", NULL);
     DRMS_RecordSet_t *recordset = NULL;
     DRMS_Record_t *rec = NULL;
     DRMS_Record_t *series_template = NULL;
     DRMS_RecChunking_t cstat = kRecChunking_None;
-    char seriesname[DRMS_MAXSERIESNAMELEN];
     char *keys[1000];
     char *segs[1000];
     char *links[1000];
@@ -2656,7 +2655,6 @@ int DoIt(void)
     int irec, nrecs;
     int record_set_staged = 0;
     int sum_info_called = 0;
-    int sumInfoStr = 0;
     jroot = json_new_object();
     DRMS_Record_t *jsdTemplate = NULL;
     DRMS_Segment_t *segment_template = NULL;
@@ -2669,7 +2667,6 @@ int DoIt(void)
     char *fitsValue = NULL;
     json_t *keyObj = NULL;
     int badKey = 0;
-    int badSeg = 0;
     int badLink = 0;
     ListNode_t *lnKey = NULL;
     ListNode_t *lnSeg = NULL;
@@ -2852,7 +2849,6 @@ int DoIt(void)
         /* get specified list */
         char *thiskey = NULL;
         CGI_unescape_url(keylist);
-        ListNode_t *node = NULL;
 
         if (useFitsKeyNames)
         {
@@ -3053,7 +3049,6 @@ int DoIt(void)
     if (requisition.requireLogdir)
     {
         int iset;
-        int nrecs;
 
         /* call SUM_get() with batches of SUs */
         for (iset = 0; iset < recordset->ss_n && status == DRMS_SUCCESS; iset++)
@@ -3135,7 +3130,6 @@ int DoIt(void)
                 struct stat statBuf;
                 char *segFilePath = NULL;
                 size_t szPath = DRMS_MAXPATHLEN;
-                SUM_info_t *sinfo = NULL;
                 long long numBytes = -1;
                 DRMS_Segment_t *seg = NULL;
                 char seg_file_name[PATH_MAX] = {0};
@@ -3154,7 +3148,6 @@ int DoIt(void)
                         if (segFilePath)
                         {
                             list_llreset(reqSegs);
-
                             while ((lnSeg = list_llnext(reqSegs)) != NULL)
                             {
                                 segment_template = *((DRMS_Segment_t **)(lnSeg->data));
@@ -3558,8 +3551,6 @@ int DoIt(void)
                 else if (strcmp(keys[ikey], "*size*") == 0)
                 {
                     char size[64];
-                    struct stat statBuf;
-                    SUM_info_t *sinfo = NULL;
                     long long numBytes = -1;
                     long long numSubBytes = 0;
                     DRMS_Segment_t *seg = NULL;
@@ -3789,12 +3780,9 @@ int DoIt(void)
         {
             json_t *segmentArray = NULL;
             json_t *keywordArray = NULL;
-            char *pch = NULL;
             json_t *segObj = NULL;
             DRMS_Segment_t *seg = NULL;
-            DRMS_Keyword_t *key = NULL;
             int segNum = 0;
-            char recordDir[PATH_MAX];
             char path[PATH_MAX];
             char dims[128];
             int iaxis = 0;
@@ -3809,7 +3797,6 @@ int DoIt(void)
             list_llreset(reqSegs);
             while ((lnSeg = list_llnext(reqSegs)) != NULL)
             {
-                badSeg = 0;
                 segment_template = *((DRMS_Segment_t **)(lnSeg->data));
 
                 segObj = json_new_object();
@@ -3818,7 +3805,6 @@ int DoIt(void)
                 if (isInvalidSeg(segment_template))
                 {
                     /* the segment is not defined in this series */
-                    badSeg = 1;
 
                     /* name */
                     if (segment_template && segment_template->info && *(segment_template->info->name) != '\0')
