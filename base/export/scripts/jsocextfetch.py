@@ -81,13 +81,13 @@ try:
             elif key in ('n'):
                 optD['noheader'] = True
             else:
-                if key in ('ds'):
+                if key in ('ds',):
                     optD['spec'] = val
-                elif key in ('op'):
+                elif key in ('op',):
                     optD['op'] = val
-                elif key in ('requestid'):
+                elif key in ('requestid',):
                     optD['requestid'] = val
-                elif key in ('format') and val.lower() == 'txt':
+                elif key in ('format',) and val.lower() == 'txt':
                     optD['json'] = False
 
                 allArgs.append(key + '=' + val)
