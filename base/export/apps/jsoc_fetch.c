@@ -31,6 +31,7 @@
 #include "printk.h"
 #include "qDecoder.h"
 #include "jsmn.h"
+#include "processing.h"
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -102,6 +103,9 @@
 #define kOptProtocolAsIs   "as-is"	   // Protocol option value for no change to fits files
 #define kOptProtocolSuAsIs "su-as-is"  // Protocol option value for requesting as-is FITS paths for the exp_su operation
 
+#define ARG_PROCESSING_JSON "processing" // takes precedence over the `process` parameter
+#define ARG_RECORD_LIMIT "max_recs" // maximum number of records to export; + --> oldest, - --> newest
+
 #define kNotSpecified	"Not Specified"
 #define kNoAsyncReq     "NOASYNCREQUEST"
 
@@ -117,6 +121,8 @@ ModuleArgs_t module_args[] =
   {ARG_INTS, kArgSunum, "-1", "<sunum list for SU exports>"},
   {ARG_STRING, kArgRequestid, kNotSpecified, "JSOC export request identifier"},
   {ARG_STRING, kArgProcess, kNotSpecified, "string containing program and arguments"},
+  {ARG_STRING, ARG_PROCESSING_JSON, kNotSpecified, "A JSON object of processing steps to be applied to the input record-set upon export; if provided, then the ratio of the processed image size to the original image size will be printed when op == series_struct (in the processing_size_ratio property)."},
+  {ARG_INT, ARG_RECORD_LIMIT, "0", "limit export to the number of records specified; positive value --> truncate records that sort higher according to prime-key ranking; negative value --> truncate records that sort lower according to prime-key ranking; zero --> no truncation"},
   {ARG_STRING, kArgRequestor, kNotSpecified, "name of requestor"},
   {ARG_STRING, kArgNotify, kNotSpecified, "email address of requestor"},
   {ARG_STRING, kArgShipto, kNotSpecified, "mail address of requestor"},
@@ -1619,6 +1625,52 @@ static int IsNearlineSeries(const char *series)
     return (strncmp(series, "iris.lev1", 9) == 0);
 }
 
+static long long apply_size_ratio(LinkedList_t *processing_steps, DRMS_Segment_t *segment, float size_ratio_default, long long image_size)
+{
+    ListNode_t *node = NULL;
+    struct _processing_step_node_data_ *node_data = NULL;
+    float size_ratio_override = -1;
+    float step_size_ratio = 1;
+    long long processed_size = -1;
+
+    /* it is only at this point that we can calculate the size ratio because we need to examine
+     * the first segment of the first record of the specified record set */
+    if (processing_steps)
+    {
+        size_ratio_override = 1.0;
+
+        /* calculate size ratio (override) */
+        list_llreset(processing_steps);
+        while ((node = list_llnext(processing_steps)) != NULL)
+        {
+            node_data = (struct _processing_step_node_data_ *)node->data;
+            step_size_ratio = get_processing_size_ratio(node_data, segment);
+            if (step_size_ratio < 0)
+            {
+                size_ratio_override = -1;
+                break;
+            }
+
+            size_ratio_override *= step_size_ratio;
+        }
+    }
+
+    if (size_ratio_override > 0)
+    {
+        processed_size = size_ratio_override * image_size;
+    }
+    else if (size_ratio_default > 0)
+    {
+        processed_size = size_ratio_default * image_size;
+    }
+    else
+    {
+        processed_size = image_size;
+    }
+
+    return processed_size;
+}
+
 
 /* Module main function. */
 int DoIt(void)
@@ -1629,6 +1681,11 @@ int DoIt(void)
   const char *seglist;
   const char *requestid = NULL;
   const char *process;
+  const char *processing_override = NULL;
+  int record_limit = 0;
+  LinkedList_t *processing_steps = NULL;
+  char *processing_column = NULL;
+  size_t sz_processing_column = 128;
   const char *requestor;
   int requestorid = -1; /* id in jsoc.export_user_info */
   const char *notify;
@@ -1651,6 +1708,8 @@ int DoIt(void)
   char *errorreply;
   int64_t *sunumarr = NULL; /* array of 64-bit sunums provided in the'sunum=...' argument. */
   int nsunums;
+    ListNode_t *node = NULL;
+    struct _processing_step_node_data_ *node_data = NULL;
   long long size;
   int rcount = 0;
   int rcountlimit = 0;
@@ -1771,6 +1830,8 @@ int DoIt(void)
             SetWebArg(req, kArgSunum, &webarglist, &webarglistsz);
             SetWebArg(req, kArgSeg, &webarglist, &webarglistsz);
             SetWebArg(req, kArgProcess, &webarglist, &webarglistsz);
+            SetWebArg(req, ARG_PROCESSING_JSON, &webarglist, &webarglistsz);
+            SetWebArg(req, ARG_RECORD_LIMIT, &webarglist, &webarglistsz);
             SetWebArg(req, kArgFormat, &webarglist, &webarglistsz);
             SetWebArg(req, kArgFormatvar, &webarglist, &webarglistsz);
             SetWebArg(req, kArgMethod, &webarglist, &webarglistsz);
@@ -1823,6 +1884,8 @@ int DoIt(void)
 
   seglist = cmdparams_get_str (&cmdparams, kArgSeg, NULL);
   process = cmdparams_get_str (&cmdparams, kArgProcess, NULL);
+  processing_override = cmdparams_get_str(&cmdparams, ARG_PROCESSING_JSON, NULL);
+  record_limit = cmdparams_get_int(&cmdparams, ARG_RECORD_LIMIT, NULL);
   format = cmdparams_get_str (&cmdparams, kArgFormat, NULL);
   formatvar = cmdparams_get_str (&cmdparams, kArgFormatvar, NULL);
   method = cmdparams_get_str (&cmdparams, kArgMethod, NULL);
@@ -1862,9 +1925,74 @@ int DoIt(void)
 
   // Extract the record limit from the Process field, if present.
   // Leave as part of process to forward into jsoc.export
-  if (strncmp(process, "n=", 2) == 0)
+  // can be negative
+    if (strcasecmp(processing_override, kNotSpecified) == 0)
     {
-    rcountlimit = atoi(process+2);
+        if (strncmp(process, "n=", 2) == 0)
+        {
+            rcountlimit = atoi(process+2);
+        }
+    }
+    else
+    {
+        rcountlimit = record_limit;
+
+        /* suck in processing argument values into the returned list */
+        if (get_processing_list(processing_override, &processing_steps))
+        {
+            JSONDIE("invalid processing list argument");
+        }
+
+        if (processing_steps)
+        {
+            int first = 1;
+            HIterator_t *step_iter = NULL;
+            const char *argument_name = NULL;
+            char *argument_value = NULL;
+            char record_limit_str[32];
+
+            /* create `processing` keyword value for jsoc.export from `processing_override` and `rcountlimit`*/
+            processing_column = calloc(sz_processing_column, sizeof(char));
+
+            /* n=<rcountlimit> */
+            snprintf(record_limit_str, sizeof(record_limit_str), "%d", record_limit);
+            processing_column = base_strcatalloc(processing_column, "n=", &sz_processing_column);
+            processing_column = base_strcatalloc(processing_column, record_limit_str, &sz_processing_column);
+            processing_column = base_strcatalloc(processing_column, "|", &sz_processing_column);
+
+            first = 1;
+            list_llreset(processing_steps);
+            while ((node = list_llnext(processing_steps)) != NULL)
+            {
+                node_data = (struct _processing_step_node_data_ *)node->data;
+
+                if (!first)
+                {
+                    processing_column = base_strcatalloc(processing_column, "|", &sz_processing_column);
+                }
+
+                processing_column = base_strcatalloc(processing_column, node_data->step, &sz_processing_column);
+
+                if (hcon_size(&node_data->arguments) > 0)
+                {
+                    step_iter = hiter_create(&node_data->arguments);
+                    if (step_iter)
+                    {
+                        while ((argument_value = (char *)hiter_extgetnext(step_iter, &argument_name)) != NULL)
+                        {
+                            processing_column = base_strcatalloc(processing_column, ",", &sz_processing_column);
+                            processing_column = base_strcatalloc(processing_column, argument_name, &sz_processing_column);
+                            processing_column = base_strcatalloc(processing_column, "=", &sz_processing_column);
+                            processing_column = base_strcatalloc(processing_column, argument_value, &sz_processing_column);
+                        }
+
+                        hiter_destroy(&step_iter);
+                    }
+                }
+
+                first = 0;
+            }
+        }
     }
 
 // SPECIAL DEBUG LOG HERE XXXXXX
@@ -2650,7 +2778,7 @@ int DoIt(void)
       else
       {
           /* ART - temporarily block /SUM0.../SUM22 since these disks are old and could die if they are used heavily; */
-          size += (long long)sinfo->bytes;
+          size += (long long)sinfo->bytes; /* for exp_su, the size ratio is always 1 since no processing will occur */
           dirsize = (long long)sinfo->bytes;
 
           omit = 0;
@@ -3294,6 +3422,8 @@ int DoIt(void)
                     JSONDIE(mbuf);
                 }
 
+                series_template = drms_template_record(drms_env, seriesname, &status);
+
                 /* Iterate through firstlast, looking for anything that isn't 'N'. */
                 if (firstlast)
                 {
@@ -3322,8 +3452,6 @@ int DoIt(void)
 
                 if (!omit_quality_check)
                 {
-                    series_template = drms_template_record(drms_env, seriesname, &status);
-
                     if (status != DRMS_SUCCESS)
                     {
                         snprintf(mbuf, sizeof(mbuf), "cannot export series '%s' - it does not exist\n", seriesname);
@@ -3420,6 +3548,7 @@ int DoIt(void)
 
         if (tmp_recordset)
         {
+            /* the original specification was modified to add the quality-keyword no-image check */
             if (*tmp_recordset != '\0')
             {
                 snprintf(dsquery, sizeof(dsquery), "%s", tmp_recordset);
@@ -3825,7 +3954,7 @@ int DoIt(void)
               record_is_online = 0;
               // all_nearline = ?; we need a new SUMS table to provide this informaton
               /* Use sinfo to get SU size info. Must cast double to 64-bit integer - SUMS design problem. */
-              size += (long long)sinfo->bytes;
+              size += apply_size_ratio(processing_steps, tSeg, sizeRatio, (long long)sinfo->bytes);
               if ((long long)sinfo->bytes > 0)
               {
                   /* Assume the user wants a least one segment file in the SU. */
@@ -3869,7 +3998,7 @@ int DoIt(void)
                       {
                           if (fscanf(du,"%lld",&dirsize) == 1)
                           {
-                              size += dirsize;
+                              size += dirsize; /* cannot apply size ratio to a directory (cannot process a directory) */
                               segcount += 1;
                           }
                           pclose(du);
@@ -3879,7 +4008,7 @@ int DoIt(void)
                   }
                   else
                   {
-                      size += buf.st_size;
+                      size += apply_size_ratio(processing_steps, tSeg, sizeRatio, buf.st_size);
                       segcount += 1;
                   }
               }
@@ -3962,19 +4091,20 @@ int DoIt(void)
 
     compressedDownload = (strstr(protocol, "**NONE**") == NULL);
 
-
+    /* `size` is size in number of bytes; it has already been adjusted by the image size ratio */
     if (compressedStorage && !compressedDownload)
     {
-        sizeLimit = MAX_UNCOMPRESSING_EXPORT_SIZE / sizeRatio;
+        sizeLimit = MAX_UNCOMPRESSING_EXPORT_SIZE;
     }
     else if (!compressedStorage && compressedDownload)
     {
-        sizeLimit = MAX_COMPRESSING_EXPORT_SIZE / sizeRatio;
+        sizeLimit = MAX_COMPRESSING_EXPORT_SIZE;
     }
     else
     {
-        sizeLimit = MAX_STRAIGHT_EXPORT_SIZE / sizeRatio;
+        sizeLimit = MAX_STRAIGHT_EXPORT_SIZE;
     }
+
 
     /* Can't figure out how sizeLimit can be -2^63, but it is here. Print out a lot of stuff. */
     WriteLog(lfname, "size is %lld.\n", size);
@@ -4226,7 +4356,17 @@ int DoIt(void)
 
         drms_setkey_string(exprec, "RequestID", requestid);
         drms_setkey_string(exprec, "DataSet", dsquery);
-        drms_setkey_string(exprec, "Processing", process);
+
+        if (processing_column)
+        {
+            /* processing_override */
+            drms_setkey_string(exprec, "Processing", processing_column);
+        }
+        else
+        {
+            drms_setkey_string(exprec, "Processing", process);
+        }
+
         drms_setkey_string(exprec, "Protocol", protocol);
         drms_setkey_string(exprec, "FilenameFmt", filenamefmt);
         drms_setkey_string(exprec, "Method", method);
@@ -4720,6 +4860,11 @@ int DoIt(void)
         }
       fflush(stdout);
       }
+    }
+
+    if (processing_steps)
+    {
+        list_llfree(&processing_steps);
     }
 
     if (sustatus)
