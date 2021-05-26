@@ -11653,6 +11653,16 @@ int ParseRecSetDescInternal(const char *recsetsStr, char **allvers, char ***sets
                             sname = strdup(buf);
                         }
 
+                        if (filtstr == NULL)
+                        {
+                            filtstr = calloc(1, sizeof(char));
+                        }
+
+                        if (segliststr == NULL)
+                        {
+                            segliststr = calloc(1, sizeof(char));
+                        }
+
                         state = kRSParseState_EndElem;
                     }
 
