@@ -190,6 +190,8 @@ int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey,
 void drms_keyword_setdate();
 TIME drms_keyword_getdate(DRMS_Record_t *rec);
 
+int drms_keyword_get_alias(DRMS_Keyword_t *keyword, char *alias, size_t size);
+
 static inline int drms_keyword_ranksort(const void *he1, const void *he2)
 {
    DRMS_Keyword_t *k1 = (DRMS_Keyword_t *)hcon_getval(*((HContainerElement_t **)he1));

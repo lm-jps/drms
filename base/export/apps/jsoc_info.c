@@ -260,6 +260,8 @@ static int populateKeyList(const char *listOfKeys, LinkedList_t *reqSegs, DRMS_R
     int specKey = 0;
     int sumInfoFakeKey = 0;
     int fakeKey = 0;
+    DRMS_Keyword_t **ptr_keyword_alias = NULL;
+    char alias[DRMS_MAXKEYNAMELEN] = {0};
 
     JSOC_INFO_ASSERT(listOfKeys && *listOfKeys != '\0' && reqSegs && template && jsdTemplate && recordSet && recsStaged && requisition && reqKeys, "populateKeyList(): invalid arguments");
     listOfKeysWorking = strdup(listOfKeys);
@@ -395,7 +397,8 @@ static int populateKeyList(const char *listOfKeys, LinkedList_t *reqSegs, DRMS_R
 
                 JSOC_INFO_ASSERT(*jsdTemplate, "Could not obtain the JSD template record.");
 
-                /* look-up keyword; if not found, we need to print some kind of invalid-key string */
+                /* look-up keyword; if not found, we need to print some kind of invalid-key string;
+                 * currentKey could be an alias, but drms_keyword_lookup knows how to handle this */
                 keyTemplate = drms_keyword_lookup(*jsdTemplate, currentKey, 0);
 
                 if (!keyTemplate || !(keyTemplate->info) || *(keyTemplate->info->name) == '\0')
@@ -1366,6 +1369,11 @@ if (DEBUG) fprintf(stderr,"   starting all keywords\n");
     char *scopework = NULL;
     char *unitswork = NULL;
     char *defvalwork = NULL;
+    LinkedList_t *augmented_key_list = NULL;
+    ListNode_t *node = NULL;
+    char alias[DRMS_MAXKEYNAMELEN] = {0};
+    DRMS_Keyword_t *alias_key = NULL;
+
 
     /* show all keywords */
     keyarray = json_new_array();
@@ -1579,8 +1587,37 @@ if (DEBUG) fprintf(stderr,"   starting all keywords\n");
          */
         /* We don't want to follow the link just yet - we need a combination of source and target
         * keyword information below. For now, just get the source keyword info. */
-        while ((key = drms_record_nextkey(rec, &last, 0)))
+        /* ADD aliases to rec->keywords */
+        augmented_key_list = list_llcreate(sizeof(DRMS_Keyword_t *), NULL);
+        if (augmented_key_list)
         {
+            while ((key = drms_record_nextkey(rec, &last, 0)))
+            {
+                list_llinserttail(augmented_key_list, &key);
+
+                if (drms_keyword_get_alias(key, alias, sizeof(alias)))
+                {
+                    alias_key = calloc(1, sizeof(DRMS_Keyword_t));
+                    alias_key->record = key->record;
+                    alias_key->info = (DRMS_KeywordInfo_t *)calloc(1, sizeof(DRMS_KeywordInfo_t));
+                    /* copy info over (needed in loop keyword loop below), but keep alias name */
+                    *alias_key->info = *key->info;
+                    snprintf(alias_key->info->name, sizeof(alias_key->info->name), "%s", alias);
+
+                    /* must also copy the value over since this is the default value */
+                    drms_copy_drms2drms(alias_key->info->type, &alias_key->value, &key->value);
+
+                    list_llinserttail(augmented_key_list, &alias_key);
+                }
+            }
+
+            list_llreset(augmented_key_list);
+        }
+
+        //while ((key = drms_record_nextkey(augmented_record, &last, 0)))
+        while ((node = list_llnext(augmented_key_list)) != NULL && node->data != NULL)
+        {
+            key = *(DRMS_Keyword_t **)node->data;
             int persegment = key->info->kwflags & kKeywordFlag_PerSegment;
 
 if (DEBUG) fprintf(stderr,"   starting keyword %s\n",key->info->name);
@@ -1679,6 +1716,11 @@ if (DEBUG) fprintf(stderr,"   starting keyword %s\n",key->info->name);
             notework = NULL;
 
             json_insert_child(keyarray, keyinfo);
+        }
+
+        if (augmented_key_list)
+        {
+            list_llfree(&augmented_key_list);
         }
 
         if (last)
@@ -2639,6 +2681,7 @@ int DoIt(void)
     char *keys[1000];
     char *segs[1000];
     char *links[1000];
+    char alias[DRMS_MAXKEYNAMELEN];
     int ikey = 0;
     int nkeys = 0;
     int iseg = 0;
@@ -2672,6 +2715,7 @@ int DoIt(void)
     ListNode_t *lnSeg = NULL;
     ListNode_t *lnLink = NULL;
     HContainer_t *log_dirs = NULL;
+    DRMS_Keyword_t **ptr_keyword_alias = NULL;
 
     if (status == DRMS_ERROR_QUERYFAILED)
     {
@@ -2875,7 +2919,13 @@ int DoIt(void)
                     {
                         if (!drms_keyword_getimplicit(key))
                         {
-                            keys[nkeys++] = strdup (key->info->name);
+                            keys[nkeys++] = strdup(key->info->name);
+
+                            /* check for keyword aliases */
+                            if (drms_keyword_get_alias(key, alias, sizeof(alias)))
+                            {
+                                keys[nkeys++] = strdup(alias);
+                            }
                         }
                     }
 
@@ -3428,7 +3478,7 @@ int DoIt(void)
                     {
                         DRMS_Keyword_t *keyWithVal = NULL;
 
-                        /* get keyword name from template keyword */
+                        /* get keyword name from template keyword (FITS name == alias) */
                         if (fitsexport_getmappedextkeyname(keyword_template, NULL, NULL, fitsName, sizeof(fitsName), NULL, 0, NULL) && *fitsName != '\0')
                         {
                             keyNameOut = fitsName;

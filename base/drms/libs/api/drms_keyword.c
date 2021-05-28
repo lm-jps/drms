@@ -2956,6 +2956,34 @@ TIME drms_keyword_getdate(DRMS_Record_t *rec)
   return thedate;
 }
 
+/* returns 1 if the alias exists */
+int drms_keyword_get_alias(DRMS_Keyword_t *keyword, char *alias, size_t size)
+{
+    int rv = 0;
+    char alias_tmp[DRMS_MAXKEYNAMELEN] = {0};
+
+    if (keyword != NULL && keyword->record != NULL && keyword->record->keyword_aliases != NULL && !drms_keyword_getimplicit(keyword))
+    {
+        fitsexport_getextkeyname(keyword, alias_tmp, sizeof(alias_tmp));
+        if (*alias_tmp != '\0')
+        {
+            if (hcon_member_lower(keyword->record->keyword_aliases, alias_tmp))
+            {
+                /* has alias */
+                rv = 1;
+            }
+        }
+    }
+
+    if (rv)
+    {
+        snprintf(alias, size, alias_tmp);
+    }
+
+    return rv;
+}
+
+
 static DRMS_Keyword_t *TemplateKeyFollowLink(DRMS_Keyword_t *srckey, int depth, int jsd, int *statret)
 {
     int status = DRMS_SUCCESS;
