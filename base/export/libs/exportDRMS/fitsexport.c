@@ -285,6 +285,7 @@ static int parse_keyword_description(const char *description, char **comment_out
     char *cast_type = NULL;
     char *separator = NULL;
     char *working_description = NULL;
+    char *saver = NULL;
 
     if (!description)
     {
@@ -317,7 +318,7 @@ static int parse_keyword_description(const char *description, char **comment_out
                 * <X> is the FITS keyword name
                 * <Y> is the FITS data type to cast to
                 */
-                ptr_cast = strtok(working_description, " ");
+                ptr_cast = strtok_r(working_description, " ", &saver);
 
                 if (ptr_cast)
                 {

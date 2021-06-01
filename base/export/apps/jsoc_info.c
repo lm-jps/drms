@@ -2427,6 +2427,7 @@ int DoIt(void)
     char *seglist = NULL;
     char *linklist = NULL;
     char *web_query = NULL;
+    char *saver = NULL;
     const char *Remote_Address = NULL;
     const char *Server = NULL;
     int followLinks = 0;
@@ -2853,7 +2854,8 @@ int DoIt(void)
             else
             {
                 /* can result in an InvalidSegName printed to the output */
-                for (thisseg=strtok(seglist, ","); thisseg; thisseg=strtok(NULL,","))
+                saver = NULL;
+                for (thisseg=strtok_r(seglist, ",", &saver); thisseg; thisseg=strtok_r(NULL, ",", &saver))
                 {
                     segs[nsegs++] = strdup(thisseg);
                 }
@@ -2899,7 +2901,8 @@ int DoIt(void)
         else
         {
             /* not using FITS keyword names */
-            for (thiskey = strtok(keylist, ","); thiskey; thiskey = strtok(NULL,","))
+            saver = NULL;
+            for (thiskey = strtok_r(keylist, ",", &saver); thiskey; thiskey = strtok_r(NULL, ",", &saver))
             {
                 if (strcmp(thiskey,"**NONE**") == 0)
                 {
@@ -3001,7 +3004,8 @@ int DoIt(void)
         }
         else
         {
-            for (thislink=strtok(linklist, ","); thislink; thislink=strtok(NULL,","))
+            saver = NULL;
+            for (thislink=strtok_r(linklist, ",", &saver); thislink; thislink=strtok_r(NULL, ",", &saver))
             {
                 if (strcmp(thislink,"**NONE**")==0)
                 {
