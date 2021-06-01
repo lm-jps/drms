@@ -673,7 +673,7 @@ int drms_template_keywords_int(DRMS_Record_t *template, int expandperseg, const 
   int rankindeterminate;
   int constrank;
   DB_Binary_Result_t *qres;
-  char alias[DRMS_MAXKEYNAMELEN] = {0};
+  char *alias = NULL;
 
   DRMS_SeriesVersion_t vers2_1 = {"2.1", ""};
 
@@ -886,11 +886,14 @@ int drms_template_keywords_int(DRMS_Record_t *template, int expandperseg, const 
       if (!drms_keyword_getimplicit(key))
       {
           /* instantiate any aliases for FITS header output (key->record is template) */
-          fitsexport_getextkeyname(key, alias, sizeof(alias));
-          if (*alias != '\0' && !hcon_member_lower(&key->record->keywords, alias))
+          if (!fitsexport_parse_keyword_description(key, NULL, NULL, &alias, NULL))
           {
-              hcon_insert_lower(key->record->keyword_aliases, alias, &key);
-              *alias = '\0';
+              if (alias && *alias != '\0' && !hcon_member_lower(&key->record->keywords, alias))
+              {
+                  hcon_insert_lower(key->record->keyword_aliases, alias, &key);
+              }
+
+              fitsexport_free_parsed_keyword_description(NULL, NULL, &alias, NULL);
           }
       }
 
@@ -2960,24 +2963,24 @@ TIME drms_keyword_getdate(DRMS_Record_t *rec)
 int drms_keyword_get_alias(DRMS_Keyword_t *keyword, char *alias, size_t size)
 {
     int rv = 0;
-    char alias_tmp[DRMS_MAXKEYNAMELEN] = {0};
+    char *alias_tmp = NULL;
 
     if (keyword != NULL && keyword->record != NULL && keyword->record->keyword_aliases != NULL && !drms_keyword_getimplicit(keyword))
     {
-        fitsexport_getextkeyname(keyword, alias_tmp, sizeof(alias_tmp));
-        if (*alias_tmp != '\0')
+        if (!fitsexport_parse_keyword_description(keyword, NULL, NULL, &alias_tmp, NULL))
         {
-            if (hcon_member_lower(keyword->record->keyword_aliases, alias_tmp))
+            if (alias_tmp && *alias_tmp != '\0')
             {
-                /* has alias */
-                rv = 1;
+                if (hcon_member_lower(keyword->record->keyword_aliases, alias_tmp))
+                {
+                    /* has alias */
+                    rv = 1;
+                    snprintf(alias, size, alias_tmp);
+                }
             }
-        }
-    }
 
-    if (rv)
-    {
-        snprintf(alias, size, alias_tmp);
+            fitsexport_free_parsed_keyword_description(NULL, NULL, &alias_tmp, NULL);
+        }
     }
 
     return rv;

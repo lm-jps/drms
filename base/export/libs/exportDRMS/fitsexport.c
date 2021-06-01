@@ -2407,6 +2407,44 @@ int fitsexport_mapexportkey(DRMS_Keyword_t *key, const char *clname, Exputl_KeyM
     return stat;
 }
 
+/* allocs, must be freed with `fitsexport_free_parsed_keyword_description` */
+int fitsexport_parse_keyword_description(DRMS_Keyword_t *keyword, char **description_out, char **parsed_cast_out, char **parsed_cast_name_out, char ** parsed_cast_type_out)
+{
+    if (keyword && keyword->info && keyword->info->description && *keyword->info->description != '\0')
+    {
+        return parse_keyword_description(keyword->info->description, description_out, parsed_cast_out, &parsed_cast_name_out, &parsed_cast_type_out);
+    }
+
+    return 1;
+}
+
+void fitsexport_free_parsed_keyword_description(char **description, char **cast, char **parsed_cast_name, char ** parsed_cast_type)
+{
+    if (description && *description)
+    {
+        free(*description);
+        *description = NULL;
+    }
+
+    if (cast && *cast)
+    {
+        free(*cast);
+        *cast = NULL;
+    }
+
+    if (parsed_cast_name && *parsed_cast_name)
+    {
+        free(*parsed_cast_name);
+        *parsed_cast_name = NULL;
+    }
+
+    if (parsed_cast_type && *parsed_cast_type)
+    {
+        free(*parsed_cast_type);
+        *parsed_cast_type = NULL;
+    }
+}
+
 int fitsexport_getextkeyname(DRMS_Keyword_t *key, char *nameOut, int size)
 {
    return fitsexport_getmappedextkeyname(key, NULL, NULL, nameOut, size, NULL, 0, NULL);

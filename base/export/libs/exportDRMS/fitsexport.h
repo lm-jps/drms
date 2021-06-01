@@ -51,6 +51,10 @@ int fitsexport_exportkey(DRMS_Keyword_t *key, CFITSIO_KEYWORD **fitskeys, CFITSI
 
 int fitsexport_mapexportkey(DRMS_Keyword_t *key, const char *clname, Exputl_KeyMap_t *map, CFITSIO_KEYWORD **fitskeys, CFITSIO_KEYWORD **fits_key);
 
+int fitsexport_parse_keyword_description(DRMS_Keyword_t *keyword, char **description_out, char **parsed_cast_out, char **parsed_cast_name_out, char ** parsed_cast_type_out);
+
+void fitsexport_free_parsed_keyword_description(char **description, char **cast, char **parsed_cast_name, char ** parsed_cast_type);
+
 /* Maps to external keywords in this order.  If an item does not result in a valid
  * FITS keyword, then the next item is consulted.
  *   1. Name in keyword description.

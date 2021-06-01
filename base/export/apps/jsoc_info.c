@@ -260,8 +260,6 @@ static int populateKeyList(const char *listOfKeys, LinkedList_t *reqSegs, DRMS_R
     int specKey = 0;
     int sumInfoFakeKey = 0;
     int fakeKey = 0;
-    DRMS_Keyword_t **ptr_keyword_alias = NULL;
-    char alias[DRMS_MAXKEYNAMELEN] = {0};
 
     JSOC_INFO_ASSERT(listOfKeys && *listOfKeys != '\0' && reqSegs && template && jsdTemplate && recordSet && recsStaged && requisition && reqKeys, "populateKeyList(): invalid arguments");
     listOfKeysWorking = strdup(listOfKeys);
@@ -2715,7 +2713,6 @@ int DoIt(void)
     ListNode_t *lnSeg = NULL;
     ListNode_t *lnLink = NULL;
     HContainer_t *log_dirs = NULL;
-    DRMS_Keyword_t **ptr_keyword_alias = NULL;
 
     if (status == DRMS_ERROR_QUERYFAILED)
     {
