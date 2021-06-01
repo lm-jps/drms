@@ -2412,7 +2412,7 @@ int fitsexport_parse_keyword_description(DRMS_Keyword_t *keyword, char **descrip
 {
     if (keyword && keyword->info && keyword->info->description && *keyword->info->description != '\0')
     {
-        return parse_keyword_description(keyword->info->description, description_out, parsed_cast_out, &parsed_cast_name_out, &parsed_cast_type_out);
+        return parse_keyword_description(keyword->info->description, description_out, parsed_cast_out, parsed_cast_name_out, parsed_cast_type_out);
     }
 
     return 1;
