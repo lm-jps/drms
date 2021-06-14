@@ -74,25 +74,32 @@ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION drms.create_manifest(series varchar(64)) RETURNS boolean AS
 $$
 DECLARE
-command text;
-number_rows int;
-series_ns_table varchar(64);
-series_array varchar(64)[];
-series_namespace varchar(64);
-shadow_table varchar(64);
-manifest_table varchar(64);
-first boolean;
-segment_record RECORD;
-segment_index integer;
-segment_columns varchar(64)[];
-segment_columns_def_list text;
-
+  command text;
+  number_rows int;
+  series_ns_table varchar(64);
+  series_array varchar(64)[];
+  series_namespace varchar(64);
+  shadow_table varchar(64);
+  manifest_table varchar(64);
+  first boolean;
+  segment_record RECORD;
+  segment_index integer;
+  segment_columns varchar(64)[];
+  segment_columns_def_list text;
 BEGIN
   series_ns_table := lower(series);
   series_array := regexp_split_to_array(series, '[.]');
   series_namespace := lower(series_array[1]);
   shadow_table := lower(series_array[2]) || '_shadow';
   manifest_table := lower(series_array[2]) || '_manifest';
+
+  -- does manifest table exist
+  command := 'SELECT count(*) FROM pg_class PGC JOIN pg_namespace PGN ON PGN.oid = PGC.relnamespace WHERE PGN.nspname = ' || E'\'' || series_namespace || E'\'' || ' AND PGC.relname = ' || E'\'' || manifest_table || E'\'';
+  EXECUTE command INTO number_rows; -- don't use `FOUND`, it is totally messed up! A query that uses count that returns 0 rows will set FOUND to 't'
+
+  IF number_rows = 1 THEN
+    RETURN 'f';
+  END IF;
 
   -- does shadow table exist
   command := 'SELECT count(*) FROM pg_class PGC JOIN pg_namespace PGN ON PGN.oid = PGC.relnamespace WHERE PGN.nspname = ' || E'\'' || series_namespace || E'\'' || ' AND PGC.relname = ' || E'\'' || shadow_table || E'\'';
@@ -169,7 +176,7 @@ BEGIN
     RETURN 'f';
   END IF;
 
-  command := 'DROP TABLE ' series_namespace || manifest_table;
+  command := 'DROP TABLE ' || series_namespace || '.' || manifest_table;
   EXECUTE command;
 
   -- does manifest table existnow
