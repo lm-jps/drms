@@ -147,6 +147,43 @@ END;
 $$
 LANGUAGE plpgsql;
 
+CREATE OR REPLACE FUNCTION drms.delete_manifest(series varchar(64)) RETURNS boolean AS
+$$
+DECLARE
+  command text;
+  number_rows int;
+  series_array varchar(64)[];
+  series_namespace varchar(64);
+  shadow_table varchar(64);
+  manifest_table varchar(64);
+BEGIN
+  series_array := regexp_split_to_array(series, '[.]');
+  series_namespace := lower(series_array[1]);
+  manifest_table := lower(series_array[2]) || '_manifest';
+
+  -- does manifest table exist
+  command := 'SELECT count(*) FROM pg_class PGC JOIN pg_namespace PGN ON PGN.oid = PGC.relnamespace WHERE PGN.nspname = ' || E'\'' || series_namespace || E'\'' || ' AND PGC.relname = ' || E'\'' || manifest_table || E'\'';
+  EXECUTE command INTO number_rows; -- don't use `FOUND`, it is totally messed up! A query that uses count that returns 0 rows will set FOUND to 't'
+
+  IF number_rows = 0 THEN
+    RETURN 'f';
+  END IF;
+
+  command := 'DROP TABLE ' series_namespace || manifest_table;
+  EXECUTE command;
+
+  -- does manifest table existnow
+  command := 'SELECT count(*) FROM pg_class PGC JOIN pg_namespace PGN ON PGN.oid = PGC.relnamespace WHERE PGN.nspname = ' || E'\'' || series_namespace || E'\'' || ' AND PGC.relname = ' || E'\'' || manifest_table || E'\'';
+  EXECUTE command INTO number_rows; -- don't use `FOUND`, it is totally messed up! A query that uses count that returns 0 rows will set FOUND to 't'
+
+  IF number_rows = 0 THEN
+    RETURN 't';
+  ELSE
+    RETURN 'f';
+  END IF;
+END;
+$$
+LANGUAGE plpgsql;
 
 DROP TYPE IF EXISTS drms_id_type CASCADE;
 CREATE TYPE drms_id_type AS
