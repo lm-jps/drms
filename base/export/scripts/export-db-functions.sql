@@ -71,6 +71,83 @@ END;
 $$
 LANGUAGE plpgsql;
 
+CREATE OR REPLACE FUNCTION drms.create_manifest(series varchar(64)) RETURNS boolean AS
+$$
+DECLARE
+command text;
+number_rows int;
+series_ns_table varchar(64);
+series_array varchar(64)[];
+series_namespace varchar(64);
+shadow_table varchar(64);
+manifest_table varchar(64);
+first boolean;
+segment_record RECORD;
+segment_index integer;
+segment_columns varchar(64)[];
+segment_columns_def_list text;
+
+BEGIN
+  series_ns_table := lower(series);
+  series_array := regexp_split_to_array(series, '[.]');
+  series_namespace := lower(series_array[1]);
+  shadow_table := lower(series_array[2]) || '_shadow';
+  manifest_table := lower(series_array[2]) || '_manifest';
+
+  -- does shadow table exist
+  command := 'SELECT count(*) FROM pg_class PGC JOIN pg_namespace PGN ON PGN.oid = PGC.relnamespace WHERE PGN.nspname = ' || E'\'' || series_namespace || E'\'' || ' AND PGC.relname = ' || E'\'' || shadow_table || E'\'';
+  EXECUTE command INTO number_rows; -- don't use `FOUND`, it is totally messed up! A query that uses count that returns 0 rows will set FOUND to 't'
+
+  IF number_rows = 0 THEN
+    RETURN 'f';
+  END IF;
+
+  -- for creating manifest
+  segment_columns_def_list := '';
+
+  -- get list of segments from drms_segment
+  first := 't';
+  segment_index := 1;
+  FOR segment_record IN EXECUTE 'SELECT * FROM ' || series_namespace || E'.drms_segment WHERE lower(seriesname) = \'' || series_ns_table || E'\'' LOOP
+    IF NOT first THEN
+      -- for creating manifest
+      segment_columns_def_list := segment_columns_def_list || ', ';
+    ELSE
+      first := 'f';
+    END IF;
+
+    -- manifest creation
+    segment_columns[segment_index] = lower(segment_record.segmentname);
+    segment_columns_def_list := segment_columns_def_list || segment_columns[segment_index] || ' character(1) NOT NULL';
+    segment_index := segment_index + 1;
+  END LOOP;
+
+  -- create table and indexes
+  IF array_length(segment_columns, 1) > 0 THEN
+    EXECUTE 'CREATE TABLE ' || series_namespace || '.' || manifest_table || '(recnum bigint PRIMARY KEY, ' || segment_columns_def_list || ')';
+    FOR segment_index IN 1..array_length(segment_columns, 1) LOOP
+      EXECUTE 'CREATE INDEX ' || manifest_table || '_' || segment_columns[segment_index] || ' ON ' || series_namespace || '.' || manifest_table || '(' || segment_columns[segment_index] || ')';
+    END LOOP;
+  ELSE
+    -- series has no segments, so exports are for keywords only
+    EXECUTE 'CREATE TABLE ' || series_namespace || '.' || manifest_table || '(recnum bigint PRIMARY, keywords$ character(1) NOT NULL)';
+    EXECUTE 'CREATE INDEX ' || manifest_table || '_keywords ON ' || series_namespace || '.' || manifest_table || '(keywords$)';
+  END IF;
+
+  -- does manifest table exist now
+  command := 'SELECT count(*) FROM pg_class PGC JOIN pg_namespace PGN ON PGN.oid = PGC.relnamespace WHERE PGN.nspname = ' || E'\'' || series_namespace || E'\'' || ' AND PGC.relname = ' || E'\'' || manifest_table || E'\'';
+  EXECUTE command INTO number_rows; -- don't use `FOUND`, it is totally messed up! A query that uses count that returns 0 rows will set FOUND to 't'
+
+  IF number_rows = 0 THEN
+    RETURN 'f';
+  ELSE
+    RETURN 't';
+  END IF;
+END;
+$$
+LANGUAGE plpgsql;
+
+
 DROP TYPE IF EXISTS drms_id_type CASCADE;
 CREATE TYPE drms_id_type AS
 (
