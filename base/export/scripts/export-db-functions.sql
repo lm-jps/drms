@@ -239,12 +239,39 @@ LANGUAGE plpgsql;
 
 
 
-CREATE OR REPLACE FUNCTION drms.update_drms_id(drms_id varchar(128)[], new_value character(1), updated_values boolean DEFAULT 'f') RETURNS bigint AS
+CREATE OR REPLACE FUNCTION drms.update_drms_id(drms_ids varchar(128)[], new_value character(1), updated_values boolean DEFAULT 'f') RETURNS setof drms_id_type AS
 $$
 DECLARE
-
+  id_array varchar(128)[];
+  manifest_record RECORD;
+  id_row drms_id_type%ROWTYPE;
 BEGIN
   -- parse id --> lc_series, recnum, lc_segment
+  FOR id_index IN 1..array_length(drms_ids, 1) LOOP
+    id_array := regexp_split_to_array(drms_ids[id_index], '[:]');
+
+    FOR manifest_record IN EXECUTE 'UPDATE ' || id_array[1] || '_manifest SET ' || id_array[3] || E' = \'' || new_value || E'\' WHERE recnum = ' || id_array[2] || ' RETURNING recnum' LOOP
+      IF updated_values THEN
+        id_row.drms_id = id_array[1] || ':' || manifest_record.recnum::text || ':' || id_array[3];
+        RETURN NEXT id_row;
+      END IF;
+    END LOOP;
+
+    IF FOUND THEN
+      IF NOT updated_values THEN
+        id_row.drms_id = 't';
+        RETURN NEXT id_row;
+      END IF;
+    ELSE
+      IF NOT updated_values THEN
+        id_row.drms_id = 'f';
+        RETURN NEXT id_row;
+      END IF;
+    END IF;
+
+  END LOOP;
+
+  RETURN;
 
 END;
 $$
