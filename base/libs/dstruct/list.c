@@ -94,6 +94,9 @@ ListNode_t *list_llinserttail(LinkedList_t *llist, void *data)
 
 void list_llremove(LinkedList_t *llist, ListNode_t *item)
 {
+   if (!llist) return;
+   if (!item) return;
+
    ListNode_t *node = llist->first;
    ListNode_t *prev = NULL;
 
@@ -126,7 +129,7 @@ void list_llremove(LinkedList_t *llist, ListNode_t *item)
 
 void list_llreset(LinkedList_t *llist)
 {
-   llist->next = llist->first;
+   if (llist) llist->next = llist->first;
 }
 
 ListNode_t *list_llnext(LinkedList_t *llist)
