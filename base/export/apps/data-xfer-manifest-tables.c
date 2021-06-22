@@ -199,6 +199,7 @@ static int fetch_ids(DRMS_Env_t *env, const char *series, LinkedList_t *segments
             segment_list = base_strcatalloc(segment_list, buffer, &sz_segment_list);
         }
 
+        /* returns IDs ordered by ascending recnum */
         snprintf(command, sizeof(command), "SELECT drms_id FROM drms.get_n_drms_ids('%s', ARRAY[%s], %d)", series, segment_list, number_ids);
 
         free(segment_list);
@@ -243,74 +244,133 @@ static int fetch_ids(DRMS_Env_t *env, const char *series, LinkedList_t *segments
     return error;
 }
 
-static int update_manifest(DRMS_Env_t *env, const char *series, const char *new_value, FILE *stream)
+static int update_manifest(DRMS_Env_t *env, const char *series, LinkedList_t *segments, const char *new_value, FILE *stream)
 {
     char *line = NULL;
     size_t buffer_length = 0;
     ssize_t number_chars = 0;
     size_t total_number_chars = 0;
-    char command[256] = {0};
+    char command[256];
     DB_Text_Result_t *query_result = NULL;
-    char drms_id[128] = {0};
-    char *drms_ids = NULL;
-    size_t sz_drms_ids = 1048576; /* write up to 1 M bytes of DRMS ID values each iteration */
+    char drms_id[128];
+    char *recnum_list = NULL;
+    size_t sz_recnum_list = 1048576; /* write up to 1 M bytes each iteration */
+    char *segment_list = NULL;
+    size_t sz_segment_list = 1024;
+    char *segment = NULL;
+    int first = -1;
+    ListNode_t *node = NULL;
+    char buffer[64];
     int error = 0;
 
     if (strcmp(new_value, OPTION_ID_VALUE_DEFAULT) != 0)
     {
-        /* list of drms_ids is piped in to stdin */
-        drms_ids = calloc(sz_drms_ids, sizeof(char));
-        total_number_chars = 0;
-        while (1)
+        /* make comma-separated list of segments */
+        segment_list = calloc(sz_segment_list, sizeof(char));
+        if (segment_list)
         {
-            number_chars = getline(&line, &buffer_length, stream);
-
-            if (total_number_chars >= 104800 || number_chars == -1)
+            first = 1;
+            list_llreset(segments);
+            while ((node = list_llnext(segments)) != NULL)
             {
-                snprintf(command, sizeof(command), "SELECT drms_id AS answer FROM drms.update_drms_ids(ARRAY[%s], '%s')", drms_ids, new_value);
-                query_result = drms_query_txt(drms_env->session, command);
+                segment = *((char **)node->data);
 
-                if (query_result->num_rows == 1 && query_result->num_cols == 1)
+                if (!first)
                 {
-                    if (*query_result->field[0][0] != 't')
-                    {
-                        error = 1;
-                        fprintf(stderr, "[ update_manifest ] failure deleting manifest table\n");
-                    }
+                    segment_list = base_strcatalloc(segment_list, ", ", &sz_segment_list);
                 }
                 else
                 {
-                    error = 1;
-                    fprintf(stderr, "[ update_manifest ] unexpected number of rows or columns returned (rows=%d, cols=%d)\n", query_result->num_rows, query_result->num_cols);
+                    first = 0;
                 }
 
-                if (drms_ids)
-                {
-                    free(drms_ids);
-                }
-
-                if (error)
-                {
-                    break;
-                }
-
-                if (number_chars == -1)
-                {
-                    break;
-                }
-
-                drms_ids = calloc(sz_drms_ids, sizeof(char));
-                total_number_chars = 0;
+                snprintf(buffer, sizeof(buffer), "'%s'", segment);
+                segment_list = base_strcatalloc(segment_list, buffer, &sz_segment_list);
             }
+        }
+        else
+        {
+            fprintf(stderr, "[ update_manifest ] out of memory 1\n");
+            error == 1;
+        }
 
-            if (total_number_chars != 0)
+        if (!error)
+        {
+            /* list of recnums is piped in to stdin */
+            recnum_list = calloc(sz_recnum_list, sizeof(char));
+            if (!recnum_list)
             {
-                drms_ids = base_strcatalloc(drms_ids, ", ", &sz_drms_ids);
+                fprintf(stderr, "[ update_manifest ] out of memory 2\n");
+                error == 1;
             }
+        }
 
-            snprintf(drms_id, sizeof(drms_id), "'%s'", line);
-            drms_ids = base_strcatalloc(drms_ids, drms_id, &sz_drms_ids);
-            total_number_chars += number_chars;
+        if (!error)
+        {
+            total_number_chars = 0;
+            while (1)
+            {
+                number_chars = getline(&line, &buffer_length, stream);
+
+                if (total_number_chars >= 104800 || number_chars == -1)
+                {
+                    snprintf(command, sizeof(command), "SELECT drms_id AS answer FROM drms.update_drms_ids('%s', ARRAY[%s], ARRAY[%s], '%s')", series, segment_list, recnum_list, new_value);
+                    query_result = drms_query_txt(drms_env->session, command);
+
+                    if (query_result->num_rows == 1 && query_result->num_cols == 1)
+                    {
+                        if (*query_result->field[0][0] != 't')
+                        {
+                            error = 1;
+                            fprintf(stderr, "[ update_manifest ] failure deleting manifest table\n");
+                        }
+                    }
+                    else
+                    {
+                        error = 1;
+                        fprintf(stderr, "[ update_manifest ] unexpected number of rows or columns returned (rows=%d, cols=%d)\n", query_result->num_rows, query_result->num_cols);
+                    }
+
+                    if (recnum_list)
+                    {
+                        free(recnum_list);
+                        recnum_list = NULL;
+                    }
+
+                    if (error)
+                    {
+                        break;
+                    }
+
+                    if (number_chars == -1)
+                    {
+                        break;
+                    }
+
+                    recnum_list = calloc(sz_recnum_list, sizeof(char));
+                    total_number_chars = 0;
+                }
+
+                if (total_number_chars != 0)
+                {
+                    recnum_list = base_strcatalloc(recnum_list, ", ", &sz_recnum_list);
+                }
+
+                recnum_list = base_strcatalloc(recnum_list, line, &sz_recnum_list);
+                total_number_chars += number_chars;
+            }
+        }
+
+        if (recnum_list)
+        {
+            free(recnum_list);
+            recnum_list = NULL;
+        }
+
+        if (segment_list)
+        {
+            free(segment_list);
+            segment_list = NULL;
         }
     }
     else
@@ -376,7 +436,7 @@ int DoIt(void)
                     }
                     else if (strcasecmp(operation, OPERATION_UPDATE) == 0)
                     {
-                        error = update_manifest(drms_env, series, new_value, stdin);
+                        error = update_manifest(drms_env, series, segment_list, new_value, stdin);
                     }
                     else if (strcasecmp(operation, OPERATION_FETCH) == 0)
                     {
