@@ -360,14 +360,16 @@ LANGUAGE plpgsql;
 
 
 
-CREATE OR REPLACE FUNCTION drms.update_drms_id(drms_ids varchar(128)[], new_value character(1), updated_values boolean DEFAULT 'f') RETURNS setof drms_id_type AS
+CREATE OR REPLACE FUNCTION drms.update_drms_ids(drms_ids varchar(128)[], new_value character(1), updated_values boolean DEFAULT 'f') RETURNS setof drms_id_type AS
 $$
 DECLARE
   id_array varchar(128)[];
   manifest_record RECORD;
+  succeeded boolean;
   id_row drms_id_type%ROWTYPE;
 BEGIN
   -- parse id --> lc_series, recnum, lc_segment
+  succeeded := 't';
   FOR id_index IN 1..array_length(drms_ids, 1) LOOP
     id_array := regexp_split_to_array(drms_ids[id_index], '[:]');
 
@@ -378,22 +380,77 @@ BEGIN
       END IF;
     END LOOP;
 
-    IF FOUND THEN
-      IF NOT updated_values THEN
-        id_row.drms_id = 't';
-        RETURN NEXT id_row;
-      END IF;
-    ELSE
-      IF NOT updated_values THEN
-        id_row.drms_id = 'f';
-        RETURN NEXT id_row;
-      END IF;
+    IF NOT FOUND AND NOT updated_values THEN
+      succeeded = 'f';
     END IF;
-
   END LOOP;
 
-  RETURN;
+  IF NOT updated_values THEN
+    IF succeeded THEN
+      id_row.drms_id = 't';
+    ELSE
+      id_row.drms_id = 'f';
+    END IF;
 
+    RETURN NEXT id_row;
+  END IF;
+
+  RETURN;
+END;
+$$
+LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION drms.update_drms_ids(series varchar(64), segments varchar(64)[], recnums bigint[], new_value character(1), updated_values boolean DEFAULT 'f') RETURNS setof drms_id_type AS
+$$
+DECLARE
+  first boolean;
+  segment varchar(64);
+  segment_set_clause text;
+  recnum bigint[];
+
+  manifest_record RECORD;
+  succeeded boolean;
+  id_row drms_id_type%ROWTYPE;
+BEGIN
+  first := 't';
+  segment_set_clause := '';
+  FOR segment_index IN 1..array_length(segments, 1) LOOP
+    IF first THEN
+      first := 'f';
+    ELSE
+      segment_set_clause := segment_set_clause || ', ';
+    END IF;
+
+    segment_set_clause := segment_set_clause || segments[segment_index] || E' = \'' || new_value || E'\'';
+  END LOOP;
+
+  succeeded := 't';
+  FOR recnum_index IN 1..array_length(recnums, 1) LOOP
+    FOR manifest_record IN EXECUTE 'UPDATE ' || series || '_manifest SET ' || segment_set_clause || ' WHERE recnum = ' || recnums[recnum_index] || ' RETURNING recnum' LOOP
+      IF updated_values THEN
+        FOR segment IN 1..array_length(segments, 1) LOOP
+          id_row.drms_id = series || ':' || manifest_record.recnum::text || ':' || segment;
+          RETURN NEXT id_row;
+        END LOOP;
+      END IF;
+    END LOOP;
+
+    IF NOT FOUND AND NOT updated_values THEN
+      succeeded = 'f';
+    END IF;
+  END LOOP;
+
+  IF NOT updated_values THEN
+    IF succeeded THEN
+      id_row.drms_id = 't';
+    ELSE
+      id_row.drms_id = 'f';
+    END IF;
+
+    RETURN NEXT id_row;
+  END IF;
+
+  RETURN;
 END;
 $$
 LANGUAGE plpgsql;
