@@ -100,8 +100,7 @@ import drms
 from drms import utils
 from drms.client import Client as DRMSClient, ExportRequest, SeriesInfo
 from drms.config import ServerConfig, register_server
-# from drms.error import DrmsQueryError, DrmsExportError, DrmsOperationNotSupported
-from .exceptions import DrmsQueryError, DrmsExportError, DrmsOperationNotSupported
+from drms.exceptions import DrmsQueryError, DrmsExportError, DrmsOperationNotSupported
 from drms.json import HttpJsonClient, HttpJsonRequest
 from drms.utils import _split_arg
 
@@ -278,6 +277,14 @@ class SecureServerConfig(ServerConfig):
 
     Attributes
     ----------
+        connection_info : dict
+            `connection_info` contains the host, port, role, and database name information needed to connect to the DRMS database
+            {
+              'dbhost' : <str - the database host>,
+              'dbport' : <int - the port on the database host>,
+              'dbuser' : <str - the database role>,
+              'dbname' : <str - the database name>
+            }
         download_directory : str
             `download_directory` contains the client path to which exported files are downloaded
         has_full_export_system : bool
@@ -322,30 +329,42 @@ class SecureServerConfig(ServerConfig):
             For SSHClient clients, `ssh_jsoc_fetch` contains the remote-server program that initiates export requests, and reports the status on those requests. It accesses the external/public database.
         ssh_jsoc_fetch_args : dict
             For SSHClient clients, `ssh_jsoc_fetch_args` contains the command-line arguments for the `ssh_jsoc_fetch` program required for external/public database access:
-                dbhost : str
+                JSOC_DBHOST : str
                     the public database host (as seen from the SSH server)
                 JSOC_DBUSER : str
                     the database account to access
-        ssh_jsoc_fetch_internal : str
-            For SSHClient clients, `ssh_jsoc_fetch_internal` contains the remote-server program that initiates export requests, and reports the status on those requests. It accesses the internal/private database.
         ssh_jsoc_fetch_internal_args : dict
-            For SSHClient clients, `ssh_jsoc_fetch_internal_args` contains the command-line arguments for the `ssh_jsoc_fetch_internal` program required for internal/private database access:
+            For SSHClient clients, `ssh_jsoc_fetch_internal_args` contains the command-line arguments for the `ssh_jsoc_fetch` program required for internal/private database access:
                 JSOC_DBHOST : str
                     the private database host (as seen from the SSH server)
                 JSOC_DBUSER : str
                     the database account to access
+        ssh_jsoc_fetch_wrapper : str
+            For SSHClient clients, `ssh_jsoc_fetch_wrapper` contains the remote-server program that initiates export requests, and reports the status on those requests. It accesses the external/public database, plus the internal/private database for pass-through series.
+        ssh_jsoc_fetch_wrapper_args : dict
+            For SSHClient clients, `ssh_jsoc_fetch_wrapper_args` contains the command-line arguments for the `ssh_jsoc_fetch_wrapper` program required for external/public database access:
+                dbhost : str
+                    the public database host (as seen from the SSH server)
         ssh_jsoc_info : str
             For SSHClient clients, `ssh_jsoc_info` contains the remote-server program that provides DRMS record-set information.  It accesses the external/public database.
         ssh_jsoc_info_args : dict
-            For SSHClient clients, `ssh_jsoc_info_args` contains the command-line arguments for the `ssh_jsoc_info` program required for external/public database access.
-                    dbhost : str
-                        the public database host (as seen from the SSH server)
-        ssh_jsoc_info_internal : str
-            For SSHClient clients, `ssh_jsoc_info_internal` contains the remote-server program that provides DRMS record-set information. It accesses the internal/private database.
+            For SSHClient clients, `ssh_jsoc_info_args` contains the command-line arguments for the `ssh_jsoc_info` program required for external/public database access:
+                JSOC_DBHOST : str
+                    the public database host (as seen from the SSH server)
+                JSOC_DBUSER : str
+                    the public database role (as seen from the SSH server)
         ssh_jsoc_info_internal_args : dict
             For SSHClient clients, `ssh_jsoc_info_internal_args` contains the command-line arguments for the `ssh_jsoc_info` program required for internal/private database access:
                 JSOC_DBHOST : str
                     the private database host (as seen from the SSH server)
+                JSOC_DBUSER : str
+                    the private database role (as seen from the SSH server)
+        ssh_jsoc_info_wrapper : str
+            For SSHClient clients, `ssh_jsoc_info_wrapper` contains the remote-server program that provides DRMS record-set information. It accesses the external/public database, plus the internal/private database for pass-through series.
+        ssh_jsoc_info_wrapper_args : dict
+            For SSHClient clients, `ssh_jsoc_info_wrapper_args` contains the command-line arguments for the `ssh_jsoc_info_wrapper` program required for external/public database access.
+                    dbhost : str
+                        the public database host (as seen from the SSH server)
         ssh_parse_recset : str
             For SSHClient clients, `ssh_parse_recset` contains the remote-server program that parses DRMS record-set strings into parts (e.g., series name, filters, segment list, etc.).
         ssh_remote_env : str
@@ -403,15 +422,15 @@ class SecureServerConfig(ServerConfig):
                 webserver : str
                     the webserver host privately accessible
         web_jsoc_info : str
-            For BasicAccessClient clients, `web_jsoc_info` contains the  web-applicaton script that provides DRMS data series and record information.
+            For BasicAccessClient clients, `web_jsoc_info` contains the web-applicaton script that provides DRMS data series and record information; the dbhost cannot be specified as an argument
         web_jsoc_fetch : str
-            For BasicAccessClient clients, `web_jsoc_fetch` contains the  web-applicaton script that exports DRMS segment files.
+            For BasicAccessClient clients, `web_jsoc_fetch` contains the web-applicaton script that exports DRMS segment files; the dbhost cannot be specified as an argument
         web_parse_recset : str
             For BasicAccessClient clients, `web_parse_recset` contains the web-applicaton script used to parse record-set specification character strings into components (series, namespace, database table, filters, segments)
         web_show_series : str
-            For BasicAccessClient clients, `web_show_series` contains the  web-applicaton script that lists public series information.
+            For BasicAccessClient clients, `web_show_series` contains the web-applicaton script that lists public series information.
         web_show_series_wrapper : str
-            For BasicAccessClient clients, `web_show_series_wrapper` contains the  web-applicaton script that lists public and accessible private series information.
+            For BasicAccessClient clients, `web_show_series_wrapper` contains the  web-applicaton script that lists public and accessible private series information; the dbhost can be specified as an argument
         web_show_series_wrapper_args : dict
             For BasicAccessClient clients, `contains` contains the URL query arguments for the `web_show_series_wrapper` program required for external/public database access:
                 dbhost : str
@@ -428,6 +447,7 @@ class SecureServerConfig(ServerConfig):
     '''
     __configs = {}
     __valid_keys = set([
+        'connection_info',
         'download_directory',
         'has_full_export_system',
         'http_download_baseurl',
@@ -444,12 +464,14 @@ class SecureServerConfig(ServerConfig):
         'ssh_export_fits_internal_args',
         'ssh_jsoc_fetch',
         'ssh_jsoc_fetch_args',
-        'ssh_jsoc_fetch_internal',
         'ssh_jsoc_fetch_internal_args',
+        'ssh_jsoc_fetch_wrapper',
+        'ssh_jsoc_fetch_wrapper_args',
         'ssh_jsoc_info',
         'ssh_jsoc_info_args',
-        'ssh_jsoc_info_internal',
         'ssh_jsoc_info_internal_args',
+        'ssh_jsoc_info_wrapper',
+        'ssh_jsoc_info_wrapper_args',
         'ssh_parse_recset',
         'ssh_remote_env',
         'ssh_remote_host',
@@ -484,7 +506,7 @@ class SecureServerConfig(ServerConfig):
         'url_show_series_wrapper' ])
 
 
-    def __init__(self, config=None, **kwargs):
+    def __init__(self, *, config=None, **kwargs):
         '''
         a new SecureServerConfig instance is optionally initialized by copying the attributes in `config`. The keyword arguments in `kwargs` are then added to the instance
 
@@ -507,21 +529,21 @@ class SecureServerConfig(ServerConfig):
 
         if config is not None:
             # initialized the instance with `config`
-            for key, val in config.items():
+            for key, val in config.to_dict().items():
                 if key not in self._valid_keys:
-                    raise SecureDRMSConfigurationError('[ SecureServerConfig.__init__ ] Invalid server config key "{key}" in `config` parameter'.format(key=key))
+                    raise SecureDRMSConfigurationError(f'[ SecureServerConfig.__init__ ] Invalid server config key `{key}` in `config` parameter')
 
-            self._d[key] = val
+                self._d[key] = val
 
         for key, val in kwargs.items():
             # add the parameters passed in as keyword arguments
             if key not in self._valid_keys:
-                raise SecureDRMSConfigurationError('[ SecureServerConfig.__init__ ] Invalid server config key "{key}" in keyword arguments'.format(key=key))
+                raise SecureDRMSConfigurationError(f'[ SecureServerConfig.__init__ ] Invalid server config key `{key}` in keyword arguments')
 
             self._d[key] = val
 
         if 'name' not in self._d:
-            raise SecureDRMSConfigurationError('Server config entry "name" is missing')
+            raise SecureDRMSConfigurationError(f'Server config entry `name` is missing')
 
         # default values
         if 'ssh_remote_port' not in self._d:
@@ -612,23 +634,23 @@ class SecureServerConfig(ServerConfig):
                 if op == 'check_email' or op == 'email':
                     return self.ssh_check_email is not None and self.ssh_check_email_addresstab is not None and self.ssh_check_email_domaintab is not None and self.ssh_base_script is not None
                 elif op == 'export':
-                    return self.ssh_jsoc_info_internal is not None and self.ssh_parse_recset is not None and self.ssh_jsoc_fetch_internal is not None and self.ssh_base_bin is not None
+                    return self.ssh_jsoc_info is not None and self.ssh_parse_recset is not None and self.ssh_jsoc_fetch is not None and self.ssh_base_bin is not None
                 elif op == 'export_fits':
                     return self.ssh_export_fits is not None and self.ssh_parse_recset is not None and self.ssh_base_bin is not None
                 elif op == 'export_from_id':
-                    return self.ssh_jsoc_info_internal is not None and self.ssh_parse_recset is not None and self.ssh_jsoc_fetch_internal is not None and self.ssh_base_bin is not None
+                    return self.ssh_jsoc_info is not None and self.ssh_parse_recset is not None and self.ssh_jsoc_fetch is not None and self.ssh_base_bin is not None
                 elif op == 'export_package':
-                    return self.ssh_export_fits is not None and self.ssh_parse_recset is not None and self.ssh_jsoc_fetch_internal is not None and self.ssh_base_bin is not None
+                    return self.ssh_export_fits is not None and self.ssh_parse_recset is not None and self.ssh_jsoc_fetch is not None and self.ssh_base_bin is not None
                 elif op == 'info':
-                    return self.ssh_jsoc_info_internal is not None and self.ssh_parse_recset is not None and self.ssh_base_bin is not None
+                    return self.ssh_jsoc_info is not None and self.ssh_parse_recset is not None and self.ssh_base_bin is not None
                 elif op == 'keys':
-                    return self.ssh_jsoc_info_internal is not None and self.ssh_parse_recset is not None and self.ssh_base_bin is not None
+                    return self.ssh_jsoc_info is not None and self.ssh_parse_recset is not None and self.ssh_base_bin is not None
                 elif op == 'parse_spec':
                     return self.ssh_parse_recset is not None and self.ssh_base_bin is not None
                 elif op == 'pkeys':
-                    return self.ssh_jsoc_info_internal is not None and self.ssh_parse_recset is not None and self.ssh_base_bin is not None
+                    return self.ssh_jsoc_info is not None and self.ssh_parse_recset is not None and self.ssh_base_bin is not None
                 elif op == 'query':
-                    return self.ssh_jsoc_info_internal is not None and self.ssh_parse_recset is not None and self.ssh_base_bin is not None
+                    return self.ssh_jsoc_info is not None and self.ssh_parse_recset is not None and self.ssh_base_bin is not None
                 elif op == 'series':
                     return (self.ssh_show_series is not None and self.ssh_base_bin is not None) or (self.ssh_show_series_wrapper is not None and self.ssh_base_script is not None)
                 else:
@@ -1910,6 +1932,12 @@ class SecureExportRequest(ExportRequest):
         export protocol ()
     data : object (pandas.DataFrame)
         record-specification strings and data file filenames of the export request
+    size: int
+        total size in bytes of exported files
+    error_msg: str
+        if an error has occurred, this may contain a message
+    contact: str
+        if an error has occurred, this may contain a contact email address
     dir : str
         export-request Storage Unit directory
     tarfile : str
@@ -2144,6 +2172,18 @@ class SecureExportRequest(ExportRequest):
 
         return self._downloader.urls
 
+    @property
+    def size(self):
+        return self._d.get('size')
+
+    @property
+    def error_msg(self):
+        return self._d.get('error')
+
+    @property
+    def contact(self):
+        return self._d.get('contact')
+
 
 class BasicAccessHttpJsonRequest(HttpJsonRequest):
     '''
@@ -2267,8 +2307,16 @@ class BasicAccessHttpJsonClient(HttpJsonClient):
             # use wrapper (showextseries)
             if hasattr(self._server, 'web_show_series_wrapper_args') and self._server.web_show_series_wrapper_args is not None:
                 arg_str_unencoded.update(self._server.web_show_series_wrapper_args)
-
-
+                # use connection information override, if present
+                if self._server.connection_info is not None:
+                    if 'dbhost' in self._server.connection_info:
+                        arg_str_unencoded['dbhost'] = self._server.connection_info['dbhost']
+                    if 'dbport' in self._server.connection_info:
+                        arg_str_unencoded['dbport'] = str(self._server.connection_info['dbport'])
+                    if 'dbname' in self._server.connection_info:
+                        arg_str_unencoded['dbname'] = self._server.connection_info['dbname']
+                    if 'dbuser' in self._server.connection_info:
+                        arg_str_unencoded['dbuser'] = self._server.connection_info['dbuser']
             if info:
                 arg_str_unencoded['info'] = 1
 
@@ -2312,9 +2360,27 @@ class BasicAccessHttpJsonClient(HttpJsonClient):
         if self._use_internal:
             if hasattr(self._server, 'web_export_package_internal_args') and self._server.web_export_package_internal_args is not None:
                 arg_str_unencoded.update(self._server.web_export_package_internal_args)
+                if self._server.connection_info is not None:
+                    if 'dbhost' in self._server.connection_info:
+                        arg_str_unencoded['dbhost'] = self._server.connection_info['dbhost']
+                    if 'dbport' in self._server.connection_info:
+                        arg_str_unencoded['dbport'] = str(self._server.connection_info['dbport'])
+                    if 'dbname' in self._server.connection_info:
+                        arg_str_unencoded['dbname'] = self._server.connection_info['dbname']
+                    if 'dbuser' in self._server.connection_info:
+                        arg_str_unencoded['dbuser'] = self._server.connection_info['dbuser']
         else:
             if hasattr(self._server, 'web_export_package_args') and self._server.web_export_package_args is not None:
                 arg_str_unencoded.update(self._server.web_export_package_args)
+                if self._server.connection_info is not None:
+                    if 'dbhost' in self._server.connection_info:
+                        arg_str_unencoded['dbhost'] = self._server.connection_info['dbhost']
+                    if 'dbport' in self._server.connection_info:
+                        arg_str_unencoded['dbport'] = str(self._server.connection_info['dbport'])
+                    if 'dbname' in self._server.connection_info:
+                        arg_str_unencoded['dbname'] = self._server.connection_info['dbname']
+                    if 'dbuser' in self._server.connection_info:
+                        arg_str_unencoded['dbuser'] = self._server.connection_info['dbuser']
 
         unparsed = urlunparse((parsed[0], parsed[1], parsed[2], None, urlencode(arg_str_unencoded), None))
 
@@ -2625,6 +2691,8 @@ class SSHJsonClient(object):
     def _show_series(self, *, ds_filter=None, info=False):
         # we have to intercept calls to both show_series parent methods, show_series() and show_series_wrapper(), and then do the
         # right thing depending on configuration parameters
+        update_dict = {}
+
         if self._use_internal or self._server.ssh_show_series_wrapper is None:
             # binary executable
             cmd_list = [ os.path.join(self._server.ssh_base_bin, self._server.ssh_show_series), '-qz' ]
@@ -2634,19 +2702,44 @@ class SSHJsonClient(object):
 
             if self._use_internal:
                 if self._server.ssh_show_series_internal_args is not None:
-                    cmd_list.extend([ key + '=' + str(val) for key, val in self._server.ssh_show_series_internal_args.items() ])
+                    update_dict.update(self._server.ssh_show_series_internal_args)
             else:
                 if self._server.ssh_show_series_args is not None:
-                    cmd_list.extend([ key + '=' + str(val) for key, val in self._server.ssh_show_series_args.items() ])
+                    update_dict.update(self.ssh_show_series_args)
+
+            # override
+            if self._server.connection_info is not None:
+                if 'dbhost' in self._server.connection_info:
+                    val = self._server.connection_info['dbhost']
+                    if 'dbport' in self._server.connection_info:
+                        val = f'{val}:{str(self._server.connection_info["dbport"])}'
+
+                    update_dict['JSOC_DBHOST'] = val
+
+                if 'dbuser' in self._server.connection_info:
+                    update_dict['JSOC_DBUSER'] = self._server.connection_info['dbuser']
+
+                if 'dbname' in self._server.connection_info:
+                    update_dict['JSOC_DBNAME'] = self._server.connection_info['dbname']
+
+            cmd_list.extend([ f'{key} = {str(val)}' for key, val in update_dict.items() ])
 
             if ds_filter is not None:
                 cmd_list.append(ds_filter)
         else:
-            # script
+            # script (showextinfo.py)
             cmd_list = [ os.path.join(self._server.ssh_base_script, self._server.ssh_show_series_wrapper), '--json' ]
 
             if self._server.ssh_show_series_wrapper_args is not None:
-                cmd_list.extend([ key + '=' + str(val) for key, val in self._server.ssh_show_series_wrapper_args.items() ])
+                arg_str_unencoded.update(self._server.ssh_show_series_wrapper_args)
+
+            # override
+            if 'dbhost' in self._server.connection_info:
+                val = self._server.connection_info['dbhost']
+                if 'dbport' in self._server.connection_info:
+                    val = f'{val}:{str(self._server.connection_info["dbport"])}'
+
+                arg_str_unencoded['dbhost'] = val
 
             if ds_filter is not None:
                 cmd_list.append('--filter=' + ds_filter)
@@ -2813,12 +2906,31 @@ class SSHJsonClient(object):
         if self._server.encoding.lower() == 'utf8':
             cmd_list.append('DRMS_DBUTF8CLIENTENCODING=1')
 
+        update_dict = {}
+
         if self._use_internal:
             if self._server.ssh_export_fits_internal_args is not None:
-                cmd_list.extend([ key + '=' + str(val) for key, val in self._server.ssh_export_fits_internal_args.items() ])
+                update_dict.update(self._server.ssh_export_fits_internal_args)
         else:
             if self._server.ssh_export_fits_args is not None:
-                cmd_list.extend([ key + '=' + str(val) for key, val in self._server.ssh_export_fits_args.items() ])
+                update_dict.update(self._server.ssh_export_fits_args)
+
+        # override
+        if self._server.connection_info is not None:
+            if 'dbhost' in self._server.connection_info:
+                val = self._server.connection_info['dbhost']
+                if 'dbport' in self._server.connection_info:
+                    val = f'{val}:{str(self._server.connection_info["dbport"])}'
+
+                update_dict['JSOC_DBHOST'] = val
+
+            if 'dbuser' in self._server.connection_info:
+                update_dict['JSOC_DBUSER'] = self._server.connection_info['dbuser']
+
+            if 'dbname' in self._server.connection_info:
+                update_dict['JSOC_DBNAME'] = self._server.connection_info['dbname']
+
+        cmd_list.extend([ f'{key} = {str(val)}' for key, val in update_dict.items() ])
 
         # we have to redirect the output to a tar file; use a UUID-inspired base file name; when the user calls
         # SecureExportRequest.download(dir), this file is scp'd back to the dir directory on the client host and exploded
@@ -2919,12 +3031,31 @@ class SSHJsonClient(object):
         if self._server.encoding.lower() == 'utf8':
             cmd_list.append('DRMS_DBUTF8CLIENTENCODING=1')
 
+        update_dict = {}
+
         if self._use_internal:
             if self._server.ssh_export_fits_internal_args is not None:
-                cmd_list.extend([ key + '=' + str(val) for key, val in self._server.ssh_export_fits_internal_args.items() ])
+                update_dict.update(self._server.ssh_export_fits_internal_args)
         else:
             if self._server.ssh_export_fits_args is not None:
-                cmd_list.extend([ key + '=' + str(val) for key, val in self._server.ssh_export_fits_args.items() ])
+                update_dict.update(self._server.ssh_export_fits_args)
+
+        # override
+        if self._server.connection_info is not None:
+            if 'dbhost' in self._server.connection_info:
+                val = self._server.connection_info['dbhost']
+                if 'dbport' in self._server.connection_info:
+                    val = f'{val}:{str(self._server.connection_info["dbport"])}'
+
+                update_dict['JSOC_DBHOST'] = val
+
+            if 'dbuser' in self._server.connection_info:
+                update_dict['JSOC_DBUSER'] = self._server.connection_info['dbuser']
+
+            if 'dbname' in self._server.connection_info:
+                update_dict['JSOC_DBNAME'] = self._server.connection_info['dbname']
+
+        cmd_list.extend([ f'{key} = {str(val)}' for key, val in update_dict.items() ])
 
         if download_directory is None:
             download_path = None
@@ -3020,8 +3151,10 @@ class SSHJsonClient(object):
             if protocol_args is not None:
                 raise ValueError("protocol_args not supported for protocol '%s'" % protocol)
 
-        if self._use_internal:
-            cmd_list = [ os.path.join(self._server.ssh_base_bin, self._server.ssh_jsoc_fetch_internal), '-W', 'op=exp_request', 'format=json', shlex.quote('ds=' + ds), 'notify=' + notify, 'method=' + method, 'protocol=' + protocol ]
+        update_dict = {}
+
+        if self._use_internal or self._server.ssh_jsoc_fetch_wrapper is None:
+            cmd_list = [ os.path.join(self._server.ssh_base_bin, self._server.ssh_jsoc_fetch), '-W', 'op=exp_request', 'format=json', shlex.quote('ds=' + ds), 'notify=' + notify, 'method=' + method, 'protocol=' + protocol ]
 
             if filenamefmt is not None:
                 cmd_list.append(shlex.quote('filenamefmt=' + filenamefmt))
@@ -3035,14 +3168,43 @@ class SSHJsonClient(object):
             if self._server.encoding.lower() == 'utf8':
                 cmd_list.append('DRMS_DBUTF8CLIENTENCODING=1')
 
-            if self._server.ssh_jsoc_fetch_internal_args is not None:
-                cmd_list.extend([ key + '=' + str(val) for key, val in self._server.ssh_jsoc_fetch_internal_args.items() ])
+            if self._use_internal:
+                if self._server.ssh_jsoc_fetch_internal_args is not None:
+                    update_dict.update(self._server.ssh_jsoc_fetch_internal_args)
+            else:
+                if self._server.ssh_jsoc_fetch_args is not None:
+                    update_dict.update(self._server.ssh_jsoc_fetch_args)
+
+            # override
+            if self._server.connection_info is not None:
+                if 'dbhost' in self._server.connection_info:
+                    val = self._server.connection_info['dbhost']
+                    if 'dbport' in self._server.connection_info:
+                        val = f'{val}:{str(self._server.connection_info["dbport"])}'
+
+                    update_dict['JSOC_DBHOST'] = val
+
+                if 'dbuser' in self._server.connection_info:
+                    update_dict['JSOC_DBUSER'] = self._server.connection_info['dbuser']
+
+                if 'dbname' in self._server.connection_info:
+                    update_dict['JSOC_DBNAME'] = self._server.connection_info['dbname']
+
+            cmd_list.extend([ f'{key} = {str(val)}' for key, val in update_dict.items() ])
         else:
-            # this script accepts a URL argument string (like QUERY_STRING)
+            # this script (jsocextfetch.py) accepts a URL argument string (like QUERY_STRING)
             arg_str_unencoded = { 'op' : 'exp_request', 'format' : 'json', 'ds' : ds, 'notify' : notify, 'method' : method, 'protocol' : protocol, 'n' : 1 }
 
-            if self._server.ssh_jsoc_fetch_args is not None:
-                arg_str_unencoded.update(self._server.ssh_jsoc_fetch_args)
+            if self._server.ssh_jsoc_fetch_wrapper_args is not None:
+                arg_str_unencoded.update(self._server.ssh_jsoc_fetch_wrapper_args)
+
+            # override
+            if 'dbhost' in self._server.connection_info:
+                val = self._server.connection_info['dbhost']
+                if 'dbport' in self._server.connection_info:
+                    val = f'{val}:{str(self._server.connection_info["dbport"])}'
+
+                arg_str_unencoded['dbhost'] = val
 
             if filenamefmt is not None:
                 arg_str_unencoded.update({ 'filenamefmt' : filenamefmt })
@@ -3075,20 +3237,51 @@ class SSHJsonClient(object):
         if requestid is None or not isinstance(requestid, str):
             raise SecureDRMSArgumentError('[ exp_status ] missing or invalid argument requestid')
 
-        if self._use_internal:
-            cmd_list = [ os.path.join(self._server.ssh_base_bin, self._server.ssh_jsoc_fetch_internal), '-W', 'op=exp_status', 'requestid=' + requestid ]
+        update_dict = {}
+
+        if self._use_internal or self._server.ssh_jsoc_fetch_wrapper is None:
+            cmd_list = [ os.path.join(self._server.ssh_base_bin, self._server.ssh_jsoc_fetch), '-W', 'op=exp_status', 'requestid=' + requestid ]
 
             if self._server.encoding.lower() == 'utf8':
                 cmd_list.append('DRMS_DBUTF8CLIENTENCODING=1')
 
-            if self._server.ssh_jsoc_fetch_internal_args is not None:
-                cmd_list.extend([ key + '=' + str(val) for key, val in self._server.ssh_jsoc_fetch_internal_args.items() ])
+            if self._use_internal:
+                if self._server.ssh_jsoc_fetch_internal_args is not None:
+                    update_dict.update(self._server.ssh_jsoc_fetch_internal_args)
+            else:
+                if self._server.ssh_jsoc_fetch_args is not None:
+                    update_dict.update(self._server.ssh_jsoc_fetch_args)
+
+            # override
+            if self._server.connection_info is not None:
+                if 'dbhost' in self._server.connection_info:
+                    val = self._server.connection_info['dbhost']
+                    if 'dbport' in self._server.connection_info:
+                        val = f'{val}:{str(self._server.connection_info["dbport"])}'
+
+                    update_dict['JSOC_DBHOST'] = val
+
+                if 'dbuser' in self._server.connection_info:
+                    update_dict['JSOC_DBUSER'] = self._server.connection_info['dbuser']
+
+                if 'dbname' in self._server.connection_info:
+                    update_dict['JSOC_DBNAME'] = self._server.connection_info['dbname']
+
+            cmd_list.extend([ f'{key} = {str(val)}' for key, val in update_dict.items() ])
         else:
             # this script accepts a URL argument string (like QUERY_STRING)
             arg_str_unencoded = { 'op' : 'exp_status', 'requestid' : requestid, 'n' : 1 }
 
-            if self._server.ssh_jsoc_fetch_args is not None:
-                arg_str_unencoded.update(self._server.ssh_jsoc_fetch_args)
+            if self._server.ssh_jsoc_fetch_wrapper_args is not None:
+                arg_str_unencoded.update(self._server.ssh_jsoc_fetch_wrapper_args)
+
+            # override
+            if 'dbhost' in self._server.connection_info:
+                val = self._server.connection_info['dbhost']
+                if 'dbport' in self._server.connection_info:
+                    val = f'{val}:{str(self._server.connection_info["dbport"])}'
+
+                arg_str_unencoded['dbhost'] = val
 
             arg_str_encoded = urlencode(arg_str_unencoded)
             cmd_list = [ os.path.join(self._server.ssh_base_script, self._server.ssh_jsoc_fetch), shlex.quote(arg_str_encoded) ]
@@ -3188,8 +3381,10 @@ class SSHJsonClient(object):
         '''
         # both external (jsocextinfo.py) and internal (jsoc_info) calls
 
-        if self._use_internal:
-            cmd_list = [ os.path.join(self._server.ssh_base_bin, self._server.ssh_jsoc_info_internal), '-s', 'op=rs_list', shlex.quote('ds=' + ds) ]
+        update_dict = {}
+
+        if self._use_internal or self._server.ssh_jsoc_info_wrapper is None:
+            cmd_list = [ os.path.join(self._server.ssh_base_bin, self._server.ssh_jsoc_info), '-s', 'op=rs_list', shlex.quote('ds=' + ds) ]
 
             if key is not None:
                 cmd_list.append('key=' + ','.join(_split_arg(key)))
@@ -3207,10 +3402,30 @@ class SSHJsonClient(object):
             if self._server.encoding.lower() == 'utf8':
                 cmd_list.append('DRMS_DBUTF8CLIENTENCODING=1')
 
-            if self._server.ssh_jsoc_info_internal_args is not None:
-                cmd_list.extend([ key + '=' + str(val) for key, val in self._server.ssh_jsoc_info_internal_args.items() ])
+            if self._use_internal:
+                if self._server.ssh_jsoc_info_internal_args is not None:
+                    update_dict.update(self._server.ssh_jsoc_info_internal_args)
+            else:
+                if self._server.ssh_jsoc_info_args is not None:
+                    update_dict.update(self._server.ssh_jsoc_info_args)
+
+            # override
+            if 'dbhost' in self._server.connection_info:
+                val = self._server.connection_info['dbhost']
+                if 'dbport' in self._server.connection_info:
+                    val = f'{val}:{str(self._server.connection_info["dbport"])}'
+
+                update_dict['JSOC_DBHOST'] = val
+
+            if 'dbuser' in self._server.connection_info:
+                update_dict['JSOC_DBUSER'] = self._server.connection_info['dbuser']
+
+            if 'dbname' in self._server.connection_info:
+                update_dict['JSOC_DBNAME'] = self._server.connection_info['dbname']
+
+            cmd_list.extend([ f'{key} = {str(val)}' for key, val in update_dict.items() ])
         else:
-            # this script accepts a URL argument string (like QUERY_STRING)
+            # this script (jsocextinfo.py) accepts a URL argument string (like QUERY_STRING)
             arg_str_unencoded = { 'op' : 'rs_list', 'ds' : ds, 'N' : 1 }
 
             if key is not None:
@@ -3226,11 +3441,21 @@ class SSHJsonClient(object):
             if uid is not None:
                 arg_str_unencoded.update({ 'userhandle' : uid })
 
-            if self._server.ssh_jsoc_info_args is not None:
-                arg_str_unencoded.update(self._server.ssh_jsoc_info_args)
+            if self._server.ssh_jsoc_info_wrapper_args is not None:
+                update_dict.update(self._server.ssh_jsoc_info_wrapper_args)
 
+            # override
+            if self._server.connection_info is not None:
+                if 'dbhost' in self._server.connection_info:
+                    val = self._server.connection_info['dbhost']
+                    if 'dbport' in self._server.connection_info:
+                        val = f'{val}:{str(self._server.connection_info["dbport"])}'
+
+                    update_dict['dbhost'] = val
+
+            arg_str_unencoded.update(update_dict)
             arg_str_encoded = urlencode(arg_str_unencoded)
-            cmd_list = [ os.path.join(self._server.ssh_base_script, self._server.ssh_jsoc_info), shlex.quote(arg_str_encoded) ]
+            cmd_list = [ os.path.join(self._server.ssh_base_script, self._server.ssh_jsoc_info_wrapper), shlex.quote(arg_str_encoded) ]
 
         return self._run_cmd(cmd_list=cmd_list)
 
@@ -3254,19 +3479,51 @@ class SSHJsonClient(object):
             }
         '''
         # both external (jsocextinfo.py) and internal (jsoc_info) calls
-        if self._use_internal:
-            cmd_list = [ os.path.join(self._server.ssh_base_bin, self._server.ssh_jsoc_info_internal), '-s', 'op=rs_summary', shlex.quote('ds=' + ds) ]
+        update_dict = {}
+
+        if self._use_internal or self._server.ssh_jsoc_info_wrapper is None:
+            cmd_list = [ os.path.join(self._server.ssh_base_bin, self._server.ssh_jsoc_info), '-s', 'op=rs_summary', shlex.quote('ds=' + ds) ]
 
             if self._server.encoding.lower() == 'utf8':
                 cmd_list.append('DRMS_DBUTF8CLIENTENCODING=1')
 
-            if self._server.ssh_jsoc_info_internal_args is not None:
-                cmd_list.extend([ key + '=' + str(val) for key, val in self._server.ssh_jsoc_info_internal_args.items() ])
+            if self._use_internal:
+                if self._server.ssh_jsoc_info_internal_args is not None:
+                    update_dict.update(self._server.ssh_jsoc_info_internal_args)
+            else:
+                if self._server.ssh_jsoc_info_args is not None:
+                    update_dict.update(self._server.ssh_jsoc_info_args)
+
+            # override
+            if 'dbhost' in self._server.connection_info:
+                val = self._server.connection_info['dbhost']
+                if 'dbport' in self._server.connection_info:
+                    val = f'{val}:{str(self._server.connection_info["dbport"])}'
+
+                update_dict['JSOC_DBHOST'] = val
+
+            if 'dbuser' in self._server.connection_info:
+                update_dict['JSOC_DBUSER'] = self._server.connection_info['dbuser']
+
+            if 'dbname' in self._server.connection_info:
+                update_dict['JSOC_DBNAME'] = self._server.connection_info['dbname']
+
+            cmd_list.extend([ f'{key} = {str(val)}' for key, val in update_dict.items() ])
+
         else:
+            # jsocextfetch.py
             arg_str_unencoded = { 'op' : 'rs_summary', 'ds' : ds, 'N' : 1 }
 
-            if self._server.ssh_jsoc_info_args is not None:
-                arg_str_unencoded.update(self._server.ssh_jsoc_info_args)
+            if self._server.ssh_jsoc_info_wrapper_args is not None:
+                arg_str_unencoded.update(self._server.ssh_jsoc_info_wrapper_args)
+
+            # override
+            if 'dbhost' in self._server.connection_info:
+                val = self._server.connection_info['dbhost']
+                if 'dbport' in self._server.connection_info:
+                    val = f'{val}:{str(self._server.connection_info["dbport"])}'
+
+                arg_str_unencoded['dbhost'] = val
 
             arg_str_encoded = urlencode(arg_str_unencoded)
             cmd_list = [ os.path.join(self._server.ssh_base_script, self._server.ssh_jsoc_info), shlex.quote(arg_str_encoded) ]
@@ -3355,23 +3612,53 @@ class SSHJsonClient(object):
         if series is None or not isinstance(series, str):
             raise SecureDRMSArgumentError('[ series_struct ] missing or invalid argument series')
 
-        if self._use_internal:
-            cmd_list = [ os.path.join(self._server.ssh_base_bin, self._server.ssh_jsoc_info_internal), '-s', 'op=series_struct', 'ds=' +  series ]
+        update_dict = {}
+
+        if self._use_internal or self._server.ssh_jsoc_info_wrapper is None:
+            cmd_list = [ os.path.join(self._server.ssh_base_bin, self._server.ssh_jsoc_info), '-s', 'op=series_struct', 'ds=' +  series ]
 
             if self._server.encoding.lower() == 'utf8':
                 cmd_list.append('DRMS_DBUTF8CLIENTENCODING=1')
 
-            if self._server.ssh_jsoc_info_internal_args is not None:
-                cmd_list.extend([ key + '=' + str(val) for key, val in self._server.ssh_jsoc_info_internal_args.items() ])
+            if self._use_internal:
+                if self._server.ssh_jsoc_info_internal_args is not None:
+                    update_dict.update(self._server.ssh_jsoc_info_internal_args)
+            else:
+                if self._server.ssh_jsoc_info_args is not None:
+                    update_dict.update(self._server.ssh_jsoc_info_args)
+
+            # override
+            if 'dbhost' in self._server.connection_info:
+                val = self._server.connection_info['dbhost']
+                if 'dbport' in self._server.connection_info:
+                    val = f'{val}:{str(self._server.connection_info["dbport"])}'
+
+                update_dict['JSOC_DBHOST'] = val
+
+            if 'dbuser' in self._server.connection_info:
+                update_dict['JSOC_DBUSER'] = self._server.connection_info['dbuser']
+
+            if 'dbname' in self._server.connection_info:
+                update_dict['JSOC_DBNAME'] = self._server.connection_info['dbname']
+
+            cmd_list.extend([ f'{key} = {str(val)}' for key, val in update_dict.items() ])
         else:
+            # jsocextinfo.py
             arg_str_unencoded = { 'op' : 'series_struct', 'ds' : series, 'N' : 1 }
 
-            if self._server.ssh_jsoc_info_args is not None:
-                arg_str_unencoded.update(self._server.ssh_jsoc_info_args)
+            if self._server.ssh_jsoc_info_wrapper_args is not None:
+                arg_str_unencoded.update(self._server.ssh_jsoc_info_wrapper_args)
+
+            # override
+            if 'dbhost' in self._server.connection_info:
+                val = self._server.connection_info['dbhost']
+                if 'dbport' in self._server.connection_info:
+                    val = f'{val}:{str(self._server.connection_info["dbport"])}'
+
+                arg_str_unencoded['dbhost'] = val
 
             arg_str_encoded = urlencode(arg_str_unencoded)
             cmd_list = [ os.path.join(self._server.ssh_base_script, self._server.ssh_jsoc_info), shlex.quote(arg_str_encoded) ]
-
 
         return self._run_cmd(cmd_list=cmd_list)
 
@@ -3536,6 +3823,8 @@ class SecureClient(DRMSClient):
 
             import traceback
             print(traceback.format_exc(), file=sys.stderr)
+
+            raise
 
         return resp
 
@@ -3888,7 +4177,7 @@ class SecureClient(DRMSClient):
         Return Value
         ------------
         list or object (pandas.DataFrame)
-            if `full` is True, then returns a list of accessible series that match `regex`, otherwise return a pandas.DataFrame of series and information for series that match `regex`; if the server is configured for external access and web_show_series_wrapper/ssh_show_series_wrapper, then in addition to listing DRMS 'external' data series, lists 'internal' series (ones that reside in the internal, private database) that the server makes publicly accessible
+            if `full` is True, returns a pandas.DataFrame of series and information for series that match `regex`, otherwise returns a list of accessible series that match `regex`; if the server is configured for external access and web_show_series_wrapper/ssh_show_series_wrapper, then in addition to listing DRMS 'external' data series, lists 'internal' series (ones that reside in the internal, private database) that the server makes publicly accessible
         '''
         args = { 'api_name' : 'series', 'regex' : regex, 'full' : full }
 
@@ -4092,11 +4381,11 @@ class SecureClientFactory(object):
     '''
     __clients = []
 
-    def __init__(self, *, server='__JSOC', email=None, verbose=False, debug=False):
+    def __init__(self, *, server=None, email=None, verbose=False, debug=False):
         '''
         Parameters
         ----------
-        server : str
+        [ server : str ]
             name of the secure-server configuration
         [ email : str ]
             an export-system registered email address
@@ -4105,22 +4394,33 @@ class SecureClientFactory(object):
         [ debug : bool ]
             if True, print debugging statements (default is False)
         '''
-        self._config = SecureServerConfig.get(server)
-        self._config.debug = debug
+        if server is not None:
+            self._config = SecureServerConfig.get(server)
+            self._config.debug = debug
         self._email = email
         self._verbose = verbose
         self._debug = debug
 
-    def create_client(self, *, use_ssh=False, use_internal=False, debug=None):
+    def create_client(self, *, server=None, use_ssh=False, use_internal=False, connection_info=None, debug=None):
         '''
         return a SecureClient that can be used to access the DRMS server via the set of API methods in the SecureClient class
 
         Parameters
         ----------
+        [ server : str ]
+            name of the secure-server configuration
         [ use_ssh : bool ]
             if True, interface programs that use the SSH-access methods will be used; if False (the default), programs that use the HTTP-access methods will be used
         [ use_internal : bool ]
             if True, interface programs that access publicly accessible data series will be used; if False (the default), programs that access privately accessible series will be used
+        [ connection_info : dict ]
+            if not None, then use the database connection information contained within when connecting to the database, overriding the default connection arguments in the configuraton
+            {
+              'dbhost' : <str - the database host>,
+              'dbport' : <int - the port on the database host>,
+              'dbuser' : <str - the database role>,
+              'dbname' : <str - the database name>
+            }
         [ debug : bool ]
             if True, print debugging statements (default is False); if None (the default), then SecureClientFactory._debug is used
 
@@ -4130,7 +4430,17 @@ class SecureClientFactory(object):
             return an SSHClient if `use_ssh` is True, otherwise return a BasicAccessClient; the SecureClient returned can then be used to access the DRMS server
         '''
         client = None
-        args = { 'email' : self._email, 'verbose' : self._verbose, 'debug' : self._debug if debug is None else debug, 'use_internal' : use_internal }
+        args = { 'email' : self._email, 'verbose' : self._verbose, 'debug' : self._debug if debug is None else debug, 'use_internal' : use_internal, 'connection_info' : connection_info }
+
+        if server is not None:
+            self._config = SecureServerConfig.get(server)
+            self._config.debug = self._debug
+
+        if not hasattr(self, '_config'):
+            raise SecureDRMSArgumentError(f'[ {self.__class__.__name__}.create_client() ] no server configuration specified (must be specified either when creating factory or creating client)')
+
+        # this will ensure that `connection_info` becomes an attribute of the configuration internal dict (`d`)
+        self._config.connection_info = connection_info
 
         if use_ssh:
             client = SSHClient(self._config, **args)
@@ -4146,7 +4456,7 @@ class SecureClientFactory(object):
 
         return client
 
-    def create_http_client(self, *, use_internal=False, debug=None):
+    def create_http_client(self, *, use_internal=False, connection_info=None, debug=None):
         '''
         return a BasicAccessClient that can be used to access the DRMS server via the set of API methods in the BasicAccessClient class
 
@@ -4154,6 +4464,14 @@ class SecureClientFactory(object):
         ----------
         [ use_internal : bool ]
             if True, interface programs that access publicly accessible data series will be used; if False (the default), programs that access privately accessible series will be used
+        [ connection_info : dict ]
+            if not None, then use the database connection information contained within when connecting to the database, overriding the default connection arguments in the configuraton
+            {
+              'dbhost' : <str - the database host>,
+              'dbport' : <int - the port on the database host>,
+              'dbuser' : <str - the database role>,
+              'dbname' : <str - the database name>
+            }
         [ debug : bool ]
             if True, print debugging statements (default is False); if None (the default), then SecureClientFactory._debug is used
 
@@ -4162,9 +4480,9 @@ class SecureClientFactory(object):
         object (BasicAccessClient)
             return an BasicAccessClient, which can then be used to access the DRMS server
         '''
-        return self.create_client(use_ssh=False, use_internal=use_internal, debug=debug)
+        return self.create_client(use_ssh=False, use_internal=use_internal, connection_info=connection_info, debug=debug)
 
-    def create_ssh_client(self, *, use_internal=False, debug=None):
+    def create_ssh_client(self, *, use_internal=False, connection_info=None, debug=None):
         '''
         return an SSHClient that can be used to access the DRMS server via the set of API methods in the SSHClient class
 
@@ -4172,6 +4490,14 @@ class SecureClientFactory(object):
         ----------
         [ use_internal : bool ]
             if True, interface programs that access publicly accessible data series will be used; if False (the default), programs that access privately accessible series will be used
+        [ connection_info : dict ]
+            if not None, then use the database connection information contained within when connecting to the database, overriding the default connection arguments in the configuraton
+            {
+              'dbhost' : <str - the database host>,
+              'dbport' : <int - the port on the database host>,
+              'dbuser' : <str - the database role>,
+              'dbname' : <str - the database name>
+            }
         [ debug : bool ]
             if True, print debugging statements (default is False); if None (the default), then SecureClientFactory._debug is used
 
@@ -4180,7 +4506,7 @@ class SecureClientFactory(object):
         object (SSHClient)
             return an SSHClient, which can then be used to access the DRMS server
         '''
-        return self.create_client(use_ssh=True, use_internal=use_internal, debug=debug)
+        return self.create_client(use_ssh=True, use_internal=use_internal, connection_info=connection_info, debug=debug)
 
     @classmethod
     def _insert_client(cls, secure_client):
@@ -4198,36 +4524,11 @@ signal.signal(signal.SIGTERM, SecureClientFactory.terminator)
 signal.signal(signal.SIGHUP, SecureClientFactory.terminator)
 
 # register secure JSOC DRMS server
-SecureServerConfig.register_server(SecureServerConfig(
+
+server_config_common = SecureServerConfig(
+    name='common_do_not_use',
     download_directory='/tmp',
-    name='__JSOC',
-    web_baseurl='http://jsoc.stanford.edu/cgi-bin/ajax/',
-    web_baseurl_internal='http://jsoc2.stanford.edu/cgi-bin/ajax/',
-    web_baseurl_authority=None, # will prompt user if needed
-#   web_baseurl_authority='<user>:<pword>',
-#   web_baseurl_authorityfile='/Users/art/HEPL/drmsPy/auth.py',
-    web_check_address='checkAddress.sh',
-    web_export_package='drms-export.sh',
-    web_jsoc_info='jsoc_info',
-    web_jsoc_fetch='jsoc_fetch',
-    web_parse_recset='drms_parserecset',
-    web_show_series='show_series',
-    web_show_series_wrapper='showextseries',
-    web_show_series_wrapper_args=
-    {
-        'dbhost' : 'hmidb2'
-    },
-    web_export_package_args=
-    {
-        'dbhost' : 'hmidb2',
-        'webserver' : 'jsoc.stanford.edu'
-    },
-    web_export_package_internal_args=
-    {
-        'dbhost' : 'hmidb',
-        'webserver' : 'jsoc2.stanford.edu'
-    },
-    has_full_export_system=False,
+    has_full_export_system=True,
     server_tmp='/tmp',
     ssh_base_bin='/home/jsoc/cvs/Development/JSOC/bin/linux_avx',
     ssh_base_script='/home/jsoc/cvs/Development/JSOC/scripts',
@@ -4247,24 +4548,21 @@ SecureServerConfig.register_server(SecureServerConfig(
         'JSOC_DBUSER' : 'production',
         'maxfilesize' : 4294967296
     },
-    ssh_jsoc_info='jsocextinfo.py',
+    ssh_jsoc_info='jsoc_info',
     ssh_jsoc_info_args=
     {
-        'dbhost' : 'hmidb2'
+        'dbhost' : 'hmidb2',
     },
-    ssh_jsoc_info_internal='jsoc_info',
     ssh_jsoc_info_internal_args=
     {
         'JSOC_DBHOST' : 'hmidb',
         'JSOC_DBUSER' : 'production'
     },
-    ssh_jsoc_fetch='jsocextfetch.py',
+    ssh_jsoc_fetch='jsoc_fetch',
     ssh_jsoc_fetch_args=
     {
-        'dbhost' : 'hmidb2',
-        'JSOC_DBUSER' : 'production'
+        'dbhost' : 'hmidb2'
     },
-    ssh_jsoc_fetch_internal='jsoc_fetch',
     ssh_jsoc_fetch_internal_args=
     {
         'JSOC_DBHOST' : 'hmidb',
@@ -4283,18 +4581,21 @@ SecureServerConfig.register_server(SecureServerConfig(
     ssh_show_series='show_series',
     ssh_show_series_args=
     {
-        'JSOC_DBHOST' : 'hmidb2'
+        'JSOC_DBHOST' : 'hmidb2',
+        'JSOC_DBUSER' : 'production'
     },
     ssh_show_series_internal_args=
     {
         'JSOC_DBHOST' : 'hmidb',
         'JSOC_DBUSER' : 'production'
     },
-    ssh_show_series_wrapper='showextseries.py',
-    ssh_show_series_wrapper_args=
-    {
-        'dbhost' : 'hmidb2',
-        '--wlfile' : '/home/jsoc/cvs/Development/JSOC/proj/export/webapps/whitelist.txt'
-    },
     http_download_baseurl='http://jsoc.stanford.edu/',
-    ftp_download_baseurl='ftp://pail.stanford.edu/export/'))
+    ftp_download_baseurl='ftp://pail.stanford.edu/export/')
+
+server_config_external = SecureServerConfig(config=server_config_common)
+server_config_external.name = 'jsoc_external'
+server_config_internal = SecureServerConfig(config=server_config_common)
+server_config_internal.name = 'jsoc_internal'
+
+SecureServerConfig.register_server(server_config_external)
+SecureServerConfig.register_server(server_config_internal)
