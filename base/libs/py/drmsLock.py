@@ -30,7 +30,7 @@ class DrmsLock(object):
             return self
         else:
             return None
-    
+
     def __exit__(self, etype, value, traceback):
         self.close()
 
@@ -54,26 +54,26 @@ class DrmsLock(object):
                     gotLock = True
                 except IOError:
                     pass
-        
+
                 if gotLock or not self._retry or natt >= 10:
                     break
-        
+
                 sleep(1)
                 natt += 1
 
             self._hasLock = gotLock
 
-        if self._hasLock: 
+        if self._hasLock:
             # write the content into the file; but first truncate the file (because we opened the file in 'a' mode)
             if self._lfContent and len(self._lfContent) > 0:
                 self._lfObj.seek(0)
-                self._lfObj.truncate()            
+                self._lfObj.truncate()
                 self._lfObj.write(self._lfContent)
                 self._lfObj.flush()
         else:
             # we did not acquire lock; because we opened in append mode, the value in the lock file will not be changed
             pass
-                
+
         return self._hasLock
 
     def releaseLock(self):
@@ -85,19 +85,27 @@ class DrmsLock(object):
                 lockf(self._lfObj.fileno(), LOCK_UN)
             except IOError:
                 raise Exception('drmsLock', 'Unable to release lock.')
-                    
+
             self._hasLock = False
-            
-    def close(self):
+
+    def write_to_file(self, content):
+        if not self._hasLock:
+            raise Exception('drmsLock', 'cannot write to lock file - you must first acquire lock')
+
+        if len(content) > 0:
+            self._lfObj.write(content)
+
+    def close(self, delete_file=True):
         '''Use close(), after calling releaseLock(), when not using DrmsLock in a context-manager context.'''
         # release the lock
         if self._hasLock:
             self.releaseLock()
-            
+
         # close the file
         if self._lfObj:
             self._lfObj.close()
             self._lfObj = None
-    
-            # delete the lock file
-            unlink(self._lockFile)
+
+            if delete_file:
+                # delete the lock file
+                unlink(self._lockFile)
