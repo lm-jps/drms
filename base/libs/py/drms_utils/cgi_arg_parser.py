@@ -1,6 +1,6 @@
 import cgi
 import argparse
-from cmdline_parser import CmdlParser
+from .cmdline_parser import CmdlParser
 
 __all__ = [ 'CgiParser' ]
 
