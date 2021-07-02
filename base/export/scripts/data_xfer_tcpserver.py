@@ -430,10 +430,10 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
         try:
             if not terminate:
                 # block, waiting for client to terminate connection (to avoid TIME_WAIT)
-                self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.handle ] waiting for client `{str(self.client_address)}` to shut down CONTROL connection' ])
+                self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.handle ] waiting for client `{str(self.client_address)}` to close CONTROL connection' ])
                 if self.request.recv(128) == b'':
                     # client closed socket connection
-                    pass
+                    self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.handle ] client `{str(self.client_address)}` closed CONTROL connection' ])
         except socket.timeout as exc:
             # end session (return from handler)
             self.server.log.write_error([ f'[ DataTransferTCPRequestHandler.handle ] timeout waiting for client to terminate control connection', f'{str(exc)}' ])
@@ -548,7 +548,12 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
     async def receive_verification_and_update_manifest(self, *, product):
         self._receive_is_done = False
         self._verified_recnums = asyncio.Queue()
-        await asyncio.gather(self.receive_verification(), self.update_manifest(product=product))
+        self._verification_data_exist = False
+
+        # await asyncio.gather(self.receive_verification(), self.update_manifest(product=product))
+
+        data_event = asyncio.Event()
+        await asyncio.gather(self.receive_verification(data_event=data_event), asyncio.create_task(self.update_manifest(data_event=data_event, product=product)))
 
         self.finalize_data_connection()
 
@@ -603,6 +608,7 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
         arg_list.append(f'JSOC_DBHOST={arguments.db_host}')
 
         try:
+            # we need to run drms-export-to-stdout, even if no DRMS_IDs are available for processing; running drms-export-to-stdout will create an empty manifest file in this case
             self.server.log.write_info([ f'[ DataTransferTCPRequestHandler.stream_package ] running export for client `{str(self.client_address)}`: {str(arg_list)}' ])
             proc = await asyncio.subprocess.create_subprocess_exec(os.path.join(self.server.export_bin, 'drms-export-to-stdout'), *arg_list, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE)
 
@@ -657,7 +663,7 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
         except (ValueError, OSError) as exc:
             raise SubprocessError(msg=f'[ stream_package ] {str(exc)}' )
 
-    async def receive_verification(self):
+    async def receive_verification(self, *, data_event):
         self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.receive_verification ] receiving verification data from client `{str(self.client_address)}`' ])
         data_block = b''
         partial_line_start = None
@@ -672,7 +678,9 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
                     # server called shutdown on socket, but has not closed socket connection; server can still receive
                     break
 
-                print('got data')
+                # we know we have some verification data
+                self._verification_data_exist = True
+                data_event.set()
 
                 lines = data_block.decode().split('\n')
                 lstripped_lines = [] # leading partial line removed
@@ -702,7 +710,6 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
                     await self._verified_recnums.put(recnum)
 
                 self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.receive_verification ] finished sending {len(verified_recnums)} recnums for verification processing (for client `{str(self.client_address)}`)' ])
-
             except socket.timeout as exc:
                 # no data written to pipe
                 raise MessageTimeoutError(msg=f'timeout event waiting for server {data_socket.getpeername()} to send data')
@@ -711,49 +718,54 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
         await self._verified_recnums.join()
         self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.receive_verification ] finished waiting for verification processing to complete (for client `{str(self.client_address)}`)' ])
         self._receive_is_done = True
+        if not self._verification_data_exist:
+            data_event.set()
 
-    async def update_manifest(self, *, product):
+    async def update_manifest(self, *, data_event, product):
         self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.update_manifest ] updating product {product} manifest with data received from client `{str(self.client_address)}`' ])
 
-        try:
-            # unlike the subprocess module, the asyncio.subprocess module runs asynchronously
-            arg_list = [ f'series={product}', f'operation=update', f'new_value=Y', f'JSOC_DBUSER={arguments.export_production_db_user}', f'JSOC_DBHOST={arguments.db_host}' ]
+        await data_event.wait()
+        if self._verification_data_exist:
+            # only run the manifest-update code if there are verification data
+            try:
+                # unlike the subprocess module, the asyncio.subprocess module runs asynchronously
+                arg_list = [ f'series={product}', f'operation=update', f'new_value=Y', f'JSOC_DBUSER={arguments.export_production_db_user}', f'JSOC_DBHOST={arguments.db_host}' ]
 
-            self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.update_manifest ] running manifest manager for client `{str(self.client_address)}`: {str(arg_list)}' ])
-            proc = await asyncio.subprocess.create_subprocess_exec(os.path.join(self.server.export_bin, 'data-xfer-manifest-tables'), *arg_list, stdin=asyncio.subprocess.PIPE)
+                self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.update_manifest ] running manifest manager for client `{str(self.client_address)}`: {str(arg_list)}' ])
+                proc = await asyncio.subprocess.create_subprocess_exec(os.path.join(self.server.export_bin, 'data-xfer-manifest-tables'), *arg_list, stdin=asyncio.subprocess.PIPE)
 
-            chunk_of_recnums = []
+                chunk_of_recnums = []
 
-            while True:
-                # a list of recnum decimal byte strings
-                while len(chunk_of_recnums) < self.server.chunk_size:
-                    try:
-                        chunk_of_recnums.append(self._verified_recnums.get_nowait())
-                        self._verified_recnums.task_done()
-                    except asyncio.QueueEmpty:
-                        # got all available recnums
-                        if self._receive_is_done:
-                            # and there will be no more
-                            break
+                while True:
+                    # a list of recnum decimal byte strings
+                    while len(chunk_of_recnums) < self.server.chunk_size:
+                        try:
+                            chunk_of_recnums.append(self._verified_recnums.get_nowait())
+                            self._verified_recnums.task_done()
+                        except asyncio.QueueEmpty:
+                            # got all available recnums
+                            if self._receive_is_done:
+                                # and there will be no more
+                                break
 
-                        # more recnums to come; wait for queue to fill a bit
-                        await asyncio.sleep(0.5)
+                            # more recnums to come; wait for queue to fill a bit
+                            await asyncio.sleep(0.5)
 
-                # we have our chunk of recnums in `chunk_of_recnums`
-                if len(chunk_of_recnums) > 0:
-                    proc.stdin.write('\n'.join(chunk_of_recnums).encode())
-                    self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.update_manifest ] updated chunk of {len(chunk_of_recnums)} recnums in manifest for client `{str(self.client_address)}`' ])
-                    await proc.stdin.drain()
-                    chunk_of_recnums = []
+                    # we have our chunk of recnums in `chunk_of_recnums`
+                    if len(chunk_of_recnums) > 0:
+                        proc.stdin.write('\n'.join(chunk_of_recnums).encode())
+                        self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.update_manifest ] updated chunk of {len(chunk_of_recnums)} recnums in manifest for client `{str(self.client_address)}`' ])
+                        await proc.stdin.drain()
+                        chunk_of_recnums = []
 
-                if self._receive_is_done:
-                    proc.stdin.close()
-                    self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.update_manifest ] done updating manifest for client `{str(self.client_address)}`' ])
-                    break
+                    if self._receive_is_done:
+                        proc.stdin.close()
+                        self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.update_manifest ] done updating manifest for client `{str(self.client_address)}`' ])
+                        break
 
-            await proc.wait()
-        except (ValueError, OSError) as exc:
-            raise SubprocessError(msg=f'[ fetch_drms_ids ] {str(exc)}' )
+                await proc.wait()
+            except (ValueError, OSError) as exc:
+                raise SubprocessError(msg=f'[ fetch_drms_ids ] {str(exc)}' )
 
 def get_arguments(**kwargs):
     args = []
