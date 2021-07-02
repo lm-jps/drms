@@ -37,10 +37,12 @@ char *module_name = "drms-export-to-stdout";
 #define ARG_DO_NOT_CREATE_TAR "s" /* if there is more than one FITS file requested in spec, error out */
 #define ARG_DUMP_FILE_NAME "d" /* if not making a tar, then dump the name of the FITS file at the beginning of the stream */
 #define ARG_SUPPRESS_STDERR "e" /* if set, then do not print error messages and warnings to stderr */
+#define ARG_EXPORT_FROM_MANIFEST "m" /* if set, then `spec` is a manifest-table specification */
 
 #define FILE_LIST_PATH "jsoc/file_list.json"
 #define ERROR_LIST_PATH "jsoc/error_list.json"
 #define ERROR_PATH "jsoc/error.txt"
+#define MANIFEST_FILE_PATH "jsoc/manifest.txt"
 
 #define DEFAULT_MAX_TAR_FILE_SIZE "4294967296" /* 4 GB*/
 #define MAX_MAX_TAR_FILE_SIZE 53687091200 /* 50 GB - the maxfilesize argument cannot be larger than this */
@@ -88,13 +90,14 @@ ModuleArgs_t module_args[] =
     { ARG_STRING, ARG_KEYMAP_FILE, " ", "export key-map file" },
     { ARG_STRING, ARG_FILE_TEMPLATE, " ", "export FITS filename template" },
     { ARG_STRINGS, ARG_CPARMS_STRING, " ", "a list of FITSIO compression types (none, rice, gzip1, gzip2, plio, hcompress), one for each segment; default is rice for all segments" },
-    { ARG_STRING, ARG_ACK_FILE, " ", "a file provided by the caller to include in the tar file"},
-    { ARG_INT, ARG_MAX_TAR_FILE_SIZE, DEFAULT_MAX_TAR_FILE_SIZE, "the maximum size in bytes of the resulting tar file"},
+    { ARG_STRING, ARG_ACK_FILE, " ", "a file provided by the caller to include in the tar file" },
+    { ARG_INT, ARG_MAX_TAR_FILE_SIZE, DEFAULT_MAX_TAR_FILE_SIZE, "the maximum size in bytes of the resulting tar file" },
     { ARG_FLAG, ARG_COMPRESS_ALL_SEGS, NULL, "apply the single string in ARG_CPARMS_STRING to all segments" },
     { ARG_FLAG, ARG_KEYWORDS_ONLY, NULL, "dump keyword values into a FITS binary table; do not dump segments into FITS image files" },
     { ARG_FLAG, ARG_DO_NOT_CREATE_TAR, NULL, "skip producing a tar file if a single FITS file is being exported" },
-    { ARG_FLAG, ARG_DUMP_FILE_NAME, NULL, "dump the name of the FITS file at the beginning of the stream"},
-    { ARG_FLAG, ARG_SUPPRESS_STDERR, NULL, "do not print error messages to stdout (if not making a tar file)"},
+    { ARG_FLAG, ARG_DUMP_FILE_NAME, NULL, "dump the name of the FITS file at the beginning of the stream" },
+    { ARG_FLAG, ARG_SUPPRESS_STDERR, NULL, "do not print error messages to stdout (if not making a tar file)" },
+    { ARG_FLAG, ARG_EXPORT_FROM_MANIFEST, NULL, "`spec` is a manifest-table specification" },
     { ARG_END }
 };
 
@@ -866,7 +869,18 @@ static void Insert_info_msg(const char *record_spec, const char *seg_name, const
     json_insert_child(info_arr, recobj);
 }
 
-static void Restore_stderr_on_error(int saved_pipes[2], int *saved_stderr, FILE **stream_with_stderr, const char *alt_msg, int make_tar, json_t *error_data_arr, const char *record_spec, const char *seg_name, const char *file_name)
+static void insert_into_manifest(const char *drms_id, const char *file_path, char **buffer, size_t *size)
+{
+    char line[256];
+
+    if (buffer && *buffer)
+    {
+        snprintf(line, sizeof(line), "%s %s\n", drms_id, file_path);
+        *buffer = base_strcatalloc(*buffer, line, size);
+    }
+}
+
+static void Restore_stderr_on_error(int saved_pipes[2], int *saved_stderr, FILE **stream_with_stderr, const char *alt_msg, int make_tar, int export_from_manifest, json_t *error_data_arr, const char *record_spec, const char *seg_name, const char *file_name)
 {
     ExpToStdoutStatus_t exp_status = ExpToStdoutStatus_Success;
     char *captured_stderr = NULL;
@@ -887,7 +901,7 @@ static void Restore_stderr_on_error(int saved_pipes[2], int *saved_stderr, FILE 
         snprintf(msg, sizeof(msg), alt_msg);
     }
 
-    if (*msg != '\0' && make_tar && error_data_arr)
+    if (*msg != '\0' && make_tar && !export_from_manifest && error_data_arr)
     {
         Insert_error_msg(record_spec, seg_name, file_name, msg, error_data_arr);
     }
@@ -901,7 +915,7 @@ static void Restore_stderr_on_error(int saved_pipes[2], int *saved_stderr, FILE 
 
 /* subset should be a set of records in a single series */
 /* generates a single FITS file from all records in subset */
-static ExpToStdoutStatus_t ExportRecordSetKeywordsToStdout(DRMS_RecordSet_t *subset, const char *series, int make_tar, int dump_file_name, int suppress_stderr, const char *ffmt, const char *class_name, const char *map_file, size_t *bytes_exported, size_t max_tar_file_size, int *num_records_exported, json_t *info_data_arr, json_t *error_data_arr, char **error_buf)
+static ExpToStdoutStatus_t ExportRecordSetKeywordsToStdout(DRMS_RecordSet_t *subset, const char *series, int make_tar, int export_from_manifest, int dump_file_name, int suppress_stderr, const char *ffmt, const char *class_name, const char *map_file, size_t *bytes_exported, size_t max_tar_file_size, int *num_records_exported, json_t *info_data_arr, json_t *error_data_arr, char **error_buf, char **manifest_buf)
 {
     ExpToStdoutStatus_t exp_status = ExpToStdoutStatus_Success;
     int drms_status = DRMS_SUCCESS;
@@ -925,7 +939,11 @@ static ExpToStdoutStatus_t ExportRecordSetKeywordsToStdout(DRMS_RecordSet_t *sub
     int restore_stderr = 0;
     char error_buf_tmp[128];
     size_t sz_error_buf = 256;
-
+    long long min_recnum = -1;
+    long long max_recnum = -1;
+    char *series_lower = NULL;
+    char drms_id[128];
+    size_t sz_manifest_buf = 512;
 
     secs = time(NULL);
     local_time = localtime(&secs);
@@ -969,7 +987,7 @@ static ExpToStdoutStatus_t ExportRecordSetKeywordsToStdout(DRMS_RecordSet_t *sub
             if (restore_stderr)
             {
                 /* implies suppress_stderr */
-                Restore_stderr_on_error(saved_pipes, &saved_stderr, &read_stream, msg, make_tar, error_data_arr, record_spec, NULL, fits_file_name);
+                Restore_stderr_on_error(saved_pipes, &saved_stderr, &read_stream, msg, make_tar, export_from_manifest, error_data_arr, record_spec, NULL, fits_file_name);
                 restore_stderr = 0;
             }
             else
@@ -989,6 +1007,8 @@ static ExpToStdoutStatus_t ExportRecordSetKeywordsToStdout(DRMS_RecordSet_t *sub
          * BINTABLE for all records in the set; each record's DRMS keyword info gets appended to the end of
          * the single BINTABLE */
         num_records = 0;
+        min_recnum = -1;
+        max_recnum = -1;
         while ((rec = drms_recordset_fetchnext(subset->env, subset, &drms_status, NULL, NULL)) != NULL)
         {
             drms_status = fitsexport_mapexport_keywords_to_cfitsio_file(cfitsio_file, rec, num_records, class_name, map_file);
@@ -1003,6 +1023,20 @@ static ExpToStdoutStatus_t ExportRecordSetKeywordsToStdout(DRMS_RecordSet_t *sub
             }
             else
             {
+                if (make_tar)
+                {
+                    if (export_from_manifest && manifest_buf)
+                    {
+                        if (rec->recnum < min_recnum || min_recnum == -1)
+                        {
+                            min_recnum = rec->recnum;
+                        }
+                        else if (rec->recnum > max_recnum)
+                        {
+                            max_recnum = rec->recnum;
+                        }
+                    }
+                }
                 num_records++;
             }
         }
@@ -1023,7 +1057,7 @@ static ExpToStdoutStatus_t ExportRecordSetKeywordsToStdout(DRMS_RecordSet_t *sub
                 if (restore_stderr)
                 {
                     /* implies suppress_stderr */
-                    Restore_stderr_on_error(saved_pipes, &saved_stderr, &read_stream, msg, make_tar, error_data_arr, record_spec, NULL, fits_file_name);
+                    Restore_stderr_on_error(saved_pipes, &saved_stderr, &read_stream, msg, make_tar, export_from_manifest, error_data_arr, record_spec, NULL, fits_file_name);
                     restore_stderr = 0;
                 }
                 else
@@ -1051,7 +1085,7 @@ static ExpToStdoutStatus_t ExportRecordSetKeywordsToStdout(DRMS_RecordSet_t *sub
                         if (restore_stderr)
                         {
                             /* implies suppress_stderr */
-                            Restore_stderr_on_error(saved_pipes, &saved_stderr, &read_stream, msg, make_tar, error_data_arr, record_spec, NULL, fits_file_name);
+                            Restore_stderr_on_error(saved_pipes, &saved_stderr, &read_stream, msg, make_tar, export_from_manifest, error_data_arr, record_spec, NULL, fits_file_name);
                             restore_stderr = 0;
                         }
                         else
@@ -1094,7 +1128,7 @@ static ExpToStdoutStatus_t ExportRecordSetKeywordsToStdout(DRMS_RecordSet_t *sub
                             if (restore_stderr)
                             {
                                 /* implies suppress_stderr */
-                                Restore_stderr_on_error(saved_pipes, &saved_stderr, &read_stream, msg, make_tar, error_data_arr, record_spec, NULL, fits_file_name);
+                                Restore_stderr_on_error(saved_pipes, &saved_stderr, &read_stream, msg, make_tar, export_from_manifest, error_data_arr, record_spec, NULL, fits_file_name);
                                 restore_stderr = 0;
                             }
                             else
@@ -1120,7 +1154,7 @@ static ExpToStdoutStatus_t ExportRecordSetKeywordsToStdout(DRMS_RecordSet_t *sub
                                 if (restore_stderr)
                                 {
                                     /* implies suppress_stderr */
-                                    Restore_stderr_on_error(saved_pipes, &saved_stderr, &read_stream, msg, make_tar, error_data_arr, record_spec, NULL, fits_file_name);
+                                    Restore_stderr_on_error(saved_pipes, &saved_stderr, &read_stream, msg, make_tar, export_from_manifest, error_data_arr, record_spec, NULL, fits_file_name);
                                     restore_stderr = 0;
                                 }
                                 else
@@ -1180,24 +1214,40 @@ static ExpToStdoutStatus_t ExportRecordSetKeywordsToStdout(DRMS_RecordSet_t *sub
 
                     if (exp_status == ExpToStdoutStatus_Success)
                     {
-                        if (make_tar && info_data_arr)
+                        if (make_tar)
                         {
-                            /* print JSON output for ease of parsing; append to the returned JSON obj's data array:
-                             * {
-                             *   "status" : 0,
-                             *   "msg" : "success",
-                             *   "data" : [
-                             *              {
-                             *                "record": "hmi.Ic_720s[2017.01.09_00:00:00_TAI][3]{continuum}",
-                             *                "filename": "/SUM95/D990052480/S00000/continuum.fits"
-                             *              },
-                             *              {
-                             *                ...
-                             *              }
-                             *            ]
-                             * }
-                             */
-                            Insert_info_msg(record_spec, NULL, fits_file_name, info_data_arr);
+                            if (info_data_arr)
+                            {
+                                /* print JSON output for ease of parsing; append to the returned JSON obj's data array:
+                                 * {
+                                 *   "status" : 0,
+                                 *   "msg" : "success",
+                                 *   "data" : [
+                                 *              {
+                                 *                "record": "hmi.Ic_720s[2017.01.09_00:00:00_TAI][3]{continuum}",
+                                 *                "filename": "hmi.Ic_720s.129534.continuum.fits"
+                                 *              },
+                                 *              {
+                                 *                ...
+                                 *              }
+                                 *            ]
+                                 * }
+                                 */
+                                Insert_info_msg(record_spec, NULL, fits_file_name, info_data_arr);
+                            }
+                            else if (export_from_manifest && manifest_buf)
+                            {
+                                *manifest_buf = calloc(sz_manifest_buf, sizeof(char));
+                                series_lower = strdup(series);
+                                strtolower(series_lower);
+
+                                /* make keyword-only DRMS_ID */
+                                snprintf(drms_id, sizeof(drms_id), "%s:%lld-%lld:keywords$", series_lower, min_recnum, max_recnum);
+                                insert_into_manifest(drms_id, fits_file_name, manifest_buf, &sz_manifest_buf);
+
+                                free(series_lower);
+                                series_lower = NULL;
+                            }
                         }
                     }
                 }
@@ -1244,7 +1294,7 @@ static ExpToStdoutStatus_t ExportRecordSetKeywordsToStdout(DRMS_RecordSet_t *sub
         if (restore_stderr)
         {
             /* implies suppress_stderr */
-            Restore_stderr_on_error(saved_pipes, &saved_stderr, &read_stream, msg, make_tar, error_data_arr, record_spec, NULL, fits_file_name);
+            Restore_stderr_on_error(saved_pipes, &saved_stderr, &read_stream, msg, make_tar, export_from_manifest, error_data_arr, record_spec, NULL, fits_file_name);
         }
         else
         {
@@ -1305,7 +1355,7 @@ static ExpToStdoutStatus_t ExportRecordSetKeywordsToStdout(DRMS_RecordSet_t *sub
 /* loop over segments */
 /* segCompression is an array of FITSIO macros, one for each segment, that specify the type of compression to perform; if NULL, then compress all segments with Rice compression
  */
-static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int dumpFileName, int suppress_stderr, DRMS_Record_t *expRec, const char *ffmt, CFITSIO_COMPRESSION_TYPE *segCompression, int compressAllSegs, const char *classname, const char *mapfile, size_t *bytesExported, size_t maxTarFileSize, size_t *numFilesExported, json_t *infoDataArr, json_t *errorDataArr)
+static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int export_from_manifest, int dumpFileName, int suppress_stderr, DRMS_Record_t *expRec, const char *ffmt, CFITSIO_COMPRESSION_TYPE *segCompression, int compressAllSegs, const char *classname, const char *mapfile, size_t *bytesExported, size_t maxTarFileSize, size_t *numFilesExported, json_t *infoDataArr, json_t *errorDataArr, char **manifest_buf)
 {
     ExpToStdoutStatus_t expStatus = ExpToStdoutStatus_Success;
     int drmsStatus = DRMS_SUCCESS;
@@ -1330,9 +1380,18 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int dumpFileName, i
     char specbuf[1024];
     char msg[256];
     char errMsg[512];
+    char drms_id[128];
+    size_t sz_manifest_buf = 512;
+    char *series_lower = NULL;
+    char *segment_lower = NULL;
 
-
-    drms_sprint_rec_query(recordSpec, expRec);
+    if (makeTar)
+    {
+        if (infoDataArr)
+        {
+            drms_sprint_rec_query(recordSpec, expRec);
+        }
+    }
 
     iSeg = 0;
     while ((segIn = drms_record_nextseg(expRec, &last, 0)) != NULL)
@@ -1453,7 +1512,7 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int dumpFileName, i
             if (restore_stderr)
             {
                 /* implies suppress_stderr */
-                Restore_stderr_on_error(saved_pipes, &saved_stderr, &read_stream, msg, makeTar, errorDataArr, recordSpec, segIn->info->name, formattedFitsName);
+                Restore_stderr_on_error(saved_pipes, &saved_stderr, &read_stream, msg, makeTar, export_from_manifest, errorDataArr, recordSpec, segIn->info->name, formattedFitsName);
             }
             else
             {
@@ -1499,7 +1558,7 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int dumpFileName, i
             if (restore_stderr)
             {
                 /* implies suppress_stderr */
-                Restore_stderr_on_error(saved_pipes, &saved_stderr, &read_stream, msg, makeTar, errorDataArr, recordSpec, segIn->info->name, formattedFitsName);
+                Restore_stderr_on_error(saved_pipes, &saved_stderr, &read_stream, msg, makeTar, export_from_manifest, errorDataArr, recordSpec, segIn->info->name, formattedFitsName);
             }
             else
             {
@@ -1539,7 +1598,7 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int dumpFileName, i
                  if (restore_stderr)
                  {
                      /* implies suppress_stderr */
-                     Restore_stderr_on_error(saved_pipes, &saved_stderr, &read_stream, msg, makeTar, errorDataArr, recordSpec, segIn->info->name, formattedFitsName);
+                     Restore_stderr_on_error(saved_pipes, &saved_stderr, &read_stream, msg, makeTar, export_from_manifest, errorDataArr, recordSpec, segIn->info->name, formattedFitsName);
                  }
                  else
                  {
@@ -1573,7 +1632,7 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int dumpFileName, i
                     if (restore_stderr)
                     {
                         /* implies suppress_stderr */
-                        Restore_stderr_on_error(saved_pipes, &saved_stderr, &read_stream, msg, makeTar, errorDataArr, recordSpec, segIn->info->name, formattedFitsName);
+                        Restore_stderr_on_error(saved_pipes, &saved_stderr, &read_stream, msg, makeTar, export_from_manifest, errorDataArr, recordSpec, segIn->info->name, formattedFitsName);
                     }
                     else
                     {
@@ -1613,7 +1672,7 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int dumpFileName, i
                     if (restore_stderr)
                     {
                         /* implies suppress_stderr */
-                        Restore_stderr_on_error(saved_pipes, &saved_stderr, &read_stream, msg, makeTar, errorDataArr, recordSpec, segIn->info->name, formattedFitsName);
+                        Restore_stderr_on_error(saved_pipes, &saved_stderr, &read_stream, msg, makeTar, export_from_manifest, errorDataArr, recordSpec, segIn->info->name, formattedFitsName);
                     }
                     else
                     {
@@ -1668,7 +1727,7 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int dumpFileName, i
                 totalBytes += numBytesFitsFile;
                 totalFiles++;
 
-                if (makeTar && infoDataArr)
+                if (makeTar)
                 {
                     /* print JSON output for ease of parsing; append to the returned JSON obj's data array:
                      * {
@@ -1685,7 +1744,31 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int dumpFileName, i
                      *            ]
                      * }
                      */
-                    Insert_info_msg(recordSpec, segIn->info->name, formattedFitsName, infoDataArr);
+                    if (infoDataArr)
+                    {
+                        Insert_info_msg(recordSpec, segIn->info->name, formattedFitsName, infoDataArr);
+                    }
+                    else if (export_from_manifest && manifest_buf)
+                    {
+                        if (!*manifest_buf)
+                        {
+                            *manifest_buf = calloc(sz_manifest_buf, sizeof(char));
+                        }
+
+                        series_lower = strdup(expRec->seriesinfo->seriesname);
+                        strtolower(series_lower);
+                        segment_lower = strdup(segIn->info->name);
+                        strtolower(segment_lower);
+
+                        /* make keyword-only DRMS_ID */
+                        snprintf(drms_id, sizeof(drms_id), "%s:%lld:%s", series_lower, expRec->recnum, segment_lower);
+                        insert_into_manifest(drms_id, formattedFitsName, manifest_buf, &sz_manifest_buf);
+
+                        free(segment_lower);
+                        segment_lower = NULL;
+                        free(series_lower);
+                        series_lower = NULL;
+                    }
                 }
             }
             else
@@ -1739,7 +1822,7 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int dumpFileName, i
             if (restore_stderr)
             {
                 /* implies suppress_stderr */
-                Restore_stderr_on_error(saved_pipes, &saved_stderr, &read_stream, msg, makeTar, errorDataArr, recordSpec, segIn->info->name, formattedFitsName);
+                Restore_stderr_on_error(saved_pipes, &saved_stderr, &read_stream, msg, makeTar, export_from_manifest, errorDataArr, recordSpec, segIn->info->name, formattedFitsName);
             }
             else
             {
@@ -1789,7 +1872,7 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int dumpFileName, i
 /* loop over records */
 /* segCompression is an array of FITSIO macros, one for each segment, that specify the type of compression to perform; if NULL, then compress all segments with Rice compression
  */
-static ExpToStdoutStatus_t ExportRecordSetToStdout(DRMS_Env_t *env, int makeTar, int dumpFileName, int suppress_stderr, DRMS_RecordSet_t *expRS, const char *ffmt, CFITSIO_COMPRESSION_TYPE *segCompression, int compressAllSegs, int dump_keywords_only, const char *classname, const char *mapfile, size_t *bytesExported, size_t maxTarFileSize, size_t *numFilesExported, json_t *infoDataArr, json_t *errorDataArr, char **error_buf)
+static ExpToStdoutStatus_t ExportRecordSetToStdout(DRMS_Env_t *env, int makeTar, int export_from_manifest, int dumpFileName, int suppress_stderr, DRMS_RecordSet_t *expRS, const char *ffmt, CFITSIO_COMPRESSION_TYPE *segCompression, int compressAllSegs, int dump_keywords_only, const char *classname, const char *mapfile, size_t *bytesExported, size_t maxTarFileSize, size_t *numFilesExported, json_t *infoDataArr, json_t *errorDataArr, char **error_buf, char **manifest_buf)
 {
     int drmsStatus = DRMS_SUCCESS;
     ExpToStdoutStatus_t expStatus = ExpToStdoutStatus_Success;
@@ -1818,7 +1901,12 @@ static ExpToStdoutStatus_t ExportRecordSetToStdout(DRMS_Env_t *env, int makeTar,
     char series[DRMS_MAXSERIESNAMELEN];
     int num_set_recs = -1;
     DRMS_RecordSet_t *subset = NULL;
+    char *manifest_series = NULL;
 
+    char drms_id[128];
+    size_t sz_manifest_buf = 512;
+    char *series_lower = NULL;
+    char *segment_lower = NULL;
 
     if (error_buf)
     {
@@ -1840,14 +1928,20 @@ static ExpToStdoutStatus_t ExportRecordSetToStdout(DRMS_Env_t *env, int makeTar,
         else
         {
             /* all records in each set must have the same series */
-            if (drms_record_parserecsetspec(expRS->ss_queries[iSet], &allvers, &sets, &settypes, &snames, &filts, &nsets, &rsinfo) == DRMS_SUCCESS)
+            if (drms_is_manifest_specification(expRS->ss_queries[iSet], NULL, &manifest_series, NULL, NULL))
             {
-                snprintf(series, sizeof(series), snames[0]);
+                snprintf(series, sizeof(series), manifest_series);
+            }
+            else
+            {
+                if (drms_record_parserecsetspec(expRS->ss_queries[iSet], &allvers, &sets, &settypes, &snames, &filts, &nsets, &rsinfo) == DRMS_SUCCESS)
+                {
+                    snprintf(series, sizeof(series), snames[0]);
+                    drms_record_freerecsetspecarr(&allvers, &sets, &settypes, &snames, &filts, nsets);
+                }
             }
 
             series_template_rec = drms_template_record(env, series, &drmsStatus);
-
-            drms_record_freerecsetspecarr(&allvers, &sets, &settypes, &snames, &filts, nsets);
 
             if (drmsStatus != DRMS_SUCCESS)
             {
@@ -1882,7 +1976,7 @@ static ExpToStdoutStatus_t ExportRecordSetToStdout(DRMS_Env_t *env, int makeTar,
                         subset->ss_currentrecs = (int *)calloc(1, sizeof(int));
                         drms_recordset_fetchnext_setcurrent(subset, -1); /* set iterator to first record */
                         subset->env = expRS->env;
-                        expStatus = ExportRecordSetKeywordsToStdout(subset, series, makeTar, dumpFileName, suppress_stderr, ffmt, classname, mapfile, bytesExported, maxTarFileSize, &num_records_exported, infoDataArr, errorDataArr, error_buf);
+                        expStatus = ExportRecordSetKeywordsToStdout(subset, series, makeTar, export_from_manifest, dumpFileName, suppress_stderr, ffmt, classname, mapfile, bytesExported, maxTarFileSize, &num_records_exported, infoDataArr, errorDataArr, error_buf, manifest_buf);
 
                         drms_close_records(subset, DRMS_FREE_RECORD);
                     }
@@ -1895,10 +1989,8 @@ static ExpToStdoutStatus_t ExportRecordSetToStdout(DRMS_Env_t *env, int makeTar,
                 }
                 else
                 {
-                    for (rec_index = 0; expStatus == ExpToStdoutStatus_Success && rec_index < nRecs; rec_index++)
+                    while ((expRecord = drms_recordset_fetchnext(env, expRS, &drmsStatus, NULL, NULL)) != NULL)
                     {
-                        expRecord = drms_recordset_fetchnext(env, expRS, &drmsStatus, NULL, NULL);
-
                         if (!expRecord || drmsStatus != DRMS_SUCCESS)
                         {
                             /* exit rec loop - last record was fetched last time */
@@ -1908,7 +2000,7 @@ static ExpToStdoutStatus_t ExportRecordSetToStdout(DRMS_Env_t *env, int makeTar,
                         recsAttempted++;
 
                         /* export each segment file in this record */
-                        expStatus = ExportRecordToStdout(makeTar, dumpFileName, suppress_stderr, expRecord, ffmt, segCompression, compressAllSegs, classname, mapfile, bytesExported, maxTarFileSize, numFilesExported, infoDataArr, errorDataArr);
+                        expStatus = ExportRecordToStdout(makeTar, export_from_manifest, dumpFileName, suppress_stderr, expRecord, ffmt, segCompression, compressAllSegs, classname, mapfile, bytesExported, maxTarFileSize, numFilesExported, infoDataArr, errorDataArr, manifest_buf);
                         if (expStatus == ExpToStdoutStatus_TarTooLarge)
                         {
                             break;
@@ -1938,6 +2030,12 @@ static ExpToStdoutStatus_t ExportRecordSetToStdout(DRMS_Env_t *env, int makeTar,
                 }
             }
         }
+    }
+
+    if (manifest_series)
+    {
+        free(manifest_series);
+        manifest_series = NULL;
     }
 
     if (recsAttempted > 0 && recsExported == 0)
@@ -2033,6 +2131,7 @@ int DoIt(void)
     int skipTarCreation = 0;
     int dumpFileName = 0;
     int suppress_stderr = 0;
+    int export_from_manifest = 0;
     int makeTar = 1;
     ListNode_t *cparmNode = NULL;
     CFITSIO_COMPRESSION_TYPE *segCompression = NULL;
@@ -2046,6 +2145,7 @@ int DoIt(void)
     json_t *infoDataArr = NULL;
     json_t *errorRoot = NULL; /* for ERROR_LIST_PATH file inside tar file (makeTar == 1) */
     json_t *errorDataArr = NULL;
+    char *manifest_buf = NULL;
     char *infoJson = NULL;
     char *errorJson = NULL;
     char *jsonFileContent = NULL;
@@ -2066,6 +2166,7 @@ int DoIt(void)
     GetOptionValue(ARG_FLAG, ARG_DO_NOT_CREATE_TAR, (void *)&skipTarCreation);
     GetOptionValue(ARG_FLAG, ARG_DUMP_FILE_NAME, (void *)&dumpFileName);
     GetOptionValue(ARG_FLAG, ARG_SUPPRESS_STDERR, (void *)&suppress_stderr);
+    GetOptionValue(ARG_FLAG, ARG_EXPORT_FROM_MANIFEST, (void *)&export_from_manifest);
 
     memset(generalErrorBuf, '\0', sizeof(generalErrorBuf));
 
@@ -2080,13 +2181,15 @@ int DoIt(void)
     {
         if (makeTar)
         {
-            infoRoot = json_new_object();
-            infoDataArr = json_new_array();
-            json_insert_pair_into_object(infoRoot, "data", infoDataArr);
-
-            errorRoot = json_new_object();
-            errorDataArr = json_new_array();
-            json_insert_pair_into_object(errorRoot, "data", errorDataArr);
+            if (!export_from_manifest)
+            {
+                infoDataArr = json_new_array();
+                errorDataArr = json_new_array();
+                infoRoot = json_new_object();
+                json_insert_pair_into_object(infoRoot, "data", infoDataArr);
+                errorRoot = json_new_object();
+                json_insert_pair_into_object(errorRoot, "data", errorDataArr);
+            }
         }
     }
 
@@ -2145,7 +2248,15 @@ int DoIt(void)
 
     if (expStatus == ExpToStdoutStatus_Success)
     {
-        expRS = drms_open_records(drms_env, rsSpec, &drmsStatus);
+        if (export_from_manifest)
+        {
+            expRS = drms_open_records_from_manifest(drms_env, rsSpec, NULL, 1, 0, &drmsStatus);
+        }
+        else
+        {
+            expRS = drms_open_records(drms_env, rsSpec, &drmsStatus);
+        }
+
         if (!expRS || drmsStatus != DRMS_SUCCESS)
         {
             if (sizeof(generalErrorBuf) - strlen(generalErrorBuf) > 0)
@@ -2203,7 +2314,14 @@ int DoIt(void)
 
         /* since the following call dives into lib DRMS, it could print error and warnings messages to stderr; capture those if we are
          * suppressing writing to stderr */
-        expStatus = ExportRecordSetToStdout(drms_env, makeTar, dumpFileName, suppress_stderr, expRS, fileTemplate, segCompression, compressAllSegs, dump_keywords_only, mapClass, mapFile, &bytesExported, maxTarFileSize, &numFilesExported, infoDataArr, errorDataArr, &error_buf_tmp);
+        expStatus = ExportRecordSetToStdout(drms_env, makeTar, export_from_manifest, dumpFileName, suppress_stderr, expRS, fileTemplate, segCompression, compressAllSegs, dump_keywords_only, mapClass, mapFile, &bytesExported, maxTarFileSize, &numFilesExported, infoDataArr, errorDataArr, &error_buf_tmp, &manifest_buf);
+
+        /* -- ART -- */
+        if (!manifest_buf)
+        {
+            /* no records */
+            manifest_buf = calloc(1, sizeof(char));
+        }
 
         if (error_buf_tmp)
         {
@@ -2344,6 +2462,19 @@ int DoIt(void)
         {
             fprintf(stderr, generalErrorBuf);
         }
+    }
+
+    /* -- ART -- */
+    // if (manifest_buf && strlen(manifest_buf) > 0)
+    if (manifest_buf)
+    {
+        if (makeTar && export_from_manifest)
+        {
+            dump_status = WriteFileBuffer(stdout, MANIFEST_FILE_PATH, manifest_buf, strlen(manifest_buf));
+        }
+
+        free(manifest_buf);
+        manifest_buf = NULL;
     }
 
     if (makeTar)
