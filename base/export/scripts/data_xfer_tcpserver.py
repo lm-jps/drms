@@ -8,7 +8,6 @@ from heapq import heapify, heappop, heappush
 import json
 import os
 import psutil
-from queue import Queue as FifoQueue, Empty as EmptyQueue
 import re
 import signal
 import socket
@@ -29,9 +28,11 @@ class ErrorCode(ExportErrorCode):
     MESSAGE_TIMEOUT = 4, 'message timeout event'
     UNEXCPECTED_MESSAGE = 5, 'unexpected message'
     SOCKET_SERVER = 6, 'TCP socket server creation error'
-    DATA_CONNECTION = 7, 'data connection'
-    SUBPROCESS = 8, 'subprocess'
-    LOGGING = 9, 'logging'
+    CONTROL_CONNECTION = 7, 'control connection'
+    DATA_CONNECTION = 8, 'data connection'
+    SUBPROCESS = 9, 'subprocess'
+    LOGGING = 10, 'logging'
+    ERROR_MESSAGE = 11, 'error message received'
 
 class ParametersError(ExportError):
     _error_code = ErrorCode(ErrorCode.PARAMETERS)
@@ -69,6 +70,12 @@ class SocketserverError(ExportError):
     def __init__(self, *, msg=None):
         super().__init__(msg=msg)
 
+class ControlConnectionError(ExportError):
+    _error_code = ErrorCode(ErrorCode.CONTROL_CONNECTION)
+
+    def __init__(self, *, msg=None):
+        super().__init__(msg=msg)
+
 class DataConnectionError(ExportError):
     _error_code = ErrorCode(ErrorCode.DATA_CONNECTION)
 
@@ -83,6 +90,12 @@ class SubprocessError(ExportError):
 
 class LoggingError(ExportError):
     _error_code = ErrorCode(ErrorCode.LOGGING)
+
+    def __init__(self, *, msg=None):
+        super().__init__(msg=msg)
+
+class ErrorMessageReceived(ExportError):
+    _error_code = ErrorCode(ErrorCode.ERROR_MESSAGE)
 
     def __init__(self, *, msg=None):
         super().__init__(msg=msg)
@@ -181,10 +194,20 @@ class Message(object):
 
         log.write_debug([ f'[ Message.receive ] received message from client {"".join(json_message_buffer)}' ])
 
-        message = cls.new_instance(json_message=''.join(json_message_buffer), msg_type=msg_type)
+        try_error = False
+        try:
+            message = cls.new_instance(json_message=''.join(json_message_buffer), msg_type=msg_type)
+        except UnexpectedMessageError as exc:
+            try_error = True
+
+        if try_error:
+            message = cls.new_instance(json_message=''.join(json_message_buffer), msg_type=MessageType.ERROR)
 
         if not hasattr(message, 'message'):
             raise MessageSyntaxError(msg=f'[ Message.receive ] invalid message synax; message must contain `message` attribute')
+
+        if isinstance(message, ErrorMessage):
+            raise ErrorMessageReceived(message.values[0])
 
         if message.message.lower() != msg_type.fullname.lower():
             raise UnexpectedMessageError(msg=f'[ Message.receive ] expecting {msg_type.fullname.lower()} message, but received {message.message.lower()} message')
@@ -208,7 +231,7 @@ class Message(object):
             try:
                 num_bytes_sent = client_socket.send(encoded_message[num_bytes_sent_total:])
                 if not num_bytes_sent:
-                    raise SocketError(msg=f'[ Message.send ] socket broken; cannot send message data to client')
+                    raise ControlConnectionError(msg=f'[ Message.send ] socket broken; cannot send message data to client')
                 num_bytes_sent_total += num_bytes_sent
             except socket.timeout as exc:
                 msg = f'timeout event waiting for client to receive message'
@@ -226,6 +249,11 @@ class DataConnectionReadyMessage(Message):
     def __init__(self, *, json_message=None, **kwargs):
         super().__init__(json_message=json_message, **kwargs)
         self.values = (self.host_ip, self.port)
+
+class DataVerifiedMessage(Message):
+    def __init__(self, *, json_message=None, **kwargs):
+        super().__init__(json_message=json_message, **kwargs)
+        self.values = (self.number_of_files)
 
 class RequestCompleteMessage(Message):
     def __init__(self, *, json_message=None, **kwargs):
@@ -352,7 +380,7 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
             try:
                 data_socket_ip, data_socket_port = data_socket.getsockname()
 
-                self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.handle ] sending {MessageType.DATA_CONNECTION_READY.fullname} to client `{str(self.client_address)}`' ])
+                self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.handle ] sending {MessageType.DATA_CONNECTION_READY.fullname} message to client `{str(self.client_address)}`' ])
                 Message.send(client_socket=self.request, msg_type=MessageType.DATA_CONNECTION_READY, **{ 'host_ip' : data_socket_ip, 'port' : data_socket_port}) # unblock client
 
                 # wait for client to connect to DATA connection
@@ -380,16 +408,23 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
             self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.handle ] waiting for client `{str(self.client_address)}` to send  {MessageType.DATA_VERIFIED.fullname} message' ])
             number_of_ids = Message.receive(client_socket=self.request, msg_type=MessageType.DATA_VERIFIED, log=self.server.log)
 
-            self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.handle ] sending {MessageType.REQUEST_COMPLETE.fullname} to client `{str(self.client_address)}`' ])
+            self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.handle ] sending {MessageType.REQUEST_COMPLETE.fullname} message to client `{str(self.client_address)}`' ])
             Message.send(client_socket=self.request, msg_type=MessageType.REQUEST_COMPLETE) # client unblocks on CONTROL connection, then ends CONTROL connection
         except socket.timeout as exc:
             # end session (return from handler)
             terminate = True
             self.server.log.write_error([ f'[ DataTransferTCPRequestHandler.handle ] timeout waiting for client response', f'{str(exc)}'])
+        except ControlConnectionError as exc:
+            terminate = True
+            self.server.log.write_error([ f'[ DataTransferTCPRequestHandler.handle ] failure over CONTROL connection', f'{str(exc)}'])
+        except ErrorMessageReceived as exc:
+            self.server.log.write_error([ f'[ DataTransferTCPRequestHandler.handle ] received error message from client `{str(self.client_address)}`' ])
+            self.server.log.write_error([ f'[ DataTransferTCPRequestHandler.handle ] sending {MessageType.REQUEST_COMPLETE.fullname} message to client `{str(self.client_address)}`' ])
+            Message.send(client_socket=self.request, msg_type=MessageType.REQUEST_COMPLETE)
         except ExportError as exc:
             # send error response; client should shut down socket connection
-            self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.handle ] error handling client request: {str(exc)}' ])
-            self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.handle ] sending {MessageType.ERROR.fullname} to client `{str(self.client_address)}`' ])
+            self.server.log.write_error([ f'[ DataTransferTCPRequestHandler.handle ] error handling client request: {str(exc)}' ])
+            self.server.log.write_error([ f'[ DataTransferTCPRequestHandler.handle ] sending {MessageType.ERROR.fullname} message to client `{str(self.client_address)}`' ])
             Message.send(client_socket=self.request, msg_type=MessageType.ERROR, error_message=f'{str(exc)}')
 
         try:
@@ -401,24 +436,36 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
                     pass
         except socket.timeout as exc:
             # end session (return from handler)
-            terminate = True
-            self.server.log.write_error([ f'[ DataTransferTCPRequestHandler.handle ]timeout waiting for client to terminate control connection', f'{str(exc)}' ])
+            self.server.log.write_error([ f'[ DataTransferTCPRequestHandler.handle ] timeout waiting for client to terminate control connection', f'{str(exc)}' ])
+        except OSError as exc:
+            self.server.log.write_error([ f'[ DataTransferTCPRequestHandler.handle ] failure waiting for client to close control connection', f'{str(exc)}' ])
         finally:
             # shut down socket
-            self.request.close()
-            self.request.shutdown(socket.SHUT_RDWR)
+            try:
+                self.request.shutdown(socket.SHUT_RDWR)
+                self.request.close()
+            except:
+                pass
 
     def initialize_data_connection(self):
         self._data_socket = None
         bound = False
         attempts = 0
+        previous_port = None
 
         server_ip_address = self.server.server_address[0]
 
         while attempts < 10 and not bound:
             self.server.acquire_lock()
             try:
+                # try a new port
                 unused_port = self.server.get_unused_port()
+
+                # put a previously used one back
+                if previous_port is not None:
+                    self.server.put_unused_port(port=previous_port)
+                    previous_port = None
+
                 self.server.log.write_error([ f'[ DataTransferTCPRequestHandler.initialize_data_connection ] using port {str(unused_port)} for DATA connection' ])
             finally:
                 self.server.release_lock()
@@ -426,29 +473,34 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
             try:
                 info = socket.getaddrinfo(server_ip_address, unused_port)
 
+                first_iteration = True
                 for address_info in info:
+                    if not first_iteration:
+                        self.server.log.write_warning([ f'[ DataTransferTCPRequestHandler.initialize_data_connection ] unable to connect to {str(socket_address)}, trying a different IP address'])
+                    else:
+                        first_iteration = False
+
                     family = address_info[0]
+                    socket_type = address_info[1]
                     proto = address_info[2]
                     socket_address = address_info[4] # 2-tuple for AF_INET family
 
+                    if socket_type != socket.SOCK_STREAM:
+                        # streaming only
+                        continue
+
                     try:
                         server_socket = socket.socket(family, socket.SOCK_STREAM, proto)
-                        server_socket.bind((server_ip_address, unused_port))
+                        server_socket.bind(socket_address)
                         bound = True
                         break
                     except OSError as exc:
-                        self.server.log.write_warning([ f'[ DataTransferTCPRequestHandler.initialize_data_connection ] unable to connect to {str((server_ip_address, unused_port))}, trying a different address'])
+                        pass
             except Exception as exc:
                 self.server.log.write_warning([ f'[ DataTransferTCPRequestHandler.initialize_data_connection ] unable to connect to server, trying a different port: {str(exc)}'])
 
             if not bound:
-                # put port back for next attempt
-                self.server.acquire_lock()
-                try:
-                    self.server.put_unused_port(port=unused_port)
-                finally:
-                    self.server.release_lock()
-
+                previous_port = unused_port
                 attempts += 1
 
         if not bound:
@@ -464,20 +516,27 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
             self.server.acquire_lock()
             try:
                 self.server.put_unused_port(port=port)
+                self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.finalize_data_connection ] put back port {str(port)}' ])
             finally:
                 self.server.release_lock()
 
             # shut down read end of data socket and close socket (the client already closed their end)
-            self._data_socket.shutdown(socket.SHUT_RD)
-            self._data_socket.close()
-            self._data_socket = None
-            self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.finalize_data_connection ] successfully shut down and closed DATA connection f{str((host, port))}' ])
+            try:
+                # do not shut down read - if the client has already shut down their end of socket, this will fail
+                # self._data_socket.shutdown(socket.SHUT_RD)
+                self._data_socket.close()
+                self.server.log.write_info([ f'[ DataTransferTCPRequestHandler.finalize_data_connection ] successfully closed DATA connection f{str((host, port))}' ])
+            except Exception as exc:
+                self.server.log.write_error([ f'[ DataTransferTCPRequestHandler.finalize_data_connection ] unable to close DATA connection f{str((host, port))} properly' ])
+                raise DataConnectionError(msg=f'{str(exc)}')
+            finally:
+                self._data_socket = None
 
     async def create_and_stream_package(self, *, product, number_of_files, file_template):
         # get list of DRMS_IDs
         self.server.log.write_info([ f'[ DataTransferTCPRequestHandler.create_and_stream_package ] fetching {str(number_of_files)} DRMS_IDs for product {product} for client `{str(self.client_address)}`' ])
         self._fetch_is_done = False
-        self._drms_ids = FifoQueue()
+        self._drms_ids = asyncio.Queue()
 
         await asyncio.gather(self.fetch_drms_ids(product=product, number_of_ids=number_of_files), self.stream_package(product=product, file_template=file_template))
 
@@ -488,7 +547,7 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
 
     async def receive_verification_and_update_manifest(self, *, product):
         self._receive_is_done = False
-        self._verified_recnums = FifoQueue()
+        self._verified_recnums = asyncio.Queue()
         await asyncio.gather(self.receive_verification(), self.update_manifest(product=product))
 
         self.finalize_data_connection()
@@ -506,7 +565,9 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
                 drms_id = await proc.stdout.readline() # bytes
                 if not drms_id:
                     break
-                self._drms_ids.put(drms_id.decode().rstrip()) # strings
+                await self._drms_ids.put(drms_id.decode().rstrip()) # strings
+
+            await self._drms_ids.join()
 
             self._fetch_is_done = True
 
@@ -553,12 +614,12 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
                 # a list of recnum decimal byte strings
                 while len(chunk_of_recnums) < self.server.chunk_size:
                     try:
-                        drms_id = self._drms_ids.get(block=False)
+                        drms_id = self._drms_ids.get_nowait()
                         # since DRMS_IDs are specific to a segment, a set of DRMS_IDs might contain duplicate recnums; remove dupes with an OrderedDict
                         recnum = self._drms_id_regex.match(drms_id).group(1)
                         chunk_of_recnums[recnum] = 0
                         self._drms_ids.task_done()
-                    except EmptyQueue:
+                    except asyncio.QueueEmpty:
                         # got all available recnums
                         if self._fetch_is_done:
                             # and there will be no more
@@ -638,7 +699,7 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
 
                 verified_recnums = [ self._drms_id_regex.match(line.split()[0]).group(1) for line in full_lines if line.split()[1] == 'V' ]
                 for recnum in verified_recnums:
-                    self._verified_recnums.put(recnum)
+                    await self._verified_recnums.put(recnum)
 
                 self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.receive_verification ] finished sending {len(verified_recnums)} recnums for verification processing (for client `{str(self.client_address)}`)' ])
 
@@ -647,7 +708,7 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
                 raise MessageTimeoutError(msg=f'timeout event waiting for server {data_socket.getpeername()} to send data')
 
         self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.receive_verification ] finished receiving verification data from client `{str(self.client_address)}`' ])
-        self._verified_recnums.join()
+        await self._verified_recnums.join()
         self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.receive_verification ] finished waiting for verification processing to complete (for client `{str(self.client_address)}`)' ])
         self._receive_is_done = True
 
@@ -667,9 +728,9 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
                 # a list of recnum decimal byte strings
                 while len(chunk_of_recnums) < self.server.chunk_size:
                     try:
-                        chunk_of_recnums.append(self._verified_recnums.get(block=False))
+                        chunk_of_recnums.append(self._verified_recnums.get_nowait())
                         self._verified_recnums.task_done()
-                    except EmptyQueue:
+                    except asyncio.QueueEmpty:
                         # got all available recnums
                         if self._receive_is_done:
                             # and there will be no more
@@ -680,8 +741,9 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
 
                 # we have our chunk of recnums in `chunk_of_recnums`
                 if len(chunk_of_recnums) > 0:
-                    await proc.stdin.write('\n'.join(chunk_of_recnums).encode())
+                    proc.stdin.write('\n'.join(chunk_of_recnums).encode())
                     self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.update_manifest ] updated chunk of {len(chunk_of_recnums)} recnums in manifest for client `{str(self.client_address)}`' ])
+                    await proc.stdin.drain()
                     chunk_of_recnums = []
 
                 if self._receive_is_done:
