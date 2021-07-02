@@ -151,6 +151,9 @@ class Message(object):
     def __getattr__(self, name):
         return getattr(self._data, name)
 
+    def __str__(self):
+        return self.message
+
     @classmethod
     def new_instance(cls, *, json_message, msg_type, **kwargs):
         if msg_type == MessageType.CLIENT_READY:
@@ -227,13 +230,13 @@ class Message(object):
         if not hasattr(message, 'message'):
             raise MessageSyntaxError(msg=f'[ Message.receive ] invalid message synax; message must contain `message` attribute')
 
-        print(f'type of message {str(type(message))}')
-
         if isinstance(message, ErrorMessage):
             raise ErrorMessageReceived(message.values[0])
 
         if message.message.lower() != msg_type.fullname.lower():
             raise UnexpectedMessageError(msg=f'[ Message.receive ] expecting {msg_type.fullname.lower()} message, but received {message.message.lower()} message')
+
+        print(f'[ Message.receive ] message is of type {str(message)}')
 
         return message.values
 
@@ -273,6 +276,11 @@ class DataConnectionReadyMessage(Message):
     def __init__(self, *, json_message=None, **kwargs):
         super().__init__(json_message=json_message, **kwargs)
         self.values = (self.host_ip, self.port)
+
+class DataVerifiedMessage(Message):
+    def __init__(self, *, json_message=None, **kwargs):
+        super().__init__(json_message=json_message, **kwargs)
+        self.values = (self.number_of_files)
 
 class RequestCompleteMessage(Message):
     def __init__(self, *, json_message=None, **kwargs):
@@ -450,7 +458,7 @@ if __name__ == "__main__":
                                             raise DataPackageError(f'{str(exc)}')
                                         finally:
                                             if data_connected:
-                                                print(f'DATA connection closed by client')
+                                                print(f'client closed DATA connection')
 
                                         # exiting with statement causes data_socket.close() to be called
                                     # data socket is now closed
@@ -471,6 +479,9 @@ if __name__ == "__main__":
                             print(f'received error message from server {str(exc)}; shutting down socket')
                         finally:
                             control_socket.shutdown(socket.SHUT_RDWR)
+                            print(f'client shut down CONTROL connection')
+                    # control socket was closed
+                    print(f'client closed CONTROL connection')
                 except OSError as exc:
                     print(str(exc))
                     raise TcpClientError(msg=f'failure creating TCP client')
