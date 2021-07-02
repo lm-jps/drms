@@ -162,7 +162,7 @@ static int delete_manifest(DRMS_Env_t *env, const char *series)
     return error;
 }
 
-static int fetch_ids(DRMS_Env_t *env, const char *series, LinkedList_t *segments, int number_ids, FILE *stream)
+static int fetch_ids(DRMS_Env_t *env, const char *series, LinkedList_t *segments, int number_ids, FILE *stream_out, char **recnum_list_out)
 {
     int error = 0;
     char *segment_list = NULL;
@@ -171,6 +171,11 @@ static int fetch_ids(DRMS_Env_t *env, const char *series, LinkedList_t *segments
     char *segment = NULL;
     char command[256] = {0};
     char buffer[256] = {0};
+    char *separator = NULL;
+    char *ptr_recnum = NULL;
+    Hash_Table_t recnum_hash;
+    char *recnum_list = NULL;
+    size_t sz_recnum_list = 512;
     int first = -1;
     ListNode_t *node = NULL;
     DB_Text_Result_t *query_result = NULL;
@@ -210,15 +215,43 @@ static int fetch_ids(DRMS_Env_t *env, const char *series, LinkedList_t *segments
         {
             if (query_result->num_cols == 1)
             {
-                /* print all to `stream` (`stream` should be fully buffered) */
-                setvbuf(stream, NULL, _IOFBF, 0);
-                for (row_index = 0; row_index < query_result->num_rows; row_index++)
+                hash_init(&recnum_hash, 89, 0, (int (*)(const void *, const void *))strcmp, hash_universal_hash);
+
+                /* print all to `stream_out` (`stream_out` should be fully buffered) */
+                setvbuf(stream_out, NULL, _IOFBF, 0);
+                for (row_index = 0, first = 1; row_index < query_result->num_rows; row_index++)
                 {
-                    fprintf(stream, query_result->field[row_index][0]);
-                    fprintf(stream, "\n");
+                    /* stream to update code - must strip out recnums, removing duplicates*/
+                    snprintf(buffer, sizeof(buffer), "%s", query_result->field[row_index][0]);
+
+                    ptr_recnum = strchr(buffer, ':') + 1;
+                    separator = strchr(ptr_recnum, ':');
+                    *separator = '\0';
+
+                    if (!hash_member(&recnum_hash, ptr_recnum))
+                    {
+                        if (!first)
+                        {
+                            recnum_list = base_strcatalloc(recnum_list, ", ", &sz_recnum_list);
+                        }
+                        else
+                        {
+                            recnum_list = calloc(sz_recnum_list, sizeof(char));
+                            first = 0;
+                        }
+
+                        recnum_list = base_strcatalloc(recnum_list, ptr_recnum, &sz_recnum_list);
+                        hash_insert(&recnum_hash, ptr_recnum, "T");
+                    }
+
+                    /* stream out to caller */
+                    fprintf(stream_out, query_result->field[row_index][0]);
+                    fprintf(stream_out, "\n");
                 }
 
-                fflush(stream);
+                hash_free(&recnum_hash);
+
+                fflush(stream_out);
             }
             else
             {
@@ -241,10 +274,15 @@ static int fetch_ids(DRMS_Env_t *env, const char *series, LinkedList_t *segments
         fprintf(stderr, "[ fetch_ids ] out of memory\n");
     }
 
+    if (!error)
+    {
+        *recnum_list_out = recnum_list;
+    }
+
     return error;
 }
 
-static int update_manifest(DRMS_Env_t *env, const char *series, LinkedList_t *segments, const char *new_value, FILE *stream)
+static int update_manifest(DRMS_Env_t *env, const char *series, LinkedList_t *segments, const char *new_value, FILE *stream, const char *recnum_list_in)
 {
     char *line = NULL;
     size_t buffer_length = 0;
@@ -259,6 +297,7 @@ static int update_manifest(DRMS_Env_t *env, const char *series, LinkedList_t *se
     size_t sz_segment_list = 1024;
     char *segment = NULL;
     int first = -1;
+    char *ptr_newline = NULL;
     ListNode_t *node = NULL;
     char buffer[64];
     int error = 0;
@@ -310,10 +349,18 @@ static int update_manifest(DRMS_Env_t *env, const char *series, LinkedList_t *se
             total_number_chars = 0;
             while (1)
             {
-                number_chars = getline(&line, &buffer_length, stream);
-
-                if (total_number_chars >= 104800 || number_chars == -1)
+                if (stream)
                 {
+                    number_chars = getline(&line, &buffer_length, stream);
+                }
+
+                if ((stream && (total_number_chars >= 104800 || number_chars == -1)) || recnum_list_in)
+                {
+                    if (recnum_list_in)
+                    {
+                        recnum_list = (char *)recnum_list_in;
+                    }
+
                     snprintf(command, sizeof(command), "SELECT drms_id AS answer FROM drms.update_drms_ids('%s', ARRAY[%s], ARRAY[%s], '%s')", series, segment_list, recnum_list, new_value);
                     query_result = drms_query_txt(drms_env->session, command);
 
@@ -322,13 +369,18 @@ static int update_manifest(DRMS_Env_t *env, const char *series, LinkedList_t *se
                         if (*query_result->field[0][0] != 't')
                         {
                             error = 1;
-                            fprintf(stderr, "[ update_manifest ] failure deleting manifest table\n");
+                            fprintf(stderr, "[ update_manifest ] failure updating manifest table\n");
                         }
                     }
                     else
                     {
                         error = 1;
                         fprintf(stderr, "[ update_manifest ] unexpected number of rows or columns returned (rows=%d, cols=%d)\n", query_result->num_rows, query_result->num_cols);
+                    }
+
+                    if (recnum_list_in)
+                    {
+                        break;
                     }
 
                     if (recnum_list)
@@ -356,12 +408,18 @@ static int update_manifest(DRMS_Env_t *env, const char *series, LinkedList_t *se
                     recnum_list = base_strcatalloc(recnum_list, ", ", &sz_recnum_list);
                 }
 
+                /* `line` has a trailing newline */
+                if ((ptr_newline = strrchr(line, '\n')) !=NULL && ptr_newline == &line[strlen(line) - 1])
+                {
+                    *ptr_newline = '\0';
+                }
+
                 recnum_list = base_strcatalloc(recnum_list, line, &sz_recnum_list);
                 total_number_chars += number_chars;
             }
         }
 
-        if (recnum_list)
+        if (recnum_list && !recnum_list_in)
         {
             free(recnum_list);
             recnum_list = NULL;
@@ -396,6 +454,7 @@ int DoIt(void)
     int series_exists = -1;
     char series_lower[DRMS_MAXSERIESNAMELEN] = {0};
     char *manifest_table = NULL;
+    char *recnum_list = NULL;
     int error = 0;
 
     series = params_get_str(&cmdparams, ARG_SERIES);
@@ -436,11 +495,25 @@ int DoIt(void)
                     }
                     else if (strcasecmp(operation, OPERATION_UPDATE) == 0)
                     {
-                        error = update_manifest(drms_env, series, segment_list, new_value, stdin);
+                        error = update_manifest(drms_env, series, segment_list, new_value, stdin, NULL);
                     }
                     else if (strcasecmp(operation, OPERATION_FETCH) == 0)
                     {
-                        error = fetch_ids(drms_env, series, segment_list, number_ids, stdout);
+                        error = fetch_ids(drms_env, series, segment_list, number_ids, stdout, &recnum_list);
+                        if (!error)
+                        {
+                            if (recnum_list)
+                            {
+                                /* there might have been no available DRMS_IDs, in which case the manifest need to be updated */
+                                error = update_manifest(drms_env, series, segment_list, "P", NULL, recnum_list);
+                            }
+                        }
+
+                        if (recnum_list)
+                        {
+                            free(recnum_list);
+                            recnum_list = NULL;
+                        }
                     }
                     else
                     {
