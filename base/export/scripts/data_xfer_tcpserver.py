@@ -660,6 +660,7 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
                 await loop.sock_sendall(self._data_socket, bytes_read)
 
             await proc.wait()
+            self.server.log.write_debug([f'[ DataTransferTCPRequestHandler.stream_package ] child process terminated (pid {str(proc.pid)})'])
         except (ValueError, OSError) as exc:
             raise SubprocessError(msg=f'[ stream_package ] {str(exc)}' )
 
@@ -804,7 +805,7 @@ if __name__ == "__main__":
             formatter = DrmsLogFormatter('%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
             log = DrmsLog(arguments.log_file, arguments.logging_level, formatter)
         except exc:
-            raise LogException(msg=f'{str(exc)}')
+            raise LoggingError(msg=f'{str(exc)}')
 
         # socket addresses available on the hosting machine
         addresses = get_addresses(family=socket.AF_INET, log=log)
