@@ -5,13 +5,13 @@ from enum import Enum
 import json
 from os.path import join as os_join
 import socket
-from sys import exit
+from sys import exit, stdout
 import tarfile
 from uuid import uuid4
 
 from drms_export import Error as ExportError, ErrorCode as ExportErrorCode
 from drms_parameters import DRMSParams, DPMissingParameterError
-from drms_utils import Arguments as Args, CmdlParser, MakeObject
+from drms_utils import Arguments as Args, CmdlParser, Formatter as DrmsLogFormatter, Log as DrmsLog, LogLevel as DrmsLogLevel, LogLevelAction as DrmsLogLevelAction, MakeObject
 
 DEFAULT_LOG_FILE = 'dx_client_log.txt'
 MANIFEST_FILE = 'jsoc/manifest.txt'
@@ -26,7 +26,8 @@ class ErrorCode(ExportErrorCode):
     CONTROL_CONNECTION = 7, 'control connection'
     DATA_CONNECTION = 8, 'data connection'
     DATA_PACKAGE_FILE = 9, 'data package'
-    ERROR_MESSAGE = 10, 'error message received'
+    LOGGING = 10, 'logging'
+    ERROR_MESSAGE = 11, 'error message received'
 
 class ParametersError(ExportError):
     _error_code = ErrorCode(ErrorCode.PARAMETERS)
@@ -82,6 +83,12 @@ class DataPackageError(ExportError):
     def __init__(self, *, msg=None):
         super().__init__(msg=msg)
 
+class LoggingError(ExportError):
+    _error_code = ErrorCode(ErrorCode.LOGGING)
+
+    def __init__(self, *, msg=None):
+        super().__init__(msg=msg)
+
 class ErrorMessageReceived(ExportError):
     _error_code = ErrorCode(ErrorCode.ERROR_MESSAGE)
 
@@ -113,6 +120,7 @@ class Arguments(Args):
             # optional
             parser.add_argument('-d', '--download_directory', help='the directory to which tar file will be downloaded', metavar='<download directory>', dest='download_directory', default='.')
             parser.add_argument('-e', '--export_file_format', help='the export file-name format string to be used when creating the exported files', metavar='<export file format>', dest='export_file_format', default=None)
+            parser.add_argument('-l', '--logging_level', help='the amount of logging to perform; in order of increasing verbosity: critical, error, warning, info, debug', metavar='<logging level>', dest='logging_level', action=DrmsLogLevelAction, default=DrmsLogLevel.ERROR)
             parser.add_argument('-n', '--number_of_files', help='the number of data files/DRMS_IDs to process at one time', metavar='<number of files>', dest='number_of_files', default=1024)
 
             arguments = Arguments(parser=parser, args=args)
@@ -171,7 +179,7 @@ class Message(object):
         return message
 
     @classmethod
-    def receive(cls, *, server_connection, msg_type):
+    def receive(cls, *, server_connection, msg_type, log):
         json_message_buffer = []
         open_count = 0
         close_count = 0
@@ -189,7 +197,7 @@ class Message(object):
                 # no data written to pipe
                 if datetime.now() > timeout_event:
                     raise MessageTimeoutError(msg=f'[ Message.receive ] timeout event waiting for server to send message')
-                print(f'[ Message.receive ] waiting for server to send message...')
+                log.write_info([ f'[ Message.receive ] waiting for server to send message...' ])
                 continue
 
             buffer = binary_buffer.decode('UTF-8')
@@ -216,7 +224,7 @@ class Message(object):
             if close_count == open_count:
                 break
 
-        print(f'[ Message.receive ] received message from server {"".join(json_message_buffer)}')
+        log.write_info([ f'[ Message.receive ] received message from server {"".join(json_message_buffer)}' ])
 
         try_error = False
         try:
@@ -236,12 +244,12 @@ class Message(object):
         if message.message.lower() != msg_type.fullname.lower():
             raise UnexpectedMessageError(msg=f'[ Message.receive ] expecting {msg_type.fullname.lower()} message, but received {message.message.lower()} message')
 
-        print(f'[ Message.receive ] message is of type {str(message)}')
+        log.write_info([ f'[ Message.receive ] message is of type {str(message)}' ])
 
         return message.values
 
     @classmethod
-    def send(self, *, server_connection, msg_type, **kwargs):
+    def send(self, *, server_connection, msg_type, log, **kwargs):
         num_bytes_sent_total = 0
         num_bytes_sent = 0
         timeout_event = datetime.now() + timedelta(30.0)
@@ -250,7 +258,7 @@ class Message(object):
         message_dict['message'] = msg_type.fullname
         message_dict.update(kwargs)
         json_message = json.dumps(message_dict)
-        print(f'message: {json_message}')
+        log.write_info([ f'message: {json_message}' ])
         encoded_message = json_message.encode('utf8')
 
         # no need to send length of json message since the receiver can simply find the opening and closing curly braces
@@ -262,10 +270,10 @@ class Message(object):
                 num_bytes_sent_total += num_bytes_sent
             except socket.timeout as exc:
                 msg = f'timeout event waiting for server to receive message'
+                log.write_debug([ f'[ Message.send ] {msg}' ])
+
                 if datetime.now() > timeout_event:
                     raise MessageTimeoutError(msg=f'{msg}')
-                if self.log:
-                    self.log.write_debug([ f'[ Message.send ] {msg}' ])
 
 class ClientReadyMessage(Message):
     def __init__(self, *, json_message=None, **kwargs):
@@ -304,12 +312,12 @@ def get_arguments(**kwargs):
 
     return Arguments.get_arguments(program_args=args, drms_params=drms_params)
 
-def download_data(data_socket, download_path):
+def download_data(data_socket, download_path, log):
     # make this a non-blocking socket so we can give up if the server appears to go away
     data_socket.settimeout(15.0)
     timeout_event = None
 
-    print(f'downloading data-package file to {download_path}...', end='')
+    log.write_info([ f'downloading data-package file to {download_path}...' ])
     with open(download_path, 'wb') as dl_file:
         while True:
             try:
@@ -322,7 +330,7 @@ def download_data(data_socket, download_path):
                 # no data written to pipe
                 raise MessageTimeoutError(msg=f'timeout event waiting for server {data_socket.getpeername()} to send data')
 
-    print(f'DONE')
+    log.write_info([ f'...DONE' ])
 
 def send_verification(data_socket, verification_data):
     total_bytes_sent = 0
@@ -334,14 +342,14 @@ def send_verification(data_socket, verification_data):
 
         total_bytes_sent += bytes_sent
 
-def verify_and_store_data(data_socket, download_path):
+def verify_and_store_data(data_socket, download_path, log):
     buffer = []
     number_of_files = 0
 
     # open tar file
-    print(f'opening data-package `{download_path}`')
+    log.write_info([ f'opening data-package `{download_path}`' ])
     with tarfile.open(name=download_path, mode='r') as open_archive:
-        print(f'extracting manifest file `{MANIFEST_FILE}`')
+        log.write_info([ f'extracting manifest file `{MANIFEST_FILE}`' ])
         try:
             with open_archive.extractfile(MANIFEST_FILE) as manifest_file:
                 # the manifest file is a text file - we do not need to read the whole file into memory to start processing it
@@ -349,13 +357,13 @@ def verify_and_store_data(data_socket, download_path):
                     drms_id, file = line.split() # binary data
 
                     # verify checksum, etc.
-                    print(f'verifying data integrity of `{file.decode()}`...', end='')
+                    log.write_info([ f'verifying data integrity of `{file.decode()}`...' ])
                     verification_status = 'V' # pretend the data are good
-                    print(f'DONE')
+                    log.write_info([ f'...DONE' ])
 
                     # store file
-                    print(f'storing data file `{file.decode()}`...', end='')
-                    print(f'DONE')
+                    log.write_info([ f'storing data file `{file.decode()}`...' ])
+                    log.write_info([ f'...DONE' ])
 
                     # send server verification information
                     buffer.append(drms_id)
@@ -372,7 +380,7 @@ def verify_and_store_data(data_socket, download_path):
                     send_verification(data_socket, b''.join(buffer))
                     buffer = []
 
-                print(f'sent verification data to server')
+                log.write_info([ f'sent verification data to server' ])
         except:
             raise DataPackageError(msg=f'unable to locate manifest file {MANIFEST_FILE}')
 
@@ -382,6 +390,11 @@ def verify_and_store_data(data_socket, download_path):
 if __name__ == "__main__":
     try:
         arguments = get_arguments()
+        try:
+            formatter = DrmsLogFormatter('%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+            log = DrmsLog(stdout, arguments.logging_level, formatter)
+        except Exception as exc:
+            raise LoggingError(msg=f'{str(exc)}')
 
         info = socket.getaddrinfo(arguments.server, arguments.server_port)
         control_connected = False
@@ -394,14 +407,14 @@ if __name__ == "__main__":
 
                 try:
                     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as control_socket:
-                        print('created socket')
+                        log.write_info([ f'created socket' ])
                         try:
-                            print(f'connecting to {socket_address}')
+                            log.write_info([ f'connecting to {socket_address}' ])
                             control_socket.connect((socket_address[0], socket_address[1]))
                             control_connected = True
-                            print('control connection established')
+                            log.write_info([ f'control connection established' ])
                         except OSError as exc:
-                            print(f'WARNING: connection to {socket_address} failed - {str(exc)}')
+                            log.write_info([ f'WARNING: connection to {socket_address} failed - {str(exc)}' ])
                             control_socket.close()
                             control_socket = None
                             continue
@@ -411,12 +424,12 @@ if __name__ == "__main__":
                             number_of_files = 0
 
                             # send CLIENT_READY
-                            print(f'sending {MessageType.CLIENT_READY.fullname} message to server')
-                            Message.send(server_connection=control_socket, msg_type=MessageType.CLIENT_READY, **{ 'product' : arguments.product, 'number_of_files' : arguments.number_of_files, 'export_file_format' : arguments.export_file_format })
+                            log.write_info([ f'sending {MessageType.CLIENT_READY.fullname} message to server' ])
+                            Message.send(server_connection=control_socket, msg_type=MessageType.CLIENT_READY, log=log, **{ 'product' : arguments.product, 'number_of_files' : arguments.number_of_files, 'export_file_format' : arguments.export_file_format })
 
                             # receive DATA_CONNECTION_READY (or ERROR)
-                            print(f'waiting for server to send {MessageType.DATA_CONNECTION_READY.fullname} message')
-                            host_ip, port = Message.receive(server_connection=control_socket, msg_type=MessageType.DATA_CONNECTION_READY)
+                            log.write_info([ f'waiting for server to send {MessageType.DATA_CONNECTION_READY.fullname} message' ])
+                            host_ip, port = Message.receive(server_connection=control_socket, msg_type=MessageType.DATA_CONNECTION_READY, log=log)
 
                             # make DATA connection
                             info = socket.getaddrinfo(host_ip, port)
@@ -432,7 +445,7 @@ if __name__ == "__main__":
                                         try:
                                             data_socket.connect(socket_address)
                                             data_connected = True
-                                            print(f'DATA connection to server established')
+                                            log.write_info([ f'DATA connection to server established' ])
                                         except OSError as exc:
                                             data_socket.close()
                                             data_socket = None
@@ -443,22 +456,22 @@ if __name__ == "__main__":
                                             download_path = os_join(arguments.download_directory, download_file)
 
                                             # download product file over DATA connection
-                                            download_data(data_socket, download_path)
+                                            download_data(data_socket, download_path, log)
 
                                             # data have been downloaded over DATA connection, now need to shut down read part of socket
                                             data_socket.shutdown(socket.SHUT_RD)
-                                            print(f'successfuly shut down read on DATA connection')
+                                            log.write_info([ f'successfuly shut down read on DATA connection' ])
 
                                             # server has already shutdown its write, but is awaiting an EOF from client; send verification data back over DATA connection
-                                            number_of_files = verify_and_store_data(data_socket, download_path)
+                                            number_of_files = verify_and_store_data(data_socket, download_path, log)
 
                                             data_socket.shutdown(socket.SHUT_WR)
-                                            print(f'successfuly shut down write on DATA connection')
+                                            log.write_info([ f'successfuly shut down write on DATA connection' ])
                                         except tarfile.ReadError as exc:
                                             raise DataPackageError(f'{str(exc)}')
                                         finally:
                                             if data_connected:
-                                                print(f'client closed DATA connection')
+                                                log.write_info([ f'client closed DATA connection' ])
 
                                         # exiting with statement causes data_socket.close() to be called
                                     # data socket is now closed
@@ -466,32 +479,34 @@ if __name__ == "__main__":
                                 if data_connected:
                                     break
                             if data_connected:
-                                print(f'sending {MessageType.DATA_VERIFIED.fullname} message to server')
+                                log.write_info([ f'sending {MessageType.DATA_VERIFIED.fullname} message to server' ])
                                 # send DATA_VERIFIED message over CONTROL connection
-                                Message.send(server_connection=control_socket, msg_type=MessageType.DATA_VERIFIED, **{ 'number_of_files' : number_of_files }) # unblock server
+                                Message.send(server_connection=control_socket, msg_type=MessageType.DATA_VERIFIED, log=log, **{ 'number_of_files' : number_of_files }) # unblock server
 
-                                print(f'waiting for server to send {MessageType.REQUEST_COMPLETE.fullname} message')
+                                log.write_info([ f'waiting for server to send {MessageType.REQUEST_COMPLETE.fullname} message' ])
                                 # receive REQUEST_COMPLETE message from server over CONTROL connection
-                                Message.receive(server_connection=control_socket, msg_type=MessageType.REQUEST_COMPLETE)
+                                Message.receive(server_connection=control_socket, msg_type=MessageType.REQUEST_COMPLETE,log=log)
                             else:
                                 raise DataConnectionError(msg=f'unable to make data connection')
                         except ErrorMessageReceived as exc:
-                            print(f'received error message from server {str(exc)}; shutting down socket')
+                            log.write_info([ f'received error message from server {str(exc)}; shutting down socket' ])
                         finally:
                             control_socket.shutdown(socket.SHUT_RDWR)
-                            print(f'client shut down CONTROL connection')
+                            log.write_info([ f'client shut down CONTROL connection' ])
                     # control socket was closed
-                    print(f'client closed CONTROL connection')
+                    log.write_info([ f'client closed CONTROL connection' ])
                 except OSError as exc:
-                    print(str(exc))
+                    log.write_info([ str(exc) ])
                     raise TcpClientError(msg=f'failure creating TCP client')
 
             if control_connected:
                 break
         if not control_connected:
             raise ControlConnectionError(msg=f'unable to establish CONTROL connection')
+    except LoggingError as exc:
+        print(str(exc),file=sys.stderr)
     except ExportError as exc:
-        print(str(exc))
+        log.write_info([ str(exc) ])
 
     exit(0)
 else:
