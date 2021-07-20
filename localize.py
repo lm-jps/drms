@@ -74,7 +74,9 @@ PERL_FXNS_B = """sub get
 }
 1;"""
 
-PY_BINPATH = '#!/usr/bin/env python\n'
+PY_BINPATH = '#!/usr/bin/env python3\n'
+
+PY_ALL = f"__all__ = [ 'DPError', 'DPMissingParameterError', 'DRMSParams' ]"
 
 PY_ERROR_CLASSES = """
 class DPError(Exception):
@@ -908,6 +910,7 @@ def writeParamsFiles(base, cfile, mfile, pfile, pyfile, shfile, cDefs, mDefsGen,
             print(PY_BINPATH, file=pyout)
             print(PREFIX, file=pyout)
             print('# This file contains a set of constants - one for each configuration parameter.\n', file=pyout)
+            print(PY_ALL, file=pyout)
             print(''.join(pyConstSection), file=pyout)
 
             print(PY_ERROR_CLASSES, file=pyout)
