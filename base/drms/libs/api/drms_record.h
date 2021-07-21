@@ -63,6 +63,8 @@ DRMS_RecordSet_t *drms_open_nrecords(DRMS_Env_t *env, const char *recordsetname,
 
 DRMS_RecordSet_t *drms_open_recordswithkeys(DRMS_Env_t *env, const char *specification, const char *keylist, int *status);
 
+DRMS_RecordSet_t *drms_open_records_from_manifest(DRMS_Env_t *env, const char *manifest_specificaton, LinkedList_t *keys, int chunk_records, int open_links, int *status);
+
 int drms_open_recordchunk(DRMS_Env_t *env, DRMS_RecordSet_t *rs, DRMS_RecSetCursorSeek_t seektype, long long chunkindex, int *status);
 
 int drms_close_recordchunk(DRMS_RecordSet_t *rs);
@@ -249,6 +251,8 @@ int drms_record_isdsds(DRMS_Record_t *rec);
 int drms_record_islocal(DRMS_Record_t *rec);
 
 DRMS_RecordSet_t *drms_record_retrievelinks(DRMS_Env_t *env, DRMS_RecordSet_t *rs, int *status);
+
+int drms_is_manifest_specification(const char *query, char **manifest_table_out, char **manifest_series_out, long long *manifest_start_recnum_out, long long *manifest_end_recnum_out);
 
 /* Doxygen function documentation */
 

@@ -1,4 +1,4 @@
-//#define DEBUG
+// #define DEBUG
 
 #include <dirent.h>
 #include <dlfcn.h>
@@ -6,6 +6,7 @@
 #include <strings.h>
 #include <regex.h>
 #include <pwd.h>
+#include <libpq-fe.h>
 #include "drms.h"
 #include "drms_priv.h"
 #include "xmem.h"
@@ -157,7 +158,7 @@ static DRMS_RecordSet_t *OpenPlainFileRecords(DRMS_Env_t *env,
 
 DRMS_RecordSet_t *drms_open_recordset_internal(DRMS_Env_t *env, const char *rsquery, int openLinks, LinkedList_t *keys, int *status);
 
-static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *seriesname, char *where, const char *pkwhere, const char *npkwhere, int filter, int mixed, const char *qoverride, int allvers, int nrecs, HContainer_t *firstlast, HContainer_t *pkwhereNFL, int recnumq, int cursor, HContainer_t *links, /* Links to fetch from db. */HContainer_t *keys, /* Keys to fetch from db. */ HContainer_t *segs, /* Segs to fetch from db. */ int fetchLinkedRecords, int *status);
+static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *seriesname, char *where, const char *pkwhere, const char *npkwhere, int filter, int mixed, const char *qoverride, DB_Binary_Result_t *br_override, int allvers, int nrecs, HContainer_t *firstlast, HContainer_t *pkwhereNFL, int recnumq, int cursor, HContainer_t *links, /* Links to fetch from db. */HContainer_t *keys, /* Keys to fetch from db. */ HContainer_t *segs, /* Segs to fetch from db. */ int fetchLinkedRecords, int *status);
 
 static void RSFree(const void *val);
 /* end drms_open_records() helpers */
@@ -1418,6 +1419,161 @@ static void QFree(void *data)
    }
 }
 
+/* <manifest table>::[<first recnum> '-' <last recnum>] */
+static int is_manifest_table_query(const char *query, char **manifest_table_out, char **manifest_series_out, long long *manifest_start_recnum_out, long long *manifest_end_recnum_out)
+{
+    int answer = 0; /* -1 is error */
+    static regex_t *reg_expression = NULL;
+    /* DO NOT USE \d et al in EXTENDED POSIX regular expressions; these "character types" do not exist is POSIX regular expressions; hourse were wasted on this */
+    const char *manifest_query_pattern = "^[ ]*(([a-z_][a-z_0-9$]*[.][a-z_][a-z_0-9$]*)_manifest)::[[](([0-9]+-[0-9]+)|([*]))[]][ ]*$";
+    regmatch_t matches[6]; /* index 0 is the entire string */
+    char buffer[64] = {0};
+    char *ptr_dash = NULL;
+    char manifest_table[64] = {0};
+    char manifest_series[64] = {0};
+    int recnums_via_stdin = 0;
+    long long manifest_start_recnum = -1;
+    long long manifest_end_recnum = -1;
+
+    if (!reg_expression)
+    {
+        /* ART - this does not get freed! */
+        reg_expression = calloc(1, sizeof(regex_t));
+        if (regcomp(reg_expression, manifest_query_pattern, REG_EXTENDED | REG_ICASE) != 0)
+        {
+            if (reg_expression)
+            {
+                free(reg_expression);
+                reg_expression = NULL;
+            }
+        }
+    }
+
+    if (reg_expression)
+    {
+        if (regexec(reg_expression, query, sizeof(matches) / sizeof(matches[0]), matches, 0) == 0)
+        {
+            /* matches */
+            if (matches[1].rm_so != -1)
+            {
+                /* manifest table */
+                memcpy(manifest_table, (void *)&query[matches[1].rm_so], matches[1].rm_eo - matches[1].rm_so);
+                answer = 1;
+            }
+            else
+            {
+                answer = 0;
+            }
+
+            if (answer == 1)
+            {
+                if (matches[2].rm_so != -1)
+                {
+                    /* series */
+                    memcpy(manifest_series, (void *)&query[matches[2].rm_so], matches[2].rm_eo - matches[2].rm_so);
+                    answer = 1;
+                }
+                else
+                {
+                    answer = 0;
+                }
+            }
+
+            if (answer == 1)
+            {
+                if (matches[4].rm_so != -1)
+                {
+                    memcpy(buffer, (void *)&query[matches[4].rm_so], matches[4].rm_eo - matches[4].rm_so);
+
+                    /* <start_recnum> '-' <end_recnum> --> use recnum range in DB query */
+                    ptr_dash = strchr(buffer, '-');
+
+                    sscanf(buffer, "%lld", &manifest_start_recnum);
+                    sscanf(ptr_dash + 1, "%lld", &manifest_end_recnum);
+                    answer = 1;
+                }
+                else if (matches[5].rm_so != -1)
+                {
+                    /* '*' --> recnums provided via stdin */
+                    recnums_via_stdin = 1;
+                    answer = 1;
+                }
+                else
+                {
+                    answer = -1;
+                }
+            }
+        }
+        else
+        {
+            answer = 0;
+        }
+    }
+    else
+    {
+        answer = -1;
+    }
+
+    if (answer == 1)
+    {
+        if (manifest_table_out)
+        {
+            *manifest_table_out = strdup(manifest_table);
+        }
+
+        if (manifest_series_out)
+        {
+            *manifest_series_out = strdup(manifest_series);
+        }
+
+        if (recnums_via_stdin)
+        {
+            if (manifest_start_recnum_out)
+            {
+                *manifest_start_recnum_out = -1;
+            }
+
+            if (manifest_end_recnum_out)
+            {
+                *manifest_end_recnum_out = -1;
+            }
+        }
+        else
+        {
+            if (manifest_start_recnum_out)
+            {
+                *manifest_start_recnum_out = manifest_start_recnum;
+            }
+
+            if (manifest_end_recnum_out)
+            {
+                *manifest_end_recnum_out = manifest_end_recnum;
+            }
+        }
+    }
+
+    return answer;
+}
+
+int drms_is_manifest_specification(const char *query, char **manifest_table_out, char **manifest_series_out, long long *manifest_start_recnum_out, long long *manifest_end_recnum_out)
+{
+    return is_manifest_table_query(query, manifest_table_out, manifest_series_out, manifest_start_recnum_out, manifest_end_recnum_out);
+}
+
+static int get_manifest_temp_table(char *tabname, int size)
+{
+   static int id = 0;
+
+   if (id < INT_MAX)
+   {
+      snprintf(tabname, size, "temp_manifest%05llu_%03d", (unsigned long long)getpid(), id);
+      id++;
+      return 0;
+   }
+
+   return 1;
+}
+
 /* recordsetname is a comma-separated list of recordsets.
  * Must surround DSDS queries with '{' and '}'.
  *
@@ -1442,7 +1598,8 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *record
     int i, filter, mixed;
     int recnumq;
     HContainer_t *firstlast = NULL;
-    char *query=0, *seriesname=0;
+    char *query=NULL;
+    char *seriesname=NULL;
     char *pkwhere = NULL;
     char *npkwhere = NULL;
     HContainer_t *pkwhereNFL = NULL;
@@ -1473,6 +1630,19 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *record
 
     /* Keyword list provided by caller. */
     LinkedList_t *klist = NULL;
+
+    int manifest_table_query = 0;
+    char *manifest_table = NULL;
+    char *manifest_series = NULL;
+    long long manifest_start_recnum = 0;
+    long long manifest_end_recnum = 0;
+    long long manifest_query_recsize = 0;
+    char *manifest_query_field_list = NULL;
+    long long manifest_query_limit = 0;
+    char manifest_override[4096] = { 0 }; /* must hold all series column names */
+    ssize_t number_chars = 0;
+    size_t buffer_length = 0;
+    char *line = NULL;
 
     cursor = (!retrieverecs);
     if (llistout)
@@ -1510,6 +1680,7 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *record
     char **snames = NULL;
     char **filts = NULL;
     int *setstarts = NULL;
+    const char *oneSet = NULL;
 
     int nsets = 0;
     char *allvers = NULL; /* If 'y', then don't do a 'group by' on the primekey value.
@@ -1520,7 +1691,33 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *record
     HContainer_t **set_template_segs = NULL; /* segments specified by the caller (used in SQL queries and segment keyword structs) */
 
     DRMS_RecQueryInfo_t rsinfo; /* Filled in by parser as it encounters elements. */
-    stat = ParseRecSetDesc(recordsetname, &allvers, &sets, &settypes, &snames, &filts, &nsets, &rsinfo);
+
+
+    /* `recordsetname` could be a manifest-table query; if so, the format is:
+     *    <manifest table>::[<first recnum> '-' <last recnum>]
+     *    where
+     *      <manifest table> --> <series> '_manifest'
+     */
+    if (is_manifest_table_query(recordsetname, &manifest_table, &manifest_series, &manifest_start_recnum, &manifest_end_recnum))
+    {
+        manifest_table_query = 1;
+
+        /* ack, if manifest query is chunked, then we need to populate `llistout` */
+        XASSERT(hasshadowout == NULL);
+        nsets =  1;
+        allvers = calloc(1, sizeof(char));
+        allvers[0] = 'n';
+        sets = calloc(1, sizeof(char *));
+        sets[0] = strdup(recordsetname);
+        settypes = calloc(1, sizeof(DRMS_RecordSetType_t));
+        settypes[0] = kRecordSetType_DRMS;
+        snames = calloc(1, sizeof(char *));
+        snames[0] = manifest_series; /* yoink! */
+    }
+    else
+    {
+        stat = ParseRecSetDesc(recordsetname, &allvers, &sets, &settypes, &snames, &filts, &nsets, &rsinfo);
+    }
 
     if (stat == DRMS_SUCCESS)
     {
@@ -1547,7 +1744,15 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *record
 
         for (iSet = 0; stat == DRMS_SUCCESS && iSet < nsets; iSet++)
         {
-            char *oneSet = sets[iSet];
+            if (manifest_table_query)
+            {
+                /* not used for manifest query, but needed to branch into manifest code; `oneSet` is not freed */
+                oneSet = recordsetname;
+            }
+            else
+            {
+                oneSet = sets[iSet];
+            }
 
             filter_keys = 0;
             filter_segs = 0;
@@ -1803,32 +2008,179 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *record
                         filter_keys = 1;
                     }
 
-                    /* oneSet may have a segement specifier - strip that off and
-                     * generate the HContainer_t that contains the requested segment
-                     * names. */
-                    actualSet = strdup(oneSet);
-                    if (actualSet)
+                    if (manifest_table_query)
                     {
-                        psl = strchr(actualSet, '{');
-                        if (psl)
+                        if ((filter_keys && unsorted && hcon_size(unsorted) > 0) || (filter_segs && set_template_segs[0] && hcon_size(set_template_segs[0]) > 0))
                         {
-                            seglist = strdup(psl);
-                            *psl = '\0';
+                            manifest_query_recsize = partialRecordMemsize(recTempl, NULL, unsorted, set_template_segs[0]);
+                            manifest_query_field_list = columnList(recTempl, NULL, unsorted, set_template_segs[0], openlinks, NULL, NULL);
+                        }
+                        else
+                        {
+                            manifest_query_recsize = partialRecordMemsize(recTempl, NULL, NULL, NULL);
+                            manifest_query_field_list = drms_field_list(recTempl, openlinks, NULL);
                         }
 
-                        TIME(stat = drms_recordset_query(env, actualSet, &query, &pkwhere, &npkwhere, &seriesname, &filter, &mixed, NULL, &firstlast, &pkwhereNFL, &recnumq));
+                        manifest_query_limit = (long long)((1.1e6 * env->query_mem) / manifest_query_recsize);
 
-                        if (actualSet)
+                        if (manifest_start_recnum == -1 && manifest_end_recnum == -1 && env->session->db_direct)
                         {
-                            free(actualSet);
-                            actualSet = NULL;
+                            PGresult *pg_result = NULL;
+                            char temporary_recnum_table[64];
+
+                            if (get_manifest_temp_table(temporary_recnum_table, sizeof(temporary_recnum_table)))
+                            {
+                                stat = 1;
+                                goto failure;
+                            }
+
+                            snprintf(manifest_override, sizeof(manifest_override), "CREATE TEMPORARY TABLE %s(recnum bigint not null, PRIMARY KEY(recnum)) ON COMMIT DROP", temporary_recnum_table);
+
+                            if (drms_dms(env->session, NULL, manifest_override))
+                            {
+                                stat = 1;
+                                goto failure;
+                            }
+
+                            /* manifest-query recnums are piped in to stdin; use text transfer since recnum will
+                             * almost assuredly not have more than 9 digits (== 9 bytes), and binary transfer requires 14 bytes
+                             * per line of text sent; */
+                            snprintf(manifest_override, sizeof(manifest_override), "COPY %s FROM STDIN", temporary_recnum_table);
+
+                            db_lock(env->session->db_handle);
+                            if (env->session->db_handle->abort_now)
+                            {
+                                stat = 1;
+                                db_unlock(env->session->db_handle);
+                                goto failure;
+                            }
+
+                            pg_result = PQexec(env->session->db_handle->db_connection, manifest_override);
+
+                            if (PQresultStatus(pg_result) != PGRES_COPY_IN)
+                            {
+                                fprintf(stderr, "[ drms_open_records_internal ] query failed: %s", PQerrorMessage(env->session->db_handle->db_connection));
+                                PQclear(pg_result);
+                                stat = 1;
+                                db_unlock(env->session->db_handle);
+                                goto failure;
+                            }
+
+                            PQclear(pg_result);
+
+                            while (1)
+                            {
+                                /* assume ascii text [0-9]+ */
+                                number_chars = getline(&line, &buffer_length, stdin);
+
+                                if (number_chars == -1)
+                                {
+                                    /* send "\." to tell PG that we are done copying */
+                                    if (PQputCopyEnd(env->session->db_handle->db_connection, NULL) == -1)
+                                    {
+                                        fprintf(stderr, "[ drms_open_records_internal ] query failed: %s", PQerrorMessage(env->session->db_handle->db_connection));
+                                        stat = 1;
+                                        db_unlock(env->session->db_handle);
+                                        goto failure;
+                                    }
+
+                                    break;
+                                }
+
+                                if (PQputCopyData(env->session->db_handle->db_connection, line, strlen(line)) == -1)
+                                {
+                                    fprintf(stderr, "[ drms_open_records_internal ] query failed: %s", PQerrorMessage(env->session->db_handle->db_connection));
+                                    stat = 1;
+                                    db_unlock(env->session->db_handle);
+                                    goto failure;
+                                }
+                            }
+
+                            pg_result = PQgetResult(env->session->db_handle->db_connection);
+                            if (PQresultStatus(pg_result) != PGRES_COMMAND_OK)
+                            {
+                                fprintf(stderr, "[ drms_open_records_internal ] query failed: %s", PQerrorMessage(env->session->db_handle->db_connection));
+                                PQclear(pg_result);
+                                stat = 1;
+                                db_unlock(env->session->db_handle);
+                                goto failure;
+                            }
+
+                            PQclear(pg_result);
+
+                            db_unlock(env->session->db_handle);
+
+                            if (cursor)
+                            {
+                                snprintf(manifest_override, sizeof(manifest_override), "SELECT %s FROM %s WHERE recnum IN (SELECT recnum FROM %s)", manifest_query_field_list, snames[0], temporary_recnum_table);
+                            }
+                            else
+                            {
+                                snprintf(manifest_override, sizeof(manifest_override), "SELECT %s FROM %s WHERE recnum IN (SELECT recnum FROM %s LIMIT %lld)", manifest_query_field_list, snames[0], temporary_recnum_table, manifest_query_limit);
+                            }
                         }
+                        else if (manifest_start_recnum != -1 && manifest_end_recnum != -1)
+                        {
+                            /* cannot specify individual recnums because this client cannot access DB directly; must
+                             * specify range of recnums */
+                             if (cursor)
+                             {
+                                 snprintf(manifest_override, sizeof(manifest_override), "SELECT %s FROM %s WHERE recnum IN (SELECT recnum FROM %s WHERE recnum >= %lld AND recnum <= %lld)", manifest_query_field_list, snames[0], manifest_table, manifest_start_recnum, manifest_end_recnum);
+                             }
+                             else
+                             {
+                                 snprintf(manifest_override, sizeof(manifest_override), "SELECT %s FROM %s WHERE recnum IN (SELECT recnum FROM %s WHERE recnum >= %lld AND recnum <= %lld LIMIT %lld)", manifest_query_field_list, snames[0], manifest_table, manifest_start_recnum, manifest_end_recnum, manifest_query_limit);
+                             }
+                        }
+                        else
+                        {
+                            /* invalid manifest spec */
+                            stat = 1;
+                            goto failure;
+                        }
+
+                        free(manifest_query_field_list);
+                        manifest_query_field_list = NULL;
+
+                        free(manifest_table);
+                        manifest_table = NULL;
+
+                        /* do NOT free manifest_series; it was swiped earlier */
                     }
                     else
-                        goto failure;
+                    {
+                        /* oneSet may have a segement specifier - strip that off and
+                        * generate the HContainer_t that contains the requested segment
+                        * names. */
+                        actualSet = strdup(oneSet);
+                        if (actualSet)
+                        {
+                            psl = strchr(actualSet, '{');
+                            if (psl)
+                            {
+                                seglist = strdup(psl);
+                                *psl = '\0';
+                            }
 
-                    if (stat)
-                        goto failure;
+                            /* parse record-set specification */
+                            TIME(stat = drms_recordset_query(env, actualSet, &query, &pkwhere, &npkwhere, &seriesname, &filter, &mixed, NULL, &firstlast, &pkwhereNFL, &recnumq));
+
+                            if (actualSet)
+                            {
+                                free(actualSet);
+                                actualSet = NULL;
+                            }
+                        }
+                        else
+                        {
+                            goto failure;
+                        }
+
+                        if (stat)
+                        {
+                            goto failure;
+                        }
+                    }
 
 #ifdef DEBUG
                     printf("seriesname = %s\n",seriesname);
@@ -1841,6 +2193,7 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *record
                     }
 #endif
 
+                    /* `seglist` == NULL for manifest query */
                     if (seglist)
                     {
                         char aseg[DRMS_MAXSEGNAMELEN];
@@ -1872,16 +2225,18 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *record
                         XASSERT(allvers[iSet] != '\0');
                         if (env->verbose)
                         {
-                            TIME(rs = drms_retrieve_records_internal(env, seriesname, query, pkwhere, npkwhere, filter, mixed, NULL, allvers[iSet] == 'y', nrecslimit, firstlast, pkwhereNFL, recnumq, 0, NULL, filter_keys ? unsorted : NULL, filter_segs ? set_template_segs[iSet] : NULL, openlinks, &stat));
+                            TIME(rs = drms_retrieve_records_internal(env, seriesname, query, pkwhere, npkwhere, filter, mixed, *manifest_override != '\0' ? manifest_override : NULL, NULL, allvers[iSet] == 'y', nrecslimit, firstlast, pkwhereNFL, recnumq, 0, NULL, filter_keys ? unsorted : NULL, filter_segs ? set_template_segs[iSet] : NULL, openlinks, &stat));
                         }
                         else
                         {
-                            rs = drms_retrieve_records_internal(env, seriesname, query, pkwhere, npkwhere, filter, mixed, NULL, allvers[iSet] == 'y', nrecslimit, firstlast, pkwhereNFL, recnumq, 0, NULL, filter_keys ? unsorted : NULL, filter_segs ? set_template_segs[iSet] : NULL, openlinks, &stat);
+                            rs = drms_retrieve_records_internal(env, seriesname, query, pkwhere, npkwhere, filter, mixed, *manifest_override != '\0' ? manifest_override : NULL, NULL, allvers[iSet] == 'y', nrecslimit, firstlast, pkwhereNFL, recnumq, 0, NULL, filter_keys ? unsorted : NULL, filter_segs ? set_template_segs[iSet] : NULL, openlinks, &stat);
                         }
                         /* Remove unrequested segments now */
                     }
                     else
                     {
+                        /* manifest could be chunked - ack */
+
                         /* Don't retrieve recs, because record-chunking
                          * functions will.  Instead, make an
                          * empty recordset and rs->n empty records. */
@@ -1907,11 +2262,23 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *record
                         rs->ss_template_segs = NULL;
                     }
 
+                    /* `llist` might not be NULL for manifest query */
                     if (llist)
                     {
                         /* one query per query set (sets are delimited by commas) */
                         long long limit = 0;
-                        char *selquery = drms_query_string(env, seriesname, query, pkwhere, npkwhere, filter, mixed, DRMS_QUERY_ALL, NULL, filter_keys ? unsorted : NULL, filter_segs ? set_template_segs[iSet] : NULL, allvers[iSet] == 'y', firstlast, pkwhereNFL, recnumq, cursor, openlinks, &limit);
+                        char *selquery = NULL;
+
+                        if (manifest_table_query)
+                        {
+                            selquery = strdup(manifest_override); /* the list code will free the query */
+                        }
+                        else
+                        {
+                            /* make DB query, from the parts of the parsed record-set specification, to select records */
+                            selquery = drms_query_string(env, seriesname, query, pkwhere, npkwhere, filter, mixed, DRMS_QUERY_ALL, NULL, filter_keys ? unsorted : NULL, filter_segs ? set_template_segs[iSet] : NULL, allvers[iSet] == 'y', firstlast, pkwhereNFL, recnumq, cursor, openlinks, &limit);
+                        }
+
                         list_llinserttail(llist, &selquery);
                     }
 
@@ -1923,6 +2290,8 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *record
 
                     /* If drms_query_string() was called, then template->seriesinfo->hasshadow
                      * was set (and it not -1). */
+
+                    /* `hasshadowout` == NULL for manifest query */
                     if (hasshadowout)
                     {
                         DRMS_Record_t *template = drms_template_record(env, seriesname, &stat);
@@ -2526,6 +2895,36 @@ DRMS_RecordSet_t *drms_open_records2(DRMS_Env_t *env, const char *specification,
     }
 
     return ret;
+}
+
+DRMS_RecordSet_t *drms_open_records_from_manifest(DRMS_Env_t *env, const char *manifest_specificaton, LinkedList_t *keys, int chunk_records, int open_links, int *status)
+{
+    DRMS_RecordSet_t *record_set = NULL;
+
+    if (chunk_records)
+    {
+        if (env->verbose)
+        {
+            TIME(record_set = drms_open_recordset_internal(env, manifest_specificaton, open_links, keys, status));
+        }
+        else
+        {
+            record_set = drms_open_recordset_internal(env, manifest_specificaton, open_links, keys, status);
+        }
+    }
+    else
+    {
+        if (env->verbose)
+        {
+            TIME(record_set = drms_open_records_internal(env, manifest_specificaton, open_links, chunk_records, 0, keys, NULL, NULL, NULL, status));
+        }
+        else
+        {
+            record_set = drms_open_records_internal(env, manifest_specificaton, open_links, chunk_records, 0, keys, NULL, NULL, NULL, status);
+        }
+    }
+
+    return record_set;
 }
 
 /* Create n new records by calling drms_create_record n times.  */
@@ -4187,6 +4586,9 @@ static int drms_stage_records_internal(DRMS_RecordSet_t *rs, int retrieve, int d
 // ART
             /* this is the computationally-expensive call; it does a join to determine the linked records that
              * will be fetched from the DB */
+
+            /* new idea; break up the
+             */
             linkedrecs = drms_record_retrievelinks(env, workingRS, &status);
 
             if (workingRS != rs)
@@ -5849,8 +6251,9 @@ static int ParseAndExecTempTableSQL(DRMS_Env_t *env, DRMS_Session_t *session, ch
  */
 
 /* `keys` - an hcontainer of keyword structs
+ * `where` -
  */
-DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *seriesname, char *where, const char *pkwhere, const char *npkwhere, int filter, int mixed, const char *qoverride, int allvers, int nrecs, HContainer_t *firstlast, HContainer_t *pkwhereNFL, int recnumq, int cursor, HContainer_t *links, /* Links to fetch from db. */ HContainer_t *keys, /* Keys to fetch from db. */ HContainer_t *segs, /* Segs to fetch from db. */ int fetchLinkedRecords, int *status)
+DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *seriesname, char *where, const char *pkwhere, const char *npkwhere, int filter, int mixed, const char *qoverride, DB_Binary_Result_t *br_override, int allvers, int nrecs, HContainer_t *firstlast, HContainer_t *pkwhereNFL, int recnumq, int cursor, HContainer_t *links, /* Links to fetch from db. */ HContainer_t *keys, /* Keys to fetch from db. */ HContainer_t *segs, /* Segs to fetch from db. */ int initialize_links, int *status)
 {
   int i,throttled;
   int stat = 0;
@@ -5872,7 +6275,7 @@ DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *se
   if ((template = drms_template_record(env,seriesname,status)) == NULL)
     return NULL;
 
-    if (fetchLinkedRecords)
+    if (initialize_links)
     {
         drms_link_getpidx(template); /* Make sure links have pidx's set. */
     }
@@ -5899,7 +6302,7 @@ DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *se
     }
     else
     {
-        query = drms_query_string(env, seriesname, where, pkwhere, npkwhere, filter, mixed, nrecs == 0 ? DRMS_QUERY_ALL : DRMS_QUERY_N, &nrecs, keys, segs, allvers, firstlast, pkwhereNFL, recnumq, cursor, fetchLinkedRecords, &limit);
+        query = drms_query_string(env, seriesname, where, pkwhere, npkwhere, filter, mixed, nrecs == 0 ? DRMS_QUERY_ALL : DRMS_QUERY_N, &nrecs, keys, segs, allvers, firstlast, pkwhereNFL, recnumq, cursor, initialize_links, &limit);
     }
 
     if (env->verbose)
@@ -6182,7 +6585,7 @@ DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *se
     printf("\nMemory used before populate= %Zu\n\n",xmem_recenthighwater());
 #endif
 
-    TIME(if ((stat = drms_populate_records(env, rs, qres, fetchLinkedRecords)))
+    TIME(if ((stat = drms_populate_records(env, rs, qres, initialize_links)))
     {
       goto bailout; /* Query result was inconsistent with series template. */
     } );
@@ -6252,7 +6655,7 @@ DRMS_RecordSet_t *drms_retrieve_records(DRMS_Env_t *env,
                                         HContainer_t *segs,
                                         int *status)
 {
-    return drms_retrieve_records_internal(env, seriesname, where, pkwhere, npkwhere, filter, mixed, NULL, allvers, nrecs, firstlast, pkwhereNFL, recnumq, cursor, NULL, keys, NULL, 1, status);
+    return drms_retrieve_records_internal(env, seriesname, where, pkwhere, npkwhere, filter, mixed, NULL, NULL, allvers, nrecs, firstlast, pkwhereNFL, recnumq, cursor, NULL, keys, NULL, 1, status);
 }
 
 /* prepared - A prepared statement when combined with argin that results in the retrieval of db information needed to create the DRMS records specified by the statement and argin. */
@@ -7175,7 +7578,7 @@ DRMS_RecordSet_t *callRetrieveRecsPreparedQuery(DRMS_Env_t *env, HContainer_t *m
                         {
                             sql = base_strcatalloc(sql, ")", &stsz);
 
-                            rvSupp = drms_retrieve_records_internal(env, seriesGet, NULL, NULL, NULL, 0, 0, sql, 0, 0, NULL, NULL, 0, 0, NULL, NULL, NULL, 1, &istat);
+                            rvSupp = drms_retrieve_records_internal(env, seriesGet, NULL, NULL, NULL, 0, 0, sql, NULL, 0, 0, NULL, NULL, 0, 0, NULL, NULL, NULL, 1, &istat);
 
                             if (rvSupp)
                             {
@@ -7236,6 +7639,312 @@ DRMS_RecordSet_t *callRetrieveRecsPreparedQuery(DRMS_Env_t *env, HContainer_t *m
 
     return rvMerge;
 }
+
+
+char *get_child_table_sql(DRMS_Link_t *link, const char *child_column_list, const char *child_series, const char *parent_series, const char *parent_record_list)
+{
+    char *sql = NULL;
+    size_t sz_sql = 1024;
+    int prime_key_index = 1;
+
+    sql = calloc(sz_sql, sizeof(char));
+    sql = base_strcatalloc(sql, "SELECT parent_recnum, ", &sz_sql);
+    sql = base_strcatalloc(sql, child_column_list, &sz_sql);
+    sql = base_strcatalloc(sql, "\nFROM\n(\n  SELECT PARENT.recnum AS parent_recnum, drms.get_linked_records(", &sz_sql);
+    sql = base_strcatalloc(sql, (link->info->type == DYNAMIC_LINK) ? "'t'" : "'f'", &sz_sql);
+    sql = base_strcatalloc(sql, "'", &sz_sql);
+    sql = base_strcatalloc(sql, child_series, &sz_sql);
+    sql = base_strcatalloc(sql, "'", &sz_sql);
+    sql = base_strcatalloc(sql, ", ARRAY[", &sz_sql);
+
+    if (link->info->type == DYNAMIC_LINK)
+    {
+        for (prime_key_index = 0; prime_key_index < link->info->pidx_num; prime_key_index++)
+        {
+            if (prime_key_index > 0)
+            {
+                sql = base_strcatalloc(sql, ", ", &sz_sql);
+            }
+
+            sql = base_strcatalloc(sql, "'", &sz_sql);
+            link->info->pidx_name[prime_key_index];
+            sql = base_strcatalloc(sql, "'", &sz_sql);
+        }
+    }
+    else
+    {
+        sql = base_strcatalloc(sql, "'recnum", &sz_sql);
+    }
+
+    sql = base_strcatalloc(sql, "], ", &sz_sql); /* end child prime-key keyword array */
+
+    sql = base_strcatalloc(sql, ", ARRAY[", &sz_sql);
+
+    if (link->info->type == DYNAMIC_LINK)
+    {
+        for (prime_key_index = 0; prime_key_index < link->info->pidx_num; prime_key_index++)
+        {
+            if (prime_key_index > 0)
+            {
+                sql = base_strcatalloc(sql, ", ", &sz_sql);
+            }
+
+            sql = base_strcatalloc(sql, "PARENT.ln_", &sz_sql);
+            sql = base_strcatalloc(sql, link->info->name, &sz_sql);
+            sql = base_strcatalloc(sql, "_", &sz_sql);
+            link->info->pidx_name[prime_key_index];
+            sql = base_strcatalloc(sql, "::varchar", &sz_sql);
+        }
+    }
+    else
+    {
+        sql = base_strcatalloc(sql, "PARENT.ln_", &sz_sql);
+        sql = base_strcatalloc(sql, link->info->name, &sz_sql);
+    }
+
+    sql = base_strcatalloc(sql, "], ", &sz_sql);  /* end child prime-key keyword value array */
+
+
+    if (link->info->type == DYNAMIC_LINK)
+    {
+        sql = base_strcatalloc(sql, "PARENT.ln_", &sz_sql);
+        sql = base_strcatalloc(sql, link->info->name, &sz_sql);
+        sql = base_strcatalloc(sql, "_isset", &sz_sql);
+    }
+    else
+    {
+        sql = base_strcatalloc(sql, "'t'", &sz_sql);
+    }
+
+    sql = base_strcatalloc(sql, ") AS child_recnum\nFROM\n  ", &sz_sql);
+    sql = base_strcatalloc(sql, parent_series, &sz_sql);
+    sql = base_strcatalloc(sql, ") AS PARENT WHERE recnum IN(", &sz_sql);
+    sql = base_strcatalloc(sql, parent_record_list, &sz_sql);
+    sql = base_strcatalloc(sql, ")\n", &sz_sql); /* end record list */
+    sql = base_strcatalloc(sql, ") AS LINK\nLEFT OUTER JOIN\n  ", &sz_sql);
+    sql = base_strcatalloc(sql, child_series, &sz_sql);
+    sql = base_strcatalloc(sql, " AS CHILD\nON\n  LINK.child_recnum = CHILD.recnum", &sz_sql);
+
+    return sql;
+}
+
+/* requires that the child series has a shadow table (which is pretty much the only way to get half-decent
+ * performance with links);
+ * DOES NOT ASSUME that `recordset` was opened with `open_links` flag true (which would initialize the link structs) -
+ * either way, this function will not update the link structs, so if they are not initialized, they will remain
+ * uninitialized, with one important exception: link->recnum WILL be initialized; this is necessary so that
+ * any future attempts to follow the link will use link->recnum to locate the child record in the
+ * record cache
+ *
+ * ASSUMES that all records in `recordset` belong to the same series
+ *
+ * `keywords` -
+ * `initialize_links`
+ *    if set, then link structs in the returned record set will have have been initialized; they can then be used
+ *    for another level of link following (although this initialization is not needed if drms_record_retrievelinks2()
+ *    is called recursively on the returned record set)
+ *
+ */
+
+#if 0
+DRMS_RecordSet_t *drms_record_retrievelinks2(DRMS_Env_t *env, DRMS_RecordSet_t *record_set, int chunk_size, DRMS_Record_t *series_template, HContainer_t *keywords, HContainer_t *segments, int initialize_links, int *status)
+{
+    HIterator_t iterator;
+    LinkedList_t *record_list = NULL;
+    HContainer_t *record_lists = NULL;
+    char *sql = NULL;
+    DB_Binary_Result_t *child_series_data = NULL;
+    DRMS_RecordSet_t *fetched_records = NULL;
+    char hash_key[DRMS_MAXHASHKEYLEN] = {0};
+    int record_index = 0;
+    int number_records = 0;
+    int number_chunks = 0;
+    DRMS_Record_t *record = NULL;
+    int number_links = 0;
+    int has_dynamic_links = 0;
+    char *parent_record_list = NULL;
+    size_t sz_parent_record_list = 128;
+    int link_index = 0;
+    int drms_status = DRMS_SUCCESS;
+
+    /* records must belong to same series */
+    XASSERT(recordset && recordset->ss_n == 1);
+    /* break up record set into chunks */
+
+    number_records = record_set->n;
+    number_links = hcon_size(&series_template->links);
+    number_chunks = (number_records - 1) / chunk_size + 1;
+
+    if (number_records > 0 && number_links > 0)
+    {
+        has_dynamic_links = 0;
+
+        hiter_new(&iterator, &record->links, drms_link_ranksort); /* returns void; no way to tell if memory alloc succeeded */
+        while ((link = (DRMS_Link_t *)hiter_getnext(&iterator)) != NULL)
+        {
+            if (link->info->type == DYNAMIC_LINK)
+            {
+                has_dynamic_links = 1;
+                break;
+            }
+        }
+
+        hiter_free(&iterator);
+
+        /* for each chunk, make a database query that drms_retrieve_records_internal() knows how to handle */
+        /* iterate through record chunks */
+        record_index = 0;
+        record = record_set->records[record_index++];
+        parent_record_list = base_strcatalloc(parent_record_list, , &sz_parent_record_list);
+
+        for (chunk_index = 0; chunk_index < number_chunks; chunk_index++)
+        {
+            /* iterate through records in chunk; collecting all parent recnums for each link */
+            for (; record_index < chunk_size && chunk_size * chunk_index + record_index < number_records; record_index++)
+            {
+                record = record_set->records[chunk_size * chunk_index + record_index];
+
+                if (has_dynamic_links)
+                {
+                    drms_link_getpidx(record);
+                }
+
+                parent_record_list = base_strcatalloc(parent_record_list, , &sz_parent_record_list);
+            }
+
+            record_index = 0;
+
+            /* we have our list of recnums - make one sql query per link */
+            hiter_new(&iterator, &record->links, drms_link_ranksort); /* returns void; no way to tell if memory alloc succeeded */
+            link_index = 0;
+            while ((link = (DRMS_Link_t *)hiter_getnext(&iterator)) != NULL)
+            {
+                sql = get_child_table_sql(link, child_column_list, child_series, parent_series, parent_record_list);
+
+                if (sql)
+                {
+                    if (env->print_sql_only)
+                    {
+                        printf("%s;\n", sql);
+                    }
+                    else
+                    {
+                        TIME(child_series_data = drms_query_bin(env->session, sql));
+                        if (child_series_data != NULL)
+                        {
+                            /* the first column contains the parent series record number, the second, the link, the third column contains the child series record number;
+                             * use the map to initialize the parent link structs */
+                            if (child_series_data->num_rows > 0)
+                            {
+                                for (row_index = 0; row_index < child_series_data->num_rows; row_index++)
+                                {
+                                    column_index = 0;
+
+                                    parent_record = db_binary_field_getlonglong(child_series_data, row_index, column_index++);
+                                    db_binary_field_getstr(child_series_data, row_index, column_index++, DRMS_MAXLINKNAMELEN, link_name);
+                                    child_record = db_binary_field_getlonglong(child_series_data, row_index, column_index++);
+
+                                    drms_make_hashkey(hash_key, parent_series, parent_record);
+                                    parent_record = hcon_lookup(&env->record_cache, hash_key);
+
+                                    if (parent_record)
+                                    {
+                                        if ((link = hcon_lookup_lower(&parent_record->links, link_name)) != NULL)
+                                        {
+                                            if (link->record == NULL)
+                                            {
+                                                /* the link db columns were never read from the database; but this doesn't matter - as long
+                                                 * as we set link->recnum */
+                                            }
+
+                                            link->recnum = child_record;
+                                        }
+                                        else
+                                        {
+                                            fprintf(stderr, "[ drms_record_retrievelinks2 ] \n");
+                                        }
+                                    }
+                                    else
+                                    {
+                                        /* this should not happen - when `recordset` was opened, all records were cached */
+                                        fprintf(stderr, "[ drms_record_retrievelinks2 ] \n");
+                                    }
+                                }
+                            }
+
+                            /* send the remaining column data to drms_retrieve_records_internal() */
+                            fetchedrecs = drms_retrieve_records_internal(env, child_series, NULL, NULL, NULL, 0, 0, NULL, child_series_data, 0, 0, NULL, NULL, 0, 1, NULL, keywords, segments, 1, &stat);
+
+                            db_free_binary_result(child_series_data);
+                        }
+                        else
+                        {
+                            drms_status = DRMS_ERROR_QUERYFAILED;
+                            fprintf(stderr, "[ drms_record_retrievelinks2 ] failure retrieving record data for child series `%s` [%s]\n", child_series, sql);
+                        }
+                    }
+                }
+            }
+
+            hiter_free(&iterator);
+
+
+            /* each link is to a different series; query each series */
+            /*
+            "SELECT columns FROM child_series WHERE recnum IN (SELECT drms.get_linked_records(<is_dynamic>, <target_series>, ARRAY['fsn', 't_rec_index'], ARRAY[PARENT.ln_lev1_fsn, PARENT.ln_lev_t_rec_index], PARENT.ln_lev_isset) FROM parent_series AS PARENT WHERE recnum IN (recnum_list))"
+
+            "SELECT columns FROM child_series WHERE recnum IN (SELECT drms.get_linked_records(<is_dynamic>, <target_series>, ARRAY['recnum'], ARRAY[PARENT.ln_history], 't') FROM parent_series AS PARENT WHERE recnum IN (recnum_list))"
+
+            SELECT recnum FROM aia.lev1 WHERE recnum IN (SELECT drms.get_linked_records('t', 'aia.lev1', ARRAY['fsn', 't_rec_index'], ARRAY[PARENT.ln_lev1_fsn::varchar, PARENT.ln_lev1_t_rec_index::
+    varchar], PARENT.ln_lev1_isset::boolean) FROM aia.lev1_euv_12s AS PARENT WHERE recnum IN (229629051));
+      recnum
+    -----------
+     284784226
+    (1 row) */
+
+            /* we need the parent recnum too, since that is how we find the parent's link struct so we can fill-in the
+             * link->recnum (with the child's recnum) */
+
+            /* link_name + link_type + PARENT.recnum -> (ln_<link name>_<pkey>, ln_isset) OR ln_<link_name> [1]
+            [1] + target_series -> target_series_recnum
+            */
+
+
+
+            /*  SELECT parent_recnum, link, child_recnum, <CHILD columns, excluding recnum>
+                FROM
+                (
+                    SELECT PARENT.recnum AS parent_recnum, 'lev1', drms.get_linked_records('t', 'aia.lev1', ARRAY['fsn', 't_rec_index'], ARRAY[PARENT.ln_lev1_fsn::varchar, PARENT.ln_lev1_t_rec_index::varchar], PARENT.ln_lev1_isset::boolean) AS child_recnum
+                    FROM
+                      aia.lev1_euv_12s AS PARENT WHERE recnum IN (229629051)
+                ) AS LINK
+                LEFT OUTER JOIN
+                  aia.lev1 AS CHILD
+                ON
+                  LINK.child_recnum = CHILD.recnum
+             *
+             */
+
+
+
+
+            parent_record ---database--> link_pidx_values -> child_shadow_recnum -> select column_list from child series where recnum in ->
+        }
+
+        /* the SQL will return a qres; send this to drms_retrieve_records_internal instead of qoverride, and instead of the pkwhere/npkwhere arguments */
+
+
+
+            snprintf()
+            drms_retrieve_records_internal(DRMS_Env_t *env, linked_series, where, const char *pkwhere, const char *npkwhere, int filter, int mixed, const char *qoverride, DB_Binary_Result_t *br_override, int allvers, int nrecs, HContainer_t *firstlast, HContainer_t *pkwhereNFL, int recnumq, int cursor, HContainer_t *links, /* Links to fetch from db. */ HContainer_t *keys, /* Keys to fetch from db. */ HContainer_t *segs, /* Segs to fetch from db. */ int fetchLinkedRecords, int *status)
+
+
+        }
+    }
+
+    return fetched_records;
+}
+#endif
 
 /* This function iterates through recordset and finds all linked records. recordset could contain
  * records from more than one series. */
@@ -13116,20 +13825,26 @@ char *drms_record_jsoc_version(DRMS_Env_t *env, DRMS_Record_t *rec) {
 
 char *drms_recordset_acquireseriesname(const char *query)
 {
-   char *sn = strdup(query);
-   char *pc = NULL;
+    char *sn = NULL;
+    char *pc = NULL;
 
-   if (sn)
-   {
-      pc = index(sn, '[');
-      if (pc)
-      {
-	 *pc = '\0';
-	 pc = strdup(sn);
-	 free(sn);
-	 sn = pc;
-      }
-   }
+    if (!is_manifest_table_query(query, NULL, &sn, NULL, NULL))
+    {
+        sn = strdup(query);
+
+        if (sn)
+        {
+            pc = index(sn, '[');
+
+            if (pc)
+            {
+                *pc = '\0';
+                pc = strdup(sn);
+                free(sn);
+                sn = pc;
+            }
+        }
+    }
 
    return sn;
 }
@@ -13442,26 +14157,7 @@ int drms_open_recordchunk(DRMS_Env_t *env,
 
                   /* Unrequested segments are now filtered out. They didn't used to be filtered out. */
                   openLinkedRecords = rs->cursor->openLinks;
-                  fetchedrecs = drms_retrieve_records_internal(env,
-                                                               seriesname,
-                                                               NULL,
-                                                               NULL,
-                                                               NULL,
-                                                               0,
-                                                               0,
-                                                               sqlquery,
-                                                               rs->cursor->allvers[iset],
-                                                               0,
-                                                               NULL,
-                                                               NULL,
-                                                               0,
-                                                               1,
-                                                               NULL,
-                                                               rs->ss_template_keys[iset], /* hcon of keyword structs */
-                                                               rs->ss_template_segs[iset], /* hcon of keyword structs */
-                                                               openLinkedRecords,
-                                                               &stat);
-
+                  fetchedrecs = drms_retrieve_records_internal(env, seriesname, NULL, NULL, NULL, 0, 0, sqlquery, NULL, rs->cursor->allvers[iset], 0, NULL, NULL, 0, 1, NULL, rs->ss_template_keys[iset], /* hcon of keyword structs */ rs->ss_template_segs[iset], /* hcon of keyword structs */ openLinkedRecords, &stat);
 
                   free(seriesname);
                   seriesname = NULL;
@@ -13765,7 +14461,6 @@ DRMS_RecordSet_t *drms_open_recordset_internal(DRMS_Env_t *env, const char *rsqu
             while ((ln = (ListNode_t *)(list_llnext(querylist))) != NULL)
             {
                 pQuery = *((char **)ln->data);
-
                 seriesname = drms_recordset_acquireseriesname(rs->ss_queries[iset]);
 
                 if (seriesname)
