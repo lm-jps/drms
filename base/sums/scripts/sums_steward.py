@@ -23,6 +23,9 @@ SUM_MAIN = 'sum_main'
 PARTITION_TABLE = 'sum_partn_alloc'
 PARTITION_TABLE_WD = 'wd'
 PARTITION_TABLE_EFFECTIVE_DATE = 'effective_date'
+PARTITION_DEFINITION_TABLE = 'sum_partn_avail'
+PARTITION_DEFINITION_TABLE_PDS_SET_NUM = 'pds_set_num'
+PARTITION_DEFINITION_TABLE_PARTN_NAME = 'partn_name'
 DEFAULT_LOG_FILE = 'sums_steward_log.txt'
 
 class ErrorCode(DRMSErrorCode):
@@ -316,7 +319,7 @@ class PartitionScrubber(object):
 
     async def _find_chunk(self):
         # SELECT wd AS sudir FROM sum_partn_alloc WHERE effective_date < to_char(current_timestamp, 'YYYYMMDD') AND status = 2 AND wd LIKE '/SUM8/%' ORDER BY wd LIMIT 2000
-        sql = f"SELECT {PARTITION_TABLE_WD} AS sudir FROM {PARTITION_TABLE} where {PARTITION_TABLE_EFFECTIVE_DATE} < to_char(current_timestamp, 'YYYYMMDD') AND status = 2 AND {PARTITION_TABLE_WD} LIKE '{self._partition.rstrip('/')}/%' ORDER BY {PARTITION_TABLE_WD} LIMIT {self._chunk_size}"
+        sql = f"SELECT {PARTITION_TABLE_WD} AS sudir FROM {PARTITION_TABLE} where {PARTITION_TABLE_EFFECTIVE_DATE} < to_char(current_timestamp, 'YYYYMMDDHH24SS') AND status = 2 AND {PARTITION_TABLE_WD} LIKE '{self._partition.rstrip('/')}/%' ORDER BY {PARTITION_TABLE_WD} LIMIT {self._chunk_size}"
 
         cmd = [ 'psql', '-qt', f'-h {self._db_host}', f'-p {str(self._db_port)}', f'-U {self._db_user}', f'{self._db_name}' ]
         cmd.append(f'-c {quote(sql)}')
@@ -330,7 +333,9 @@ class PartitionScrubber(object):
                 break
 
             # strip leading whitespace and newline
-            sudir_chunk.append(bytes_read.decode().strip())
+            sudir = bytes_read.decode().strip()
+            if len(sudir) > 0:
+                sudir_chunk.append(sudir)
 
         await proc.wait()
         if proc.returncode is not None:
@@ -350,14 +355,15 @@ class PartitionScrubber(object):
 
     async def _disable_partition(self):
         cmd = [ 'psql', f'-h {self._db_host}', f'-p {str(self._db_port)}', f'-U {self._db_user}', f'{self._db_name}' ]
-        sql = f"UPDATE {PARTITION_TABLE} SET pds_set_num = -1 WHERE partn_name = '{self._partition}'"
+        sql = f"UPDATE {PARTITION_DEFINITION_TABLE} SET {PARTITION_DEFINITION_TABLE_PDS_SET_NUM} = -1 WHERE {PARTITION_DEFINITION_TABLE_PARTN_NAME} = '{self._partition}'"
         cmd.append(f'-c {quote(sql)}')
+        self._log.write_debug([ f'[ PartitionScrubber._disable_partition ] running SQL {sql}' ])
         proc = await asyncio.subprocess.create_subprocess_shell(' '.join(cmd), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
 
         await proc.wait()
         if proc.returncode is not None:
             # child process terminated
-            stdout, stderr = proc.communicate()
+            stdout, stderr = await proc.communicate()
 
             # child process terminated
             if proc.returncode != 0:
@@ -396,7 +402,7 @@ class PartitionScrubber(object):
                 if current_usage > self._high_water:
                     # no more sus to delete, but we are still above low water - disable writing to partition
                     self._log.write_info([ f'[ PartitionScrubber.scrub ] disabling write-access to partition {self._partition}' ])
-                    self._disable_partition()
+                    await self._disable_partition()
             else:
                 deleted_sudirs = []
                 self._log.write_info([ f'[ PartitionScrubber.scrub ] deleting SUdirs {",".join(sudirs)} from partition `{self._partition}`' ])
@@ -420,7 +426,7 @@ class PartitionScrubber(object):
                     if current_usage > self._high_water:
                         # no more sus to delete, but we are still above low water - disable writing to partition
                         self._log.write_info([ f'[ PartitionScrubber.scrub ] disabling write-access to partition {self._partition}' ])
-                        self._disable_partition()
+                        await self._disable_partition()
                 else:
                     current_usage = self.usage # update current usage
                     self._previous_usage = current_usage
