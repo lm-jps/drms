@@ -73,8 +73,9 @@ RV_GENERATERESPONSE = 19
 RV_IMPLEMENTATION = 20
 RV_TAPEREQUEST = 21
 RV_SUMSCHMOWN = 22
-RV_SU_FILE_OWNER_MOD_UPDATER = 23
-RV_UNKNOWNERROR = 24
+RV_PUTFILE = 23
+RV_SU_FILE_OWNER_MOD_UPDATER = 24
+RV_UNKNOWNERROR = 25
 
 
 # Request types
@@ -454,12 +455,17 @@ class TaperequestException(SDException):
     def __init__(self, msg):
         super(TaperequestException, self).__init__(msg)
 
-
 class SumsChmownException(SDException):
 
     retcode = RV_SUMSCHMOWN
     def __init__(self, msg):
         super(SumsChmownException, self).__init__(msg)
+
+class PutFileException(SDException):
+
+    retcode = RV_PUTFILE
+    def __init__(self, msg):
+        super(PutFileException, self).__init__(msg)
 
 class SUFileOwnerModUpdaterException(SDException):
 
@@ -1793,9 +1799,9 @@ class PutFileUpdater(SUFileOwnerModUpdater):
 
                 # now write current SU to lock file
                 self._log.write_debug([ '[ PutFileUpdater.update ] writing SU {su} to {lock_file}'.format(su=su_path, lock_file=self._updater_lock_path) ])
-                self._updater_lock.write_to_file(su_path)
-            except OSError as error:
-                xxx
+                self._updater_lock.write_to_file(su_path + '\n')
+            except OSError as exc:
+                raise PutFileException('[ PutFileUpdater.update ] error updating SUMS put file `{exc_msg}`'.format(exc_msg=str(exc)))
 
             finally:
                 self._updater_lock.releaseLock()
@@ -1814,10 +1820,9 @@ class PutFileUpdater(SUFileOwnerModUpdater):
         if write_to_tmp:
             try:
                 with open(tmp_file, mode='a') as f_tmp:
-                    tmp_file.write(su_path)
-            except OSError:
-                xxx
-
+                    tmp_file.write(su_path + '\n')
+            except OSError as exc:
+                raise PutFileException('[ PutFileUpdater.update ] error updating SUMS tmp put file `{exc_msg}`'.format(exc_msg=str(exc)))
 
 class PutResponse(Response):
     def __init__(self, request, status, dest=None):
