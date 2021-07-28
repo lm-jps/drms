@@ -804,7 +804,7 @@ if __name__ == "__main__":
         try:
             formatter = DrmsLogFormatter('%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
             log = DrmsLog(arguments.log_file, arguments.logging_level, formatter)
-        except exc:
+        except Exception as exc:
             raise LoggingError(msg=f'{str(exc)}')
 
         # socket addresses available on the hosting machine
