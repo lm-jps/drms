@@ -37,7 +37,7 @@ def getArgs(drmsParams):
     optD = {}
     etype = ''
     useCGI = False
-    
+
     # Ack - A disaster of Hellerian proportions. We want to determine the method of argument parsing chosen by the user, but in order to select a method the user
     # must set an argument! So, parse the cmd-line and if the debug flag is set, then strip that and pass the rest to the cgi command-line parser.
     optD['debug'] = False
@@ -49,13 +49,13 @@ def getArgs(drmsParams):
             sys.argv.pop(index)
             break
         index += 1
-    
+
     # Use REQUEST_URI as surrogate for the invocation coming from a CGI request.
     if os.getenv('REQUEST_URI') or DEBUG_CGI or useCGI:
         optD['source'] = 'cgi'
     else:
         optD['source'] = 'cl'
-    
+
     if optD['source'] == 'cgi':
         # Options
         optD['noheader'] = None
@@ -65,15 +65,15 @@ def getArgs(drmsParams):
         optD['dbuser'] = None
         optD['filter'] = None
         optD['wlfile'] = None
-        
+
         try:
             # Try to get arguments with the cgi module. If that doesn't work, then fetch them from the command line.
             arguments = cgi.FieldStorage()
-            
+
             if arguments:
                 for key in arguments.keys():
                     val = arguments.getvalue(key)
-                    
+
                     if key in ('n', 'noheader'):
                         if int(val) == 1:
                             optD['noheader'] = True
@@ -96,7 +96,7 @@ def getArgs(drmsParams):
                         optD['filter'] = val
                     elif key in ('w', 'wlfile'):
                         optD['wlfile'] = val
-            
+
             optD['noheader'] = bool(getOption(optD['noheader'], False))
             optD['info'] = bool(getOption(optD['info'], False))
             optD['dbport'] = int(getOption(optD['dbport'], drmsParams.get('DRMSPGPORT')))
@@ -104,7 +104,7 @@ def getArgs(drmsParams):
             optD['dbuser'] = getOption(optD['dbuser'], pwd.getpwuid(os.getuid())[0])
             optD['filter'] = getOption(optD['filter'], None)
             optD['wlfile'] = getOption(optD['wlfile'], drmsParams.get('WL_FILE'))
-            
+
             # Enforce requirements.
             if not 'dbhost' in optD:
                 raise Exception('getArgs', 'cgi', 'Missing required argument ' + "'dbhost'.")
@@ -114,10 +114,10 @@ def getArgs(drmsParams):
         # Non CGI invocation.
         try:
             parser = CmdlParser(usage='%(prog)s [ -dhin ] dbhost=<db host> [ --dbport=<db port> ] [ --dbname=<db name> ] [ --dbuser=<db user> ] [ --filter=<DRMS regular expression> ] [--wlfile=<white-list text file> ]')
-            
+
             # Required
             parser.add_argument('H', 'dbhost', '--dbhost', help='The machine hosting the EXTERNAL database that serves DRMS data series names.', metavar='<db host>', dest='dbhost', required=True)
-            
+
             # Optional
             parser.add_argument('-d', '--debug', help='Run in CGI mode, and print helpful diagnostics.', dest='debug', action='store_true', default=False)
             parser.add_argument('-i', '--info', help='Print additional series information (such as series description)', dest='info', action='store_true', default=False)
@@ -128,15 +128,15 @@ def getArgs(drmsParams):
             parser.add_argument('-U', '--dbuser', help='The user to log-in to the serving database as.', metavar='<db user>', dest='dbuser', default=pwd.getpwuid(os.getuid())[0])
             parser.add_argument('-f', '--filter', help='The DRMS-style regular expression to filter series.', metavar='<regexp>', dest='filter', default=None)
             parser.add_argument('-w', '--wlfile', help='The text file containing the definitive list of internal series accessible via the external web site.', metavar='<white-list file>', dest='wlfile', default=drmsParams.get('WL_FILE'))
-            
+
             args = parser.parse_args()
         except Exception as exc:
             if len(exc.args) != 2:
                 raise # Re-raise
-            
+
             etype = exc.args[0]
             msg = exc.args[1]
-            
+
             if etype == 'CmdlParser-ArgUnrecognized' or etype == 'CmdlParser-ArgBadformat' or etype == 'CmdlParser':
                 raise Exception('getArgs', 'cl', 'Unable to parse command-line arguments. ' + msg + '\n' + parser.format_help())
             else:
@@ -159,7 +159,7 @@ def getArgs(drmsParams):
 
     # Get configuration information.
     optD['cfg'] = drmsParams
-    
+
     return optD
 
 rv = RET_SUCCESS
@@ -171,9 +171,9 @@ if __name__ == "__main__":
     errMsg = ''
     passThruSeries = []
     combinedSeries = []
-    rtype = 'cgi' # Gotta assume CGI, since if we are in a CGI context, but we have assumed we are not, and an exception happens, 
+    rtype = 'cgi' # Gotta assume CGI, since if we are in a CGI context, but we have assumed we are not, and an exception happens,
                   # an error would be printed causing the CGI script to fail without returning some kind of message to the caller.
-    
+
     try:
         drmsParams = DRMSParams()
         if drmsParams is None:
@@ -182,12 +182,12 @@ if __name__ == "__main__":
             else:
                 rtype = 'cl'
             raise Exception('drmsParams', rtype, 'Unable to locate DRMS parameters file (drmsparams.py).')
-        
+
         optD = getArgs(drmsParams)
-        
+
         if not drmsParams.getBool('WL_HASWL'):
             raise Exception('whitelist', optD['source'], 'This DRMS does not support series whitelists.')
-        
+
         # If being run by apache in the CGI context, then the environment is virtually empty. And this script needs to be runnable
         # outside the CGI context too. This is one argument for not systeming processes. So, call this csh script to figure out which
         # architecture's binary to run.
@@ -202,7 +202,7 @@ if __name__ == "__main__":
             del os.environ['QUERY_STRING']
 
         cmdList = [os.path.join(binDir, '..', 'build', 'jsoc_machine.csh')]
-        
+
         try:
             resp = check_output(cmdList, stderr=STDOUT)
             output = resp.decode('utf-8')
@@ -217,7 +217,7 @@ if __name__ == "__main__":
 
         # There should be only one output line.
         arch = outputList[0];
-        
+
         # Call show_series on the internal host with the optional filter.
         cmdList = [os.path.join(binDir, arch, 'show_series'), '-qz', 'JSOC_DBHOST=' + drmsParams.get('SERVER'), 'JSOC_DBPORT=' + drmsParams.get('DRMSPGPORT'), 'JSOC_DBNAME=' + drmsParams.get('DBNAME'), 'JSOC_DBUSER=' + optD['dbuser']]
         if optD['filter']:
@@ -231,7 +231,7 @@ if __name__ == "__main__":
             raise Exception('showseries', rtype, "Unable to run command: '" + ' '.join(cmdList) + "'.")
         except CalledProcessError as exc:
             raise Exception('showseries', rtype, "Command '" + ' '.join(cmdList) + "' returned non-zero status code " + str(exc.returncode))
-        
+
         if output is None:
             raise Exception('showseries', rtype, 'Unexpected response from show_series.')
 
@@ -256,7 +256,7 @@ if __name__ == "__main__":
         cmdList = [os.path.join(binDir, arch, 'show_series'), '-qz', 'JSOC_DBHOST=' + optD['dbhost'], 'JSOC_DBPORT=' + str(optD['dbport']), 'JSOC_DBNAME=' + optD['dbname'], 'JSOC_DBUSER=' + optD['dbuser']]
         if optD['filter']:
             cmdList.append(optD['filter'])
-        
+
         try:
             resp = check_output(cmdList, stderr=STDOUT)
             output = resp.decode('utf-8')
@@ -331,7 +331,7 @@ if __name__ == "__main__":
             pass
         elif etype == 'getArgsCL':
             rv = RET_BADARGS
-            # Show usage.            
+            # Show usage.
         elif etype == 'drmsArgsCGI':
             # Nothing extra for now. Could append to msg.
             pass
