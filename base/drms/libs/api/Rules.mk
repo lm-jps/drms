@@ -32,7 +32,7 @@ CLEAN		:= $(CLEAN) \
 		   $(LIBDRMS) \
 		   $(LIBDRMSCLIENT) \
 		   $(LIBDRMS_SERVER_FPIC) \
-		   $(DEP_$(d)) 
+		   $(DEP_$(d))
 
 TGT_LIB 	:= $(TGT_LIB) $(LIBDRMS) $(LIBDRMSCLIENT) $(LIBDRMS_SERVER_FPIC)
 
@@ -46,7 +46,7 @@ $(CLIENT_OBJ_$(d)):	$(d)/client/%.o : $(SRCDIR)/$(d)/%.c
 
 $(COMM_OBJ_FPIC_$(d)):  $(d)/server-fpic/%.o : $(SRCDIR)/$(d)/%.c
 												$(COMP)
-												
+
 
 # THIS IS BUGGY ON gnu make 3.81; it causes a circular dependency; with gnu make 3.82, there is no circular dependency;
 # the problem is a bad interaction between VPATH and this recipe
@@ -61,9 +61,9 @@ $(d)/client/fdrms.o:	$(d)/fdrms.f
 $(COMM_OBJ_$(d)):	$(SRCDIR)/$(d)/Rules.mk
 $(COMM_OBJ_$(d)):	CF_TGT := $(CF_TGT) -D$(DBMS) $(CFITSIOH)
 $(SERVER_OBJ_$(d)):		$(SRCDIR)/$(d)/Rules.mk
-$(SERVER_OBJ_$(d)):		CF_TGT := $(CF_TGT) -D$(DBMS) $(CFITSIOH)
+$(SERVER_OBJ_$(d)):		CF_TGT := $(CF_TGT) -D$(DBMS) $(CFITSIOH) $(PGH)
 $(CLIENT_OBJ_$(d)):		$(SRCDIR)/$(d)/Rules.mk
-$(CLIENT_OBJ_$(d)):		CF_TGT := $(CF_TGT) -D$(DBMS) -DDRMS_CLIENT
+$(CLIENT_OBJ_$(d)):		CF_TGT := $(CF_TGT) -D$(DBMS) -DDRMS_CLIENT $(PGH)
 $(COMM_OBJ_FPIC_$(d)):	$(SRCDIR)/$(d)/Rules.mk
 $(COMM_OBJ_FPIC_$(d)):	CF_TGT := $(CF_TGT) -D$(DBMS) $(CFITSIOH)
 $(SERVER_OBJ_FPIC_$(d)):    $(SRCDIR)/$(d)/Rules.mk
