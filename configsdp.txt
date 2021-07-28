@@ -32,6 +32,7 @@ q:SUMS_GROUP                    SOI
 q:SUMLOG_BASEDIR                /usr/local/logs/SUM
 q:SUMBIN_BASEDIR                /usr/local/bin
 q:SUMSERVER                     k1.stanford.edu
+q:SUMS_PUT_FILE                 /usr/local/logs/SUM/sums_put.txt
 q:DRMS_LOG_DIR                  /home/jsoc/jsoclogs
 q:DRMS_LOCK_DIR                 /home/jsoc/locks
 # The number of SUMS process SETS to spawn. If this number is not 1, then the number of SUMS processes
@@ -92,6 +93,10 @@ q:WL_FILE                               /web/jsoc/htdocs/whitelist.txt
 # Bin paths
 q:BIN_EXPORT                            /home/jsoc/cvs/Development/JSOC/bin
 q:SCRIPTS_EXPORT                        /home/jsoc/cvs/Development/JSOC/scripts
+q:DX_SERVER                             rumble.stanford.edu
+a:DX_LISTEN_PORT                        6200
+a:DX_START_PORT                         8800
+a:DX_NUMBER_PORTS                       100
 q:EXPORT_PRODUCTION_DB_USER             production
 q:EXPORT_LOG_DIR                        /home/jsoc/exports/logs
 q:EXPORT_LOCK_DIR                       /home/jsoc/exports/tmp
@@ -109,6 +114,8 @@ q:EXPORT_USER_INFO_INSERT_FN            jsoc.user_info_insert
 q:EXPORT_USER_INFO_UPDATE_FN            jsoc.user_info_update
 q:EXPORT_USER_INFO_DELETE_FN            jsoc.user_info_delete
 q:EXPORT_USER_UNREGISTER_FN             jsoc.user_unregister
+q:WEB_DOMAIN_PRIVATE                    jsoc2.stanford.edu
+q:WEB_DOMAIN_PUBLIC                     jsoc.stanford.edu
 q:BIN_PY                                /home/jsoc/bin/linux_x86_64/activepython27
 q:BIN_PY3                               /home/jsoc/anaconda3/bin/python3
 a:SUMS_USEMTSUMS                        1
