@@ -2704,7 +2704,7 @@ class SSHJsonClient(object):
                     update_dict.update(self._server.ssh_show_series_internal_args)
             else:
                 if self._server.ssh_show_series_args is not None:
-                    update_dict.update(self.ssh_show_series_args)
+                    update_dict.update(self._server.ssh_show_series_args)
 
             # override
             if self._server.connection_info is not None:
@@ -2721,7 +2721,7 @@ class SSHJsonClient(object):
                 if 'dbname' in self._server.connection_info:
                     update_dict['JSOC_DBNAME'] = self._server.connection_info['dbname']
 
-            cmd_list.extend([ f'{key} = {str(val)}' for key, val in update_dict.items() ])
+            cmd_list.extend([ f'{key}={str(val)}' for key, val in update_dict.items() ])
 
             if ds_filter is not None:
                 cmd_list.append(ds_filter)
@@ -2929,7 +2929,7 @@ class SSHJsonClient(object):
             if 'dbname' in self._server.connection_info:
                 update_dict['JSOC_DBNAME'] = self._server.connection_info['dbname']
 
-        cmd_list.extend([ f'{key} = {str(val)}' for key, val in update_dict.items() ])
+        cmd_list.extend([ f'{key}={str(val)}' for key, val in update_dict.items() ])
 
         # we have to redirect the output to a tar file; use a UUID-inspired base file name; when the user calls
         # SecureExportRequest.download(dir), this file is scp'd back to the dir directory on the client host and exploded
@@ -3054,7 +3054,7 @@ class SSHJsonClient(object):
             if 'dbname' in self._server.connection_info:
                 update_dict['JSOC_DBNAME'] = self._server.connection_info['dbname']
 
-        cmd_list.extend([ f'{key} = {str(val)}' for key, val in update_dict.items() ])
+        cmd_list.extend([ f'{key}={str(val)}' for key, val in update_dict.items() ])
 
         if download_directory is None:
             download_path = None
@@ -3189,7 +3189,7 @@ class SSHJsonClient(object):
                 if 'dbname' in self._server.connection_info:
                     update_dict['JSOC_DBNAME'] = self._server.connection_info['dbname']
 
-            cmd_list.extend([ f'{key} = {str(val)}' for key, val in update_dict.items() ])
+            cmd_list.extend([ f'{key}={str(val)}' for key, val in update_dict.items() ])
         else:
             # this script (jsocextfetch.py) accepts a URL argument string (like QUERY_STRING)
             arg_str_unencoded = { 'op' : 'exp_request', 'format' : 'json', 'ds' : ds, 'notify' : notify, 'method' : method, 'protocol' : protocol, 'n' : 1 }
@@ -3266,7 +3266,7 @@ class SSHJsonClient(object):
                 if 'dbname' in self._server.connection_info:
                     update_dict['JSOC_DBNAME'] = self._server.connection_info['dbname']
 
-            cmd_list.extend([ f'{key} = {str(val)}' for key, val in update_dict.items() ])
+            cmd_list.extend([ f'{key}={str(val)}' for key, val in update_dict.items() ])
         else:
             # this script accepts a URL argument string (like QUERY_STRING)
             arg_str_unencoded = { 'op' : 'exp_status', 'requestid' : requestid, 'n' : 1 }
@@ -3422,7 +3422,7 @@ class SSHJsonClient(object):
             if 'dbname' in self._server.connection_info:
                 update_dict['JSOC_DBNAME'] = self._server.connection_info['dbname']
 
-            cmd_list.extend([ f'{key} = {str(val)}' for key, val in update_dict.items() ])
+            cmd_list.extend([ f'{key}={str(val)}' for key, val in update_dict.items() ])
         else:
             # this script (jsocextinfo.py) accepts a URL argument string (like QUERY_STRING)
             arg_str_unencoded = { 'op' : 'rs_list', 'ds' : ds, 'N' : 1 }
@@ -3507,7 +3507,7 @@ class SSHJsonClient(object):
             if 'dbname' in self._server.connection_info:
                 update_dict['JSOC_DBNAME'] = self._server.connection_info['dbname']
 
-            cmd_list.extend([ f'{key} = {str(val)}' for key, val in update_dict.items() ])
+            cmd_list.extend([ f'{key}={str(val)}' for key, val in update_dict.items() ])
 
         else:
             # jsocextfetch.py
@@ -3640,7 +3640,7 @@ class SSHJsonClient(object):
             if 'dbname' in self._server.connection_info:
                 update_dict['JSOC_DBNAME'] = self._server.connection_info['dbname']
 
-            cmd_list.extend([ f'{key} = {str(val)}' for key, val in update_dict.items() ])
+            cmd_list.extend([ f'{key}={str(val)}' for key, val in update_dict.items() ])
         else:
             # jsocextinfo.py
             arg_str_unencoded = { 'op' : 'series_struct', 'ds' : series, 'N' : 1 }
@@ -4429,7 +4429,7 @@ class SecureClientFactory(object):
             return an SSHClient if `use_ssh` is True, otherwise return a BasicAccessClient; the SecureClient returned can then be used to access the DRMS server
         '''
         client = None
-        args = { 'email' : self._email, 'verbose' : self._verbose, 'debug' : self._debug if debug is None else debug, 'use_internal' : use_internal, 'connection_info' : connection_info }
+        args = { 'email' : self._email, 'verbose' : self._verbose, 'debug' : self._debug if debug is None else debug, 'use_internal' : use_internal }
 
         if server is not None:
             self._config = SecureServerConfig.get(server)
