@@ -6,7 +6,8 @@ from collections import namedtuple
 __all__ = [ 'Response' ]
 
 class Response(object):
-    def __init__(self, *, msg=None, **kwargs):
+    def __init__(self, *, status_code, msg=None, **kwargs):
+        self._status_code = status_code
         self._msg = msg
         self._kwargs = kwargs
         self._json_obj_response = None
@@ -28,10 +29,17 @@ class Response(object):
 
     def generate_dict(self):
         if self._dict_response is None:
-            self._dict_response = { "status" : int(self._status), "msg" : self._msg }
+            self._dict_response = { "status" : int(self._status_code), "msg" : self._msg }
             self._dict_response.update(self._kwargs)
         return self._dict_response
 
+    @classmethod
+    def generate_response(cls, *, status_code, msg=None, **kwargs):
+        if msg is None:
+            msg = status_code.fullname(**kwargs)
+
+        return cls(status_code=status_code, msg=msg, **kwargs)
+
 class ErrorResponse(Response):
-    def __init__(self, *, msg=None):
-        super().__init__(msg=msg)
+    def __init__(self, *, error_code, msg=None):
+        super().__init__(status_code=error_code, msg=msg)
