@@ -34,11 +34,13 @@ class Response(object):
         return self._dict_response
 
     @classmethod
-    def generate_response(cls, *, status_code, msg=None, **kwargs):
-        if msg is None:
-            msg = status_code.fullname(**kwargs)
+    def generate_response(cls, *, status_code=None, msg=None, **kwargs):
+        status_code_final = status_code if status_code is not None else cls._status_code
 
-        return cls(status_code=status_code, msg=msg, **kwargs)
+        if msg is None:
+            msg = status_code_final.fullname(**kwargs)
+
+        return cls(status_code=status_code_final, msg=msg, **kwargs)
 
 class ErrorResponse(Response):
     def __init__(self, *, error_code, msg=None):
