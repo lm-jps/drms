@@ -1,4 +1,4 @@
-#!/usr/bin/env python3                                                                                                                                                                            
+#!/usr/bin/env python3
 from enum import Enum
 from .statuscode import StatusCode as SC
 
@@ -13,13 +13,11 @@ class Error(Exception):
 
     def __init__(self, *, msg=None):
         if msg is None:
-            self._msg = f'{self._error_code.fullname}'
+            self._msg = f'{self._error_code.fullname()}'
         else:
             self._msg = msg
 
         if not hasattr(self, '_header'):
             self._header = f'[ {self.__class__.__name__} ]'
-
-        self._response = None
 
         super().__init__(self._msg)
