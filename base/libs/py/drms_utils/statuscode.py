@@ -16,4 +16,4 @@ class StatusCode(Enum):
         return self._value
 
     def fullname(self, **kwargs):
-        self._fullname.format(**kwargs)
+        return self._fullname.format(**kwargs)
