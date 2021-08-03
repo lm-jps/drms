@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from json import dumps
+from json import dumps, loads
 from collections import namedtuple
 
 __all__ = [ 'Response' ]
@@ -19,7 +19,7 @@ class Response(object):
 
     def generate_json_obj(self):
         if self._json_obj_response is None:
-            self._json_obj_response = json.loads(self.generate_json(), object_hook = lambda d : namedtuple('JO', d.keys()) (*d.values()))
+            self._json_obj_response = loads(self.generate_json(), object_hook = lambda d : namedtuple('JO', d.keys()) (*d.values()))
         return self._json_obj_response
 
     def generate_json(self):
