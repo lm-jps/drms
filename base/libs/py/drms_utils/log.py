@@ -16,12 +16,21 @@ class LogLevel(Enum):
     INFO = 4, 'info'
     DEBUG = 5, 'debug'
 
+    def __new__(cls, value, name):
+        member = object.__new__(cls)
+        member._value = value
+        member._fullname = name
+        return member
+
+    def __int__(self):
+        return self._value
+
 class Formatter(logging.Formatter):
     pass
 
 class Log(object):
     """Manage a logfile."""
-    def __init__(self, file, level, formatter):
+    def __init__(self, file, drms_log_level, formatter):
         if isinstance(file, IOBase):
             self._file_name = None
             self._handler = logging.StreamHandler(file)
@@ -30,10 +39,26 @@ class Log(object):
             self._handler = logging.FileHandler(file)
 
         self._log = logging.getLogger()
-        self._log.setLevel(level)
-        self._handler.setLevel(level)
+
+        logging_level = self._level_to_logging_level(drms_log_level)
+        self._log.setLevel(logging_level)
+        self._handler.setLevel(logging_level)
         self._handler.setFormatter(formatter)
         self._log.addHandler(self._handler)
+
+    def _level_to_logging_level(self, drms_log_level):
+        if drms_log_level == LogLevel.CRITICAL:
+            logging_level = logging.CRITICAL
+        if drms_log_level == LogLevel.ERROR:
+            logging_level = logging.ERROR
+        if drms_log_level == LogLevel.WARNING:
+            logging_level = logging.WARNING
+        if drms_log_level == LogLevel.INFO:
+            logging_level = logging.INFO
+        if drms_log_level == LogLevel.DEBUG:
+            logging_level = logging.DEBUG
+
+        return logging_level
 
     def close(self):
         if self._log:
@@ -91,16 +116,16 @@ class LogLevelAction(ApAction):
     def __call__(self, parser, namespace, value, option_string=None):
         valueLower = value.lower()
         if valueLower == 'critical':
-            level = logging.CRITICAL
+            level = LogLevel.CRITICAL
         elif valueLower == 'error':
-            level = logging.ERROR
+            level = LogLevel.ERROR
         elif valueLower == 'warning':
-            level = logging.WARNING
+            level = LogLevel.WARNING
         elif valueLower == 'info':
-            level = logging.INFO
+            level = LogLevel.INFO
         elif valueLower == 'debug':
-            level = logging.DEBUG
+            level = LogLevel.DEBUG
         else:
-            level = logging.ERROR
+            level = LogLevel.ERROR
 
         setattr(namespace, self.dest, level)
