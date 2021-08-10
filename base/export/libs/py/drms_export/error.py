@@ -11,18 +11,20 @@ class ErrorCode(DrmsErrorCode):
 
 class Error(DrmsError):
     _error_code = None
+    _header = None
 
-    def __init__(self, *, msg=None):
-        super().__init__(msg=self._msg)
+    def __init__(self, *, error_message=None):
+        super().__init__(error_message=error_message)
         self._response = None
 
     def _generate_response(self):
-        if self._msg is None or len(self._msg) == 0:
-            msg = f'{self._header}'
-        else:
-            msg = f'{self._header} {self._msg}'
+        if self._header is not None:
+            if self._error_message is None or len(self._error_message) == 0:
+                error_message = f'{self._header}'
+            else:
+                error_message = f'{self._header} {self._error_message}'
 
-        self._response = ErrorResponse(error_code=self._error_code, msg=self._msg)
+        self._response = ErrorResponse(error_code=self._error_code, error_message=self._error_message)
 
     @property
     def response(self):
