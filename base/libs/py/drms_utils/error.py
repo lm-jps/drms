@@ -11,13 +11,17 @@ class ErrorCode(SC):
 class Error(Exception):
     _error_code = None
 
-    def __init__(self, *, msg=None):
-        if msg is None:
-            self._msg = f'{self._error_code.fullname()}'
+    def __init__(self, *, error_message=None):
+        if error_message is None:
+            self._error_message = f'{self._error_code.description()}'
         else:
-            self._msg = msg
+            self._error_message = error_message
 
         if not hasattr(self, '_header'):
             self._header = f'[ {self.__class__.__name__} ]'
 
-        super().__init__(self._msg)
+        super().__init__(self._error_message)
+
+    @property
+    def message(self):
+        return self._error_message
