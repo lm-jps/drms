@@ -66,6 +66,7 @@ Password:
 
 # standard library imports
 import base64
+from copy import deepcopy
 import getpass
 import importlib
 import inspect
@@ -885,6 +886,21 @@ class OnTheFlyDownloader(object):
         ]
     }
     '''
+    class DataFileDestination():
+        pass
+
+    class StreamDestination(DataFileDestination):
+        def __init__(self, stream):
+            self._stream = stream
+
+    class ObjectDestination(DataFileDestination):
+        def __init__(self, directory):
+            pass
+
+    class DirectoryDestination(DataFileDestination):
+        def __init__(self, directory):
+            self._directory = directory
+
     def __init__(self, secure_export_request, export_data, debug=False):
         '''
         Parameters
@@ -1080,14 +1096,14 @@ class BasicAccessOnTheFlyDownloader(OnTheFlyDownloader):
         self._response = None
 
     # public methods
-    def download(self, *, data_dir, index=None, fname_from_rec=False, remove_package=True, verbose=None):
+    def download(self, *, destination, index=None, fname_from_rec=False, remove_package=True, verbose=None):
         '''
         stream the tar file into memory, and then extract individual data files to `data_dir`; `index` can be used to select the set of files to extract; if `index` is an integer value, then the data file for the record indexed by the value in the self._export_data pandas.DataFrame is extracted; multiple files can be extracted by providing a list of integer values; a value of None causes all files to be extracted
 
         Parameters
         ----------
-        data_dir : str
-            the directory to which data files are to be extracted
+        destination : SecureExportRequest.DataFileDestination
+            specifies the destination for all extracted data files: a directory, a stream, or a python object; if destination is an instance of SecureExportRequest.StreamDestination, then destination._stream specifies the file object to which all exported data are dumped; data can be a package of data files, or a single data file, or a file name followed by the content of a single data file; if destination is an instance of SecureExportRequest.ObjectDestination, then all exported data are packaged into an object returned to the caller; if destination is an instance of SecureExportRequest.DirectoryDestination, then destination._directory specifies the directory to which all exported data are written
         [ index : int or list ]
             either an integer value, or a list of integer values, or None; the integer values refer to the indexes of the data files in the tar file that are to be extracted; if None (default) then all data files are extracted
         [ fname_from_rec : bool ]
@@ -1177,15 +1193,26 @@ class BasicAccessOnTheFlyDownloader(OnTheFlyDownloader):
             if self._debug:
                 print('[ BasicAccessOnTheFlyDownloader.download ] extracted (record, filename) export data from file_list.json inside streamed archive')
 
-        dl_data = self._extract_data(data_dir=data_dir, index=index, fname_from_rec=fname_from_rec, remove_tar=remove_package, verbose=verbose)
+        if isinstance(destination, self.StreamDestination):
+            dl_data = self._dump_payload_to_stream(stream=destination._stream)
+        else:
+            if isinstance(destination, self.ObjectDestination):
+                data_dir = None
+            elif isinstance(destination, self.DirectoryDestination):
+                data_dir = destination._directory
+            else:
+                raise SecureDRMSArgumentError('invalid destination argument')
+
+            self._download_and_open_tar_file()
+            dl_data = self._extract_data(data_dir=data_dir, index=index, fname_from_rec=fname_from_rec, remove_tar=remove_package, verbose=verbose)
 
         # return (single_record_spec, None, local_path_of_data_file) - in the parent class, the second column would normally be URL of the tarfile; however, no such file exists since the tarfile was generated synchronous (no Storage Unit was created)
         return dl_data
 
-    def extract(self, *, data_dir, index=None, fname_from_rec=False, remove_package=False, verbose=None):
+    def extract(self, *, destination, index=None, fname_from_rec=False, remove_package=False, verbose=None):
         dl_data = None
         try:
-            dl_data = self._extract_data(data_dir=data_dir, index=index, fname_from_rec=fname_from_rec, remove_tar=remove_package, verbose=verbose)
+            dl_data = self._extract_data(destination=destination, index=index, fname_from_rec=fname_from_rec, remove_tar=remove_package, verbose=verbose)
         except OSError as error:
             raise SecureDRMSSystemError(error.strerror)
 
@@ -1329,15 +1356,14 @@ class SSHOnTheFlyOnestopDownloader(OnTheFlyDownloader):
         except pexpect.exceptions.TIMEOUT:
             raise SecureDRMSTimeOutError('time-out waiting server to respond')
 
-    # data_dir not determined in SecureClient.exp_fits(), so it is required here
-    def _download_tar_file(self, *, data_dir):
+    def _download_tar_file(self):
         if self._tarfile is None:
             raise SecureDRMSArgumentError('[ SSHOnTheFlyOnestopDownloader._remove_sever_tar_file ] server package file has been removed')
 
         # download tarfile to `self._local_tar_file`; self._tarfile is the server path to the tarfile (as seen from the server)
         if not self._open_archive and not os.path.exists(self._local_tar_file):
             try:
-                # scp the tarfile from the server to the local `data_dir` directory
+                # scp the tarfile from the server to the local tar file
                 scp_cmd_list = [ '/usr/bin/scp', '-q', '-P', str(self._remote_port), self._remote_user + '@' + self._remote_host + ':' + self._tarfile, self._local_tar_file ]
 
                 if self._debug:
@@ -1386,9 +1412,9 @@ class SSHOnTheFlyOnestopDownloader(OnTheFlyDownloader):
             # remove the local tar file
             os.remove(self._local_tar_file)
 
-    def _download_and_open_tar_file(self, *, data_dir):
+    def _download_and_open_tar_file(self):
         if not os.path.exists(self._local_tar_file):
-            self._download_tar_file(data_dir=data_dir)
+            self._download_tar_file()
 
         if not self._open_archive:
             self._open_archive = tarfile.open(name=self._local_tar_file, mode='r')
@@ -1461,14 +1487,14 @@ class SSHOnTheFlyOnestopDownloader(OnTheFlyDownloader):
         return dl_data
 
     # public methods
-    def download(self, *, data_dir, index=None, fname_from_rec=False, remove_package=False, verbose=None):
+    def download(self, *, destination, index=None, fname_from_rec=False, remove_package=False, verbose=None):
         '''
         download the tar file from the server to `data_dir`, and then extract individual data files to `data_dir`; `index` can be used to select the set of files to extract; if `index` is an integer value, then the data file for the record indexed by the value in the self._export_data pandas.DataFrame is extracted; multiple files can be extracted by providing a list of integer values; a value of None causes all files to be extracted
 
         Parameters
         ----------
-        data_dir : str
-            the directory to which data files are to be extracted
+        destination : SecureExportRequest.DataFileDestination
+            specifies the destination for all extracted data files: a directory, a stream, or a python object; if destination is an instance of SecureExportRequest.StreamDestination, then destination._stream specifies the file object to which all exported data are dumped; data can be a package of data files, or a single data file, or a file name followed by the content of a single data file; if destination is an instance of SecureExportRequest.ObjectDestination, then all exported data are packaged into an object returned to the caller; if destination is an instance of SecureExportRequest.DirectoryDestination, then destination._directory specifies the directory to which all exported data are written
         [ index : int or list ]
             either an integer value, or a list of integer values, or None; the integer values refer to the indexes of the data files in the tar file that are to be extracted; if None (default) then all data files are extracted
         [ fname_from_rec : bool ]
@@ -1485,24 +1511,51 @@ class SSHOnTheFlyOnestopDownloader(OnTheFlyDownloader):
             `filename` - the absolute path to the downloaded tar file (all rows have the same path)
             `download` - local path to the extracted data file
         '''
-        if data_dir is None:
-            raise SecureDRMSArgumentError('missing argument `data_dir`')
-
         if verbose is None:
             verbose = self._secure_export_request.client.verbose
 
         dl_data = None
         try:
-            self._download_and_open_tar_file(data_dir=data_dir)
-            dl_data = self._extract_data(data_dir=data_dir, index=index, fname_from_rec=fname_from_rec, remove_tar=remove_package, verbose=verbose)
+            if isinstance(destination, self.StreamDestination):
+                dl_data = self._dump_payload_to_stream(stream=destination._stream)
+            else:
+                if isinstance(destination, self.ObjectDestination):
+                    data_dir = None
+                elif isinstance(destination, self.DirectoryDestination):
+                    data_dir = destination._directory
+                else:
+                    raise SecureDRMSArgumentError('invalid destination argument')
+
+                self._download_and_open_tar_file()
+                dl_data = self._extract_data(data_dir=data_dir, index=index, fname_from_rec=fname_from_rec, remove_tar=remove_package, verbose=verbose)
         except OSError as error:
             raise SecureDRMSSystemError(error.strerror)
 
         return dl_data
 
-    def extract(self, *, data_dir, index=None, fname_from_rec=False, remove_package=False, verbose=None):
+    def extract(self, *, destination, index=None, fname_from_rec=False, remove_package=False, verbose=None):
         '''
+        extract one or more fits files from the downloaded, and possibly in memory, archive
 
+        Parameters
+        ----------
+        destination : SecureExportRequest.DataFileDestination
+            specifies the destination for all extracted data files: a directory, a stream, or a python object; if destination is an instance of SecureExportRequest.StreamDestination, then destination._stream specifies the file object to which all exported data are dumped; data can be a package of data files, or a single data file, or a file name followed by the content of a single data file; if destination is an instance of SecureExportRequest.ObjectDestination, then all exported data are packaged into an object returned to the caller; if destination is an instance of SecureExportRequest.DirectoryDestination, then destination._directory specifies the directory to which all exported data are written
+        [ index : int or list ]
+            either an integer value, or a list of integer values, or None; the integer values refer to the indexes of the data files in the tar file that are to be extracted; if None (default) then all data files are extracted; the emtpy list [] is prohibited
+        [ fname_from_rec : bool ]
+            if True then the name of each extracted file is generated from the record-set specification for that record
+        [ remove_package : bool ]
+            if True, then after the package is downloaded and any data files have been extracted, the in-memory tar file is deallocated and the local disk file is deleted; if False (the default), then additional data-file can be extracted with SecureClient.extract()
+        [ verbose : bool ]
+            if True, print export status; if False do not print export status; if None (default), use the verbose attribute from SecureClient
+
+        Return Value
+        ------------
+        object (('record', 'filename', 'download')pandas.DataFrame):
+            `record` - the record set specification for a single DRMS record
+            `filename` - None (normally this would be the URL to the tar file on the server, but no such tar file was ever created)
+            `download` - local path to the extracted data files
         '''
         if verbose is None:
             verbose = self._secure_export_request.client.verbose
@@ -1519,7 +1572,7 @@ class SSHOnTheFlyOnestopDownloader(OnTheFlyDownloader):
 
         dl_data = None
         try:
-            dl_data = self._extract_data(data_dir=data_dir, index=index, fname_from_rec=fname_from_rec, remove_tar=remove_package, verbose=verbose)
+            dl_data = self._extract_data(destination=destination, index=index, fname_from_rec=fname_from_rec, remove_tar=remove_package, verbose=verbose)
         except OSError as error:
             raise SecureDRMSSystemError(error.strerror)
 
@@ -1674,6 +1727,38 @@ class SSHOnTheFlyNonstopDownloader(OnTheFlyDownloader):
 
         self._remove_tar_file(delete_files)
 
+    async def _write_to_stream(self):
+        if self._debug:
+            print('[ SSHOnTheFlyNonstopDownloader._write_to_stream ] starting child process')
+
+        proc = await asyncio.subprocess.create_subprocess_shell(command_string, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE)
+
+        if self._debug:
+            print('[ SSHOnTheFlyNonstopDownloader._write_to_stream ] interacting with child process')
+
+        self._stream.write(await proc.stdout.read()) # disk file
+        await proc.wait()
+
+        if self._debug:
+            print('[ SSHOnTheFlyNonstopDownloader._write_to_stream ] child process terminated')
+
+    def _dump_payload_to_stream(self, stream):
+        if self._debug:
+            print('[ SSHOnTheFlyNonstopDownloader._dump_payload_to_stream ] exporting data and streaming them to stream')
+
+        ssh_cmd_list = [ '/usr/bin/ssh', '-p', str(self._remote_port), self._remote_user + '@' + self._remote_host, shlex.quote('/bin/bash -c ' + shlex.quote(' '.join(self._on_the_fly_command))) ]
+
+        if self._debug:
+            print('[ SSHOnTheFlyNonstopDownloader._dump_payload_to_stream ] running ssh command: {cmd}'.format(cmd=' '.join(ssh_cmd_list)))
+
+        self._stream = stream
+
+        # use asyncio
+        asyncio.run(self._write_to_stream(' '.join(ssh_cmd_list)))
+
+        if self._debug:
+            print('[ SSHOnTheFlyNonstopDownloader._dump_payload_to_stream ] DONE reading data from child')
+
     def _download_and_open_tar_file(self):
         if self._export_data is not None:
             raise SecureDRMSArgumentError('tar file has already been downloaded and opened')
@@ -1705,7 +1790,7 @@ class SSHOnTheFlyNonstopDownloader(OnTheFlyDownloader):
         if self._debug:
             print('[ SSHOnTheFlyNonstopDownloader._download_and_open_tar_file ] extracted (record, filename) export data from file_list.json inside streamed archive')
 
-    def _extract_data(self, *, data_dir=None, index=None, fname_from_rec=False, remove_tar=False, verbose=None):
+    def _extract_data(self, *, destination=None, index=None, fname_from_rec=False, remove_tar=False, verbose=None):
         if self._debug:
             print('[ SSHOnTheFlyNonstopDownloader._extract_data ] extracting data from open tar file')
 
@@ -1812,14 +1897,14 @@ class SSHOnTheFlyNonstopDownloader(OnTheFlyDownloader):
         return dl_data
 
     # public methods
-    def download(self, *, data_dir=None, index=None, fname_from_rec=False, remove_package=False, verbose=None):
+    def download(self, *, destination, index=None, fname_from_rec=False, remove_package=False, verbose=None):
         '''
         download the package file to local storage, optionally extracting data files; the local path to the package file was determined by SecureClient.export_package(), but that can be overriden with `data_dir`
 
         Parameters
         ----------
-        [ data_dir : str ]
-            the directory to which the data files are to be extracted; if None, then the data files are extracted into memory and no disk files are created
+        destination : SecureExportRequest.DataFileDestination
+            specifies the destination for all extracted data files: a directory, a stream, or a python object; if destination is an instance of SecureExportRequest.StreamDestination, then destination._stream specifies the file object to which all exported data are dumped; data can be a package of data files, or a single data file, or a file name followed by the content of a single data file; if destination is an instance of SecureExportRequest.ObjectDestination, then all exported data are packaged into an object returned to the caller; if destination is an instance of SecureExportRequest.DirectoryDestination, then destination._directory specifies the directory to which all exported data are written
         [ index : int or list ]
             either an integer value, or a list of integer values, or None; the integer values refer to the indexes of the data files in the tar file that are to be extracted; if the value is None (default), then all data files are extracted; if the value is [], an empty list, then no data files are extracted
         [ fname_from_rec : bool ]
@@ -1844,21 +1929,31 @@ class SSHOnTheFlyNonstopDownloader(OnTheFlyDownloader):
 
         dl_data = None
         try:
-            self._download_and_open_tar_file()
-            dl_data = self._extract_data(data_dir=data_dir, index=index, fname_from_rec=fname_from_rec, remove_tar=remove_package, verbose=verbose)
+            if isinstance(destination, self.StreamDestination):
+                dl_data = self._dump_payload_to_stream(stream=destination._stream)
+            else:
+                if isinstance(destination, self.ObjectDestination):
+                    data_dir = None
+                elif isinstance(destination, self.DirectoryDestination):
+                    data_dir = destination._directory
+                else:
+                    raise SecureDRMSArgumentError('invalid destination argument')
+
+                self._download_and_open_tar_file()
+                dl_data = self._extract_data(data_dir=data_dir, index=index, fname_from_rec=fname_from_rec, remove_tar=remove_package, verbose=verbose)
         except OSError as error:
             raise SecureDRMSSystemError(error.strerror)
 
         return dl_data
 
-    def extract(self, *, data_dir=None, index=None, fname_from_rec=False, remove_package=False, verbose=None):
+    def extract(self, *, destination, index=None, fname_from_rec=False, remove_package=False, verbose=None):
         '''
         extract one or more fits files from the downloaded, and possibly in memory, archive
 
         Parameters
         ----------
-        [ data_dir : str ]
-            the directory to which the data files are to be extracted; if None, then data files are in-memory
+        destination : SecureExportRequest.DataFileDestination
+            specifies the destination for all extracted data files: a directory, a stream, or a python object; if destination is an instance of SecureExportRequest.StreamDestination, then destination._stream specifies the file object to which all exported data are dumped; data can be a package of data files, or a single data file, or a file name followed by the content of a single data file; if destination is an instance of SecureExportRequest.ObjectDestination, then all exported data are packaged into an object returned to the caller; if destination is an instance of SecureExportRequest.DirectoryDestination, then destination._directory specifies the directory to which all exported data are written
         [ index : int or list ]
             either an integer value, or a list of integer values, or None; the integer values refer to the indexes of the data files in the tar file that are to be extracted; if None (default) then all data files are extracted; the emtpy list [] is prohibited
         [ fname_from_rec : bool ]
@@ -1887,7 +1982,7 @@ class SSHOnTheFlyNonstopDownloader(OnTheFlyDownloader):
 
         dl_data = None
         try:
-            dl_data = self._extract_data(data_dir=data_dir, index=index, fname_from_rec=fname_from_rec, remove_tar=remove_package, verbose=verbose)
+            dl_data = self._extract_data(destination=destination, index=index, fname_from_rec=fname_from_rec, remove_tar=remove_package, verbose=verbose)
         except OSError as error:
             raise SecureDRMSSystemError(error.strerror)
 
@@ -1946,7 +2041,7 @@ class SecureExportRequest(ExportRequest):
 
     not all attributes are always present; they are export-method-dependent
     '''
-    def __init__(self, server_response, secure_client, remote_user=None, remote_host=None, remote_port=None, on_the_fly=True, defer_package=True, debug=False):
+    def __init__(self, *, server_response=None, secure_client, remote_user=None, remote_host=None, remote_port=None, on_the_fly=True, defer_package=True, debug=False):
         '''
         Parameters
         ----------
@@ -2018,7 +2113,14 @@ class SecureExportRequest(ExportRequest):
 
         # initialize parent first - needed for self.data; `server_response` must be a json dict with a 'data' attribute;
         # if server_response['data'] ==> 'data' not in self (the case for BasicAccessOnTheFlyDownloader and SSHOnTheFlyNonstopDownloader, but not SSHOnTheFlyOnestopDownloader)
-        super().__init__(server_response, secure_client)
+        if server_response is not None:
+            super().__init__(server_response, secure_client)
+        else:
+            self._client = secure_client
+            self._requestid = None
+            self._status = None
+            self._download_urls_cache = None
+            self._d_time = None
 
         self._on_the_fly = on_the_fly
         self._debug = debug
@@ -2043,6 +2145,23 @@ class SecureExportRequest(ExportRequest):
                 self._downloader = BasicAccessOnTheFlyDownloader(self, server_response['url'], server_response['package'], debug)
         else:
             self._downloader = None
+
+    def copy(self, export_request):
+        self._d = deepcopy(export_request._d)
+        self._d_time = export_request._d_time
+        self._status = int(export_request._d.get('status', export_request._status))
+        self._requestid = export_request._d.get('requestid', export_request._requestid)
+
+        self._on_the_fly = export_request._on_the_fly if hasattr(export_request, '_on_the_fly') else None
+        self._debug = export_request._debug if hasattr(export_request, '_debug') else export_request._client._debug
+        self._isssh = True if isinstance(export_request._client, SSHClient) else False
+        self._downloader = export_request._downloader if hasattr(export_request, '_downloader') else None
+
+    def __setattr__(self, name, value):
+        if name in ('request_id'):
+            self._d[name] = value
+        else:
+            object.__setattr__(self, name, value)
 
     # private methods
     def _generate_download_urls(self):
@@ -2074,14 +2193,14 @@ class SecureExportRequest(ExportRequest):
     # end private methods
 
     # public methods
-    def download(self, *, directory=None, index=None, fname_from_rec=None, remove_package=False, verbose=None):
+    def download(self, *, destination, index=None, fname_from_rec=None, remove_package=False, verbose=None):
         '''
         download the data files or tar file of data files to a local directory
 
         Parameters
         ----------
-        [ directory : str ]
-            the directory to which data files are to be extracted; the package file local directory will be used by default
+        destination : SecureExportRequest.DataFileDestination
+            specifies the destination for all extracted data files: a directory, a stream, or a python object; if destination is an instance of SecureExportRequest.StreamDestination, then destination._stream specifies the file object to which all exported data are dumped; data can be a package of data files, or a single data file, or a file name followed by the content of a single data file; if destination is an instance of SecureExportRequest.ObjectDestination, then all exported data are packaged into an object returned to the caller; if destination is an instance of SecureExportRequest.DirectoryDestination, then destination._directory specifies the directory to which all exported data are written
         [ index : int or list ]
             either an integer value, or a list of integer values, or None; the integer values refer to the indexes of the data files in the tar file that are to be extracted; if None (default) then all data files are extracted
         [ fname_from_rec : bool ]
@@ -2099,12 +2218,6 @@ class SecureExportRequest(ExportRequest):
         if self._downloader is None:
             return super().download(directory, index, fname_from_rec, verbose)
 
-        # synchronous
-        if directory is not None:
-            data_dir = os.path.abspath(directory)
-        else:
-            data_dir = None
-
         # make a list out of index
         if numpy.isscalar(index):
             index = [ int(index) ]
@@ -2114,16 +2227,16 @@ class SecureExportRequest(ExportRequest):
         if verbose is None:
             verbose = self._client.verbose
 
-        return self._downloader.download(data_dir=data_dir, index=index, fname_from_rec=fname_from_rec, remove_package=remove_package, verbose=verbose)
+        return self._downloader.download(destination=destination, index=index, fname_from_rec=fname_from_rec, remove_package=remove_package, verbose=verbose)
 
-    def extract(self, *, directory=None, index=None, fname_from_rec=None, remove_package=False, verbose=None):
+    def extract(self, *, destination, index=None, fname_from_rec=None, remove_package=False, verbose=None):
         '''
         extract one or more fits files from the downloaded, and possibly in memory, archive
 
         Parameters
         ----------
-        [ directory : str ]
-            the directory to which data files are to be extracted; the package file local directory will be used by default
+        destination : SecureExportRequest.DataFileDestination
+            specifies the destination for all extracted data files: a directory, a stream, or a python object; if destination is an instance of SecureExportRequest.StreamDestination, then destination._stream specifies the file object to which all exported data are dumped; data can be a package of data files, or a single data file, or a file name followed by the content of a single data file; if destination is an instance of SecureExportRequest.ObjectDestination, then all exported data are packaged into an object returned to the caller; if destination is an instance of SecureExportRequest.DirectoryDestination, then destination._directory specifies the directory to which all exported data are written
         [ index : int or list ]
             either an integer value, or a list of integer values, or None; the integer values refer to the indexes of the data files in the tar file that are to be extracted; if None (default) then all data files are extracted
         [ fname_from_rec : bool ]
@@ -2138,7 +2251,7 @@ class SecureExportRequest(ExportRequest):
         object (('record', 'filename', 'download')pandas.DataFrame):
             the column values depend on the type of SecureClient used and are described in BasicAccessOnTheFlyDownloader.download(), SSHOnTheFlyOnestopDownloader.download(), SSHOnTheFlyNonstopDownloader.download()
         '''
-        return self._downloader.extract(data_dir=directory, index=index, fname_from_rec=fname_from_rec, remove_package=remove_package, verbose=verbose)
+        return self._downloader.extract(destination=destination, index=index, fname_from_rec=fname_from_rec, remove_package=remove_package, verbose=verbose)
 
     def remove_package(self):
         self._downloader.remove_package()
@@ -2165,9 +2278,33 @@ class SecureExportRequest(ExportRequest):
         raise SecureDRMSMethodError('[ SecureExportRequest.request_url ] no export SU directory is created for an synchronous export request')
 
     @property
+    def error(self):
+        return self._d.get('error')
+
+    @property
+    def request_id(self):
+        return self._d.get('id')
+
+    @property
+    def file_count(self):
+        return self._d.get('count')
+
+    @property
+    def record_count(self):
+        return self._d.get('rcount')
+
+    @property
+    def method(self):
+        return self._d.get('method')
+
+    @property
+    def file_format(self):
+        return self._d.get('protocol')
+
+    @property
     def urls(self):
         if self._downloader is None:
-            super().urls
+            return super().urls
 
         return self._downloader.urls
 
@@ -2324,6 +2461,69 @@ class BasicAccessHttpJsonClient(HttpJsonClient):
         unparsed = urlunparse((parsed[0], parsed[1], parsed[2], None, urlencode(arg_str_unencoded), None))
         request = self._json_request(unparsed)
         return request.data
+
+    def exp_stream_file(self, spec, filename_fmt=None):
+        '''
+        synchronously export FITS files contained by DRMS records specified by `spec`; unlike export(), this method does not require the presence of the formal export system and no export Storage Unit will be created on the server
+
+        Parameters
+        ----------
+        spec : str
+            a DRMS record-set specification such as "hmi.M_720s[2018.3.2_00:00_TAI]{magnetogram}"; the DRMS data segments to which `spec` refers must be of FITS protocol
+        [ filename_fmt : str ]
+            custom filename template string to use when generating the names for exported files that appear in the tar file; if None (the default), then '{seriesname}.{recnum:%%lld}.{segment}' is used
+
+
+        Return Value
+        ------------
+        dict
+            a dict containing a `url` attribute (the web-application URL which, when opened, initiates the streaming download of a tar file of synchronously exported FITS files); an example URL:
+                http://jsoc.stanford.edu/cgi-bin/drms-export.sh?
+                skiptar=true&
+                spec=hmi.m_720s%5B2019.2.2%5D&
+                filename=hmi.m_720s.%7BT_REC%3AA%7D.%7BCAMERA%7D.%7Bsegment%7D&
+                compression=none&
+                dbhost=hmidb2&
+                webserver=jsoc.stanford.edu
+        '''
+        parsed = urlparse(self._server.url_export_package)
+
+        arg_str_unencoded = { 'spec' : spec, 'skiptar' : 'true' }
+
+        if filename_fmt is not None and len(filename_fmt) > 0:
+            arg_str_unencoded['filename'] = filename_fmt
+
+        if self._use_internal:
+            if hasattr(self._server, 'web_export_package_internal_args') and self._server.web_export_package_internal_args is not None:
+                arg_str_unencoded.update(self._server.web_export_package_internal_args)
+                if self._server.connection_info is not None:
+                    if 'dbhost' in self._server.connection_info:
+                        arg_str_unencoded['dbhost'] = self._server.connection_info['dbhost']
+                    if 'dbport' in self._server.connection_info:
+                        arg_str_unencoded['dbport'] = str(self._server.connection_info['dbport'])
+                    if 'dbname' in self._server.connection_info:
+                        arg_str_unencoded['dbname'] = self._server.connection_info['dbname']
+                    if 'dbuser' in self._server.connection_info:
+                        arg_str_unencoded['dbuser'] = self._server.connection_info['dbuser']
+        else:
+            if hasattr(self._server, 'web_export_package_args') and self._server.web_export_package_args is not None:
+                arg_str_unencoded.update(self._server.web_export_package_args)
+                if self._server.connection_info is not None:
+                    if 'dbhost' in self._server.connection_info:
+                        arg_str_unencoded['dbhost'] = self._server.connection_info['dbhost']
+                    if 'dbport' in self._server.connection_info:
+                        arg_str_unencoded['dbport'] = str(self._server.connection_info['dbport'])
+                    if 'dbname' in self._server.connection_info:
+                        arg_str_unencoded['dbname'] = self._server.connection_info['dbname']
+                    if 'dbuser' in self._server.connection_info:
+                        arg_str_unencoded['dbuser'] = self._server.connection_info['dbuser']
+
+        unparsed = urlunparse((parsed[0], parsed[1], parsed[2], None, urlencode(arg_str_unencoded), None))
+
+
+        # do not call self._json_request() - we want to defer the actual download until the user calls download(); must
+        # return a dict
+        return { 'url' : unparsed, 'status' : 0 }
 
     def exp_package(self, spec, download_directory, filename_fmt=None):
         '''
@@ -2835,6 +3035,80 @@ class SSHJsonClient(object):
         cmd_list = [ os.path.join(self._server.ssh_base_script, self._server.ssh_check_email), shlex.quote(arg_str_encoded) ]
         return self._run_cmd(cmd_list=cmd_list)
 
+    def exp_stream_file(self, *, spec, filename_fmt=None):
+        '''
+        synchronously export FITS files contained by DRMS records specified by `spec`; unlike export(), this method does not require the presence of the formal export system and no export Storage Unit will be created on the server; the FITS files are archived to a temporary tar file, which is placed on the server's temp directory
+
+        Parameters
+        ----------
+        spec : str
+            a DRMS record-set specification (e.g., 'hmi.M_720s[2018.3.2_00:00_TAI]{magnetogram}'); the DRMS data segments to which `spec` refers must be of FITS protocol
+        [ filename_fmt : str ]
+            custom filename template string to use when generating the names for exported files that appear in the tar file; if None (the default), then '{seriesname}.{recnum:%%lld}.{segment}' is used
+
+        Return Value
+        ------------
+        dict
+            a dict representing the JSON response to the export_fits web-application; the 'method' attribute will be set to 'url_direct',  'requestid' will be None since a format export request was never created, and 'dir' will be None since no export Storage Unit is created; to the server's response is added the 'tarfile' attribute, which is the path to the server's temporary tar file; example return value:
+            {
+                "status" : 0,
+                "on-the-fly-command" : [ '/home/jsoc/cvs/Development/JSOC/bin/linux_avx/drms-export-to-stout', 'a=0', 's=1', 'e=1', spec='hmi.rdMAI_fd30[2231][210][255.0]', ffmt='hmi.rdMAI_fd30.{CarrRot}.{CMLon}.{LonHG}.{LatHG}.{LonCM}.{segment}', 'DRMS_DBUTF8CLIENTENCODING=1' ]
+            }
+        '''
+        # a=0 ==> compress all segments, s=0 ==> make tar file, e=1 ==> suppress stderr
+        cmd_list = [ os.path.join(self._server.ssh_base_bin, self._server.ssh_export_fits), 'a=0', 's=0', 'e=1' ]
+
+        cmd_list.append(shlex.quote('spec=' + spec))
+
+        if filename_fmt is not None and len(filename_fmt) > 0:
+            cmd_list.append(shlex.quote('ffmt=' + filename_fmt))
+
+        if self._server.encoding.lower() == 'utf8':
+            cmd_list.append('DRMS_DBUTF8CLIENTENCODING=1')
+
+        update_dict = {}
+
+        if self._use_internal:
+            if self._server.ssh_export_fits_internal_args is not None:
+                update_dict.update(self._server.ssh_export_fits_internal_args)
+        else:
+            if self._server.ssh_export_fits_args is not None:
+                update_dict.update(self._server.ssh_export_fits_args)
+
+        # override
+        if self._server.connection_info is not None:
+            if 'dbhost' in self._server.connection_info:
+                val = self._server.connection_info['dbhost']
+                if 'dbport' in self._server.connection_info:
+                    val = f'{val}:{str(self._server.connection_info["dbport"])}'
+
+                update_dict['JSOC_DBHOST'] = val
+
+            if 'dbuser' in self._server.connection_info:
+                update_dict['JSOC_DBUSER'] = self._server.connection_info['dbuser']
+
+            if 'dbname' in self._server.connection_info:
+                update_dict['JSOC_DBNAME'] = self._server.connection_info['dbname']
+
+        cmd_list.extend([ f'{key}={str(val)}' for key, val in update_dict.items() ])
+
+        # do not call self._run_cmd() - we are not executing ssh just yet; do that when the user calls
+        # SSHClient.download()
+        response = {
+            "status" : 0,
+            "on-the-fly-command" : cmd_list
+        }
+
+        # the response json looks like:
+        # {
+        #      "status" : 0,
+        #      "on-the-fly-command" : [ "/home/jsoc/cvs/Development/JSOC/bin/linux_avx/drms-export-to-stdout", "a=0", "s=0", "e=1", spec="hmi.M_720s[2017.12.03_01:12:00_TAI][3]{magnetogram}", "ffmt=hmi.M_720s.{T_REC:A}.{CAMERA}.{segment}", DRMS_DBUTF8CLIENTENCODING=1", JSOC_DBHOST" : "hmidb", "JSOC_DBUSER" : "production", "maxfilesize" : 4294967296 ],
+        #      "package" : "/tmp/.46680c4a-c004-4b67-9d7c-0d65412d8c94.tar",
+        #      "json_response" : "jsoc/file_list.json"
+        # }
+
+        return response
+
     def exp_fits(self, spec, download_directory, filename_fmt=None):
         '''
         synchronously export FITS files contained by DRMS records specified by `spec`; unlike export(), this method does not require the presence of the formal export system and no export Storage Unit will be created on the server; the FITS files are archived to a temporary tar file, which is placed on the server's temp directory
@@ -3081,7 +3355,7 @@ class SSHJsonClient(object):
 
         return response
 
-    def exp_request(self, ds, notify, method='url_quick', protocol='as-is', protocol_args=None, filenamefmt=None, n=None, requestor=None):
+    def exp_request(self, ds, notify, method='url_quick', protocol='as-is', protocol_args=None, filenamefmt=None, process=None, n=None, requestor=None):
         '''
         submit a data-export request to the DRMS server
 
@@ -3099,6 +3373,9 @@ class SSHJsonClient(object):
             protocol arguments for protocols 'jpg', 'mpg', and 'mp4', which include 'ct', 'scaling', 'min', 'max', and 'size'.
         [ filenamefmt : str ]
             custom filename template string to use when generating the names for exported files that appear in the tar file; if None (the default), then '{seriesname}.{recnum:%%lld}.{segment}' is used; for 'url_quick'/'as-is' data exports, this is ignored
+        [ process : dict or None ]
+            dict of processing commands; each entry is also a  dict containing all of the applicable options for that processing
+            command
         [ n : int ]
             a maximum of abs(`n`) records are exported; if `n` > 0 the first abs(`n`) records of the record set are returned, if `n` < 0 the last abs(`n`) records of the record set are returned, and `n` is None (the default), then no limit is applied
         [ requestor : str or False ]
@@ -3157,8 +3434,11 @@ class SSHJsonClient(object):
 
             if filenamefmt is not None:
                 cmd_list.append(shlex.quote('filenamefmt=' + filenamefmt))
+            if process is not None:
+                # convert to json so we can pass to jsoc_fetch as a string argument
+                cmd_list.append(f'processing={dumps(process)}')
             if n is not None:
-                cmd_list.append('process=n=' + str(n))
+                cmd_list.append(f'max_recs= {str(n)}')
             if requestor is None:
                 cmd_list.append('requestor=' + notify.split('@')[0])
             elif requestor is not False:
@@ -3192,7 +3472,7 @@ class SSHJsonClient(object):
             cmd_list.extend([ f'{key}={str(val)}' for key, val in update_dict.items() ])
         else:
             # this script (jsocextfetch.py) accepts a URL argument string (like QUERY_STRING)
-            arg_str_unencoded = { 'op' : 'exp_request', 'format' : 'json', 'ds' : ds, 'notify' : notify, 'method' : method, 'protocol' : protocol, 'n' : 1 }
+            arg_str_unencoded = { 'op' : 'exp_request', 'format' : 'json', 'ds' : ds, 'notify' : notify, 'method' : method, 'protocol' : protocol }
 
             if self._server.ssh_jsoc_fetch_wrapper_args is not None:
                 arg_str_unencoded.update(self._server.ssh_jsoc_fetch_wrapper_args)
@@ -3207,9 +3487,12 @@ class SSHJsonClient(object):
 
             if filenamefmt is not None:
                 arg_str_unencoded.update({ 'filenamefmt' : filenamefmt })
+            if process is not None:
+                arg_str_unencoded.update({ 'processing' : f'{dumps(process)}' })
             if n is not None:
-                arg_str_unencoded.update({ 'process=n=' : str(n) })
+                arg_str_unencoded.update({ 'max_recs' : str(n) })
             if requestor is None:
+
                 arg_str_unencoded.update({ 'requestor=' : notify.split('@')[0] })
             elif requestor is not False:
                 arg_str_unencoded.update({ 'requestor=' : requestor })
@@ -3872,7 +4155,7 @@ class SecureClient(DRMSClient):
         # call the parent's check_email() method
         return self._execute(super().check_email, **args)
 
-    def export(self, ds, method='url_quick', protocol='as-is', protocol_args=None, filename_fmt=None, n=None, email=None, requestor=None, synchronous_export=None):
+    def export(self, ds, method='url_quick', protocol='as-is', protocol_args=None, filename_fmt=None, n=None, email=None, requestor=None, process=None, synchronous_export=None):
         '''
         submit a data-export request to the DRMS server; if the export can be performed synchronously, and the user has not specifically said they do not want the export to be synchronous (by setting `synchronous_export` to False), then the export is a syncrhonous one
 
@@ -3894,8 +4177,10 @@ class SecureClient(DRMSClient):
             an export-system registered email address; if None (the default), then the client-wide email address, SecureClient.email, is used
         [ requestor : str or False ]
             the export user name; if None (the default), then a name is automatically generated from the user's registered email address; if False, then no requestor argument will be submitted during the export request
+        [ process : dict or None ]
+            Dictionary of processing commands. Each entry is also a dict containing all of the applicable options for that processing command. Note that only the name of the process, and not the arguments, are validated by the `~drms.client.Client`. In the case of invalid or malformed processing arguments, JSOC may still return an unprocessed image without the export request failing.
         [ synchronous_export : bool ]
-            if True, then the SecureClient.export method will perform a synchronous export, provided the export method is 'url' or 'url_direct', the export protocol is FITS, and the segments being exported are of FITS protocol; if None (the default), then the client-wide synchronous_export flag, SecureClient.synchronous_export, is used
+            if True, then the SecureClient.export method will perform a synchronous export, provided the export method is 'url' or 'url_direct', the export protocol is FITS, the segments being exported are of FITS protocol, and no export-processing is being requested; if None (the default), then the client-wide synchronous_export flag, SecureClient.synchronous_export, is used
 
         Return Value
         ------------
@@ -3929,6 +4214,9 @@ class SecureClient(DRMSClient):
                     if method.lower() != 'url_direct' and method.lower() != 'url':
                         raise SecureDRMSArgumentError('[ SecureClient.export() ] method argument {method} not suitable for export_fits() shortcut'.format(method=method))
 
+                    if process is not None:
+                        raise SecureDRMSArgumentError(f'[ SecureClient.export() ] process argument {str(process)} not suitable for export_fits() shortcut')
+
                     # call info() and make sure all segments are of fits protocol (drms-export-to-stdout does not support
                     # non-fits segments)
                     segments = self.info(series).segments
@@ -3961,13 +4249,24 @@ class SecureClient(DRMSClient):
                 # some problem calling self._export_fits, propagate to a handler
                 raise
 
-        args = { 'ds' : ds, 'method' : method, 'protocol' : protocol, 'protocol_args' : protocol_args, 'filenamefmt' : filename_fmt, 'n' : n, 'email' : email, 'requestor' : requestor }
+        args = { 'ds' : ds, 'method' : method, 'protocol' : protocol, 'protocol_args' : protocol_args, 'filenamefmt' : filename_fmt, 'n' : n, 'email' : email, 'requestor' : requestor, 'process' : process }
 
         # call the parent's export() method
         if self._debug:
             print('[ SecureClient.export() ] calling parent export() with args ' + dumps(args))
 
-        return self._execute(super().export, **args)
+        parent_export_request = self._execute(super().export, **args)
+
+        # make a SecureExportRequest child
+        export_request = SecureExportRequest(server_response=None, secure_client=self, on_the_fly=None)
+        export_request.copy(parent_export_request)
+        return export_request
+
+    def export_and_stream_file(self, spec, stream, filename_fmt=None):
+        args = { 'api_name' : 'export_and_stream_file', 'stream' : stream, 'spec' : spec, 'filename_fmt' : filename_fmt }
+
+        # returns a SecureExportRequest
+        return self._execute(self._export_and_stream_file, **args)
 
     def export_fits(self, spec, download_directory, filename_fmt=None):
         '''
@@ -4233,6 +4532,11 @@ class BasicAccessClient(SecureClient):
     def __repr__(self):
         return '<BasicAccessClient "{name}">'.format(name=self._config.name)
 
+    def _export_and_stream_file(self, spec, stream, filename_fmt=None):
+        resp = self._json.exp_stream_file(spec, stream, filename_fmt)
+
+        return SecureExportRequest(server_resopnse=resp, secure_client=self, remote_user=None, remote_host=None, remote_port=None, on_the_fly=True, defer_package=True, debug=self.debug)
+
     def _export_fits(self, spec, download_directory, filename_fmt=None):
         # since a tar disk file is not created on the server, this method is synonymous with self._export_package()
         return self._export_package(spec, download_directory, filename_fmt)
@@ -4241,7 +4545,7 @@ class BasicAccessClient(SecureClient):
         # we are going to run drms-export-to-stdout on the server; `download_directory` refers a local directory to which the tar file will be downloaded - if None, then the tar file will be in-memory only
         resp = self._json.exp_package(spec, download_directory, filename_fmt)
 
-        return SecureExportRequest(resp, self, remote_user=None, remote_host=None, remote_port=None, on_the_fly=True, defer_package=True, debug=self.debug)
+        return SecureExportRequest(server_response=resp, secure_client=self, remote_user=None, remote_host=None, remote_port=None, on_the_fly=True, defer_package=True, debug=self.debug)
 
     def _series(self, regex=None, full=False):
         if self._use_internal or self._server.web_show_series_wrapper is None:
@@ -4310,16 +4614,21 @@ class SSHClient(SecureClient):
         return '<SSHClient "{name}">'.format(name=self._config.name)
 
     # private methods
+    def _export_and_stream_file(self, spec, stream, filename_fmt=None):
+        resp = self._json.exp_stream_file(spec, stream, filename_fmt)
+
+        return SecureExportRequest(server_response=resp, secure_client=self, remote_user=None, remote_host=None, remote_port=None, on_the_fly=True, defer_package=True, debug=self.debug)
+
     def _export_fits(self, spec, download_directory, filename_fmt):
         # we are going to run drms-export-to-stdout on the server
         resp = self._json.exp_fits(spec, download_directory, filename_fmt)
 
-        return SecureExportRequest(resp, self, remote_user=self._config.ssh_remote_user, remote_host=self._config.ssh_remote_host, remote_port=self._config.ssh_remote_port, on_the_fly=True, defer_package=False, debug=self.debug)
+        return SecureExportRequest(server_response=resp, secure_client=self, remote_user=self._config.ssh_remote_user, remote_host=self._config.ssh_remote_host, remote_port=self._config.ssh_remote_port, on_the_fly=True, defer_package=False, debug=self.debug)
 
     def _export_package(self, spec, download_directory, filename_fmt):
         dummy_series_response = self._json.exp_package(spec=spec, download_directory=download_directory, filename_fmt=filename_fmt)
 
-        return SecureExportRequest(dummy_series_response, self, remote_user=self._config.ssh_remote_user, remote_host=self._config.ssh_remote_host, remote_port=self._config.ssh_remote_port, on_the_fly=True, defer_package=True, debug=self.debug)
+        return SecureExportRequest(server_response=dummy_series_response, secure_client=self, remote_user=self._config.ssh_remote_user, remote_host=self._config.ssh_remote_host, remote_port=self._config.ssh_remote_port, on_the_fly=True, defer_package=True, debug=self.debug)
 
     def _series(self, regex=None, full=False):
         if self._use_internal or self._server.ssh_show_series_wrapper is None:
