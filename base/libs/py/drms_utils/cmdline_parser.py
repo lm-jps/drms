@@ -3,7 +3,14 @@ import argparse
 import copy
 import re
 
-__all__ = [ 'CmdlParser' ]
+__all__ = [ 'Choices', 'CmdlParser' ]
+
+class Choices(list):
+    def __init__(self, items):
+        super(Choices, self).__init__(map(str.lower, items))
+
+    def __contains__(self, other):
+        return super(Choices, self).__contains__(other.lower())
 
 class CmdlParser(argparse.ArgumentParser):
     def __init__(self, **kwargsin):
