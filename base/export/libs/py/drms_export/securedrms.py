@@ -2283,7 +2283,7 @@ class SecureExportRequest(ExportRequest):
 
     @property
     def request_id(self):
-        return self._d.get('id')
+        return self._requestid
 
     @property
     def file_count(self):
@@ -4260,6 +4260,7 @@ class SecureClient(DRMSClient):
         # make a SecureExportRequest child
         export_request = SecureExportRequest(server_response=None, secure_client=self, on_the_fly=None)
         export_request.copy(parent_export_request)
+
         return export_request
 
     def export_and_stream_file(self, spec, stream, filename_fmt=None):
@@ -4317,7 +4318,13 @@ class SecureClient(DRMSClient):
         args = { 'requestid' : requestid }
 
         # call the parent's export_from_id() method
-        return self._execute(super().export_from_id, **args)
+        parent_export_request = self._execute(super().export_from_id, **args)
+
+        # make a SecureExportRequest child
+        export_request = SecureExportRequest(server_response=None, secure_client=self, on_the_fly=None)
+        export_request.copy(parent_export_request)
+
+        return export_request
 
     def info(self, series):
         '''
