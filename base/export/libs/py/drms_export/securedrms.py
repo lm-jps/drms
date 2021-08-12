@@ -635,6 +635,8 @@ class SecureServerConfig(ServerConfig):
                     return self.ssh_check_email is not None and self.ssh_check_email_addresstab is not None and self.ssh_check_email_domaintab is not None and self.ssh_base_script is not None
                 elif op == 'export':
                     return self.ssh_jsoc_info is not None and self.ssh_parse_recset is not None and self.ssh_jsoc_fetch is not None and self.ssh_base_bin is not None
+                elif op == 'export_and_stream_file':
+                    return self.ssh_export_fits is not None and self.ssh_parse_recset is not None and self.ssh_jsoc_fetch is not None and self.ssh_base_bin is not None
                 elif op == 'export_fits':
                     return self.ssh_export_fits is not None and self.ssh_parse_recset is not None and self.ssh_base_bin is not None
                 elif op == 'export_from_id':
@@ -661,6 +663,8 @@ class SecureServerConfig(ServerConfig):
                     return self.ssh_check_email is not None and self.ssh_check_email_addresstab is not None and self.ssh_check_email_domaintab is not None and self.ssh_base_script is not None
                 elif op == 'export':
                     return self.ssh_jsoc_info is not None and self.ssh_parse_recset is not None and self.ssh_jsoc_fetch is not None and self.ssh_base_bin is not None
+                elif op == 'export_and_stream_file':
+                    return self.ssh_export_fits is not None and self.ssh_parse_recset is not None and self.ssh_base_bin is not None
                 elif op == 'export_fits':
                     return self.ssh_export_fits is not None and self.ssh_parse_recset is not None and self.ssh_base_bin is not None
                 elif op == 'export_from_id':
@@ -699,7 +703,7 @@ class SecureServerConfig(ServerConfig):
                 return self.web_check_address is not None
             elif op == 'keys' or op == 'pkeys' or op == 'info':
                 return self.web_jsoc_info is not None
-            elif op == 'export' or op == 'export_from_id':
+            elif op == 'export' or op == 'export_and_stream_file' or op == 'export_from_id':
                 return self.web_jsoc_info is not None and self.web_jsoc_fetch is not None
             elif op == 'export_package':
                 return self.web_export_package is not None and self.web_parse_recset is not None
@@ -1194,7 +1198,7 @@ class BasicAccessOnTheFlyDownloader(OnTheFlyDownloader):
                 print('[ BasicAccessOnTheFlyDownloader.download ] extracted (record, filename) export data from file_list.json inside streamed archive')
 
         if isinstance(destination, self.StreamDestination):
-            dl_data = self._dump_payload_to_stream(stream=destination._stream)
+            dl_data = self._dump_payload_to_stream(destination)
         else:
             if isinstance(destination, self.ObjectDestination):
                 data_dir = None
@@ -1517,7 +1521,7 @@ class SSHOnTheFlyOnestopDownloader(OnTheFlyDownloader):
         dl_data = None
         try:
             if isinstance(destination, self.StreamDestination):
-                dl_data = self._dump_payload_to_stream(stream=destination._stream)
+                dl_data = self._dump_payload_to_stream(destination)
             else:
                 if isinstance(destination, self.ObjectDestination):
                     data_dir = None
@@ -1727,22 +1731,30 @@ class SSHOnTheFlyNonstopDownloader(OnTheFlyDownloader):
 
         self._remove_tar_file(delete_files)
 
-    async def _write_to_stream(self):
+    async def _write_to_stream(self, command_string, destination):
         if self._debug:
             print('[ SSHOnTheFlyNonstopDownloader._write_to_stream ] starting child process')
 
-        proc = await asyncio.subprocess.create_subprocess_shell(command_string, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE)
+        proc = await asyncio.subprocess.create_subprocess_shell(command_string, stdout=asyncio.subprocess.PIPE)
 
         if self._debug:
             print('[ SSHOnTheFlyNonstopDownloader._write_to_stream ] interacting with child process')
 
-        self._stream.write(await proc.stdout.read()) # disk file
+        while True:
+            # bytes_read = await proc.stdout.read(4096)
+            bytes_read = await destination.stream_reader(destination, proc)
+
+            if not bytes_read:
+                break
+
+            destination._stream.write(bytes_read)
+
         await proc.wait()
 
         if self._debug:
             print('[ SSHOnTheFlyNonstopDownloader._write_to_stream ] child process terminated')
 
-    def _dump_payload_to_stream(self, stream):
+    def _dump_payload_to_stream(self, destination):
         if self._debug:
             print('[ SSHOnTheFlyNonstopDownloader._dump_payload_to_stream ] exporting data and streaming them to stream')
 
@@ -1751,10 +1763,8 @@ class SSHOnTheFlyNonstopDownloader(OnTheFlyDownloader):
         if self._debug:
             print('[ SSHOnTheFlyNonstopDownloader._dump_payload_to_stream ] running ssh command: {cmd}'.format(cmd=' '.join(ssh_cmd_list)))
 
-        self._stream = stream
-
         # use asyncio
-        asyncio.run(self._write_to_stream(' '.join(ssh_cmd_list)))
+        asyncio.run(self._write_to_stream(' '.join(ssh_cmd_list), destination))
 
         if self._debug:
             print('[ SSHOnTheFlyNonstopDownloader._dump_payload_to_stream ] DONE reading data from child')
@@ -1930,7 +1940,7 @@ class SSHOnTheFlyNonstopDownloader(OnTheFlyDownloader):
         dl_data = None
         try:
             if isinstance(destination, self.StreamDestination):
-                dl_data = self._dump_payload_to_stream(stream=destination._stream)
+                dl_data = self._dump_payload_to_stream(destination)
             else:
                 if isinstance(destination, self.ObjectDestination):
                     data_dir = None
@@ -2472,7 +2482,6 @@ class BasicAccessHttpJsonClient(HttpJsonClient):
             a DRMS record-set specification such as "hmi.M_720s[2018.3.2_00:00_TAI]{magnetogram}"; the DRMS data segments to which `spec` refers must be of FITS protocol
         [ filename_fmt : str ]
             custom filename template string to use when generating the names for exported files that appear in the tar file; if None (the default), then '{seriesname}.{recnum:%%lld}.{segment}' is used
-
 
         Return Value
         ------------
@@ -3055,8 +3064,11 @@ class SSHJsonClient(object):
                 "on-the-fly-command" : [ '/home/jsoc/cvs/Development/JSOC/bin/linux_avx/drms-export-to-stout', 'a=0', 's=1', 'e=1', spec='hmi.rdMAI_fd30[2231][210][255.0]', ffmt='hmi.rdMAI_fd30.{CarrRot}.{CMLon}.{LonHG}.{LatHG}.{LonCM}.{segment}', 'DRMS_DBUTF8CLIENTENCODING=1' ]
             }
         '''
-        # a=0 ==> compress all segments, s=0 ==> make tar file, e=1 ==> suppress stderr
-        cmd_list = [ os.path.join(self._server.ssh_base_bin, self._server.ssh_export_fits), 'a=0', 's=0', 'e=1' ]
+        # a=0 ==> Rice-compress all segments
+        # d=1 ==> dump file name at beginning of stream
+        # e=1 ==> suppress stderr
+        # s=1 ==> do not make tar file
+        cmd_list = [ os.path.join(self._server.ssh_base_bin, self._server.ssh_export_fits), 'a=0', 'd=1', 'e=1', 's=1' ]
 
         cmd_list.append(shlex.quote('spec=' + spec))
 
@@ -3096,7 +3108,9 @@ class SSHJsonClient(object):
         # SSHClient.download()
         response = {
             "status" : 0,
-            "on-the-fly-command" : cmd_list
+            "on-the-fly-command" : cmd_list,
+            "package" : None,
+            "json_response" : None
         }
 
         # the response json looks like:
@@ -4263,8 +4277,8 @@ class SecureClient(DRMSClient):
 
         return export_request
 
-    def export_and_stream_file(self, spec, stream, filename_fmt=None):
-        args = { 'api_name' : 'export_and_stream_file', 'stream' : stream, 'spec' : spec, 'filename_fmt' : filename_fmt }
+    def export_and_stream_file(self, spec, filename_fmt=None):
+        args = { 'api_name' : 'export_and_stream_file', 'spec' : spec, 'filename_fmt' : filename_fmt }
 
         # returns a SecureExportRequest
         return self._execute(self._export_and_stream_file, **args)
@@ -4539,10 +4553,10 @@ class BasicAccessClient(SecureClient):
     def __repr__(self):
         return '<BasicAccessClient "{name}">'.format(name=self._config.name)
 
-    def _export_and_stream_file(self, spec, stream, filename_fmt=None):
-        resp = self._json.exp_stream_file(spec, stream, filename_fmt)
+    def _export_and_stream_file(self, spec, filename_fmt=None):
+        resp = self._json.exp_stream_file(spec=spec, filename_fmt=filename_fmt)
 
-        return SecureExportRequest(server_resopnse=resp, secure_client=self, remote_user=None, remote_host=None, remote_port=None, on_the_fly=True, defer_package=True, debug=self.debug)
+        return SecureExportRequest(server_response=resp, secure_client=self, remote_user=None, remote_host=None, remote_port=None, on_the_fly=True, defer_package=True, debug=self.debug)
 
     def _export_fits(self, spec, download_directory, filename_fmt=None):
         # since a tar disk file is not created on the server, this method is synonymous with self._export_package()
@@ -4621,10 +4635,10 @@ class SSHClient(SecureClient):
         return '<SSHClient "{name}">'.format(name=self._config.name)
 
     # private methods
-    def _export_and_stream_file(self, spec, stream, filename_fmt=None):
-        resp = self._json.exp_stream_file(spec, stream, filename_fmt)
+    def _export_and_stream_file(self, spec, filename_fmt=None):
+        resp = self._json.exp_stream_file(spec=spec, filename_fmt=filename_fmt)
 
-        return SecureExportRequest(server_response=resp, secure_client=self, remote_user=None, remote_host=None, remote_port=None, on_the_fly=True, defer_package=True, debug=self.debug)
+        return SecureExportRequest(server_response=resp, secure_client=self, remote_user=self._config.ssh_remote_user, remote_host=self._config.ssh_remote_host, remote_port=self._config.ssh_remote_port, on_the_fly=True, defer_package=True, debug=self.debug)
 
     def _export_fits(self, spec, download_directory, filename_fmt):
         # we are going to run drms-export-to-stdout on the server
