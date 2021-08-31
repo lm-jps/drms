@@ -59,6 +59,14 @@ class Arguments(object):
 
         raise ArgumentsError(error_message=f'invalid argument `{name}`')
 
+    def __str__(self):
+        args_dict = {}
+        for key, val in self.__dict__.items():
+            if not key in ('_parsed_args', '_parser', '_dict_of_args'):
+                args_dict[key] = val
+
+        return str(args_dict)
+
     def set_all_args(self):
         # store in instance dict
         if self._parsed_args is not None:
