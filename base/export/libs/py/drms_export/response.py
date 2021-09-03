@@ -4,7 +4,7 @@ from copy import deepcopy
 from collections import namedtuple
 from json import dumps, loads
 
-__all__ = [ 'Response' ]
+__all__ = [ 'ErrorResponse', 'Response' ]
 
 class Response(object):
     def __init__(self, *, status_code, **kwargs):
@@ -44,3 +44,8 @@ class Response(object):
 class ErrorResponse(Response):
     def __init__(self, *, error_code, error_message=None):
         super().__init__(status_code=error_code, error_message=error_message)
+
+    @classmethod
+    def generate_response(cls, *, error_code=None, **kwargs):
+        error_code_final = error_code if error_code is not None else cls._error_code
+        return cls(error_code=error_code_final, **kwargs)
