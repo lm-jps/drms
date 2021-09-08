@@ -36,6 +36,10 @@ class Response(object):
             self._dict_response.update(self._kwargs)
         return self._dict_response
 
+    @property
+    def status_code(self):
+        return self._status_code
+
     @classmethod
     def generate_response(cls, *, status_code=None, **kwargs):
         status_code_final = status_code if status_code is not None else cls._status_code
