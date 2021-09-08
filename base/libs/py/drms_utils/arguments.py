@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
+from argparse import Action
 
-__all__ = [ 'Arguments', 'ArgumentsError' ]
+__all__ = [ 'Arguments', 'ArgumentsError', 'ListAction' ]
 
 class ArgumentsError(Exception):
     def __init__(self, *, error_message=None):
@@ -78,3 +79,7 @@ class Arguments(object):
 
     def set_arg(self, name, value):
         setattr(self, name, value)
+
+class ListAction(Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        setattr(namespace, self.dest, values.split(','))
