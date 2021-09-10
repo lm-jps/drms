@@ -2048,6 +2048,8 @@ class SecureExportRequest(ExportRequest):
         tar filename (if export method is ftp or ftp-tar)
     keywords : str
         name of textfile in `dir` containing DRMS record keyword values
+    raw_response : dict
+        the dict representation of the JSON fetch response
 
     not all attributes are always present; they are export-method-dependent
     '''
@@ -2329,6 +2331,10 @@ class SecureExportRequest(ExportRequest):
     @property
     def contact(self):
         return self._d.get('contact')
+
+    @property
+    def raw_response(self):
+        return self._d
 
 
 class BasicAccessHttpJsonRequest(HttpJsonRequest):
@@ -2837,6 +2843,7 @@ class SSHJsonClient(object):
         self._debug = debug
         self._password = None
         self._password_timer = None
+        self._response_dict = None
 
     def __repr__(self):
         return '<SSHJsonClient "{name}"'.format(name=self._server.name)
@@ -2894,6 +2901,7 @@ class SSHJsonClient(object):
 
         # runs the ssh command
         response = request.data
+        self._response_dict = response
         return response
 
     def _show_series(self, *, ds_filter=None, info=False):
@@ -3017,6 +3025,10 @@ class SSHJsonClient(object):
         self._password_timer.start()
 
         return self._password
+
+    @property
+    def response_dict(self):
+        return self._response_dict
 
     def check_address(self, address):
         '''
@@ -4444,10 +4456,8 @@ class SecureClient(DRMSClient):
         # call the parent's pkeys() method
         return self._execute(super().pkeys, **args)
 
-    def query(self, ds, key=None, seg=None, link=None, convert_numeric=True, skip_conversion=None, pkeys=False, rec_index=False, n=None):
+    def query(self, ds, key=None, seg=None, link=None, convert_numeric=True, skip_conversion=None, pkeys=False, rec_index=False, n=None, raw_response=False):
         '''
-
-
         Parameters
         ----------
         ds : str
@@ -4468,6 +4478,8 @@ class SecureClient(DRMSClient):
             if True, then the rows in the resulting pandas.DataFrame are indexed by record specification; if False (the default) the rows are indexed by numeric index
         [ n : int ]
             a maximum of abs(`n`) records are returned; if `n` > 0 the first abs(`n`) records of the record set are returned, if `n` < 0 the last abs(`n`) records of the record set are returned, and `n` is None (the default), then no limit is applied
+        [ raw_response : bool ]
+            if True, then return raw JSON response, converted to a dict, from the JSON client layer
 
         Return Value
         ------------
@@ -4477,10 +4489,15 @@ class SecureClient(DRMSClient):
                 result[1] : segment results; his DataFrame is not None if `seg` is not None
                 result[3] : link results; this DataFrame is not None if `link` is not None
         '''
-        args = { 'ds' : ds, 'key' : key, 'seg' : seg, 'link' : link, 'convert_numeric' : convert_numeric, 'skip_conversion' : skip_conversion, 'pkeys' : pkeys, 'rec_index' : rec_index, 'n' : n }
 
-        # call the parent's query() method
-        return self._execute(super().query, **args)
+        if raw_response:
+            # initializes self._json._response_dict
+            return self._json.rs_list(ds, key, seg, link, recinfo=rec_index, n=n)
+        else:
+            # call the parent's query() method
+            args = { 'ds' : ds, 'key' : key, 'seg' : seg, 'link' : link, 'convert_numeric' : convert_numeric, 'skip_conversion' : skip_conversion, 'pkeys' : pkeys, 'rec_index' : rec_index, 'n' : n }
+
+            return self._execute(super().query, **args)
 
     def series(self, regex=None, full=False):
         '''
@@ -4503,6 +4520,10 @@ class SecureClient(DRMSClient):
         # call the parent's series() method [ the server configuration parameters in the parent method will be ignored; they will be used,
         # however, in the self._json.show_series*() methods ]
         return self._execute(self._series, **args)
+
+    @property
+    def response_dict(self):
+        return self._json.response_dict
 
     @property
     def config(self):
