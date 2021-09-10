@@ -3,6 +3,9 @@
 from copy import deepcopy
 from collections import namedtuple
 from json import dumps, loads
+from re import sub
+
+from drms_utils import MakeObject
 
 __all__ = [ 'ErrorResponse', 'Response' ]
 
@@ -18,27 +21,35 @@ class Response(object):
         return str(self._status_code)
 
     def generate_json_obj(self):
+        # certain JSON attribute names would be invalid python identifiers; drop such characters; identifies may not start with a digit
         if self._json_obj_response is None:
-            self._json_obj_response = loads(self.generate_json(), object_hook = lambda d : namedtuple('JO', d.keys()) (*d.values()))
+            # need to first call generate_json() to make the dict serializable
+            self._json_obj_response = MakeObject(name='JO', data=self.generate_json())()
+
         return self._json_obj_response
 
     def generate_json(self):
         if self._json_response is None:
             self.generate_dict()
             working = deepcopy(self._dict_response)
-            working['status_code'] = int(self._dict_response['status_code']) # serialize for json
+            working['drms_export_status_code'] = int(self._dict_response['drms_export_status_code']) # serialize for json
             self._json_response = dumps(working)
         return self._json_response
 
     def generate_dict(self):
         if self._dict_response is None:
-            self._dict_response = { 'status' : str(self._status_code), 'status_code' : self._status_code, 'status_description' : self._status_code.description(**self._kwargs) }
+            self._dict_response = { 'drms_export_status' : str(self._status_code), 'drms_export_status_code' : self._status_code, 'drms_export_status_description' : self._status_code.description(**self._kwargs) }
             self._dict_response.update(self._kwargs)
         return self._dict_response
 
     @property
     def status_code(self):
         return self._status_code
+
+    @property
+    def attributes(self):
+        self.generate_json_obj()
+        return self._json_obj_response
 
     @classmethod
     def generate_response(cls, *, status_code=None, **kwargs):
