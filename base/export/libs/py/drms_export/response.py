@@ -26,6 +26,11 @@ class Response(object):
             # need to first call generate_json() to make the dict serializable
             self._json_obj_response = MakeObject(name='JO', data=self.generate_json())()
 
+            # since we no longer have to worry about serialization, restore `drms_export_status_code`
+            mo_dict = self._json_obj_response._asdict()
+            mo_dict['drms_export_status_code'] = self._dict_response['drms_export_status_code']
+            self._json_obj_response = type(self._json_obj_response)(**mo_dict)
+
         return self._json_obj_response
 
     def generate_json(self):
