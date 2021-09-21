@@ -151,7 +151,7 @@ static void *resize_handler(void *data)
     target_scale_str = (char *)hcon_lookup_lower(arguments, "scale_to");
     sscanf(target_scale_str, "%f", &target_scale);
     template_rec_str = (char *)hcon_lookup_lower(arguments, "template_rec");
-    sscanf(template_rec_str, "%p", &(void *)template_rec);
+    sscanf(template_rec_str, "%p", &template_rec);
 
     /* get newest record from series */
     /* ugh - cannot specify both a key list and n=XX, so we have to fetch all keys */
@@ -221,7 +221,7 @@ static void *im_patch_handler(void *data)
     new_dim_y_str = (char *)hcon_lookup_lower(arguments, "height");
     sscanf(new_dim_y_str, "%d", &new_dim_y);
     segment_str = (char *)hcon_lookup_lower(arguments, "segment");
-    sscanf(segment_str, "%p", &(void *)segment);
+    sscanf(segment_str, "%p", &segment);
 
     if (segment)
     {
@@ -287,7 +287,7 @@ static void *map_proj_handler(void *data)
     new_dim_y_str = (char *)hcon_lookup_lower(arguments, "rows");
     sscanf(new_dim_y_str, "%d", &new_dim_y);
     segment_str = (char *)hcon_lookup_lower(arguments, "segment");
-    sscanf(segment_str, "%p", &(void *)segment);
+    sscanf(segment_str, "%p", &segment);
 
     if (segment)
     {
