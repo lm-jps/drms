@@ -67,7 +67,7 @@ $(CLIENT_OBJ_$(d)):		CF_TGT := $(CF_TGT) -D$(DBMS) -DDRMS_CLIENT $(PGH)
 $(COMM_OBJ_FPIC_$(d)):	$(SRCDIR)/$(d)/Rules.mk
 $(COMM_OBJ_FPIC_$(d)):	CF_TGT := $(CF_TGT) -D$(DBMS) $(CFITSIOH)
 $(SERVER_OBJ_FPIC_$(d)):    $(SRCDIR)/$(d)/Rules.mk
-$(SERVER_OBJ_FPIC_$(d)):    CF_TGT := $(CF_TGT) -D$(DBMS) $(CFITSIOH)
+$(SERVER_OBJ_FPIC_$(d)):    CF_TGT := $(CF_TGT) -D$(DBMS) $(CFITSIOH) $(PGH)
 
 $(LIBDRMS):	$(LIBDRMSSERVER_OBJ)
 			$(ARCHIVE)
