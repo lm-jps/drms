@@ -759,7 +759,8 @@ static void ErrorOutExpNewRec(DRMS_RecordSet_t *exprecs, DRMS_Record_t **exprec,
 }
 
 
-// generate qsub script
+// generate qsub script; THIS DOES NOT SUBMIT THE qsub SCRIPT; THAT IS PERFORMED BY A system() call AFTER THE drmsrun SCRIPT
+// IS CREATED; THE drmsrun SCRIPT IS AN ARGUMENT TO THE qsub SCRIPT
 /* requestid is the ID and requestorid is the name of the person making the request (and is the only member of the prime-key set.) */
 static void make_qsub_call(char *requestid, /* like JSOC_20120906_199_IN*/
                            char *reqdir,
@@ -4725,6 +4726,7 @@ int DoIt(void)
            */
           CloseWriteLog(emLogFH);
 
+          /* SUBMIT qsub SCRIPT */
           if (system(command))
           {
               return DBCOMM(&export_rec, "Submission of qsub command failed", 4);
