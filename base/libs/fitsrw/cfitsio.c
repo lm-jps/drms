@@ -775,15 +775,32 @@ static int Cf_write_header_key(fitsfile *fptr, CFITSIO_KEYWORD *key)
         }
         else if (key->key_type == CFITSIO_KEYWORD_DATATYPE_FLOAT)
         {
-            /* prints 15 decimal places, if needed */
-            // fits_write_key(fptr, TDOUBLE, key->key_name, &key->key_value.vf, key->key_comment ? key->key_comment : NULL, &cfiostat);
-
             /* a NaN value implies a missing value; write a keyword with no value (null) */
-
-            /* prints 17 decimal places, if needed */
-            if (fits_write_key_dbl(fptr, key->key_name, key->key_value.vf, -17, key->key_comment ? key->key_comment : NULL, &cfiostat))
+            if (key->number_bytes == 4)
             {
-                fprintf(stderr, "[ Cf_write_header_key() ] NOTE: invalid value for DRMS floating-point keyword %s; continuing\n", key->key_name);
+                /* prints 9 decimal places, if needed */
+                if (fits_write_key_flt(fptr, key->key_name, (float)key->key_value.vf, -9, key->key_comment ? key->key_comment : NULL, &cfiostat))
+                {
+                    fprintf(stderr, "[ Cf_write_header_key() ] NOTE: invalid value for DRMS floating-point keyword %s; continuing\n", key->key_name);
+                    key->is_missing = 1;
+                    err = Cf_write_key_null(fptr, key->key_name, key->key_comment, key->key_unit);
+                    cfiostat = 0;
+                }
+            }
+            else if (key->number_bytes == 8)
+            {
+                /* prints 17 decimal places, if needed */
+                if (fits_write_key_dbl(fptr, key->key_name, key->key_value.vf, -17, key->key_comment ? key->key_comment : NULL, &cfiostat))
+                {
+                    fprintf(stderr, "[ Cf_write_header_key() ] NOTE: invalid value for DRMS floating-point keyword %s; continuing\n", key->key_name);
+                    key->is_missing = 1;
+                    err = Cf_write_key_null(fptr, key->key_name, key->key_comment, key->key_unit);
+                    cfiostat = 0;
+                }
+            }
+            else
+            {
+                fprintf(stderr, "[ Cf_write_header_key() ] NOTE: invalid number of bytes specified for `%c` keyword `%s`; continuing\n", key->key_type, key->key_name);
                 key->is_missing = 1;
                 err = Cf_write_key_null(fptr, key->key_name, key->key_comment, key->key_unit);
                 cfiostat = 0;
