@@ -16,6 +16,7 @@ class Response(object):
         self._json_obj_response = None
         self._json_response = None
         self._dict_response = None
+        self._serializable_dict_response = None
 
     def __str__(self):
         return str(self._status_code)
@@ -35,10 +36,8 @@ class Response(object):
 
     def generate_json(self):
         if self._json_response is None:
-            self.generate_dict()
-            working = deepcopy(self._dict_response)
-            working['drms_export_status_code'] = int(self._dict_response['drms_export_status_code']) # serialize for json
-            self._json_response = dumps(working)
+            self.generate_serializable_dict()
+            self._json_response = dumps(self._serializable_dict_response)
         return self._json_response
 
     def generate_dict(self):
@@ -46,6 +45,14 @@ class Response(object):
             self._dict_response = { 'drms_export_status' : str(self._status_code), 'drms_export_status_code' : self._status_code, 'drms_export_status_description' : self._status_code.description(**self._kwargs) }
             self._dict_response.update(self._kwargs)
         return self._dict_response
+
+    def generate_serializable_dict(self):
+        if self._serializable_dict_response is None:
+            self.generate_dict()
+            working = deepcopy(self._dict_response)
+            working['drms_export_status_code'] = int(self._dict_response['drms_export_status_code']) # serialize
+            self._serializable_dict_response = working
+        return self._serializable_dict_response
 
     @property
     def status_code(self):
