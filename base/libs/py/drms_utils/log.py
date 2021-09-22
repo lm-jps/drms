@@ -10,11 +10,11 @@ import os
 __all__ = [ 'Formatter', 'Log', 'LogLevel', 'LogLevelAction' ]
 
 class LogLevel(Enum):
-    CRITICAL = 1, 'critical'
-    ERROR = 2, 'error'
-    WARNING = 3, 'warning'
-    INFO = 4, 'info'
-    DEBUG = 5, 'debug'
+    CRITICAL = (1, 'critical')
+    ERROR = (2, 'error')
+    WARNING = (3, 'warning')
+    INFO = (4, 'info')
+    DEBUG = (5, 'debug')
 
     def __new__(cls, value, name):
         member = object.__new__(cls)
@@ -114,18 +114,25 @@ class Log(object):
 
 class LogLevelAction(ApAction):
     def __call__(self, parser, namespace, value, option_string=None):
-        valueLower = value.lower()
-        if valueLower == 'critical':
+        level = self.string_to_level(value)
+        setattr(namespace, self.dest, level)
+
+    @classmethod
+    def string_to_level(cls, level_str):
+        level = None
+
+        level_str_lower = level_str.lower()
+        if level_str_lower == 'critical':
             level = LogLevel.CRITICAL
-        elif valueLower == 'error':
+        elif level_str_lower == 'error':
             level = LogLevel.ERROR
-        elif valueLower == 'warning':
+        elif level_str_lower == 'warning':
             level = LogLevel.WARNING
-        elif valueLower == 'info':
+        elif level_str_lower == 'info':
             level = LogLevel.INFO
-        elif valueLower == 'debug':
+        elif level_str_lower == 'debug':
             level = LogLevel.DEBUG
         else:
             level = LogLevel.ERROR
 
-        setattr(namespace, self.dest, level)
+        return level
