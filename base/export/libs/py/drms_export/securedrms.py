@@ -893,6 +893,10 @@ class OnTheFlyDownloader(object):
     class DataFileDestination():
         pass
 
+    class GeneratorDestination(DataFileDestination):
+        def __init__(self):
+            self._generator = None
+
     class StreamDestination(DataFileDestination):
         def __init__(self, stream):
             self._stream = stream
@@ -1754,6 +1758,49 @@ class SSHOnTheFlyNonstopDownloader(OnTheFlyDownloader):
         if self._debug:
             print('[ SSHOnTheFlyNonstopDownloader._write_to_stream ] child process terminated')
 
+    def _generator_factory(self, destination, proc):
+        async def generator():
+            while True:
+                # returns tuple; first element is boolean - True means more to read, False means done;
+                # second element are data bytes
+                more, bytes_read = await destination.stream_reader(destination, proc)
+
+                if not more:
+                    break
+
+                yield bytes_read
+
+            await proc.wait()
+
+        return generator
+
+    async def _get_generator(self, destination):
+        if self._debug:
+            print('[ SSHOnTheFlyNonstopDownloader._get_generator ] creating generator object that encapsulates data stream')
+
+        ssh_cmd_list = [ '/usr/bin/ssh', '-p', str(self._remote_port), self._remote_user + '@' + self._remote_host, shlex.quote('/bin/bash -c ' + shlex.quote(' '.join(self._on_the_fly_command))) ]
+
+        if self._debug:
+            print('[ SSHOnTheFlyNonstopDownloader._get_generator ] running ssh command: {cmd}'.format(cmd=' '.join(ssh_cmd_list)))
+            print('[ SSHOnTheFlyNonstopDownloader._get_generator ] starting child process')
+
+        proc = await asyncio.subprocess.create_subprocess_shell(' '.join(ssh_cmd_list), stdout=asyncio.subprocess.PIPE)
+
+        if destination.has_header:
+            # call read proc to extract header; more should be True, bytes_read should be b''
+            more, bytes_read = await destination.stream_reader(destination, proc)
+
+        if self._debug:
+            print('[ SSHOnTheFlyNonstopDownloader._get_generator ] child process successfully started')
+
+        generator = self._generator_factory(destination, proc)
+
+        if self._debug:
+            print('[ SSHOnTheFlyNonstopDownloader._get_generator ] DONE creating generator')
+
+        # generator object
+        return generator()
+
     def _dump_payload_to_stream(self, destination):
         if self._debug:
             print('[ SSHOnTheFlyNonstopDownloader._dump_payload_to_stream ] exporting data and streaming them to stream')
@@ -1939,7 +1986,9 @@ class SSHOnTheFlyNonstopDownloader(OnTheFlyDownloader):
 
         dl_data = None
         try:
-            if isinstance(destination, self.StreamDestination):
+            if isinstance(destination, self.GeneratorDestination):
+                raise SecureDRMSArgumentError(f'cannot run `download()` for `GeneratorDestination` destination')
+            elif isinstance(destination, self.StreamDestination):
                 dl_data = self._dump_payload_to_stream(destination)
             else:
                 if isinstance(destination, self.ObjectDestination):
@@ -1955,6 +2004,18 @@ class SSHOnTheFlyNonstopDownloader(OnTheFlyDownloader):
             raise SecureDRMSSystemError(error.strerror)
 
         return dl_data
+
+    async def generate_data(self, *, destination):
+        try:
+            if not isinstance(destination, self.GeneratorDestination):
+                raise SecureDRMSArgumentError(f'cannot run `generate_data()` for `{str(destination)}` destination')
+
+            # returns generator object
+            generator = await self._get_generator(destination)
+        except OSError as error:
+            raise SecureDRMSSystemError(error.strerror)
+
+        return generator
 
     def extract(self, *, destination, index=None, fname_from_rec=False, remove_package=False, verbose=None):
         '''
@@ -2240,6 +2301,9 @@ class SecureExportRequest(ExportRequest):
             verbose = self._client.verbose
 
         return self._downloader.download(destination=destination, index=index, fname_from_rec=fname_from_rec, remove_package=remove_package, verbose=verbose)
+
+    async def generate_data(self, *, destination):
+        return await self._downloader.generate_data(destination=destination)
 
     def extract(self, *, destination, index=None, fname_from_rec=None, remove_package=False, verbose=None):
         '''
@@ -3637,6 +3701,25 @@ class SSHJsonClient(object):
         cmd_list = [ os.path.join(self._server.ssh_base_bin, self._server.ssh_parse_recset), shlex.quote('spec=' + recset) ]
         if self._server.encoding.lower() == 'utf8':
             cmd_list.append('DRMS_DBUTF8CLIENTENCODING=1')
+
+        update_dict = {}
+
+        # override
+        if self._server.connection_info is not None:
+            if 'dbhost' in self._server.connection_info:
+                val = self._server.connection_info['dbhost']
+                if 'dbport' in self._server.connection_info:
+                    val = f'{val}:{str(self._server.connection_info["dbport"])}'
+
+                update_dict['JSOC_DBHOST'] = val
+
+            if 'dbuser' in self._server.connection_info:
+                update_dict['JSOC_DBUSER'] = self._server.connection_info['dbuser']
+
+            if 'dbname' in self._server.connection_info:
+                update_dict['JSOC_DBNAME'] = self._server.connection_info['dbname']
+
+        cmd_list.extend([ f'{key}={str(val)}' for key, val in update_dict.items() ])
 
         return self._run_cmd(cmd_list=cmd_list)
 
