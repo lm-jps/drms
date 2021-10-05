@@ -97,6 +97,7 @@ q:DX_SERVER                             rumble.stanford.edu
 a:DX_LISTEN_PORT                        6200
 a:DX_START_PORT                         8800
 a:DX_NUMBER_PORTS                       100
+q:EXPORT_DB_HOST_DEFAULT                hmidb2
 q:EXPORT_PRODUCTION_DB_USER             production
 q:EXPORT_LOG_DIR                        /home/jsoc/exports/logs
 q:EXPORT_LOCK_DIR                       /home/jsoc/exports/tmp
