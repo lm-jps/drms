@@ -88,7 +88,7 @@ from urllib.error import URLError
 from urllib.parse import urlencode, urlparse, urlunparse, urljoin
 from urllib.request import Request, urlopen
 import uuid
-from subprocess import check_output, CalledProcessError
+from subprocess import check_output, CalledProcessError, PIPE, Popen
 import asyncio
 
 # third party imports
@@ -1758,7 +1758,7 @@ class SSHOnTheFlyNonstopDownloader(OnTheFlyDownloader):
         if self._debug:
             print('[ SSHOnTheFlyNonstopDownloader._write_to_stream ] child process terminated')
 
-    def _generator_factory(self, destination, proc):
+    def _async_generator_factory(self, destination, proc):
         async def generator():
             while True:
                 # returns tuple; first element is boolean - True means more to read, False means done;
@@ -1774,7 +1774,50 @@ class SSHOnTheFlyNonstopDownloader(OnTheFlyDownloader):
 
         return generator
 
-    async def _get_generator(self, destination):
+    def _generator_factory(self, destination, proc):
+        def generator():
+            while True:
+                # returns tuple; first element is boolean - True means more to read, False means done;
+                # second element are data bytes
+                more, bytes_read = destination.stream_reader(destination, proc)
+
+                if not more:
+                    break
+
+                yield bytes_read
+
+            proc.wait()
+
+        return generator
+
+    async def _async_get_generator(self, destination):
+        if self._debug:
+            print('[ SSHOnTheFlyNonstopDownloader._async_get_generator ] creating generator object that encapsulates data stream')
+
+        ssh_cmd_list = [ '/usr/bin/ssh', '-p', str(self._remote_port), self._remote_user + '@' + self._remote_host, shlex.quote('/bin/bash -c ' + shlex.quote(' '.join(self._on_the_fly_command))) ]
+
+        if self._debug:
+            print('[ SSHOnTheFlyNonstopDownloader._async_get_generator ] running ssh command: {cmd}'.format(cmd=' '.join(ssh_cmd_list)))
+            print('[ SSHOnTheFlyNonstopDownloader._async_get_generator ] starting child process')
+
+        proc = await asyncio.subprocess.create_subprocess_shel(' '.join(ssh_cmd_list), stdout=asyncio.subprocess.PIPE)
+
+        if destination.has_header:
+            # call read proc to extract header; more should be True, bytes_read should be b''
+            more, bytes_read = await destination.stream_reader(destination, proc)
+
+        if self._debug:
+            print('[ SSHOnTheFlyNonstopDownloader._async_get_generator ] child process successfully started')
+
+        generator = self._async_generator_factory(destination, proc)
+
+        if self._debug:
+            print('[ SSHOnTheFlyNonstopDownloader._async_get_generator ] DONE creating generator')
+
+        # generator object
+        return generator()
+
+    def _get_generator(self, destination):
         if self._debug:
             print('[ SSHOnTheFlyNonstopDownloader._get_generator ] creating generator object that encapsulates data stream')
 
@@ -1784,11 +1827,15 @@ class SSHOnTheFlyNonstopDownloader(OnTheFlyDownloader):
             print('[ SSHOnTheFlyNonstopDownloader._get_generator ] running ssh command: {cmd}'.format(cmd=' '.join(ssh_cmd_list)))
             print('[ SSHOnTheFlyNonstopDownloader._get_generator ] starting child process')
 
-        proc = await asyncio.subprocess.create_subprocess_shell(' '.join(ssh_cmd_list), stdout=asyncio.subprocess.PIPE)
+        proc = Popen(' '.join(ssh_cmd_list), shell=True, stdout=PIPE)
+
+        if self._debug:
+            print('[ SSHOnTheFlyNonstopDownloader._get_generator ] child process running')
 
         if destination.has_header:
             # call read proc to extract header; more should be True, bytes_read should be b''
-            more, bytes_read = await destination.stream_reader(destination, proc)
+            print('[ SSHOnTheFlyNonstopDownloader._get_generator ] reading headers')
+            more, bytes_read = destination.stream_reader(destination, proc)
 
         if self._debug:
             print('[ SSHOnTheFlyNonstopDownloader._get_generator ] child process successfully started')
@@ -2005,13 +2052,25 @@ class SSHOnTheFlyNonstopDownloader(OnTheFlyDownloader):
 
         return dl_data
 
-    async def generate_data(self, *, destination):
+    async def async_generate_data(self, *, destination):
         try:
             if not isinstance(destination, self.GeneratorDestination):
                 raise SecureDRMSArgumentError(f'cannot run `generate_data()` for `{str(destination)}` destination')
 
             # returns generator object
-            generator = await self._get_generator(destination)
+            generator = await self._async_get_generator(destination)
+        except OSError as error:
+            raise SecureDRMSSystemError(error.strerror)
+
+        return generator
+
+    def generate_data(self, *, destination):
+        try:
+            if not isinstance(destination, self.GeneratorDestination):
+                raise SecureDRMSArgumentError(f'cannot run `generate_data()` for `{str(destination)}` destination')
+
+            # returns generator object
+            generator = self._get_generator(destination)
         except OSError as error:
             raise SecureDRMSSystemError(error.strerror)
 
@@ -2302,8 +2361,11 @@ class SecureExportRequest(ExportRequest):
 
         return self._downloader.download(destination=destination, index=index, fname_from_rec=fname_from_rec, remove_package=remove_package, verbose=verbose)
 
-    async def generate_data(self, *, destination):
-        return await self._downloader.generate_data(destination=destination)
+    async def async_generate_data(self, *, destination):
+        return await self._downloader.async_generate_data(destination=destination)
+
+    def generate_data(self, *, destination):
+        return self._downloader.generate_data(destination=destination)
 
     def extract(self, *, destination, index=None, fname_from_rec=None, remove_package=False, verbose=None):
         '''
