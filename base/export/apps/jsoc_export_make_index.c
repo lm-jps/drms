@@ -57,7 +57,7 @@ char * string_to_json(char *in)
 		"<h2>JSOC Data Request Summary</h2>\n"  \
 		"<table>\n"
 
-#define HTTP_SERVER "http://jsoc1.stanford.edu"
+#define HTTP_SERVER "https://jsoc1.stanford.edu"
 #define FTP_SERVER  "ftp://pail.stanford.edu/export"
 
 
