@@ -57,9 +57,9 @@ char * string_to_json(char *in)
 		"<h2>JSOC Data Request Summary</h2>\n"  \
 		"<table>\n"
 
-#define HTTP_SERVER "http://jsoc.stanford.edu"
+#define HTTP_SERVER "http://jsoc1.stanford.edu"
 #define FTP_SERVER  "ftp://pail.stanford.edu/export"
-		
+
 
 /* Module main function. */
 int main(int argc, char **argv)
@@ -109,7 +109,7 @@ int main(int argc, char **argv)
     }
   jroot = json_new_object();
   recinfo = json_new_array();
-  
+
   int doHeader = 0;
 
   while (fgets(buf, 1000, index_txt))
@@ -124,9 +124,9 @@ int main(int argc, char **argv)
     char *c;
     char *procArg = NULL;
     char *procVal = NULL;
-    
+
     if (p >= buf && *p == '\n')
-      *p = '\0'; 
+      *p = '\0';
     p = buf;
     switch (state)
     {
@@ -138,7 +138,7 @@ int main(int argc, char **argv)
         }
     	state = 1;
 	    break;
-	  case 10: // Processing section            
+	  case 10: // Processing section
         // Skip header separators.
         if (strncmp(buf, "  --", 4) == 0)
         {
@@ -151,24 +151,24 @@ int main(int argc, char **argv)
                 state = 3;
             else
                 state = 2;
-                
+
             fprintf(index_html, "</table>\n");
             fprintf(index_html, "<p><h2><b>Selected Data</b></h2><p>\n");
             fprintf(index_html, "<table>\n");
             break;
         }
-        
+
         // skip blank and comment lines
-        if (!*p || *p == '#') 
+        if (!*p || *p == '#')
         {
             break;
         }
-        
+
         if (strncmp(buf, "Processing", 10) == 0)
         {
             c = strchr(buf, ':');
             procVal = strtok(++c, " ");
-            
+
             fprintf(index_html, "<tr><td><b>%s</b></td></tr>\n", procVal);
             doHeader = 1;
         }
@@ -188,7 +188,7 @@ int main(int argc, char **argv)
             doHeader = 0;
 	    }
 	    break;
-	    
+
       case 1:  // In header section, take name=val pairs.
         if (strncmp(buf, "# DATA",6) == 0 || strncmp(buf, "# PROCESSING", 12) == 0) // done with header ?
         {  // Now at end of header section, write special information
@@ -200,20 +200,20 @@ int main(int argc, char **argv)
                 state = 3;
             else
                 state = 2;
-                
+
             // special line for keywords
             if (protocol == kPROTOCOL_as_is)
                 sprintf(protocolbuf, "%s/%s.keywords.txt", dir, requestid);
             else
                 sprintf(protocolbuf, "**IN FITS FILES**");
-                
+
             namestr = string_to_json("keywords");
             valstr = string_to_json(protocolbuf);
             json_insert_pair_into_object(jroot, namestr, json_new_string(valstr));
             free(namestr);
             free(valstr);
             fprintf(index_html, "<tr><td><b>keywords</b></td><td>%s</td></tr>\n", protocolbuf);
-              
+
             // special line for tarfiles
             if (method_tar)
             {
@@ -226,7 +226,7 @@ int main(int argc, char **argv)
                 // put name=value pair into index.html
                 fprintf(index_html, "<tr><td>tarfile</td><td><a href=\"%s%s\">%s</a></td></tr>\n", (method_ftp ? FTP_SERVER : HTTP_SERVER), tarfile, tarfile);
             }
-            
+
             if (state == 10)
             {
                 fprintf(index_html, "</table>\n");
@@ -239,7 +239,7 @@ int main(int argc, char **argv)
             }
             break;
         }
-        
+
         if (*p == '#' || !*p) // skip blank and comment lines
           break;
         if ((val=index(p, '='))==NULL)
@@ -278,7 +278,7 @@ int main(int argc, char **argv)
                }
             }
 
-        // save requestid 
+        // save requestid
         if (strcmp(name, "requestid") == 0)
           strncpy(requestid, val, 1000);
             // Check for method==ftp
@@ -424,8 +424,8 @@ int main(int argc, char **argv)
         }
 
         // put name=value pair into index.html
-        fprintf(index_html, 
-                "<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>\n", 
+        fprintf(index_html,
+                "<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>\n",
                 sustr, /* sunum */
                 name, /* owning series */
                 linkbuf, /* link or NA */
