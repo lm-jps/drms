@@ -857,7 +857,7 @@ static void make_qsub_call(char *requestid, /* like JSOC_20120906_199_IN*/
     fprintf(fp, "  if (\"$Notify\" != 0) then\n");
     fprintf(fp, "    mail -n -s 'JSOC export complete - %s' \"$Notify\" <<!\n", requestid);
     fprintf(fp, "JSOC export request %s is complete.\n", requestid);
-    fprintf(fp, "Results at http://jsoc.stanford.edu$REQDIR\n");
+    fprintf(fp, "Results at https://jsoc1.stanford.edu$REQDIR\n");
     fprintf(fp, "!\n");
     fprintf(fp, "  endif\n");
 
