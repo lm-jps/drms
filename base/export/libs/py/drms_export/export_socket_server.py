@@ -141,12 +141,16 @@ class PremiumExportRequest(Request):
         else:
             self._args_dict['protocol'] = None
 
-        self._args_dict['processing'] = json_dumps(processing)
+        self._args_dict['processing'] = json_dumps(processing) if processing is not None else json_dumps({})
         self._args_dict['filenamefmt'] = file_name_format
-        self._args_dict['n'] = number_records
+        self._args_dict['max_recs'] = number_records
         self._args_dict['W'] = 1
         self._args_dict['op'] = 'exp_request'
         self._args_dict['format'] = 'json'
+
+    def generate_response(self, db_host, db_port, db_user, export_bin):
+        response = PremiumExportResponse(self, db_host, db_port, db_user, export_bin)
+        return response
 
 class MiniExportRequest(Request):
     def __init__(self, address, specification, requestor=None, file_name_format=None, number_records=None):
@@ -156,11 +160,16 @@ class MiniExportRequest(Request):
         self._args_dict['method'] = 'url_quick'
         self._args_dict['requestor'] = requestor
         self._args_dict['protocol'] = 'as-is'
+        self._args_dict['processing'] = json_dumps({})
         self._args_dict['filenamefmt'] = file_name_format
-        self._args_dict['n'] = number_records
+        self._args_dict['max_recs'] = number_records
         self._args_dict['W'] = 1
         self._args_dict['op'] = 'exp_request'
         self._args_dict['format'] = 'json'
+
+    def generate_response(self, db_host, db_port, db_user, export_bin):
+        response = MiniExportResponse(self, db_host, db_port, db_user, export_bin)
+        return response
 
 class StreamedExportRequest(Request):
     def __init__(self, address, specification, file_name_format=None):
