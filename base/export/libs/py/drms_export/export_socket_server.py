@@ -88,7 +88,7 @@ class Request:
         return self._args_dict
 
 class ParseSpecificationRequest(Request):
-    def __init__(self, specification):
+    def __init__(self, *, specification):
         super().__init__()
         self._args_dict['spec'] = specification
 
@@ -97,45 +97,93 @@ class ParseSpecificationRequest(Request):
         return response
 
 class SeriesInfoRequest(Request):
-    def __init__(self, series):
+    def __init__(self, *, series):
         super().__init__()
-        self._args_dict['series'] = series
+        self._args_dict['ds'] = series
+        self._args_dict['op'] = 'series_struct'
+        self._args_dict['s'] = 1
+
+    def generate_response(self, db_host, db_port, db_user, export_bin):
+        response = SeriesInfoResponse(self, db_host, db_port, db_user, export_bin)
+        return response
 
 class RecordInfoRequest(Request):
-    def __init__(self, specification):
+    def __init__(self, specification, keywords=None, links=None, segments=None, record_info=False, number_records=None):
         super().__init__()
-        self._args_dict['specification'] = specification
+        self._args_dict['ds'] = specification
+        self._args_dict['key'] = None if keywords is None else ','.join(keywords)
+        self._args_dict['link'] = None if links is None else ','.join(links)
+        self._args_dict['seg'] = None if segments is None else ','.join(segments)
+        self._args_dict['R'] = 1 if record_info else 0
+        self._args_dict['n'] = number_records
+        self._args_dict['op'] = 'rs_list'
+        self._args_dict['s'] = 1
+
+    def generate_response(self, db_host, db_port, db_user, export_bin):
+        response = RecordInfoResponse(self, db_host, db_port, db_user, export_bin)
+        return response
 
 class PremiumExportRequest(Request):
-    def __init__(self, address, specification, processing, package, access, file_format, file_name_format, number_records):
+    def __init__(self, address, specification, method, requestor=None, processing=None, file_format=None, file_format_args=None, file_name_format=None, number_records=None):
         super().__init__()
-        self._args_dict['address'] = address
-        self._args_dict['specification'] = specification
-        self._args_dict['processing'] = processing
-        self._args_dict['package'] = package
-        self._args_dict['access'] = access
-        self._args_dict['file_format'] = file_format
-        self._args_dict['file_name_format'] = file_name_format
-        self._args_dict['number_records'] = number_records
+        self._args_dict['notify'] = address
+        self._args_dict['ds'] = specification
+        self._args_dict['method'] = method
+        self._args_dict['requestor'] = requestor
+
+        protocol = None if file_format is None else [ file_format ]
+        if protocol is not None:
+            if file_format_args is not None:
+                for key, val in file_format_args.items():
+                    protocol.append(f'{key}={str(val)}')
+
+            self._args_dict['protocol'] = ','.join(protocol)
+        else:
+            self._args_dict['protocol'] = None
+
+        self._args_dict['processing'] = json_dumps(processing)
+        self._args_dict['filenamefmt'] = file_name_format
+        self._args_dict['n'] = number_records
+        self._args_dict['W'] = 1
+        self._args_dict['op'] = 'exp_request'
+        self._args_dict['format'] = 'json'
 
 class MiniExportRequest(Request):
-    def __init__(self, address, specification, file_name_format, number_records):
+    def __init__(self, address, specification, requestor=None, file_name_format=None, number_records=None):
         super().__init__()
-        self._args_dict['address'] = address
-        self._args_dict['specification'] = specification
-        self._args_dict['file_name_format'] = file_name_format
-        self._args_dict['number_records'] = number_records
+        self._args_dict['notify'] = address
+        self._args_dict['ds'] = specification
+        self._args_dict['method'] = 'url_quick'
+        self._args_dict['requestor'] = requestor
+        self._args_dict['protocol'] = 'as-is'
+        self._args_dict['filenamefmt'] = file_name_format
+        self._args_dict['n'] = number_records
+        self._args_dict['W'] = 1
+        self._args_dict['op'] = 'exp_request'
+        self._args_dict['format'] = 'json'
 
 class StreamedExportRequest(Request):
-    def __init__(self, address, specification, file_name_format):
+    def __init__(self, address, specification, file_name_format=None):
         super().__init__()
         self._args_dict['address'] = address
-        self._args_dict['specification'] = specification
-        self._args_dict['file_name_format'] = file_name_format
+        self._args_dict['spec'] = specification
+        self._args_dict['ffmt'] = file_name_format
+        self._args_dict['a'] = 0
+        self._args_dict['d'] = 1
+        self._args_dict['e'] = 1
+        self._args_dict['s'] = 1
 
 class ExportStatusRequest(Request):
     def __init__(self, address, request_id):
         super().__init__()
+        self._args_dict['requestid'] = request_id
+        self._args_dict['W'] = 1
+        self._args_dict['op'] = 'exp_status'
+        self._args_dict['format'] = 'json'
+
+    def generate_response(self, db_host, db_port, db_user, export_bin):
+        response = ExportStatusResponse(self, db_host, db_port, db_user, export_bin)
+        return response
 
 class QuitRequest(Request):
     def __init__(self):
@@ -153,10 +201,12 @@ class Response():
         args_list = [ command_path ]
 
         for key, val in self._args_dict.items():
-            args_list.append(f'{key}={quote(str(val))}')
+            if val is not None:
+                args_list.append(f'{key}={quote(str(val))}')
 
         for key, val in self._request.args_dict.items():
-            args_list.append(f'{key}={quote(str(val))}')
+            if val is not None:
+                args_list.append(f'{key}={quote(str(val))}')
 
         args_list.append('2>/dev/null')
 
@@ -206,31 +256,28 @@ class RecordInfoResponse(Response):
         super().__init__(request, db_host, db_port, db_user, export_bin)
 
 class PremiumExportResponse(Response):
-    _cmd = 'jsoc_info'
+    _cmd = 'jsoc_fetch'
 
     def __init__(self, request, db_host, db_port, db_user, export_bin):
         super().__init__(request, db_host, db_port, db_user, export_bin)
 
 class MiniExportResponse(Response):
-    _cmd = 'jsoc_info'
+    _cmd = 'jsoc_fetch'
 
     def __init__(self, request, db_host, db_port, db_user, export_bin):
         super().__init__(request, db_host, db_port, db_user, export_bin)
 
 class StreamedExportResponse(Response):
-    _cmd = 'jsoc_info'
+    _cmd = 'drms-export-to-stdout'
 
     def __init__(self, request, db_host, db_port, db_user, export_bin):
         super().__init__(request, db_host, db_port, db_user, export_bin)
 
 class ExportStatusResponse(Response):
-    _cmd = 'jsoc_info'
+    _cmd = 'jsoc_fetch'
 
-    def __init__(self, address, request_id, request, db_host, db_port, db_user, export_bin):
-        super().__init__(self, request, db_host, db_port, db_user, export_bin)
-        self._args_dict['op'] = 'exp_status'
-        self._args_dict['requestid'] = request_id
-        self._args_dict['W'] = 1
+    def __init__(self, request, db_host, db_port, db_user, export_bin):
+        super().__init__(request, db_host, db_port, db_user, export_bin)
 
 class Arguments(Args):
     _arguments = None
@@ -395,21 +442,27 @@ async def get_request(reader):
         raise MessageSyntaxError(exc_info=sys_exc_info(), error_message=str(exc))
 
     request_type = message_dict['request_type'].lower()
+    request_dict = {}
+    for key, val in message_dict.items():
+        if key.lower().strip() != 'request_type':
+            request_dict[key.lower().strip()] = val
+
     Session.log.write_debug([ f'received {request_type} message' ])
+
     if request_type == 'parse_specification':
-        request = ParseSpecificationRequest(message_dict['specification'])
+        request = ParseSpecificationRequest(**request_dict)
     elif request_type == 'series_info':
-        request = SeriesInfoRequest(message_dict['series'])
+        request = SeriesInfoRequest(**request_dict)
     elif request_type == 'record_info':
-        request = RecordInfoRequest(message_dict['specification'])
+        request = RecordInfoRequest(**request_dict)
     elif request_type == 'premium_export':
-        request = PremiumExportRequest(message_dict['address'], message_dict['specification'], message_dict['processing'], message_dict['package'], message_dict['access'], message_dict['file-format'], message_dict['file-name-format'], message_dict['number-records'])
+        request = PremiumExportRequest(**request_dict)
     elif request_type == 'mini_export':
-        request = MiniExportRequest(message_dict['address'], message_dict['specification'], message_dict['file-name-format'], message_dict['number-records'])
+        request = MiniExportRequest(**request_dict)
     elif request_type == 'streamed_export':
-        request = StreamedExportRequest(message_dict['address'], message_dict['specification'], message_dict['file-name-format'])
+        request = StreamedExportRequest(**request_dict)
     elif request_type == 'export_status':
-        request = ExportStatusRequest(message_dict['address'], message_dict['request-id'])
+        request = ExportStatusRequest(**request_dict)
     elif rquest_type == 'quit':
         request = QuitRequest()
     else:
@@ -429,7 +482,7 @@ async def handle_client(reader, writer, timeout, db_host, db_port, db_user, expo
             try:
                 request = await asyncio.wait_for(get_request(reader), timeout=timeout)
             except asyncio.TimeoutError:
-                raise MessageTimeoutError(exc_info=sys_exc_info(), error_message=f'[ handle_client ] timeout event waiting for client {self.request.getpeername()} to send message')
+                raise MessageTimeoutError(exc_info=sys_exc_info(), error_message=f'[ handle_client ] timeout event waiting for client {writer.get_extra_info("peername")!r} to send message')
 
             if isinstance(request, QuitRequest):
                 break
@@ -490,6 +543,17 @@ def initalize_logging(arguments):
 
     return log
 
+def process_request(request, connection):
+    json_message = json_dumps(request)
+
+    print(f'sending message to server:')
+    print(f'{json_message}')
+    send_message(connection, json_message)
+
+    message = get_message(connection)
+    print(f'server response:')
+    print(f'{message}')
+
 if __name__ == "__main__":
     # server
     arguments = get_arguments(is_program=True, module_args=None)
@@ -522,18 +586,32 @@ else:
                         connection.connect(socket_address)
                         Session.log.write_info([ f'connected to server ({connection.getpeername()})' ])
 
-                        # send test data
+                        # send test requests
+                        # 1. parse specification
                         message = { 'request_type' : 'parse_specification', 'specification' : 'hmi.m_720s[2015.2.2]' }
-                        json_message = json_dumps(message)
+                        process_request(message, connection)
 
-                        print(f'sending message to server:')
-                        print(f'{json_message}')
-                        send_message(connection, json_message)
+                        # 2. series info
+                        message = { 'request_type' : 'series_info', 'series' : 'hmi.v_45s' }
+                        process_request(message, connection)
 
-                        # receive response
-                        message = get_message(connection)
-                        print(f'server response:')
-                        print(f'{message}')
+                        # 3. record info
+                        message = { 'request_type' : 'record_info', 'specification' : 'hmi.m_720s[2015.2.2/96m]', 'keywords' : [ 't_rec', 't_sel' ], 'segments' : [ 'magnetogram' ], 'record_info' : False, 'number_records' : 128 }
+                        process_request(message, connection)
+
+                        # 4. premium export
+                        message = { 'request_type' : 'premium_export', 'specification' : 'hmi.v_720s[2015.3.2]' }
+
+                        # 5. mini export
+                        message = { 'request_type' : 'mini_export', 'specification' : 'hmi.v_720s[2015.3.5]' }
+
+                        # 6. streamed export
+                        message = { 'request_type' : 'streamed_export', 'specification' : 'hmi.v_720s[2015.8.5]' }
+
+                        # 7. request status
+                        message = { 'request_type' : 'export_status', 'address' : 'arta@sun.stanford.edu', 'request_id' : 'JSOC_20211019_1665' }
+                        process_request(message, connection)
+
                 except socket.error as exc:
                     raise TCPClientError(exc_info=sys_exc_info(), error_message=str(exc))
                 except OSError as exc:
