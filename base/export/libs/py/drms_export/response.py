@@ -69,8 +69,8 @@ class Response(object):
         return cls(status_code=status_code_final, **kwargs)
 
 class ErrorResponse(Response):
-    def __init__(self, *, error_code, error_message=None):
-        super().__init__(status_code=error_code, error_message=error_message)
+    def __init__(self, *, error_code, error_message=None, **kwargs):
+        super().__init__(status_code=error_code, error_message=error_message, **kwargs)
 
     @classmethod
     def generate_response(cls, *, error_code=None, **kwargs):
