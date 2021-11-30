@@ -4,7 +4,7 @@ from json import loads as json_loads, dumps as json_dumps, decoder
 from os.path import join as path_join
 from shlex import quote
 from signal import SIGINT
-import socket
+from socket import AF_INET, error as socket_error, getaddrinfo, SHUT_RDWR, SOCK_STREAM, socket, timeout as socket_timeout
 from sys import exc_info as sys_exc_info, exit as sys_exit
 
 from drms_export import Error as ExportError, ErrorCode as ExportErrorCode
@@ -367,6 +367,56 @@ def parse_message(json_message_buffer, buffer, open_count, close_count):
 class Session:
     log = None
 
+class Connection:
+    '''
+    context manager to establish connection to server
+    '''
+    def __init__(self, *, server, listen_port, log_file=None, logging_level=None):
+        if Session.log is None:
+            # could be a noop log
+            Session.log = initialize_logging(log_file, logging_level)
+            Session.log.write_info([ f'initialized logging; log file is {log_file}' ])
+
+        self._info = getaddrinfo(server, listen_port)
+
+    def __enter__(self):
+        self._sock = None
+
+        for address_info in self._info:
+            family = address_info[0]
+            sock_type = address_info[1]
+
+            if family == AF_INET and sock_type == SOCK_STREAM:
+                socket_address = address_info[4] # 2-tuple for AF_INET family
+
+                try:
+                    self._sock = socket(AF_INET, SOCK_STREAM)
+                    Session.log.write_info([ f'created socket' ])
+                    self._sock.connect(socket_address)
+                    Session.log.write_info([ f'connected to server ({self._sock.getpeername()})' ])
+                except socket_error as exc:
+                    raise TCPClientError(exc_info=sys_exc_info(), error_message=str(exc))
+                except OSError as exc:
+                    raise TCPClientError(exc_info=sys_exc_info(), error_message=f'failure creating TCP client')
+
+            if self._sock is not None:
+                break
+
+        return self._sock
+
+    def __exit__(self, etype, value, traceback):
+        if self._sock is not None:
+            self._sock.shutdown(SHUT_RDWR)
+            self._sock.close()
+            self._sock = None
+
+        # propagate any exception
+        return False
+
+    @classmethod
+    def get_log(cls):
+        return Session.log
+
 def get_message(connection):
     json_message_buffer = []
     open_count = 0
@@ -378,14 +428,18 @@ def get_message(connection):
             buffer = connection.recv(4096).decode('utf8') # blocking
 
             if buffer == '':
-                raise MessageSyntaxError(error_message='message must be valid JSON')
+                if close_count != open_count:
+                    raise MessageSyntaxError(error_message=f'[ get_message ] message must be valid JSON')
+                else:
+                    raise MessageReceiveError(error_message=f'[ get_message ] while waiting for message, peer terminated connection')
+                    break
 
             json_message_buffer, buffer, open_count, close_count = parse_message(json_message_buffer, buffer, open_count, close_count)
-
-            if close_count == open_count:
-                break
-        except socket.timeout as exc:
+        except socket_timeout as exc:
             raise MessageTimeoutError(exc_info=sys_exc_info(), error_message=f'{str(exc)}')
+
+        if close_count == open_count:
+            break
 
     message = ''.join(json_message_buffer)
     Session.log.write_debug([ f'received message:', f'{message}' ])
@@ -400,7 +454,11 @@ async def get_message_async(reader):
         buffer = (await reader.read(4096)).decode('utf8')
 
         if buffer == '':
-            raise MessageSyntaxError(error_message='message must be valid JSON')
+            if close_count != open_count:
+                raise MessageSyntaxError(error_message=f'[ get_message_async ] message must be valid JSON')
+            else:
+                raise MessageReceiveError(error_message=f'[ get_message_async ] while waiting for message, peer terminated connection')
+                break
 
         json_message_buffer, buffer, open_count, close_count = parse_message(json_message_buffer, buffer, open_count, close_count)
 
@@ -422,7 +480,7 @@ def send_message(connection, json_message):
             if not num_bytes_sent:
                 raise TCPClientError(error_messsage=f'socket broken; cannot send message data to server')
             num_bytes_sent_total += num_bytes_sent
-        except socket.timeout as exc:
+        except socket_timeout as exc:
             raise MessageTimeoutError(exc_info=sys_exc_info(), error_message=f'{str(exc)}')
     Session.log.write_debug([ f'message successfully sent' ])
 
@@ -498,6 +556,12 @@ async def handle_client(reader, writer, timeout, db_host, db_port, db_user, expo
         if Session.log:
             Session.log.write_error([ f'{str(exc)}' ])
 
+    # wait for client to terminate connection
+    buffer = await reader.read(4096)
+
+    if buffer != b'':
+        Session.log.write_error([ f'error waiting for client {writer.get_extra_info("peername")!r} to shut down connection' ])
+
     writer.close()
 
 async def cancel_server():
@@ -534,90 +598,30 @@ def get_arguments(*, is_program, program_name=None, module_args=None):
 
     return arguments
 
-def initalize_logging(arguments):
-    try:
-        formatter = DrmsLogFormatter('%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
-        log = DrmsLog(arguments.log_file, arguments.logging_level, formatter)
-    except Exception as exc:
-        raise LoggingError(exc_info=sys_exc_info(), error_message=f'{str(exc)}')
+def initialize_logging(log_file, logging_level):
+    log = None
+
+    if log_file is not None:
+        try:
+            formatter = DrmsLogFormatter('%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+            log = DrmsLog(log_file, logging_level, formatter)
+        except Exception as exc:
+            raise LoggingError(exc_info=sys_exc_info(), error_message=f'{str(exc)}')
+    else:
+        # noop log (does not write anything)
+        log = DrmsLog(None, None, None)
 
     return log
-
-def process_request(request, connection):
-    json_message = json_dumps(request)
-
-    print(f'sending message to server:')
-    print(f'{json_message}')
-    send_message(connection, json_message)
-
-    message = get_message(connection)
-    print(f'server response:')
-    print(f'{message}')
 
 if __name__ == "__main__":
     # server
     arguments = get_arguments(is_program=True, module_args=None)
-    Session.log = initalize_logging(arguments)
+
+    # if arguments.log_file is None, then Session.log is a noop
+    Session.log = initialize_logging(arguments.log_file, arguments.logging_level)
     Session.log.write_info([ f'initialized logging; log file is {arguments.log_file}' ])
 
     asyncio.run(run_server(host=arguments.server, port=arguments.listen_port, timeout=arguments.message_timeout, db_host=arguments.db_host, db_port=arguments.db_port, db_user=arguments.db_user, export_bin=arguments.export_bin))
 else:
     # client
-    try:
-        test_module_args = { 'log_file' : '/home/jsoc/exports/logs/exp_client_log.txt', 'logging_level' : 'info' }
-        arguments = get_arguments(is_program=False, module_args=test_module_args)
-
-        if Session.log is None:
-            Session.log = initalize_logging(arguments)
-            Session.log.write_info([ f'initialized logging; log file is {arguments.log_file}' ])
-
-        info = socket.getaddrinfo(arguments.server, arguments.listen_port)
-        connected = False
-        for address_info in info:
-            family = address_info[0]
-            sock_type = address_info[1]
-
-            if family == socket.AF_INET and sock_type == socket.SOCK_STREAM:
-                socket_address = address_info[4] # 2-tuple for AF_INET family
-
-                try:
-                    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as connection:
-                        Session.log.write_info([ f'created socket' ])
-                        connection.connect(socket_address)
-                        Session.log.write_info([ f'connected to server ({connection.getpeername()})' ])
-
-                        # send test requests
-                        # 1. parse specification
-                        message = { 'request_type' : 'parse_specification', 'specification' : 'hmi.m_720s[2015.2.2]' }
-                        process_request(message, connection)
-
-                        # 2. series info
-                        message = { 'request_type' : 'series_info', 'series' : 'hmi.v_45s' }
-                        process_request(message, connection)
-
-                        # 3. record info
-                        message = { 'request_type' : 'record_info', 'specification' : 'hmi.m_720s[2015.2.2/96m]', 'keywords' : [ 't_rec', 't_sel' ], 'segments' : [ 'magnetogram' ], 'record_info' : False, 'number_records' : 128 }
-                        process_request(message, connection)
-
-                        # 4. premium export
-                        message = { 'request_type' : 'premium_export', 'specification' : 'hmi.v_720s[2015.3.2]' }
-
-                        # 5. mini export
-                        message = { 'request_type' : 'mini_export', 'specification' : 'hmi.v_720s[2015.3.5]' }
-
-                        # 6. streamed export
-                        message = { 'request_type' : 'streamed_export', 'specification' : 'hmi.v_720s[2015.8.5]' }
-
-                        # 7. request status
-                        message = { 'request_type' : 'export_status', 'address' : 'arta@sun.stanford.edu', 'request_id' : 'JSOC_20211019_1665' }
-                        process_request(message, connection)
-
-                except socket.error as exc:
-                    raise TCPClientError(exc_info=sys_exc_info(), error_message=str(exc))
-                except OSError as exc:
-                    raise TCPClientError(exc_info=sys_exc_info(), error_message=f'failure creating TCP client')
-    except Exception as exc:
-        if Session.log:
-            Session.log.write_error([ f'{str(exc)}' ])
-        else:
-            print(f'{str(exc)}')
+    pass
