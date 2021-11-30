@@ -189,6 +189,10 @@ class QuitRequest(Request):
     def __init__(self):
         super().__init__()
 
+    def generate_response(self, db_host, db_port, db_user, export_bin):
+        response = QuitResponse(self, db_host, db_port, db_user, export_bin)
+        return response
+
 class Response():
     def __init__(self, request, db_host, db_port, db_user, export_bin):
         self._request = request
@@ -278,6 +282,16 @@ class ExportStatusResponse(Response):
 
     def __init__(self, request, db_host, db_port, db_user, export_bin):
         super().__init__(request, db_host, db_port, db_user, export_bin)
+
+class QuitResponse(Response):
+    _cmd = None
+
+    def __init__(self, request, db_host, db_port, db_user, export_bin):
+        super().__init__(request, db_host, db_port, db_user, export_bin)
+
+    async def send(self, writer, timeout):
+        message = { 'instructions' : 'quit request received; please shut down socket connection' }
+        await send_message_async(writer, json_dumps(message))
 
 class Arguments(Args):
     _arguments = None
@@ -521,7 +535,7 @@ async def get_request(reader):
         request = StreamedExportRequest(**request_dict)
     elif request_type == 'export_status':
         request = ExportStatusRequest(**request_dict)
-    elif rquest_type == 'quit':
+    elif request_type == 'quit':
         request = QuitRequest()
     else:
         raise InvalidMessageError(error_message=f'unexpected message type {request_type}')
@@ -542,13 +556,13 @@ async def handle_client(reader, writer, timeout, db_host, db_port, db_user, expo
             except asyncio.TimeoutError:
                 raise MessageTimeoutError(exc_info=sys_exc_info(), error_message=f'[ handle_client ] timeout event waiting for client {writer.get_extra_info("peername")!r} to send message')
 
-            if isinstance(request, QuitRequest):
-                break
-
             try:
                 await send_response(writer, request, timeout, db_host, db_port, db_user, export_bin)
             except Exception as exc:
                 raise MessageSendError(exc_info=sys_exc_info(), error_message=f'[ handle_client] {str(exc)}')
+
+            if isinstance(request, QuitRequest):
+                break
     except ExpServerBaseError as exc:
         if Session.log:
             Session.log.write_error([ f'{str(exc)}' ])
