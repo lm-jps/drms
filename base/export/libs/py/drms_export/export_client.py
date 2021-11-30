@@ -33,10 +33,12 @@ if __name__ == "__main__":
             process_request(message, connection)
 
             # 4. premium export
-            message = { 'request_type' : 'premium_export', 'specification' : 'hmi.v_720s[2015.3.2]' }
+            message = { 'request_type' : 'premium_export', 'address' : 'arta@sun.stanford.edu', 'specification' : 'hmi.v_720s[2015.3.12/24m]', 'method' : 'url', 'requestor' : 'art', 'processing' : None, 'file_format' : 'fits', 'number_records' : 1 }
+            process_request(message, connection)
 
             # 5. mini export
-            message = { 'request_type' : 'mini_export', 'specification' : 'hmi.v_720s[2015.3.5]' }
+            message = { 'request_type' : 'mini_export', 'address' : 'arta@sun.stanford.edu', 'specification' : 'hmi.v_720s[2017.12.5/96m]', 'requestor' : 'art', 'file_name_format' : '{seriesname}.{recnum:%lld}.{segment}', 'number_records' : 2 }
+            process_request(message, connection)
 
             # 6. streamed export
             message = { 'request_type' : 'streamed_export', 'specification' : 'hmi.v_720s[2015.8.5]' }
