@@ -13,6 +13,8 @@ from drms_utils import Arguments as Args, ArgumentsError as ArgsError, CmdlParse
 
 DEFAULT_LOG_FILE = 'exp_log.txt'
 
+__all__ = [ 'Connection', 'get_arguments', 'get_message', 'send_message', 'ExpServerBaseError' ]
+
 class StatusCode(SC):
     # info success status codes
     SUCCESS = (0, 'success')
@@ -309,20 +311,24 @@ class Arguments(Args):
     def get_arguments(cls, *, is_program, program_name=None, program_args=None, module_args=None, drms_params, refresh=True):
         if cls._arguments is None or refresh:
             try:
-                server = drms_params.get_required('EXP_SERVER')
                 listen_port = int(drms_params.get_required('EXP_LISTEN_PORT'))
-                db_port =int(drms_params.get_required('DRMSPGPORT'))
+                server = drms_params.get_required('EXP_SERVER')
                 message_timeout = int(drms_params.get_required('EXP_MESSAGE_TIMEOUT'))
-                export_bin = drms_params.get_required('BIN_EXPORT')
-                export_production_db_user = drms_params.get_required('EXPORT_PRODUCTION_DB_USER')
-                log_file = path_join(drms_params.get_required('EXPORT_LOG_DIR'), DEFAULT_LOG_FILE)
             except DPMissingParameterError as exc:
                 raise ParametersError(exc_info=sys_exc_info(), error_message=str(exc))
 
             if is_program:
+                try:
+                    db_port =int(drms_params.get_required('DRMSPGPORT'))
+                    export_bin = drms_params.get_required('BIN_EXPORT')
+                    export_production_db_user = drms_params.get_required('EXPORT_PRODUCTION_DB_USER')
+                    log_file = path_join(drms_params.get_required('EXPORT_LOG_DIR'), DEFAULT_LOG_FILE)
+                except DPMissingParameterError as exc:
+                    raise ParametersError(exc_info=sys_exc_info(), error_message=str(exc))
+
                 args = None
 
-                parser_args = {}
+                parser_args = { 'usage' : f'%(prog)s dbhost=<db host> [ -l/--log-file=<log file path> [ -L/--logging-level=<critical/error/warning/info/debug> ] [ -p/--port=<listen port> ] [ -P/--dbport=<db port> ] [ -S/--server=<socket-server host>] [ -U/--dbuser=<db user>] [ --webserver=<host> ]' }
 
                 if program_name is not None and len(program_name) > 0:
                     parser_args['prog'] = program_name
@@ -341,14 +347,16 @@ class Arguments(Args):
                 parser.add_argument('-U', '--dbuser', help='the name of the database user account', metavar='<db user>', dest='db_user', default=export_production_db_user)
 
                 arguments = Arguments(parser=parser, args=args)
+
+                # add needed drms parameters
+                arguments.export_bin = path_join(export_bin, 'linux_avx')
+                arguments.export_production_db_user = export_production_db_user
             else:
                 # module invocation
-                def extract_module_args(*, server=server, listen_port=listen_port, log_file=log_file, logging_level='info'):
+                def extract_module_args(*, listen_port=listen_port, server=server):
                     arguments = {}
 
-                    arguments['log_file'] = log_file
                     arguments['listen_port'] = listen_port
-                    arguments['logging_level'] = DrmsLogLevelAction.string_to_level(logging_level)
                     arguments['server'] = server
 
                     return arguments
@@ -357,8 +365,6 @@ class Arguments(Args):
                 arguments = Arguments(parser=None, args=module_args_dict)
 
             # add needed drms parameters
-            arguments.export_bin = path_join(export_bin, 'linux_avx')
-            arguments.export_production_db_user = export_production_db_user
             arguments.message_timeout = message_timeout
 
             cls._arguments = arguments
@@ -394,13 +400,16 @@ class Connection:
     '''
     context manager to establish connection to server
     '''
-    def __init__(self, *, server, listen_port, log_file=None, logging_level=None):
-        if Session.log is None:
-            # could be a noop log
-            Session.log = initialize_logging(log_file, logging_level)
-            Session.log.write_info([ f'initialized logging; log file is {log_file}' ])
+    def __init__(self, *, server, listen_port, timeout=None, log=None):
+        if log is None:
+            Session.log = DrmsLog(None, None, None)
+        else:
+            Session.log = log
+
+        Session.log.write_info([ f'[ Connection._init__ ] initialized logging' ])
 
         self._info = getaddrinfo(server, listen_port)
+        self._timeout = timeout
 
     def __enter__(self):
         self._sock = None
@@ -417,6 +426,8 @@ class Connection:
                     Session.log.write_info([ f'created socket' ])
                     self._sock.connect(socket_address)
                     Session.log.write_info([ f'connected to server ({self._sock.getpeername()})' ])
+                    if self._timeout is not None:
+                        self._sock.settimeout(self._timeout)
                 except socket_error as exc:
                     raise TCPClientError(exc_info=sys_exc_info(), error_message=str(exc))
                 except OSError as exc:
