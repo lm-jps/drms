@@ -82,7 +82,10 @@ class TCPClientError(ExpServerBaseError):
     _export_error = ErrorCode.TCP_CLIENT
 
 class Request:
-    def __init__(self):
+    def __init__(self, db_host, db_port, db_user):
+        self._db_host = db_host
+        self._db_port = db_port
+        self._db_user = db_user
         self._args_dict = {}
         self._positional_args = []
 
@@ -94,9 +97,21 @@ class Request:
     def positional_args(self):
         return self._positional_args
 
+    @property
+    def db_host(self):
+        return self._db_host
+
+    @property
+    def db_port(self):
+        return self._db_port
+
+    @property
+    def db_user(self):
+        return self._db_user
+
 class ParseSpecificationRequest(Request):
-    def __init__(self, *, specification):
-        super().__init__()
+    def __init__(self, *, db_host, db_port, db_user, specification):
+        super().__init__(db_host, db_port, db_user)
         self._args_dict['spec'] = specification
 
     def generate_response(self, db_host, db_port, db_user, export_bin):
@@ -104,8 +119,8 @@ class ParseSpecificationRequest(Request):
         return response
 
 class SeriesListRequest(Request):
-    def __init__(self, *, series_regex):
-        super().__init__()
+    def __init__(self, *, db_host, db_port, db_user, series_regex):
+        super().__init__(db_host, db_port, db_user)
         self._args_dict['q'] = 1
         self._args_dict['z'] = 1
         self._positional_args.append(series_regex)
@@ -115,8 +130,8 @@ class SeriesListRequest(Request):
         return response
 
 class SeriesInfoRequest(Request):
-    def __init__(self, *, series):
-        super().__init__()
+    def __init__(self, *, db_host, db_port, db_user, series):
+        super().__init__(db_host, db_port, db_user)
         self._args_dict['ds'] = series
         self._args_dict['op'] = 'series_struct'
         self._args_dict['s'] = 1
@@ -126,8 +141,8 @@ class SeriesInfoRequest(Request):
         return response
 
 class RecordInfoRequest(Request):
-    def __init__(self, specification, keywords=None, links=None, segments=None, record_info=False, number_records=None):
-        super().__init__()
+    def __init__(self, *, db_host, db_port, db_user, specification, keywords=None, links=None, segments=None, record_info=False, number_records=None):
+        super().__init__(db_host, db_port, db_user)
         self._args_dict['ds'] = specification
         self._args_dict['key'] = None if keywords is None else ','.join(keywords)
         self._args_dict['link'] = None if links is None else ','.join(links)
@@ -142,8 +157,8 @@ class RecordInfoRequest(Request):
         return response
 
 class PremiumExportRequest(Request):
-    def __init__(self, address, specification, method, requestor=None, processing=None, file_format=None, file_format_args=None, file_name_format=None, number_records=None):
-        super().__init__()
+    def __init__(self, *, db_host, db_port, db_user, address, specification, method, requestor=None, processing=None, file_format=None, file_format_args=None, file_name_format=None, number_records=None):
+        super().__init__(db_host, db_port, db_user)
         self._args_dict['notify'] = address
         self._args_dict['ds'] = specification
         self._args_dict['method'] = method
@@ -171,8 +186,8 @@ class PremiumExportRequest(Request):
         return response
 
 class MiniExportRequest(Request):
-    def __init__(self, address, specification, requestor=None, file_name_format=None, number_records=None):
-        super().__init__()
+    def __init__(self, *, db_host, db_port, db_user, address, specification, requestor=None, file_name_format=None, number_records=None):
+        super().__init__(db_host, db_port, db_user)
         self._args_dict['notify'] = address
         self._args_dict['ds'] = specification
         self._args_dict['method'] = 'url_quick'
@@ -190,8 +205,8 @@ class MiniExportRequest(Request):
         return response
 
 class StreamedExportRequest(Request):
-    def __init__(self, address, specification, file_name_format=None):
-        super().__init__()
+    def __init__(self, *, db_host, db_port, db_user, address, specification, file_name_format=None):
+        super().__init__(db_host, db_port, db_user)
         self._args_dict['address'] = address
         self._args_dict['spec'] = specification
         self._args_dict['ffmt'] = file_name_format
@@ -201,8 +216,8 @@ class StreamedExportRequest(Request):
         self._args_dict['s'] = 1
 
 class ExportStatusRequest(Request):
-    def __init__(self, address, request_id):
-        super().__init__()
+    def __init__(self, *, db_host, db_port, db_user, address, request_id):
+        super().__init__(db_host, db_port, db_user)
         self._args_dict['requestid'] = request_id
         self._args_dict['W'] = 1
         self._args_dict['op'] = 'exp_status'
@@ -214,16 +229,31 @@ class ExportStatusRequest(Request):
 
 class QuitRequest(Request):
     def __init__(self):
-        super().__init__()
+        super().__init__(None, None, None)
 
     def generate_response(self, db_host, db_port, db_user, export_bin):
         response = QuitResponse(self, db_host, db_port, db_user, export_bin)
         return response
 
 class Response():
+    # db_host, db_port, db_user are defaults used if not provided in request
     def __init__(self, request, db_host, db_port, db_user, export_bin):
         self._request = request
-        self._args_dict = { 'DRMS_DBUTF8CLIENTENCODING' : 1, 'JSOC_DBHOST' : f'{db_host}:{str(db_port)}', 'JSOC_DBUSER' : db_user }
+        self._args_dict = { 'DRMS_DBUTF8CLIENTENCODING' : 1 }
+
+        resolved_db_host = request.db_host if request.db_host is not None else db_host
+        resolved_db_port = request.db_port if request.db_port is not None else db_port
+        resolved_db_user = request.db_user if request.db_user is not None else db_user
+
+        if resolved_db_host is not None:
+            if resolved_db_port is not None:
+                self._args_dict['JSOC_DBHOST'] = f'{resolved_db_host}:{str(resolved_db_port)}'
+            else:
+                self._args_dict['JSOC_DBHOST'] = f'{resolved_db_host}'
+
+        if resolved_db_user is not None:
+            self._args_dict['JSOC_DBUSER'] = f'{resolved_db_user}'
+
         self._export_bin = export_bin
 
     async def send(self, writer, timeout):
@@ -532,10 +562,19 @@ async def get_request(reader):
         raise MessageSyntaxError(exc_info=sys_exc_info(), error_message=str(exc))
 
     request_type = message_dict['request_type'].lower()
+    db_host = message_dict['db_host'].lower() if 'db_host' in message_dict else None
+    db_port = message_dict['db_port'] if 'db_port' in message_dict else None
+    db_user = message_dict['db_user'] if 'db_user' in message_dict else None
+
     request_dict = {}
     for key, val in message_dict.items():
+        # todo : use filter instead
         if key.lower().strip() != 'request_type':
             request_dict[key.lower().strip()] = val
+
+    request_dict['db_host'] = db_host
+    request_dict['db_port'] = db_port
+    request_dict['db_user'] = db_user
 
     Session.log.write_debug([ f'received {request_type} message' ])
 
@@ -562,6 +601,7 @@ async def get_request(reader):
 
     return request
 
+# db_host, db_port, db_user are defaults if not provided in user request
 async def send_response(writer, request, timeout, db_host, db_port, db_user, export_bin):
     response = request.generate_response(db_host, db_port, db_user, export_bin)
     await response.send(writer, timeout)
@@ -585,7 +625,7 @@ async def handle_client(reader, writer, timeout, db_host, db_port, db_user, expo
                 break
     except ExpServerBaseError as exc:
         if Session.log:
-            Session.log.write_error([ f'{str(exc)}' ])
+            Session.log.write_error([ f'{exc.message}' ])
     except Exception as exc:
         if Session.log:
             Session.log.write_error([ f'{str(exc)}' ])
