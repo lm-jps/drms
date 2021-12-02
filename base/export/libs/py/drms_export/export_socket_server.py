@@ -84,10 +84,15 @@ class TCPClientError(ExpServerBaseError):
 class Request:
     def __init__(self):
         self._args_dict = {}
+        self._positional_args = []
 
     @property
     def args_dict(self):
         return self._args_dict
+
+    @property
+    def positional_args(self):
+        return self._positional_args
 
 class ParseSpecificationRequest(Request):
     def __init__(self, *, specification):
@@ -96,6 +101,17 @@ class ParseSpecificationRequest(Request):
 
     def generate_response(self, db_host, db_port, db_user, export_bin):
         response = ParseSpecificationResponse(self, db_host, db_port, db_user, export_bin)
+        return response
+
+class SeriesListRequest(Request):
+    def __init__(self, *, series_regex):
+        super().__init__()
+        self._args_dict['q'] = 1
+        self._args_dict['z'] = 1
+        self._positional_args.append(series_regex)
+
+    def generate_response(self, db_host, db_port, db_user, export_bin):
+        response = SeriesListResponse(self, db_host, db_port, db_user, export_bin)
         return response
 
 class SeriesInfoRequest(Request):
@@ -223,6 +239,9 @@ class Response():
             if val is not None:
                 args_list.append(f'{key}={quote(str(val))}')
 
+        for val in self._request.positional_args:
+            args_list.append(f'{str(val)}')
+
         args_list.append('2>/dev/null')
 
         Session.log.write_debug([ f'[ Response.send ] arguments: ' ])
@@ -255,50 +274,29 @@ class Response():
 class ParseSpecificationResponse(Response):
     _cmd = 'drms_parserecset'
 
-    def __init__(self, request, db_host, db_port, db_user, export_bin):
-        super().__init__(request, db_host, db_port, db_user, export_bin)
+class SeriesListResponse(Response):
+    _cmd = 'show_series'
 
 class SeriesInfoResponse(Response):
     _cmd = 'jsoc_info'
 
-    def __init__(self, request, db_host, db_port, db_user, export_bin):
-        super().__init__(request, db_host, db_port, db_user, export_bin)
-
 class RecordInfoResponse(Response):
     _cmd = 'jsoc_info'
-
-    def __init__(self, request, db_host, db_port, db_user, export_bin):
-        super().__init__(request, db_host, db_port, db_user, export_bin)
 
 class PremiumExportResponse(Response):
     _cmd = 'jsoc_fetch'
 
-    def __init__(self, request, db_host, db_port, db_user, export_bin):
-        super().__init__(request, db_host, db_port, db_user, export_bin)
-
 class MiniExportResponse(Response):
     _cmd = 'jsoc_fetch'
-
-    def __init__(self, request, db_host, db_port, db_user, export_bin):
-        super().__init__(request, db_host, db_port, db_user, export_bin)
 
 class StreamedExportResponse(Response):
     _cmd = 'drms-export-to-stdout'
 
-    def __init__(self, request, db_host, db_port, db_user, export_bin):
-        super().__init__(request, db_host, db_port, db_user, export_bin)
-
 class ExportStatusResponse(Response):
     _cmd = 'jsoc_fetch'
 
-    def __init__(self, request, db_host, db_port, db_user, export_bin):
-        super().__init__(request, db_host, db_port, db_user, export_bin)
-
 class QuitResponse(Response):
     _cmd = None
-
-    def __init__(self, request, db_host, db_port, db_user, export_bin):
-        super().__init__(request, db_host, db_port, db_user, export_bin)
 
     async def send(self, writer, timeout):
         message = { 'instructions' : 'quit request received; please shut down socket connection' }
@@ -543,6 +541,8 @@ async def get_request(reader):
 
     if request_type == 'parse_specification':
         request = ParseSpecificationRequest(**request_dict)
+    elif request_type == 'series_list':
+        request = SeriesListRequest(**request_dict)
     elif request_type == 'series_info':
         request = SeriesInfoRequest(**request_dict)
     elif request_type == 'record_info':
