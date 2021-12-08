@@ -13,7 +13,7 @@ from drms_utils import Arguments as Args, ArgumentsError as ArgsError, CmdlParse
 
 DEFAULT_LOG_FILE = 'exp_log.txt'
 
-__all__ = [ 'Connection', 'get_arguments', 'get_message', 'send_message', 'ExpServerBaseError' ]
+__all__ = [ 'Connection', 'create_generator', 'get_arguments', 'get_message', 'send_message', 'ExpServerBaseError' ]
 
 class StatusCode(SC):
     # info success status codes
@@ -110,16 +110,19 @@ class Request:
         return self._db_user
 
 class ParseSpecificationRequest(Request):
-    def __init__(self, *, db_host, db_port, db_user, specification):
-        super().__init__(db_host, db_port, db_user)
+    def __init__(self, *, specification):
+        super().__init__(None, None, None)
         self._args_dict['spec'] = specification
 
+    # db_host, db_port, db_user are for the public db server, by default - this
+    # is the server used for ParseSpecificationRequest since those arguments
+    # are now allowed in the request (force use of the public db server)
     def generate_response(self, db_host, db_port, db_user, export_bin):
         response = ParseSpecificationResponse(self, db_host, db_port, db_user, export_bin)
         return response
 
 class SeriesListRequest(Request):
-    def __init__(self, *, db_host, db_port, db_user, series_regex):
+    def __init__(self, *, db_host, db_port=None, db_user=None, series_regex):
         super().__init__(db_host, db_port, db_user)
         self._args_dict['q'] = 1
         self._args_dict['z'] = 1
@@ -130,7 +133,7 @@ class SeriesListRequest(Request):
         return response
 
 class SeriesInfoRequest(Request):
-    def __init__(self, *, db_host, db_port, db_user, series):
+    def __init__(self, *, db_host, db_port=None, db_user=None, series):
         super().__init__(db_host, db_port, db_user)
         self._args_dict['ds'] = series
         self._args_dict['op'] = 'series_struct'
@@ -141,7 +144,7 @@ class SeriesInfoRequest(Request):
         return response
 
 class RecordInfoRequest(Request):
-    def __init__(self, *, db_host, db_port, db_user, specification, keywords=None, links=None, segments=None, record_info=False, number_records=None):
+    def __init__(self, *, db_host, db_port=None, db_user=None, specification, keywords=None, links=None, segments=None, record_info=False, number_records=None):
         super().__init__(db_host, db_port, db_user)
         self._args_dict['ds'] = specification
         self._args_dict['key'] = None if keywords is None else ','.join(keywords)
@@ -157,7 +160,7 @@ class RecordInfoRequest(Request):
         return response
 
 class PremiumExportRequest(Request):
-    def __init__(self, *, db_host, db_port, db_user, address, specification, method, requestor=None, processing=None, file_format=None, file_format_args=None, file_name_format=None, number_records=None):
+    def __init__(self, *, db_host, db_port=None, db_user=None, address, specification, method, requestor=None, processing=None, file_format=None, file_format_args=None, file_name_format=None, number_records=None):
         super().__init__(db_host, db_port, db_user)
         self._args_dict['notify'] = address
         self._args_dict['ds'] = specification
@@ -186,7 +189,7 @@ class PremiumExportRequest(Request):
         return response
 
 class MiniExportRequest(Request):
-    def __init__(self, *, db_host, db_port, db_user, address, specification, requestor=None, file_name_format=None, number_records=None):
+    def __init__(self, *, db_host, db_port=None, db_user=None, address, specification, requestor=None, file_name_format=None, number_records=None):
         super().__init__(db_host, db_port, db_user)
         self._args_dict['notify'] = address
         self._args_dict['ds'] = specification
@@ -205,7 +208,7 @@ class MiniExportRequest(Request):
         return response
 
 class StreamedExportRequest(Request):
-    def __init__(self, *, db_host, db_port, db_user, address, specification, file_name_format=None):
+    def __init__(self, *, db_host, db_port=None, db_user=None, address, specification, file_name_format=None):
         super().__init__(db_host, db_port, db_user)
         self._args_dict['address'] = address
         self._args_dict['spec'] = specification
@@ -215,8 +218,12 @@ class StreamedExportRequest(Request):
         self._args_dict['e'] = 1
         self._args_dict['s'] = 1
 
+    def generate_response(self, db_host, db_port, db_user, export_bin):
+        response = StreamedExportResponse(self, db_host, db_port, db_user, export_bin)
+        return response
+
 class ExportStatusRequest(Request):
-    def __init__(self, *, db_host, db_port, db_user, address, request_id):
+    def __init__(self, *, db_host, db_port=None, db_user=None, address, request_id):
         super().__init__(db_host, db_port, db_user)
         self._args_dict['requestid'] = request_id
         self._args_dict['W'] = 1
@@ -256,7 +263,7 @@ class Response():
 
         self._export_bin = export_bin
 
-    async def send(self, writer, timeout):
+    async def send(self, writer):
         command_path = path_join(f'{self._export_bin}', f'{self.__class__._cmd}')
         Session.log.write_debug([ f'[ Response.send ] running DRMS module {command_path}' ])
         args_list = [ command_path ]
@@ -284,6 +291,7 @@ class Response():
             if not response or response == b'':
                 break
 
+            # write to the client socket
             await send_message_async(writer, response.decode('utf8'))
 
         await proc.wait()
@@ -293,11 +301,15 @@ class Response():
             if proc.returncode == 0:
                 pass
             else:
-                stdout, stderr = proc.communicate()
+                # DRMS modules have inconsistent return values; jsoc_fetch can return 1 when returning certain kinds of
+                # information, but 0 for other kinds; so ignore non-zero error codes, but log them; we cannot add a
+                # `export_server_status` code to the message sent to the client because we already sent the message at this
+                # point
+                stdout, stderr = await proc.communicate()
                 if stderr is not None and len(stderr) > 0:
-                    raise SubprocessError(error_message=f'[ Response.send ] failure running {self.__class__.__name__} command: {stderr.decode()}' )
+                    Session.log.write_warning([ f'[ Response.send ] {command_path} returned status code {str(proc.returncode)}, plus jibber-jabber {stderr.decode()}' ])
                 else:
-                    raise SubprocessError(error_message=f'[ Response.send ] failure running {self.__class__.__name__} command' )
+                    Session.log.write_warning([ f'[ Response.send ] {command_path} returned status code {str(proc.returncode)}' ])
         else:
             raise SubprocessError(error_message=f'[ Response.send ] failure running {self.__class__.__name__} command; no return code' )
 
@@ -322,13 +334,67 @@ class MiniExportResponse(Response):
 class StreamedExportResponse(Response):
     _cmd = 'drms-export-to-stdout'
 
+    async def send(self, writer):
+        command_path = path_join(f'{self._export_bin}', f'{self.__class__._cmd}')
+        Session.log.write_debug([ f'[ Response.send ] running DRMS module {command_path}' ])
+        args_list = [ command_path ]
+
+        for key, val in self._args_dict.items():
+            if val is not None:
+                args_list.append(f'{key}={quote(str(val))}')
+
+        for key, val in self._request.args_dict.items():
+            if val is not None:
+                args_list.append(f'{key}={quote(str(val))}')
+
+        for val in self._request.positional_args:
+            args_list.append(f'{str(val)}')
+
+        args_list.append('2>/dev/null')
+
+        Session.log.write_debug([ f'[ Response.send ] arguments: ' ])
+        Session.log.write_debug(args_list)
+
+        proc = await asyncio.subprocess.create_subprocess_shell(' '.join(args_list), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+
+        # tell client that binary payload will follow the message
+        message = { 'status' : 0, 'instructions' : 'binary payload will follow this message' }
+        await send_message_async(writer, json_dumps(message))
+
+        while True:
+            data = await proc.stdout.read(8192) # bytes
+            if not data or data == b'':
+                break
+
+            # write binary data to the client socket
+            await send_data_async(writer, data)
+
+        await proc.wait()
+
+        if proc.returncode is not None:
+            # child process terminated
+            if proc.returncode == 0:
+                pass
+            else:
+                # DRMS modules have inconsistent return values; jsoc_fetch can return 1 when returning certain kinds of
+                # information, but 0 for other kinds; so ignore non-zero error codes, but log them; we cannot add a
+                # `export_server_status` code to the message sent to the client because we already sent the message at this
+                # point
+                stdout, stderr = await proc.communicate()
+                if stderr is not None and len(stderr) > 0:
+                    Session.log.write_warning([ f'[ Response.send ] {command_path} returned status code {str(proc.returncode)}, plus jibber-jabber {stderr.decode()}' ])
+                else:
+                    Session.log.write_warning([ f'[ Response.send ] {command_path} returned status code {str(proc.returncode)}' ])
+        else:
+            raise SubprocessError(error_message=f'[ Response.send ] failure running {self.__class__.__name__} command; no return code' )
+
 class ExportStatusResponse(Response):
     _cmd = 'jsoc_fetch'
 
 class QuitResponse(Response):
     _cmd = None
 
-    async def send(self, writer, timeout):
+    async def send(self, writer):
         message = { 'instructions' : 'quit request received; please shut down socket connection' }
         await send_message_async(writer, json_dumps(message))
 
@@ -406,7 +472,7 @@ def parse_message(json_message_buffer, buffer, open_count, close_count):
         if buffer[0] == '{':
             open_count += 1
         else:
-            raise MessageSyntaxError(error_message=f'[ Message.receive ] invalid message synax; first character must be {str("{")}')
+            raise MessageSyntaxError(error_message=f'[ parse_message ] invalid message synax; first character must be {str("{")}')
 
         json_message_buffer.append(buffer[0])
         buffer = buffer[1:]
@@ -474,6 +540,19 @@ class Connection:
 
         # propagate any exception
         return False
+
+    def connect(self):
+        return self.__enter__()
+
+    def shutdown(self):
+        if self._sock is not None:
+            self._sock.shutdown(SHUT_RDWR)
+
+    def close(self):
+        if self._sock is not None:
+            self._sock.close()
+
+        self._sock = None
 
     @classmethod
     def get_log(cls):
@@ -552,6 +631,39 @@ async def send_message_async(writer, json_message):
     await writer.drain()
     Session.log.write_debug([ f'message successfully sent' ])
 
+async def send_data_async(writer, binary_data):
+    writer.write(binary_data)
+    await writer.drain()
+
+def generator_factory(*, destination):
+    def generator():
+        while True:
+            # returns tuple; first element is boolean - True means more to read, False means done;
+            # second element are data bytes
+            more, bytes_read = destination['reader'](destination=destination)
+
+            # `stream_reader` uses parse_message()-like logic so the payload must be wrapped in curly braces:
+            #    payload = { b'' } --> utf8-encoded binary data
+            #  when `stream_reader` sees the closing brace, it returns more == False
+            if not more:
+                break
+
+            yield bytes_read
+
+    return generator
+
+def create_generator(*, destination):
+    # first, download just the header from the output of drms-export-to-stdout
+    if destination['has_header']:
+        # call read proc to extract header; more should be True, bytes_read should be b''
+        more, bytes_read = destination['reader'](destination=destination)
+
+    # wrap generator around the remaining drms-export-to-stdout output
+    generator = generator_factory(destination=destination)
+
+    # return generator object
+    return generator()
+
 async def get_request(reader):
     json_message = await get_message_async(reader)
 
@@ -562,19 +674,11 @@ async def get_request(reader):
         raise MessageSyntaxError(exc_info=sys_exc_info(), error_message=str(exc))
 
     request_type = message_dict['request_type'].lower()
-    db_host = message_dict['db_host'].lower() if 'db_host' in message_dict else None
-    db_port = message_dict['db_port'] if 'db_port' in message_dict else None
-    db_user = message_dict['db_user'] if 'db_user' in message_dict else None
 
     request_dict = {}
     for key, val in message_dict.items():
-        # todo : use filter instead
-        if key.lower().strip() != 'request_type':
+        if key.lower().strip() != 'request_type' and val is not None:
             request_dict[key.lower().strip()] = val
-
-    request_dict['db_host'] = db_host
-    request_dict['db_port'] = db_port
-    request_dict['db_user'] = db_user
 
     Session.log.write_debug([ f'received {request_type} message' ])
 
@@ -602,9 +706,13 @@ async def get_request(reader):
     return request
 
 # db_host, db_port, db_user are defaults if not provided in user request
-async def send_response(writer, request, timeout, db_host, db_port, db_user, export_bin):
+async def send_response(writer, request, db_host, db_port, db_user, export_bin):
     response = request.generate_response(db_host, db_port, db_user, export_bin)
-    await response.send(writer, timeout)
+    await response.send(writer)
+
+async def send_error_response(writer, error_message):
+    message = { 'export_server_status' : 'export_server_error', 'error_message' : error_message }
+    await send_message_async(writer, json_dumps(message))
 
 async def handle_client(reader, writer, timeout, db_host, db_port, db_user, export_bin):
     request = None
@@ -617,18 +725,36 @@ async def handle_client(reader, writer, timeout, db_host, db_port, db_user, expo
                 raise MessageTimeoutError(exc_info=sys_exc_info(), error_message=f'[ handle_client ] timeout event waiting for client {writer.get_extra_info("peername")!r} to send message')
 
             try:
-                await send_response(writer, request, timeout, db_host, db_port, db_user, export_bin)
+                await asyncio.wait_for(send_response(writer, request, db_host, db_port, db_user, export_bin), timeout=timeout)
+            except asyncio.TimeoutError:
+                raise MessageTimeoutError(exc_info=sys_exc_info(), error_message=f'[ handle_client ] timeout event waiting sending message to client {writer.get_extra_info("peername")!r}')
             except Exception as exc:
                 raise MessageSendError(exc_info=sys_exc_info(), error_message=f'[ handle_client] {str(exc)}')
 
-            if isinstance(request, QuitRequest):
+            if isinstance(request, QuitRequest) or isinstance(request, StreamedExportRequest):
+                # StreamedExportRequest --> the server dumps the export content on the writer after sending
+                # the message; since this is not a normal JSON message, the server has to send EOF to the
+                # client and break out of the request loop
+                writer.write_eof()
                 break
     except ExpServerBaseError as exc:
         if Session.log:
             Session.log.write_error([ f'{exc.message}' ])
+
+        # send error response
+        try:
+            await asyncio.wait_for(send_error_response(writer, exc.message), timeout=timeout)
+        except:
+            pass
     except Exception as exc:
         if Session.log:
             Session.log.write_error([ f'{str(exc)}' ])
+
+        # send error response
+        try:
+            await asyncio.wait_for(send_error_response(writer, str(exc)), timeout=timeout)
+        except:
+            pass
 
     # wait for client to terminate connection
     buffer = await reader.read(4096)
@@ -637,6 +763,7 @@ async def handle_client(reader, writer, timeout, db_host, db_port, db_user, expo
         Session.log.write_error([ f'error waiting for client {writer.get_extra_info("peername")!r} to shut down connection' ])
 
     writer.close()
+    await writer.wait_closed()
 
 async def cancel_server():
     Session.log.write_info([ f'[ cancel_server] cancelling server task'])
