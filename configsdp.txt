@@ -97,6 +97,10 @@ q:DX_SERVER                             rumble.stanford.edu
 a:DX_LISTEN_PORT                        6200
 a:DX_START_PORT                         8800
 a:DX_NUMBER_PORTS                       100
+q:EXP_SERVER                            rumble.stanford.edu
+a:EXP_LISTEN_PORT                       2020
+a:EXP_MESSAGE_TIMEOUT                   30
+q:EXP_APP_LOG                           exp_app_log.txt
 q:EXPORT_DB_HOST_DEFAULT                hmidb2
 q:EXPORT_PRODUCTION_DB_USER             production
 q:EXPORT_LOG_DIR                        /home/jsoc/exports/logs
@@ -116,7 +120,7 @@ q:EXPORT_USER_INFO_UPDATE_FN            jsoc.user_info_update
 q:EXPORT_USER_INFO_DELETE_FN            jsoc.user_info_delete
 q:EXPORT_USER_UNREGISTER_FN             jsoc.user_unregister
 q:WEB_DOMAIN_PRIVATE                    jsoc2.stanford.edu
-q:WEB_DOMAIN_PUBLIC                     jsoc.stanford.edu
+q:WEB_DOMAIN_PUBLIC                     jsoc1.stanford.edu
 q:BIN_PY                                /home/jsoc/bin/linux_x86_64/activepython27
 q:BIN_PY3                               /home/jsoc/anaconda3/bin/python3
 a:SUMS_USEMTSUMS                        1
