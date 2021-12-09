@@ -31,20 +31,23 @@ class Formatter(logging.Formatter):
 class Log(object):
     """Manage a logfile."""
     def __init__(self, file, drms_log_level, formatter):
-        if isinstance(file, IOBase):
-            self._file_name = None
-            self._handler = logging.StreamHandler(file)
+        if file is not None:
+            if isinstance(file, IOBase):
+                self._file_name = None
+                self._handler = logging.StreamHandler(file)
+            else:
+                self._file_name = file
+                self._handler = logging.FileHandler(file)
+
+            self._log = logging.getLogger()
+
+            logging_level = self._level_to_logging_level(drms_log_level)
+            self._log.setLevel(logging_level)
+            self._handler.setLevel(logging_level)
+            self._handler.setFormatter(formatter)
+            self._log.addHandler(self._handler)
         else:
-            self._file_name = file
-            self._handler = logging.FileHandler(file)
-
-        self._log = logging.getLogger()
-
-        logging_level = self._level_to_logging_level(drms_log_level)
-        self._log.setLevel(logging_level)
-        self._handler.setLevel(logging_level)
-        self._handler.setFormatter(formatter)
-        self._log.addHandler(self._handler)
+            self._log = None
 
     def _level_to_logging_level(self, drms_log_level):
         if drms_log_level == LogLevel.CRITICAL:
@@ -109,7 +112,7 @@ class Log(object):
     def write_critical(self, text):
         if self._log:
             for line in text:
-                self.log.critical(self.__prependFrameInfo(line))
+                self._log.critical(self.__prependFrameInfo(line))
             self._handler.flush()
 
 class LogLevelAction(ApAction):
