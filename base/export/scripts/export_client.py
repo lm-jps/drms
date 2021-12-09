@@ -63,7 +63,7 @@ if __name__ == "__main__":
         formatter = DrmsLogFormatter('%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
         log = DrmsLog('/home/jsoc/exports/logs/exp_client_log.txt', DrmsLogLevel.DEBUG, formatter)
 
-        if False:
+        if True:
             with Connection(server=arguments.server, listen_port=arguments.listen_port, timeout=15, log=log) as connection:
                 # send test requests
                 # 1. parse specification
@@ -76,7 +76,9 @@ if __name__ == "__main__":
 
                 # 3. series info
                 message = { 'request_type' : 'series_info', 'series' : 'hmi.v_45s', 'db_host' : 'hmidb2' }
+                #json_response = process_request(message, connection)
                 process_request(message, connection)
+                #print(f'series_info response {json_response}')
 
                 # 4. record info
                 message = { 'request_type' : 'record_info', 'specification' : 'hmi.m_720s[2015.2.2/96m]', 'keywords' : [ 't_rec', 't_sel' ], 'segments' : [ 'magnetogram' ], 'record_info' : False, 'number_records' : 128, 'db_host' : 'hmidb' }
