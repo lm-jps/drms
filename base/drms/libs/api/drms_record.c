@@ -1994,17 +1994,6 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *record
 
                             if (!hcon_member_lower(unsorted, keyword->info->name))
                             {
-                                if (!unsorted)
-                                {
-                                    /* A list of POINTERS to keyword structs, not of keyword structs themselves. */
-                                    unsorted = hcon_create(sizeof(DRMS_Keyword_t *), DRMS_MAXKEYNAMELEN, NULL, NULL, NULL, NULL, 0);
-                                }
-
-                                if (!unsorted)
-                                {
-                                    goto failure;
-                                }
-
                                 hcon_insert_lower(unsorted, keyword->info->name, &keyword);
                             }
                         }
