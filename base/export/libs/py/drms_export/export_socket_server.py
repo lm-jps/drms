@@ -269,11 +269,11 @@ class Response():
         args_list = [ command_path ]
 
         for key, val in self._args_dict.items():
-            if val is not None:
+            if val is not None and len(str(val)) > 0:
                 args_list.append(f'{key}={quote(str(val))}')
 
         for key, val in self._request.args_dict.items():
-            if val is not None:
+            if val is not None and len(str(val)) > 0:
                 args_list.append(f'{key}={quote(str(val))}')
 
         for val in self._request.positional_args:
@@ -283,6 +283,8 @@ class Response():
 
         Session.log.write_debug([ f'[ Response.send ] arguments: ' ])
         Session.log.write_debug(args_list)
+
+        Session.log.write_debug([ f'[ Response.send ] running {" ".join(args_list)}' ])
 
         proc = await asyncio.subprocess.create_subprocess_shell(' '.join(args_list), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
 
