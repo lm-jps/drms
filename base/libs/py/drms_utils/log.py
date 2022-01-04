@@ -95,7 +95,7 @@ class Log(object):
         if self._log:
             for line in text:
                 self._log.info(self.__prependFrameInfo(line))
-        self._handler.flush()
+            self._handler.flush()
 
     def write_warning(self, text):
         if self._log:
