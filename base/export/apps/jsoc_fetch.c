@@ -1514,7 +1514,7 @@ static int CheckUserLoad(DRMS_Env_t *env, const char *address, const char *ipAdd
             }
         }
 
-        snprintf(command, sizeof(command), "SELECT request_id FROM %s WHERE address ILIKE '%s' AND CURRENT_TIMESTAMP - start_time < interval '%d minutes'", EXPORT_PENDING_REQUESTS_TABLE, address, timeOutInterval);
+        snprintf(command, sizeof(command), "SELECT request_id FROM %s WHERE lower(address) = lower('%s') AND CURRENT_TIMESTAMP - start_time < interval '%d minutes'", EXPORT_PENDING_REQUESTS_TABLE, address, timeOutInterval);
 
         if ((bres = drms_query_bin(env->session, command)) == NULL)
         {
@@ -1678,7 +1678,7 @@ int DoIt(void)
 						/* Get command line arguments */
   const char *op;
   const char *dsin;
-  const char *seglist;
+  const char *seglist = NULL;
   const char *requestid = NULL;
   const char *process;
   const char *processing_override = NULL;
@@ -1883,6 +1883,12 @@ int DoIt(void)
   }
 
   seglist = cmdparams_get_str (&cmdparams, kArgSeg, NULL);
+
+  if (strcmp(seglist, kNotSpecified) == 0)
+  {
+      seglist = NULL;
+  }
+
   process = cmdparams_get_str (&cmdparams, kArgProcess, NULL);
   processing_override = cmdparams_get_str(&cmdparams, ARG_PROCESSING_JSON, NULL);
   record_limit = cmdparams_get_int(&cmdparams, ARG_RECORD_LIMIT, NULL);
@@ -3160,6 +3166,19 @@ int DoIt(void)
         char *pending_request_id = NULL;
         char *pending_requests = NULL;
         size_t pending_requests_sz = 64;
+        char mbuf[1024] = {0};
+
+        char *allvers = NULL;
+        char **sets = NULL;
+        DRMS_RecordSetType_t *settypes = NULL; /* a maximum doesn't make sense */
+        char **snames = NULL;
+        char **filts = NULL;
+        char **segs = NULL;
+        int nsets = 0;
+        DRMS_RecQueryInfo_t rsinfo; /* Filled in by parser as it encounters elements. */
+
+        LinkedList_t *empty_key_list = NULL;
+
 
         if (internal)
         {
@@ -3279,271 +3298,283 @@ int DoIt(void)
         strncpy(dsquery,dsin,DRMS_MAXQUERYLEN);
         fileupload = strncmp(dsquery, "*file*", 6) == 0;
 
-    if (fileupload)  // recordset passed as uploaded file
-      {
-      file = (char *)cmdparams_get_str (&cmdparams, kArgFile, NULL);
-      filesize = cmdparams_get_int (&cmdparams, kArgFile".length", NULL);
-      filename = (char *)cmdparams_get_str (&cmdparams, kArgFile".filename", NULL);
-      if (filesize >= DRMS_MAXQUERYLEN)
-        { //  must use file for all processing
-        JSONDIE("Uploaded file limit 4096 chars for a bit longer, will fix later.");
-// XXXXXX need to deal with big files
-        }
-      else if (filesize == 0)
-        {
-        JSONDIE("Uploaded file is empty");
-        }
-      else // can treat as command line arg by changing newlines to commas
-        {
-        int i;
-        char c, *p = dsquery;
-        int newline = 1;
-        int discard = 0;
-        strcpy(dsquery, file);
-        for (i=0; (c = file[i]) && i<DRMS_MAXQUERYLEN; i++)
-          {
-          if (newline && c == '#') // discard comment lines
-            discard = 1;
-          if (c == '\r')
-            continue;
-          if (c == '\n')
-            {
-            if (!newline && !discard)
-              *p++ = ',';
-            newline = 1;
-            discard = 0;
-            }
-          else
-            {
-            if (!discard)
-              *p++ = c;
-            newline = 0;
-            }
-          }
-        *p = '\0';
-        if (p > dsquery && *(p-1) == ',')
-          *(p-1) = '\0';
-        }
-      }
-    else // normal request, check for embedded segment list
-      {
-          /* This block ensures that the record-set query has a DRMS filter. It adds an empty filter if need be. */
-      if (index(dsquery,'[') == NULL)
-        {
-        char *cb = index(dsquery, '{');
-        if (cb)
-          {
-          char *cbin = index(dsin, '{');
-          *cb = '\0';
-          strcat(dsquery, "[]");
-          strcat(dsquery, cbin);
-          }
-        else
-          strcat(dsquery,"[]");
-        }
-      if (strcmp(seglist,kNotSpecified) != 0)
-        {
-        if (index(dsquery,'{') != NULL)
-          JSONDIE("Can not give segment list both in key and explicitly in recordset.");
-        strncat(dsquery, "{", DRMS_MAXQUERYLEN);
-        strncat(dsquery, seglist, DRMS_MAXQUERYLEN);
-        strncat(dsquery, "}", DRMS_MAXQUERYLEN);
-        }
-      if ((p=index(dsquery,'{')) != NULL && strncmp(p+1, "**ALL**", 7) == 0)
-        *p = '\0';
-      } /* normal request */
-
-        // Check for series existence. The jsoc_fetch cgi can be used outside of the
-        // exportdata.html context, in which case there is no check for series existence
-        // before we reach this point in code. Let's catch bad-series errors here
-        // so we can tell the user that they're trying to export a non-existent
-        // series.
-        char mbuf[1024] = {0};
-        char *allvers = NULL;
-        char **sets = NULL;
-        DRMS_RecordSetType_t *settypes = NULL; /* a maximum doesn't make sense */
-        char **snames = NULL;
-        char **filts = NULL;
-        char **segs = NULL;
-        int nsets = 0;
-        DRMS_RecQueryInfo_t rsinfo; /* Filled in by parser as it encounters elements. */
-        int iset;
-        int firstlastExists = 0;
-        const char *setName = NULL;
-        char *seriesname = NULL;
-        DRMS_Record_t *series_template = NULL;
-
         if (drms_record_parserecsetspec_plussegs(dsquery, &allvers, &sets, &settypes, &snames, &filts, &segs, &nsets, &rsinfo) == DRMS_SUCCESS)
         {
-            /* Below, we need to know whether or not there was a FIRSTLAST symbol in the record-set specification.
-             * But because record-set subsets may exist, we need to iterate through them. If any subset contains
-             * a FIRSTLAST symbol, set a flag indicating that and check the flag below.
-             *
-             * Although drms_record_parserecsetspec() is a rec-set parser, it does not recognize the FIRSTLAST symbols, so
-             * we need to use drms_recordset_query(), the definitive parser. We actually already parsed the info we need,
-             * but that info gets discarded and not saved into the record-set struct.
-             */
-            char *query = NULL;
-            char *pkwhere = NULL;
-            char *npkwhere = NULL;
-            int filter;
-            int mixed;
-            HContainer_t *firstlast = NULL;
-            HContainer_t *pkwhereNFL = NULL;
-            int recnumq;
-            static regex_t *quality_reg_expression = NULL;
-            const char *quality_pattern = NULL;
-
-            if (nsets > 0)
+            if (seglist)
             {
-                setName = snames[0];
-                sz_tmp_recordset = strlen(dsquery) + 1;
-                tmp_recordset = calloc(sz_tmp_recordset, sizeof(char));
-            }
+                XASSERT(segs);
 
-            for (iset = 0; iset < nsets; iset++)
-            {
-                if (strcmp(setName, snames[iset]) != 0)
+                if (segs[0] != NULL)
                 {
-                    snprintf(mbuf, sizeof(mbuf), "Cannot specify subsets of records from different series.\n");
-                    JSONDIE(mbuf);
-                }
-
-                if (!drms_series_exists(drms_env, snames[iset], &status))
-                {
-                    snprintf(mbuf, sizeof(mbuf), "Cannot export series '%s' - it does not exist.\n", snames[iset]);
-                    JSONDIE(mbuf);
-                }
-
-                status = drms_recordset_query(drms_env, sets[iset], &query, &pkwhere, &npkwhere, &seriesname, &filter, &mixed, NULL, &firstlast, &pkwhereNFL, &recnumq);
-                if (status != DRMS_SUCCESS)
-                {
-                    snprintf(mbuf, sizeof(mbuf), "Bad record-set subset specification '%s'.\n", sets[iset]);
-                    JSONDIE(mbuf);
-                }
-
-                series_template = drms_template_record(drms_env, seriesname, &status);
-
-                /* Iterate through firstlast, looking for anything that isn't 'N'. */
-                if (firstlast)
-                {
-                    HIterator_t *hiter = NULL;
-                    char *code = NULL;
-
-                    hiter = hiter_create(firstlast);
-                    if (hiter)
+                    if (*segs[0] != '\0')
                     {
-                        while ((code = hiter_getnext(hiter)) != NULL)
-                        {
-                            if (*code != 'N')
-                            {
-                                firstlastExists = 1;
-                                break;
-                            }
-                        }
-
-                        hiter_destroy(&hiter);
-                    }
-                    else
-                    {
-                        JSONDIE("Out of memory.\n");
-                    }
-                }
-
-                if (!omit_quality_check)
-                {
-                    if (status != DRMS_SUCCESS)
-                    {
-                        snprintf(mbuf, sizeof(mbuf), "cannot export series '%s' - it does not exist\n", seriesname);
-                        JSONDIE(mbuf);
+                        JSONDIE("cannot provide both the `seg` argument, and a segment filter in the `in` argument");
                     }
 
-                    if (hcon_member_lower(&series_template->keywords, "quality"))
-                    {
-                        /* scan the record-set specification (sets[iset]) looking for 'quality'; if there, do nothing, otherwise
-                         * force a check for image existence into the record-set specification */
-                        if (!quality_reg_expression)
-                        {
-                            quality_pattern = "\\[(\\?|\\?[[:print:]]*\\W)quality(\\?|\\W[[:print:]]*\\?)\\]";
-
-                            /* ART - this does not get freed! */
-                            quality_reg_expression = calloc(1, sizeof(regex_t));
-                            if (quality_reg_expression)
-                            {
-                                if (regcomp(quality_reg_expression, quality_pattern, REG_EXTENDED | REG_ICASE) != 0)
-                                {
-                                    JSONDIE2("cannot compile regular expression", quality_pattern);
-                                }
-                            }
-                            else
-                            {
-                                JSONDIE("out of memory");
-                            }
-                        }
-
-                        if(regexec(quality_reg_expression, sets[iset], 0, NULL, 0) != 0)
-                        {
-                            /* no match - no 'quality' substring in specification */
-                            if (tmp_recordset)
-                            {
-                                tmp_recordset = base_strcatalloc(tmp_recordset, seriesname, &sz_tmp_recordset);
-                                if (filts && filts[iset] && *filts[iset] != '\0')
-                                {
-                                    tmp_recordset = base_strcatalloc(tmp_recordset, filts[iset], &sz_tmp_recordset);
-                                }
-
-                                /* force quality check; just add it! this works! */
-                                tmp_recordset = base_strcatalloc(tmp_recordset, "[? drms.image_exists(quality) ?]", &sz_tmp_recordset);
-
-                                if (segs && segs[iset] && *segs[iset] != '\0')
-                                {
-                                    tmp_recordset = base_strcatalloc(tmp_recordset, segs[iset], &sz_tmp_recordset);
-                                }
-
-                                if (iset + 1 < nsets)
-                                {
-                                    tmp_recordset = base_strcatalloc(tmp_recordset, ",", &sz_tmp_recordset);
-                                }
-                            }
-                        }
-                    }
+                    free(segs[0]);
+                    segs[0] = NULL;
                 }
 
-                if (query)
-                {
-                    free(query);
-                }
-
-                if (pkwhere)
-                {
-                    free(pkwhere);
-                }
-
-                if (npkwhere)
-                {
-                    free(npkwhere);
-                }
-
-                if (seriesname)
-                {
-                    free(seriesname);
-                }
-
-                if (firstlast)
-                {
-                    hcon_destroy(&firstlast);
-                }
-
-                if (pkwhereNFL)
-                {
-                    hcon_destroy(&pkwhereNFL);
-                }
+                segs[0] = calloc(strlen(seglist) + 3, sizeof(char));
+                snprintf(segs[0], strlen(seglist) + 3, "{%s}", seglist); /* needs to have curly braces */
             }
         }
         else
         {
             snprintf(mbuf, sizeof(mbuf), "Bad record-set query '%s'.\n", dsquery);
             JSONDIE(mbuf);
+        }
+
+        if (fileupload)  // recordset passed as uploaded file
+        {
+            file = (char *)cmdparams_get_str (&cmdparams, kArgFile, NULL);
+            filesize = cmdparams_get_int (&cmdparams, kArgFile".length", NULL);
+            filename = (char *)cmdparams_get_str (&cmdparams, kArgFile".filename", NULL);
+
+            if (filesize >= DRMS_MAXQUERYLEN)
+            {
+                JSONDIE("Uploaded file limit 4096 chars for a bit longer, will fix later");
+                // XXXXXX need to deal with big files
+            }
+            else if (filesize == 0)
+            {
+                JSONDIE("Uploaded file is empty");
+            }
+            else // can treat as command line arg by changing newlines to commas
+            {
+                int i;
+                char c, *p = dsquery;
+                int newline = 1;
+                int discard = 0;
+
+                strcpy(dsquery, file);
+                for (i=0; (c = file[i]) && i<DRMS_MAXQUERYLEN; i++)
+                {
+                  if (newline && c == '#') // discard comment lines
+                    discard = 1;
+                  if (c == '\r')
+                    continue;
+                  if (c == '\n')
+                    {
+                    if (!newline && !discard)
+                      *p++ = ',';
+                    newline = 1;
+                    discard = 0;
+                    }
+                  else
+                    {
+                    if (!discard)
+                      *p++ = c;
+                    newline = 0;
+                    }
+                }
+
+
+                *p = '\0';
+                if (p > dsquery && *(p-1) == ',')
+                  *(p-1) = '\0';
+            }
+        }
+        else
+        {
+            /* no file upload */
+
+            /* This block ensures that the record-set query has a DRMS filter. It adds an empty filter if need be. */
+            XASSERT(filts);
+            if (filts[0] == NULL)
+            {
+                filts[0] = calloc(4, sizeof(char));
+                snprintf(filts[0], 4, "[]");
+            }
+            else if (*filts[0] == '\0')
+            {
+                /* no filter - alloc since filts will be freed */
+                free(filts[0]);
+                filts[0] = calloc(4, sizeof(char));
+                snprintf(filts[0], 4, "[]");
+            }
+
+            XASSERT(segs);
+            if (segs[0] != NULL && strstr(segs[0], "**ALL**"))
+            {
+                /* seg filter has **ALL** - remove it, **ALL** is superfluous */
+                *segs[0] = '\0';
+            }
+        } /* not fileupload request */
+
+        // Check for series existence. The jsoc_fetch cgi can be used outside of the
+        // exportdata.html context, in which case there is no check for series existence
+        // before we reach this point in code. Let's catch bad-series errors here
+        // so we can tell the user that they're trying to export a non-existent
+        // series.
+        int iset;
+        int firstlastExists = 0;
+        const char *setName = NULL;
+        char *seriesname = NULL;
+        DRMS_Record_t *series_template = NULL;
+        char *query = NULL;
+        char *pkwhere = NULL;
+        char *npkwhere = NULL;
+        int filter;
+        int mixed;
+        HContainer_t *firstlast = NULL;
+        HContainer_t *pkwhereNFL = NULL;
+        int recnumq;
+        static regex_t *quality_reg_expression = NULL;
+        const char *quality_pattern = NULL;
+
+        /* Below, we need to know whether or not there was a FIRSTLAST symbol in the record-set specification.
+         * But because record-set subsets may exist, we need to iterate through them. If any subset contains
+         * a FIRSTLAST symbol, set a flag indicating that and check the flag below.
+         *
+         * Although drms_record_parserecsetspec() is a rec-set parser, it does not recognize the FIRSTLAST symbols, so
+         * we need to use drms_recordset_query(), the definitive parser. We actually already parsed the info we need,
+         * but that info gets discarded and not saved into the record-set struct.
+         */
+        if (nsets > 0)
+        {
+            setName = snames[0];
+            sz_tmp_recordset = strlen(dsquery) + 1;
+            tmp_recordset = calloc(sz_tmp_recordset, sizeof(char));
+        }
+
+        for (iset = 0; iset < nsets; iset++)
+        {
+            if (strcmp(setName, snames[iset]) != 0)
+            {
+                snprintf(mbuf, sizeof(mbuf), "Cannot specify subsets of records from different series.\n");
+                JSONDIE(mbuf);
+            }
+
+            if (!drms_series_exists(drms_env, snames[iset], &status))
+            {
+                snprintf(mbuf, sizeof(mbuf), "Cannot export series '%s' - it does not exist.\n", snames[iset]);
+                JSONDIE(mbuf);
+            }
+
+            status = drms_recordset_query(drms_env, sets[iset], &query, &pkwhere, &npkwhere, &seriesname, &filter, &mixed, NULL, &firstlast, &pkwhereNFL, &recnumq);
+            if (status != DRMS_SUCCESS)
+            {
+                snprintf(mbuf, sizeof(mbuf), "Bad record-set subset specification '%s'.\n", sets[iset]);
+                JSONDIE(mbuf);
+            }
+
+            series_template = drms_template_record(drms_env, seriesname, &status);
+
+            /* Iterate through firstlast, looking for anything that isn't 'N'. */
+            if (firstlast)
+            {
+                HIterator_t *hiter = NULL;
+                char *code = NULL;
+
+                hiter = hiter_create(firstlast);
+                if (hiter)
+                {
+                    while ((code = hiter_getnext(hiter)) != NULL)
+                    {
+                        if (*code != 'N')
+                        {
+                            firstlastExists = 1;
+                            break;
+                        }
+                    }
+
+                    hiter_destroy(&hiter);
+                }
+                else
+                {
+                    JSONDIE("Out of memory.\n");
+                }
+            }
+
+            if (!omit_quality_check)
+            {
+                if (status != DRMS_SUCCESS)
+                {
+                    snprintf(mbuf, sizeof(mbuf), "cannot export series '%s' - it does not exist\n", seriesname);
+                    JSONDIE(mbuf);
+                }
+
+                if (hcon_member_lower(&series_template->keywords, "quality"))
+                {
+                    /* scan the record-set specification (sets[iset]) looking for 'quality'; if there, do nothing, otherwise
+                     * force a check for image existence into the record-set specification */
+                    if (!quality_reg_expression)
+                    {
+                        quality_pattern = "\\[(\\?|\\?[[:print:]]*\\W)quality(\\?|\\W[[:print:]]*\\?)\\]";
+
+                        /* ART - this does not get freed! */
+                        quality_reg_expression = calloc(1, sizeof(regex_t));
+                        if (quality_reg_expression)
+                        {
+                            if (regcomp(quality_reg_expression, quality_pattern, REG_EXTENDED | REG_ICASE) != 0)
+                            {
+                                JSONDIE2("cannot compile regular expression", quality_pattern);
+                            }
+                        }
+                        else
+                        {
+                            JSONDIE("out of memory");
+                        }
+                    }
+
+                    if(regexec(quality_reg_expression, sets[iset], 0, NULL, 0) != 0)
+                    {
+                        /* no match - no 'quality' substring in specification */
+                        if (tmp_recordset)
+                        {
+                            tmp_recordset = base_strcatalloc(tmp_recordset, seriesname, &sz_tmp_recordset);
+                            if (filts && filts[iset] && *filts[iset] != '\0')
+                            {
+                                tmp_recordset = base_strcatalloc(tmp_recordset, filts[iset], &sz_tmp_recordset);
+                            }
+
+                            /* force quality check; just add it! this works! */
+                            tmp_recordset = base_strcatalloc(tmp_recordset, "[? drms.image_exists(quality) ?]", &sz_tmp_recordset);
+
+                            if (segs && segs[iset] && *segs[iset] != '\0')
+                            {
+                                tmp_recordset = base_strcatalloc(tmp_recordset, segs[iset], &sz_tmp_recordset);
+                            }
+
+                            if (iset + 1 < nsets)
+                            {
+                                tmp_recordset = base_strcatalloc(tmp_recordset, ",", &sz_tmp_recordset);
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (query)
+            {
+                free(query);
+            }
+
+            if (pkwhere)
+            {
+                free(pkwhere);
+            }
+
+            if (npkwhere)
+            {
+                free(npkwhere);
+            }
+
+            if (seriesname)
+            {
+                free(seriesname);
+            }
+
+            if (firstlast)
+            {
+                hcon_destroy(&firstlast);
+            }
+
+            if (pkwhereNFL)
+            {
+                hcon_destroy(&pkwhereNFL);
+            }
         }
 
         if (tmp_recordset)
@@ -3558,15 +3589,10 @@ int DoIt(void)
             tmp_recordset = NULL;
         }
 
-        if (rcountlimit == 0)
-        {
-            rs = drms_open_records(drms_env, dsquery, &status);
-        }
-        else
-        {
-            // rcountlimit specified via "n=" parameter in process field.
-            rs = drms_open_nrecords (drms_env, dsquery, rcountlimit, &status);
-        }
+        /* follow links; we need to open linked records to get segment information for linked segments */
+        empty_key_list = list_llcreate(DRMS_MAXKEYNAMELEN, NULL);
+        rs = drms_open_records2(drms_env, dsquery, empty_key_list, 0, rcountlimit, 1, &status);
+        list_llfree(&empty_key_list);
 
         if (!rs)
         {
@@ -3804,6 +3830,7 @@ int DoIt(void)
 
         drms_record_freerecsetspecarr_plussegs(&allvers, &sets, &settypes, &snames, &filts, &segs, nsets);
 
+        /* I think we can get rid of staging; drms_record_getinfo() creates the SU info structs, w/o calling SUM_get() */
     drms_stage_records(rs, 0, 0);
 
         /* drms_record_getinfo() will now fill-in the rec->suinfo for all recs in rs, PLUS all
@@ -3971,22 +3998,9 @@ int DoIt(void)
               char path[DRMS_MAXPATHLEN];
               //drms_record_directory(segrec, path, 0); I think this was a typo.
               drms_segment_filename(tSeg, path);
-              if (stat(path, &buf) != 0)
-              { // segment specified file is not present.
-                  // it is a WARNING if the record and QUALITY >=0 but no file matching
-                  // the segment file name unless the filename is empty.
-                  if (*(tSeg->filename))
-                  {
-                      DRMS_Keyword_t *quality = drms_keyword_lookup(segrec, "QUALITY",1);
-                      if (quality && drms_getkey_int(segrec, "QUALITY", 0) >= 0)
-                      { // there should be a file
-                          fprintf(stderr,"QUALITY >=0, filename=%s, but %s not found\n",tSeg->filename,path);
-                          // JSONDIE2("Bad path (file missing) in a record in RecordSet: ", dsquery);
-                      }
-                  }
-              }
-              else // Stat succeeded, get size
+              if (stat(path, &buf) == 0)
               {
+                  // stat() succeeded, get size
                   if (S_ISDIR(buf.st_mode))
                   { // Segment is directory, get size == for now == use system "du"
                       char cmd[DRMS_MAXPATHLEN+100];
