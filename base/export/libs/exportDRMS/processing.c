@@ -124,8 +124,8 @@ static void *resize_handler(void *data)
     char *operation = NULL;
     char *target_scale_str = NULL;
     float target_scale = -1;
-    char *template_rec_str = NULL;
-    DRMS_Record_t *template_rec = NULL;
+    char *segment_str = NULL;
+    DRMS_Segment_t *segment = NULL;
     int drms_status = DRMS_SUCCESS;
     DRMS_RecordSet_t *open_records = NULL;
     float cdelt1 = -1;
@@ -150,12 +150,12 @@ static void *resize_handler(void *data)
 
     target_scale_str = (char *)hcon_lookup_lower(arguments, "scale_to");
     sscanf(target_scale_str, "%f", &target_scale);
-    template_rec_str = (char *)hcon_lookup_lower(arguments, "template_rec");
-    sscanf(template_rec_str, "%p", &template_rec);
+    segment_str = (char *)hcon_lookup_lower(arguments, "segment");
+    sscanf(segment_str, "%p", &segment);
 
-    /* get newest record from series */
+    /* get newest record from series - use segment passed into processing code tog get last record */
     /* ugh - cannot specify both a key list and n=XX, so we have to fetch all keys */
-    open_records = drms_open_records2(template_rec->env, template_rec->seriesinfo->seriesname, NULL, 0, -1, 0, &drms_status);
+    open_records = drms_open_records2(segment->record->env, segment->record->seriesinfo->seriesname, NULL, 0, -1, 0, &drms_status);
 
     if (open_records && drms_status == DRMS_SUCCESS)
     {
@@ -164,7 +164,7 @@ static void *resize_handler(void *data)
     }
     else
     {
-        fprintf(stderr, "[ resize_handler ] unable to open most recent record in series `%s`\n", template_rec->seriesinfo->seriesname);
+        fprintf(stderr, "[ resize_handler ] unable to open most recent record in series `%s`\n", segment->record->seriesinfo->seriesname);
         ratio = -1;
     }
 
@@ -423,6 +423,7 @@ int get_processing_step_index(const char *step)
 /* calls the processing-step handler for processing step `step` with the `operation` argument of `special_args` to
  * obtain the Hash_Table_t of processing-step program special arguments (the program arguments needed for a size-
  * ratio calculation); returns the hash table if it is located, or NULL otherwise */
+/* ART - appears to be obsolete and no longer used */
 static Hash_Table_t *get_special_args(const char *step)
 {
     int step_index = -1;
@@ -656,6 +657,7 @@ float get_processing_size_ratio(struct _processing_step_node_data_ *node_data, D
     int index = -1;
     float ratio = -1;
     p_fn_size_ratio_handler handler = NULL;
+    char template_rec_str[32];
     char segment_str[32];
 
     index = *(int *)hcon_lookup_lower(g_processing_steps, node_data->step);
@@ -665,7 +667,7 @@ float get_processing_size_ratio(struct _processing_step_node_data_ *node_data, D
         /* get handler */
         handler = PROCESSING_HANDLERS[index];
 
-        /* add template rec to args */
+        /* add segment to args */
         snprintf(segment_str, sizeof(segment_str), "%p", segment);
         hcon_insert_lower(&node_data->arguments, "segment", segment_str);
 
