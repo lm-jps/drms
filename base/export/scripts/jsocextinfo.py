@@ -13,7 +13,7 @@ import os
 import cgi
 import json
 from distutils.util import strtobool
-from subprocess import check_output, Popen, SubprocessError, STDOUT, PIPE, DEVNULL
+from subprocess import check_output, CalledProcessError, Popen, SubprocessError, STDOUT, PIPE, DEVNULL
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../include'))
 from drmsparams import DRMSParams
 
@@ -61,6 +61,7 @@ try:
             elif key in ('N'):
                 optD['noheader'] = strtobool(val) == True
             else:
+                # all of these args are passed as is to jsoc_info
                 if key in ('ds'):
                     optD['spec'] = val
 
@@ -154,7 +155,7 @@ try:
     ###################
     ## Run jsoc_info ##
     ###################
-    cmdList = [ os.path.join(binDir, arch, 'jsoc_info'), 'JSOC_DBHOST=' + server, 'DRMS_DBTIMEOUT=600000', 'DRMS_QUERY_MEM=4096', 'DRMS_DBUTF8CLIENTENCODING=1' ]
+    cmdList = [ os.path.join(binDir, arch, 'jsoc_info'), 'JSOC_DBHOST=' + server ]
 
     if optD['noheader']:
         cmdList.append('-s')
