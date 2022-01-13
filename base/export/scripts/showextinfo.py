@@ -110,10 +110,10 @@ try:
 	## Determine Series DB Server ##
 	################################
 	# Ask checkExpDbServer.py to provide the name of the db server that can handle all the series in series.
-	binPy = getDRMSParam(drmsParams, 'BIN_PY')
+	binPy3 = getDRMSParam(drmsParams, 'BIN_PY3')
 	scriptsDir = getDRMSParam(drmsParams, 'SCRIPTS_EXPORT')
 
-	cmdList = [binPy, os.path.join(scriptsDir, 'checkExpDbServer.py'), '-c', 'n=1&dbhost=' + optD['dbhost'] + '&series=' + ','.join(series)]
+	cmdList = [binPy3, os.path.join(scriptsDir, 'checkExpDbServer.py'), '-c', 'n=1&dbhost=' + optD['dbhost'] + '&series=' + ','.join(series)]
 
 	try:
 		resp = check_output(cmdList, stderr=STDOUT)
