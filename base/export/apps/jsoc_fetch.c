@@ -1747,6 +1747,7 @@ int DoIt(void)
 
     char *pRemoteAddress = NULL;
     char ipAddress[16] = {0};
+    char record_limit_str[32] = {0};
 
     if (getenv("REQUEST_METHOD"))
     {
@@ -1949,34 +1950,26 @@ int DoIt(void)
             JSONDIE("invalid processing list argument");
         }
 
-        if (processing_steps)
+        /* create `processing` keyword value for jsoc.export from `processing_override` and `rcountlimit`*/
+        processing_column = calloc(sz_processing_column, sizeof(char));
+
+        /* n=<rcountlimit> */
+        snprintf(record_limit_str, sizeof(record_limit_str), "%d", record_limit);
+        processing_column = base_strcatalloc(processing_column, "n=", &sz_processing_column);
+        processing_column = base_strcatalloc(processing_column, record_limit_str, &sz_processing_column);
+
+        if (processing_steps && list_llgetnitems(processing_steps) > 0)
         {
-            int first = 1;
             HIterator_t *step_iter = NULL;
             const char *argument_name = NULL;
             char *argument_value = NULL;
-            char record_limit_str[32];
 
-            /* create `processing` keyword value for jsoc.export from `processing_override` and `rcountlimit`*/
-            processing_column = calloc(sz_processing_column, sizeof(char));
-
-            /* n=<rcountlimit> */
-            snprintf(record_limit_str, sizeof(record_limit_str), "%d", record_limit);
-            processing_column = base_strcatalloc(processing_column, "n=", &sz_processing_column);
-            processing_column = base_strcatalloc(processing_column, record_limit_str, &sz_processing_column);
-            processing_column = base_strcatalloc(processing_column, "|", &sz_processing_column);
-
-            first = 1;
             list_llreset(processing_steps);
             while ((node = list_llnext(processing_steps)) != NULL)
             {
                 node_data = (struct _processing_step_node_data_ *)node->data;
 
-                if (!first)
-                {
-                    processing_column = base_strcatalloc(processing_column, "|", &sz_processing_column);
-                }
-
+                processing_column = base_strcatalloc(processing_column, "|", &sz_processing_column);
                 processing_column = base_strcatalloc(processing_column, node_data->step, &sz_processing_column);
 
                 if (hcon_size(&node_data->arguments) > 0)
@@ -1995,9 +1988,11 @@ int DoIt(void)
                         hiter_destroy(&step_iter);
                     }
                 }
-
-                first = 0;
             }
+        }
+        else
+        {
+            processing_column = base_strcatalloc(processing_column, "|no_op", &sz_processing_column);
         }
     }
 
@@ -4375,6 +4370,8 @@ int DoIt(void)
         {
             /* processing_override */
             drms_setkey_string(exprec, "Processing", processing_column);
+            free(processing_column);
+            processing_column = NULL;
         }
         else
         {
