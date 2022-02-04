@@ -2315,6 +2315,18 @@ int DoIt(void)
   // The variable "from_web" is made just in case some use of the fact might be made.
   int from_web;
   char *web_query;
+
+    /* we want to pass to drms_open_records2() a list of keywords - even an empty list; otherwise,
+     * drms_open_records2() will fetch all keyword columns */
+    validKeysSpecified = list_llcreate(DRMS_MAXKEYNAMELEN, NULL);
+    if (!validKeysSpecified)
+    {
+        fprintf(stderr, "out of memory\n");
+        show_info_return(1);
+    }
+
+    hash_init(&validKeysHT, 89, 0, (int (*)(const void *, const void *))strcmp, hash_universal_hash);
+
   web_query = strdup (cmdparams_get_str (&cmdparams, "QUERY_STRING", NULL));
   from_web = strcmp (web_query, "Not Specified") != 0;
 
@@ -2715,7 +2727,7 @@ int DoIt(void)
               char *intermed = NULL;
 
               filterbuf = malloc(fbsz);
-              finalin = strdup(in);
+              finalin = strdup(in); //YYY
               if (filterbuf && finalin)
               {
                   memset(filterbuf, 0, sizeof(filterbuf));
@@ -2750,7 +2762,7 @@ int DoIt(void)
 
                                   /* Replace filter with filterbuf. */
                                   intermed = base_strreplace(finalin, filter, filterbuf);
-                                  free(finalin);
+                                  free(finalin); //YYY
                                   finalin = intermed;
                               }
                               else
@@ -2797,7 +2809,7 @@ int DoIt(void)
 
               if (!err)
               {
-                  in = finalin;
+                  in = finalin;//YYY - finalin was freed on line 2753, and then in is used in 3036
               }
 
               free(filterbuf);
@@ -3033,7 +3045,7 @@ int DoIt(void)
   /* get count if -c flag set */
   if (want_count)
     {
-    int count = drms_count_records(drms_env, (char *)in, &status);
+    int count = drms_count_records(drms_env, (char *)in, &status);//YYY
     if (status)
       {
       fprintf(stderr,"### show_info: series %s not found.\n",in);
