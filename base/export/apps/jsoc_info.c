@@ -3034,18 +3034,21 @@ int DoIt(void)
                 }
             }
         }
-      }
+    }
 
     if (!useFitsKeyNames)
     {
         /* place to put an array of keyvals per keyword */
         if (nkeys)
-          keyvals = (json_t **)malloc(nkeys * sizeof(json_t *));
-        for (ikey=0; ikey<nkeys; ikey++)
-          {
-          json_t *val = json_new_array();
-          keyvals[ikey] = val;
-          }
+        {
+            keyvals = (json_t **)malloc(nkeys * sizeof(json_t *));
+        }
+
+        for (ikey = 0; ikey < nkeys; ikey++)
+        {
+            json_t *val = json_new_array();
+            keyvals[ikey] = val;
+        }
 
         /* place to put an arrays of segvals and segdims per segment */
         if (nsegs)
@@ -3122,8 +3125,11 @@ int DoIt(void)
         }
     }
 
-    recArray = json_new_array();
-    JSOC_INFO_ASSERT(recArray, "out of memory");
+    if (useFitsKeyNames)
+    {
+        recArray = json_new_array();
+        JSOC_INFO_ASSERT(recArray, "out of memory");
+    }
 
     int missingKeyName = 0;
 
@@ -4463,22 +4469,32 @@ int DoIt(void)
             }
 
             json_insert_child(recArray, recobj);
+            recobj = NULL;
         }
         else
         {
             /* not using FITS keyword names */
-            if (!recinfo)
-            {
-                recinfo = json_new_array();
-            }
 
-              /* finish record info for this record */
+            /* finish record info for this record */
             if (wantRecInfo)
             {
+                if (!recinfo)
+                {
+                    recinfo = json_new_array();
+                }
+
                 json_insert_pair_into_object(recobj, "online", json_new_number(online ? "1" : "0"));
                 json_insert_child(recinfo, recobj);
+                recobj = NULL;
             }
         }
+
+          if (recobj)
+          {
+              /* recobj was never used */
+              json_free_value(&recobj);
+              recobj = NULL;
+          }
       } /* rec loop */
 
         /* clean up memory used by invalid keys, segs, links */
@@ -4564,20 +4580,36 @@ int DoIt(void)
             json_t *json_segments = json_new_array();
             json_t *json_links = json_new_array();
 
-          if (wantRecInfo)
-            json_insert_pair_into_object(jroot, "recinfo", recinfo);
-
-          for (ikey=0; ikey<nkeys; ikey++)
+            if (wantRecInfo)
             {
-            json_t *keyname = json_new_string(keys[ikey]);
-            json_t *keyobj = json_new_object();
-            json_insert_pair_into_object(keyobj, "name", keyname);
-            json_insert_pair_into_object(keyobj, "values", keyvals[ikey]);
-            json_insert_child(json_keywords, keyobj);
+                json_insert_pair_into_object(jroot, "recinfo", recinfo);
             }
-        json_insert_pair_into_object(jroot, "keywords", json_keywords);
 
-          for (iseg=0; iseg<nsegs; iseg++)
+            for (ikey = 0; ikey < nkeys; ikey++)
+            {
+                json_t *keyname = json_new_string(keys[ikey]);
+                json_t *keyobj = json_new_object();
+                json_insert_pair_into_object(keyobj, "name", keyname);
+                json_insert_pair_into_object(keyobj, "values", keyvals[ikey]);
+                json_insert_child(json_keywords, keyobj);
+
+                /* done with keys and keyvals */
+                if (keys[ikey])
+                {
+                    free(keys[ikey]);
+                    keys[ikey] = NULL;
+                }
+            }
+
+            if (keyvals)
+            {
+                free(keyvals);
+                keyvals = NULL;
+            }
+
+            json_insert_pair_into_object(jroot, "keywords", json_keywords);
+
+            for (iseg=0; iseg<nsegs; iseg++)
             {
                 /* do not insert invalid segs if allSegs == 1 */
                 if (!allSegs || segvals[iseg]->child || segdims[iseg]->child || segcparms[iseg]->child || segbzeros[iseg]->child || segbscales[iseg]->child)
@@ -4594,37 +4626,38 @@ int DoIt(void)
                 }
             }
 
-          json_insert_pair_into_object(jroot, "segments", json_segments);
+            json_insert_pair_into_object(jroot, "segments", json_segments);
 
-          for (ilink=0; ilink<nlinks; ilink++)
+            for (ilink=0; ilink<nlinks; ilink++)
             {
-            json_t *linkname = json_new_string(links[ilink]);
-            json_t *linkobj = json_new_object();
-            json_insert_pair_into_object(linkobj, "name", linkname);
-            json_insert_pair_into_object(linkobj, "values", linkvals[ilink]);
-            json_insert_child(json_links, linkobj);
+                json_t *linkname = json_new_string(links[ilink]);
+                json_t *linkobj = json_new_object();
+                json_insert_pair_into_object(linkobj, "name", linkname);
+                json_insert_pair_into_object(linkobj, "values", linkvals[ilink]);
+                json_insert_child(json_links, linkobj);
             }
-          json_insert_pair_into_object(jroot, "links", json_links);
-      }
 
-      snprintf(count, sizeof(count), "%d", nrecs);
-      json_insert_pair_into_object(jroot, "count", json_new_number(count));
-      json_insert_runtime(jroot, StartTime);
-      json_insert_pair_into_object(jroot, "status", json_new_number("0"));
+            json_insert_pair_into_object(jroot, "links", json_links);
+        }
 
-    drms_close_records(recordset, DRMS_FREE_RECORD);
-    json_tree_to_string(jroot, &final_json);
+        snprintf(count, sizeof(count), "%d", nrecs);
+        json_insert_pair_into_object(jroot, "count", json_new_number(count));
+        json_insert_runtime(jroot, StartTime);
+        json_insert_pair_into_object(jroot, "status", json_new_number("0"));
 
-    if (printHTTPHeaders)
-    {
-        printf("Content-type: application/json\n\n");
-    }
+        drms_close_records(recordset, DRMS_FREE_RECORD);
+        json_tree_to_string(jroot, &final_json);
 
-    printf("%s\n",final_json);
-    free(final_json);
-    fflush(stdout);
+        if (printHTTPHeaders)
+        {
+            printf("Content-type: application/json\n\n");
+        }
 
-    json_free_value(&jroot);
+        printf("%s\n",final_json);
+        free(final_json);
+        fflush(stdout);
+
+        json_free_value(&jroot);
 
         if (log_dirs)
         {
