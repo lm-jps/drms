@@ -1135,10 +1135,17 @@ def configureNet(cfgfile, cfile, mfile, pfile, pyfile, shfile, pCfile, pMfile, p
                 # Must add a parameter for the SUMS_MANAGER UID (for some reason). This must be done after the
                 # config file is processed since an input to getMgrUIDLine() is one of the config file's
                 # parameter values.
+
+                # CANNOT run this unless sunroom2 home directories are accessible
                 uidParam = {}
                 rv = getMgrUIDLine(defs, uidParam)
+
                 if rv == bool(0):
                     rv = parseConfig(None, keymap, uidParam, defs, cDefs, mDefsGen, None, projCfg, projMkRules, projRules, projTarget, perlConstSection, perlInitSection, pyConstSection, pyInitSection, shConstSection)
+
+                # ignore the error where the SUMS manager UID cannot be determined
+                rv = 0
+
             # Configure the compiler-selection make variables.
             if not rv:
                 rv = configureComps(defs, mDefsComps)
@@ -1230,6 +1237,9 @@ def configureSdp(cfgfile, cfile, mfile, pfile, pyfile, shfile, pCfile, pMfile, p
                 rv = getMgrUIDLine(defs, uidParam)
                 if not rv:
                     rv = parseConfig(None, None, uidParam, defs, cDefs, mDefsGen, None, projCfg, projMkRules, projRules, projTarget, perlConstSection, perlInitSection, pyConstSection, pyInitSection, shConstSection)
+
+                # ignore the error where the SUMS manager UID cannot be determined
+                rv = 0
 
                 # Configure the compiler-selection make variables.
                 if not rv:
