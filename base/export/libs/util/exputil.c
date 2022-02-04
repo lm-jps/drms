@@ -39,14 +39,14 @@
  *
  */
 
-/* For series with linked records, always use the source record for keyword names, segment names, etc., 
- * and use the target record for keyword values, etc. To achieve this, 'rec' is the source-series record, 
- * and 'segname' is the name of the segment in the sourc series. Obtain the target record by 
+/* For series with linked records, always use the source record for keyword names, segment names, etc.,
+ * and use the target record for keyword values, etc. To achieve this, 'rec' is the source-series record,
+ * and 'segname' is the name of the segment in the sourc series. Obtain the target record by
  * "following links" when using functions to look-up keywords, for example. */
 ExpUtlStat_t exputl_mk_expfilename(DRMS_Segment_t *srcseg,
-                                   DRMS_Segment_t *tgtseg, /* If the segment is a linked segment, then tgtseg is the 
+                                   DRMS_Segment_t *tgtseg, /* If the segment is a linked segment, then tgtseg is the
                                                             * segment in the target series. */
-                                   const char *filenamefmt, 
+                                   const char *filenamefmt,
                                    char *filename)
 {
    static int namesMade = 0;
@@ -55,7 +55,7 @@ ExpUtlStat_t exputl_mk_expfilename(DRMS_Segment_t *srcseg,
    char *fn = filenameWorking;
    char format[1024];
    char *fmt;
-    
+
    if (filenamefmt)
      snprintf(format, sizeof(format), "%s", filenamefmt);
    else
@@ -105,8 +105,8 @@ ExpUtlStat_t exputl_mk_expfilename(DRMS_Segment_t *srcseg,
                val = srcseg->record->seriesinfo->seriesname;
             else if (strcmp(keyname,"recnum")==0)
                {
-               snprintf(valstr, sizeof(valstr), (layout ? layout : "%lld"), 
-                        srcseg->record->recnum); 
+               snprintf(valstr, sizeof(valstr), (layout ? layout : "%lld"),
+                        srcseg->record->recnum);
                val = valstr;
                }
             else if (strcmp(keyname,"segment")==0)
@@ -119,7 +119,7 @@ ExpUtlStat_t exputl_mk_expfilename(DRMS_Segment_t *srcseg,
                {
                   val = srcseg->filename;
                }
-                
+
                 if (!val || !*val)
                 {
                     /* Use the segment name, just like drms_segment_filename() does. */
@@ -139,7 +139,7 @@ ExpUtlStat_t exputl_mk_expfilename(DRMS_Segment_t *srcseg,
                   val = "ERROR";
               }
               else if (key->info->type == DRMS_TYPE_TIME)
-                { // do special time formats here 
+                { // do special time formats here
                 char formatwas[DRMS_MAXFORMATLEN], unitwas[DRMS_MAXUNITLEN];
                 int precision = 0;
                 char Mod = ' ';
@@ -169,7 +169,7 @@ ExpUtlStat_t exputl_mk_expfilename(DRMS_Segment_t *srcseg,
                 strncpy(key->info->format, formatwas, DRMS_MAXFORMATLEN);
                 strncpy(key->info->unit, unitwas, DRMS_MAXUNITLEN);
                 if (Mod != ' ')
-                   { 
+                   {
                    if (Mod == 'A')
                      {
                      int i;
@@ -216,12 +216,12 @@ ExpUtlStat_t exputl_mk_expfilename(DRMS_Segment_t *srcseg,
                 strncpy(formatwas, key->info->format, DRMS_MAXFORMATLEN);
                 strncpy(key->info->format,layout,DRMS_MAXFORMATLEN);
                 followedKey = drms_keyword_lookup(srcseg->record, keyname, 1);
-                    
+
                 if (followedKey)
                     {
                         *tmpstr2 = '\0';
                         drms_keyword_snprintfval(followedKey, tmpstr2, sizeof(tmpstr2));
-                        
+
                         /* Strip-out whitespace. */
                         for (pCh = tmpstr2, pVal = valstr; *pCh && pVal < valstr + sizeof(valstr) - 1; pCh++)
                         {
@@ -231,12 +231,12 @@ ExpUtlStat_t exputl_mk_expfilename(DRMS_Segment_t *srcseg,
                                 pVal++;
                             }
                         }
-                        
+
                         *pVal = '\0';
-                        
+
                         val = valstr; // To be consistent with other cases above.
                     }
-                    
+
                     strncpy(key->info->format, formatwas, DRMS_MAXFORMATLEN);
                 }
               }
@@ -257,8 +257,8 @@ ExpUtlStat_t exputl_mk_expfilename(DRMS_Segment_t *srcseg,
                }
             }
 
-            /* At this point, val should have a valid string in it, and val might 
-             * actually be pointing to valstr which contains the valid string, but 
+            /* At this point, val should have a valid string in it, and val might
+             * actually be pointing to valstr which contains the valid string, but
              * it might not. */
             if (!val)
                {
@@ -266,7 +266,7 @@ ExpUtlStat_t exputl_mk_expfilename(DRMS_Segment_t *srcseg,
                val = "ERROR";
                }
 #if 0
-            /* Why copy back to valstr when the valid string is in 
+            /* Why copy back to valstr when the valid string is in
              * val already? Plus this is causing memory corruption - you can't copy from val
              * to valstr if both pointers point to the same address. */
             else
@@ -308,14 +308,14 @@ ExpUtlStat_t exputl_mk_expfilename(DRMS_Segment_t *srcseg,
           }
       }
    *fn = '\0';
-    
+
     if (filename)
     {
         /* Just gotta hope this doesn't overrun the output buffer. */
         /* Replace remaining whitespace with underscores. */
         char *pIn = NULL;
         char *pOut = NULL;
-        
+
         for (pIn = filenameWorking, pOut = filename; *pIn ; pIn++)
         {
             if (!isspace(*pIn))
@@ -324,10 +324,10 @@ ExpUtlStat_t exputl_mk_expfilename(DRMS_Segment_t *srcseg,
                 pOut++;
             }
         }
-        
+
         *pOut = '\0';
-        
-        
+
+
         snprintf(filename, sizeof(filenameWorking), "%s", filenameWorking);
     }
 
@@ -345,14 +345,14 @@ static FILE *lock_open(const char *filename)
     char lockfile[1024];
 
     snprintf(lockfile, sizeof(lockfile), "%s.lck", filename);
-    
+
     FILE *fp = fopen(lockfile, "w");
     if (!fp)
     {
         fprintf(stderr, "Failed to open file for locking %s.\n", lockfile);
         return NULL;
     }
-    
+
     for (sleeps=0; lockf(fileno(fp), F_TLOCK, 0); sleeps++)
     {
         if (sleeps >= 300)
@@ -362,7 +362,7 @@ static FILE *lock_open(const char *filename)
         }
         sleep(1);
     }
-    
+
     return(fp);
 }
 
@@ -376,20 +376,20 @@ ExpUtlStat_t exputl_manage_cgibin_handles_add_proc_handle(const char *file, cons
 {
     FILE *fp = NULL;
     FILE *fp_lock = NULL;
-    
+
     fp_lock = lock_open(file);
     if (!fp_lock)
     {
         return kExpUtlStat_ManageHandles;
     }
-    
+
     fp = fopen(file, "a");
     if (!fp)
     {
         fprintf(stderr, "Failed to open %s file.\n", file);
         return kExpUtlStat_ManageHandles;
     }
-    
+
     fprintf(fp, "%s\t%d\n", handle, pid);
     fclose(fp);
     lock_close(fp_lock);
@@ -403,20 +403,20 @@ char *exputl_manage_cgibin_handles_lookup_proc_handle(const char *file, const ch
     char PID[128];
     char HANDLE[128];
     char *pid = NULL;
-    
+
     fp_lock = lock_open(file);
     if (!fp_lock)
     {
         return NULL;
     }
-    
+
     fp = fopen(file, "r");
     if (!fp)
     {
         fprintf(stderr, "Failed to open %s file.\n", file);
         return NULL;
     }
-    
+
     while (fscanf(fp, "%s\t%s\n", HANDLE, PID) == 2)
     {
         if (strcmp(handle, HANDLE) == 0)
@@ -425,7 +425,7 @@ char *exputl_manage_cgibin_handles_lookup_proc_handle(const char *file, const ch
             break;
         }
     }
-    
+
     fclose(fp);
     lock_close(fp_lock);
     return pid;
@@ -436,13 +436,13 @@ ExpUtlStat_t exputl_manage_cgibin_handles_delete_proc_handle(const char *file, c
     FILE *fp = NULL;
     FILE *fp_lock = NULL;
     char cmd[1024] = { 0 };
-    
+
     fp_lock = lock_open(file);
     if (!fp_lock)
     {
         return kExpUtlStat_ManageHandles;
     }
-    
+
     snprintf(cmd, sizeof(cmd), "ed -s %s <<END\ng/^%s\t/d\nwq\nEND\n", file, handle);
     system(cmd);
     lock_close(fp_lock);
@@ -454,13 +454,13 @@ ExpUtlStat_t exputl_manage_cgibin_handles_edit_proc_handles(const char *file)
     FILE *fp = NULL;
     FILE *fp_lock = NULL;
     char cmd[1024];
-    
+
     fp_lock = lock_open(file);
     if (!fp_lock)
     {
         return kExpUtlStat_ManageHandles;
     }
-    
+
     sprintf(cmd, "vi %s\n", file);
     system(cmd);
     lock_close(fp_lock);
@@ -473,6 +473,8 @@ ExpUtlStat_t exputl_manage_cgibin_handles(const char *op, const char *handle, pi
     int op_delete = 0;
     int op_edit = 0;
     int op_lookup = 0;
+    char *lockfile = NULL;
+    int status = kExpUtlStat_Success;
 
     if (!op)
     {
@@ -488,7 +490,7 @@ ExpUtlStat_t exputl_manage_cgibin_handles(const char *op, const char *handle, pi
     {
         if (!file || *file == '\0')
         {
-           char *lockfile = calloc(1, PATH_MAX);
+           lockfile = calloc(1, PATH_MAX);
 
            base_strlcat(lockfile, EXPORT_HANDLE_DIR, PATH_MAX);
 
@@ -500,46 +502,54 @@ ExpUtlStat_t exputl_manage_cgibin_handles(const char *op, const char *handle, pi
            base_strlcat(lockfile, HANDLE_FILE_BASE, PATH_MAX);
            file = lockfile;
         }
-        
+
         op_add = (*op == 'a');
         op_delete = (*op == 'd');
         op_edit = (*op == 'e');
         op_lookup = (*op == 'l');
-        
+
         if (!op_edit && !handle)
         {
             fprintf(stderr, "handle must be provided.\n");
-            return kExpUtlStat_ManageHandles;
+            status = kExpUtlStat_ManageHandles;
         }
-        
-        if (op_add)
+        else
         {
-            return exputl_manage_cgibin_handles_add_proc_handle(file, handle, pid);
-        }
-        
-        if (op_lookup)
-        {
-            char *pid = exputl_manage_cgibin_handles_lookup_proc_handle(file, handle);
-            
-            if (pid)
+            if (op_add)
             {
-                printf("%s\n", pid);
+                status = exputl_manage_cgibin_handles_add_proc_handle(file, handle, pid);
             }
-            
-            fflush(stdout);
-            return kExpUtlStat_Success;
+
+            if (op_lookup)
+            {
+                char *pid = exputl_manage_cgibin_handles_lookup_proc_handle(file, handle);
+
+                if (pid)
+                {
+                    printf("%s\n", pid);
+                }
+
+                fflush(stdout);
+                status = kExpUtlStat_Success;
+            }
+
+            if (op_delete)
+            {
+                status = exputl_manage_cgibin_handles_delete_proc_handle(file, handle);
+            }
+
+            if (op_edit)
+            {
+                status = exputl_manage_cgibin_handles_edit_proc_handles(file);
+            }
         }
-        
-        if (op_delete)
+
+        if (lockfile)
         {
-            return exputl_manage_cgibin_handles_delete_proc_handle(file, handle);
-        }
-        
-        if (op_edit)
-        {
-            return exputl_manage_cgibin_handles_edit_proc_handles(file);
+            free(lockfile);
+            lockfile = NULL;
         }
     }
-    
-    return kExpUtlStat_Success;
+
+    return status;
 }
