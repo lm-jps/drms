@@ -6306,7 +6306,7 @@ DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *se
 
   /* Filter query result and initialize record data structures
      from template. */
-  rs = malloc(sizeof(DRMS_RecordSet_t));
+  rs = calloc(1, sizeof(DRMS_RecordSet_t));
   XASSERT(rs);
   if (qres->num_rows<1)
   {
