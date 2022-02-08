@@ -648,6 +648,9 @@ struct DRMS_RecordSet_struct
   HContainer_t **ss_template_keys;
 
   HContainer_t **ss_template_segs;
+
+  LinkedList_t *linked_records_list;
+  /** \brief a list of all records located by following links; set when the set's records are retrieved */
 };
 
 /** \brief DRMS record struct reference */

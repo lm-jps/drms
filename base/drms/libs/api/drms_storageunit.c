@@ -502,10 +502,10 @@ static int drms_su_newslots_internal(DRMS_Env_t *env, int n, char *series,
   HContainer_t *scon;
   HIterator_t hit;
   long long sunum;
-  char slotdir[DRMS_MAXPATHLEN+40], hashkey[DRMS_MAXHASHKEYLEN], *sudir = NULL;
+  char slotdir[DRMS_MAXPATHLEN+40] = {0};
+  char hashkey[DRMS_MAXHASHKEYLEN] = {0};
+  char *sudir = NULL;
   DRMS_Record_t *template=NULL;
-
-
 
   XASSERT(env->session->db_direct==1);
 
@@ -514,8 +514,7 @@ static int drms_su_newslots_internal(DRMS_Env_t *env, int n, char *series,
   if (scon == NULL) /* Make new container for this series. */
   {
     scon = hcon_allocslot(&env->storageunit_cache, series);
-    hcon_init(scon, sizeof(DRMS_StorageUnit_t), DRMS_MAXHASHKEYLEN,
-	      (void (*)(const void *)) drms_su_freeunit, NULL);
+    hcon_init(scon, sizeof(DRMS_StorageUnit_t), DRMS_MAXHASHKEYLEN, (void (*)(const void *)) drms_su_freeunit, NULL);
   }
 
   /* Now iterate through all storage units for this series open for writing
@@ -624,11 +623,15 @@ static int drms_su_newslots_internal(DRMS_Env_t *env, int n, char *series,
                             &status);
       if (status)
       {
-	if (sudir)
-	  free(sudir);
-	goto bail;
+          if (sudir)
+          {
+              free(sudir);
+          }
+
+          goto bail;
       }
-      sprintf(hashkey,DRMS_SUNUM_FORMAT, sunum);
+
+      snprintf(hashkey, sizeof(hashkey), DRMS_SUNUM_FORMAT, sunum);
       /* Insert new entry in hash table. */
       /* This allocates a new DRMS_StorageUnit_t. */
       su[i] = hcon_allocslot(scon, hashkey);
@@ -650,7 +653,7 @@ static int drms_su_newslots_internal(DRMS_Env_t *env, int n, char *series,
       su[i]->recnum = malloc(su[i]->nfree*sizeof(long long));
       XASSERT(su[i]->recnum);
       memset(su[i]->recnum, 0, su[i]->nfree*sizeof(long long));
-      su[i]->refcount = 0;
+      su[i]->refcount = 1; /* we created a new SU with SUM_alloc(); we have 1 handle to the SU */
       /* This is a fresh storage unit. Assign slot 0 to the caller. */
       slot = 0;
     }
@@ -2975,44 +2978,52 @@ int drms_commit_all_units(DRMS_Env_t *env, int *archive, int *status)
 #endif
 
 /* Look up a storage unit and its container in the storage unit cache. */
-DRMS_StorageUnit_t *drms_su_lookup(DRMS_Env_t *env, char *series,
-				   long long sunum, HContainer_t **scon_out)
+DRMS_StorageUnit_t *drms_su_lookup(DRMS_Env_t *env, char *series, long long sunum, HContainer_t **scon_out)
 {
-  HIterator_t hit;
-  HContainer_t *scon;
-  DRMS_StorageUnit_t *su;
-  char hashkey[DRMS_MAXHASHKEYLEN];
+    HIterator_t hit;
+    HContainer_t *scon;
+    DRMS_StorageUnit_t *su;
+    char hashkey[DRMS_MAXHASHKEYLEN];
 
-  //  XASSERT(env->session->db_direct==1);
+    //  XASSERT(env->session->db_direct==1);
 
-  su = NULL;
-  scon = NULL;
-  if (series==NULL)
-  {
-    /* Don't know series. Iterate through the containers corresponding to
-       all the series we have retrieved so far to see if it is among them. */
-    sprintf(hashkey, DRMS_SUNUM_FORMAT, sunum);
-    hiter_new(&hit, &env->storageunit_cache);
-    while( (scon = (HContainer_t *)hiter_getnext(&hit)) )
+    su = NULL;
+    scon = NULL;
+
+    if (series == NULL)
     {
-      if ( (su = hcon_lookup(scon, hashkey)) )
-	break;
+        /* Don't know series. Iterate through the containers corresponding to
+        all the series we have retrieved so far to see if it is among them. */
+        sprintf(hashkey, DRMS_SUNUM_FORMAT, sunum);
+
+        hiter_new(&hit, &env->storageunit_cache);
+        while((scon = (HContainer_t *)hiter_getnext(&hit)))
+        {
+            if ((su = hcon_lookup(scon, hashkey)))
+            {
+                break;
+            }
+        }
     }
-  }
-  else
-  {
-    /* Look up container corresponding to the series. */
-    if ( (scon = hcon_lookup(&env->storageunit_cache, series)) )
+    else
     {
-      sprintf(hashkey, DRMS_SUNUM_FORMAT, sunum);
-      su = hcon_lookup(scon, hashkey);
+        /* Look up container corresponding to the series. */
+        if ((scon = hcon_lookup(&env->storageunit_cache, series)))
+        {
+            sprintf(hashkey, DRMS_SUNUM_FORMAT, sunum);
+            su = hcon_lookup(scon, hashkey);
+        }
     }
-  }
-  if (scon_out)
-    *scon_out = scon;
-  return su;
+
+    if (scon_out)
+    {
+        *scon_out = scon;
+    }
+
+    return su;
 }
 
+/* deep frees stuff inside SU */
 void drms_su_freeunit(DRMS_StorageUnit_t *su)
 {
   if (su->state)
@@ -3027,14 +3038,15 @@ void drms_su_freeunit(DRMS_StorageUnit_t *su)
   }
 }
 
+/* deep frees stuff inside SU - does not check refcount */
 void drms_freeunit(DRMS_Env_t *env, DRMS_StorageUnit_t *su)
 {
-  char hashkey[DRMS_MAXHASHKEYLEN];
+  char hashkey[DRMS_MAXHASHKEYLEN] = {0};
   HContainer_t *scon;
 
   if ( (scon = hcon_lookup(&env->storageunit_cache, su->seriesinfo->seriesname)) )
   {
-    sprintf(hashkey,DRMS_SUNUM_FORMAT, su->sunum);
+    snprintf(hashkey, sizeof(hashkey), DRMS_SUNUM_FORMAT, su->sunum);
     if (su->state)
     {
       free(su->state);

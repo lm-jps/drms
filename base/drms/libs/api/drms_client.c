@@ -1249,142 +1249,156 @@ DRMS_StorageUnit_t *drms_getunit_internal(DRMS_Env_t *env, char *series,
                                           long long sunum, int retrieve,
                                           int gotosums, int *status)
 {
-  HContainer_t *scon=NULL;
-  int stat;
-  DRMS_StorageUnit_t *su;
-  char hashkey[DRMS_MAXHASHKEYLEN];
-  DRMS_Record_t *template;
+    HContainer_t *scon=NULL;
+    int stat;
+    DRMS_StorageUnit_t *su;
+    char hashkey[DRMS_MAXHASHKEYLEN] = {0};
+    DRMS_Record_t *template;
 #ifdef DRMS_CLIENT
-  char *sudir;
-  XASSERT(env->session->db_direct==0);
+    char *sudir;
+    XASSERT(env->session->db_direct==0);
 #endif
 
-  if ((su = drms_su_lookup(env, series, sunum, &scon)) == NULL)
-  {
-    /* We didn't find the storage unit in the cache so we have to ask
-       the server or SUMS for it... */
-    if (!scon)
+    if ((su = drms_su_lookup(env, series, sunum, &scon)) == NULL)
     {
-      scon = hcon_allocslot(&env->storageunit_cache,series);
-      hcon_init(scon, sizeof(DRMS_StorageUnit_t), DRMS_MAXHASHKEYLEN,
-		(void (*)(const void *)) drms_su_freeunit, NULL);
-    }
-    /* Get a slot in the cache to insert a new entry in. */
-    sprintf(hashkey,DRMS_SUNUM_FORMAT, sunum);
-    su = hcon_allocslot(scon,hashkey);
+        /* We didn't find the storage unit in the cache so we have to ask
+           the server or SUMS for it... */
+        if (!scon)
+        {
+            scon = hcon_allocslot(&env->storageunit_cache,series);
+            hcon_init(scon, sizeof(DRMS_StorageUnit_t), DRMS_MAXHASHKEYLEN, (void (*)(const void *)) drms_su_freeunit, NULL);
+        }
+
+        /* Get a slot in the cache to insert a new entry in. */
+        snprintf(hashkey, sizeof(hashkey), DRMS_SUNUM_FORMAT, sunum);
+        su = hcon_allocslot(scon, hashkey);
 #ifdef DEBUG
-      printf("getunit: Got su = %p. Now has %d slots from '%s'\n",su,
-	     hcon_size(scon), series);
+        printf("getunit: Got su = %p. Now has %d slots from '%s'\n",su,
+        hcon_size(scon), series);
 #endif
 
-    /* Populate the fields in the struct. */
-    su->sunum = sunum;
-    su->mode = DRMS_READONLY; /* All storage units previously archived
-				 by SUMS are read-only. */
-    su->nfree = 0;
-    su->state = NULL;
-    su->recnum = NULL;
-    su->refcount = 0;
-    /* Get a template for series info. */
-    if ((template = drms_template_record(env, series,&stat)) == NULL)
-      goto bailout;
-    su->seriesinfo = template->seriesinfo;
+        /* Populate the fields in the struct. */
+        su->sunum = sunum;
+        su->mode = DRMS_READONLY; /* All storage units previously archived
+    				 by SUMS are read-only. */
+        su->nfree = 0;
+        su->state = NULL;
+        su->recnum = NULL;
+        su->refcount = 1;
 
-    if (gotosums)
-    {
-       /* Talk to SUMS ONLY if the caller of this function permits it. */
+        /* Get a template for series info. */
+        if ((template = drms_template_record(env, series, &stat)) == NULL)
+        {
+            goto bailout;
+        }
+
+        su->seriesinfo = template->seriesinfo;
+
+        if (gotosums)
+        {
+            /* Talk to SUMS ONLY if the caller of this function permits it. */
 #ifndef DRMS_CLIENT
-       /* Send a query to SUMS for the storage unit directory. */
+            /* Send a query to SUMS for the storage unit directory. */
 
-       stat = drms_su_getsudir(env, su, retrieve);
+            /* does not set refcount */
+            stat = drms_su_getsudir(env, su, retrieve);
 #ifdef DEBUG
-       printf("drms_getunit: Got sudir from SUMS = '%s'\n",su->sudir);
+            printf("drms_getunit: Got sudir from SUMS = '%s'\n",su->sudir);
 #endif
 #else
-       {
-          int len, retrieve_tmp;
-          long long sunum_tmp;
-          struct iovec vec[4];
-
-          drms_send_commandcode(env->session->sockfd, DRMS_GETUNIT);
-
-          /* Send seriesname,  sunum, and retrieve flag */
-          vec[1].iov_len = strlen(series);
-          vec[1].iov_base = series;
-          len = htonl(vec[1].iov_len);
-          vec[0].iov_len = sizeof(len);
-          vec[0].iov_base = &len;
-          sunum_tmp = htonll(sunum);
-          vec[2].iov_len = sizeof(sunum_tmp);
-          vec[2].iov_base = &sunum_tmp;
-          retrieve_tmp = htonl(retrieve);
-          vec[3].iov_len = sizeof(retrieve_tmp);
-          vec[3].iov_base = &retrieve_tmp;
-          Writevn(env->session->sockfd, vec, 4);
-
-          stat = Readint(env->session->sockfd);
-          if (stat == DRMS_SUCCESS)
-          {
-             sudir = receive_string(env->session->sockfd);
-#ifdef DEBUG
-             printf("drms_getunit: Got sudir from DRMS server = '%s', stat = %d\n",
-                    sudir,stat);
-#endif
-             strncpy(su->sudir, sudir, sizeof(su->sudir));
-             free(sudir);
-          }
-       }
-#endif
-
-        if (!strlen(su->sudir))
-        {
-            /* This is causing problems. If we return a NULL SU, then there is nothing to prevent client code from calling this function again.
-             * Code that calls this function does so only if rec->su is NULL, and if we return NULL, rec->su becomes NULL, and this function
-             * will be called again, which will result in SUM_get() being called again. But we do not need to keep calling SUM_get(). Once
-             * it has been called once, we know that there is no sudir, and we should remember that. If we do not remove the SU from
-             * the SU cache, then although this function will be called again, it doesn't have to call SUM_get(). The SU in the cache will
-             * have *su->sudir == '\0', so this function will return NULL, which will not change the semantics of this function. But it will
-             * also result in this function no longer calling SUM_get().
-             *
-             * ART - 2014.7.15
-             *
-             * hcon_remove(scon, hashkey);
-             */
-
-            if (!retrieve)
             {
-                /* Still want to remove the SU from the cache if it is possible that the SU is offline, but exists. That way if this function is
-                 * called with the retrieve flag set later, a SUM_get() (with the retrieve flag set) will be called, and the SU retrieved, if
-                 * it exists on tape. */
-                hcon_remove(scon, hashkey);
-            }
+                int len, retrieve_tmp;
+                long long sunum_tmp;
+                struct iovec vec[4];
 
+                drms_send_commandcode(env->session->sockfd, DRMS_GETUNIT);
+
+                /* Send seriesname,  sunum, and retrieve flag */
+                vec[1].iov_len = strlen(series);
+                vec[1].iov_base = series;
+                len = htonl(vec[1].iov_len);
+                vec[0].iov_len = sizeof(len);
+                vec[0].iov_base = &len;
+                sunum_tmp = htonll(sunum);
+                vec[2].iov_len = sizeof(sunum_tmp);
+                vec[2].iov_base = &sunum_tmp;
+                retrieve_tmp = htonl(retrieve);
+                vec[3].iov_len = sizeof(retrieve_tmp);
+                vec[3].iov_base = &retrieve_tmp;
+                Writevn(env->session->sockfd, vec, 4);
+
+                stat = Readint(env->session->sockfd);
+
+                if (stat == DRMS_SUCCESS)
+                {
+                    sudir = receive_string(env->session->sockfd);
+#ifdef DEBUG
+                    printf("drms_getunit: Got sudir from DRMS server = '%s', stat = %d\n", sudir,stat);
+#endif
+                    strncpy(su->sudir, sudir, sizeof(su->sudir));
+                    free(sudir);
+                }
+            }
+#endif
+            if (!strlen(su->sudir))
+            {
+                /* This is causing problems. If we return a NULL SU, then there is nothing to prevent client code from calling this
+                 * function again. Code that calls this function does so only if rec->su is NULL, and if we return NULL, rec->su
+                 * becomes NULL, and this function will be called again, which will result in SUM_get() being called again. But
+                 * we do not need to keep calling SUM_get(). Once it has been called once, we know that there is no sudir, and
+                 * we should remember that. If we do not remove the SU from the SU cache, then although this function will be
+                 * called again, it doesn't have to call SUM_get(). The SU in the cache will have *su->sudir == '\0', so this
+                 * function will return NULL, which will not change the semantics of this function. But it will also result
+                 * in this function no longer calling SUM_get().
+                 *
+                 * ART - 2014.7.15
+                 *
+                 * hcon_remove(scon, hashkey);
+                 */
+                if (!retrieve)
+                {
+                    /* Still want to remove the SU from the cache if it is possible that the SU is offline, but exists. That way if this function is
+                     * called with the retrieve flag set later, a SUM_get() (with the retrieve flag set) will be called, and the SU retrieved, if
+                     * it exists on tape. */
+                    hcon_remove(scon, hashkey);
+                }
+
+                su = NULL;
+            }
+        } /* if (gotosums) */
+
+        if (stat)
+        {
+            /* noop if hashkey not in hcon */
+            hcon_remove(scon, hashkey);
             su = NULL;
         }
-    } /* if (gotosums) */
 
-    if (stat)
-    {
-      hcon_remove(scon, hashkey);
-      su = NULL;
+        /* if the new cache item was not removed, then its refcount is 1 */
     }
-  }
-  else
-  {
-      /* If su->sudir is '\0', then there was a previous attempt to retrieve the SU from SUMS, but it didn't exist (either aged-off, or the SUNUM was
-       * invalid). We need to return NULL so indicate to the calling code that there is no SU. Calling code checks the su.
-       */
-      if (*su->sudir == '\0')
-      {
-          su = NULL;
-      }
-      stat = DRMS_SUCCESS;
-  }
+    else
+    {
+        su->refcount++;
 
- bailout:
-  if (status)
-    *status = stat;
-  return su;
+        /* If su->sudir is '\0', then there was a previous attempt to retrieve the SU from SUMS, but it didn't exist (either aged-off,
+         * or the SUNUM was invalid). We need to return NULL so indicate to the calling code that there is no SU. Calling
+         * code checks the su.
+         */
+        if (*su->sudir == '\0')
+        {
+            su = NULL;
+        }
+
+        stat = DRMS_SUCCESS;
+    }
+
+bailout:
+    if (status)
+    {
+        *status = stat;
+    }
+
+    return su;
 }
 
 DRMS_StorageUnit_t *drms_getunit(DRMS_Env_t *env, char *series,
@@ -1410,143 +1424,156 @@ int drms_getunits_internal(DRMS_Env_t *env,
                            int retrieve,
                            int dontwait)
 {
-  HContainer_t *scon=NULL;
-  int stat = DRMS_SUCCESS;
-  DRMS_StorageUnit_t *su;
-  char hashkey[DRMS_MAXHASHKEYLEN];
-  DRMS_Record_t *template;
+    HContainer_t *scon=NULL;
+    int stat = DRMS_SUCCESS;
+    DRMS_StorageUnit_t *su;
+    char hashkey[DRMS_MAXHASHKEYLEN] = {0};
+    DRMS_Record_t *template;
 #ifdef DRMS_CLIENT
-  char *sudir;
-  XASSERT(env->session->db_direct==0);
+    char *sudir = NULL;
+    XASSERT(env->session->db_direct==0);
 #endif
 
-  DRMS_StorageUnit_t **su_nc; // not cached su's
-  int cnt;
+    DRMS_StorageUnit_t **su_nc; // not cached su's
+    int cnt;
 
 #ifdef DRMS_CLIENT
-  char **tosend = (char **)malloc(n * sizeof(char *));
+    char **tosend = (char **)malloc(n * sizeof(char *));
 #endif
 
     /* SUMS does not support dontwait == 1, so force dontwait to be 0 (deprecate the dontwait parameter). */
     dontwait = 0;
 
-  su_nc = malloc(n*sizeof(DRMS_StorageUnit_t *));
-  XASSERT(su_nc);
+    su_nc = malloc(n*sizeof(DRMS_StorageUnit_t *));
+    XASSERT(su_nc);
 #ifdef DEBUG
-      printf("getunit: Called, n=%d, series=%s\n", n, series);
+    printf("getunit: Called, n=%d, series=%s\n", n, series);
 #endif
   /* Get a template for series info. */
 
-  cnt = 0;
-  for (int i = 0; i < n; i++) {
-     if ((template = drms_template_record(env, suandseries[i].series, &stat)) == NULL)
-       goto bailout;
+    cnt = 0;
+    for (int i = 0; i < n; i++)
+    {
+        if ((template = drms_template_record(env, suandseries[i].series, &stat)) == NULL)
+        {
+          goto bailout;
+        }
 
-    if ((su = drms_su_lookup(env, suandseries[i].series, suandseries[i].sunum, &scon)) == NULL) {
-      if (!scon)
-	{
-	  scon = hcon_allocslot(&env->storageunit_cache, suandseries[i].series);
-	  hcon_init(scon, sizeof(DRMS_StorageUnit_t), DRMS_MAXHASHKEYLEN,
-		    (void (*)(const void *)) drms_su_freeunit, NULL);
-	}
-      /* Get a slot in the cache to insert a new entry in. */
-      sprintf(hashkey,DRMS_SUNUM_FORMAT, suandseries[i].sunum);
-      su = hcon_allocslot(scon,hashkey);
+        if ((su = drms_su_lookup(env, suandseries[i].series, suandseries[i].sunum, &scon)) == NULL)
+        {
+            if (!scon)
+          	{
+                scon = hcon_allocslot(&env->storageunit_cache, suandseries[i].series);
+                hcon_init(scon, sizeof(DRMS_StorageUnit_t), DRMS_MAXHASHKEYLEN, (void (*)(const void *)) drms_su_freeunit, NULL);
+          	}
+
+            /* Get a slot in the cache to insert a new entry in. */
+            snprintf(hashkey, sizeof(hashkey), DRMS_SUNUM_FORMAT, suandseries[i].sunum);
+            su = hcon_allocslot(scon, hashkey);
 #ifdef DEBUG
-      printf("getunit: Got su = %p. Now has %d slots from '%s'\n",su,
-	     hcon_size(scon), suandseries[i].series);
+            printf("getunit: Got su = %p. Now has %d slots from '%s'\n",su,
+            hcon_size(scon), suandseries[i].series);
 #endif
 
-      /* Populate the fields in the struct. */
-      su->sunum = suandseries[i].sunum;
-      su->sudir[0] = '\0';
-      su->mode = DRMS_READONLY; /* All storage units previously archived
-				   by SUMS are read-only. */
-      su->nfree = 0;
-      su->state = NULL;
-      su->recnum = NULL;
-      su->refcount = 0;
-      su->seriesinfo = template->seriesinfo;
-      su_nc[cnt] = su;
+            /* Populate the fields in the struct. */
+            su->sunum = suandseries[i].sunum;
+            su->sudir[0] = '\0';
+            su->mode = DRMS_READONLY; /* All storage units previously archived
+      				   by SUMS are read-only. */
+            su->nfree = 0;
+            su->state = NULL;
+            su->recnum = NULL;
+            su->refcount = 1;
+            su->seriesinfo = template->seriesinfo;
+            su_nc[cnt] = su;
 
 #ifdef DRMS_CLIENT
-      /* need to send series names to drms_server - but only the ones for sunums that were not
-       * already cached. */
-      tosend[cnt] = suandseries[i].series;
+            /* need to send series names to drms_server - but only the ones for sunums that were not
+             * already cached. */
+            tosend[cnt] = suandseries[i].series;
 #endif
-
-      cnt++;
+            cnt++;
+        }
     }
-  }
 
 #ifndef DRMS_CLIENT
     /* Send a query to SUMS for the storage unit directory. */
-  if (cnt) {
-    stat = drms_su_getsudirs(env, cnt, su_nc, retrieve, dontwait);
-  }
-#else
-  int icnt;
-  if (cnt) {
-    long long *sunum_tmp;
-    struct iovec *vec;
-
-    drms_send_commandcode(env->session->sockfd, DRMS_GETUNITS);
-
-    /* Send cnt, series names, sunums, retrieve, and dontwait to drms_server */
-
-    /* pass n first */
-    Writeint(env->session->sockfd, cnt);
-
-    /* pass n seriesnames next */
-    for (icnt = 0; icnt < cnt; icnt++)
+    if (cnt)
     {
-       send_string(env->session->sockfd, tosend[icnt]);
+        /* does not set refcounts */
+        stat = drms_su_getsudirs(env, cnt, su_nc, retrieve, dontwait);
     }
+#else
+    int icnt;
+    if (cnt)
+    {
+        long long *sunum_tmp;
+        struct iovec *vec;
 
-    /* pass n sunums */
-    vec = malloc(cnt*sizeof(struct iovec));
-    XASSERT(vec);
-    sunum_tmp = malloc(cnt*sizeof(long long));
-    XASSERT(sunum_tmp);
-    for (int i = 0; i < cnt; i++) {
-      sunum_tmp[i] = htonll(su_nc[i]->sunum);
-      vec[i].iov_len = sizeof(sunum_tmp[i]);
-      vec[i].iov_base = &sunum_tmp[i];
+        drms_send_commandcode(env->session->sockfd, DRMS_GETUNITS);
+
+        /* Send cnt, series names, sunums, retrieve, and dontwait to drms_server */
+
+        /* pass n first */
+        Writeint(env->session->sockfd, cnt);
+
+        /* pass n seriesnames next */
+        for (icnt = 0; icnt < cnt; icnt++)
+        {
+           send_string(env->session->sockfd, tosend[icnt]);
+        }
+
+        /* pass n sunums */
+        vec = malloc(cnt*sizeof(struct iovec));
+        XASSERT(vec);
+        sunum_tmp = malloc(cnt*sizeof(long long));
+        XASSERT(sunum_tmp);
+        for (int i = 0; i < cnt; i++)
+        {
+            sunum_tmp[i] = htonll(su_nc[i]->sunum);
+            vec[i].iov_len = sizeof(sunum_tmp[i]);
+            vec[i].iov_base = &sunum_tmp[i];
+        }
+
+        Writevn(env->session->sockfd, vec, cnt);
+        free(sunum_tmp);
+        free(vec);
+
+        /* retrieve */
+        Writeint(env->session->sockfd, retrieve);
+
+        /* dontwait */
+        Writeint(env->session->sockfd, dontwait);
+
+        stat = Readint(env->session->sockfd);
+        if (stat == DRMS_SUCCESS)
+        {
+            if (!dontwait)
+            {
+              	for (int i = 0; i < cnt; i++)
+                {
+                	  sudir = receive_string(env->session->sockfd);
+                	  strncpy(su_nc[i]->sudir, sudir, sizeof(su->sudir));
+                	  free(sudir);
+              	}
+            }
+        }
     }
-    Writevn(env->session->sockfd, vec, cnt);
-    free(sunum_tmp);
-    free(vec);
-
-    /* retrieve */
-    Writeint(env->session->sockfd, retrieve);
-
-    /* dontwait */
-    Writeint(env->session->sockfd, dontwait);
-
-    stat = Readint(env->session->sockfd);
-    if (stat == DRMS_SUCCESS) {
-      if (!dontwait) {
-	for (int i = 0; i < cnt; i++) {
-	  sudir = receive_string(env->session->sockfd);
-	  strncpy(su_nc[i]->sudir, sudir, sizeof(su->sudir));
-	  free(sudir);
-	}
-      }
-    }
-  }
 #endif
-  for (int i = 0; i < cnt; i++) {
-    if (stat || !strlen(su_nc[i]->sudir)) {
-      drms_su_lookup(env, su_nc[i]->seriesinfo->seriesname, su_nc[i]->sunum, &scon);
-      sprintf(hashkey,DRMS_SUNUM_FORMAT, su_nc[i]->sunum);
-      hcon_remove(scon, hashkey);
+    for (int i = 0; i < cnt; i++)
+    {
+        if (stat || !strlen(su_nc[i]->sudir))
+        {
+            drms_su_lookup(env, su_nc[i]->seriesinfo->seriesname, su_nc[i]->sunum, &scon);
+            snprintf(hashkey, sizeof(hashkey), DRMS_SUNUM_FORMAT, su_nc[i]->sunum);
+            hcon_remove(scon, hashkey);
+        }
     }
-  }
 
- bailout:
-  free(su_nc);
+bailout:
+    free(su_nc);
 
-  return stat;
+    return stat;
 }
 
 int drms_getunits(DRMS_Env_t *env,
@@ -1851,11 +1878,13 @@ int drms_newslots_internal(DRMS_Env_t *env, int n, char *series, long long *recn
      if (gotosums)
      {
         /* Allows SUMS access. */
+        /* sets SU refount to 1 */
         return drms_su_newslots(env, n, series, recnum, lifetime, slotnum, su, createslotdirs);
      }
      else
      {
         /* Does not allow SUMS access. */
+        /* sets SU refount to 1 */
         return drms_su_newslots_nosums(env, n, series, recnum, lifetime, slotnum, su, createslotdirs);
      }
   }
