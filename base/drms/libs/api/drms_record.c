@@ -6411,7 +6411,7 @@ DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *se
             if (!keys)
             {
                 /* Copy all keyword structs. This will perform a deep-copy. */
-                hcon_copy_to_initialized(&(rs->records[i]->keywords), &template->keywords);
+                copy_keywords_container(&(rs->records[i]->keywords), &template->keywords);
             }
             else if (hcon_size(keys) > 0)
             {
@@ -6506,7 +6506,7 @@ DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *se
                 rs->records[i] = hcon_allocslot(&env->record_cache, hashkey);
 
                 /* Populate the slot with values from the template. */
-                drms_copy_record_struct(rs->records[i], template);
+                drms_copy_record_struct_ext(rs->records[i], template, copy_keywords_container, NULL, NULL);
 
                 /* Set refcount to initial value of 1. */
                 if (rs->records[i])

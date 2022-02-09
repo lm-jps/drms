@@ -373,123 +373,126 @@ static int drms_link_determine_recnum(DRMS_Env_t *env, const char *link, DRMS_Re
     template_link = hcon_lookup_lower(&template_record->links, link);
     XASSERT(template_link);
 
-    snprintf(parent_series_lower, sizeof(parent_series_lower), "%s", template_record->seriesinfo->seriesname);
-    strtolower(parent_series_lower);
-
-    child_template_record = drms_template_record(env, template_link->info->target_series, &status);
-    snprintf(child_series_lower, sizeof(child_series_lower), "%s", child_template_record->seriesinfo->seriesname);
-    strtolower(child_series_lower);
-
-    if (status == DRMS_SUCCESS)
+    if (template_link->info->type == DYNAMIC_LINK)
     {
-        sql = calloc(sz_sql, sizeof(char));
+        snprintf(parent_series_lower, sizeof(parent_series_lower), "%s", template_record->seriesinfo->seriesname);
+        strtolower(parent_series_lower);
 
-        sql = base_strcatalloc(sql, "SELECT P.recnum AS parent_recnum, max(C.recnum) AS child_recnum FROM ", &sz_sql);
-        sql = base_strcatalloc(sql, parent_series_lower, &sz_sql);
-        sql = base_strcatalloc(sql, " AS P LEFT OUTER JOIN ", &sz_sql);
-        sql = base_strcatalloc(sql, child_series_lower, &sz_sql);
-        sql = base_strcatalloc(sql, " AS C ON (", &sz_sql);
+        child_template_record = drms_template_record(env, template_link->info->target_series, &status);
+        snprintf(child_series_lower, sizeof(child_series_lower), "%s", child_template_record->seriesinfo->seriesname);
+        strtolower(child_series_lower);
 
-        first = 1;
-        for (prime_key_index = 0; prime_key_index < child_template_record->seriesinfo->pidx_num; prime_key_index++)
+        if (status == DRMS_SUCCESS)
         {
-            if (first)
+            sql = calloc(sz_sql, sizeof(char));
+
+            sql = base_strcatalloc(sql, "SELECT P.recnum AS parent_recnum, max(C.recnum) AS child_recnum FROM ", &sz_sql);
+            sql = base_strcatalloc(sql, parent_series_lower, &sz_sql);
+            sql = base_strcatalloc(sql, " AS P LEFT OUTER JOIN ", &sz_sql);
+            sql = base_strcatalloc(sql, child_series_lower, &sz_sql);
+            sql = base_strcatalloc(sql, " AS C ON (", &sz_sql);
+
+            first = 1;
+            for (prime_key_index = 0; prime_key_index < child_template_record->seriesinfo->pidx_num; prime_key_index++)
             {
-                first = 0;
-            }
-            else
-            {
-                sql = base_strcatalloc(sql, " AND ", &sz_sql);
-            }
-
-            sql = base_strcatalloc(sql, "P.ln_", &sz_sql);
-            sql = base_strcatalloc(sql, link_lower, &sz_sql);
-            sql = base_strcatalloc(sql, "_", &sz_sql);
-            sql = base_strcatalloc(sql, child_template_record->seriesinfo->pidx_keywords[prime_key_index]->info->name, &sz_sql);
-            sql = base_strcatalloc(sql, "=", &sz_sql);
-            sql = base_strcatalloc(sql, "C.", &sz_sql);
-            sql = base_strcatalloc(sql, child_template_record->seriesinfo->pidx_keywords[prime_key_index]->info->name, &sz_sql);
-        }
-
-        sql = base_strcatalloc(sql, ") WHERE P.", &sz_sql);
-        sql = base_strcatalloc(sql, is_set_column, &sz_sql);
-        sql = base_strcatalloc(sql, "=1 AND P.recnum IN (", &sz_sql);
-
-        first = 1;
-        list_llreset(record_list);
-        while ((list_node = list_llnext(record_list)) != NULL)
-        {
-            XASSERT(list_node->data);
-            drms_record = *(DRMS_Record_t **)list_node->data;
-
-            /* make a hash array so we can find these records later */
-            if (!hash_map)
-            {
-                hash_map = hcon_create(sizeof(DRMS_Record_t *), DRMS_MAXHASHKEYLEN, NULL, NULL, NULL, NULL, 0);
-            }
-
-            drms_make_hashkey(parent_hash_key, drms_record->seriesinfo->seriesname, drms_record->recnum);
-            hcon_insert_lower(hash_map, parent_hash_key, &drms_record);
-
-            if (first)
-            {
-                first = 0;
-            }
-            else
-            {
-                sql = base_strcatalloc(sql, ",", &sz_sql);
-            }
-
-            snprintf(recnum_str, sizeof(recnum_str), "%lld", drms_record->recnum);
-            sql = base_strcatalloc(sql, recnum_str, &sz_sql);
-        }
-
-        sql = base_strcatalloc(sql, ") GROUP BY P.recnum", &sz_sql);
-
-        if (sql)
-        {
-            binary_query_result = drms_query_bin(env->session, sql);
-            if (binary_query_result != NULL)
-            {
-                for (result_index = 0; result_index < binary_query_result->num_rows; result_index++)
+                if (first)
                 {
-                    parent_recnum = db_binary_field_getlonglong(binary_query_result, result_index, 0);
-                    child_recnum = db_binary_field_getlonglong(binary_query_result, result_index, 1);
-
-                    /* locate parent drms link and set recnum */
-                    drms_make_hashkey(parent_hash_key, template_record->seriesinfo->seriesname, parent_recnum);
-                    drms_record_ptr = hcon_lookup_lower(hash_map, parent_hash_key);
-                    if (drms_record_ptr)
-                    {
-                        parent_record = *(DRMS_Record_t **)drms_record_ptr;
-                    }
-                    XASSERT(parent_record);
-
-                    parent_link = hcon_lookup_lower(&parent_record->links, link);
-                    XASSERT(parent_link);
-                    parent_link->recnum = child_recnum;
+                    first = 0;
+                }
+                else
+                {
+                    sql = base_strcatalloc(sql, " AND ", &sz_sql);
                 }
 
-                db_free_binary_result(binary_query_result);
-                binary_query_result = NULL;
+                sql = base_strcatalloc(sql, "P.ln_", &sz_sql);
+                sql = base_strcatalloc(sql, link_lower, &sz_sql);
+                sql = base_strcatalloc(sql, "_", &sz_sql);
+                sql = base_strcatalloc(sql, child_template_record->seriesinfo->pidx_keywords[prime_key_index]->info->name, &sz_sql);
+                sql = base_strcatalloc(sql, "=", &sz_sql);
+                sql = base_strcatalloc(sql, "C.", &sz_sql);
+                sql = base_strcatalloc(sql, child_template_record->seriesinfo->pidx_keywords[prime_key_index]->info->name, &sz_sql);
+            }
+
+            sql = base_strcatalloc(sql, ") WHERE P.", &sz_sql);
+            sql = base_strcatalloc(sql, is_set_column, &sz_sql);
+            sql = base_strcatalloc(sql, "=1 AND P.recnum IN (", &sz_sql);
+
+            first = 1;
+            list_llreset(record_list);
+            while ((list_node = list_llnext(record_list)) != NULL)
+            {
+                XASSERT(list_node->data);
+                drms_record = *(DRMS_Record_t **)list_node->data;
+
+                /* make a hash array so we can find these records later */
+                if (!hash_map)
+                {
+                    hash_map = hcon_create(sizeof(DRMS_Record_t *), DRMS_MAXHASHKEYLEN, NULL, NULL, NULL, NULL, 0);
+                }
+
+                drms_make_hashkey(parent_hash_key, drms_record->seriesinfo->seriesname, drms_record->recnum);
+                hcon_insert_lower(hash_map, parent_hash_key, &drms_record);
+
+                if (first)
+                {
+                    first = 0;
+                }
+                else
+                {
+                    sql = base_strcatalloc(sql, ",", &sz_sql);
+                }
+
+                snprintf(recnum_str, sizeof(recnum_str), "%lld", drms_record->recnum);
+                sql = base_strcatalloc(sql, recnum_str, &sz_sql);
+            }
+
+            sql = base_strcatalloc(sql, ") GROUP BY P.recnum", &sz_sql);
+
+            if (sql)
+            {
+                binary_query_result = drms_query_bin(env->session, sql);
+                if (binary_query_result != NULL)
+                {
+                    for (result_index = 0; result_index < binary_query_result->num_rows; result_index++)
+                    {
+                        parent_recnum = db_binary_field_getlonglong(binary_query_result, result_index, 0);
+                        child_recnum = db_binary_field_getlonglong(binary_query_result, result_index, 1);
+
+                        /* locate parent drms link and set recnum */
+                        drms_make_hashkey(parent_hash_key, template_record->seriesinfo->seriesname, parent_recnum);
+                        drms_record_ptr = hcon_lookup_lower(hash_map, parent_hash_key);
+                        if (drms_record_ptr)
+                        {
+                            parent_record = *(DRMS_Record_t **)drms_record_ptr;
+                        }
+                        XASSERT(parent_record);
+
+                        parent_link = hcon_lookup_lower(&parent_record->links, link);
+                        XASSERT(parent_link);
+                        parent_link->recnum = child_recnum;
+                    }
+
+                    db_free_binary_result(binary_query_result);
+                    binary_query_result = NULL;
+                }
+                else
+                {
+                    status = DRMS_ERROR_OUTOFMEMORY;
+                }
+
+                free(sql);
+                sql = NULL;
             }
             else
             {
                 status = DRMS_ERROR_OUTOFMEMORY;
             }
-
-            free(sql);
-            sql = NULL;
         }
-        else
+
+        if (hash_map)
         {
-            status = DRMS_ERROR_OUTOFMEMORY;
+            hcon_destroy(&hash_map);
         }
-    }
-
-    if (hash_map)
-    {
-        hcon_destroy(&hash_map);
     }
 
     return status;
