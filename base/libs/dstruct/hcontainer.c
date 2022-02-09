@@ -49,6 +49,16 @@ void hcon_init_ext(HContainer_t *hc, unsigned int hashprime, int datasize, int k
 	    (int (*)(const void *, const void *))strcmp, hash_universal_hash);
 }
 
+void hcon_init_ext2(HContainer_t *hc, unsigned int hashprime, unsigned int initial_bin_size, int datasize, int keysize, void (*deep_free)(const void *value), void (*deep_copy)(const void *dst, const void *src))
+{
+  hc->num_total = 0;
+  hc->datasize = datasize;
+  hc->keysize = keysize;
+  hc->deep_free = deep_free;
+  hc->deep_copy = deep_copy;
+  hash_init(&hc->hash, hashprime, initial_bin_size, (int (*)(const void *, const void *))strcmp, hash_universal_hash);
+}
+
 void *hcon_allocslot_lower(HContainer_t *hc, const char *key)
 {
   char *tmp = strdup(key);

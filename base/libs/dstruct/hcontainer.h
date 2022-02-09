@@ -55,6 +55,9 @@ void hcon_init(HContainer_t *hc, int datasize, int keysize,
 void hcon_init_ext(HContainer_t *hc, unsigned int hashprime, int datasize, int keysize,
                    void (*deep_free)(const void *value),
                    void (*deep_copy)(const void *dst, const void *src));
+
+/* allows the caller to specify an initial number of bins too */
+void hcon_init_ext2(HContainer_t *hc, unsigned int hashprime, unsigned int initial_bin_size, int datasize, int keysize, void (*deep_free)(const void *value), void (*deep_copy)(const void *dst, const void *src));
 void *hcon_allocslot_lower(HContainer_t *hc, const char *key);
 void *hcon_allocslot(HContainer_t *hc, const char *key);
 void *hcon_lookup_lower(HContainer_t *hc, const char *key);
