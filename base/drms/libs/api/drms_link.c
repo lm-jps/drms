@@ -337,6 +337,163 @@ DRMS_Record_t *drms_link_follow(DRMS_Record_t *rec, const char *linkname, int *s
     }
 }
 
+/* `record_list` has no duplicate records */
+static int drms_link_determine_recnum(DRMS_Env_t *env, const char *link, DRMS_Record_t *template_record, LinkedList_t *record_list)
+{
+    char link_lower[DRMS_MAXLINKNAMELEN] = {0};
+    char is_set_column[DRMS_MAXLINKNAMELEN + 16] = {0};
+    DRMS_Link_t *template_link = NULL;
+    DRMS_Record_t *child_template_record = NULL;
+    char parent_series_lower[DRMS_MAXSERIESNAMELEN] = {0};
+    char child_series_lower[DRMS_MAXSERIESNAMELEN] = {0};
+    int prime_key_index = -1;
+    char recnum_str[32] = {0};
+    int first = -1;
+    int number_prime_key_keywords = -1;
+    ListNode_t *list_node = NULL;
+    DRMS_Record_t *drms_record = NULL;
+    DRMS_Record_t **drms_record_ptr = NULL;
+    HContainer_t *hash_map = NULL;
+    char *sql = NULL;
+    size_t sz_sql = 1024;
+    DB_Binary_Result_t *binary_query_result = NULL;
+    int result_index = -1;
+    long long parent_recnum = -1;
+    long long child_recnum = -1;
+    DRMS_Record_t *parent_record = NULL;
+    DRMS_Link_t *parent_link = NULL;
+    char parent_hash_key[DRMS_MAXHASHKEYLEN] = {0};
+    int status = DRMS_SUCCESS;
+
+    snprintf(link_lower, sizeof(link_lower), "%s", link);
+    strtolower(link_lower);
+    snprintf(is_set_column, sizeof(is_set_column), "ln_%s_isset", link);
+    strtolower(is_set_column);
+
+    template_link = hcon_lookup_lower(&template_record->links, link);
+    XASSERT(template_link);
+
+    snprintf(parent_series_lower, sizeof(parent_series_lower), "%s", template_record->seriesinfo->seriesname);
+    strtolower(parent_series_lower);
+
+    child_template_record = drms_template_record(env, template_link->info->target_series, &status);
+    snprintf(child_series_lower, sizeof(child_series_lower), "%s", child_template_record->seriesinfo->seriesname);
+    strtolower(child_series_lower);
+
+    if (status == DRMS_SUCCESS)
+    {
+        sql = calloc(sz_sql, sizeof(char));
+
+        sql = base_strcatalloc(sql, "SELECT P.recnum AS parent_recnum, max(C.recnum) AS child_recnum FROM ", &sz_sql);
+        sql = base_strcatalloc(sql, parent_series_lower, &sz_sql);
+        sql = base_strcatalloc(sql, " AS P LEFT OUTER JOIN ", &sz_sql);
+        sql = base_strcatalloc(sql, child_series_lower, &sz_sql);
+        sql = base_strcatalloc(sql, " AS C ON (", &sz_sql);
+
+        first = 1;
+        for (prime_key_index = 0; prime_key_index < child_template_record->seriesinfo->pidx_num; prime_key_index++)
+        {
+            if (first)
+            {
+                first = 0;
+            }
+            else
+            {
+                sql = base_strcatalloc(sql, " AND ", &sz_sql);
+            }
+
+            sql = base_strcatalloc(sql, "P.ln_", &sz_sql);
+            sql = base_strcatalloc(sql, link_lower, &sz_sql);
+            sql = base_strcatalloc(sql, "_", &sz_sql);
+            sql = base_strcatalloc(sql, child_template_record->seriesinfo->pidx_keywords[prime_key_index]->info->name, &sz_sql);
+            sql = base_strcatalloc(sql, "=", &sz_sql);
+            sql = base_strcatalloc(sql, "C.", &sz_sql);
+            sql = base_strcatalloc(sql, child_template_record->seriesinfo->pidx_keywords[prime_key_index]->info->name, &sz_sql);
+        }
+
+        sql = base_strcatalloc(sql, ") WHERE P.", &sz_sql);
+        sql = base_strcatalloc(sql, is_set_column, &sz_sql);
+        sql = base_strcatalloc(sql, "=1 AND P.recnum IN (", &sz_sql);
+
+        first = 1;
+        list_llreset(record_list);
+        while ((list_node = list_llnext(record_list)) != NULL)
+        {
+            XASSERT(list_node->data);
+            drms_record = *(DRMS_Record_t **)list_node->data;
+
+            /* make a hash array so we can find these records later */
+            if (!hash_map)
+            {
+                hash_map = hcon_create(sizeof(DRMS_Record_t *), DRMS_MAXHASHKEYLEN, NULL, NULL, NULL, NULL, 0);
+            }
+
+            drms_make_hashkey(parent_hash_key, drms_record->seriesinfo->seriesname, drms_record->recnum);
+            hcon_insert_lower(hash_map, parent_hash_key, &drms_record);
+
+            if (first)
+            {
+                first = 0;
+            }
+            else
+            {
+                sql = base_strcatalloc(sql, ",", &sz_sql);
+            }
+
+            snprintf(recnum_str, sizeof(recnum_str), "%lld", drms_record->recnum);
+            sql = base_strcatalloc(sql, recnum_str, &sz_sql);
+        }
+
+        sql = base_strcatalloc(sql, ") GROUP BY P.recnum", &sz_sql);
+
+        if (sql)
+        {
+            binary_query_result = drms_query_bin(env->session, sql);
+            if (binary_query_result != NULL)
+            {
+                for (result_index = 0; result_index < binary_query_result->num_rows; result_index++)
+                {
+                    parent_recnum = db_binary_field_getlonglong(binary_query_result, result_index, 0);
+                    child_recnum = db_binary_field_getlonglong(binary_query_result, result_index, 1);
+
+                    /* locate parent drms link and set recnum */
+                    drms_make_hashkey(parent_hash_key, template_record->seriesinfo->seriesname, parent_recnum);
+                    drms_record_ptr = hcon_lookup_lower(hash_map, parent_hash_key);
+                    if (drms_record_ptr)
+                    {
+                        parent_record = *(DRMS_Record_t **)drms_record_ptr;
+                    }
+                    XASSERT(parent_record);
+
+                    parent_link = hcon_lookup_lower(&parent_record->links, link);
+                    XASSERT(parent_link);
+                    parent_link->recnum = child_recnum;
+                }
+
+                db_free_binary_result(binary_query_result);
+                binary_query_result = NULL;
+            }
+            else
+            {
+                status = DRMS_ERROR_OUTOFMEMORY;
+            }
+
+            free(sql);
+            sql = NULL;
+        }
+        else
+        {
+            status = DRMS_ERROR_OUTOFMEMORY;
+        }
+    }
+
+    if (hash_map)
+    {
+        hcon_destroy(&hash_map);
+    }
+
+    return status;
+}
 /* recursively follows all links for a record set;
  * returns 'link_map' that maps the child record hash to child linked record */
  /* the record set argument need not be a first record set (i.e., one that can have drms_close_records() called on ); to indicate
@@ -355,7 +512,7 @@ LinkedList_t *drms_link_follow_recordset(DRMS_Env_t *env, DRMS_Record_t *templat
     DRMS_Record_t *child_drms_record = NULL;
     DRMS_Record_t *drms_record = NULL;
     int drms_status = DRMS_SUCCESS;
-    int loop_status = DRMS_SUCCESS;
+    int internal_status = DRMS_SUCCESS;
     HContainer_t *link_hash_map = NULL;
     HContainer_t *link_map_retrieved = NULL;
     HIterator_t hit;
@@ -370,116 +527,125 @@ LinkedList_t *drms_link_follow_recordset(DRMS_Env_t *env, DRMS_Record_t *templat
     child_template_record = drms_template_record(env, template_link->info->target_series, &drms_status);
     XASSERT(child_template_record);
 
-    list_llreset(record_list);
-    while ((list_node = list_llnext(record_list)) != NULL)
+    /* resolve links for ALL records in chunk (instead of doing so one at a time, which is the way this used to work);
+     * resolve --> assign child recnum to parent_link->recnum for every record in record_list
+     *
+     * must have called drms_link_getpidx() before drms_link_determine_recnum
+     */
+    if (drms_link_determine_recnum(env, link, template_record, record_list))
     {
-        XASSERT(list_node->data);
-        drms_record = *(DRMS_Record_t **)list_node->data;
+        internal_status = DRMS_ERROR_BADLINK;
+    }
 
-        if ((drms_link = hcon_lookup_lower(&drms_record->links, link)) == NULL)
+    if (internal_status == DRMS_SUCCESS)
+    {
+        list_llreset(record_list);
+        while ((list_node = list_llnext(record_list)) != NULL)
         {
-            loop_status = DRMS_ERROR_UNKNOWNLINK;
-            break;
-        }
+            XASSERT(list_node->data);
+            drms_record = *(DRMS_Record_t **)list_node->data;
 
-        if ((drms_link->info->type == STATIC_LINK && drms_link->recnum == -1) || (drms_link->info->type == DYNAMIC_LINK && !drms_link->isset))
-        {
-            loop_status = DRMS_ERROR_LINKNOTSET;
-            break;
-        }
-
-        /* must have called drms_link_getpidx() before drms_link_resolve() */
-        if (drms_link_resolve(drms_link))
-        {
-            loop_status = DRMS_ERROR_BADLINK;
-            break;
-        }
-
-        drms_make_hashkey(parent_hash_key, drms_record->seriesinfo->seriesname, drms_record->recnum);
-        drms_make_hashkey(child_hash_key, drms_link->info->target_series, drms_link->recnum);
-
-        if ((child_drms_record = hcon_lookup(&env->record_cache, child_hash_key)) != NULL)
-        {
-            /* Do not increase refcount on linked record. */
-            if (drms_link->wasFollowed)
+            if ((drms_link = hcon_lookup_lower(&drms_record->links, link)) == NULL)
             {
-                /* The caller has previously called drms_link_follow() on the same original record.
-                 * No new handle (via original rec) to the link record will be created, so do not
-                 * increment the refcount on the linked record. */
+                internal_status = DRMS_ERROR_UNKNOWNLINK;
+                break;
+            }
+
+            if ((drms_link->info->type == STATIC_LINK && drms_link->recnum == -1) || (drms_link->info->type == DYNAMIC_LINK && !drms_link->isset))
+            {
+                continue;
+            }
+
+            drms_make_hashkey(parent_hash_key, drms_record->seriesinfo->seriesname, drms_record->recnum);
+            drms_make_hashkey(child_hash_key, drms_link->info->target_series, drms_link->recnum);
+
+            if ((child_drms_record = hcon_lookup(&env->record_cache, child_hash_key)) != NULL)
+            {
+                /* Do not increase refcount on linked record. */
+                if (drms_link->wasFollowed)
+                {
+                    /* The caller has previously called drms_link_follow() on the same original record.
+                     * No new handle (via original rec) to the link record will be created, so do not
+                     * increment the refcount on the linked record. */
+                }
+                else
+                {
+                   /* The caller has never called drms_link_follow() on this original record, but the
+                    * linked record is in the cache, so drms_open_records() must have been called on
+                    * that linked record. In this case, we are creating a handle to the linked record
+                    * (via original rec), so we do need to increment the refcount on the linked record.*/
+                   child_drms_record->refcount++;
+                   drms_link->wasFollowed = 1;
+                }
+
+                /* key is the hash_key of the input (parent) record, val is pointer to linked record (because we do not
+                 * know if the linked record is cached or not) */
+                if (!hcon_member_lower(link_map, child_hash_key))
+                {
+                    /* no duplicate linked records */
+                    hcon_insert(link_map, child_hash_key, &child_drms_record);
+                    list_llinserttail(linked_records, &child_drms_record);
+                }
             }
             else
             {
-               /* The caller has never called drms_link_follow() on this original record, but the
-                * linked record is in the cache, so drms_open_records() must have been called on
-                * that linked record. In this case, we are creating a handle to the linked record
-                * (via original rec), so we do need to increment the refcount on the linked record.*/
-               child_drms_record->refcount++;
-               drms_link->wasFollowed = 1;
-            }
+                if (link_hash_map == NULL)
+                {
+                    link_hash_map = hcon_create(DRMS_MAXHASHKEYLEN, DRMS_MAXHASHKEYLEN, NULL, NULL, NULL, NULL, 0);
+                }
 
-            /* key is the hash_key of the input (parent) record, val is pointer to linked record (because we do not
-             * know if the linked record is cached or not) */
-            if (!hcon_member_lower(link_map, child_hash_key))
-            {
-                /* no duplicate linked records */
-                hcon_insert(link_map, child_hash_key, &child_drms_record);
-                list_llinserttail(linked_records, &child_drms_record);
+                /* Set refcount on linked record to 1. */
+                XASSERT(!drms_link->wasFollowed); /* Do not follow links more than once (for any given original
+                                              * record). */
+                drms_link->wasFollowed = 1;
+                /* need to store the target series and recnum - below we will call retrieve_records en masse, inserting
+                 * the results into link_map */
+                if (!hcon_member_lower(link_map, child_hash_key))
+                {
+                    /* no duplicate linked records */
+                    hcon_insert(link_hash_map, child_hash_key, child_hash_key);
+                }
             }
         }
-        else
+
+        if (link_hash_map != NULL)
         {
-            if (link_hash_map == NULL)
+            /* iterate through records_to_retrieve (link_map: child_hash_key --> child_drms_record) */
+            /* always caches linked record since we only download complete linked records (penultimate arg, 1,
+             * ensures that link info is downloaded from the DB) */
+            /* since all child records originated from a single link, they all belong to the same series
+             *
+             * no duplicate linked records */
+            link_map_retrieved = drms_retrieve_linked_recordset(env, child_template_record, link_hash_map, 1, &drms_status);
+
+            if (drms_status == DRMS_SUCCESS)
             {
-                link_hash_map = hcon_create(DRMS_MAXHASHKEYLEN, DRMS_MAXHASHKEYLEN, NULL, NULL, NULL, NULL, 0);
+                hiter_new(&hit, link_map_retrieved);
+                while ((child_drms_record_ptr = (DRMS_Record_t **)hiter_extgetnext(&hit, &child_hash_key_retrieved)) != NULL)
+                {
+                    child_drms_record = *child_drms_record_ptr;
+                    hcon_insert(link_map, child_hash_key_retrieved, &child_drms_record);
+
+                    /* no duplicate linked records */
+                    list_llinserttail(linked_records, &child_drms_record);
+                }
+
+                hiter_free(&hit);
+            }
+            else
+            {
+                internal_status = drms_status;
             }
 
-            /* Set refcount on linked record to 1. */
-            XASSERT(!drms_link->wasFollowed); /* Do not follow links more than once (for any given original
-                                          * record). */
-            drms_link->wasFollowed = 1;
-            /* need to store the target series and recnum - below we will call retrieve_records en masse, inserting
-             * the results into link_map */
-            if (!hcon_member_lower(link_map, child_hash_key))
-            {
-                /* no duplicate linked records */
-                hcon_insert(link_hash_map, child_hash_key, child_hash_key);
-            }
-        }
-    }
-
-    if (link_hash_map != NULL)
-    {
-        /* iterate through records_to_retrieve (link_map: child_hash_key --> child_drms_record) */
-        /* always caches linked record since we only download complete linked records (penultimate arg, 1,
-         * ensures that link info is downloaded from the DB) */
-        /* since all child records originated from a single link, they all belong to the same series
-         *
-         * no duplicate linked records */
-        link_map_retrieved = drms_retrieve_linked_recordset(env, child_template_record, link_hash_map, 1, &loop_status);
-
-        if (loop_status == DRMS_SUCCESS)
-        {
-            hiter_new(&hit, link_map_retrieved);
-            while ((child_drms_record_ptr = (DRMS_Record_t **)hiter_extgetnext(&hit, &child_hash_key_retrieved)) != NULL)
-            {
-                child_drms_record = *child_drms_record_ptr;
-                hcon_insert(link_map, child_hash_key_retrieved, &child_drms_record);
-
-                /* no duplicate linked records */
-                list_llinserttail(linked_records, &child_drms_record);
-            }
-
-            hiter_free(&hit);
+            hcon_destroy(&link_map_retrieved);
         }
 
-        hcon_destroy(&link_map_retrieved);
+        hcon_destroy(&link_hash_map);
     }
-
-    hcon_destroy(&link_hash_map);
 
     if (status)
     {
-        *status = loop_status;
+        *status = internal_status;
     }
 
     /* caller iterates through parent record set, and uses link_map to obtain handle to linked record */
@@ -523,7 +689,10 @@ static int drms_link_resolve(DRMS_Link_t *link)
 }
 
 
-/* Resolve a link to all matching DB ROWS in the child series. A static link only has one match. */
+/* Resolve a link to all matching DB ROWS in the child series. A static link only has one match.
+ *   `link` is a DRMS_Link_t * for a single record
+ *   `recnums` are the recnums that match the link's prime-key value
+ */
 static int drms_link_resolveall(DRMS_Link_t *link, int *n, long long **recnums)
 {
   char query[DRMS_MAXQUERYLEN+DRMS_MAXPRIMIDX*DRMS_MAXKEYNAMELEN], *p;

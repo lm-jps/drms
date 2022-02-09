@@ -210,6 +210,9 @@ xxx
 DRMS_Record_t *drms_alloc_record2(DRMS_Record_t *template,
 				  long long recnum, int *status);
 
+DRMS_Record_t *drms_alloc_record3(DRMS_Env_t *env, const char *series, long long recnum, void (*keyword_copy)(HContainer_t *dst, HContainer_t *src), void (*segment_copy)(HContainer_t *dst, HContainer_t *src), void (*link_copy)(HContainer_t *dst, HContainer_t *src), int *status);
+
+
 /* Generate a string containing a comma-separated list column
    names of the database table containing the meta-data of the
    given record. Return the number of columns in num_args. */
@@ -226,6 +229,8 @@ xxx
 */
 void drms_copy_record_struct(DRMS_Record_t *dst, DRMS_Record_t *src);
 /* Deep free the contents of a record structure. */
+
+void drms_copy_record_struct_ext(DRMS_Record_t *dst, DRMS_Record_t *src, void (*keyword_copy)(HContainer_t *dst, HContainer_t *src), void (*segment_copy)(HContainer_t *dst, HContainer_t *src), void (*link_copy)(HContainer_t *dst, HContainer_t *src));
 
 /**
 xxx

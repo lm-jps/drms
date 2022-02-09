@@ -169,6 +169,8 @@ static size_t partialRecordMemsize(DRMS_Record_t *rec, HContainer_t *links, HCon
 
 static int drms_populate_recordset(DRMS_Env_t *env, DRMS_Record_t *template_record, LinkedList_t *record_list, int initialize_links);
 
+static void copy_keywords_container(HContainer_t *dst, HContainer_t*src);
+
 /* A valid local spec is:
  *   ( <file> | <directory> ) { '[' <keyword1>, <keyword2>, <...> ']' }
  *
@@ -6034,8 +6036,11 @@ HContainer_t *drms_retrieve_linked_recordset(DRMS_Env_t *env, DRMS_Record_t *tem
 
         if ((child_drms_record = hcon_lookup(&env->record_cache, child_hash_key)) == NULL)
         {
+            /* ART - setting up record structs takes a HUGE amount of time; I'm guessing that
+             * one of the biggest expenses is going to come from copying hundreds of keyword
+             * structs for each record */
             /* set up data structure for dataset based on series template - puts in record cache */
-            if ((child_drms_record = drms_alloc_record(env, series, record_number, &drms_status)) == NULL)
+            if ((child_drms_record = drms_alloc_record3(env, series, record_number, copy_keywords_container, NULL, NULL, &drms_status)) == NULL)
             {
                 if (drms_status != DRMS_SUCCESS)
                 {
@@ -7804,6 +7809,44 @@ char *drms_query_string(DRMS_Env_t *env, const char *seriesname, char *where, co
   return rquery;
 }
 
+DRMS_Record_t *drms_alloc_record3(DRMS_Env_t *env, const char *series, long long recnum, void (*keyword_copy)(HContainer_t *dst, HContainer_t *src), void (*segment_copy)(HContainer_t *dst, HContainer_t *src), void (*link_copy)(HContainer_t *dst, HContainer_t *src), int *status)
+{
+    DRMS_Record_t *record = NULL;
+    DRMS_Record_t *template_record = NULL;
+    char hash_key[DRMS_MAXHASHKEYLEN] = {0};
+
+    template_record = drms_template_record(env, series, status);
+
+    /* Build hashkey <seriesname>_<recnum> */
+    drms_make_hashkey(hash_key, series, recnum);
+
+    /* Allocate a slot in the hash indexed record cache. */
+    record = (DRMS_Record_t *)hcon_allocslot(&env->record_cache, hash_key);
+
+    /* set refcount to initial value of 1 (because this is in the record cache) */
+    if (record)
+    {
+        /* Populate the slot with values from the template. */
+        drms_copy_record_struct_ext(record, template_record, keyword_copy, segment_copy, link_copy);
+
+        record->refcount = 1;
+        record->su = NULL;
+
+        /* Set pidx in links */
+        drms_link_getpidx(record);
+
+        /* Set new unique record number. */
+        record->recnum = recnum;
+    }
+
+    if (status)
+    {
+        *status = DRMS_SUCCESS;
+    }
+
+    return record;
+}
+
 
 /* Allocate a new record data structure and initialize it with
    meta-data from the given series template. "recnum" must contain
@@ -8427,8 +8470,64 @@ void drms_free_record_struct(DRMS_Record_t *rec)
     }
 }
 
+void copy_keywords_container(HContainer_t *dst, HContainer_t*src)
+{
+    Table_t *src_bin = NULL;
+    Table_t *dst_bin = NULL;
+    Entry_t *src_slot = NULL;
+    Entry_t *dst_slot = NULL;
+    int bin_index = -1;
+    int slot_index = -1;
+    const HContainerElement_t *src_hcon_element = NULL;
+    HContainerElement_t *dst_hcon_element = NULL;
+    DRMS_Keyword_t *keyword = NULL;
+
+    /* copy all HContainer_t fields */
+    *dst = *src;
+
+    /* alloc each hash bin (Table_t) */
+    dst->hash.list = calloc(dst->hash.hashprime, sizeof(Table_t));
+
+    /* initialize each hash bin (Table_t) */
+    for (bin_index = 0; bin_index < dst->hash.hashprime; bin_index++)
+    {
+        src_bin = &src->hash.list[bin_index];
+        dst_bin = &dst->hash.list[bin_index];;
+
+        table_init(src_bin->maxsize, dst_bin, dst->hash.not_equal);
+
+        /* we are going to create src_table->size Entry_t structs in the dst hash bin */
+        dst_bin->size = src_bin->size;
+
+        /* for each slot (Entry_t) in each bin (Table_t), copy key from `src` to `dst` */
+        for (slot_index = 0; slot_index < dst_bin->size; slot_index++)
+        {
+            src_slot = &src_bin->data[slot_index];
+            dst_slot = &dst_bin->data[slot_index];
+            XASSERT(src_slot && dst_slot);
+
+            if (src_slot && src_slot->key && *(char *)src_slot->key != '\0' && dst_slot)
+            {
+                src_hcon_element = src_slot->value;
+                dst_hcon_element = (HContainerElement_t *)calloc(1, sizeof(HContainerElement_t));
+
+                dst_hcon_element->key = strdup(src_slot->key);
+                dst_hcon_element->val = calloc(dst->datasize, sizeof(char)); /* DRMS_Keyword_t */
+
+                dst_slot->key = dst_hcon_element->key;
+                dst_slot->value = dst_hcon_element;
+
+                /* do not copy pointer to record, do not copy keyword value; these will
+                 * be filled in by drms_populate_records(); copy the info struct ptr */
+                keyword = (DRMS_Keyword_t *)dst_hcon_element->val;
+                keyword->info = ((DRMS_Keyword_t *)src_hcon_element->val)->info;
+            }
+        }
+    }
+}
+
 /* Copy the body of a record structure. */
-void drms_copy_record_struct(DRMS_Record_t *dst, DRMS_Record_t *src)
+void drms_copy_record_struct_ext(DRMS_Record_t *dst, DRMS_Record_t *src, void (*keyword_copy)(HContainer_t *dst, HContainer_t *src), void (*segment_copy)(HContainer_t *dst, HContainer_t *src), void (*link_copy)(HContainer_t *dst, HContainer_t *src))
 {
   HIterator_t hit;
   DRMS_Keyword_t *key;
@@ -8444,9 +8543,38 @@ void drms_copy_record_struct(DRMS_Record_t *dst, DRMS_Record_t *src)
      series info. */
   *dst = *src;
   /* Copy fields in segments, links and keywords. */
-  hcon_copy(&dst->keywords, &src->keywords);
-  hcon_copy(&dst->links, &src->links);
-  hcon_copy(&dst->segments, &src->segments);
+
+  /* since there can be many keywords, use a custom number of bins (choose a prime ~200 --> 211);
+   * also, initialize each bin to have 1 entry (the default is 0); this way we should have
+   * enough cells for each keyword */
+  // hcon_init_ext2(&dst->keywords, 211, 1, src->keywords.datasize, src->keywords.keysize, src->keywords.deep_free, src->keywords.deep_copy);
+  // hcon_copy_to_initialized(&dst->keywords, &src->keywords);
+  if (keyword_copy)
+  {
+      keyword_copy(&dst->keywords, &src->keywords);
+  }
+  else
+  {
+      hcon_copy(&dst->keywords, &src->keywords);
+  }
+
+  if (segment_copy)
+  {
+      segment_copy(&dst->segments, &src->segments);
+  }
+  else
+  {
+      hcon_copy(&dst->segments, &src->segments);
+  }
+
+  if (link_copy)
+  {
+      link_copy(&dst->links, &src->links);
+  }
+  else
+  {
+      hcon_copy(&dst->links, &src->links);
+  }
 
   /* copy aliases - the assignment above messes up the keyword_aliases field */
   // dst->keyword_aliases = (HContainer_t *)malloc(sizeof(HContainer_t));
@@ -8489,6 +8617,11 @@ void drms_copy_record_struct(DRMS_Record_t *dst, DRMS_Record_t *src)
   /* FIXME: Should we copy su struct here? */
 }
 
+/* Copy the body of a record structure. */
+void drms_copy_record_struct(DRMS_Record_t *dst, DRMS_Record_t *src)
+{
+    drms_copy_record_struct_ext(dst, src, NULL, NULL, NULL);
+}
 
 /* Populate the keyword, link, and data descriptors in the
  * record structure with the result from a database query.
