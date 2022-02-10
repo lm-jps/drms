@@ -123,7 +123,7 @@ DRMS_RecordSet_t *drms_retrieve_records(DRMS_Env_t *env,
                                         int *status);
 
 
-HContainer_t *drms_retrieve_linked_recordset(DRMS_Env_t *env, DRMS_Record_t *template_record, HContainer_t *link_hash_map, int initialize_links, int *status);
+HContainer_t *drms_retrieve_linked_recordset(DRMS_Env_t *env, DRMS_Record_t *template_record, DRMS_Record_t *parent_template_record, HContainer_t *link_hash_map, int initialize_links, int *status);
 
 /* Insert multiple records in the database using the
    fast bulk insert interface. */
@@ -210,7 +210,7 @@ xxx
 DRMS_Record_t *drms_alloc_record2(DRMS_Record_t *template,
 				  long long recnum, int *status);
 
-DRMS_Record_t *drms_alloc_record3(DRMS_Env_t *env, const char *series, long long recnum, void (*keyword_copy)(HContainer_t *dst, HContainer_t *src), void (*segment_copy)(HContainer_t *dst, HContainer_t *src), void (*link_copy)(HContainer_t *dst, HContainer_t *src), int *status);
+DRMS_Record_t *drms_alloc_record3(DRMS_Env_t *env, const char *series, long long recnum, void (*keyword_copy)(HContainer_t *dst, HContainer_t *src), void (*segment_copy)(HContainer_t *dst, HContainer_t *src), void (*link_copy)(HContainer_t *dst, HContainer_t *src), HContainer_t *keywords, int *status);
 
 
 /* Generate a string containing a comma-separated list column
@@ -230,7 +230,7 @@ xxx
 void drms_copy_record_struct(DRMS_Record_t *dst, DRMS_Record_t *src);
 /* Deep free the contents of a record structure. */
 
-void drms_copy_record_struct_ext(DRMS_Record_t *dst, DRMS_Record_t *src, void (*keyword_copy)(HContainer_t *dst, HContainer_t *src), void (*segment_copy)(HContainer_t *dst, HContainer_t *src), void (*link_copy)(HContainer_t *dst, HContainer_t *src));
+void drms_copy_record_struct_ext(DRMS_Record_t *dst, DRMS_Record_t *src, void (*keyword_copy)(HContainer_t *dst, HContainer_t *src), void (*segment_copy)(HContainer_t *dst, HContainer_t *src), void (*link_copy)(HContainer_t *dst, HContainer_t *src), HContainer_t *keywords);
 
 /**
 xxx
