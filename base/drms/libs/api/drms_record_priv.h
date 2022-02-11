@@ -122,8 +122,8 @@ DRMS_RecordSet_t *drms_retrieve_records(DRMS_Env_t *env,
                                         HContainer_t *segs,
                                         int *status);
 
+HContainer_t *drms_retrieve_linked_recordset(DRMS_Env_t *env, DRMS_Record_t *template_record, DRMS_Record_t *parent_template_record, HContainer_t *keywords, HContainer_t *link_hash_map, int initialize_links, int *status);
 
-HContainer_t *drms_retrieve_linked_recordset(DRMS_Env_t *env, DRMS_Record_t *template_record, DRMS_Record_t *parent_template_record, HContainer_t *link_hash_map, int initialize_links, int *status);
 
 /* Insert multiple records in the database using the
    fast bulk insert interface. */

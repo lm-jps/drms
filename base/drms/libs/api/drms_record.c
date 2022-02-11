@@ -5950,63 +5950,6 @@ static int link_map_sort(const void *he1, const void *he2)
     return 1;
 }
 
-/* the record set argument need not be a first record set (i.e., one that can have drms_close_records() called on ); to indicate
- * this, the argument is named `record_list` and is a LinkedList_t */
-int drms_cache_linked_records(DRMS_Env_t *env, DRMS_Record_t *template_record, LinkedList_t *record_list, HContainer_t *link_map)
-{
-    HIterator_t hit;
-    DRMS_Link_t *drms_link = NULL;
-    LinkedList_t *linked_records_list = NULL;
-    DRMS_Record_t *child_template_record = NULL;
-    int status = DRMS_SUCCESS;
-
-    hiter_new_sort(&hit, &template_record->links, linkListSort);
-    while((drms_link = (DRMS_Link_t *)hiter_getnext(&hit)) != NULL)
-    {
-        /* don't need pointers to the links; caller has handle to a record in rs, and when a linked
-         * value is needed, drms_link_follow will be called (the refcount will increase only if
-         * access to the linked record is made from a different record, one not in `rs`); the linked
-         * records that were followed from the records in `rs` will be freed when the records
-         * in `rs` are freed - for each record, all linked records will be obtained from the record
-         * cache using a hash key for the linked record
-         */
-        drms_link_getpidx(template_record); /* sets pidx needed by drms_link_follow_recordset() */
-
-        /* no duplicate linked records */
-        linked_records_list = drms_link_follow_recordset(env, template_record, record_list, drms_link->info->name, link_map, &status);
-
-        if (status != DRMS_SUCCESS)
-        {
-            break;
-        }
-
-        if (linked_records_list && list_llgetnitems(linked_records_list) > 0)
-        {
-            child_template_record = drms_template_record(env, drms_link->info->target_series, &status);
-
-            if (status != DRMS_SUCCESS)
-            {
-                break;
-            }
-
-            status = drms_cache_linked_records(env, child_template_record, linked_records_list, link_map);
-            /* no duplicate linked records because link_map key is record hash of linked record */
-
-            if (status != DRMS_SUCCESS)
-            {
-                break;
-            }
-        }
-
-        /* do not free linked records; they are in the cache and will be freed when drms_free_records(rs) is
-         * called */
-    }
-
-    hiter_free(&hit);
-
-    return status;
-}
-
 static int is_prime_number(int number)
 {
     int is_prime_number = -1;
@@ -6061,13 +6004,195 @@ static int next_prime_number(int number)
     return prime_number;
 }
 
+static HContainer_t *make_reachable_keywords(DRMS_Record_t *template_record, DRMS_Record_t *parent_template_record, HContainer_t *keywords)
+{
+    HContainer_t *reachable_keywords = NULL; /* value is DRMS_Keyword_t (not pointer)*/
+    int hash_prime_number = -1;
+    int keyword_index = -1;
+    void *hash_slot = NULL;
+    HIterator_t hit;
+    DRMS_Keyword_t *template_drms_keyword = NULL;
+    DRMS_Keyword_t *drms_keyword = NULL;
+    DRMS_Keyword_t *parent_drms_keyword = NULL;
+
+    reachable_keywords = calloc(1, sizeof(HContainer_t));
+
+    if (keywords)
+    {
+        hash_prime_number = next_prime_number(hcon_size(keywords) + 8);
+    }
+    else
+    {
+        hash_prime_number = next_prime_number(hcon_size(&template_record->keywords));
+    }
+
+    hcon_init_ext2(reachable_keywords, hash_prime_number, 1, sizeof(DRMS_Keyword_t), DRMS_MAXHASHKEYLEN, template_record->keywords.deep_free, template_record->keywords.deep_copy);
+
+    /* add prime-key keyword - can't use any records without these; these keyword will never be linked keywords */
+    for (keyword_index = 0; keyword_index < template_record->seriesinfo->pidx_num; keyword_index++)
+    {
+        drms_keyword = template_record->seriesinfo->pidx_keywords[keyword_index];
+
+        hash_slot = hcon_allocslot_lower(reachable_keywords, drms_keyword->info->name);
+        if (hash_slot)
+        {
+            memcpy(hash_slot, drms_keyword, reachable_keywords->datasize);
+
+            /* do not retain pointer to string; also, we do not want to keep any keyword values - they will be
+             * fetched from the DB in drms_populate_recordset() */
+            drms_keyword = (DRMS_Keyword_t *)hash_slot;
+            drms_keyword->value.longlong_val = 0;
+        }
+    }
+
+    /* add keywords that are targets of the parent link */
+    hiter_new(&hit, &parent_template_record->keywords);
+    while ((parent_drms_keyword = (DRMS_Keyword_t *)hiter_getnext(&hit)) != NULL)
+    {
+        if (keywords)
+        {
+            /* `keywords` filter is based upon parent keywords */
+            if (!hcon_member_lower(keywords, parent_drms_keyword->info->name))
+            {
+                continue;
+            }
+        }
+
+        if (parent_drms_keyword->info->islink)
+        {
+            template_drms_keyword = hcon_lookup_lower(&template_record->keywords, parent_drms_keyword->info->target_key);
+            XASSERT(template_drms_keyword);
+
+            if (!hcon_lookup_lower(reachable_keywords, template_drms_keyword->info->name))
+            {
+                hash_slot = hcon_allocslot_lower(reachable_keywords, template_drms_keyword->info->name);
+                if (hash_slot)
+                {
+                    memcpy(hash_slot, template_drms_keyword, reachable_keywords->datasize);
+
+                    /* do not retain pointer to string (we don't want to accidentally modify a template record's
+                     * string value); we do need to keep template constant-keyword values because they will be used
+                     * as the keyword value in the final record set returned to the caller; if the data type of
+                     * the constant-keyword value is a string, then we need to copy the keyword value since
+                     * it will be freed by template_record->keywords.deep_free() */
+                    drms_keyword = (DRMS_Keyword_t *)hash_slot;
+
+                    if (drms_keyword->info->type == DRMS_TYPE_STRING)
+                    {
+                        drms_keyword->value.string_val = strdup(template_drms_keyword->value.string_val);
+                    }
+                    else
+                    {
+                        drms_keyword->value = template_drms_keyword->value;
+                    }
+                }
+            }
+        }
+    }
+    hiter_free(&hit);
+
+    /* finally, add all external-prime keywords */
+    hiter_new(&hit, &template_record->keywords);
+    while ((drms_keyword = (DRMS_Keyword_t *)hiter_getnext(&hit)) != NULL)
+    {
+        if (drms_keyword_getextprime(drms_keyword))
+        {
+            if (!hcon_lookup_lower(reachable_keywords, drms_keyword->info->name))
+            {
+                hash_slot = hcon_allocslot_lower(reachable_keywords, drms_keyword->info->name);
+                if (hash_slot)
+                {
+                    memcpy(hash_slot, drms_keyword, reachable_keywords->datasize);
+
+                    /* do not retain pointer to string; also, we do not want to keep any keyword values - they will be
+                     * fetched from the DB in drms_populate_recordset() */
+                    drms_keyword = (DRMS_Keyword_t *)hash_slot;
+                    drms_keyword->value.longlong_val = 0;
+                }
+            }
+        }
+    }
+    hiter_free(&hit);
+
+    return reachable_keywords;
+}
+
+/* the record set argument need not be a first record set (i.e., one that can have drms_close_records() called on ); to indicate
+ * this, the argument is named `record_list` and is a LinkedList_t
+ *   `keywords` are the keywords from the template_record series that have been requested */
+static int cache_linked_records(DRMS_Env_t *env, DRMS_Record_t *template_record, LinkedList_t *record_list, HContainer_t *keywords, HContainer_t *link_map)
+{
+    HIterator_t hit;
+    DRMS_Link_t *drms_link = NULL;
+    DRMS_Keyword_t **drms_keyword_ptr = NULL;
+    DRMS_Keyword_t *drms_keyword = NULL;
+    LinkedList_t *linked_records_list = NULL;
+    DRMS_Record_t *child_template_record = NULL;
+    HContainer_t *child_keywords = NULL;
+    int status = DRMS_SUCCESS;
+
+    hiter_new_sort(&hit, &template_record->links, linkListSort);
+    while((drms_link = (DRMS_Link_t *)hiter_getnext(&hit)) != NULL)
+    {
+        /* don't need pointers to the links; caller has handle to a record in rs, and when a linked
+         * value is needed, drms_link_follow will be called (the refcount will increase only if
+         * access to the linked record is made from a different record, one not in `rs`); the linked
+         * records that were followed from the records in `rs` will be freed when the records
+         * in `rs` are freed - for each record, all linked records will be obtained from the record
+         * cache using a hash key for the linked record
+         */
+        drms_link_getpidx(template_record); /* sets pidx needed by drms_link_follow_recordset() */
+
+        /* no duplicate linked records */
+        linked_records_list = drms_link_follow_recordset(env, template_record, record_list, drms_link->info->name, keywords, link_map, &status);
+
+        if (status != DRMS_SUCCESS)
+        {
+            break;
+        }
+
+        if (linked_records_list && list_llgetnitems(linked_records_list) > 0)
+        {
+            child_template_record = drms_template_record(env, drms_link->info->target_series, &status);
+
+            if (status != DRMS_SUCCESS)
+            {
+                break;
+            }
+
+            if (keywords)
+            {
+                /* filter child keywords with the list of keywords in the parent */
+                child_keywords = make_reachable_keywords(child_template_record, template_record, keywords);
+            }
+
+            status = cache_linked_records(env, child_template_record, linked_records_list, child_keywords, link_map);
+            /* no duplicate linked records because link_map key is record hash of linked record */
+
+            hcon_destroy(&child_keywords);
+
+            if (status != DRMS_SUCCESS)
+            {
+                break;
+            }
+        }
+
+        /* do not free linked records; they are in the cache and will be freed when drms_free_records(rs) is
+         * called */
+    }
+
+    hiter_free(&hit);
+
+    return status;
+}
+
 /* ALWAYS cache complete linked records, because we do not know which keywords a module will need
  * (links from the parent to the child will be for only a subset of keywords, but the
  * module might try to access other keywords too)
  *
  * no duplicates are returned in link_map
  */
-HContainer_t *drms_retrieve_linked_recordset(DRMS_Env_t *env, DRMS_Record_t *template_record, DRMS_Record_t *parent_template_record, HContainer_t *link_hash_map, int initialize_links, int *status)
+HContainer_t *drms_retrieve_linked_recordset(DRMS_Env_t *env, DRMS_Record_t *template_record, DRMS_Record_t *parent_template_record, HContainer_t *keywords, HContainer_t *link_hash_map, int initialize_links, int *status)
 {
     HContainer_t *reachable_keywords = NULL; /* value is DRMS_Keyword_t (not pointer)*/
     int hash_prime_number = -1;
@@ -6091,79 +6216,7 @@ HContainer_t *drms_retrieve_linked_recordset(DRMS_Env_t *env, DRMS_Record_t *tem
      *
      * copy from this filtered set of keywords instead of the keywords in the template record
      */
-    reachable_keywords = calloc(1, sizeof(HContainer_t));
-    hash_prime_number = next_prime_number(hcon_size(&template_record->keywords));
-    hcon_init_ext2(reachable_keywords, hash_prime_number, 1, sizeof(DRMS_Keyword_t), DRMS_MAXHASHKEYLEN, template_record->keywords.deep_free, template_record->keywords.deep_copy);
-
-    /* add prime-key keyword - can't use any records without these; these keyword will never be linked keywords */
-    for (keyword_index = 0; keyword_index < template_record->seriesinfo->pidx_num; keyword_index++)
-    {
-        drms_keyword = template_record->seriesinfo->pidx_keywords[keyword_index];
-
-        // hcon_insert_lower(reachable_keywords, drms_keyword->info->name, drms_keyword);
-        hash_slot = hcon_allocslot_lower(reachable_keywords, drms_keyword->info->name);
-        if (hash_slot)
-        {
-            memcpy(hash_slot, drms_keyword, reachable_keywords->datasize);
-
-            /* do not retain pointer to string; also, we do not want to keep any keyword values - they will be
-             * fetched from the DB in drms_populate_recordset() */
-            drms_keyword = (DRMS_Keyword_t *)hash_slot;
-            drms_keyword->value.longlong_val = 0;
-        }
-    }
-
-    /* add keywords that are targets of the parent link */
-    hiter_new(&hit, &parent_template_record->keywords);
-    while ((parent_drms_keyword = (DRMS_Keyword_t *)hiter_getnext(&hit)) != NULL)
-    {
-        if (parent_drms_keyword->info->islink)
-        {
-            drms_keyword = hcon_lookup_lower(&template_record->keywords, parent_drms_keyword->info->target_key);
-            XASSERT(drms_keyword);
-
-            // hcon_insert_lower(reachable_keywords, key, drms_keyword);
-            if (!hcon_lookup_lower(reachable_keywords, drms_keyword->info->name))
-            {
-                hash_slot = hcon_allocslot_lower(reachable_keywords, drms_keyword->info->name);
-                if (hash_slot)
-                {
-                    memcpy(hash_slot, drms_keyword, reachable_keywords->datasize);
-
-                    /* do not retain pointer to string; also, we do not want to keep any keyword values - they will be
-                     * fetched from the DB in drms_populate_recordset() */
-                    drms_keyword = (DRMS_Keyword_t *)hash_slot;
-                    drms_keyword->value.longlong_val = 0;
-                }
-            }
-        }
-    }
-    hiter_free(&hit);
-
-    /* finally, add all external-prime keywords */
-    hiter_new(&hit, &template_record->keywords);
-    while ((drms_keyword = (DRMS_Keyword_t *)hiter_getnext(&hit)) != NULL)
-    {
-        if (drms_keyword_getextprime(drms_keyword))
-        {
-            // hcon_insert_lower(reachable_keywords, key, drms_keyword);
-            if (!hcon_lookup_lower(reachable_keywords, drms_keyword->info->name))
-            {
-                hash_slot = hcon_allocslot_lower(reachable_keywords, drms_keyword->info->name);
-                if (hash_slot)
-                {
-                    memcpy(hash_slot, drms_keyword, reachable_keywords->datasize);
-
-                    /* do not retain pointer to string; also, we do not want to keep any keyword values - they will be
-                     * fetched from the DB in drms_populate_recordset() */
-                    drms_keyword = (DRMS_Keyword_t *)hash_slot;
-                    drms_keyword->value.longlong_val = 0;
-                }
-            }
-        }
-    }
-    hiter_free(&hit);
-
+    reachable_keywords = make_reachable_keywords(template_record, parent_template_record, keywords);
     drms_record_list = list_llcreate(sizeof(DRMS_Record_t *), NULL);
     XASSERT(drms_record_list);
 
@@ -6725,7 +6778,7 @@ DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *se
                 if (record_list)
                 {
                     /* no duplicate linked records */
-                    stat = drms_cache_linked_records(env, template, record_list, link_map);
+                    stat = cache_linked_records(env, template, record_list, keys, link_map);
                     list_llfree(&record_list);
                 }
                 else
@@ -8659,10 +8712,23 @@ void copy_keywords_container(HContainer_t *dst, HContainer_t*src)
                 dst_slot->key = dst_hcon_element->key;
                 dst_slot->value = dst_hcon_element;
 
-                /* do not copy pointer to record, do not copy keyword value; these will
-                 * be filled in by drms_populate_records(); copy the info struct ptr */
+                /* do not copy pointer to record, and do not copy non-constant keyword
+                 * values - these will be filled in by drms_populate_records(); copy
+                 * the values for constant keywords though (do it for all keyword since
+                 * there might be some part of the code that uses these values that
+                 * I'm not aware of); if the value to be copied is a string, then that
+                 * needs to be duped; copy the info struct ptr */
                 keyword = (DRMS_Keyword_t *)dst_hcon_element->val;
                 keyword->info = ((DRMS_Keyword_t *)src_hcon_element->val)->info;
+
+                if (keyword->info->type == DRMS_TYPE_STRING)
+                {
+                    keyword->value.string_val = strdup(((DRMS_Keyword_t *)src_hcon_element->val)->value.string_val);
+                }
+                else
+                {
+                    keyword->value = ((DRMS_Keyword_t *)src_hcon_element->val)->value;
+                }
             }
         }
     }

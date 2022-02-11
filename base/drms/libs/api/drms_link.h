@@ -12,7 +12,7 @@
 DRMS_Record_t *drms_link_follow(DRMS_Record_t *rec, const char *linkname,
 				int *status);
 
-LinkedList_t *drms_link_follow_recordset(DRMS_Env_t *env, DRMS_Record_t *template_record, LinkedList_t *record_list, const char *link, HContainer_t *link_map, int *status);
+LinkedList_t *drms_link_follow_recordset(DRMS_Env_t *env, DRMS_Record_t *template_record, LinkedList_t *record_list, const char *link, HContainer_t *keywords, HContainer_t *link_map, int *status);
 
 void drms_link_print(DRMS_Link_t *link);
 void drms_link_fprint(FILE *linkfile, DRMS_Link_t *link);
