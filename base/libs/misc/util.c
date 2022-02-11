@@ -1149,7 +1149,7 @@ int base_doubleIsEqual(const double val1, const double val2)
     union
     {
         int64_t integer;
-        float doublePrecFP;
+        double doublePrecFP;
     } conv1, conv2;
 
     conv1.doublePrecFP = val1;
