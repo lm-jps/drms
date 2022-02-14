@@ -6195,7 +6195,6 @@ static int cache_linked_records(DRMS_Env_t *env, DRMS_Record_t *template_record,
 HContainer_t *drms_retrieve_linked_recordset(DRMS_Env_t *env, DRMS_Record_t *template_record, DRMS_Record_t *parent_template_record, HContainer_t *keywords, HContainer_t *link_hash_map, int initialize_links, int *status)
 {
     HContainer_t *reachable_keywords = NULL; /* value is DRMS_Keyword_t (not pointer)*/
-    int hash_prime_number = -1;
     int keyword_index = -1;
     HIterator_t hit;
     DRMS_Keyword_t *drms_keyword = NULL;
@@ -6397,7 +6396,7 @@ static LinkedList_t *faux_record_set_to_list(DRMS_RecordSet_t *faux_record_set)
  * record cache.
  */
 
-/* `keys` - an hcontainer of keyword structs
+/* `keys` - an hcontainer of DRMS_Keyword_t pointers (to template keywords)
  * `where` -
  */
 DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *seriesname, char *where, const char *pkwhere, const char *npkwhere, int filter, int mixed, const char *qoverride, DB_Binary_Result_t *br_override, int allvers, int nrecs, HContainer_t *firstlast, HContainer_t *pkwhereNFL, int recnumq, int cursor, HContainer_t *links, /* Links to fetch from db. */ HContainer_t *keys, /* Keys to fetch from db. */ HContainer_t *segs, /* Segs to fetch from db. */ int initialize_links, int *status)
@@ -6420,6 +6419,12 @@ DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *se
     DRMS_Record_t **drms_record_ptr = NULL;
     HContainer_t *link_map = NULL;
     LinkedList_t *record_list = NULL;
+    HContainer_t *template_keywords_subset = NULL;
+    int hash_prime_number = -1;
+    DRMS_Keyword_t *template_keyword = NULL;
+    DRMS_Keyword_t *drms_keyword = NULL;
+    DRMS_Keyword_t **keyword_ptr = NULL;
+    void *hash_slot = NULL;
 
     CHECKNULL_STAT(env,status);
 
@@ -6522,6 +6527,52 @@ DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *se
     rs->n = qres->num_rows;
     rs->records=malloc(rs->n*sizeof(DRMS_Record_t*));
     XASSERT(rs->records);
+
+    if (keys && hcon_size(keys) > 0)
+    {
+        template_keywords_subset = calloc(1, sizeof(HContainer_t));
+
+        hash_prime_number = next_prime_number(hcon_size(&template->keywords) + 8);
+        hcon_init_ext2(template_keywords_subset, hash_prime_number, 1, sizeof(DRMS_Keyword_t), DRMS_MAXHASHKEYLEN, template->keywords.deep_free, template->keywords.deep_copy);
+
+        hiter_new(&hit, keys);
+        while ((keyword_ptr = (DRMS_Keyword_t **)hiter_getnext(&hit)) != NULL)
+        {
+            template_keyword = *keyword_ptr;
+
+            hash_slot = hcon_allocslot_lower(template_keywords_subset, template_keyword->info->name);
+            if (hash_slot)
+            {
+                memcpy(hash_slot, template_keyword, template_keywords_subset->datasize);
+
+                /* do not retain pointer to string (we don't want to accidentally modify a template record's
+                 * string value); we do need to keep template constant-keyword values because they will be used
+                 * as the keyword value in the final record set returned to the caller; if the data type of
+                 * the constant-keyword value is a string, then we need to copy the keyword value since
+                 * it will be freed by template_record->keywords.deep_free() */
+                drms_keyword = (DRMS_Keyword_t *)hash_slot;
+
+                if (drms_keyword->info->type == DRMS_TYPE_STRING)
+                {
+                    drms_keyword->value.string_val = strdup(template_keyword->value.string_val);
+                }
+                else
+                {
+                    drms_keyword->value = template_keyword->value;
+                }
+            }
+        }
+        hiter_free(&hit);
+    }
+
+
+
+
+
+
+
+
+
     for (i=0; i<rs->n; i++)
     {
 #ifdef DEBUG
@@ -6565,7 +6616,20 @@ DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *se
 
             /* Initialize the link, keyword, and segment info. */
             hcon_init(&rs->records[i]->links, sizeof(DRMS_Link_t), DRMS_MAXHASHKEYLEN, (void (*)(const void *))drms_free_link_struct, (void (*)(const void *, const void *))drms_copy_link_struct);
-            hcon_init(&rs->records[i]->keywords, sizeof(DRMS_Keyword_t), DRMS_MAXHASHKEYLEN, (void (*)(const void *))drms_free_keyword_struct, (void (*)(const void *, const void *))drms_copy_keyword_struct);
+
+            /* copy_keywords_container() will copy over structure from template->keywords, allocating the memory
+             * needed to hold hash bins and slots as determined by the usage of template->keywords; so do not
+             * initialize the HContainer_t here
+             *
+             * however, keys stores DRMS_Keyword_t *s, but copy_keywords_container() needs a container that stores
+             * DRMS_Keyword_ts; so create a new container of keys that stores DRMS_Keyword_ts - we need to do this
+             * only once; use a better hashprime for this new container
+             */
+            if (keys && hcon_size(keys) == 0)
+            {
+                hcon_init(&rs->records[i]->keywords, sizeof(DRMS_Keyword_t), DRMS_MAXHASHKEYLEN, (void (*)(const void *))drms_free_keyword_struct, (void (*)(const void *, const void *))drms_copy_keyword_struct);
+            }
+
             hcon_init(&rs->records[i]->segments, sizeof(DRMS_Segment_t), DRMS_MAXHASHKEYLEN, (void (*)(const void *))drms_free_segment_struct, (void (*)(const void *, const void *))drms_copy_segment_struct);
 
             rs->records[i]->keyword_aliases = hcon_create(sizeof(DRMS_Keyword_t *), DRMS_MAXKEYNAMELEN, NULL, NULL, NULL, NULL, 0);
@@ -6610,24 +6674,7 @@ DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *se
             }
             else if (hcon_size(keys) > 0)
             {
-                hiter_new_sort(&hit, keys, keyListSort);
-                while((pkey = (DRMS_Keyword_t **)hiter_extgetnext(&hit, &keyVal)) != NULL)
-                {
-                    key = *pkey;
-
-                    /* Copy the keyword struct. */
-                    hcon_insert(&(rs->records[i]->keywords), keyVal, key);
-
-                    if (key->info->type == DRMS_TYPE_STRING)
-                    {
-                        /* Don't have a handle to the new record's keyword struct. */
-                        strVal = key->value.string_val;
-                        key = hcon_lookup_lower(&(rs->records[i]->keywords), keyVal);
-                        XASSERT(key);
-                        key->value.string_val = strdup(strVal);
-                    }
-                }
-                hiter_free(&hit);
+                copy_keywords_container(&(rs->records[i]->keywords), template_keywords_subset);
             }
 
             /* Iterate through all keywords and make them point to rs->records[i]. */
@@ -6635,20 +6682,24 @@ DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *se
             while((key = (DRMS_Keyword_t *)hiter_getnext(&hit)) != NULL)
             {
                 key->record = rs->records[i];
+            }
+            hiter_free(&hit);
 
-                if (!drms_keyword_getimplicit(key))
+            if (rs->records[i]->keyword_aliases)
+            {
+                hiter_new(&hit, template->keyword_aliases);
+                while ((keyword_ptr = (DRMS_Keyword_t **)hiter_getnext(&hit)) != NULL)
                 {
-                    /* instantiate any aliases for FITS header output */
-                    fitsexport_getextkeyname(key, alias, sizeof(alias));
-                    if (*alias != '\0' && !hcon_member_lower(&key->record->keywords, alias))
+                    template_keyword = *keyword_ptr;
+
+                    drms_keyword = hcon_lookup_lower(&rs->records[i]->keywords, template_keyword->info->name);
+                    if (drms_keyword)
                     {
-                        hcon_insert_lower(key->record->keyword_aliases, alias, &key);
-                        *alias = '\0';
+                        hcon_insert_lower(rs->records[i]->keyword_aliases, template_keyword->info->name, &drms_keyword);
                     }
                 }
+                hiter_free(&hit);
             }
-
-            hiter_free(&hit);
 
             /* Copy segment structs from template. segs == 0 ==> all segs, hcon_size(segs) == 0 ==> no segs. */
             if (!segs)
@@ -6822,6 +6873,8 @@ DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *se
   rs->env = env;
   rs->ss_template_keys = NULL;
   rs->ss_template_segs = NULL;
+
+  hcon_destroy(&template_keywords_subset);
 
   db_free_binary_result(qres);
   free(query);
@@ -8687,7 +8740,7 @@ void copy_keywords_container(HContainer_t *dst, HContainer_t*src)
     for (bin_index = 0; bin_index < dst->hash.hashprime; bin_index++)
     {
         src_bin = &src->hash.list[bin_index];
-        dst_bin = &dst->hash.list[bin_index];;
+        dst_bin = &dst->hash.list[bin_index];
 
         table_init(src_bin->maxsize, dst_bin, dst->hash.not_equal);
 
@@ -8798,6 +8851,7 @@ void drms_copy_record_struct_ext(DRMS_Record_t *dst, DRMS_Record_t *src, void (*
   /* copy aliases - the assignment above messes up the keyword_aliases field */
   // dst->keyword_aliases = (HContainer_t *)malloc(sizeof(HContainer_t));
   // hcon_copy(dst->keyword_aliases, src->keyword_aliases);
+
   dst->keyword_aliases = hcon_create(sizeof(DRMS_Keyword_t *), DRMS_MAXKEYNAMELEN, NULL, NULL, NULL, NULL, 0);
 
   if (dst->keyword_aliases)
