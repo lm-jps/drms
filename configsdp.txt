@@ -259,6 +259,8 @@ PY_LIBS:AVX             /home/jsoc/anaconda3/lib
 PY_HOME:X86_64          /home/jsoc/anaconda3
 PY_HOME:AVX             /home/jsoc/anaconda3
 
+MEX_CC                  /usr/bin/gcc
+
 
 # Set custom make file to tell the make system that the gcc cfitsio library is called
 # libcfitsio_gcc.a
