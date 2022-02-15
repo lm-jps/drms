@@ -5593,6 +5593,8 @@ void drms_free_records(DRMS_RecordSet_t *rs)
         rs->ss_template_segs = NULL;
     }
 
+    list_llfree(&rs->linked_records_list);
+
     /* Do NOT free rs->env. That is still being used. */
     /* Must NOT set ss_n to 0 before calling drms_free_cursor(). */
     rs->ss_n = 0;
@@ -5660,6 +5662,7 @@ DRMS_Record_t *drms_clone_record(DRMS_Record_t *oldrec,
   rs_old.env = oldrec->env;
   rs_old.ss_template_keys = NULL;
   rs_old.ss_template_segs = NULL;
+  rs_old.linked_records_list = NULL;
 
   rs = drms_clone_records(&rs_old, lifetime, mode, status);
   if (rs && (rs->n==1))
@@ -6874,6 +6877,7 @@ DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *se
   rs->env = env;
   rs->ss_template_keys = NULL;
   rs->ss_template_segs = NULL;
+  rs->linked_records_list = NULL;
 
   hcon_destroy(&template_keywords_subset);
 
@@ -8945,6 +8949,7 @@ int drms_populate_record(DRMS_Env_t *env, DRMS_Record_t *rec, long long recnum, 
   rs.env = env;
   rs.ss_template_keys = NULL;
   rs.ss_template_segs = NULL;
+  rs.linked_records_list = NULL;
 
   stat = drms_populate_records(env, &rs, qres, openLinks);
   db_free_binary_result(qres);
@@ -9079,6 +9084,7 @@ int drms_populate_recordset(DRMS_Env_t *env, DRMS_Record_t *template_record, Lin
         record_set.env = env;
         record_set.ss_template_keys = NULL;
         record_set.ss_template_segs = NULL;
+        record_set.linked_records_list = NULL;
 
         status = drms_populate_records(env, &record_set, query_result, initialize_links);
     }
@@ -12863,6 +12869,8 @@ int drms_merge_record(DRMS_RecordSet_t *rs, DRMS_Record_t *rec)
                  }
              }
          }
+
+         list_llfree(&rs->linked_records_list);
 
          /* Do not free rs->env. It is still being used. */
       } /* rs->ss_n > 0 */

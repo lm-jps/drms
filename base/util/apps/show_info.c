@@ -2318,14 +2318,6 @@ int DoIt(void)
 
     /* we want to pass to drms_open_records2() a list of keywords - even an empty list; otherwise,
      * drms_open_records2() will fetch all keyword columns */
-    validKeysSpecified = list_llcreate(DRMS_MAXKEYNAMELEN, NULL);
-    if (!validKeysSpecified)
-    {
-        fprintf(stderr, "out of memory\n");
-        show_info_return(1);
-    }
-
-    hash_init(&validKeysHT, 89, 0, (int (*)(const void *, const void *))strcmp, hash_universal_hash);
 
   web_query = strdup (cmdparams_get_str (&cmdparams, "QUERY_STRING", NULL));
   from_web = strcmp (web_query, "Not Specified") != 0;
@@ -2781,20 +2773,24 @@ int DoIt(void)
                                   parsedrs = list_llcreate(sizeof(SIParts_t), (ListFreeFn_t)FreeParts);
                               }
 
-                              apart.series = strdup(snames[iset]);
-                              if (filter)
-                              {
-                                  size_t sz = strlen(filter) + 1;
 
-                                  apart.filter = strdup(filter);
-                                  apart.filter = base_strcatalloc(apart.filter, autobangstr, &sz);
-                              }
-                              else
+                              if (parsedrs)
                               {
-                                  apart.filter = NULL;
-                              }
+                                  apart.series = strdup(snames[iset]);
+                                  if (filter)
+                                  {
+                                      size_t sz = strlen(filter) + 1;
 
-                              list_llinserttail(parsedrs, &apart);
+                                      apart.filter = strdup(filter);
+                                      apart.filter = base_strcatalloc(apart.filter, autobangstr, &sz);
+                                  }
+                                  else
+                                  {
+                                      apart.filter = NULL;
+                                  }
+
+                                  list_llinserttail(parsedrs, &apart);
+                              }
                           }
 
                           free(filter);
@@ -2839,17 +2835,20 @@ int DoIt(void)
                                   parsedrs = list_llcreate(sizeof(SIParts_t), (ListFreeFn_t)FreeParts);
                               }
 
-                              apart.series = strdup(templrec->seriesinfo->seriesname);
-                              if (filter)
+                              if (parsedrs)
                               {
-                                  apart.filter = strdup(filter);
-                              }
-                              else
-                              {
-                                  apart.filter = NULL;
-                              }
+                                  apart.series = strdup(templrec->seriesinfo->seriesname);
+                                  if (filter)
+                                  {
+                                      apart.filter = strdup(filter);
+                                  }
+                                  else
+                                  {
+                                      apart.filter = NULL;
+                                  }
 
-                              list_llinserttail(parsedrs, &apart);
+                                  list_llinserttail(parsedrs, &apart);
+                              }
                           }
 
                           free(filter);
@@ -3492,6 +3491,13 @@ int DoIt(void)
         /* max_recs == 0 --> use 'cursor'
          * max_recs != 0 --> call drms_open_nrecords() internally
          */
+        if (!validKeysSpecified)
+        {
+            /* cannot be NULL in call to drms_open_records2(), otherwise */
+            validKeysSpecified = list_llcreate(DRMS_MAXKEYNAMELEN, NULL);
+            hash_init(&validKeysHT, 89, 0, (int (*)(const void *, const void *))strcmp, hash_universal_hash);
+        }
+
         recordset = drms_open_records2(drms_env, in, validKeysSpecified, max_recs == 0, max_recs, retrieveLinks, &status);
 
         if (validKeysSpecified)
@@ -3698,12 +3704,6 @@ int DoIt(void)
     {
         hash_free(&segsHT);
         list_llfree(&segsSpecified);
-    }
-
-    if (validKeysSpecified)
-    {
-        hash_free(&validKeysHT);
-        list_llfree(&validKeysSpecified);
     }
 
     if (keysSpecified)

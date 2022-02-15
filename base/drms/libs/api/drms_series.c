@@ -5407,6 +5407,12 @@ char *drms_series_nrecords_querystringFL(DRMS_Env_t *env, const char *series, co
                     pkey[iloop] = NULL;
                 }
             }
+
+            if (pkeylist)
+            {
+                free(pkeylist);
+                pkeylist = NULL;
+            }
         }
         else
         {
@@ -5419,6 +5425,11 @@ char *drms_series_nrecords_querystringFL(DRMS_Env_t *env, const char *series, co
     else
     {
         istat = DRMS_ERROR_OUTOFMEMORY;
+    }
+
+    if (lasttab)
+    {
+        free(lasttab);
     }
 
     if (status)
@@ -6282,6 +6293,11 @@ char *drms_series_all_querystringFL(DRMS_Env_t *env, const char *series, const c
         lcseries = NULL;
     }
 
+    if (lasttab)
+    {
+        free(lasttab);
+    }
+
     if (status)
     {
         *status = istat;
@@ -7008,6 +7024,11 @@ char *drms_series_n_querystringFL(DRMS_Env_t *env, const char *series, const cha
         }
 
         free(lcseries);
+    }
+
+    if (lasttab)
+    {
+        free(lasttab);
     }
 
     if (status)
