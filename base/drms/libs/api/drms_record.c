@@ -6134,7 +6134,7 @@ static int cache_linked_records(DRMS_Env_t *env, DRMS_Record_t *template_record,
     HContainer_t *child_keywords = NULL;
     int status = DRMS_SUCCESS;
 
-    hiter_new_sort(&hit, &template_record->links, linkListSort);
+    hiter_new_sort(&hit, &template_record->links, drms_link_ranksort);
     while((drms_link = (DRMS_Link_t *)hiter_getnext(&hit)) != NULL)
     {
         /* don't need pointers to the links; caller has handle to a record in rs, and when a linked
