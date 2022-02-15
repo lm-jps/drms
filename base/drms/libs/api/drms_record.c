@@ -5895,8 +5895,8 @@ DRMS_Record_t *drms_retrieve_record(DRMS_Env_t *env, const char *seriesname,
 
 static int link_hash_map_sort(const void *he1, const void *he2)
 {
-    char *hash_a_str = (char *)hcon_getval(*((HContainerElement_t **)he1));
-    char *hash_b_str = (char *)hcon_getval(*((HContainerElement_t **)he2));
+    char *hash_a_str = (char *)(*((HContainerElement_t **)he1))->key;
+    char *hash_b_str = (char *)(*((HContainerElement_t **)he2))->key;
     char series[DRMS_MAXSERIESNAMELEN] = {0};
     long long a_num = -1;
     long long b_num = -1;
@@ -5921,8 +5921,8 @@ static int link_hash_map_sort(const void *he1, const void *he2)
 
 static int link_map_sort(const void *he1, const void *he2)
 {
-    char *hash_a_str = (char *)hcon_getval(*((HContainerElement_t **)he1));
-    char *hash_b_str = (char *)hcon_getval(*((HContainerElement_t **)he2));
+    char *hash_a_str = (char *)(*((HContainerElement_t **)he1))->key;
+    char *hash_b_str = (char *)(*((HContainerElement_t **)he2))->key;
     char series_a[DRMS_MAXSERIESNAMELEN] = {0};
     char series_b[DRMS_MAXSERIESNAMELEN] = {0};
     long long a_num = -1;
@@ -6846,7 +6846,7 @@ DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *se
                 {
                     rs->linked_records_list = list_llcreate(sizeof(DRMS_Record_t *), NULL);
 
-                    /* link_map: rec hash --> record could contain records from many series, so must
+                    /* link_map: rec usable hash --> record could contain records from many series, so must
                      * use a sort function other than link_hash_map_sort(); since
                      * this is a hash array, there are no duplicate linked records in link_map */
                     hiter_new_sort(&hit, link_map, link_map_sort);
