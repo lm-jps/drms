@@ -5900,8 +5900,8 @@ static int link_hash_map_sort(const void *he1, const void *he2)
 
     XASSERT(hash_a_str && hash_b_str);
 
-    sscanf(hash_a_str, "%[^_]_%lld", series, &a_num);
-    sscanf(hash_b_str, "%[^_]_%lld", series, &b_num);
+    sscanf(hash_a_str, "%[^@]@%lld", series, &a_num);
+    sscanf(hash_b_str, "%[^@]@%lld", series, &b_num);
 
     if (a_num < b_num)
     {
@@ -5928,8 +5928,8 @@ static int link_map_sort(const void *he1, const void *he2)
 
     XASSERT(hash_a_str && hash_b_str);
 
-    sscanf(hash_a_str, "%[^_]_%lld", series_a, &a_num);
-    sscanf(hash_b_str, "%[^_]_%lld", series_b, &b_num);
+    sscanf(hash_a_str, "%[^@]@%lld", series_a, &a_num);
+    sscanf(hash_b_str, "%[^@]@%lld", series_b, &b_num);
 
     series_comparison = strcasecmp(series_a, series_b);
     if (series_comparison != 0)
@@ -6203,6 +6203,7 @@ HContainer_t *drms_retrieve_linked_recordset(DRMS_Env_t *env, DRMS_Record_t *tem
     char *child_hash_key = NULL;
     DRMS_Record_t *child_drms_record = NULL;
     LinkedList_t *drms_record_list = NULL; /* records whose info will be downloaded from the DB */
+    const char *child_usable_hash_key = NULL;
     int drms_status = DRMS_SUCCESS;
     int loop_status = DRMS_SUCCESS;
     HContainer_t *link_map = hcon_create(sizeof(DRMS_Record_t *), DRMS_MAXHASHKEYLEN, NULL, NULL, NULL, NULL, 0);
@@ -6222,9 +6223,9 @@ HContainer_t *drms_retrieve_linked_recordset(DRMS_Env_t *env, DRMS_Record_t *tem
     /* since all child records originated from a single link, they all belong to the same series; so
      * the sorting will be numeric */
     hiter_new_sort(&hit, link_hash_map, link_hash_map_sort);
-    while ((child_hash_key = (char *)hiter_getnext(&hit)) != NULL)
+    while ((child_hash_key = (char *)hiter_extgetnext(&hit, &child_usable_hash_key)) != NULL)
     {
-        sscanf(child_hash_key, "%[^_]_%lld", series, &record_number);
+        sscanf(child_usable_hash_key, "%[^@]@%lld", series, &record_number);
 
         if ((child_drms_record = hcon_lookup(&env->record_cache, child_hash_key)) == NULL)
         {
@@ -6252,7 +6253,7 @@ HContainer_t *drms_retrieve_linked_recordset(DRMS_Env_t *env, DRMS_Record_t *tem
             child_drms_record->refcount++;
         }
 
-        hcon_insert(link_map, child_hash_key, &child_drms_record);
+        hcon_insert(link_map, child_usable_hash_key, &child_drms_record);
     }
 
     hiter_free(&hit);

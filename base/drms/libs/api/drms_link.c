@@ -497,8 +497,18 @@ static int drms_link_determine_recnum(DRMS_Env_t *env, const char *link, DRMS_Re
 
     return status;
 }
+
+static inline void drms_link_make_usable_hashkey(char *usable_hash_key, const char *series, long long record_number)
+{
+   char series_lower[DRMS_MAXSERIESNAMELEN] = {0};
+
+   snprintf(series_lower, sizeof(series_lower), "%s", series);
+   strtolower(series_lower);
+   snprintf(usable_hash_key, DRMS_MAXHASHKEYLEN, "%s@%020lld", series_lower, record_number);
+}
+
 /* recursively follows all links for a record set;
- * returns 'link_map' that maps the child record hash to child linked record */
+ * returns 'link_map' that maps the child record USABLE hash to child linked record */
  /* the record set argument need not be a first record set (i.e., one that can have drms_close_records() called on ); to indicate
   * this, the argument is named `record_list` and is a LinkedList_t
   *
@@ -511,6 +521,8 @@ LinkedList_t *drms_link_follow_recordset(DRMS_Env_t *env, DRMS_Record_t *templat
     DRMS_Link_t *drms_link = NULL;
     char parent_hash_key[DRMS_MAXHASHKEYLEN] = {0};
     char child_hash_key[DRMS_MAXHASHKEYLEN] = {0};
+    char child_usable_hash_key[DRMS_MAXHASHKEYLEN] = {0};
+    const char *hcon_key = NULL;
     DRMS_Record_t **child_drms_record_ptr = NULL;
     DRMS_Record_t *child_drms_record = NULL;
     DRMS_Record_t *drms_record = NULL;
@@ -559,8 +571,8 @@ LinkedList_t *drms_link_follow_recordset(DRMS_Env_t *env, DRMS_Record_t *templat
                 continue;
             }
 
-            drms_make_hashkey(parent_hash_key, drms_record->seriesinfo->seriesname, drms_record->recnum);
             drms_make_hashkey(child_hash_key, drms_link->info->target_series, drms_link->recnum);
+            drms_link_make_usable_hashkey(child_usable_hash_key, drms_link->info->target_series, drms_link->recnum);
 
             if ((child_drms_record = hcon_lookup(&env->record_cache, child_hash_key)) != NULL)
             {
@@ -581,12 +593,12 @@ LinkedList_t *drms_link_follow_recordset(DRMS_Env_t *env, DRMS_Record_t *templat
                    drms_link->wasFollowed = 1;
                 }
 
-                /* key is the hash_key of the input (parent) record, val is pointer to linked record (because we do not
+                /* key is the hash_key of the child/linked record, val is pointer to linked record (because we do not
                  * know if the linked record is cached or not) */
-                if (!hcon_member_lower(link_map, child_hash_key))
+                if (!hcon_member_lower(link_map, child_usable_hash_key))
                 {
                     /* no duplicate linked records */
-                    hcon_insert(link_map, child_hash_key, &child_drms_record);
+                    hcon_insert(link_map, child_usable_hash_key, &child_drms_record);
                     list_llinserttail(linked_records, &child_drms_record);
                 }
             }
@@ -603,10 +615,10 @@ LinkedList_t *drms_link_follow_recordset(DRMS_Env_t *env, DRMS_Record_t *templat
                 drms_link->wasFollowed = 1;
                 /* need to store the target series and recnum - below we will call retrieve_records en masse, inserting
                  * the results into link_map */
-                if (!hcon_member_lower(link_map, child_hash_key))
+                if (!hcon_member_lower(link_hash_map, child_usable_hash_key))
                 {
                     /* no duplicate linked records */
-                    hcon_insert(link_hash_map, child_hash_key, child_hash_key);
+                    hcon_insert(link_hash_map, child_usable_hash_key, child_hash_key);
                 }
             }
         }
@@ -620,16 +632,17 @@ LinkedList_t *drms_link_follow_recordset(DRMS_Env_t *env, DRMS_Record_t *templat
              *
              * no duplicate linked records
              *
-             * `template_record` is parent record template */
+             * `template_record` is parent record template;
+             * `link_map_retrieved` key is USABLE hash key  */
             link_map_retrieved = drms_retrieve_linked_recordset(env, child_template_record, template_record, keywords, link_hash_map, 1, &drms_status);
 
             if (drms_status == DRMS_SUCCESS)
             {
                 hiter_new(&hit, link_map_retrieved);
-                while ((child_drms_record_ptr = (DRMS_Record_t **)hiter_extgetnext(&hit, &child_hash_key_retrieved)) != NULL)
+                while ((child_drms_record_ptr = (DRMS_Record_t **)hiter_extgetnext(&hit, &hcon_key)) != NULL)
                 {
                     child_drms_record = *child_drms_record_ptr;
-                    hcon_insert(link_map, child_hash_key_retrieved, &child_drms_record);
+                    hcon_insert(link_map, hcon_key, &child_drms_record);
 
                     /* no duplicate linked records */
                     list_llinserttail(linked_records, &child_drms_record);
