@@ -6877,7 +6877,7 @@ DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *se
   rs->env = env;
   rs->ss_template_keys = NULL;
   rs->ss_template_segs = NULL;
-  rs->linked_records_list = NULL;
+  /* rs->linked_records_list is needed in SU-staging code, so do not discard here */
 
   hcon_destroy(&template_keywords_subset);
 
