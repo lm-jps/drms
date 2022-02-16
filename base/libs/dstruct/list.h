@@ -5,8 +5,8 @@
 
 struct ListNode_struct
 {
-  void *data;
-  struct ListNode_struct *next;
+    void *data;
+    struct ListNode_struct *next;
 };
 typedef struct ListNode_struct ListNode_t;
 
@@ -14,11 +14,12 @@ typedef void(* ListFreeFn_t)(void *);
 
 struct LinkedList_struct
 {
-  unsigned int dsize;
-  ListFreeFn_t freefn;
-  ListNode_t *first;
-  ListNode_t *next; /* used for iterating */
-  int nitems; /* number of nodes in list */
+    unsigned int dsize;
+    ListFreeFn_t freefn;
+    ListNode_t *first;
+    ListNode_t *next; /* used for iterating */
+    ListNode_t *last; /* so 'tail' operations are not slow */
+    int nitems; /* number of nodes in list */
 };
 typedef struct LinkedList_struct LinkedList_t;
 
@@ -33,17 +34,17 @@ ListNode_t *list_llgettail(LinkedList_t *llist);
 
 static inline ListNode_t *list_llgethead(LinkedList_t *llist)
 {
-   if (llist)
-   {
-      return llist->first;
-   }
+    if (llist)
+    {
+        return llist->first;
+    }
 
-   return NULL;
+    return NULL;
 }
 
 static inline int list_llgetnitems(LinkedList_t *llist)
 {
-   return llist->nitems;
+    return llist->nitems;
 }
 
 void list_llfree(LinkedList_t **llist);
