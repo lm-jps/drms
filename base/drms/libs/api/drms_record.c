@@ -4852,8 +4852,6 @@ static int drms_stage_records_internal(DRMS_RecordSet_t *rs, int retrieve, int d
                 {
                     /* Time to sort by tapeid/filenum. All sort criteria are in the
                      * SUM_info_ts in suinfoauth. */
-                    HIterator_t hit;
-                    hiter_new_sort(&hit, suinfoauth, SumsInfoSort);
                     cnt = 0;
                     sunum = malloc(hcon_size(suinfoauth) * sizeof(DRMS_SuAndSeries_t));
                     XASSERT(sunum);
@@ -4865,6 +4863,9 @@ static int drms_stage_records_internal(DRMS_RecordSet_t *rs, int retrieve, int d
                     }
                     else
                     {
+                        HIterator_t hit;
+                        hiter_new_sort(&hit, suinfoauth, SumsInfoSort);
+
                         if (env->verbose)
                         {
                             fprintf(stdout, "Sorted (by tapeid/filename) SUNUMs (sunum, tapeid, filenum):\n");
@@ -4885,6 +4886,8 @@ static int drms_stage_records_internal(DRMS_RecordSet_t *rs, int retrieve, int d
                             sunum[cnt].series = (*ponesuinfo)->owning_series;
                             cnt++;
                         }
+
+                        hiter_free(&hit);
                     }
                 }
             }

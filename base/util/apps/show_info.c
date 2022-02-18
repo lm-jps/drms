@@ -2077,15 +2077,14 @@ static int RecordLoopCursor(DRMS_Env_t *env, const char *rsq, DRMS_RecordSet_t *
 static int RecordLoopNoCursor(DRMS_Env_t *env, DRMS_RecordSet_t *recordset, LinkedList_t *bogusList, int requireSUMinfo, int64_t *given_sunum, HContainer_t *suinfo, int want_path, int want_path_noret, const char* series, int show_all, int show_keys, int show_all_segs, int show_segs, int show_all_links, int quiet, int keyword_list, int show_recnum, int show_sunum, int show_recordspec, int parseRS, int show_online, int show_retention, int show_archive, int show_tapeinfo, int show_size, int show_session, int want_dims, int show_types, char *sunum_rs_query, LinkedList_t *keysSpecified, LinkedList_t *segsSpecified, LinkedList_t *linksSpecified, const char *linked_record_id, int max_precision, int binary)
 {
     /* rs->n contains the accurate number of records in the record set. */
-    char key[128];
-    int irec;
+    char key[128] = {0};
     DRMS_Record_t *rec = NULL;
     DRMS_Record_t *linked_record = NULL;
     SUM_info_t **ponesuinfo = NULL;
     int status = 0;
     int64_t sunum = -1;
-    int isu;
-    int first;
+    int isu = -1;
+    int first = -1;
     int displaySegPaths = 0;
     const char *specification = NULL;
     LinkedList_t *specifications = NULL;
@@ -2118,6 +2117,7 @@ static int RecordLoopNoCursor(DRMS_Env_t *env, DRMS_RecordSet_t *recordset, Link
         }
     }
 
+    record_index = 0;
     for (set_index = 0; set_index < recordset->ss_n && status == DRMS_SUCCESS; set_index++)
     {
         number_records = drms_recordset_getssnrecs(recordset, set_index, &status);
@@ -2176,7 +2176,7 @@ static int RecordLoopNoCursor(DRMS_Env_t *env, DRMS_RecordSet_t *recordset, Link
               }
           }
 
-          if ((status = PrintStuff(rec, linked_record, NULL, keyword_list, show_recnum, show_sunum, specification, parseRS, show_online, show_retention, show_archive, show_tapeinfo, show_size, show_session, want_path, want_path_noret, want_dims, displaySegPaths, keysSpecified, segsSpecified, linksSpecified, recordset->n, irec != 0 || (bogusList && list_llgetnitems(bogusList) > 0), show_all || show_keys || show_all_segs || show_segs || show_all_links, max_precision, binary)) != 0)
+          if ((status = PrintStuff(rec, linked_record, NULL, keyword_list, show_recnum, show_sunum, specification, parseRS, show_online, show_retention, show_archive, show_tapeinfo, show_size, show_session, want_path, want_path_noret, want_dims, displaySegPaths, keysSpecified, segsSpecified, linksSpecified, recordset->n, record_index > 0 || (bogusList && list_llgetnitems(bogusList) > 0), show_all || show_keys || show_all_segs || show_segs || show_all_links, max_precision, binary)) != 0)
           {
               break;
           }
@@ -2285,15 +2285,15 @@ static int OpenAllTemplateRecords(DRMS_Env_t *env, const char *series, LinkedLis
 
 /* Module main function. */
 int DoIt(void)
-  {
-  int status = 0;
-  DRMS_RecordSet_t *recordset = NULL;
-  DRMS_Record_t *rec;
-  int inqry; // means "has a record-set filter"
-  int atfile; // means "rs spec was an atfile"
-						/* Get command line arguments */
-  const char *in = NULL;
-  const char *linked_record_id = NULL;
+{
+    int status = 0;
+    DRMS_RecordSet_t *recordset = NULL;
+    DRMS_Record_t *rec = NULL;
+    int inqry = -1; // means "has a record-set filter"
+    int atfile = -1; // means "rs spec was an atfile"
+  						/* Get command line arguments */
+    const char *in = NULL;
+    const char *linked_record_id = NULL;
     char **keysArrIn = NULL;
     char **segsArrIn = NULL;
     int lenKeysArrIn = -1;
@@ -2308,55 +2308,55 @@ int DoIt(void)
     Hash_Table_t segsHT;
     Hash_Table_t linksHT;
 
-  int show_keys;
-  int show_segs;
-  int jsd_list;
-  int list_keys;
+    int show_keys = -1;
+    int show_segs = -1;
+    int jsd_list = -1;
+    int list_keys = -1;
     int retrieveLinksIn = 1;
     int retrieveLinks = 1;
-  int show_all;
-  int show_all_segs;
-  int autobang = 0;
-  int show_all_links;
-  int show_recordspec;
-  int show_stats;
-  int show_types;
-      int parseRS;
-  int verbose;
-  int max_recs;
-      int cursoredQ;
-  int quiet;
-  int show_retention;
-  int show_archive;
-  int show_online;
-  int disableTO;
-  int show_recnum;
-  int show_sunum;
-  int show_tapeinfo;
-  int show_size;
-  int show_session;
-  int keyword_list;
-  int want_count;
-  int want_path;
-  int want_path_noret;
-  int want_dims;
-  int dorecs;
-  int64_t *given_sunum = NULL; /* array of 64-bit sunums provided in the'sunum=...' argument. */
-  int nsunum; /* number of sunums provided in the 'sunum=...' argument. */
-  int requireSUMinfo;
-  char *sunum_rs_query = NULL;
-  char *autobangstr = NULL;
-  char *finalin = NULL;
-  char seriesnameforheader[DRMS_MAXSERIESNAMELEN]; /* show_info will not work if the record-set string specifies more than one series. */
-  HContainer_t *suinfo = NULL;
-  LinkedList_t *parsedrs = NULL;
-  int iset;
-  int err = 0;
-  int drmsstat;
-  DRMS_Record_t *templrec = NULL;
-  char *filter = NULL;
-  int64_t *bogus = NULL;
-  int nBogus = 0;
+    int show_all = -1;
+    int show_all_segs = -1;
+    int autobang = 0;
+    int show_all_links = -1;
+    int show_recordspec = -1;
+    int show_stats = -1;
+    int show_types = -1;
+    int parseRS = -1;
+    int verbose = -1;
+    int max_recs = -1;
+    int cursoredQ = -1;
+    int quiet = -1;
+    int show_retention = -1;
+    int show_archive = -1;
+    int show_online = -1;
+    int disableTO = -1;
+    int show_recnum = -1;
+    int show_sunum = -1;
+    int show_tapeinfo = -1;
+    int show_size = -1;
+    int show_session = -1;
+    int keyword_list = -1;
+    int want_count = -1;
+    int want_path = -1;
+    int want_path_noret = -1;
+    int want_dims = -1;
+    int dorecs = -1;
+    int64_t *given_sunum = NULL; /* array of 64-bit sunums provided in the'sunum=...' argument. */
+    int nsunum = -1; /* number of sunums provided in the 'sunum=...' argument. */
+    int requireSUMinfo = -1;
+    char *sunum_rs_query = NULL;
+    char *autobangstr = NULL;
+    char *finalin = NULL;
+    char seriesnameforheader[DRMS_MAXSERIESNAMELEN] = {0}; /* show_info will not work if the record-set string specifies more than one series. */
+    HContainer_t *suinfo = NULL;
+    LinkedList_t *parsedrs = NULL;
+    int iset = -1;
+    int err = 0;
+    int drmsstat = -1;
+    DRMS_Record_t *templrec = NULL;
+    char *filter = NULL;
+    int64_t *bogus = NULL;
+    int nBogus = 0;
     LinkedList_t *bogusList = NULL;
     char *segs[1024] = {0};
     int nsegs = 0;
@@ -2366,9 +2366,8 @@ int DoIt(void)
     int nlinks = 0;
     ListNode_t *node = NULL;
     SIParts_t *parts = NULL;
-    int iKey;
-    int iSeg;
-
+    int iKey = -1;
+    int iSeg = -1;
     int max_precision = 0;
     int binary = 0;
 
@@ -2378,8 +2377,8 @@ int DoIt(void)
   // via a web GET call.  No other special formatting will be done.
   // Note: this code could work in most programs that print to stdout.
   // The variable "from_web" is made just in case some use of the fact might be made.
-  int from_web;
-  char *web_query;
+  int from_web = -1;
+  char *web_query = NULL;
 
     /* we want to pass to drms_open_records2() a list of keywords - even an empty list; otherwise,
      * drms_open_records2() will fetch all keyword columns */
@@ -2389,7 +2388,7 @@ int DoIt(void)
 
     int postorget = 0;
     char *webarglist = NULL;
-    size_t webarglistsz;
+    size_t webarglistsz = 0;
 
     if (getenv("REQUEST_METHOD"))
     {
@@ -3107,19 +3106,27 @@ int DoIt(void)
       /* I think recordset == NULL at this point. */
 
   /* get count if -c flag set */
-  if (want_count)
+    if (want_count)
     {
-    int count = drms_count_records(drms_env, (char *)in, &status);//YYY
-    if (status)
-      {
-      fprintf(stderr,"### show_info: series %s not found.\n",in);
-      show_info_return(1);
-      }
-    printf("%d", count);
-    if (!quiet)
-      printf(" records match the query");
-    printf("\n");
-    show_info_return(0);
+        int count = drms_count_records(drms_env, (char *)in, &status);//YYY
+
+        if (status)
+        {
+            fprintf(stderr,"### show_info: series %s not found.\n",in);
+            show_info_return(1);
+        }
+
+        printf("%d", count);
+
+        if (!quiet)
+        {
+            printf(" records match the query");
+        }
+
+        printf("\n");
+
+        list_llfree(&parsedrs);
+        show_info_return(0);
     }
 
   /* NOW in mode to list per-record information.  Get recordset */

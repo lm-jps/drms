@@ -4496,12 +4496,24 @@ int callMTSums(SUM_t *sums, MTSums_CallType_t callType, JSONIZER_DATA_t *data, i
             if (err)
             {
                 /* break out if a timeout (err == 2) or error (err == 1) occurred */
+                if (response)
+                {
+                    free(response);
+                    response = NULL;
+                }
+
                 break;
             }
 
             /* successfully received response (err == 0), but it could be an is-alive response */
 
             err = unjsonizeResponse(sums, callType, response, history);
+
+            if (response)
+            {
+                free(response);
+                response = NULL;
+            }
 
             if (err == 0 /* got final response */ || err == 1 /* error */)
             {
