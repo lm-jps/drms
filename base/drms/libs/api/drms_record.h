@@ -246,6 +246,8 @@ int drms_record_freerecsetspecarr(char **allvers,
 
 int drms_record_freerecsetspecarr_plussegs(char **allvers, char ***sets, DRMS_RecordSetType_t **types, char ***snames, char ***filts, char ***segs, int nsets);
 
+LinkedList_t *drms_record_get_specification_list(DRMS_Env_t *env, DRMS_RecordSet_t *record_set, int *status);
+
 /* DSDS */
 int drms_record_isdsds(DRMS_Record_t *rec);
 int drms_record_islocal(DRMS_Record_t *rec);

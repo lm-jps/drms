@@ -637,8 +637,8 @@ struct DRMS_RecordSet_struct
   DRMS_RecordSetType_t *ss_types;
   /** \brief Array of offsets to the beginning of each subset */
   int *ss_starts;
-  /** \brief Index (relative to first item in subset) of current record in each subset. */
-  int *ss_currentrecs; /* Used by drms_recordset_fetchnextinset() */
+  /** \brief Index (relative to first item in entire record set) of current record; used by code that iterates over records */
+  int current_record; /* for cursored record sets, this can be > chunk_size -1 since it is the index into ALL records over ALL chunks */
   /** \brief DRMS record-set cursor - essentially a pointer into the return set of database records */
   /* NULL cursor means that this record-set is NOT chunked. */
   DRMS_RecSetCursor_t *cursor;

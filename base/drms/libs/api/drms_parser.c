@@ -22,8 +22,8 @@ static int getnextline(char **start);
 static int parse_seriesinfo(char *desc, DRMS_Record_t *template);
 static int parse_segments(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys, int *keynum);
 static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContainer_t *cparmkeys, int *keynum);
-static int parse_keyword(char **in, 
-			 DRMS_Record_t *ds, 
+static int parse_keyword(char **in,
+			 DRMS_Record_t *ds,
 			 HContainer_t *slotted,
                          int *keynum);
 static int parse_links(char *desc, DRMS_Record_t *template);
@@ -33,7 +33,7 @@ static int parse_dbindex(char *desc, DRMS_Record_t *template);
 
 static int keywordname_isreserved(const char *name);
 
-/* This macro advances the character pointer argument past all 
+/* This macro advances the character pointer argument past all
    whitespace or until it points to end-of-string (0). */
 //#define SKIPWS(p) {while(*p && ISBLANK(*p)) { if(*p=='\n') {lineno++;} ++p;}}
 /* Don't even THINK of advancing the lineno with SKIPWS - you really don't want to do this
@@ -44,7 +44,7 @@ static int keywordname_isreserved(const char *name);
 #define TRY(__code__) {if ((__code__)) return 1;}
 
 
-/* Add macros so that getkeyword, et al, use the correct __LINE__ 
+/* Add macros so that getkeyword, et al, use the correct __LINE__
  * (otherwise, they use the line that getkeyword lives at */
 #define GETDOUBLE(p, v) getdouble(p, v, __LINE__)
 #define GETSHORT(p, v) getshort(p, v, __LINE__)
@@ -135,28 +135,28 @@ DRMS_Record_t *drms_parse_description(DRMS_Env_t *env, char *desc)
   template->su = NULL;
     template->seriesinfo->hasshadow = -1; /* -1: don't know, 0: no, 1: yes. */
     template->seriesinfo->createshadow = 0;
-    
+
   /* Initialize container structure. */
-  hcon_init(&template->segments, sizeof(DRMS_Segment_t), DRMS_MAXHASHKEYLEN, 
-	    (void (*)(const void *)) drms_free_segment_struct, 
+  hcon_init(&template->segments, sizeof(DRMS_Segment_t), DRMS_MAXHASHKEYLEN,
+	    (void (*)(const void *)) drms_free_segment_struct,
 	    (void (*)(const void *, const void *)) drms_copy_segment_struct);
   /* Initialize container structures for links. */
-  hcon_init(&template->links, sizeof(DRMS_Link_t), DRMS_MAXHASHKEYLEN, 
-	    (void (*)(const void *)) drms_free_link_struct, 
+  hcon_init(&template->links, sizeof(DRMS_Link_t), DRMS_MAXHASHKEYLEN,
+	    (void (*)(const void *)) drms_free_link_struct,
 	    (void (*)(const void *, const void *)) drms_copy_link_struct);
   /* Initialize container structure. */
-  hcon_init(&template->keywords, sizeof(DRMS_Keyword_t), DRMS_MAXHASHKEYLEN, 
-	    (void (*)(const void *)) drms_free_keyword_struct, 
+  hcon_init(&template->keywords, sizeof(DRMS_Keyword_t), DRMS_MAXHASHKEYLEN,
+	    (void (*)(const void *)) drms_free_keyword_struct,
 	    (void (*)(const void *, const void *)) drms_copy_keyword_struct);
 
-  /* IMPORTANT: parse_keywords() can modify the list of primary keywords, 
+  /* IMPORTANT: parse_keywords() can modify the list of primary keywords,
   * so initialize here. */
   template->seriesinfo->pidx_num = 0;
 
   template->seriesinfo->dbidx_num = 0;
 
-  /* Possibly creating cparms_sgXXX keywords from information in the segment descriptions. 
-   * Must save that information during parse_segments() and use in 
+  /* Possibly creating cparms_sgXXX keywords from information in the segment descriptions.
+   * Must save that information during parse_segments() and use in
    * parse_keywords() */
   cparmkeys = hcon_create(sizeof(DRMS_Keyword_t *),
                           DRMS_MAXKEYNAMELEN,
@@ -186,7 +186,7 @@ DRMS_Record_t *drms_parse_description(DRMS_Env_t *env, char *desc)
 
   if (template->seriesinfo->unitsize < 1 && (template->segments).num_total > 0)
   {
-     fprintf(stderr, 
+     fprintf(stderr,
              "The series unit size must be at least 1, but it is %d.\n",
              template->seriesinfo->unitsize);
      goto bailout;
@@ -204,7 +204,7 @@ DRMS_Record_t *drms_parse_description(DRMS_Env_t *env, char *desc)
   if (parse_keywords(desc, template, cparmkeys, &keynum))
   {
     fprintf(stderr,"Failed to parse keywords info.\n");
-    goto bailout; 
+    goto bailout;
   }
 
   lineno = 0;
@@ -253,7 +253,7 @@ DRMS_Record_t *drms_parse_description(DRMS_Env_t *env, char *desc)
 HContainer_t *drms_parse_keyworddesc(DRMS_Env_t *env, const char *desc, int *status)
 {
     DRMS_Record_t *fauxtemplate = NULL;
-    char *copy = NULL;  
+    char *copy = NULL;
     char *start = NULL;
     char *p = NULL;
     char *q = NULL;
@@ -262,9 +262,9 @@ HContainer_t *drms_parse_keyworddesc(DRMS_Env_t *env, const char *desc, int *sta
     int len;
     HContainer_t *slotted = NULL;
     int rv = DRMS_SUCCESS;
-    
+
     lineno = 0;
-    
+
     slotted = hcon_create(sizeof(DRMS_Keyword_t *),
                           DRMS_MAXKEYNAMELEN,
                           NULL,
@@ -272,7 +272,7 @@ HContainer_t *drms_parse_keyworddesc(DRMS_Env_t *env, const char *desc, int *sta
                           NULL,
                           NULL,
                           0);
-    
+
     if (slotted)
     {
         /* copy points to the beginning of the desc string, always. */
@@ -285,7 +285,7 @@ HContainer_t *drms_parse_keyworddesc(DRMS_Env_t *env, const char *desc, int *sta
             {
                 p = start;
                 SKIPWS(p);
-                
+
                 if (*p == '\n')
                 {
                     p++;
@@ -293,23 +293,23 @@ HContainer_t *drms_parse_keyworddesc(DRMS_Env_t *env, const char *desc, int *sta
                     len = getnextline(&start);
                     continue;
                 }
-                
+
                 q = p;
-                /* GETKEYWORD() just parses to the ':' after the word 'Keyword'. q points to the 
+                /* GETKEYWORD() just parses to the ':' after the word 'Keyword'. q points to the
                  * char after the ':'. */
                 if (GETKEYWORD(&q))
                 {
                     rv = DRMS_ERROR_BADJSD;
                     break;
                 }
-                
+
                 if (prefixmatch(p, "Keyword:"))
                 {
                     if (!fauxtemplate)
                     {
                         /* Do the minimal amount of work to intialize a fake fauxtemplate record structure. */
                         fauxtemplate = calloc(1, sizeof(DRMS_Record_t));
-                        
+
                         if (fauxtemplate)
                         {
                             XASSERT(fauxtemplate);
@@ -324,12 +324,12 @@ HContainer_t *drms_parse_keyworddesc(DRMS_Env_t *env, const char *desc, int *sta
                             fauxtemplate->su = NULL;
                             fauxtemplate->seriesinfo->hasshadow = -1;
                             fauxtemplate->seriesinfo->createshadow = 0;
-                            
+
                             /* Initialize container structure. */
                             /* drms_free_keyword_struct doesn't free key->info. */
                             /* drms_copy_keyword_struct doesn't copy key->info. */
-                            hcon_init(&fauxtemplate->keywords, sizeof(DRMS_Keyword_t), DRMS_MAXHASHKEYLEN, 
-                                      (void (*)(const void *)) drms_free_keyword_struct, 
+                            hcon_init(&fauxtemplate->keywords, sizeof(DRMS_Keyword_t), DRMS_MAXHASHKEYLEN,
+                                      (void (*)(const void *)) drms_free_keyword_struct,
                                       (void (*)(const void *, const void *)) drms_copy_keyword_struct);
                         }
                         else
@@ -337,14 +337,14 @@ HContainer_t *drms_parse_keyworddesc(DRMS_Env_t *env, const char *desc, int *sta
                             rv = DRMS_ERROR_OUTOFMEMORY;
                         }
                     }
-                    
-                    /* Let parse_keyword advance the keyword number since it may 
+
+                    /* Let parse_keyword advance the keyword number since it may
                      * expand per-segment keywords into multiple keywords. */
                     if (rv == DRMS_SUCCESS)
                     {
                         /* The is the sole reason for making a fake template record. parse_keyword()
-                         * needs it. It would be better if parse_keyword() returned a simple 
-                         * DRMS_Keyword_t to a calling function that then set up the link from the 
+                         * needs it. It would be better if parse_keyword() returned a simple
+                         * DRMS_Keyword_t to a calling function that then set up the link from the
                          * keyword sturct back to the template record. Then we could avoid having
                          * to always make this fake template record. */
                         if (parse_keyword(&q, fauxtemplate, slotted, &keynum))
@@ -358,7 +358,7 @@ HContainer_t *drms_parse_keyworddesc(DRMS_Env_t *env, const char *desc, int *sta
                 {
                     fprintf(stderr, "Warning: Unexpected line '%s', skipping and continuing.\n", p);
                 }
-                
+
                 /* start + len is the NULL-terminator if the last line didn't end with a newline (EOF). */
                 if (start[len] == '\n')
                 {
@@ -368,10 +368,10 @@ HContainer_t *drms_parse_keyworddesc(DRMS_Env_t *env, const char *desc, int *sta
                 {
                     start += len;
                 }
-                
+
                 len = getnextline(&start);
             } /* end while */
-            
+
             if (rv == DRMS_SUCCESS)
             {
                 if (hcon_size(&fauxtemplate->keywords) > 0)
@@ -382,11 +382,11 @@ HContainer_t *drms_parse_keyworddesc(DRMS_Env_t *env, const char *desc, int *sta
                     {
                         HIterator_t *hit = NULL;
                         DRMS_Keyword_t *key = NULL;
-                        
+
                         /* If fauxtemplate->keywords has a deep_copy, then so will keys. But it does not,
                          * so this is a shallow copy. */
                         hcon_copy(keys, &fauxtemplate->keywords);
-                        
+
                         /* NULL-out all references to the parent record. We're making a headless container of
                          * keyword structs. */
                         hit = hiter_create(keys);
@@ -396,7 +396,7 @@ HContainer_t *drms_parse_keyworddesc(DRMS_Env_t *env, const char *desc, int *sta
                             {
                                 key->record = NULL;
                             }
-                            
+
                             hiter_destroy(&hit);
                         }
                         else
@@ -410,7 +410,7 @@ HContainer_t *drms_parse_keyworddesc(DRMS_Env_t *env, const char *desc, int *sta
                     }
                 }
             }
-            
+
             /* Free record (and keys inside the record). This will not free the key->infos, but
              * this is good since we shallow copied the key structs from fauxtemplate->keywords to keys.
              * So keys takes ownership of all the key->infos. */
@@ -421,14 +421,14 @@ HContainer_t *drms_parse_keyworddesc(DRMS_Env_t *env, const char *desc, int *sta
                 free(fauxtemplate);
                 fauxtemplate = NULL;
             }
-            
+
             if (keys)
             {
-                /* Change the deep_free() function, so that when keys is destroyed, the key->infos get 
+                /* Change the deep_free() function, so that when keys is destroyed, the key->infos get
                  * deleted too. */
                 keys->deep_free = (void (*)(const void *))drms_free_template_keyword_struct;
             }
-            
+
             free(copy);
         }
         else
@@ -438,43 +438,43 @@ HContainer_t *drms_parse_keyworddesc(DRMS_Env_t *env, const char *desc, int *sta
     }
     else
     {
-        rv = DRMS_ERROR_OUTOFMEMORY;   
+        rv = DRMS_ERROR_OUTOFMEMORY;
     }
-    
+
     if (slotted)
     {
         hcon_destroy(&slotted);
     }
-    
+
     if (status)
     {
         *status = rv;
     }
-    
+
     return keys;
 }
 
 
-/* The way this function parses the series-info section is inefficient. 
+/* The way this function parses the series-info section is inefficient.
  * It is an O(n^2) algorithm (it would be better to parse the identifier
  * present on each line, then hash to the list of acceptable identifiers).
  *   -Art */
-static int parse_seriesinfo (char *desc, DRMS_Record_t *template) 
+static int parse_seriesinfo (char *desc, DRMS_Record_t *template)
 {
     int len;
     char *start, *p, *q;
     int iStat = 0;
     int16_t newSuRetention = 0;
     int16_t stagingRetention = 0;
-    
+
     /* Parse the description line by line, filling out the template struct. */
     start = desc;
     len = getnextline (&start);
     while (*start) {
-        
+
         p = start;
         SKIPWS(p);
-        
+
         if (*p == '\n')
         {
             p++;
@@ -482,9 +482,9 @@ static int parse_seriesinfo (char *desc, DRMS_Record_t *template)
             len = getnextline (&start);
             continue;
         }
-        
+
         q = p;
-        
+
         /* Scan past keyword followed by ':'. */
         if (GETKEYWORD(&q)) return 1;
         /* Branch on keyword and insert appropriate information into struct. */
@@ -533,30 +533,30 @@ static int parse_seriesinfo (char *desc, DRMS_Record_t *template)
             TRY(GETINT (&q, &(template->seriesinfo->createshadow)));
         }
         start += len + 1; /* len doesn't account for \n*/
-        
+
         len = getnextline (&start);
     }
-    
+
     template->seriesinfo->retention = newSuRetention + (stagingRetention << 16);
-    
-    if (template->seriesinfo->archive != -1 && 
-        template->seriesinfo->archive !=  0 && 
+
+    if (template->seriesinfo->archive != -1 &&
+        template->seriesinfo->archive !=  0 &&
         template->seriesinfo->archive !=  1)
     {
         fprintf(stderr, "WARNING: Invalid archive value '%d' - setting to 0.\n", template->seriesinfo->archive);
         template->seriesinfo->archive = 0;
     }
-    
+
     //  /* Force series name to be all lower case. */
     //  strtolower(template->seriesinfo->seriesname);
-    
-    /* If version isn't specified, then assume the current version. This version will be used 
+
+    /* If version isn't specified, then assume the current version. This version will be used
      * in downstream parsing code to switch between code branches.
      */
     snprintf(template->seriesinfo->version, DRMS_MAXSERIESVERSION, "%s", drms_series_getvers());
-    
-    
-#ifdef DEBUG 
+
+
+#ifdef DEBUG
     printf("Seriesname = '%s'\n",template->seriesinfo->seriesname);
     printf("Description = '%s'\n",template->seriesinfo->description);
     printf("Owner = '%s'\n",template->seriesinfo->owner);
@@ -567,7 +567,7 @@ static int parse_seriesinfo (char *desc, DRMS_Record_t *template)
     printf("Retention = %hd\n", newSuRetention);
     printf("StagingRetention = %hd\n", stagingRetention);
 #endif
-    
+
     return iStat;
 }
 
@@ -576,7 +576,7 @@ static int parse_segments (char *desc, DRMS_Record_t *template, HContainer_t *cp
   int len, segnum;
   char *start, *p, *q;
 
-  /* Parse the description line by line, filling 
+  /* Parse the description line by line, filling
      out the template struct. */
   start = desc;
   len = getnextline(&start);
@@ -597,9 +597,9 @@ static int parse_segments (char *desc, DRMS_Record_t *template, HContainer_t *cp
      q = p;
      if (GETKEYWORD(&q))
        return 1;
-    
+
      if (prefixmatch(p,"Data:"))
-     {      
+     {
         if (parse_segment(&q, template, segnum, cparmkeys, keynum))
           return 1;
         ++segnum;
@@ -645,37 +645,37 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
   seg->info->segnum = segnum;
 
   if (GETTOKEN(&q,scope,sizeof(scope)) <= 0) GOTOFAILURE;
-  if ( !strcasecmp(scope,"link") ) 
+  if ( !strcasecmp(scope,"link") )
   {
     /* Link segment */
     seg->info->islink = 1;
     seg->info->scope= DRMS_VARIABLE;
     seg->info->type = DRMS_TYPE_INT;
     seg->info->protocol = DRMS_GENERIC;
-    
+
      if(GETTOKEN(&q,seg->info->linkname,sizeof(seg->info->linkname)) <= 0)     GOTOFAILURE;
     if(GETTOKEN(&q,seg->info->target_seg,sizeof(seg->info->target_seg)) <= 0) GOTOFAILURE;
-    /* Naxis */      
+    /* Naxis */
     if (GETTOKEN(&q,naxis,sizeof(naxis)) <= 0) GOTOFAILURE;
-             strtoll(naxis,&endptr,10);        
+             strtoll(naxis,&endptr,10);
          nval.string_val = naxis;
          if (endptr != naxis + strlen(naxis))
             {  GOTOFAILURE; }
         else
-            {             
-	      tempval = drms2int(DRMS_TYPE_STRING, &nval, &status);                
-            if (status == DRMS_RANGE || tempval < 0 ) 
+            {
+	      tempval = drms2int(DRMS_TYPE_STRING, &nval, &status);
+            if (status == DRMS_RANGE || tempval < 0 )
               {GOTOFAILURE;}
             else
-             seg->info->naxis = drms2int(DRMS_TYPE_STRING, &nval, &status);     
-            }          
+             seg->info->naxis = drms2int(DRMS_TYPE_STRING, &nval, &status);
+            }
     /* Axis */
     for (i=0; i<seg->info->naxis; i++)
-      {         	
-       if (GETTOKEN(&q,axis,sizeof(axis)) <= 0) GOTOFAILURE;        
+      {
+       if (GETTOKEN(&q,axis,sizeof(axis)) <= 0) GOTOFAILURE;
           myval.string_val = axis;
           strtoll(axis,&endptr,10);
-          if (endptr != axis + strlen(axis)) 
+          if (endptr != axis + strlen(axis))
 	    {GOTOFAILURE;}
           else
             {
@@ -683,13 +683,13 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
 	 /*   seg->axis[i] = drms2int(DRMS_TYPE_STRING, &myval, &status); */
              if (status == DRMS_RANGE || tempval < 0 )
 	       {GOTOFAILURE;}
-	     else 
-            seg->axis[i] = drms2int(DRMS_TYPE_STRING, &myval, &status);     
-	    } 
+	     else
+            seg->axis[i] = drms2int(DRMS_TYPE_STRING, &myval, &status);
+	    }
       }
-     
+
     if (getstring(&q,seg->info->description,sizeof(seg->info->description))<0) GOTOFAILURE;
-   } 
+   }
     else
    {
     /* Simple segment */
@@ -708,25 +708,25 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
     seg->info->type  = drms_str2type(type);
     /* Naxis */      //need to write a function**
     if (GETTOKEN(&q,naxis,sizeof(naxis)) <= 0) GOTOFAILURE;
-          strtoll(naxis,&endptr,10);        
+          strtoll(naxis,&endptr,10);
           nval.string_val = naxis;
          if (endptr != naxis + strlen(naxis))
             {  GOTOFAILURE; }
         else
-            {             
+            {
 	      /*    seg->info->naxis = drms2int(DRMS_TYPE_STRING, &nval, &status); */
            tempval = drms2int(DRMS_TYPE_STRING, &nval, &status);
-            if (status == DRMS_RANGE || tempval < 0 ) 
+            if (status == DRMS_RANGE || tempval < 0 )
 	      { GOTOFAILURE;}
             else
               seg->info->naxis = drms2int(DRMS_TYPE_STRING, &nval, &status);
-            }          
-    /* Axis */   
+            }
+    /* Axis */
     if ( !strcasecmp(scope, "vardim"))
     {
        for(i=0; i<seg->info->naxis; i++)
-        { 
-         if (GETTOKEN(&q,axis,sizeof(axis)) <= 0) GOTOFAILURE;        
+        {
+         if (GETTOKEN(&q,axis,sizeof(axis)) <= 0) GOTOFAILURE;
          if( !strcasecmp(axis, "*") || !strcasecmp(axis, "NA"))
             {
           seg->axis[i] = 0;
@@ -735,7 +735,7 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
            {
           myval.string_val = axis;
           strtoll(axis,&endptr,10);
-           if (endptr != axis + strlen(axis))  
+           if (endptr != axis + strlen(axis))
 	     { GOTOFAILURE;}
            else
             {
@@ -754,7 +754,7 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
     }
     else if( (!strcasecmp(scope, "variable")) ||  (!strcasecmp(scope, "constant")))
     {
-         
+
 	 count=0;
           for(i=0; i<seg->info->naxis; i++)
          {
@@ -768,13 +768,13 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
 	     {
                myval.string_val = axis;
                strtoll(axis,&endptr,10);
-               if (endptr != axis + strlen(axis))  
+               if (endptr != axis + strlen(axis))
 		 { GOTOFAILURE;}
                else
                   {
                      tempval = drms2int(DRMS_TYPE_STRING,&myval, &status);
 		     /*  seg->axis[i] = drms2int(DRMS_TYPE_STRING,&myval, &status); */
-                   if (status == DRMS_RANGE || tempval <0 )  
+                   if (status == DRMS_RANGE || tempval <0 )
                      {GOTOFAILURE; }
                    else
                      seg->axis[i] = drms2int(DRMS_TYPE_STRING,&myval, &status);
@@ -796,20 +796,20 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
     }
 
 
-	
+
 
     /* .jsd is version 2.0 or greater */
     /* CFITSIO can't compress 64-bit data. */
-    if ((seg->info->protocol == DRMS_FITS || 
-         seg->info->protocol == DRMS_FITZ || 
+    if ((seg->info->protocol == DRMS_FITS ||
+         seg->info->protocol == DRMS_FITZ ||
          seg->info->protocol == DRMS_TAS) && seg->info->type != DRMS_TYPE_LONGLONG)
     {
-       /* Create a cparms_sgXXX keyword for each segment.  It will save 
+       /* Create a cparms_sgXXX keyword for each segment.  It will save
         * the compression-parameters string. */
 
-       /* If this is TAS, then right after the tas identifier and before the comment 
-        * should come a single string  that is the FITSIO compression string 
-        * (eg., "compress Rice 128,192"). 
+       /* If this is TAS, then right after the tas identifier and before the comment
+        * should come a single string  that is the FITSIO compression string
+        * (eg., "compress Rice 128,192").
         */
        char buf[DRMS_MAXKEYNAMELEN];
 
@@ -874,8 +874,8 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
           hcon_insert(cparmkeys, buf, &cpkey);
        }
     } /* FITS, FITZ, or TAS */
-    
-    if (seg->info->protocol == DRMS_TAS || 
+
+    if (seg->info->protocol == DRMS_TAS ||
         seg->info->protocol == DRMS_FITS ||
         seg->info->protocol == DRMS_FITZ ||
         seg->info->protocol == DRMS_BINARY ||
@@ -926,7 +926,7 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
        sckey->info->rank = (*keynum)++;
        sckey->info->kwflags |= (sckey->info->rank + 1) << 16;
 
-       /* Although this container was originally used for holding 
+       /* Although this container was originally used for holding
         * the comp params for FITS, it is now being used for
         * holding TAS bzero/bscale keywords too.
         */
@@ -965,7 +965,7 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
        sckey->info->rank = (*keynum)++;
        sckey->info->kwflags |= (sckey->info->rank + 1) << 16;
 
-       /* Although this container was originally used for holding 
+       /* Although this container was originally used for holding
         * the comp params for FITS, it is now being used for
         * holding TAS bzero/bscale keywords too.
         */
@@ -978,8 +978,8 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
     if (getstring(&q,seg->info->description,sizeof(seg->info->description))<0) GOTOFAILURE;
   }
   p = ++q;
-  *in = q; 
- 
+  *in = q;
+
   return 0;
  failure:
   fprintf(stderr,"%s, line %d: Invalid segment descriptor on line %d.\n",
@@ -995,7 +995,7 @@ static int parse_links(char *desc, DRMS_Record_t *template)
   char *start, *p, *q;
   int linknum;
 
-  /* Parse the description line by line, filling 
+  /* Parse the description line by line, filling
      out the template struct. */
   start = desc;
   len = getnextline(&start);
@@ -1016,7 +1016,7 @@ static int parse_links(char *desc, DRMS_Record_t *template)
     q = p;
     if (GETKEYWORD(&q))
       return 1;
-    
+
     if (prefixmatch(p,"Link:"))
     {
        if (parse_link(&q,template, linknum))
@@ -1048,7 +1048,7 @@ static int parse_link(char **in, DRMS_Record_t *template, int linknum)
   if (GETTOKEN(&q,target,sizeof(target)) <= 0) GOTOFAILURE;
   if (GETTOKEN(&q,type,sizeof(type)) <= 0) GOTOFAILURE;
   if (getstring(&q,description,sizeof(description))<0) GOTOFAILURE;
-  
+
   link = hcon_allocslot_lower(&template->links, name);
   XASSERT(link);
   memset(link,0,sizeof(DRMS_Link_t));
@@ -1069,11 +1069,11 @@ static int parse_link(char **in, DRMS_Record_t *template, int linknum)
   link->info->rank = linknum;
   strncpy(link->info->description, description, DRMS_MAXCOMMENTLEN);
   link->isset = 0;
-  link->recnum = -1; 
+  link->recnum = -1;
 
   p = ++q;
-  *in = q; 
- 
+  *in = q;
+
   return 0;
  failure:
   fprintf(stderr,"%s, line %d: Invalid Link descriptor on line %d.\n",
@@ -1102,7 +1102,7 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys,
   }
   else
   {
-     /* Parse the description line by line, filling 
+     /* Parse the description line by line, filling
 	out the template struct. */
      start = desc;
      len = getnextline(&start);
@@ -1122,10 +1122,10 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys,
 	q = p;
 	if (GETKEYWORD(&q))
 	  return 1;
-    
+
 	if (prefixmatch(p,"Keyword:"))
 	{
-           /* Let parse_keyword advance the keyword number since it may 
+           /* Let parse_keyword advance the keyword number since it may
             * expand per-segment keywords into multiple keywords. */
 	   if (parse_keyword(&q,template, slotted, keynum))
 	     return 1;
@@ -1139,15 +1139,15 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys,
 	/* All keywords have been parsed.  Need to iterate through all slotted keywords.
 	 * For each slotted keyword, check if the corresponding index keyword exists.
 	 * If not, create it and make it prime.  Insert this keyword into
-	 * template->keywords.  If it does exist, ensure that it 
+	 * template->keywords.  If it does exist, ensure that it
 	 * is prime and that it is of recscope 'index'.  If not, fail.  If no
-	 * failure at this point, 
+	 * failure at this point,
 	 * find all keywords implied by the slotted keyword type (eg., TS_EQ requires
 	 * _epoch, _step).  They must be recscope constant, if not, fail.  If no
 	 * failure at this point, remove the 'primeness' of the slotted keyword.
 	 */
 	HIterator_t *hit = hiter_create(slotted);
-	
+
 	if (hit)
 	{
 	   DRMS_Keyword_t **pSlotKey = NULL;
@@ -1156,17 +1156,17 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys,
 	   DRMS_Keyword_t *newkey = NULL;
            DRMS_Keyword_t *existkey = NULL;
 
-	   while ((pSlotKey = 
+	   while ((pSlotKey =
 		   (DRMS_Keyword_t **)hiter_extgetnext(hit, &slotKeyname)) != NULL)
 	   {
 	      snprintf(keyname, sizeof(keyname), "%s%s", slotKeyname, kSlotAncKey_Index);
-	      if ((existkey = 
-                   (DRMS_Keyword_t *)hcon_lookup_lower(&(template->keywords), keyname)) 
+	      if ((existkey =
+                   (DRMS_Keyword_t *)hcon_lookup_lower(&(template->keywords), keyname))
 		  == NULL)
 	      {
 		 /* The corresponding index keyword does not exist - create. */
 
-		 /* If this is a per-segment keyword, then there will be 
+		 /* If this is a per-segment keyword, then there will be
 		  * multiple keywords already (eg., KEY_001, KEY_002, KEY_003).
 		  * So, don't do anything special since this look will be executed
 		  * multiple times, once for each of the per-segment keywords in
@@ -1177,7 +1177,7 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys,
                  XASSERT(newkey);
 		 memset(newkey,0,sizeof(DRMS_Keyword_t));
                  newkey->info = malloc(sizeof(DRMS_KeywordInfo_t));
-                 XASSERT(newkey->info);    
+                 XASSERT(newkey->info);
 		 memset(newkey->info,0,sizeof(DRMS_KeywordInfo_t));
 		 strcpy(newkey->info->name, keyname);
 		 newkey->record = template;
@@ -1193,7 +1193,7 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys,
                  snprintf(newkey->info->description, DRMS_MAXCOMMENTLEN, "Index keyword associated with %s", slotKeyname);
 
 		 /* Make new key DRMS-prime */
-                 /* Don't add to pidx_keywords here - do that in parse_primaryindex() so that 
+                 /* Don't add to pidx_keywords here - do that in parse_primaryindex() so that
                   * order of prime keys matches the order of keys. */
                  drms_keyword_setintprime(newkey);
                  drms_keyword_unsetextprime(newkey);
@@ -1203,7 +1203,7 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys,
                  newkey->info->kwflags |= (newkey->info->rank + 1) << 16;
 
                  /* Index keywords must have a db index */
-                 /* Don't add to dbidx_keywords here - do that in parse_dbindex() so that 
+                 /* Don't add to dbidx_keywords here - do that in parse_dbindex() so that
                   * order of prime keys matches the order of keys. */
 	      }
 	      else
@@ -1212,14 +1212,14 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys,
                   * Allowing the user to create it is not good, since they could
                   * create it improperly.
                   *
-                  * There is now code in parse_keyword() to prevent _index keywords 
+                  * There is now code in parse_keyword() to prevent _index keywords
                   * from being specified in a jsd.
                   */
                  fprintf(stderr, "Keywords with the suffix '_index' are reserved; cannot specify '%s' in a jsd file\n", existkey->info->name);
                  return 1;
 	      }
 
-	      /* Find all other required constant keywords for this type of 
+	      /* Find all other required constant keywords for this type of
 	       * slotted keyword */
 	      int failure = 0;
 	      switch ((int)drms_keyword_getrecscope(*pSlotKey))
@@ -1249,11 +1249,11 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys,
 		 case kRecScopeType_TS_EQ:
 		   {
                       DRMS_Keyword_t *anckey = NULL;
-		      snprintf(keyname, 
-			       sizeof(keyname), "%s%s", 
-			       slotKeyname, 
+		      snprintf(keyname,
+			       sizeof(keyname), "%s%s",
+			       slotKeyname,
 			       kSlotAncKey_Epoch);
-		      anckey = (DRMS_Keyword_t *)hcon_lookup_lower(&(template->keywords), 
+		      anckey = (DRMS_Keyword_t *)hcon_lookup_lower(&(template->keywords),
                                                                    keyname);
 		      if (anckey)
 		      {
@@ -1262,11 +1262,11 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys,
 			     (drms_keyword_gettype(anckey) == DRMS_TYPE_TIME ||
 			      drms_keyword_gettype(anckey) == DRMS_TYPE_STRING))
 			 {
-			    snprintf(keyname, 
-				     sizeof(keyname), "%s%s", 
-				     slotKeyname, 
+			    snprintf(keyname,
+				     sizeof(keyname), "%s%s",
+				     slotKeyname,
 				     kSlotAncKey_Step);
-			    anckey = (DRMS_Keyword_t *)hcon_lookup_lower(&(template->keywords), 
+			    anckey = (DRMS_Keyword_t *)hcon_lookup_lower(&(template->keywords),
                                                                          keyname);
 			 }
 			 else
@@ -1282,12 +1282,12 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys,
                 fprintf(stderr, "Missing required ancillary keyword '%s'.\n", keyname);
                 failure = 1;
 		      }
-		      
+
 		      if (!failure)
 		      {
 		        /* The value of the step keyword must not be zero. */
 		        double stepVal = drms2double(drms_keyword_gettype(anckey), (DRMS_Type_Value_t *)drms_keyword_getvalue(anckey), &drmsStatus);
-		        
+
 		        if (drmsStatus != DRMS_SUCCESS)
 		        {
 		            fprintf(stderr, "Cannot get step key value.");
@@ -1302,7 +1302,7 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys,
                     }
 		        }
 		      }
-		      
+
 		      if (!failure && anckey)
 		      {
                 /* Step must be constant */
@@ -1329,7 +1329,7 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys,
 
 			    if (utype == kSlotKeyUnit_Invalid)
 			    {
-			       fprintf(stderr, 
+			       fprintf(stderr,
 				       "Slot keyword unit '%s' is not valid.\n",
 				       drms_keyword_getvalue(anckey)->string_val);
 			       failure = 1;
@@ -1337,7 +1337,7 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys,
 			 }
 			 else
 			 {
-			    fprintf(stderr, 
+			    fprintf(stderr,
 				    "Ancillary keyword '%s' must be constant"
 				    " and of data type 'string'.\n",
 				    keyname);
@@ -1348,12 +1348,12 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys,
 		   break;
 		 case kRecScopeType_SLOT:
 		   {
-		      snprintf(keyname, 
-			       sizeof(keyname), "%s%s", 
-			       slotKeyname, 
+		      snprintf(keyname,
+			       sizeof(keyname), "%s%s",
+			       slotKeyname,
 			       kSlotAncKey_Base);
-		      DRMS_Keyword_t *anckey = 
-			(DRMS_Keyword_t *)hcon_lookup_lower(&(template->keywords), 
+		      DRMS_Keyword_t *anckey =
+			(DRMS_Keyword_t *)hcon_lookup_lower(&(template->keywords),
 							    keyname);
 
 		      if (anckey)
@@ -1365,18 +1365,18 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys,
 			      drms_keyword_gettype(anckey) == DRMS_TYPE_TIME))
 
 			 {
-			    snprintf(keyname, 
-				     sizeof(keyname), "%s%s", 
-				     slotKeyname, 
+			    snprintf(keyname,
+				     sizeof(keyname), "%s%s",
+				     slotKeyname,
 				     kSlotAncKey_Step);
-			    anckey = 
-			      (DRMS_Keyword_t *)hcon_lookup_lower(&(template->keywords), 
+			    anckey =
+			      (DRMS_Keyword_t *)hcon_lookup_lower(&(template->keywords),
 								  keyname);
 			 }
 			 else
 			 {
 			    fprintf(stderr, "Ancillary keyword '%s' must be constant"
-				    " and of data type 'double', 'float', or 'time'.\n", 
+				    " and of data type 'double', 'float', or 'time'.\n",
 				    keyname);
 			    failure = 1;
 			 }
@@ -1384,17 +1384,17 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys,
 
 		      if (!anckey)
 		      {
-			 fprintf(stderr, 
+			 fprintf(stderr,
 				 "Missing required ancillary keyword '%s'.\n",
 				 keyname);
 			 failure = 1;
 		      }
-		      
+
 		      if (!failure)
 		      {
 		        /* The value of the step keyword must not be zero. */
 		        double stepVal = drms2double(drms_keyword_gettype(anckey), (DRMS_Type_Value_t *)drms_keyword_getvalue(anckey), &drmsStatus);
-		        
+
 		        if (drmsStatus != DRMS_SUCCESS)
 		        {
 		            fprintf(stderr, "Cannot get step key value.");
@@ -1409,24 +1409,24 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys,
                     }
 		        }
 		      }
-		      
+
 		      if (!failure && anckey)
 		      {
 			 /* Step must be constant */
 			 if (drms_keyword_isconstant(anckey))
 			 {
 			    /* _unit is optional */
-			    snprintf(keyname, 
-				     sizeof(keyname), "%s%s", 
-				     slotKeyname, 
+			    snprintf(keyname,
+				     sizeof(keyname), "%s%s",
+				     slotKeyname,
 				     kSlotAncKey_Unit);
-			    anckey = 
-			      (DRMS_Keyword_t *)hcon_lookup_lower(&(template->keywords), 
+			    anckey =
+			      (DRMS_Keyword_t *)hcon_lookup_lower(&(template->keywords),
 								  keyname);
 			 }
 			 else
 			 {
-			    fprintf(stderr, 
+			    fprintf(stderr,
 				    "Ancillary keyword '%s' must be constant.\n",
 				    keyname);
 			    failure = 1;
@@ -1440,7 +1440,7 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys,
 			 if (drms_keyword_gettype(anckey) != DRMS_TYPE_STRING ||
 			     !drms_keyword_isconstant(anckey))
 			 {
-			    fprintf(stderr, 
+			    fprintf(stderr,
 				    "Ancillary keyword '%s' must be constant"
 				    " and of data type 'string'.\n",
 				    keyname);
@@ -1453,27 +1453,27 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys,
 		   break;
 		 case kRecScopeType_CARR:
 		   {
-		      snprintf(keyname, 
-			       sizeof(keyname), "%s%s", 
-			       slotKeyname, 
+		      snprintf(keyname,
+			       sizeof(keyname), "%s%s",
+			       slotKeyname,
 			       kSlotAncKey_Step);
-		      DRMS_Keyword_t *anckey = 
-			(DRMS_Keyword_t *)hcon_lookup_lower(&(template->keywords), 
+		      DRMS_Keyword_t *anckey =
+			(DRMS_Keyword_t *)hcon_lookup_lower(&(template->keywords),
 							    keyname);
 
 		      if (!anckey)
 		      {
-			 fprintf(stderr, 
+			 fprintf(stderr,
 				 "Missing required ancillary keyword '%s'.\n",
 				 keyname);
 			 failure = 1;
 		      }
-		      
+
 		      if (!failure)
 		      {
 		        /* The value of the step keyword must not be zero. */
 		        double stepVal = drms2double(drms_keyword_gettype(anckey), (DRMS_Type_Value_t *)drms_keyword_getvalue(anckey), &drmsStatus);
-		        
+
 		        if (drmsStatus != DRMS_SUCCESS)
 		        {
 		            fprintf(stderr, "Cannot get step key value.");
@@ -1495,17 +1495,17 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys,
 			 if (drms_keyword_isconstant(anckey))
 			 {
 			    /* _unit is optional */
-			    snprintf(keyname, 
-				     sizeof(keyname), "%s%s", 
-				     slotKeyname, 
+			    snprintf(keyname,
+				     sizeof(keyname), "%s%s",
+				     slotKeyname,
 				     kSlotAncKey_Unit);
-			    anckey = 
-			      (DRMS_Keyword_t *)hcon_lookup_lower(&(template->keywords), 
+			    anckey =
+			      (DRMS_Keyword_t *)hcon_lookup_lower(&(template->keywords),
 								  keyname);
 			 }
 			 else
 			 {
-			    fprintf(stderr, 
+			    fprintf(stderr,
 				    "Ancillary keyword '%s' must be constant.\n",
 				    keyname);
 			    failure = 1;
@@ -1518,12 +1518,12 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys,
 			 if (drms_keyword_gettype(anckey) == DRMS_TYPE_STRING &&
 			     drms_keyword_isconstant(anckey))
 			 {
-			    DRMS_SlotKeyUnit_t utype = 
+			    DRMS_SlotKeyUnit_t utype =
 			      drms_keyword_getunit(anckey, NULL);
 
 			    if (utype == kSlotKeyUnit_Invalid)
 			    {
-			       fprintf(stderr, 
+			       fprintf(stderr,
 				       "Slot keyword unit '%s' is not valid.\n",
 				       drms_keyword_getvalue(anckey)->string_val);
 			       failure = 1;
@@ -1531,7 +1531,7 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys,
 			 }
 			 else
 			 {
-			    fprintf(stderr, 
+			    fprintf(stderr,
 				    "Ancillary keyword '%s' must be constant"
 				    " and of data type 'string'.\n",
 				    keyname);
@@ -1541,8 +1541,8 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys,
 		   }
 		   break;
 		 default:
-		   fprintf(stderr, 
-			   "Invalid recscope type '%d'.\n", 
+		   fprintf(stderr,
+			   "Invalid recscope type '%d'.\n",
 			   (int)drms_keyword_getrecscope(*pSlotKey));
 		   failure = 1;
 	      }
@@ -1634,7 +1634,7 @@ static int FormatChk(const char *format, DRMS_Type_t dtype)
          if (ppcnt && gotformat)
          {
             ok = 0;
-            fprintf(stderr, "Too many format specifiers in '%s'.  There should be one only.\n", format); 
+            fprintf(stderr, "Too many format specifiers in '%s'.  There should be one only.\n", format);
             break;
          }
 
@@ -1648,7 +1648,7 @@ static int FormatChk(const char *format, DRMS_Type_t dtype)
 
             /* Since all DRMS values are signed values:
              *   ignore unsigned arguments - %u,%c
-             *   ignore pointer arguments - %p,%n 
+             *   ignore pointer arguments - %p,%n
              *   ignore Unicode arguments - %C,%S  */
             md = strtok_r(fcopy2, "dioxXfFeEgGaAs", &lasts);
             if (md)
@@ -1661,7 +1661,7 @@ static int FormatChk(const char *format, DRMS_Type_t dtype)
                /* figure out which modifier is present */
                if (strstr(md, "hh"))
                {
-                  /* The argument is converted to an int and passed to printf, 
+                  /* The argument is converted to an int and passed to printf,
                      then cast to char before printing */
                   lmod = kPFormatLMod_Char;
                }
@@ -1673,14 +1673,14 @@ static int FormatChk(const char *format, DRMS_Type_t dtype)
                }
                else if (strstr(md, "ll"))
                {
-                  /* The argument is converted to a long long and passed to printf, 
+                  /* The argument is converted to a long long and passed to printf,
                      and printed as a long long */
                   lmod = kPFormatLMod_LongLong;
                }
                else if (strchr(md, 'l'))
                {
-                  /* Don't use this modifier - on 32-bit machines this is 32 bits, but on 
-                   * 64-bit machines, this is 64 bits. So if your data type is long long, 
+                  /* Don't use this modifier - on 32-bit machines this is 32 bits, but on
+                   * 64-bit machines, this is 64 bits. So if your data type is long long,
                    * this will be converted to long, which could be 32-bits, which is too
                    * small to hold a 64-bit value, which would result in demotion. */
                   if (dtype == DRMS_TYPE_STRING)
@@ -1721,31 +1721,31 @@ static int FormatChk(const char *format, DRMS_Type_t dtype)
                   switch (dtype)
                   {
                      case DRMS_TYPE_CHAR:
-                       ok &= (lmod == kPFormatLMod_None || lmod == kPFormatLMod_Char || 
+                       ok &= (lmod == kPFormatLMod_None || lmod == kPFormatLMod_Char ||
                               lmod == kPFormatLMod_Short || lmod == kPFormatLMod_LongLong);
-                       ok &= (sp == 'd' || sp == 'i' || sp == 'o' || sp == 'x' || sp == 'X' || 
-                              sp == 'f' || sp == 'F' || sp == 'e' || sp == 'E' || sp == 'g' || sp == 'G' || 
+                       ok &= (sp == 'd' || sp == 'i' || sp == 'o' || sp == 'x' || sp == 'X' ||
+                              sp == 'f' || sp == 'F' || sp == 'e' || sp == 'E' || sp == 'g' || sp == 'G' ||
                               sp == 'a' || sp == 'A');
                        break;
                      case DRMS_TYPE_SHORT:
-                       ok &= (lmod == kPFormatLMod_None || lmod == kPFormatLMod_Short || 
+                       ok &= (lmod == kPFormatLMod_None || lmod == kPFormatLMod_Short ||
                               lmod == kPFormatLMod_LongLong);
-                       ok &= (sp == 'd' || sp == 'i' || sp == 'o' || sp == 'x' || sp == 'X' || 
-                              sp == 'f' || sp == 'F' || sp == 'e' || sp == 'E' || sp == 'g' || sp == 'G' || 
+                       ok &= (sp == 'd' || sp == 'i' || sp == 'o' || sp == 'x' || sp == 'X' ||
+                              sp == 'f' || sp == 'F' || sp == 'e' || sp == 'E' || sp == 'g' || sp == 'G' ||
                               sp == 'a' || sp == 'A');
-                       break; 
+                       break;
                      case DRMS_TYPE_INT:
                        ok &= (lmod == kPFormatLMod_None || lmod == kPFormatLMod_LongLong);
-                       ok &= (sp == 'd' || sp == 'i' || sp == 'o' || sp == 'x' || sp == 'X' || 
-                              sp == 'f' || sp == 'F' || sp == 'e' || sp == 'E' || sp == 'g' || sp == 'G' || 
+                       ok &= (sp == 'd' || sp == 'i' || sp == 'o' || sp == 'x' || sp == 'X' ||
+                              sp == 'f' || sp == 'F' || sp == 'e' || sp == 'E' || sp == 'g' || sp == 'G' ||
                               sp == 'a' || sp == 'A');
                        break;
                      case DRMS_TYPE_LONGLONG:
-                       ok &= ((lmod == kPFormatLMod_None && (sp != 'd' && sp!= 'i' 
-                                                             && sp != 'o' && sp != 'x' && sp != 'X')) || 
+                       ok &= ((lmod == kPFormatLMod_None && (sp != 'd' && sp!= 'i'
+                                                             && sp != 'o' && sp != 'x' && sp != 'X')) ||
                               lmod == kPFormatLMod_LongLong);
-                       ok &= (sp == 'd' || sp == 'i' || sp == 'o' || sp == 'x' || sp == 'X' || 
-                              sp == 'f' || sp == 'F' || sp == 'e' || sp == 'E' || sp == 'g' || sp == 'G' || 
+                       ok &= (sp == 'd' || sp == 'i' || sp == 'o' || sp == 'x' || sp == 'X' ||
+                              sp == 'f' || sp == 'F' || sp == 'e' || sp == 'E' || sp == 'g' || sp == 'G' ||
                               sp == 'a' || sp == 'A');
                        break;
                      case DRMS_TYPE_FLOAT:
@@ -1753,10 +1753,10 @@ static int FormatChk(const char *format, DRMS_Type_t dtype)
                      case DRMS_TYPE_DOUBLE:
                        /* float vals shouldn't be converted to integer vals */
                        /* length modifiers, other than 'L', have no impact on these and 'L' is fine here. */
-                       ok &= (sp == 'f' || sp == 'F' || sp == 'e' || sp == 'E' || sp == 'g' || sp == 'G' || 
+                       ok &= (sp == 'f' || sp == 'F' || sp == 'e' || sp == 'E' || sp == 'g' || sp == 'G' ||
                               sp == 'a' || sp == 'A');
                        break;
-                     case DRMS_TYPE_STRING:     
+                     case DRMS_TYPE_STRING:
                        /* The only bad modifier is 'l', which was blocked above */
                        ok &= (sp == 's');
                        break;
@@ -1771,7 +1771,7 @@ static int FormatChk(const char *format, DRMS_Type_t dtype)
             {
                /* Invalid format specifier */
                ok = 0;
-               fprintf(stderr, "Invalid format specifier.\n"); 
+               fprintf(stderr, "Invalid format specifier.\n");
             }
 
             if (fcopy2)
@@ -1791,7 +1791,7 @@ static int FormatChk(const char *format, DRMS_Type_t dtype)
       if (!gotformat)
       {
          ok = 0;
-         fprintf(stderr, "No format specifier found.\n"); 
+         fprintf(stderr, "No format specifier found.\n");
       }
 
       if (fcopy)
@@ -1803,8 +1803,8 @@ static int FormatChk(const char *format, DRMS_Type_t dtype)
    return ok;
 }
 
-static int parse_keyword(char **in, 
-			 DRMS_Record_t *template, 
+static int parse_keyword(char **in,
+			 DRMS_Record_t *template,
 			 HContainer_t *slotted,
                          int *keynum)
 {
@@ -1893,12 +1893,12 @@ static int parse_keyword(char **in,
     key = hcon_allocslot_lower(&template->keywords,name);
     XASSERT(key);
     memset(key,0,sizeof(DRMS_Keyword_t));
-    key->info = malloc(sizeof(DRMS_KeywordInfo_t)); 
-    XASSERT(key->info);   
+    key->info = malloc(sizeof(DRMS_KeywordInfo_t));
+    XASSERT(key->info);
     memset(key->info,0,sizeof(DRMS_KeywordInfo_t));
     strcpy(key->info->name,name);
     key->record = template;
-    key->info->islink = 1;   
+    key->info->islink = 1;
     strcpy(key->info->linkname,linkname);
     strcpy(key->info->target_key,target_key);
     key->info->type = DRMS_TYPE_INT;
@@ -1911,16 +1911,16 @@ static int parse_keyword(char **in,
     drms_keyword_unsetextprime(key);
     key->info->rank = (*keynum)++;
 
-    /* Also store rank in key->info->kwflags - if we do this, it will be saved into db. 
+    /* Also store rank in key->info->kwflags - if we do this, it will be saved into db.
      * When stored in the db, rank is 1-based, not 0-based. */
     key->info->kwflags |= (key->info->rank + 1) << 16;
 
     strcpy(key->info->description,description);
-  }  
+  }
   else if (!strcasecmp(constant,"index"))
   {
      /* Slotted-key index keyword */
-     /* Don't allow the creation of _index keywords since they can 
+     /* Don't allow the creation of _index keywords since they can
       * be created only one way (so make them implicit) */
      fprintf(stderr, "Specification of an index keyword in a jsd is not allowed.\n");
      GOTOFAILURE;
@@ -1938,14 +1938,14 @@ static int parse_keyword(char **in,
 
     if (per_segment == 1 && num_segments < 1)
     {
-       fprintf(stderr, 
+       fprintf(stderr,
 	       "'%s' declared per_segment, but no segments declared.\n",
 	       name);
        GOTOFAILURE;
     }
 
     for (seg=0; seg<(per_segment==1?num_segments:1); seg++)
-    {    
+    {
       /* If this is a per-segment keyword create one copy for each segment
 	 with the segment number formatted as "_%03d" appended to the name */
 
@@ -1967,8 +1967,8 @@ static int parse_keyword(char **in,
       strncpy(key->info->name,name1,sizeof(key->info->name));
       if (strlen(name1) >= sizeof(key->info->name))
         fprintf(stderr,
-		"WARNING keyword name %s truncated to %lld characters.\n", 
-		name1, 
+		"WARNING keyword name %s truncated to %lld characters.\n",
+		name1,
 		(long long)sizeof(key->info->name)-1);
       key->record = template;
 
@@ -1988,7 +1988,7 @@ static int parse_keyword(char **in,
 
       DRMS_Value_t vholder;
       TIME interval = 0;
-      
+
       /* If the key type is time, then this could be a time interval. */
       if (key->info->type == DRMS_TYPE_TIME)
       {
@@ -2029,16 +2029,16 @@ static int parse_keyword(char **in,
          }
       }
 
-#ifdef DEBUG      
+#ifdef DEBUG
       printf("Default value = '%s' = ",defval);
       drms_printfval(key->info->type, &key->value);
       printf("\n");
 #endif
       if (!FormatChk(format, key->info->type))
       {
-         fprintf(stderr, 
+         fprintf(stderr,
                  "WARNING: The format specified '%s' is incompatible with the data type '%s' of keyword '%s'.\n",
-                 format, 
+                 format,
                  drms_type2str(key->info->type),
                  key->info->name);
       }
@@ -2047,7 +2047,7 @@ static int parse_keyword(char **in,
       key->info->recscope = kRecScopeType_Variable;
       key->info->rank = (*keynum)++;
 
-      /* Also store rank in key->info->kwflags - if we do this, it will be saved into db. 
+      /* Also store rank in key->info->kwflags - if we do this, it will be saved into db.
        * When stored in the db, rank is 1-based, not 0-based. */
       key->info->kwflags |= (key->info->rank + 1) << 16;
 
@@ -2069,8 +2069,8 @@ static int parse_keyword(char **in,
     }
   } /* not a link or an index keyword */
   p = ++q;
-  *in = q; 
- 
+  *in = q;
+
   return 0;
  failure:
   fprintf(stderr,"%s, line %d: Invalid keyword descriptor on line %d.\n",
@@ -2086,7 +2086,7 @@ static int parse_primaryindex(char *desc, DRMS_Record_t *template)
   DRMS_Keyword_t *key;
   char name[DRMS_MAXKEYNAMELEN];
 
-  /* Parse the description line by line, filling 
+  /* Parse the description line by line, filling
      out the template struct. */
   start = desc;
   len = getnextline(&start);
@@ -2106,29 +2106,29 @@ static int parse_primaryindex(char *desc, DRMS_Record_t *template)
     q = p;
     if (GETKEYWORD(&q))
       return 1;
-    
+
     if (prefixmatch(p,"Index:") || prefixmatch(p,"PrimeKeys:"))
     {
       p = q;
       SKIPWS(p);
 
       while(p<=(start+len) && *p)
-      {	
+      {
 	if (template->seriesinfo->pidx_num >= DRMS_MAXPRIMIDX)
 	{
 	  printf("Too many keywords in primary index.\n");
 	  return 1;
 	}
-	  
+
 
 	while(p<=(start+len)  && isspace(*p))
 	  ++p;
 	q = name;
 	while(p<=(start+len) && q<name+sizeof(name) && !isspace(*p) && *p!=',')
-	  *q++ = *p++;	       
+	  *q++ = *p++;
 	*q++ = 0;
 	p++;
-	
+
 	key = hcon_lookup_lower(&template->keywords,name);
 	if (key==NULL)
 	{
@@ -2138,7 +2138,7 @@ static int parse_primaryindex(char *desc, DRMS_Record_t *template)
 
 	if (drms_keyword_getsegscope(key) == 1)
 	{
-	   /* The purpose of per-segment keywords is to select 
+	   /* The purpose of per-segment keywords is to select
 	    * among segments within a record, not to select among records
 	    * within a series (which is the purpose of a prime keyword). */
 #ifdef DEBUG
@@ -2176,9 +2176,9 @@ static int parse_primaryindex(char *desc, DRMS_Record_t *template)
 	   printf("adding primary key '%s'\n",name);
 #endif
 	   template->seriesinfo->pidx_keywords[(template->seriesinfo->pidx_num)++] =
-	     key; 
+	     key;
 
-           /* This keyword is not slotted, and it is not an index keyword, so 
+           /* This keyword is not slotted, and it is not an index keyword, so
             * it is prime in both the DRMS-internal and DRMS-external senses. */
            drms_keyword_setintprime(key);
            drms_keyword_setextprime(key);
@@ -2191,7 +2191,7 @@ static int parse_primaryindex(char *desc, DRMS_Record_t *template)
       for (i=0; i<template->seriesinfo->pidx_num; i++)
 	printf("'%s' ",(template->seriesinfo->pidx_keywords[i])->info->name); }
       printf("\n");
-#endif     
+#endif
 
       break;
     }
@@ -2204,17 +2204,17 @@ static int parse_primaryindex(char *desc, DRMS_Record_t *template)
   DRMS_Keyword_t *pKey = NULL;
   const char *keyname = NULL;
   HIterator_t *hit = hiter_create(&(template->keywords));
-      
+
   if (hit)
   {
-     while ((pKey = 
+     while ((pKey =
 	     (DRMS_Keyword_t *)hiter_extgetnext(hit, &keyname)) != NULL)
      {
 	if (drms_keyword_isslotted(pKey))
 	{
            if (!drms_keyword_getextprime(pKey))
 	   {
-	      fprintf(stderr, 
+	      fprintf(stderr,
 		      "Slotted key '%s' was not declared drms prime.\n",
 		      keyname);
 	      return 1;
@@ -2225,7 +2225,7 @@ static int parse_primaryindex(char *desc, DRMS_Record_t *template)
      hiter_destroy(&hit);
   }
 
-  return 0; 
+  return 0;
 }
 
 static int parse_dbindex(char *desc, DRMS_Record_t *template)
@@ -2236,7 +2236,7 @@ static int parse_dbindex(char *desc, DRMS_Record_t *template)
   char name[DRMS_MAXNAMELEN];
   int exist = 0;
 
-  /* Parse the description line by line, filling 
+  /* Parse the description line by line, filling
      out the template struct. */
   start = desc;
   len = getnextline(&start);
@@ -2256,7 +2256,7 @@ static int parse_dbindex(char *desc, DRMS_Record_t *template)
     q = p;
     if (GETKEYWORD(&q))
       return 1;
-    
+
     if (prefixmatch(p,"DBIndex:"))
     {
       exist = 1;
@@ -2264,22 +2264,22 @@ static int parse_dbindex(char *desc, DRMS_Record_t *template)
       SKIPWS(p);
 
       while(p<=(start+len) && *p)
-      {	
+      {
 	if (template->seriesinfo->dbidx_num >= DRMS_MAXDBIDX)
 	{
 	  printf("Too many keywords in primary index.\n");
 	  return 1;
 	}
-	  
+
 
 	while(p<=(start+len)  && isspace(*p))
 	  ++p;
 	q = name;
 	while(p<=(start+len) && q<name+sizeof(name) && !isspace(*p) && *p!=',')
-	  *q++ = *p++;	       
+	  *q++ = *p++;
 	*q++ = 0;
 	p++;
-	
+
 	key = hcon_lookup_lower(&template->keywords,name);
 	if (key==NULL)
 	{
@@ -2289,7 +2289,7 @@ static int parse_dbindex(char *desc, DRMS_Record_t *template)
 
 	if (drms_keyword_getsegscope(key) == 1)
 	{
-	   /* The purpose of per-segment keywords is to select 
+	   /* The purpose of per-segment keywords is to select
 	    * among segments within a record, not to select among records
 	    * within a series (which is the purpose of a prime keyword). */
 #ifdef DEBUG
@@ -2323,7 +2323,7 @@ static int parse_dbindex(char *desc, DRMS_Record_t *template)
 	   printf("adding db idx '%s'\n",name);
 #endif
 	   template->seriesinfo->dbidx_keywords[(template->seriesinfo->dbidx_num)++] =
-	     key; 
+	     key;
 	}
       }
 
@@ -2333,7 +2333,7 @@ static int parse_dbindex(char *desc, DRMS_Record_t *template)
       for (i=0; i<template->seriesinfo->dbidx_num; i++)
 	printf("'%s' ",(template->seriesinfo->dbidx_keywords[i])->info->name); }
       printf("\n");
-#endif     
+#endif
 
       break;
     }
@@ -2346,7 +2346,7 @@ static int parse_dbindex(char *desc, DRMS_Record_t *template)
       template->seriesinfo->dbidx_num = -1;
   }
 
-  return 0; 
+  return 0;
 }
 
 static int keywordname_isreserved(const char *name)
@@ -2354,7 +2354,7 @@ static int keywordname_isreserved(const char *name)
    return (base_drmskeycheck(name) == 2);
 }
 
-/* Skip empty lines and lines where the first non-whitespace character 
+/* Skip empty lines and lines where the first non-whitespace character
  * is '#'. Assumes we're at the beginning of a line. */
 static int getnextline(char **start)
 {
@@ -2362,7 +2362,7 @@ static int getnextline(char **start)
   int length;
 
   length = 0;
-  p = *start;  
+  p = *start;
   SKIPWS(p);
   while(*p && *p=='#')
   {
@@ -2382,31 +2382,31 @@ static int getnextline(char **start)
 
   /* find the length of the line. */
   while(*p && *p != '\n')
-  {       
-    length++; 
-    ++p; 
-  } 
+  {
+    length++;
+    ++p;
+  }
 
   lineno++;
   return length;
 }
 
 
-/* getstring: Copy a (possibly empty) string starting at address 
-   *in to *out. Copy a maximum of maxlen-1 characters. 
-   A string is either any sequence of characters quoted by " or ', 
+/* getstring: Copy a (possibly empty) string starting at address
+   *in to *out. Copy a maximum of maxlen-1 characters.
+   A string is either any sequence of characters quoted by " or ',
    or an unquoted sequence of non-whitespace characters.
    The quotes are not copied to *out. On exit *in points
-   to the character immediately following the last character 
+   to the character immediately following the last character
    copied from the input string. Return value is the number
    of characters copied or -1 if an error occured. */
-/* returns -1 if no string was found (an empty string is a 
+/* returns -1 if no string was found (an empty string is a
  * string, so -1 will not b returned) */
 static int getstring(char **inn, char *out, int maxlen) {
   char escape;
   int len;
   char *in;
-  
+
   in = *inn;
   /* Skip leading whitespace. */
   SKIPWS(in);
@@ -2431,7 +2431,7 @@ static int getstring(char **inn, char *out, int maxlen) {
   }
   else
   {
-    /* an un-escaped string (cannot contain whitespace or comma) */    
+    /* an un-escaped string (cannot contain whitespace or comma) */
     while(*in && !ISBLANK(*in) && *in!=',' && *in != '\n' && len<maxlen-1)
     {
       *out++ = *in++;
@@ -2452,17 +2452,17 @@ static int getstring(char **inn, char *out, int maxlen) {
   return len;
 }
 
-/* same as above, but don't strip off quotes - you need these because there might be escape chars 
+/* same as above, but don't strip off quotes - you need these because there might be escape chars
  * in the string (like tabs)
  */
-/* returns -1 if no string was found (an empty string is a 
+/* returns -1 if no string was found (an empty string is a
  * string, so -1 will not b returned) */
 static int getvalstring(char **inn, char *out, int maxlen)
 {
    char escape;
    int len;
    char *in;
-  
+
    in = *inn;
    /* Skip leading whitespace. */
    SKIPWS(in);
@@ -2490,7 +2490,7 @@ static int getvalstring(char **inn, char *out, int maxlen)
    }
    else
    {
-      /* an un-escaped string (cannot contain whitespace or comma) */    
+      /* an un-escaped string (cannot contain whitespace or comma) */
       return getstring(inn, out, maxlen);
    }
    /* Terminate output string. */
@@ -2506,7 +2506,7 @@ int getshort(char **in, int16_t *val, int parserline)
 {
     char *endptr;
     long long ival;
-    
+
     ival = (int)strtoll(*in, &endptr, 0);
     if (ival == 0 && endptr == *in )
     {
@@ -2540,7 +2540,7 @@ int getint(char **in, int *val, int parserline)
 {
     char *endptr;
     long long ival;
-    
+
     ival = (int)strtoll(*in, &endptr, 0);
     if (ival == 0 && endptr == *in )
     {
@@ -2596,11 +2596,11 @@ static int getdouble(char **in, double *val, int parserline)
   *val = strtod(*in, &endptr);
   if (*val==0 && endptr==*in )
   {
-      fprintf(stderr, 
+      fprintf(stderr,
               "%s, line %d: The string '%s' on line %d of JSOC series descriptor is not a double.\n",
-              __FILE__, 
-              parserline, 
-              *in, 
+              __FILE__,
+              parserline,
+              *in,
               lineno);
       return 1;
   }
@@ -2613,7 +2613,7 @@ static int getdouble(char **in, double *val, int parserline)
 */
 
 /* Get a string followed by comma (if the comma exists). */
-/* If there is no token, return -1, else return the length of the token 
+/* If there is no token, return -1, else return the length of the token
  * (which might be zero for empty string).
  *
  *  string     token                 len returned
@@ -2626,7 +2626,7 @@ static int getdouble(char **in, double *val, int parserline)
  *
  * If there is an error, returns -1.
  */
-static int gettoken(char **in, char *copy, int maxlen, int parserline) 
+static int gettoken(char **in, char *copy, int maxlen, int parserline)
 {
   int len;
   int ln = lineno;
@@ -2646,20 +2646,20 @@ static int gettoken(char **in, char *copy, int maxlen, int parserline)
      if (**in != ',')
      {
 	fprintf(stderr,
-                "%s, line %d: Expected comma (',') on line %d of JSOC series descriptor.\n", 
-                __FILE__, 
-                parserline, 
+                "%s, line %d: Expected comma (',') on line %d of JSOC series descriptor.\n",
+                __FILE__,
+                parserline,
                 lineno);
 	return -1;
      }
 
      ++(*in);
   }
- 
+
   return len;
 }
 
-/* If there is no token, return -1, else return the length of the token 
+/* If there is no token, return -1, else return the length of the token
  * (which might be zero for empty string).
  *
  *  string     token                 len returned
@@ -2695,8 +2695,8 @@ static int getvaltoken(char **in, DRMS_Type_t type, char *copy, int maxlen, int 
          {
             fprintf(stderr,
                     "%s, line %d: Expected comma (',') on line %d of JSOC series descriptor.\n",
-                    __FILE__, 
-                    parserline, 
+                    __FILE__,
+                    parserline,
                     lineno);
             return -1;
          }
@@ -2717,10 +2717,10 @@ static inline int prefixmatch(char *token, const char *pattern)
   return !strncasecmp(token,pattern,strlen(pattern));
 }
 
-/* Check that the line has the form 
-  <WS> <keyword> <WS>':' 
+/* Check that the line has the form
+  <WS> <keyword> <WS>':'
    i.e. begins with a keyword followed by ':'. Advance
-   the line pointer to the next character after ':' 
+   the line pointer to the next character after ':'
 */
 int getkeyword(char **line, int parserline)
 {
@@ -2733,8 +2733,8 @@ int getkeyword(char **line, int parserline)
   if (*p != ':')
   {
     fprintf(stderr,"%s, line %d: Syntax error in JSOC series descriptor. "
-	    "Expected ':' at line %d, column %d.\n", __FILE__, 
-	    parserline, (int)(p - *line), lineno); 
+	    "Expected ':' at line %d, column %d.\n", __FILE__,
+	    parserline, (int)(p - *line), lineno);
     return 1;
   }
   *line = p+1;
@@ -2751,12 +2751,12 @@ void drms_keyword_print_jsd(DRMS_Keyword_t *key) {
       const char *rscope = drms_keyword_getrecscopestr(key, &stat);
       fprintf(stdout, ", %s", stat == DRMS_SUCCESS ? rscope : NULL);
 
-    /* key->info->per_segment overload: <= drms_parser.c:1.30 will fail here if the the value in 
-     * the persegment column of the drms_keyword table has been overloaded to contain 
+    /* key->info->per_segment overload: <= drms_parser.c:1.30 will fail here if the the value in
+     * the persegment column of the drms_keyword table has been overloaded to contain
      * all the keyword bit-flags. */
       if (drms_keyword_getperseg(key))
 	printf(", segment");
-      else 
+      else
 	printf(", record");
       printf(", ");
       if (key->info->type == DRMS_TYPE_STRING) {
@@ -2764,8 +2764,8 @@ void drms_keyword_print_jsd(DRMS_Keyword_t *key) {
 	sprintf(qf, "\"%s\"", key->info->format);
 	printf(qf, key->value.string_val);
       }
-      else 
-	drms_keyword_printval(key);      
+      else
+	drms_keyword_printval(key);
       if (key->info->unit[0] && key->info->unit[0] != ' ') {
 	printf(", \"%s\", \"%s\"", key->info->format, key->info->unit);
       } else {
@@ -2827,14 +2827,14 @@ void drms_segment_print_jsd(DRMS_Segment_t *seg) {
        printf("Illegal protocol: %d", (int)seg->info->protocol);
     }
 
-    if (seg->info->protocol == DRMS_FITS || 
+    if (seg->info->protocol == DRMS_FITS ||
         seg->info->protocol == DRMS_TAS)
     {
        /* compression string */
        printf(", \"%s\"", seg->cparms);
     }
 
-    if ((seg->info->protocol == DRMS_TAS || 
+    if ((seg->info->protocol == DRMS_TAS ||
          seg->info->protocol == DRMS_FITS ||
          seg->info->protocol == DRMS_FITZ ||
          seg->info->protocol == DRMS_BINARY ||
@@ -2865,7 +2865,7 @@ void drms_jsd_printfromrec(DRMS_Record_t *rec) {
    DRMS_Keyword_t *key;
    DRMS_Segment_t *seg;
    int npkeys = 0;
-   char **extpkeys; 
+   char **extpkeys;
    DRMS_Keyword_t *dbidxkw = NULL;
    const char *dbidxkwname = NULL;
     int16_t newSuRet = INT16_MIN;
@@ -2877,7 +2877,7 @@ void drms_jsd_printfromrec(DRMS_Record_t *rec) {
    printf("%-*s\t%s\n",fwidth,"Owner:",rec->seriesinfo->owner);
    printf("%-*s\t%d\n",fwidth,"Unitsize:",rec->seriesinfo->unitsize);
    printf("%-*s\t%d\n",fwidth,"Archive:",rec->seriesinfo->archive);
-    
+
     newSuRet = drms_series_getnewsuretention(rec->seriesinfo);
     stagingRet = drms_series_getstagingretention(rec->seriesinfo);
     printf("%-*s\t%hd\n", fwidth, "Retention:", newSuRet);
@@ -2886,7 +2886,7 @@ void drms_jsd_printfromrec(DRMS_Record_t *rec) {
         stagingRet = (int16_t)abs(STDRETENTION);
     }
     printf("%-*s\t%hd\n", fwidth, "StagingRetention:", stagingRet);
-    
+
    printf("%-*s\t%d\n",fwidth,"Tapegroup:",rec->seriesinfo->tapegroup);
    /*printf("%-*s\t%s\n",fwidth,"Version:",rec->seriesinfo->version);*/
 
@@ -2907,8 +2907,8 @@ void drms_jsd_printfromrec(DRMS_Record_t *rec) {
      for (int i = 0; i < rec->seriesinfo->dbidx_num; i++) {
         dbidxkw = rec->seriesinfo->dbidx_keywords[i];
 
-        /* An db index may be the index keyword for a slotted keyword. In that case, 
-         * the jsd should contain the slotted keyword as a db index, not the 
+        /* An db index may be the index keyword for a slotted keyword. In that case,
+         * the jsd should contain the slotted keyword as a db index, not the
          * index keyword. */
         if (drms_keyword_isindex(dbidxkw))
         {
@@ -2934,7 +2934,7 @@ void drms_jsd_printfromrec(DRMS_Record_t *rec) {
 
    printf("%-*s\t\"%s\"\n",fwidth,"Description:",rec->seriesinfo->description);
    printf("\n#=====Links=====\n");
-   hiter_new_sort(&hit, &rec->links, drms_link_ranksort); 
+   hiter_new_sort(&hit, &rec->links, drms_link_ranksort);
    while( (link = (DRMS_Link_t *)hiter_getnext(&hit)) )
      drms_link_print_jsd(link);
 
@@ -2957,7 +2957,7 @@ void drms_jsd_printfromrec(DRMS_Record_t *rec) {
 void drms_jsd_print(DRMS_Env_t *drms_env, const char *seriesname) {
    int status = DRMS_SUCCESS;
 
-   /* Don't use drms_template_record() as it expands per-segment keywords 
+   /* Don't use drms_template_record() as it expands per-segment keywords
     * into multiple record-specific keywords. */
    /* DRMS_Record_t *rec = drms_template_record(drms_env, seriesname, &status); */
 
@@ -2976,14 +2976,13 @@ void drms_jsd_print(DRMS_Env_t *drms_env, const char *seriesname) {
 }
 
 /* print a query that will return the given record */
-
 /* string version */
 void drms_sprint_rec_query(char *querystring, DRMS_Record_t *rec)
   {
   int iprime, nprime=0;
   char **external_pkeys, *pkey;
   DRMS_Keyword_t *rec_key;
-  
+
   if (!querystring)
     return;
   if (!rec)
@@ -3019,7 +3018,7 @@ void drms_sprint_rec_query(char *querystring, DRMS_Record_t *rec)
 
   free(external_pkeys);
   }
-  
+
   /* safe string version */
 int drms_snprint_rec_spec(char *spec, size_t size, DRMS_Record_t *rec)
 {
@@ -3037,23 +3036,23 @@ int drms_snprint_rec_spec(char *spec, size_t size, DRMS_Record_t *rec)
         fprintf(stderr, "drms_snprint_rec_spec(): missing specification argument\n");
         rv = DRMS_ERROR_INVALIDDATA;
     }
-    
+
     if (rv == DRMS_SUCCESS)
     {
         specInternal = calloc(1, specInternalSz);
-        
+
         if (!specInternal)
         {
             rv = DRMS_ERROR_OUTOFMEMORY;
         }
     }
-    
+
     if (rv == DRMS_SUCCESS)
     {
         if (!rec)
         {
             specInternal = base_strcatalloc(specInternal, "** No Record **", &specInternalSz);
-            
+
             fprintf(stderr, "drms_snprint_rec_spec(): missing record argument\n");
             rv = DRMS_ERROR_INVALIDDATA;
         }
@@ -3068,30 +3067,30 @@ int drms_snprint_rec_spec(char *spec, size_t size, DRMS_Record_t *rec)
             rv = DRMS_ERROR_OUTOFMEMORY;
         }
     }
-    
+
     if (rv == DRMS_SUCCESS)
     {
         external_pkeys = drms_series_createpkeyarray(rec->env, rec->seriesinfo->seriesname, &nprime, &rv);
-    
+
         if (rv == DRMS_SUCCESS)
-        {            
+        {
             char filterValue[256];
 
             if (external_pkeys && nprime > 0)
             {
                 // prime-key filters
                 for (iprime = 0; iprime < nprime; iprime++)
-                {            
+                {
                     pkey = external_pkeys[iprime];
                     key = drms_keyword_lookup(rec, pkey, 1);
-            
+
                     if (!key)
                     {
                         fprintf(stderr, "unknown keyword %s\n", pkey);
                         rv = DRMS_ERROR_INVALIDKEYWORD;
                         break;
                     }
-            
+
                     specInternal = base_strcatalloc(specInternal, "[", &specInternalSz);
                     drms_keyword_snprintfval(key, filterValue, sizeof(filterValue));
                     specInternal = base_strcatalloc(specInternal, filterValue, &specInternalSz);
@@ -3126,7 +3125,7 @@ int drms_snprint_rec_spec(char *spec, size_t size, DRMS_Record_t *rec)
         free(external_pkeys);
         external_pkeys = NULL;
     }
-    
+
     if (specInternal)
     {
         if (rv == DRMS_SUCCESS)
@@ -3137,11 +3136,11 @@ int drms_snprint_rec_spec(char *spec, size_t size, DRMS_Record_t *rec)
                 rv = DRMS_QUERY_TRUNCATED;
             }
         }
-        
+
         free(specInternal);
         specInternal = NULL;
     }
-    
+
     return rv;
 }
 
