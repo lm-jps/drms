@@ -1973,7 +1973,6 @@ static ExpToStdoutStatus_t ExportRecordSetToStdout(DRMS_Env_t *env, int makeTar,
                         }
 
                         subset->ss_n = 1;
-                        subset->ss_currentrecs = (int *)calloc(1, sizeof(int));
                         drms_recordset_fetchnext_setcurrent(subset, -1); /* set iterator to first record */
                         subset->env = expRS->env;
                         expStatus = ExportRecordSetKeywordsToStdout(subset, series, makeTar, export_from_manifest, dumpFileName, suppress_stderr, ffmt, classname, mapfile, bytesExported, maxTarFileSize, &num_records_exported, infoDataArr, errorDataArr, error_buf, manifest_buf);
@@ -2200,44 +2199,50 @@ int DoIt(void)
         {
             char *cparmStr = NULL;
 
-            segCompression = calloc(1, sizeof(CFITSIO_COMPRESSION_TYPE));
-
-            if (segCompression)
+            if (compressAllSegs && list_llgetnitems(cparmsStrings) != 1)
             {
-                list_llreset(cparmsStrings);
-                iComp = 0;
-                while ((cparmNode = list_llnext(cparmsStrings)) != NULL)
+                if (sizeof(generalErrorBuf) - strlen(generalErrorBuf) > 0)
                 {
-                    cparmStr = *(char **)cparmNode->data;
-
-                    segCompression[iComp] = -1; /* not set */
-
-                    if (Compression_string_to_cfitsio_type(cparmStr, &segCompression[iComp]) != ExpToStdoutStatus_Success)
-                    {
-                        if (sizeof(generalErrorBuf) - strlen(generalErrorBuf) > 0)
-                        {
-                            snprintf(generalErrorBuf + strlen(generalErrorBuf), sizeof(generalErrorBuf) - strlen(generalErrorBuf), "invalid compression-string argument element %s\n", cparmStr);
-                        }
-
-                        expStatus = ExpToStdoutStatus_InvalidArgs;
-                        break;
-                    }
-
-                    iComp++;
+                    snprintf(generalErrorBuf + strlen(generalErrorBuf), sizeof(generalErrorBuf) - strlen(generalErrorBuf), "invalid combination of %s and %s arguments\n", ARG_CPARMS_STRING, ARG_COMPRESS_ALL_SEGS);
                 }
-
-                if (expStatus == ExpToStdoutStatus_Success && iComp != 1 && compressAllSegs)
-                {
-                    if (sizeof(generalErrorBuf) - strlen(generalErrorBuf) > 0)
-                    {
-                        snprintf(generalErrorBuf + strlen(generalErrorBuf), sizeof(generalErrorBuf) - strlen(generalErrorBuf), "invalid combination of %s and %s arguments\n", ARG_CPARMS_STRING, ARG_COMPRESS_ALL_SEGS);
-                    }
-                    expStatus = ExpToStdoutStatus_InvalidArgs;
-                }
+                expStatus = ExpToStdoutStatus_InvalidArgs;
             }
-            else
+
+            if (expStatus == ExpToStdoutStatus_Success)
             {
-                expStatus = ExpToStdoutStatus_OutOfMemory;
+                if (list_llgetnitems(cparmsStrings) > 0)
+                {
+                    segCompression = calloc(list_llgetnitems(cparmsStrings), sizeof(CFITSIO_COMPRESSION_TYPE));
+
+                    if (segCompression)
+                    {
+                        list_llreset(cparmsStrings);
+                        iComp = 0;
+                        while ((cparmNode = list_llnext(cparmsStrings)) != NULL)
+                        {
+                            cparmStr = *(char **)cparmNode->data;
+
+                            segCompression[iComp] = -1; /* not set */
+
+                            if (Compression_string_to_cfitsio_type(cparmStr, &segCompression[iComp]) != ExpToStdoutStatus_Success)
+                            {
+                                if (sizeof(generalErrorBuf) - strlen(generalErrorBuf) > 0)
+                                {
+                                    snprintf(generalErrorBuf + strlen(generalErrorBuf), sizeof(generalErrorBuf) - strlen(generalErrorBuf), "invalid compression-string argument element %s\n", cparmStr);
+                                }
+
+                                expStatus = ExpToStdoutStatus_InvalidArgs;
+                                break;
+                            }
+
+                            iComp++;
+                        }
+                    }
+                    else
+                    {
+                        expStatus = ExpToStdoutStatus_OutOfMemory;
+                    }
+                }
             }
         }
         else
@@ -2498,6 +2503,12 @@ int DoIt(void)
     {
         list_llfree(&cparmsStrings);
         cparmsStrings = NULL;
+    }
+
+    if (segCompression)
+    {
+        free(segCompression);
+        segCompression = NULL;
     }
 
     return expStatus;
