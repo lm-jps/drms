@@ -2456,7 +2456,14 @@ char *drms_recordset_extractfilter(DRMS_Record_t *template, const char *in, int 
         {
             if (status)
             {
-                *status = 1;
+                if (*pc == '\0')
+                {
+                    *status = 0;
+                }
+                else
+                {
+                    *status = 1;
+                }
             }
         }
         else
