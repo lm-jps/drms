@@ -367,7 +367,7 @@ static int parse_keyword_description(const char *description, char **comment_out
                                 external_comment = (char *)calloc(sizeof(char), strlen(description) + 1);
                                 if (external_comment)
                                 {
-                                    snprintf(external_comment, strlen(description) + 1, "%s", &working_description[length_cast + 1]);
+                                    snprintf(external_comment, strlen(description) + 1, "%s", strtok_r(NULL, "", &saver));
                                 }
                                 else
                                 {
@@ -2649,15 +2649,20 @@ int fitsexport_fitskeycheck(const char *fitsName)
    return FitsKeyNameValidationStatus(fitsName);
 }
 
-static int FITSKeyValToDRMSKeyVal(CFITSIO_KEYWORD *fitskey, DRMS_Type_t *type, DRMS_Type_Value_t *value, FE_Keyword_ExtType_t *casttype, char **format)
+static int FITSKeyValToDRMSKeyVal(CFITSIO_KEYWORD *fitskey, DRMS_Type_t *type, DRMS_Type_Value_t *value, FE_Keyword_ExtType_t *casttype, char **format, char **description)
 {
    int err = 0;
 
-    if (fitskey && type &&value &&casttype)
+    if (fitskey && type && value && casttype && description)
     {
         if (*(fitskey->key_format) != '\0')
         {
             *format = strdup(fitskey->key_format);
+        }
+
+        if (*(fitskey->key_comment) != '\0')
+        {
+            *description = strdup(fitskey->key_comment);
         }
 
         switch (fitskey->key_type)
@@ -2837,7 +2842,7 @@ int fitsexport_getintkeyname(const char *keyname, const char *fits_keyword_comme
                     memcpy(braced_informaton, (void *)&fits_keyword_comment[matches[2].rm_so], matches[2].rm_eo - matches[2].rm_so);
                     if (base_drmskeycheck(braced_informaton) == 0)
                     {
-                       strcpy(nameOut, keyname);
+                       strcpy(nameOut, braced_informaton);
                        success = 1;
                     }
                 }
@@ -2997,187 +3002,202 @@ int fitsexport_mapimportkey(CFITSIO_KEYWORD *fitskey,
                             HContainer_t *keys,
                             int verbose)
 {
-   int stat = DRMS_SUCCESS;
+    int stat = DRMS_SUCCESS;
 
-   if (fitskey && keys)
-   {
-      char nameout[DRMS_MAXKEYNAMELEN];
-      char *namelower = NULL;
-      Exputl_KeyMap_t *map = NULL;
-      FILE *fptr = NULL;
+    if (fitskey && keys)
+    {
+        char nameout[DRMS_MAXKEYNAMELEN];
+        char *namelower = NULL;
+        Exputl_KeyMap_t *map = NULL;
+        FILE *fptr = NULL;
 
-      /* It is possible that the FITS keyname is one that should not be
-       * imported into DRMS, like BITPIX or NAXIS. The DRMS db has the information
-       * contained in these keywords in places other than the series' table
-       * keyword columns. */
-      if (!IsForbidden(fitskey->key_name))
-      {
-         if (mapfile)
-         {
-            fptr = fopen(mapfile, "r");
-            if (fptr)
+        /* It is possible that the FITS keyname is one that should not be
+         * imported into DRMS, like BITPIX or NAXIS. The DRMS db has the information
+         * contained in these keywords in places other than the series' table
+         * keyword columns. */
+        if (!IsForbidden(fitskey->key_name))
+        {
+            if (mapfile)
             {
-               map = exputl_keymap_create();
+                fptr = fopen(mapfile, "r");
+                if (fptr)
+                {
+                    map = exputl_keymap_create();
 
-               if (!exputl_keymap_parsefile(map, fptr))
-               {
-                  exputl_keymap_destroy(&map);
-               }
+                    if (!exputl_keymap_parsefile(map, fptr))
+                    {
+                        exputl_keymap_destroy(&map);
+                    }
 
-               fclose(fptr);
+                    fclose(fptr);
+                }
             }
-         }
 
-         if (fitsexport_getmappedintkeyname(fitskey->key_name, fitskey->key_comment, clname, map, nameout, sizeof(nameout)))
-         {
-            DRMS_Type_t drmskwtype;
-            DRMS_Type_Value_t drmskwval;
-            FE_Keyword_ExtType_t cast;
-            DRMS_Keyword_t *newkey = NULL;
-            char *format = NULL;
-
-            /* If drmskwtype is string, then it is an alloc'd string, and ownership
-             * gets passed all the way to the DRMS_Keyword_t in the keys. Caller of
-             * drms_keyword_mapimport() must free. */
-            if (!FITSKeyValToDRMSKeyVal(fitskey, &drmskwtype, &drmskwval, &cast, &format))
+            if (fitsexport_getmappedintkeyname(fitskey->key_name, fitskey->key_comment, clname, map, nameout, sizeof(nameout)))
             {
-               namelower = strdup(nameout);
-               strtolower(namelower);
+                DRMS_Type_t drmskwtype;
+                DRMS_Type_Value_t drmskwval;
+                FE_Keyword_ExtType_t cast;
+                DRMS_Keyword_t *newkey = NULL;
+                char *format = NULL;
+                char *description = NULL;
 
-               if ((newkey = hcon_lookup(keys, namelower)) != NULL)
-               {
-                  /* Even though the newline char (0x0A) is NOT part of the Latin-1 character set,
-                   * and the DRMS database is of Latin-1 encoding,
-                   * PostgreSQL will allow you to insert a string with that character. */
-                  if (strcmp(namelower, "comment") == 0 || strcmp(namelower, "history") == 0 )
-                  {
-                     /* If this is a FITS comment or history keyword, then
-                      * append to the existing string;separate from previous
-                      * values with a newline character. */
-                     size_t size = strlen(newkey->value.string_val) + 1;
-                     newkey->value.string_val = base_strcatalloc(newkey->value.string_val, "\n", &size);
-                     newkey->value.string_val = base_strcatalloc(newkey->value.string_val,
-                                                                 drmskwval.string_val,
-                                                                 &size);
-                  }
-                  else if (newkey->record &&
-                           newkey->info &&
-                           newkey->info->type == drmskwtype)
-                  {
-                     /* key already exists in container - assume the user is trying to
-                      * copy the key value into an existing DRMS_Record_t */
-                     memcpy(&(newkey->value), &drmskwval, sizeof(DRMS_Type_Value_t));
-                     if (format && *format != '\0')
-                     {
-                        snprintf(newkey->info->format, sizeof(newkey->info->format), "%s", format);
-                     }
-                  }
-                  else if (verbose)
-                  {
-                     fprintf(stderr, "WARNING: Keyword '%s' already exists; the DRMS value is the value of the first instance .\n", nameout);
-                  }
-               }
-               else if ((newkey = (DRMS_Keyword_t *)hcon_allocslot(keys, namelower)) != NULL)
-               {
-                  memset(newkey, 0, sizeof(DRMS_Keyword_t));
-                  newkey->info = calloc(1, sizeof(DRMS_KeywordInfo_t));
-                  memcpy(&(newkey->value), &drmskwval, sizeof(DRMS_Type_Value_t));
+                /* If drmskwtype is string, then it is an alloc'd string, and ownership
+                 * gets passed all the way to the DRMS_Keyword_t in the keys. Caller of
+                 * drms_keyword_mapimport() must free. */
+                if (!FITSKeyValToDRMSKeyVal(fitskey, &drmskwtype, &drmskwval, &cast, &format, &description))
+                {
+                    namelower = strdup(nameout);
+                    strtolower(namelower);
 
-                  snprintf(newkey->info->name, DRMS_MAXKEYNAMELEN, "%s", nameout);
-                  newkey->info->islink = 0;
-                  newkey->info->type = drmskwtype;
+                    if ((newkey = hcon_lookup(keys, namelower)) != NULL)
+                    {
+                        /* Even though the newline char (0x0A) is NOT part of the Latin-1 character set,
+                        * and the DRMS database is of Latin-1 encoding,
+                        * PostgreSQL will allow you to insert a string with that character. */
+                        if (strcmp(namelower, "comment") == 0 || strcmp(namelower, "history") == 0 )
+                        {
+                            /* If this is a FITS comment or history keyword, then
+                            * append to the existing string;separate from previous
+                            * values with a newline character. */
+                            size_t size = strlen(newkey->value.string_val) + 1;
+                            newkey->value.string_val = base_strcatalloc(newkey->value.string_val, "\n", &size);
+                            newkey->value.string_val = base_strcatalloc(newkey->value.string_val,
+                                         drmskwval.string_val,
+                                         &size);
+                        }
+                        else if (newkey->record && newkey->info && newkey->info->type == drmskwtype)
+                        {
+                            /* key already exists in container - assume the user is trying to
+                            * copy the key value into an existing DRMS_Record_t */
+                            memcpy(&(newkey->value), &drmskwval, sizeof(DRMS_Type_Value_t));
+                            if (format && *format != '\0')
+                            {
+                                snprintf(newkey->info->format, sizeof(newkey->info->format), "%s", format);
+                            }
 
-                  /* Only write out the [fitsname:cast] if export will be confused otherwise -
-                   * write it out if the fits keyword was of logical type (which is stored
-                   * as a DRMS type of CHAR), or if the FITS name was not a legal DRMS name
-                   */
-                  if (cast == kFE_Keyword_ExtType_Logical || strcmp(nameout, fitskey->key_name) != 0)
-                  {
-                     snprintf(newkey->info->description,
-                              DRMS_MAXCOMMENTLEN,
-                              "[%s:%s]",
-                              fitskey->key_name,
-                              FE_Keyword_ExtType_Strings[cast]);
-                  }
+                            if (description && *description != '\0')
+                            {
+                                snprintf(newkey->info->description, sizeof(newkey->info->description), "%s", description);
+                            }
+                        }
+                        else if (verbose)
+                        {
+                            fprintf(stderr, "WARNING: Keyword '%s' already exists; the DRMS value is the value of the first instance .\n", nameout);
+                        }
+                    }
+                    else if ((newkey = (DRMS_Keyword_t *)hcon_allocslot(keys, namelower)) != NULL)
+                    {
+                        memset(newkey, 0, sizeof(DRMS_Keyword_t));
+                        newkey->info = calloc(1, sizeof(DRMS_KeywordInfo_t));
+                        memcpy(&(newkey->value), &drmskwval, sizeof(DRMS_Type_Value_t));
 
-                  if (format && *format != '\0')
-                  {
-                     snprintf(newkey->info->format, sizeof(newkey->info->format), "%s", format);
-                  }
-                  else
-                  {
-                     /* guess a format, so the keywords will print with
-                      * functions like drms_keyword_printval() */
-                     switch (drmskwtype)
-                     {
-                        case DRMS_TYPE_CHAR:
-                          snprintf(newkey->info->format, DRMS_MAXFORMATLEN, "%%hhd");
-                          break;
-                        case DRMS_TYPE_SHORT:
-                          snprintf(newkey->info->format, DRMS_MAXFORMATLEN, "%%hd");
-                          break;
-                        case DRMS_TYPE_INT:
-                          snprintf(newkey->info->format, DRMS_MAXFORMATLEN, "%%d");
-                          break;
-                        case DRMS_TYPE_LONGLONG:
-                          snprintf(newkey->info->format, DRMS_MAXFORMATLEN, "%%lld");
-                          break;
-                        case DRMS_TYPE_FLOAT:
-                          snprintf(newkey->info->format, DRMS_MAXFORMATLEN, "%%f");
-                          break;
-                        case DRMS_TYPE_DOUBLE:
-                          snprintf(newkey->info->format, DRMS_MAXFORMATLEN, "%%lf");
-                          break;
-                        case DRMS_TYPE_STRING:
-                          snprintf(newkey->info->format, DRMS_MAXFORMATLEN, "%%s");
-                          break;
-                        default:
-                          fprintf(stderr, "Unsupported keyword data type '%d'", (int)drmskwtype);
-                          stat = DRMS_ERROR_INVALIDDATA;
-                          break;
-                     }
-                  }
-               }
-               else
-               {
-                  fprintf(stderr, "Failed to alloc a new slot in keys container.\n");
-                  stat = DRMS_ERROR_OUTOFMEMORY;
-               }
+                        snprintf(newkey->info->name, DRMS_MAXKEYNAMELEN, "%s", nameout);
+                        newkey->info->islink = 0;
+                        newkey->info->type = drmskwtype;
 
-               if (namelower)
-               {
-                  free(namelower);
-               }
+                        /* Only write out the [fitsname:cast] if export will be confused otherwise -
+                        * write it out if the fits keyword was of logical type (which is stored
+                        * as a DRMS type of CHAR), or if the FITS name was not a legal DRMS name
+                        */
+                        if (cast == kFE_Keyword_ExtType_Logical || strcmp(nameout, fitskey->key_name) != 0)
+                        {
+                            if (description && *description != '\0')
+                            {
+                                snprintf(newkey->info->description, DRMS_MAXCOMMENTLEN, "[%s:%s] %s", fitskey->key_name, FE_Keyword_ExtType_Strings[cast], description);
+                            }
+                            else
+                            {
+                                snprintf(newkey->info->description, DRMS_MAXCOMMENTLEN, "[%s:%s]", fitskey->key_name, FE_Keyword_ExtType_Strings[cast]);
+                            }
+                        }
+                        else
+                        {
+                            if (description && *description != '\0')
+                            {
+                                snprintf(newkey->info->description, sizeof(newkey->info->description), "%s", description);
+                            }
+                        }
 
-               if (format)
-               {
-                  free(format);
-               }
+                        if (format && *format != '\0')
+                        {
+                            snprintf(newkey->info->format, sizeof(newkey->info->format), "%s", format);
+                        }
+                        else
+                        {
+                            /* guess a format, so the keywords will print with
+                            * functions like drms_keyword_printval() */
+                            switch (drmskwtype)
+                            {
+                                case DRMS_TYPE_CHAR:
+                                    snprintf(newkey->info->format, DRMS_MAXFORMATLEN, "%%hhd");
+                                    break;
+                                case DRMS_TYPE_SHORT:
+                                    snprintf(newkey->info->format, DRMS_MAXFORMATLEN, "%%hd");
+                                    break;
+                                case DRMS_TYPE_INT:
+                                    snprintf(newkey->info->format, DRMS_MAXFORMATLEN, "%%d");
+                                    break;
+                                case DRMS_TYPE_LONGLONG:
+                                    snprintf(newkey->info->format, DRMS_MAXFORMATLEN, "%%lld");
+                                    break;
+                                case DRMS_TYPE_FLOAT:
+                                    snprintf(newkey->info->format, DRMS_MAXFORMATLEN, "%%f");
+                                    break;
+                                case DRMS_TYPE_DOUBLE:
+                                    snprintf(newkey->info->format, DRMS_MAXFORMATLEN, "%%lf");
+                                    break;
+                                case DRMS_TYPE_STRING:
+                                    snprintf(newkey->info->format, DRMS_MAXFORMATLEN, "%%s");
+                                    break;
+                                default:
+                                    fprintf(stderr, "Unsupported keyword data type '%d'", (int)drmskwtype);
+                                    stat = DRMS_ERROR_INVALIDDATA;
+                                    break;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        fprintf(stderr, "Failed to alloc a new slot in keys container.\n");
+                        stat = DRMS_ERROR_OUTOFMEMORY;
+                    }
+
+                    if (namelower)
+                    {
+                        free(namelower);
+                    }
+
+                    if (format)
+                    {
+                        free(format);
+                    }
+
+                    if (description)
+                    {
+                        free(description);
+                    }
+                }
+                else
+                {
+                    fprintf(stderr, "Could not convert FITS keyword '%s' to DRMS keyword.\n", fitskey->key_name);
+                    stat = DRMS_ERROR_INVALIDDATA;
+                }
             }
             else
             {
-               fprintf(stderr,
-                       "Could not convert FITS keyword '%s' to DRMS keyword.\n",
-                       fitskey->key_name);
-               stat = DRMS_ERROR_INVALIDDATA;
+                fprintf(stderr, "Could not determine internal DRMS keyword name for FITS name '%s'.\n", fitskey->key_name);
+                stat = DRMS_ERROR_INVALIDDATA;
             }
-         }
-         else
-         {
-            fprintf(stderr,
-                    "Could not determine internal DRMS keyword name for FITS name '%s'.\n",
-                    fitskey->key_name);
-            stat = DRMS_ERROR_INVALIDDATA;
-         }
 
-         if (map)
-         {
-            exputl_keymap_destroy(&map);
-         }
-      }
-   }
+            if (map)
+            {
+                exputl_keymap_destroy(&map);
+            }
+        }
+    }
 
-   return stat;
+    return stat;
 }
 
 /* state

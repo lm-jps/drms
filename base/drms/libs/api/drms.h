@@ -14,19 +14,19 @@ data model. This includes
   local memory and quickly satisfy subsequent queries on attribute values
   of those objects ("keywords") by accessing the cached values.
 
-* Converting atribute values between 
+* Converting atribute values between
     a) external representation (in the host language)
     b) internal representation (in the DRMS cache in local memory)
     c) database representation (PostgreSQL column types)
     e) export representation (VOTables and FITS headers)
 
 ********************************************************************/
- 
+
 /* System includes. */
 #include "jsoc.h"
-#include <arpa/inet.h> 
+#include <arpa/inet.h>
 #include <libgen.h>
-#include <netdb.h> 
+#include <netdb.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <openssl/sha.h>
@@ -76,10 +76,11 @@ data model. This includes
 #include "drms_names.h"
 #include "drms_array.h"
 #include "drms_cmdparams.h"
+#include "drms_fitsrw.h"
 
 
-/* Copy the string "<name>_<num>" into hashkey. */   
-static inline void drms_make_hashkey(char *hashkey, const char *name, 
+/* Copy the string "<name>_<num>" into hashkey. */
+static inline void drms_make_hashkey(char *hashkey, const char *name,
 				     long long num)
 {
    /* AAAHH, HAAA! Must make the name lowercase since all hash keys should be lowercase in drms. */
