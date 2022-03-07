@@ -154,9 +154,55 @@ class RecordInfoRequest(Request):
         self._args_dict['n'] = number_records
         self._args_dict['op'] = 'rs_list'
         self._args_dict['s'] = 1
+        self._args_dict['l'] = 1
 
     def generate_response(self, db_host, db_port, db_user, export_bin):
         response = RecordInfoResponse(self, db_host, db_port, db_user, export_bin)
+        return response
+
+class RecordInfoTableRequest(Request):
+    def __init__(self, *, db_host, db_port=None, db_user=None, specification, table_flags, keywords=None, links=None, segments=None, record_info=False, number_records=None):
+        super().__init__(db_host, db_port, db_user)
+        self._args_dict['ds'] = specification
+        self._args_dict['n'] = number_records
+        self._args_dict['key'] = None if keywords is None else ','.join(keywords)
+        self._args_dict['link'] = None if links is None else ','.join(links)
+        self._args_dict['seg'] = None if segments is None else ','.join(segments)
+
+        # table_flags
+        self._args_dict['a'] = 1 if table_flags.get('all_keywords', False) else 0
+        self._args_dict['A'] = 1 if table_flags.get('all_segments', False) else 0
+        self._args_dict['b'] = 1 if table_flags.get('autobang', False) else 0
+        self._args_dict['B'] = 1 if table_flags.get('float_as_hex', False) else 0
+        self._args_dict['c'] = 1 if table_flags.get('record_count', False) else 0
+        self._args_dict['C'] = 1 if table_flags.get('no_retrieve_links', False) else 0
+        self._args_dict['d'] = 1 if table_flags.get('segment_info', False) else 0
+        self._args_dict['e'] = 1 if table_flags.get('parse_specification', False) else 0
+        self._args_dict['i'] = 1 if table_flags.get('specifications', False) else 0
+        self._args_dict['I'] = 1 if table_flags.get('session_info', False) else 0
+        self._args_dict['j'] = 1 if table_flags.get('jsd', False) else 0
+        self._args_dict['k'] = 1 if table_flags.get('keyword_rows', False) else 0
+        self._args_dict['K'] = 1 if table_flags.get('linked_records', False) else 0
+        self._args_dict['l'] = 1 if table_flags.get('list_series_info', False) else 0
+        self._args_dict['M'] = 1 if table_flags.get('float_max_precision', False) else 0
+        self._args_dict['o'] = 1 if table_flags.get('storage_unit_statuses', False) else 0
+        self._args_dict['O'] = 1 if table_flags.get('disable_timeout', False) else 0
+        self._args_dict['p'] = 1 if table_flags.get('offline_segment_paths', False) else 0
+        self._args_dict['P'] = 1 if table_flags.get('online_segment_paths', False) else 0
+        self._args_dict['q'] = 1 if table_flags.get('no_header', False) else 0
+        self._args_dict['r'] = 1 if table_flags.get('recnums', False) else 0
+        self._args_dict['s'] = 1 if table_flags.get('statistics', False) else 0
+        self._args_dict['R'] = 1 if table_flags.get('storage_unit_expiration_dates', False) else 0
+        self._args_dict['S'] = 1 if table_flags.get('sunums', False) else 0
+        self._args_dict['t'] = 1 if table_flags.get('data_types', False) else 0
+        self._args_dict['T'] = 1 if table_flags.get('tape_info', False) else 0
+        self._args_dict['v'] = 1 if table_flags.get('verbose', False) else 0
+        self._args_dict['x'] = 1 if table_flags.get('storage_unit_archive_statuses', False) else 0
+        self._args_dict['z'] = 1 if table_flags.get('storage_unit_sizes', False) else 0
+        self._args_dict['sunum'] = ','.join(table_flags['sunum_list']) if table_flags.get('sunum_list', False) else -1
+
+    def generate_response(self, db_host, db_port, db_user, export_bin):
+        response = RecordInfoTableResponse(self, db_host, db_port, db_user, export_bin)
         return response
 
 class PremiumExportRequest(Request):
@@ -326,6 +372,31 @@ class SeriesInfoResponse(Response):
 
 class RecordInfoResponse(Response):
     _cmd = 'jsoc_info'
+
+class RecordInfoTableResponse(Response):
+    _cmd = 'show_info'
+
+    async def send(self, writer):
+        suffix = None
+
+        # start JSON (the caller needs to receive valid JSON, but show_info will dump a text string)
+        await send_message_async(writer, '{\n  "table" : "')
+
+        try:
+            # dump table as a big string; parent will call show_info
+            await super().send(writer)
+
+            # send success status - 0
+            suffix = '",\n   "status" : 0\n}\n'
+        except:
+            # send faliure status - 1
+            suffix = '",\n   "status" : 1\n}\n'
+
+            # do not re-raise since this would cause the server to respond with a new JSON string, but
+            # we have already started sending a JSON string
+        finally:
+            # send closing JSON curly brace
+            await send_message_async(writer, suffix)
 
 class PremiumExportResponse(Response):
     _cmd = 'jsoc_fetch'
@@ -692,6 +763,8 @@ async def get_request(reader):
         request = SeriesInfoRequest(**request_dict)
     elif request_type == 'record_info':
         request = RecordInfoRequest(**request_dict)
+    elif request_type == 'record_info_table':
+        request = RecordInfoTableRequest(**request_dict)
     elif request_type == 'premium_export':
         request = PremiumExportRequest(**request_dict)
     elif request_type == 'mini_export':
