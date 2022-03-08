@@ -309,6 +309,10 @@ class Response():
 
         self._export_bin = export_bin
 
+    def escape_data(self, data):
+        # noop, by default
+        return data
+
     async def send(self, writer):
         command_path = path_join(f'{self._export_bin}', f'{self.__class__._cmd}')
         Session.log.write_debug([ f'[ Response.send ] running DRMS module {command_path}' ])
@@ -340,7 +344,7 @@ class Response():
                 break
 
             # write to the client socket
-            await send_message_async(writer, response.decode('utf8'))
+            await send_message_async(writer, self.escape_data(response.decode('utf8')))
 
         await proc.wait()
 
@@ -376,6 +380,10 @@ class RecordInfoResponse(Response):
 class RecordInfoTableResponse(Response):
     _cmd = 'show_info'
 
+    def escape_data(self, data):
+        # noop, by default
+        return data.encode('unicode_escape').decode('utf8')
+
     async def send(self, writer):
         suffix = None
 
@@ -387,10 +395,10 @@ class RecordInfoTableResponse(Response):
             await super().send(writer)
 
             # send success status - 0
-            suffix = '",\n   "status" : 0\n}\n'
+            suffix = '",\n  "status" : 0\n}\n'
         except:
             # send faliure status - 1
-            suffix = '",\n   "status" : 1\n}\n'
+            suffix = '",\n  "status" : 1\n}\n'
 
             # do not re-raise since this would cause the server to respond with a new JSON string, but
             # we have already started sending a JSON string
