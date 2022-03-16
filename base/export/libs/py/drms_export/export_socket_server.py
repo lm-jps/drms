@@ -5,7 +5,7 @@ from os.path import join as path_join
 from shlex import quote
 from signal import SIGINT
 from socket import AF_INET, error as socket_error, getaddrinfo, SHUT_RDWR, SOCK_STREAM, socket, timeout as socket_timeout
-from sys import exc_info as sys_exc_info, exit as sys_exit
+from sys import exc_info as sys_exc_info, executable as sys_executable, exit as sys_exit
 
 from drms_export import Error as ExportError, ErrorCode as ExportErrorCode
 from drms_parameters import DRMSParams, DPMissingParameterError
@@ -117,8 +117,8 @@ class ParseSpecificationRequest(Request):
     # db_host, db_port, db_user are for the public db server, by default - this
     # is the server used for ParseSpecificationRequest since those arguments
     # are now allowed in the request (force use of the public db server)
-    def generate_response(self, db_host, db_port, db_user, export_bin):
-        response = ParseSpecificationResponse(self, db_host, db_port, db_user, export_bin)
+    def generate_response(self, db_host, db_port, db_user, export_bin, export_scripts):
+        response = ParseSpecificationResponse(self, db_host, db_port, db_user, export_bin, export_scripts)
         return response
 
 class SeriesListRequest(Request):
@@ -128,8 +128,8 @@ class SeriesListRequest(Request):
         self._args_dict['z'] = 1
         self._positional_args.append(series_regex)
 
-    def generate_response(self, db_host, db_port, db_user, export_bin):
-        response = SeriesListResponse(self, db_host, db_port, db_user, export_bin)
+    def generate_response(self, db_host, db_port, db_user, export_bin, export_scripts):
+        response = SeriesListResponse(self, db_host, db_port, db_user, export_bin, export_scripts)
         return response
 
 class SeriesInfoRequest(Request):
@@ -139,8 +139,8 @@ class SeriesInfoRequest(Request):
         self._args_dict['op'] = 'series_struct'
         self._args_dict['s'] = 1
 
-    def generate_response(self, db_host, db_port, db_user, export_bin):
-        response = SeriesInfoResponse(self, db_host, db_port, db_user, export_bin)
+    def generate_response(self, db_host, db_port, db_user, export_bin, export_scripts):
+        response = SeriesInfoResponse(self, db_host, db_port, db_user, export_bin, export_scripts)
         return response
 
 class RecordInfoRequest(Request):
@@ -156,8 +156,8 @@ class RecordInfoRequest(Request):
         self._args_dict['s'] = 1
         self._args_dict['l'] = 1
 
-    def generate_response(self, db_host, db_port, db_user, export_bin):
-        response = RecordInfoResponse(self, db_host, db_port, db_user, export_bin)
+    def generate_response(self, db_host, db_port, db_user, export_bin, export_scripts):
+        response = RecordInfoResponse(self, db_host, db_port, db_user, export_bin, export_scripts)
         return response
 
 class RecordInfoTableRequest(Request):
@@ -201,8 +201,8 @@ class RecordInfoTableRequest(Request):
         self._args_dict['z'] = 1 if table_flags.get('storage_unit_sizes', False) else 0
         self._args_dict['sunum'] = ','.join(table_flags['sunum_list']) if table_flags.get('sunum_list', False) else -1
 
-    def generate_response(self, db_host, db_port, db_user, export_bin):
-        response = RecordInfoTableResponse(self, db_host, db_port, db_user, export_bin)
+    def generate_response(self, db_host, db_port, db_user, export_bin, export_scripts):
+        response = RecordInfoTableResponse(self, db_host, db_port, db_user, export_bin, export_scripts)
         return response
 
 class PremiumExportRequest(Request):
@@ -230,8 +230,8 @@ class PremiumExportRequest(Request):
         self._args_dict['op'] = 'exp_request'
         self._args_dict['format'] = 'json'
 
-    def generate_response(self, db_host, db_port, db_user, export_bin):
-        response = PremiumExportResponse(self, db_host, db_port, db_user, export_bin)
+    def generate_response(self, db_host, db_port, db_user, export_bin, export_scripts):
+        response = PremiumExportResponse(self, db_host, db_port, db_user, export_bin, export_scripts)
         return response
 
 class MiniExportRequest(Request):
@@ -249,8 +249,8 @@ class MiniExportRequest(Request):
         self._args_dict['op'] = 'exp_request'
         self._args_dict['format'] = 'json'
 
-    def generate_response(self, db_host, db_port, db_user, export_bin):
-        response = MiniExportResponse(self, db_host, db_port, db_user, export_bin)
+    def generate_response(self, db_host, db_port, db_user, export_bin, export_scripts):
+        response = MiniExportResponse(self, db_host, db_port, db_user, export_bin, export_scripts)
         return response
 
 class StreamedExportRequest(Request):
@@ -264,8 +264,8 @@ class StreamedExportRequest(Request):
         self._args_dict['e'] = 1
         self._args_dict['s'] = 1
 
-    def generate_response(self, db_host, db_port, db_user, export_bin):
-        response = StreamedExportResponse(self, db_host, db_port, db_user, export_bin)
+    def generate_response(self, db_host, db_port, db_user, export_bin, export_scripts):
+        response = StreamedExportResponse(self, db_host, db_port, db_user, export_bin, export_scripts)
         return response
 
 class ExportStatusRequest(Request):
@@ -276,21 +276,31 @@ class ExportStatusRequest(Request):
         self._args_dict['op'] = 'exp_status'
         self._args_dict['format'] = 'json'
 
-    def generate_response(self, db_host, db_port, db_user, export_bin):
-        response = ExportStatusResponse(self, db_host, db_port, db_user, export_bin)
+    def generate_response(self, db_host, db_port, db_user, export_bin, export_scripts):
+        response = ExportStatusResponse(self, db_host, db_port, db_user, export_bin, export_scripts)
+        return response
+
+class CheckAddressLegacyRequest(Request):
+    def __init__(self, *, db_host, db_port=None, db_user=None, address, **kwargs):
+        super().__init__(db_host, db_port, db_user)
+        self._args_dict['address'] = address
+        self._args_dict.update(kwargs);
+
+    def generate_response(self, db_host, db_port, db_user, export_bin, export_scripts):
+        response =  CheckAddressLegacyResponse(self, db_host, db_port, db_user, export_bin, export_scripts)
         return response
 
 class QuitRequest(Request):
     def __init__(self):
         super().__init__(None, None, None)
 
-    def generate_response(self, db_host, db_port, db_user, export_bin):
-        response = QuitResponse(self, db_host, db_port, db_user, export_bin)
+    def generate_response(self, db_host, db_port, db_user, export_bin, export_scripts):
+        response = QuitResponse(self, db_host, db_port, db_user, export_bin, export_scripts)
         return response
 
 class Response():
     # db_host, db_port, db_user are defaults used if not provided in request
-    def __init__(self, request, db_host, db_port, db_user, export_bin):
+    def __init__(self, request, db_host, db_port, db_user, export_bin, export_scripts):
         self._request = request
         self._args_dict = { 'DRMS_DBUTF8CLIENTENCODING' : 1 }
 
@@ -308,14 +318,14 @@ class Response():
             self._args_dict['JSOC_DBUSER'] = f'{resolved_db_user}'
 
         self._export_bin = export_bin
+        self._export_scripts = export_scripts
 
-    def escape_data(self, data):
-        # noop, by default
-        return data
+    def make_argslist(self):
+        # default to bin command line
+        args_list = None
 
-    async def send(self, writer):
         command_path = path_join(f'{self._export_bin}', f'{self.__class__._cmd}')
-        Session.log.write_debug([ f'[ Response.send ] running DRMS module {command_path}' ])
+        Session.log.write_debug([ f'[ Response.make_argslist ] running DRMS module {command_path}' ])
         args_list = [ command_path ]
 
         for key, val in self._args_dict.items():
@@ -330,6 +340,15 @@ class Response():
             args_list.append(f'{str(val)}')
 
         args_list.append('2>/dev/null')
+
+        return args_list
+
+    def escape_data(self, data):
+        # noop, by default
+        return data
+
+    async def send(self, writer):
+        args_list = self.make_argslist()
 
         Session.log.write_debug([ f'[ Response.send ] arguments: ' ])
         Session.log.write_debug(args_list)
@@ -362,6 +381,8 @@ class Response():
                     Session.log.write_warning([ f'[ Response.send ] {command_path} returned status code {str(proc.returncode)}, plus jibber-jabber {stderr.decode()}' ])
                 else:
                     Session.log.write_warning([ f'[ Response.send ] {command_path} returned status code {str(proc.returncode)}' ])
+
+                raise SubprocessError(error_message=f'[ Response.send ] failure running {self.__class__.__name__} command; {command_path} returned status code {str(proc.returncode)}' )
         else:
             raise SubprocessError(error_message=f'[ Response.send ] failure running {self.__class__.__name__} command; no return code' )
 
@@ -472,6 +493,34 @@ class StreamedExportResponse(Response):
 class ExportStatusResponse(Response):
     _cmd = 'jsoc_fetch'
 
+class CheckAddressLegacyResponse(Response):
+    _cmd = 'checkAddress.py'
+
+    def make_argslist(self):
+        # default to bin command line
+        args_list = None
+
+        command_path = path_join(f'{self._export_scripts}', f'{self.__class__._cmd}')
+        Session.log.write_debug([ f'[ CheckAddressLegacyResponse.make_argslist ] running DRMS script {command_path}' ])
+        args_list = [ f'{sys_executable}', command_path ]
+
+        query_string = []
+        for key, val in self._args_dict.items():
+            if val is not None and len(str(val)) > 0:
+                query_string.append(f'{key}={quote(str(val))}')
+
+        for key, val in self._request.args_dict.items():
+            if val is not None and len(str(val)) > 0:
+                query_string.append(f'{key}={quote(str(val))}')
+
+        for val in self._request.positional_args:
+            query_string.append(f'{str(val)}')
+
+        args_list.append(f"'{'&'.join(query_string)}'")
+        args_list.append('2>/dev/null')
+
+        return args_list
+
 class QuitResponse(Response):
     _cmd = None
 
@@ -496,6 +545,7 @@ class Arguments(Args):
                 try:
                     db_port =int(drms_params.get_required('DRMSPGPORT'))
                     export_bin = drms_params.get_required('BIN_EXPORT')
+                    export_scripts = drms_params.get_required('SCRIPTS_EXPORT')
                     export_production_db_user = drms_params.get_required('EXPORT_PRODUCTION_DB_USER')
                     log_file = path_join(drms_params.get_required('EXPORT_LOG_DIR'), DEFAULT_LOG_FILE)
                 except DPMissingParameterError as exc:
@@ -525,6 +575,7 @@ class Arguments(Args):
 
                 # add needed drms parameters
                 arguments.export_bin = path_join(export_bin, 'linux_avx')
+                arguments.export_scripts = export_scripts
                 arguments.export_production_db_user = export_production_db_user
             else:
                 # module invocation
@@ -781,6 +832,8 @@ async def get_request(reader):
         request = StreamedExportRequest(**request_dict)
     elif request_type == 'export_status':
         request = ExportStatusRequest(**request_dict)
+    elif request_type == 'legacy_check_address':
+        request = CheckAddressLegacyRequest(**request_dict)
     elif request_type == 'quit':
         request = QuitRequest()
     else:
@@ -789,15 +842,15 @@ async def get_request(reader):
     return request
 
 # db_host, db_port, db_user are defaults if not provided in user request
-async def send_response(writer, request, db_host, db_port, db_user, export_bin):
-    response = request.generate_response(db_host, db_port, db_user, export_bin)
+async def send_response(writer, request, db_host, db_port, db_user, export_bin, export_scripts):
+    response = request.generate_response(db_host, db_port, db_user, export_bin, export_scripts)
     await response.send(writer)
 
 async def send_error_response(writer, error_message):
     message = { 'export_server_status' : 'export_server_error', 'error_message' : error_message }
     await send_message_async(writer, json_dumps(message))
 
-async def handle_client(reader, writer, timeout, db_host, db_port, db_user, export_bin):
+async def handle_client(reader, writer, timeout, db_host, db_port, db_user, export_bin, export_scripts):
     request = None
 
     try:
@@ -808,7 +861,7 @@ async def handle_client(reader, writer, timeout, db_host, db_port, db_user, expo
                 raise MessageTimeoutError(exc_info=sys_exc_info(), error_message=f'[ handle_client ] timeout event waiting for client {writer.get_extra_info("peername")!r} to send message')
 
             try:
-                await asyncio.wait_for(send_response(writer, request, db_host, db_port, db_user, export_bin), timeout=timeout)
+                await asyncio.wait_for(send_response(writer, request, db_host, db_port, db_user, export_bin, export_scripts), timeout=timeout)
             except asyncio.TimeoutError:
                 raise MessageTimeoutError(exc_info=sys_exc_info(), error_message=f'[ handle_client ] timeout event waiting sending message to client {writer.get_extra_info("peername")!r}')
             except Exception as exc:
@@ -856,10 +909,10 @@ async def cancel_server():
 
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
-async def run_server(*, host, port, timeout, db_host, db_port, db_user, export_bin):
+async def run_server(*, host, port, timeout, db_host, db_port, db_user, export_bin, export_scripts):
     loop = asyncio.get_running_loop()
     loop.add_signal_handler(SIGINT, partial(asyncio.ensure_future, cancel_server()))
-    server = await asyncio.start_server(lambda r, w : handle_client(r, w, timeout, db_host, db_port, db_user, export_bin), host, port)
+    server = await asyncio.start_server(lambda r, w : handle_client(r, w, timeout, db_host, db_port, db_user, export_bin, export_scripts), host, port)
     async with server:
         try:
             Session.log.write_info([ f'server running, server is {host}, port is {str(port)}' ])
@@ -905,7 +958,7 @@ if __name__ == "__main__":
     Session.log = initialize_logging(arguments.log_file, arguments.logging_level)
     Session.log.write_info([ f'initialized logging; log file is {arguments.log_file}' ])
 
-    asyncio.run(run_server(host=arguments.server, port=arguments.listen_port, timeout=arguments.message_timeout, db_host=arguments.db_host, db_port=arguments.db_port, db_user=arguments.db_user, export_bin=arguments.export_bin))
+    asyncio.run(run_server(host=arguments.server, port=arguments.listen_port, timeout=arguments.message_timeout, db_host=arguments.db_host, db_port=arguments.db_port, db_user=arguments.db_user, export_bin=arguments.export_bin, export_scripts=arguments.export_scripts))
 else:
     # client
     pass
