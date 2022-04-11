@@ -1321,7 +1321,7 @@ int fitsexport_mapexport_tofile2(DRMS_Record_t *rec, DRMS_Segment_t *seg, long l
     int streaming = 0;
     int keywords_only = 0;
     int swval;
-    CFITSIO_BINTABLE_INFO bintable_info = {0};
+    CFITSIO_BINTABLE_INFO *bintable_info = NULL;
     LinkedList_t *bintable_rows = NULL;
     long long column_index = -1;
     ListNode_t *node = NULL;
@@ -1460,7 +1460,6 @@ int fitsexport_mapexport_tofile2(DRMS_Record_t *rec, DRMS_Segment_t *seg, long l
                     CFITSIO_FILE *disk_file = NULL; /* in-memory-only fitsfile of existing file on disk */
                     CFITSIO_HEADER *oldFitsHeader = NULL; /* in-memory-only fitsfile header of existing file on disk (no image) */
                     CFITSIO_HEADER *newFitsHeader = NULL; /* in-memory-only fitsfile header of file formed from fitskeys (no image) */
-                    CFITSIO_FILE *updated_file = NULL; /* in-memory-only fitsfile to which disk_file content has been copied and updated */
 
                     snprintf(sums_file, sizeof(sums_file), "%s", filename);
 
@@ -1591,99 +1590,32 @@ int fitsexport_mapexport_tofile2(DRMS_Record_t *rec, DRMS_Segment_t *seg, long l
                                  * by starting with disk_file and then copying/updating the keys in fitsKeys that exist in newFitsHeader */
                                 if (status == DRMS_SUCCESS)
                                 {
-                                    if (file_is_up_to_date)
-                                    {
-                                        updated_file = disk_file;
-                                    }
-                                    else
-                                    {
-                                        /* create the fptr, but do not write any keywords (no bitpipx, naxis, naxes) */
-                                        if (cfitsio_create_file(&updated_file, "-", CFITSIO_FILE_TYPE_IMAGE, NULL, NULL, NULL))
-                                        {
-                                            status = DRMS_ERROR_FITSRW;
-                                        }
-
-                                        if (status == DRMS_SUCCESS)
-                                        {
-                                            /* we need to copy the internal input fitsfile so we can edit the header; copy the image too;
-                                             * copy compression type too */
-                                            if (cfitsio_copy_file(disk_file, updated_file, 0))
-                                            {
-                                                status = DRMS_ERROR_FITSRW;
-                                            }
-                                        }
-
-                                        if (status == DRMS_SUCCESS)
-                                        {
-                                            if (cfitsio_update_header_keywords(updated_file, newFitsHeader, fitskeys))
-                                            {
-                                                status = DRMS_ERROR_FITSRW;
-                                            }
-                                        }
-
-                                        /* write the HEADSUM keyword; this is a checksum of just the FITS keywords that map to
-                                         * the DRMS keywords for this image */
-                                        if (status == DRMS_SUCCESS)
-                                        {
-                                            if (cfitsio_write_headsum(updated_file, new_headsum))
-                                            {
-                                                status = DRMS_ERROR_FITSRW;
-                                            }
-                                        }
-
-                                        /*
-                                         * WRITE LONGWARN KEYWORD LAST! All keys written after LONGWARN will silently disappear.
-                                         *
-                                         */
-                                        if (status == DRMS_SUCCESS)
-                                        {
-                                            /* write the LONGSTRN keyword to inform FITS readers that the long string convention may be used;
-                                             * no harm if this keyword already exists (it will be written to out_file only once) */
-                                            if (cfitsio_write_longwarn(updated_file))
-                                            {
-                                                status = DRMS_ERROR_FITSRW;
-                                            }
-                                        }
-                                    }
-                                }
-
-                                if (status == DRMS_SUCCESS)
-                                {
-                                    /* figure out what the out file is - a stream, a disk file, that VSO on-the-fly thing; we
-                                     * write the final, complete FITS file to out_file */
                                     if (callback != NULL)
                                     {
-                                        CFITSIO_FITSFILE fptr = NULL; /* the fitsfile * inside (CFITSIO_FILE *)callback (if streaming), or produced by callback (if not streaming) */
-                                        CFITSIO_FILE *callback_cfitsio_file = NULL;
-                                        cfitsio_file_state_t callback_file_state = CFITSIO_FILE_STATE_EMPTY;
-                                        cfitsio_file_type_t callback_file_type = CFITSIO_FILE_TYPE_UNKNOWN;
-
-                                        /* we are not initializing fptr since we will be using a fitsfile generated by a different
-                                         * block of code (streaming --> callback is the fptr; !streaming --> callback will create the fptr) */
-                                        if (cfitsio_create_file(&out_file, NULL, CFITSIO_FILE_TYPE_UNKNOWN, NULL, NULL, NULL))
-                                        {
-                                            status = DRMS_ERROR_FITSRW;
-                                        }
-                                        /* do not cache this fitsfile; in the streaming case, the fitsfile is in-memory-only, so don't need to cache;
-                                         * in the VSO "create" case, the VSO drms_export_cgi.c handles the fitsfile */
-                                        close_out_file = 0;
-
+                                        /* writing to an */
                                         if (streaming)
                                         {
-                                            /* callback IS the in-memory-only CFITSIO_FITSFILE that will be eventually streamed */
-                                            callback_cfitsio_file = (CFITSIO_FILE *)callback;
-                                            cfitsio_get_fitsfile(callback_cfitsio_file, &fptr);
-                                            cfitsio_get_file_state(callback_cfitsio_file, &callback_file_state);
-                                            cfitsio_get_file_type(callback_cfitsio_file, &callback_file_type);
-                                            cfitsio_set_fitsfile(out_file, fptr, 1, &callback_file_state, &callback_file_type);
-                                            /* DO NOT CLOSE THIS FILE */
+                                            /* `out_file` IS the in-memory file created by the caller; when streaming
+                                             * write directly to the fptr inside callback and do not close the CFITSIO_FILE */
+                                            out_file = (CFITSIO_FILE *)callback;
                                         }
                                         else
                                         {
+                                            CFITSIO_FITSFILE fptr = NULL; /* the fitsfile * inside (CFITSIO_FILE *)callback (if streaming), or produced by callback (if not streaming) */
+                                            cfitsio_file_type_t callback_file_type = CFITSIO_FILE_TYPE_UNKNOWN;
+
+                                            /* we are not initializing fptr since we will be using a fitsfile generated by a different
+                                             * block of code (streaming --> callback is the fptr; !streaming --> callback will create the fptr) */
+                                            if (cfitsio_create_file(&out_file, NULL, CFITSIO_FILE_TYPE_UNKNOWN, NULL, NULL, NULL))
+                                            {
+                                                status = DRMS_ERROR_FITSRW;
+                                            }
+                                            /* do not cache this fitsfile; in the streaming case, the fitsfile is in-memory-only, so don't need to cache;
+                                             * in the VSO "create" case, the VSO drms_export_cgi.c handles the fitsfile */
+
                                             /* not stdout */
                                             int retVal = 0;
                                             int cfiostat = 0;
-
 
                                             /* use ISS callback to create the fitsfile */
                                             /* NOTE - there is no reason to call the "setarrout" callback any more; the DRMS_Array_t is no longer
@@ -1704,15 +1636,17 @@ int fitsexport_mapexport_tofile2(DRMS_Record_t *rec, DRMS_Segment_t *seg, long l
                                                 cfitsio_set_fitsfile(out_file, fptr, 1, NULL, &callback_file_type);
                                             }
 
+                                            if (status == DRMS_SUCCESS)
+                                            {
+
+                                            }
                                         }
 
-                                        if (status == DRMS_SUCCESS)
-                                        {
-
-                                        }
+                                        close_out_file = 0;
                                     }
                                     else
                                     {
+                                        /* NO callback, and NO streaming - create a fits file on disk */
                                         /* create a new file - `realfileout` is the file to export onto disk (not streaming); the fitsfile
                                          * will be cached; use the FITS compression-string specification in `cparms`, if it exists,
                                          * otherwise */
@@ -1748,25 +1682,60 @@ int fitsexport_mapexport_tofile2(DRMS_Record_t *rec, DRMS_Segment_t *seg, long l
                                         }
                                     }
 
+                                    /* out_file has been properly created */
                                     if (status == DRMS_SUCCESS)
                                     {
-                                        /* now, copy the final in-memory file (updated_file) to either disk or stdout (streaming); copy
-                                         * compression type too */
-                                        if (cfitsio_copy_file(updated_file, out_file, 0))
+                                        /* we need to copy the internal input fitsfile so we can edit the header; copy the image too;
+                                         * copy compression type too */
+                                        //PushTimer();
+                                        if (cfitsio_copy_file(disk_file, out_file, 0))
                                         {
                                             status = DRMS_ERROR_FITSRW;
                                         }
 
-                                        /* updated_file was an in-memory-only file */
-                                        /* ART - need to NOT flush to stdout, but updated_file is an in-memory file */
-                                        if (updated_file != disk_file)
+                                        //fprintf(stderr, "Time to copy one fits file = %f\n", PopTimer());
+                                    }
+
+                                    if (!file_is_up_to_date)
+                                    {
+                                        if (status == DRMS_SUCCESS)
                                         {
-                                            cfitsio_close_file(&updated_file);
+                                            if (cfitsio_update_header_keywords(out_file, newFitsHeader, fitskeys))
+                                            {
+                                                status = DRMS_ERROR_FITSRW;
+                                            }
                                         }
 
-                                        /* close the original SUMS file */
-                                        cfitsio_close_file(&disk_file);
+                                        /* write the HEADSUM keyword; this is a checksum of just the FITS keywords that map to
+                                         * the DRMS keywords for this image */
+                                        if (status == DRMS_SUCCESS)
+                                        {
+                                            if (cfitsio_write_headsum(out_file, new_headsum))
+                                            {
+                                                status = DRMS_ERROR_FITSRW;
+                                            }
+                                        }
+
+                                        /*
+                                         * WRITE LONGWARN KEYWORD LAST! All keys written after LONGWARN will silently disappear.
+                                         *
+                                         */
+                                        if (status == DRMS_SUCCESS)
+                                        {
+                                            /* write the LONGSTRN keyword to inform FITS readers that the long string convention may be used;
+                                             * no harm if this keyword already exists (it will be written to out_file only once) */
+                                            if (cfitsio_write_longwarn(out_file))
+                                            {
+                                                status = DRMS_ERROR_FITSRW;
+                                            }
+                                        }
                                     }
+                                }
+
+                                if (status == DRMS_SUCCESS)
+                                {
+                                    /* close the original SUMS file */
+                                    cfitsio_close_file(&disk_file);
 
                                     if (close_out_file)
                                     {
@@ -1871,9 +1840,19 @@ int fitsexport_mapexport_tofile2(DRMS_Record_t *rec, DRMS_Segment_t *seg, long l
                 if (callback == NULL || callback_file_state == CFITSIO_FILE_STATE_UNINITIALIZED)
                 {
                     /* need to create bintable in unitialized file */
-                    ttypes = list_llcreate(sizeof(char *), NULL);
-                    tforms = list_llcreate(sizeof(char *), NULL);
-                    fitskeys = fitsexport_mapkeys(rec, NULL, clname, mapfile, &num_keys, ttypes, tforms, &status);
+                    bintable_info = calloc(1, sizeof(CFITSIO_BINTABLE_INFO));
+
+                    if (!bintable_info)
+                    {
+                        status = DRMS_ERROR_OUTOFMEMORY;
+                    }
+
+                    if (status == DRMS_SUCCESS)
+                    {
+                        ttypes = list_llcreate(sizeof(char *), NULL);
+                        tforms = list_llcreate(sizeof(char *), NULL);
+                        fitskeys = fitsexport_mapkeys(rec, NULL, clname, mapfile, &num_keys, ttypes, tforms, &status);
+                    }
 
                     if (status == DRMS_SUCCESS)
                     {
@@ -1889,8 +1868,8 @@ int fitsexport_mapexport_tofile2(DRMS_Record_t *rec, DRMS_Segment_t *seg, long l
                         bintable_rows = list_llcreate(sizeof(CFITSIO_KEYWORD *), NULL);
                         list_llinserttail(bintable_rows, &fitskeys);
 
-                        bintable_info.rows = bintable_rows;
-                        bintable_info.tfields = num_keys;
+                        bintable_info->rows = bintable_rows;
+                        bintable_info->tfields = num_keys;
 
                         column_index = 0;
                         list_llreset(ttypes);
@@ -1898,7 +1877,7 @@ int fitsexport_mapexport_tofile2(DRMS_Record_t *rec, DRMS_Segment_t *seg, long l
                         {
                             ttype = *(char **)node->data;
                             // snprintf((char *)&bintable_info.ttypes[column_index], sizeof(bintable_info.ttypes[column_index]), "%s", ttype);
-                            bintable_info.ttypes[column_index] = (CFITSIO_BINTABLE_TTYPE *)ttype;
+                            bintable_info->ttypes[column_index] = (CFITSIO_BINTABLE_TTYPE *)ttype;
 
                             column_index++;
                         }
@@ -1908,7 +1887,7 @@ int fitsexport_mapexport_tofile2(DRMS_Record_t *rec, DRMS_Segment_t *seg, long l
                         while ((node = list_llnext(tforms)) != NULL)
                         {
                             tform = *(char **)node->data;
-                            bintable_info.tforms[column_index] = (CFITSIO_BINTABLE_TFORM *)tform;
+                            bintable_info->tforms[column_index] = (CFITSIO_BINTABLE_TFORM *)tform;
 
                             column_index++;
                         }
@@ -1940,7 +1919,7 @@ int fitsexport_mapexport_tofile2(DRMS_Record_t *rec, DRMS_Segment_t *seg, long l
             {
                 if (callback == NULL)
                 {
-                    if (cfitsio_create_file(&out_file, realfileout, CFITSIO_FILE_TYPE_BINTABLE, NULL, &bintable_info, NULL))
+                    if (cfitsio_create_file(&out_file, realfileout, CFITSIO_FILE_TYPE_BINTABLE, NULL, bintable_info, NULL))
                     {
                         fprintf(stderr, "[ fitsexport_mapexport_tofile2() unable to create FITS bintable\n");
                         status = DRMS_ERROR_FITSRW;
@@ -1952,7 +1931,7 @@ int fitsexport_mapexport_tofile2(DRMS_Record_t *rec, DRMS_Segment_t *seg, long l
                 }
                 else if (callback_file_state == CFITSIO_FILE_STATE_UNINITIALIZED)
                 {
-                    if (cfitsio_create_bintable(out_file, &bintable_info))
+                    if (cfitsio_create_bintable(out_file, bintable_info))
                     {
                         fprintf(stderr, "[ fitsexport_mapexport_tofile2() unable to create FITS bintable\n");
                         status = DRMS_ERROR_FITSRW;
@@ -2012,6 +1991,12 @@ int fitsexport_mapexport_tofile2(DRMS_Record_t *rec, DRMS_Segment_t *seg, long l
         }
 
         cfitsio_free_keys(&fitskeys);
+    }
+
+    if (bintable_info)
+    {
+        free(bintable_info);
+        bintable_info = NULL;
     }
 
     return status;
