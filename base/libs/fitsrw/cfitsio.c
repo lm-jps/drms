@@ -1674,7 +1674,7 @@ int cfitsio_set_export_compression_type(CFITSIO_FILE *file, CFITSIO_COMPRESSION_
     return err;
 }
 
-static int Cf_create_file_object(fitsfile *fptr, cfitsio_file_type_t file_type, void *data)
+static int Cf_create_file_object(fitsfile *fptr, cfitsio_file_type_t file_type, void *data, int create_data_unit)
 {
     CFITSIO_IMAGE_INFO *image_info = NULL;
     CFITSIO_BINTABLE_INFO *bintable_info = NULL;
@@ -1724,7 +1724,10 @@ static int Cf_create_file_object(fitsfile *fptr, cfitsio_file_type_t file_type, 
 
                 if (err == CFITSIO_SUCCESS)
                 {
-                    fits_create_img(fptr, image_info->bitpix, image_info->naxis, image_info->naxes, &cfiostat);
+                    if (create_data_unit)
+                    {
+                        fits_create_img(fptr, image_info->bitpix, image_info->naxis, image_info->naxes, &cfiostat);
+                    }
                 }
             }
             break;
@@ -1740,7 +1743,10 @@ static int Cf_create_file_object(fitsfile *fptr, cfitsio_file_type_t file_type, 
                     err = CFITSIO_ERROR_ARGS;
                 }
 
-                fits_create_tbl(fptr, BINARY_TBL, list_llgetnitems(bintable_info->rows), bintable_info->tfields, (char **)bintable_info->ttypes, (char **)bintable_info->tforms, NULL, NULL, &cfiostat);
+                if (create_data_unit)
+                {
+                    fits_create_tbl(fptr, BINARY_TBL, list_llgetnitems(bintable_info->rows), bintable_info->tfields, (char **)bintable_info->ttypes, (char **)bintable_info->tforms, NULL, NULL, &cfiostat);
+                }
             }
             break;
         default:
@@ -2027,7 +2033,7 @@ int cfitsio_create_header(CFITSIO_FILE *file)
 {
     int err = CFITSIO_SUCCESS;
 
-    err = Cf_create_file_object(file->fptr, CFITSIO_FILE_TYPE_HEADER, NULL);
+    err = Cf_create_file_object(file->fptr, CFITSIO_FILE_TYPE_HEADER, NULL, 1);
     if (err == CFITSIO_SUCCESS)
     {
         file->state = CFITSIO_FILE_STATE_INITIALIZED;
@@ -2043,7 +2049,7 @@ int cfitsio_create_image(CFITSIO_FILE *file, CFITSIO_IMAGE_INFO *image_info)
     int cfiostat = 0; /* MUST start with no-error status, else CFITSIO will fail */
     char cfiostat_msg[FLEN_STATUS];
 
-    err = Cf_create_file_object(file->fptr, CFITSIO_FILE_TYPE_IMAGE, image_info);
+    err = Cf_create_file_object(file->fptr, CFITSIO_FILE_TYPE_IMAGE, image_info, 1);
     if (err == CFITSIO_SUCCESS)
     {
         file->state = CFITSIO_FILE_STATE_INITIALIZED;
@@ -2065,7 +2071,7 @@ int cfitsio_create_bintable(CFITSIO_FILE *file, CFITSIO_BINTABLE_INFO *bintable_
 {
     int err = CFITSIO_SUCCESS;
 
-    err = Cf_create_file_object(file->fptr, CFITSIO_FILE_TYPE_BINTABLE, bintable_info);
+    err = Cf_create_file_object(file->fptr, CFITSIO_FILE_TYPE_BINTABLE, bintable_info, 1);
     if (err == CFITSIO_SUCCESS)
     {
         file->state = CFITSIO_FILE_STATE_INITIALIZED;
@@ -2485,20 +2491,15 @@ void cfitsio_close_header(CFITSIO_HEADER **header)
  */
 static int Cf_copy_file(fitsfile *source, fitsfile *dest, CFITSIO_COMPRESSION_TYPE export_compression_type)
 {
-    const long long DATA_CHUNK_SIZE = 4096;
     int err = CFITSIO_SUCCESS;
     int old_hdu_index = 0;
     cfitsio_file_type_t file_type_from_fptr = CFITSIO_FILE_TYPE_UNKNOWN;
     int is_initialized = -1;
     CFITSIO_IMAGE_INFO image_info = {0};
-    CFITSIO_BINTABLE_INFO bintable_info = {0};
+    CFITSIO_BINTABLE_INFO *bintable_info = NULL;
     int data_type = 0;
-    int byte_pixels = 0;
     int dimension = 0;
-    long long total_number_pixels = 0;
-    long long current_pixel = 0; /* 1-based index */
-    long long number_pixels_to_write = 0;
-    void *image_data_array = NULL;
+    int hdu_type = 0;
     int cfiostat = 0;
     char cfiostat_msg[FLEN_STATUS];
 
@@ -2510,7 +2511,7 @@ static int Cf_copy_file(fitsfile *source, fitsfile *dest, CFITSIO_COMPRESSION_TY
         switch (file_type_from_fptr)
         {
             case CFITSIO_FILE_TYPE_HEADER:
-                err = Cf_create_file_object(dest, CFITSIO_FILE_TYPE_HEADER, NULL);
+                err = Cf_create_file_object(dest, CFITSIO_FILE_TYPE_HEADER, NULL, 1);
                 if (err == CFITSIO_SUCCESS)
                 {
                     err = Cf_write_header_keys(dest, NULL, NULL, source);
@@ -2558,96 +2559,34 @@ static int Cf_copy_file(fitsfile *source, fitsfile *dest, CFITSIO_COMPRESSION_TY
                                 break;
                         }
 
-                        for (dimension = 0, total_number_pixels = 1; dimension < image_info.naxis; dimension++)
-                        {
-                             total_number_pixels *= image_info.naxes[dimension];
-                        }
-
                         image_info.export_compression_type = export_compression_type;
 
-                        /* Cf_create_file_object calls fits_set_compression_type() if `image_info` specifies compression */
-                        err = Cf_create_file_object(dest, CFITSIO_FILE_TYPE_IMAGE, (void *)&image_info);
+                        /* Cf_create_file_object calls fits_set_compression_type() if `image_info` specifies compression;
+                         * 0 ==> do not create image extension - we will copy the source one in, which will create it  */
+                        err = Cf_create_file_object(dest, CFITSIO_FILE_TYPE_IMAGE, (void *)&image_info, 0);
                     }
 
                     if (err == CFITSIO_SUCCESS)
                     {
-                        /* EXTNAME will have been set already in Cf_create_file_object() if this is a compressed image */
-                        err = Cf_write_header_keys(dest, NULL, NULL, source);
-                    }
-
-                    if (err == CFITSIO_SUCCESS)
-                    {
-                        byte_pixels = abs(image_info.bitpix) / 8; /* bytes per pixel */
-                        image_data_array = calloc(DATA_CHUNK_SIZE, byte_pixels);
-
-                        if (!image_data_array)
-                        {
-                            err = CFITSIO_ERROR_OUT_OF_MEMORY;
-                        }
-                    }
-
-                    if (err == CFITSIO_SUCCESS)
-                    {
-                        if (fits_set_bscale(source, 1, 0, &cfiostat))
+                        if (fits_copy_hdu(source, dest, 0, &cfiostat))
                         {
                             err = CFITSIO_ERROR_LIBRARY;
                         }
-                    }
-
-                    if (err == CFITSIO_SUCCESS)
-                    {
-                        if (fits_set_bscale(dest, 1, 0, &cfiostat))
-                        {
-                            err = CFITSIO_ERROR_LIBRARY;
-                        }
-                    }
-
-                    if (err == CFITSIO_SUCCESS)
-                    {
-                        current_pixel = 1;
-                        number_pixels_to_write = 0;
-
-                        while (current_pixel <= total_number_pixels)
-                        {
-                           /* read all or part of image then write it back to the output file */
-                           number_pixels_to_write = ((total_number_pixels - current_pixel + 1) % DATA_CHUNK_SIZE);
-                           if (number_pixels_to_write == 0)
-                           {
-                              number_pixels_to_write = DATA_CHUNK_SIZE;
-                           }
-
-                           if (fits_read_img(source, data_type, current_pixel, number_pixels_to_write, NULL, image_data_array, NULL, &cfiostat))
-                           {
-                                err = CFITSIO_ERROR_LIBRARY;
-                                break;
-                           }
-
-                           if (fits_write_img(dest, data_type, current_pixel, number_pixels_to_write, image_data_array, &cfiostat))
-                           {
-                               err = CFITSIO_ERROR_LIBRARY;
-                               break;
-                           }
-
-                           current_pixel += number_pixels_to_write;
-                        }
-                    }
-
-                    if (image_data_array)
-                    {
-                        free(image_data_array);
-                        image_data_array = NULL;
                     }
                 }
 
                 break;
             case CFITSIO_FILE_TYPE_BINTABLE:
                 /* no need to read bintable info (keyword data) from source; metadata are in source header keywords */
-                err = Cf_create_file_object(dest, CFITSIO_FILE_TYPE_BINTABLE, (void *)&bintable_info);
+                /* ART - NOT YET IMPLEMENTED */
+                err = Cf_create_file_object(dest, CFITSIO_FILE_TYPE_BINTABLE, (void *)bintable_info, 1);
                 if (err == CFITSIO_SUCCESS)
                 {
                     /* not sure how to copy bintable at the moment, but fitsexport.c currently does not copy BINTABLEs */
                     //Cf_write_keys_to_bintable
                 }
+
+                err = CFITSIO_ERROR_LIBRARY;
                 break;
             default:
                 fprintf(stderr, "[ Cf_copy_file() ] invalid file type %d\n", (int)file_type_from_fptr);
