@@ -2138,14 +2138,10 @@ static int RecordLoopNoCursor(DRMS_Env_t *env, DRMS_RecordSet_t *recordset, Link
                     /* get the record specifications for the entire chunk */
                     specifications = drms_record_get_specification_list(env, recordset, &status);
                     list_llreset(specifications);
-                    node = list_llgethead(specifications);
-                    specification = *(char **)node->data;
                 }
-                else
-                {
-                    node = list_llnext(specifications);
-                    specification = *(char **)node->data;
-                }
+  
+                node = list_llnext(specifications);
+                specification = *(char **)node->data;
             }
 
           if (linked_record_id)
