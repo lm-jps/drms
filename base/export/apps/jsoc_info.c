@@ -143,6 +143,8 @@ char *INVALID_SEG = "InvalidSegName";
 /* processing argument macros */
 #define ARG_PROCESSING_JSON "processing"
 
+static int PRINT_HTTP_HEADER = 1;
+
 /* invalidObj is used simply for a fixed address to denote that a keyword, segment, or link struct is bad */
 char invalidObj;
 const char *userhandle = NULL;
@@ -153,16 +155,17 @@ do  {	\
   char *jsondie_json;	\
   json_t *jsondie_jroot = json_new_object();	\
   jsondie_msgjson = json_escape_string(msg);	\
-  json_insert_pair_into_object(jsondie_jroot, "status", json_new_number("1"));	\
+  json_insert_pair_into_object(jsondie_jroot, "status", json_new_number("1")); \
   json_insert_pair_into_object(jsondie_jroot, "error", json_new_string(jsondie_msgjson));	\
   json_tree_to_string(jsondie_jroot, &jsondie_json);	\
-  printf("Content-type: application/json\n\n");	\
-  printf("%s\n",jsondie_json);	\
+  if (PRINT_HTTP_HEADER) \
+    printf("Content-type: application/json\n\n");	printf("%s\n",jsondie_json); \
   free(jsondie_json); \
   fflush(stdout);	\
   manage_userhandle(0, userhandle); \
   return(1);	\
   } while(0)
+
 
 #ifndef NDEBUG
 #define JSOC_INFO_ASSERT(expression, msg) XASSERT(expression)
@@ -2611,6 +2614,11 @@ int DoIt(void)
     useFitsKeyNames = cmdparams_isflagset(&cmdparams, "f");
     skipRunTime = cmdparams_isflagset(&cmdparams, "r");
     printHTTPHeaders = !cmdparams_isflagset(&cmdparams, "s");
+
+    if (!printHTTPHeaders)
+    {
+        PRINT_HTTP_HEADER = 0;
+    }
 
   // allow possible user kill
   if (strcmp(userhandle, "Not Specified") != 0)
