@@ -37,7 +37,7 @@ class ErrorCode(ExportErrorCode):
 
 class DataTransferServerBaseError(ExportError):
     def __init__(self, *, msg=None):
-        super().__init__(msg=msg)
+        super().__init__(error_message=msg)
 
 class ParametersError(DataTransferServerBaseError):
     _error_code = ErrorCode(ErrorCode.PARAMETERS)
@@ -75,23 +75,37 @@ class ErrorMessageReceived(DataTransferServerBaseError):
 class MessageType(Enum):
     CLIENT_READY = (1, f'CLIENT_READY')
     PACKAGE_READY = (2, f'PACKAGE_READY')
-    DATA_VERIFIED = (3, f'DATA_VERIFIED')
-    REQUEST_COMPLETE = (4, f'REQUEST_COMPLETE')
-    ERROR = (5, f'ERROR')
+    VERIFICATION_READY = (3, f'VERIFICATION_READY')
+    DATA_VERIFIED = (4, f'DATA_VERIFIED')
+    REQUEST_COMPLETE = (5, f'REQUEST_COMPLETE')
+    ERROR = (6, f'ERROR')
 
     def __new__(cls, value, name):
         member = object.__new__(cls)
-        member._value_ = value
+        member._value = value
         member.fullname = name
+
+        if not hasattr(cls, '_all_members'):
+            cls._all_members = {}
+        cls._all_members[name.lower()] = member
+
         return member
 
     def __int__(self):
-        return self.value
+        return self._value
+
+    @classmethod
+    def get_member(cls, name):
+        if hasattr(cls, '_all_members'):
+            return cls._all_members[name.lower()]
+        else:
+            return None
 
 class Message(object):
     def __init__(self, *, json_message=None, **kwargs):
         if json_message is None:
             self._data = MakeObject(name='data_class', data=kwargs)()
+
         else:
             self._data = MakeObject(name='data_class', data=json_message)()
 
@@ -101,20 +115,34 @@ class Message(object):
         else:
             return None
 
+    def __str__(self):
+        return self.__class__.__name__
+
     @classmethod
-    def new_instance(cls, *, json_message, msg_type, **kwargs):
-        if msg_type == MessageType.CLIENT_READY:
-            message = ClientReadyMessage(json_message=json_message, **kwargs)
-        elif msg_type == MessageType.PACKAGE_READY:
-            message = PackageReadyMessage(json_message=json_message, **kwargs)
-        elif msg_type == MessageType.DATA_VERIFIED:
-            message = DataVerifiedMessage(json_message=json_message, **kwargs)
-        elif msg_type == MessageType.REQUEST_COMPLETE:
-            message = RequestCompleteMessage(json_message=json_message, **kwargs)
-        elif msg_type == MessageType.ERROR:
-            message = ErrorMessage(json_message=json_message, **kwargs)
-        else:
-            raise UnexpectedMessageError(f'unknown error type `{msg_type.fullname}`')
+    def new_instance(cls, *, json_message, **kwargs):
+        msg_type = None
+        message = None
+        try:
+            generic_message = Message(json_message=json_message, **kwargs)
+            msg_type = MessageType.get_member(generic_message.message)
+
+            if msg_type == MessageType.CLIENT_READY:
+                message = ClientReadyMessage(json_message=json_message, **kwargs)
+            elif msg_type == MessageType.PACKAGE_READY:
+                message = PackageReadyMessage(json_message=json_message, **kwargs)
+            elif msg_type == MessageType.VERIFICATION_READY:
+                message = VerificationReadyMessage(json_message=json_message, **kwargs)
+            elif msg_type == MessageType.DATA_VERIFIED:
+                message = DataVerifiedMessage(json_message=json_message, **kwargs)
+            elif msg_type == MessageType.REQUEST_COMPLETE:
+                message = RequestCompleteMessage(json_message=json_message, **kwargs)
+            elif msg_type == MessageType.ERROR:
+                message = ErrorMessage(json_message=json_message, **kwargs)
+        except Exception as exc:
+            raise MessageSyntaxError(msg=f'invalid message string `{json_message}`: `{str(exc)}`')
+
+        if message is None:
+            raise UnexpectedMessageError(msg=f'unknown error type `{msg_type.fullname}`')
 
         return message
 
@@ -164,22 +192,30 @@ class Message(object):
             if close_count == open_count:
                 break
 
-        log.write_debug([ f'[ Message.receive ] received message from client {"".join(json_message_buffer)}' ])
+        log.write_debug([ f'[ Message.receive ] received message from client `{"".join(json_message_buffer)}`' ])
 
-        try_error = False
+        error_message = None
         try:
-            message = cls.new_instance(json_message=''.join(json_message_buffer), msg_type=msg_type)
+            message = cls.new_instance(json_message=''.join(json_message_buffer))
+            log.write_debug([ f'[ Message.receive ] got valid message `{str(message)}`' ])
         except UnexpectedMessageError as exc:
-            try_error = True
+            error_message = str(exc)
+        except MessageSyntaxError as exc:
+            error_message = str(exc)
+        except Exception as exc:
+            error_message = str(exc)
 
-        if try_error:
-            message = cls.new_instance(json_message=''.join(json_message_buffer), msg_type=MessageType.ERROR)
-
-        if not hasattr(message, 'message'):
-            raise MessageSyntaxError(msg=f'[ Message.receive ] invalid message synax; message must contain `message` attribute')
+        if error_message is not None:
+            log.write_error([ f'[ Message.receive ] error parsing message `{error_message}`' ])
+            message = ErrorMessage(json_message=f'{{ "message" : {MessageType.ERROR.fullname}, "error_message" : {error_message} }}')
+            # cls.new_instance(json_message=f'{{ "error_message" : {error_message} }}', msg_type=MessageType.ERROR)
+        else:
+            if not hasattr(message, 'message'):
+                log.write_error([ f'[ Message.receive ] message missing `message` attribute' ])
+                raise MessageSyntaxError(msg=f'[ Message.receive ] invalid message synax; message must contain `message` attribute')
 
         if isinstance(message, ErrorMessage):
-            raise ErrorMessageReceived(message.values[0])
+            raise ErrorMessageReceived(msg=message.values[0])
 
         if message.message.lower() != msg_type.fullname.lower():
             raise UnexpectedMessageError(msg=f'[ Message.receive ] expecting {msg_type.fullname.lower()} message, but received {message.message.lower()} message')
@@ -221,6 +257,11 @@ class PackageReadyMessage(Message):
     def __init__(self, *, json_message=None, **kwargs):
         super().__init__(json_message=json_message, **kwargs)
         self.values = (self.package_path)
+
+class VerificationReadyMessage(Message):
+    def __init__(self, *, json_message=None, **kwargs):
+        super().__init__(json_message=json_message, **kwargs)
+        self.values = ()
 
 class DataVerifiedMessage(Message):
     def __init__(self, *, json_message=None, **kwargs):
@@ -312,9 +353,8 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
         self.request.settimeout(21600.0)
 
         try:
-            self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.handle ] waiting for client `{str(self.client_address)}` to send  {MessageType.CLIENT_READY.fullname} message' ])
-
             # receive CLIENT_READY message from client
+            self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.handle ] waiting for client `{str(self.client_address)}` to send  {MessageType.CLIENT_READY.fullname} message' ])
             product, number_of_files, file_template = Message.receive(client_socket=self.request, msg_type=MessageType.CLIENT_READY, log=self.server.log)
 
             package_path_tmp = os.path.join(self.server.package_root, f'.{str(uuid.uuid4())}.tar')
@@ -335,6 +375,10 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
             self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.handle ] sending {MessageType.PACKAGE_READY.fullname} message to client `{str(self.client_address)}`' ])
             Message.send(client_socket=self.request, msg_type=MessageType.PACKAGE_READY, package_host=self.server.package_host, package_path=package_path)
 
+            # receive VERIFICATION_READY
+            self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.handle ] waiting for client `{str(self.client_address)}` to send  {MessageType.VERIFICATION_READY.fullname} message' ])
+            Message.receive(client_socket=self.request, msg_type=MessageType.VERIFICATION_READY, log=self.server.log)
+
             # the export code has completed its run; receive client verification data and update the manifest table - these
             # happen simultaneously and asynchronously
             asyncio.run(self.receive_verification_and_update_manifest(client_socket=self.request, product=product))
@@ -346,7 +390,7 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
             number_of_ids = Message.receive(client_socket=self.request, msg_type=MessageType.DATA_VERIFIED, log=self.server.log)
 
             self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.handle ] sending {MessageType.REQUEST_COMPLETE.fullname} message to client `{str(self.client_address)}`' ])
-            Message.send(client_socket=self.request, msg_type=MessageType.REQUEST_COMPLETE) # client unblocks on CONTROL connection, then ends CONTROL connection
+            Message.send(client_socket=self.request, msg_type=MessageType.REQUEST_COMPLETE, log=self.server.log) # client unblocks on CONTROL connection, then ends CONTROL connection
         except socket.timeout as exc:
             # end session (return from handler)
             terminate = True
@@ -358,7 +402,7 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
             self.server.log.write_error([ f'[ DataTransferTCPRequestHandler.handle ] received error message from client `{str(self.client_address)}`' ])
             self.server.log.write_error([ f'[ DataTransferTCPRequestHandler.handle ] sending {MessageType.REQUEST_COMPLETE.fullname} message to client `{str(self.client_address)}`' ])
             Message.send(client_socket=self.request, msg_type=MessageType.REQUEST_COMPLETE)
-        except ExportError as exc:
+        except DataTransferServerBaseError as exc:
             # send error response; client should shut down socket connection
             self.server.log.write_error([ f'[ DataTransferTCPRequestHandler.handle ] error handling client request: {str(exc)}' ])
             self.server.log.write_error([ f'[ DataTransferTCPRequestHandler.handle ] sending {MessageType.ERROR.fullname} message to client `{str(self.client_address)}`' ])
@@ -599,7 +643,7 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
                     partial_line_start = lines[-1]
 
                 # if the last element is the end-of-verification marker, no more verification data to read
-                if len(full_lines) >= 0 and full_lines[-1] == '\\.':
+                if len(full_lines) > 0 and full_lines[-1] == '\\.':
                     client_end = True
                     self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.receive_verification ] received end-of-verification marker from client' ])
 
@@ -788,7 +832,7 @@ if __name__ == "__main__":
                 break
         if not bound:
             raise SocketserverError(msg=f'failure creating TCP server')
-    except ExportError as exc:
+    except DataTransferServerBaseError as exc:
         log.write_error([ str(exc) ])
 
     sys.exit(0)

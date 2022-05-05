@@ -33,7 +33,7 @@ class ErrorCode(ExportErrorCode):
 
 class DataTransferClientBaseError(ExportError):
     def __init__(self, *, msg=None):
-        super().__init__(msg=msg)
+        super().__init__(error_message=msg)
 
 class ParametersError(DataTransferClientBaseError):
     _error_code = ErrorCode(ErrorCode.PARAMETERS)
@@ -113,20 +113,33 @@ class Arguments(Args):
         return cls._arguments
 
 class MessageType(Enum):
-    CLIENT_READY = 1, f'CLIENT_READY'
-    PACKAGE_READY = 2, f'PACKAGE_READY'
-    DATA_VERIFIED = 3, f'DATA_VERIFIED'
-    REQUEST_COMPLETE = 4, f'REQUEST_COMPLETE'
-    ERROR = 5, f'ERROR'
+    CLIENT_READY = (1, f'CLIENT_READY')
+    PACKAGE_READY = (2, f'PACKAGE_READY')
+    VERIFICATION_READY = (3, f'VERIFICATION_READY')
+    DATA_VERIFIED = (4, f'DATA_VERIFIED')
+    REQUEST_COMPLETE = (5, f'REQUEST_COMPLETE')
+    ERROR = (6, f'ERROR')
 
     def __new__(cls, value, name):
         member = object.__new__(cls)
-        member._value_ = value
+        member._value = value
         member.fullname = name
+
+        if not hasattr(cls, '_all_members'):
+            cls._all_members = {}
+        cls._all_members[name.lower()] = member
+
         return member
 
     def __int__(self):
-        return self.value
+        return self._value
+
+    @classmethod
+    def get_member(cls, name):
+        if hasattr(cls, '_all_members'):
+            return cls._all_members[name.lower()]
+        else:
+            return None
 
 class Message(object):
     def __init__(self, *, json_message=None, **kwargs):
@@ -142,19 +155,31 @@ class Message(object):
         return self.message
 
     @classmethod
-    def new_instance(cls, *, json_message, msg_type, **kwargs):
-        if msg_type == MessageType.CLIENT_READY:
-            message = ClientReadyMessage(json_message=json_message, **kwargs)
-        elif msg_type == MessageType.PACKAGE_READY:
-            message = PackageReadyMessage(json_message=json_message, **kwargs)
-        elif msg_type == MessageType.DATA_VERIFIED:
-            message = DataVerifiedMessage(json_message=json_message, **kwargs)
-        elif msg_type == MessageType.REQUEST_COMPLETE:
-            message = RequestCompleteMessage(json_message=json_message, **kwargs)
-        elif msg_type == MessageType.ERROR:
-            message = ErrorMessage(json_message=json_message, **kwargs)
-        else:
-            raise UnexpectedMessageError(f'unknown error type `{msg_type.fullname}`')
+    def new_instance(cls, *, json_message, **kwargs):
+        msg_type = None
+        message = None
+        try:
+            generic_message = Message(json_message=json_message, **kwargs)
+            msg_type = MessageType.get_member(generic_message.message)
+
+            if msg_type == MessageType.CLIENT_READY:
+                message = ClientReadyMessage(json_message=json_message, **kwargs)
+            elif msg_type == MessageType.PACKAGE_READY:
+                message = PackageReadyMessage(json_message=json_message, **kwargs)
+            elif msg_type == MessageType.VERIFICATION_READY:
+                message = VerificationReadyMessage(json_message=json_message, **kwargs)
+            elif msg_type == MessageType.DATA_VERIFIED:
+                message = DataVerifiedMessage(json_message=json_message, **kwargs)
+            elif msg_type == MessageType.REQUEST_COMPLETE:
+                message = RequestCompleteMessage(json_message=json_message, **kwargs)
+            elif msg_type == MessageType.ERROR:
+                message = ErrorMessage(json_message=json_message, **kwargs)
+        except Exception as exc:
+            raise MessageSyntaxError(msg=f'invalid message string `{json_message}`: `{str(exc)}`')
+
+        if message is None:
+            raise UnexpectedMessageError(msg=f'unknown error type `{msg_type.fullname}`')
+
         return message
 
     @classmethod
@@ -208,17 +233,25 @@ class Message(object):
         if len(json_message_buffer) == 0:
             raise MessageSyntaxError(msg=f'[ Message.receive ] empty message (server connection )')
 
-        try_error = False
+        error_message = None
         try:
-            message = cls.new_instance(json_message=''.join(json_message_buffer), msg_type=msg_type)
+            message = cls.new_instance(json_message=''.join(json_message_buffer))
+            log.write_debug([ f'[ Message.receive ] got valid message `{str(message)}`' ])
         except UnexpectedMessageError as exc:
-            try_error = True
+            error_message = str(exc)
+        except MessageSyntaxError as exc:
+            error_message = str(exc)
+        except Exception as exc:
+            error_message = str(exc)
 
-        if try_error:
-            message = cls.new_instance(json_message=''.join(json_message_buffer), msg_type=MessageType.ERROR)
 
-        if not hasattr(message, 'message'):
-            raise MessageSyntaxError(msg=f'[ Message.receive ] invalid message synax; message must contain `message` attribute')
+        if error_message is not None:
+            log.write_error([ f'[ Message.receive ] error parsing message `{error_message}`' ])
+            message = ErrorMessage(json_message=f'{{ "message" : {MessageType.ERROR.fullname}, "error_message" : {error_message} }}')
+        else:
+            if not hasattr(message, 'message'):
+                log.write_error([ f'[ Message.receive ] message missing `message` attribute' ])
+                raise MessageSyntaxError(msg=f'[ Message.receive ] invalid message synax; message must contain `message` attribute')
 
         if isinstance(message, ErrorMessage):
             raise ErrorMessageReceived(message.values[0])
@@ -266,6 +299,11 @@ class PackageReadyMessage(Message):
     def __init__(self, *, json_message=None, **kwargs):
         super().__init__(json_message=json_message, **kwargs)
         self.values = (self.package_host, self.package_path)
+
+class VerificationReadyMessage(Message):
+    def __init__(self, *, json_message=None, **kwargs):
+        super().__init__(json_message=json_message, **kwargs)
+        self.values = ()
 
 class DataVerifiedMessage(Message):
     def __init__(self, *, json_message=None, **kwargs):
@@ -393,6 +431,8 @@ if __name__ == "__main__":
                             continue
 
                         # connected to server; perform workflow
+                        client_error = None
+                        server_error = None
                         try:
                             number_of_files = 0
 
@@ -410,24 +450,42 @@ if __name__ == "__main__":
                             downloaded_package_path = os.path.join(arguments.download_directory, package_file)
                             copyfile(package_path, downloaded_package_path)
 
+                            # send VERIFICATION_READY
+                            log.write_info([ f'[ __main __ ] sending {MessageType.VERIFICATION_READY.fullname} message to server' ])
+                            Message.send(server_connection=control_socket, msg_type=MessageType.VERIFICATION_READY, log=log)
+
+                            # send verification data
                             number_of_files = verify_and_store_data(control_socket, downloaded_package_path, log)
 
                             # send DATA_VERIFIED
                             log.write_info([ f'[ __main __ ] sending {MessageType.DATA_VERIFIED.fullname} message to server' ])
                             Message.send(server_connection=control_socket, msg_type=MessageType.DATA_VERIFIED, log=log, **{ 'number_of_files' : number_of_files })
                         except ErrorMessageReceived as exc:
-                            raise SubprocessError(msg=f'[ __main __ ] received error message from server {str(exc)}; shutting down socket')
+                            server_error = exc
+                            client_error = None
                         except ConnectionError as exc:
-                            raise ControlConnectionError(msg=f'[ __main __ ] error communicating with server {str(exc)}')
+                            client_error = ControlConnectionError(msg=f'[ __main __ ] error communicating with server {str(exc)}')
                         except OSError as exc:
-                            raise DownloadError(msg=f'[ __main __ ] error downloading package file from server {str(exc)}')
+                            server_error = None
+                            client_error = DownloadError(msg=f'[ __main __ ] error downloading package file from server {str(exc)}')
                         except subprocess.SubprocessError as exc:
-                            raise SubprocessError(msg=f'[ __main __ ] {str(exc)}')
+                            server_error = None
+                            client_error = SubprocessError(msg=f'[ __main __ ] {str(exc)}')
                         except Exception as exc:
-                            raise HandshakeError(msg=f'[ __main __ ] {str(exc)}')
-                        finally:
-                            control_socket.shutdown(socket.SHUT_RDWR)
-                            log.write_info([ f'client shut down CONTROL connection' ])
+                            server_error = None
+                            client_error = HandshakeError(msg=f'[ __main __ ] {str(exc)}')
+
+                        if client_error is not None:
+                            log.write_error([ f'[ __main __ ] sending {MessageType.ERROR.fullname} message to server' ])
+                            Message.send(server_connection=control_socket, msg_type=MessageType.ERROR, log=log, **{ 'error_message' : str(client_error) })
+
+                        if server_error is None:
+                            # receive REQUEST_COMPLETE
+                            log.write_info([ f'[ __main __ ] waiting for server to send {MessageType.REQUEST_COMPLETE.fullname} message' ])
+                            Message.receive(server_connection=control_socket, msg_type=MessageType.REQUEST_COMPLETE, log=log)
+
+                        control_socket.shutdown(socket.SHUT_RDWR)
+                        log.write_info([ f'client shut down CONTROL connection' ])
                     # control socket was closed
                     log.write_info([ f'client closed CONTROL connection' ])
                 except OSError as exc:
@@ -439,9 +497,9 @@ if __name__ == "__main__":
         if not control_connected:
             raise ControlConnectionError(msg=f'unable to establish CONTROL connection')
     except LoggingError as exc:
-        print(str(exc),file=sys.stderr)
-    except ExportError as exc:
-        log.write_info([ str(exc) ])
+        print(str(exc), file=sys.stderr)
+    except DataTransferClientBaseError as exc:
+        log.write_error([ f'[ __main __ ] client failure `{str(exc)}`' ])
 
     exit(0)
 else:
