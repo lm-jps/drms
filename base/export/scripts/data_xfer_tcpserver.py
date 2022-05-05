@@ -208,7 +208,6 @@ class Message(object):
         if error_message is not None:
             log.write_error([ f'[ Message.receive ] error parsing message `{error_message}`' ])
             message = ErrorMessage(json_message=f'{{ "message" : {MessageType.ERROR.fullname}, "error_message" : {error_message} }}')
-            # cls.new_instance(json_message=f'{{ "error_message" : {error_message} }}', msg_type=MessageType.ERROR)
         else:
             if not hasattr(message, 'message'):
                 log.write_error([ f'[ Message.receive ] message missing `message` attribute' ])
@@ -386,11 +385,13 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
             # receive DATA_VERIFIED message from client;
             # client must send a message here (after they have sent the requisite '\.\n'); this allows the client to notify
             # the server of an error
-            self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.handle ] waiting for client `{str(self.client_address)}` to send  {MessageType.DATA_VERIFIED.fullname} message' ])
-            number_of_ids = Message.receive(client_socket=self.request, msg_type=MessageType.DATA_VERIFIED, log=self.server.log)
+            data_verified_message = Message.new_instance(json_message=self._verified_message_json)
+            if not isinstance(data_verified_message, DataVerifiedMessage):
+                raise UnexpectedMessageError(msg=f'{MessageType.get_member(data_verified_message.message)}')
 
+            # send REQUEST_COMPLETE
             self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.handle ] sending {MessageType.REQUEST_COMPLETE.fullname} message to client `{str(self.client_address)}`' ])
-            Message.send(client_socket=self.request, msg_type=MessageType.REQUEST_COMPLETE, log=self.server.log) # client unblocks on CONTROL connection, then ends CONTROL connection
+            Message.send(client_socket=self.request, msg_type=MessageType.REQUEST_COMPLETE) # client unblocks on CONTROL connection, then ends CONTROL connection
         except socket.timeout as exc:
             # end session (return from handler)
             terminate = True
@@ -642,13 +643,29 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
                     # set partial line start (last line)
                     partial_line_start = lines[-1]
 
-                # if the last element is the end-of-verification marker, no more verification data to read
-                if len(full_lines) > 0 and full_lines[-1] == '\\.':
-                    client_end = True
-                    self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.receive_verification ] received end-of-verification marker from client' ])
+                # if an element is the end-of-verification marker, no more verification data to read - what
+                # follows is the DATA_VERIFIED message
+                full_line_buffer = []
+                message_buffer = []
+                for full_line in full_lines:
+                    if not client_end:
+                        if full_line == '\\.':
+                            client_end = True
+                            self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.receive_verification ] received end-of-verification marker from client' ])
+                            if partial_line_start is not None:
+                                message_buffer.append(partial_line_start)
+                                partial_line_start = None
+                        else:
+                            full_line_buffer.append(full_line)
+                    else:
+                        message_buffer.append(full_line)
 
-                    # remove the end marker
-                    full_lines = full_lines[:-1]
+                full_lines = '\n'.join(full_line_buffer)
+
+                if client_end:
+                    # combine next lines to make the DATA_VERIFIED message
+                    self._verified_message_json = '\n'.join(message_buffer)
+                    self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.receive_verification ] verified-message json {self._verified_message_json}' ])
 
                 verified_recnums = [ self._drms_id_regex.match(line.split()[0]).group(1) for line in full_lines if line.split()[1] == 'V' ]
                 self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.receive_verification ] verified recnums: {",".join(verified_recnums)}' ])
