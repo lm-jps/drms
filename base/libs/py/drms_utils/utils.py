@@ -12,14 +12,14 @@ class ArgumentsError(DrmsError):
     _error_code = ErrorCode(ErrorCode.ARGUMENTS)
 
     def __init__(self, *, msg=None):
-        super().__init__(msg=msg)
+        super().__init__(error_message=msg)
 
 class MakeObject():
     _valid_types = set([ dict, str ])
 
     def __init__(self, *, name, data):
         if type(data) not in self._valid_types:
-            raise ArgumentsError(f'data structures supported: {str(self._valid_types)}')
+            raise ArgumentsError(msg=f'data structures supported: {str(self._valid_types)}')
 
         if type(data) == dict:
             self._json = dumps(data)
@@ -28,7 +28,7 @@ class MakeObject():
                 loads(data)
                 self._json = data
             except decoder.JSONDecodeError as exc:
-                raise ArgumentsError(f'invalid json {str(exc)}')
+                raise ArgumentsError(msg=f'invalid json {str(exc)}')
 
         self._name = name # name of namedtuple
         self._data = data
