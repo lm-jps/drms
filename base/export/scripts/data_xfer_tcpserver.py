@@ -5,6 +5,7 @@ from collections import OrderedDict
 from datetime import datetime, timedelta
 from enum import Enum
 from heapq import heapify, heappop, heappush
+import uuid
 import json
 import os
 import psutil
@@ -22,90 +23,61 @@ from drms_export import Error as ExportError, ErrorCode as ExportErrorCode
 DEFAULT_LOG_FILE = 'dx_log.txt'
 
 class ErrorCode(ExportErrorCode):
-    PARAMETERS = 1, 'failure locating DRMS parameters'
-    ARGUMENTS = 2, 'bad arguments'
-    MESSAGE_SYNTAX = 3, 'message syntax'
-    MESSAGE_TIMEOUT = 4, 'message timeout event'
-    UNEXCPECTED_MESSAGE = 5, 'unexpected message'
-    SOCKET_SERVER = 6, 'TCP socket server creation error'
-    CONTROL_CONNECTION = 7, 'control connection'
-    DATA_CONNECTION = 8, 'data connection'
-    SUBPROCESS = 9, 'subprocess'
-    LOGGING = 10, 'logging'
-    ERROR_MESSAGE = 11, 'error message received'
+    PARAMETERS = (1, 'failure locating DRMS parameters')
+    ARGUMENTS = (2, 'bad arguments')
+    MESSAGE_SYNTAX = (3, 'message syntax')
+    MESSAGE_TIMEOUT = (4, 'message timeout event')
+    UNEXCPECTED_MESSAGE = (5, 'unexpected message')
+    SOCKET_SERVER = (6, 'TCP socket server creation error')
+    CONTROL_CONNECTION = (7, 'control connection')
+    SUBPROCESS = (8, 'subprocess')
+    EXPORT_FILE = (9, 'export file access')
+    LOGGING = (9, 'logging')
+    ERROR_MESSAGE = (10, 'error message received')
 
-class ParametersError(ExportError):
+class DataTransferServerBaseError(ExportError):
+    def __init__(self, *, msg=None):
+        super().__init__(msg=msg)
+
+class ParametersError(DataTransferServerBaseError):
     _error_code = ErrorCode(ErrorCode.PARAMETERS)
 
-    def __init__(self, *, msg=None):
-        super().__init__(msg=msg)
-
-class ArgumentsError(ExportError):
+class ArgumentsError(DataTransferServerBaseError):
     _error_code = ErrorCode(ErrorCode.ARGUMENTS)
 
-    def __init__(self, *, msg=None):
-        super().__init__(msg=msg)
-
-class MessageSyntaxError(ExportError):
+class MessageSyntaxError(DataTransferServerBaseError):
     _error_code = ErrorCode(ErrorCode.MESSAGE_SYNTAX)
 
-    def __init__(self, *, msg=None):
-        super().__init__(msg=msg)
-
-class MessageTimeoutError(ExportError):
+class MessageTimeoutError(DataTransferServerBaseError):
     _error_code = ErrorCode(ErrorCode.MESSAGE_TIMEOUT)
 
-    def __init__(self, *, msg=None):
-        super().__init__(msg=msg)
-
-class UnexpectedMessageError(ExportError):
+class UnexpectedMessageError(DataTransferServerBaseError):
     _error_code = ErrorCode(ErrorCode.UNEXCPECTED_MESSAGE)
 
-    def __init__(self, *, msg=None):
-        super().__init__(msg=msg)
-
-class SocketserverError(ExportError):
+class SocketserverError(DataTransferServerBaseError):
     _error_code = ErrorCode(ErrorCode.SOCKET_SERVER)
 
-    def __init__(self, *, msg=None):
-        super().__init__(msg=msg)
-
-class ControlConnectionError(ExportError):
+class ControlConnectionError(DataTransferServerBaseError):
     _error_code = ErrorCode(ErrorCode.CONTROL_CONNECTION)
 
-    def __init__(self, *, msg=None):
-        super().__init__(msg=msg)
-
-class DataConnectionError(ExportError):
-    _error_code = ErrorCode(ErrorCode.DATA_CONNECTION)
-
-    def __init__(self, *, msg=None):
-        super().__init__(msg=msg)
-
-class SubprocessError(ExportError):
+class SubprocessError(DataTransferServerBaseError):
     _error_code = ErrorCode(ErrorCode.SUBPROCESS)
 
-    def __init__(self, *, msg=None):
-        super().__init__(msg=msg)
+class ExportFileError(DataTransferServerBaseError):
+    _error_code = ErrorCode(ErrorCode.EXPORT_FILE)
 
-class LoggingError(ExportError):
+class LoggingError(DataTransferServerBaseError):
     _error_code = ErrorCode(ErrorCode.LOGGING)
 
-    def __init__(self, *, msg=None):
-        super().__init__(msg=msg)
-
-class ErrorMessageReceived(ExportError):
+class ErrorMessageReceived(DataTransferServerBaseError):
     _error_code = ErrorCode(ErrorCode.ERROR_MESSAGE)
 
-    def __init__(self, *, msg=None):
-        super().__init__(msg=msg)
-
 class MessageType(Enum):
-    CLIENT_READY = 1, f'CLIENT_READY'
-    DATA_CONNECTION_READY = 2, f'DATA_CONNECTION_READY'
-    DATA_VERIFIED = 3, f'DATA_VERIFIED'
-    REQUEST_COMPLETE = 4, f'REQUEST_COMPLETE'
-    ERROR = 5, f'ERROR'
+    CLIENT_READY = (1, f'CLIENT_READY')
+    PACKAGE_READY = (2, f'PACKAGE_READY')
+    DATA_VERIFIED = (3, f'DATA_VERIFIED')
+    REQUEST_COMPLETE = (4, f'REQUEST_COMPLETE')
+    ERROR = (5, f'ERROR')
 
     def __new__(cls, value, name):
         member = object.__new__(cls)
@@ -133,8 +105,8 @@ class Message(object):
     def new_instance(cls, *, json_message, msg_type, **kwargs):
         if msg_type == MessageType.CLIENT_READY:
             message = ClientReadyMessage(json_message=json_message, **kwargs)
-        elif msg_type == MessageType.DATA_CONNECTION_READY:
-            message = DataConnectionReadyMessage(json_message=json_message, **kwargs)
+        elif msg_type == MessageType.PACKAGE_READY:
+            message = PackageReadyMessage(json_message=json_message, **kwargs)
         elif msg_type == MessageType.DATA_VERIFIED:
             message = DataVerifiedMessage(json_message=json_message, **kwargs)
         elif msg_type == MessageType.REQUEST_COMPLETE:
@@ -245,10 +217,10 @@ class ClientReadyMessage(Message):
         super().__init__(json_message=json_message, **kwargs)
         self.values = (self.product, self.number_of_files, self.file_template)
 
-class DataConnectionReadyMessage(Message):
+class PackageReadyMessage(Message):
     def __init__(self, *, json_message=None, **kwargs):
         super().__init__(json_message=json_message, **kwargs)
-        self.values = (self.host_ip, self.port)
+        self.values = (self.package_path)
 
 class DataVerifiedMessage(Message):
     def __init__(self, *, json_message=None, **kwargs):
@@ -274,8 +246,8 @@ class Arguments(Args):
             try:
                 server = drms_params.get_required('DX_SERVER')
                 listen_port = int(drms_params.get_required('DX_LISTEN_PORT'))
-                start_port = int(drms_params.get_required('DX_START_PORT'))
-                number_of_ports = int(drms_params.get_required('DX_NUMBER_PORTS'))
+                package_host = drms_params.get_required('DX_PACKAGE_HOST')
+                package_root = drms_params.get_required('DX_PACKAGE_ROOT')
                 export_bin = drms_params.get_required('BIN_EXPORT')
                 export_production_db_user = drms_params.get_required('EXPORT_PRODUCTION_DB_USER')
                 log_file = os.path.join(drms_params.get_required('EXPORT_LOG_DIR'), DEFAULT_LOG_FILE)
@@ -296,18 +268,16 @@ class Arguments(Args):
             parser.add_argument('-c', '--chunk_size', help='the number of records to process at one time', metavar='<record chunk size>', dest='chunk_size', default=1024)
             parser.add_argument('-l', '--log_file', help='the path to the log file', metavar='<log file>', dest='log_file', default=log_file)
             parser.add_argument('-L', '--logging_level', help='the amount of logging to perform; in order of increasing verbosity: critical, error, warning, info, debug', metavar='<logging level>', dest='logging_level', action=DrmsLogLevelAction, default=DrmsLogLevel.ERROR)
-            parser.add_argument('-n', '--number_ports', help='the maximum number of data-connection ports', metavar='<number ports>', dest='number_of_ports', type=int, default=number_of_ports)
             parser.add_argument('-P', '--port', help='the port to listen on for new client connections', metavar='<listening port>', dest='listen_port', default=listen_port)
             parser.add_argument('-S', '--server', help='the server host accepting client connections', metavar='<server>', dest='server', default=server)
-            parser.add_argument('-s', '--start_port', help='the first data-connection port', metavar='<start port>', dest='start_port', default=start_port)
 
             arguments = Arguments(parser=parser, args=args)
 
             # add needed drms parameters
-            # arguments.export_bin = os.path.join(export_bin, 'linux_avx') # hack!
-            # grrrr...
             arguments.export_bin = '/home/arta/jsoctrees/JSOC/_linux_avx/base/export/apps'
             arguments.export_production_db_user = export_production_db_user
+            arguments.package_host = package_host
+            arguments.package_root = package_root
 
             cls._arguments = arguments
 
@@ -328,35 +298,6 @@ class DataTransferTCPServer(socketserver.ThreadingTCPServer):
         self.log.write_info([ f'accepting connection request from client `{str(client_address)}`'])
         return (control_socket, client_address)
 
-    def acquire_lock(self):
-        return self._t_lock.acquire()
-
-    def release_lock(self):
-        return self._t_lock.release()
-
-    # need to acquire thread lock
-    def populate_ports(self):
-        self._all_ports = list(range(self.start_port, self.start_port + self.number_of_ports))
-        heapify(self._all_ports)
-
-    def get_unused_port(self):
-        if self._all_ports is None:
-            self.populate_ports()
-
-        try:
-            return heappop(self._all_ports)
-        except IndexError as exc:
-            raise DataConnectionError(msg=f'no data-connection ports available')
-
-    def put_unused_port(self, *, port):
-        if self._all_ports is None:
-            self.populate_ports()
-
-        if port in self._all_ports:
-            raise DataConnectionError(msg=f'port {port} is already unused')
-
-        heappush(self._all_ports, port)
-
 class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
     def __init__(self, request, client_address, server):
         self._drms_id_regex = None
@@ -367,44 +308,40 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
         self.server.log.write_info([ f'[ DataTransferTCPRequestHandler.handle ] handling session from client `{str(self.client_address)}`' ])
         terminate = False
 
-        # make the client connection non-blocking, but make a long time out (the data transfer could take minutes), 1 hour
-        self.request.settimeout(216000.0)
+        # make the client connection non-blocking, but make a long time out (the data transfer could take minutes, hours) - 6 hours
+        self.request.settimeout(21600.0)
 
         try:
             self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.handle ] waiting for client `{str(self.client_address)}` to send  {MessageType.CLIENT_READY.fullname} message' ])
+
+            # receive CLIENT_READY message from client
             product, number_of_files, file_template = Message.receive(client_socket=self.request, msg_type=MessageType.CLIENT_READY, log=self.server.log)
 
-            self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.handle ] initializing DATA connection for client `{str(self.client_address)}`' ])
-            data_socket = self.initialize_data_connection()
+            package_path_tmp = os.path.join(self.server.package_root, f'.{str(uuid.uuid4())}.tar')
+            package_path = os.path.join(self.server.package_root, f'{str(uuid.uuid4())}.tar')
 
-            try:
-                data_socket_ip, data_socket_port = data_socket.getsockname()
+            self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.handle ] creating data file {package_path} for client `{str(self.client_address)}`' ])
 
-                self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.handle ] sending {MessageType.DATA_CONNECTION_READY.fullname} message to client `{str(self.client_address)}`' ])
-                Message.send(client_socket=self.request, msg_type=MessageType.DATA_CONNECTION_READY, **{ 'host_ip' : data_socket_ip, 'port' : data_socket_port}) # unblock client
+            # write data to disk, send client path info
+            with open(package_path_tmp, 'w+b') as self._data_file:
+                self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.handle ] writing data file for client `{str(self.client_address)}` to file {package_path_tmp}' ])
+                asyncio.run(self.create_package(product=product, number_of_files=number_of_files, file_template=file_template, package_path=package_path_tmp))
 
-                # wait for client to connect to DATA connection
-                try:
-                    data_socket.listen(128) # a single connection
-                except OSError as exc:
-                    raise DataConnectionError(msg=f'{str(exc)}')
+            # if no failure, rename package
+            os.rename(package_path_tmp, package_path)
+            self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.handle ] renamed {package_path_tmp} to {package_path}' ])
 
-                self._data_socket, address = data_socket.accept()
+            # send PACKAGE_READY message to client; the package COULD be empty (no segments available to export)
+            self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.handle ] sending {MessageType.PACKAGE_READY.fullname} message to client `{str(self.client_address)}`' ])
+            Message.send(client_socket=self.request, msg_type=MessageType.PACKAGE_READY, package_host=self.server.package_host, package_path=package_path)
 
-                self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.handle ] DATA connection established for client `{str(self.client_address)}`' ])
+            # the export code has completed its run; receive client verification data and update the manifest table - these
+            # happen simultaneously and asynchronously
+            asyncio.run(self.receive_verification_and_update_manifest(client_socket=self.request, product=product))
 
-                # make the dataconnection non-blocking; there really should not be any sizeable delays, so 30.0 seconds is ample
-                self._data_socket.settimeout(30.0)
-
-                # client will read from DATA stream - we want this to be synchronous; server needs to shut down DATA connection so that client sees EOF and knows download is complete
-                self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.handle ] streaming product data over DATA connection to client `{str(self.client_address)}`' ])
-                asyncio.run(self.create_and_stream_package(product=product, number_of_files=number_of_files, file_template=file_template))
-
-                # the export code has completed its run (we cannot do anything else until this happens - the client will not start streaming verification until after it has received the entire tar file); so now, receive manifest data and update the manifest table - these can happen asynchronously
-                asyncio.run(self.receive_verification_and_update_manifest(product=product))
-            finally:
-                self.finalize_data_connection()
-
+            # receive DATA_VERIFIED message from client;
+            # client must send a message here (after they have sent the requisite '\.\n'); this allows the client to notify
+            # the server of an error
             self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.handle ] waiting for client `{str(self.client_address)}` to send  {MessageType.DATA_VERIFIED.fullname} message' ])
             number_of_ids = Message.receive(client_socket=self.request, msg_type=MessageType.DATA_VERIFIED, log=self.server.log)
 
@@ -447,121 +384,37 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
             except:
                 pass
 
-    def initialize_data_connection(self):
-        self._data_socket = None
-        bound = False
-        attempts = 0
-        previous_port = None
-
-        server_ip_address = self.server.server_address[0]
-
-        while attempts < 10 and not bound:
-            self.server.acquire_lock()
-            try:
-                # try a new port
-                unused_port = self.server.get_unused_port()
-
-                # put a previously used one back
-                if previous_port is not None:
-                    self.server.put_unused_port(port=previous_port)
-                    previous_port = None
-
-                self.server.log.write_error([ f'[ DataTransferTCPRequestHandler.initialize_data_connection ] using port {str(unused_port)} for DATA connection' ])
-            finally:
-                self.server.release_lock()
-
-            try:
-                info = socket.getaddrinfo(server_ip_address, unused_port)
-
-                first_iteration = True
-                for address_info in info:
-                    if not first_iteration:
-                        self.server.log.write_warning([ f'[ DataTransferTCPRequestHandler.initialize_data_connection ] unable to connect to {str(socket_address)}, trying a different IP address'])
-                    else:
-                        first_iteration = False
-
-                    family = address_info[0]
-                    socket_type = address_info[1]
-                    proto = address_info[2]
-                    socket_address = address_info[4] # 2-tuple for AF_INET family
-
-                    if socket_type != socket.SOCK_STREAM:
-                        # streaming only
-                        continue
-
-                    try:
-                        server_socket = socket.socket(family, socket.SOCK_STREAM, proto)
-                        server_socket.bind(socket_address)
-                        bound = True
-                        break
-                    except OSError as exc:
-                        pass
-            except Exception as exc:
-                self.server.log.write_warning([ f'[ DataTransferTCPRequestHandler.initialize_data_connection ] unable to connect to server, trying a different port: {str(exc)}'])
-
-            if not bound:
-                previous_port = unused_port
-                attempts += 1
-
-        if not bound:
-            raise DataConnectionError(msg=f'[ DataTransferTCPRequestHandler.initialize_data_connection ] unable to create DATA-connection socket client `{str(self.client_address)}` (failed 10 attempts)')
-
-        return server_socket
-
-    def finalize_data_connection(self):
-        if self._data_socket is not None:
-            self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.finalize_data_connection ]' ])
-            # return used port
-            host, port = self._data_socket.getsockname()
-            self.server.acquire_lock()
-            try:
-                self.server.put_unused_port(port=port)
-                self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.finalize_data_connection ] put back port {str(port)}' ])
-            finally:
-                self.server.release_lock()
-
-            # shut down read end of data socket and close socket (the client already closed their end)
-            try:
-                # do not shut down read - if the client has already shut down their end of socket, this will fail
-                # self._data_socket.shutdown(socket.SHUT_RD)
-                self._data_socket.close()
-                self.server.log.write_info([ f'[ DataTransferTCPRequestHandler.finalize_data_connection ] successfully closed DATA connection f{str((host, port))}' ])
-            except Exception as exc:
-                self.server.log.write_error([ f'[ DataTransferTCPRequestHandler.finalize_data_connection ] unable to close DATA connection f{str((host, port))} properly' ])
-                raise DataConnectionError(msg=f'{str(exc)}')
-            finally:
-                self._data_socket = None
-
-    async def create_and_stream_package(self, *, product, number_of_files, file_template):
+    async def create_package(self, *, product, number_of_files, file_template, package_path):
         # get list of DRMS_IDs
-        self.server.log.write_info([ f'[ DataTransferTCPRequestHandler.create_and_stream_package ] fetching {str(number_of_files)} DRMS_IDs for product {product} for client `{str(self.client_address)}`' ])
+        self.server.log.write_info([ f'[ DataTransferTCPRequestHandler.create_package ] fetching {str(number_of_files)} DRMS_IDs for product {product} for client `{str(self.client_address)}`' ])
         self._fetch_is_done = False
         self._drms_ids = asyncio.Queue()
 
-        await asyncio.gather(self.fetch_drms_ids(product=product, number_of_ids=number_of_files), self.stream_package(product=product, file_template=file_template))
+        await asyncio.gather(self.fetch_drms_ids(product=product, number_of_ids=number_of_files), self.export_package(product=product, file_template=file_template))
 
         # export code has completed
 
-        # shut down write end of DATA connection - this sends EOF to client, but allows server to receive data verification
-        self._data_socket.shutdown(socket.SHUT_WR)
-
-    async def receive_verification_and_update_manifest(self, *, product):
+    async def receive_verification_and_update_manifest(self, *, client_socket, product):
+        # after the last verification-data line, the client sends a single line with the chars '\\.\n'
         self._receive_is_done = False
         self._verified_recnums = asyncio.Queue()
         self._verification_data_exist = False
 
-        # await asyncio.gather(self.receive_verification(), self.update_manifest(product=product))
-
         data_event = asyncio.Event()
-        await asyncio.gather(self.receive_verification(data_event=data_event), asyncio.create_task(self.update_manifest(data_event=data_event, product=product)))
-
-        self.finalize_data_connection()
+        await asyncio.gather(self.receive_verification(client_socket=client_socket, data_event=data_event), asyncio.create_task(self.update_manifest(data_event=data_event, product=product)))
 
     async def fetch_drms_ids(self, *, product, number_of_ids):
-        # this command will create the manifest table should it not exist (but will fail if the shadow table does not exist)
-        command = [ os.path.join(self.server.export_bin, 'data-xfer-manifest-tables'), f'series={product}', 'operation=fetch', f'n={number_of_ids}',  f'JSOC_DBUSER={arguments.export_production_db_user}', f'JSOC_DBHOST={arguments.db_host}' ]
+        # this 'fetch' command will create the manifest table should it not exist (but will fail if the series shadow table
+        # does not exist); it will populate the manifest table with <segment>='N' rows until there are `number_of_ids` such
+        # rows; it uses the series shadow table to populate the manifest table
+        #
+        # 'fetch' then retrieves `number_of_ids` rows that have at least one <segment>='N' value, returning 'drms_id'
+        # rows of the form:
+        #   su_arta.hmi__v_avg120:1:power
+        #
+        # these drms_ids are put into the self._drms_ids queue, which are then consumed by export_package()
+        command = [ os.path.join(self.server.export_bin, 'data-xfer-manifest-tables'), f'series={product}', 'operation=fetch', f'n={number_of_ids}',  f'JSOC_DBUSER={self.server.export_production_db_user}', f'JSOC_DBHOST={self.server.db_host}' ]
 
-        # starting with a recnum db query on the shadow table, create rows in the manifest table (get the recnum of the last row in the manifest table and then add n new rows, max)
         try:
             self.server.log.write_info([ f'[ DataTransferTCPRequestHandler.fetch_drms_ids ] running manifest-table manager for client `{str(self.client_address)}`: {" ".join(command)}' ])
             proc = await asyncio.subprocess.create_subprocess_shell(' '.join(command), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
@@ -592,11 +445,12 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
         except (ValueError, OSError) as exc:
             raise SubprocessError(msg=f'[ fetch_drms_ids ] {str(exc)}' )
 
-    async def stream_package(self, *, product, file_template=None):
+    async def export_package(self, *, product, file_template=None):
         chunk_of_recnums = OrderedDict()
         if self._drms_id_regex is None:
             self._drms_id_regex = re.compile(r'[a-z_][a-z_0-9$]*[.][a-z_][a-z_0-9$]*:([0-9]+):[a-z_][a-z_0-9$]*')
 
+        # [*] filter ==> provide drms-export-to-stdout manifest series recnums via stdin
         specification = f'{product}_manifest::[*]'
         arg_list = [ 'a=0', 's=0', 'e=1', 'm=1', 'DRMS_DBUTF8CLIENTENCODING=1', f'spec={specification}' ]
 
@@ -604,17 +458,15 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
             arg_list.append(f'ffmt={file_template}')
 
         arg_list.append('DRMS_DBUTF8CLIENTENCODING=1')
-        arg_list.append(f'JSOC_DBUSER={arguments.export_production_db_user}')
-        arg_list.append(f'JSOC_DBHOST={arguments.db_host}')
+        arg_list.append(f'JSOC_DBUSER={self.server.export_production_db_user}')
+        arg_list.append(f'JSOC_DBHOST={self.server.db_host}')
 
         try:
             # we need to run drms-export-to-stdout, even if no DRMS_IDs are available for processing; running drms-export-to-stdout will create an empty manifest file in this case
-            self.server.log.write_info([ f'[ DataTransferTCPRequestHandler.stream_package ] running export for client `{str(self.client_address)}`: {str(arg_list)}' ])
+            self.server.log.write_info([ f'[ DataTransferTCPRequestHandler.create_package ] running export for client `{str(self.client_address)}`: {str(arg_list)}' ])
             proc = await asyncio.subprocess.create_subprocess_exec(os.path.join(self.server.export_bin, 'drms-export-to-stdout'), *arg_list, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE)
 
-            self.server.log.write_debug([f'[ DataTransferTCPRequestHandler.stream_package ] forked child process (pid {str(proc.pid)})'])
-
-            loop = asyncio.get_running_loop()
+            self.server.log.write_debug([f'[ DataTransferTCPRequestHandler.create_package ] forked child process (pid {str(proc.pid)})'])
 
             while True:
                 # a list of recnum decimal byte strings
@@ -634,13 +486,13 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
                         # more recnums to come; wait for queue to fill a bit
                         await asyncio.sleep(0.5)
 
-                # we have our chunk of recnums in `chunk_of_recnums`
+                # we have our chunk of recnums in `chunk_of_recnums` (consumed from the self._drms_ids queue)
                 if proc.returncode is None:
                     if len(chunk_of_recnums) > 0:
-                        # send renumcs to export subprocess
-                        self.server.log.write_debug([f'[ DataTransferTCPRequestHandler.stream_package ] sending {",".join(chunk_of_recnums)} to process (pid {str(proc.pid)})'])
+                        # send recnums to drms-export-to-stdout (which is expecting recnums from stdin)
+                        self.server.log.write_debug([f'[ DataTransferTCPRequestHandler.create_package ] sending {",".join(chunk_of_recnums)} to process (pid {str(proc.pid)})'])
                         proc.stdin.write('\n'.join(list(chunk_of_recnums)).encode())
-                        self.server.log.write_debug([f'[ DataTransferTCPRequestHandler.stream_package ] sent chunk of {str(len(chunk_of_recnums))} recnums to process (pid {str(proc.pid)})'])
+                        self.server.log.write_debug([f'[ DataTransferTCPRequestHandler.create_package ] sent chunk of {str(len(chunk_of_recnums))} recnums to process (pid {str(proc.pid)})'])
                         await proc.stdin.drain()
                 else:
                     raise SubprocessError(msg=f'export process died unexpectly, error code {str(proc.returncode)}')
@@ -656,61 +508,118 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
                 if not bytes_read:
                     break
 
-                # send data package file to client
-                await loop.sock_sendall(self._data_socket, bytes_read)
+                # write binary data chunk to package file
+                num_bytes_written = 0
+                while num_bytes_written < len(bytes_read):
+                    num_bytes_written += self._data_file.write(bytes_read[num_bytes_written:])
 
             await proc.wait()
-            self.server.log.write_debug([f'[ DataTransferTCPRequestHandler.stream_package ] child process terminated (pid {str(proc.pid)})'])
+            self.server.log.write_debug([f'[ DataTransferTCPRequestHandler.create_package ] child process terminated (pid {str(proc.pid)})'])
         except (ValueError, OSError) as exc:
             raise SubprocessError(msg=f'[ stream_package ] {str(exc)}' )
+        except Exception as exc:
+            raise ExportFileError(msg=f'{str(exc)}')
 
-    async def receive_verification(self, *, data_event):
+    async def receive_verification(self, *, client_socket, data_event):
         self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.receive_verification ] receiving verification data from client `{str(self.client_address)}`' ])
         data_block = b''
         partial_line_start = None
         partial_line_end = None
 
-        loop = asyncio.get_running_loop()
         while True:
             try:
-                # data_block = self._data_socket.recv(8192) # non-blocking
-                data_block = await loop.sock_recv(self._data_socket, 8192)
+                data_block = client_socket.recv(8192)
+                self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.receive_verification ] received verification data {data_block.decode()}' ])
                 if data_block == b'':
-                    # server called shutdown on socket, but has not closed socket connection; server can still receive
                     break
-
-                # we know we have some verification data
-                self._verification_data_exist = True
-                data_event.set()
 
                 lines = data_block.decode().split('\n')
                 lstripped_lines = [] # leading partial line removed
                 full_lines = []
+                client_end = False
 
-                if partial_line_start is not None:
-                    # we have a partial line from last iteration
-                    partial_line_end = lines[0] # first line this iteration completes partial line from last iteration
-                    full_lines.append(f'{partial_line_start}{partial_line_end}')
-                    lstripped_lines = lines[1:]
-                    partial_line_start = None
-                    partial_line_end = None
-                else:
-                    lstripped_lines = lines
+                if len(lines) >= 3 and len(lines[-1]) == 0 and len(lines[0]) == 0:
+                    # data_block starts and ends in newline
+                    self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.receive_verification ] case 1 {str(lines)}' ])
+                    if partial_line_start is not None:
+                        # complete previous line
+                        full_lines.append(f'{partial_line_start}{lines[0]}')
+                        partial_line_start = None
 
-                # last line could be partial
-                if len(lstripped_lines[-1]) == 0:
-                    # last element is empty string because last byte read was '\n'; not partial
-                    full_lines = lstripped_lines[0:-1] # strip off empty-string element
+                    # add 'middle' lines
+                    full_lines.extend([ line for line in lines[1:-1] if len(line) > 0 ])
+                elif len(lines) > 1 and len(lines[-1]) == 0:
+                    # data_block ends in newline
+                    self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.receive_verification ] case 2 {str(lines)}' ])
+                    if partial_line_start is not None:
+                        # complete previous line
+                        full_lines.append(f'{partial_line_start}{lines[0]}')
+                        partial_line_start = None
+
+                        # add 'middle' lines
+                        full_lines.extend([ line for line in lines[1:-1] if len(line) > 0 ])
+                    else:
+                        # add 'middle' lines
+                        full_lines.extend([ line for line in lines[0:-1] if len(line) > 0 ])
+                elif len(lines) > 1 and len(lines[0]) == 0:
+                    # data_block starts in newline
+                    self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.receive_verification ] case 3 {str(lines)}' ])
+                    if partial_line_start is not None:
+                        # complete previous line
+                        full_lines.append(f'{partial_line_start}')
+                        partial_line_start = None
+
+                    # add 'middle' lines
+                    full_lines.extend([ line for line in lines[1:-1] if len(line) > 0 ])
+
+                    # set partial line start (last line)
+                    partial_line_start = lines[-1]
+                elif len(lines) == 1:
+                    # data_block has no newline
+                    self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.receive_verification ] case 4 {str(lines)}' ])
+                    if partial_line_start is not None:
+                        # append to partial line
+                        partial_line_start += lines[0]
+                    else:
+                        partial_line_start = lines[0]
                 else:
-                    # partial (full means '\n' was also read)
-                    full_lines = lstripped_lines[0:-1] # remove trailing partial line
+                    # data_block does not start or end in newline
+                    self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.receive_verification ] case 5 {str(lines)}' ])
+                    if partial_line_start is not None:
+                        # complete previous line
+                        full_lines.append(f'{partial_line_start}{lines[0]}')
+                        partial_line_start = None
+
+                        # add 'middle' lines
+                        full_lines.extend([ line for line in lines[1:-1] if len(line) > 0 ])
+                    else:
+                        full_lines.extend([ line for line in lines[:-1] if len(line) > 0 ])
+
+                    # set partial line start (last line)
                     partial_line_start = lines[-1]
 
+                # if the last element is the end-of-verification marker, no more verification data to read
+                if len(full_lines) >= 0 and full_lines[-1] == '\\.':
+                    client_end = True
+                    self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.receive_verification ] received end-of-verification marker from client' ])
+
+                    # remove the end marker
+                    full_lines = full_lines[:-1]
+
                 verified_recnums = [ self._drms_id_regex.match(line.split()[0]).group(1) for line in full_lines if line.split()[1] == 'V' ]
+                self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.receive_verification ] verified recnums: {",".join(verified_recnums)}' ])
+
                 for recnum in verified_recnums:
+                    # we know we have some verification data
+                    if not self._verification_data_exist:
+                        self._verification_data_exist = True
+                        data_event.set()
                     await self._verified_recnums.put(recnum)
 
                 self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.receive_verification ] finished sending {len(verified_recnums)} recnums for verification processing (for client `{str(self.client_address)}`)' ])
+
+                if client_end:
+                    break
             except socket.timeout as exc:
                 # no data written to pipe
                 raise MessageTimeoutError(msg=f'timeout event waiting for server {data_socket.getpeername()} to send data')
@@ -730,7 +639,7 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
             # only run the manifest-update code if there are verification data
             try:
                 # unlike the subprocess module, the asyncio.subprocess module runs asynchronously
-                arg_list = [ f'series={product}', f'operation=update', f'new_value=Y', f'JSOC_DBUSER={arguments.export_production_db_user}', f'JSOC_DBHOST={arguments.db_host}' ]
+                arg_list = [ f'series={product}', f'operation=update', f'new_value=Y', f'JSOC_DBUSER={self.server.export_production_db_user}', f'JSOC_DBHOST={self.server.db_host}' ]
 
                 self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.update_manifest ] running manifest manager for client `{str(self.client_address)}`: {str(arg_list)}' ])
                 proc = await asyncio.subprocess.create_subprocess_exec(os.path.join(self.server.export_bin, 'data-xfer-manifest-tables'), *arg_list, stdin=asyncio.subprocess.PIPE)
@@ -853,8 +762,10 @@ if __name__ == "__main__":
 
                         data_server.chunk_size = arguments.chunk_size
                         data_server.export_bin = arguments.export_bin
-                        data_server.number_of_ports = arguments.number_of_ports
-                        data_server.start_port = arguments.start_port
+                        data_server.package_host = arguments.package_host
+                        data_server.package_root = arguments.package_root
+                        data_server.export_production_db_user = arguments.export_production_db_user
+                        data_server.db_host = arguments.db_host
                         data_server.log = log
 
                         data_server_thread = threading.Thread(target=data_server.serve_forever)
