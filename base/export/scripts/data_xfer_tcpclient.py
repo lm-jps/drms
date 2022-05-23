@@ -6,6 +6,7 @@ import json
 import os
 from shutil import copyfile
 import socket
+from sshtunnel import SSHTunnelForwarder
 from sys import exit, stdout
 import tarfile
 import subprocess
@@ -101,8 +102,15 @@ class Arguments(Args):
             parser.add_argument('-e', '--export_file_format', help='the export file-name format string to be used when creating the exported files', metavar='<export file format>', dest='export_file_format', default=None)
             parser.add_argument('-l', '--logging_level', help='the amount of logging to perform; in order of increasing verbosity: critical, error, warning, info, debug', metavar='<logging level>', dest='logging_level', action=DrmsLogLevelAction, default=DrmsLogLevel.ERROR)
             parser.add_argument('-n', '--number_of_files', help='the number of data files/DRMS_IDs to process at one time', metavar='<number of files>', dest='number_of_files', default=1024)
+            parser.add_argument('-t', '--tunneling-off', help='if set, then access handshake server directly', dest='tunneling', action='store_false')
+            parser.add_argument('-r', '--remote-user', help='the user on the server that will be authenticated', metavar='<remote user>', dest='remote_user', default=None)
+            parser.add_argument('-p', '--private-key-file', help='the local file containing the private SSH key to be used for authentication on the server', metavar='<private key file>', dest='private_key_file', default=None)
 
             arguments = Arguments(parser=parser, args=args)
+
+            if arguments.tunneling:
+                if arguments.remote_user is None or arguments.private_key_file is None:
+                    raise ArgumentsError(msg=f'missing remote-user or private-key-file argument')
 
             # add needed drms parameters
             arguments.server = server
@@ -397,6 +405,64 @@ def verify_and_store_data(control_socket, downloaded_package_path, log):
 
     return number_of_files
 
+def handshake(*, control_socket, remote_user=None, private_key_file=None, log, product, number_of_files, export_file_format, download_directory):
+    # connected to server; perform workflow
+    client_error = None
+    server_error = None
+    try:
+        number_of_files = 0
+
+        # send CLIENT_READY
+        log.write_info([ f'[ __handshake__ ] sending {MessageType.CLIENT_READY.fullname} message to server' ])
+        Message.send(server_connection=control_socket, msg_type=MessageType.CLIENT_READY, log=log, **{ 'product' : arguments.product, 'number_of_files' : arguments.number_of_files, 'export_file_format' : arguments.export_file_format })
+
+        # receive PACKAGE_READY (or ERROR)
+        log.write_info([ f'[ __handshake__ ] waiting for server to send {MessageType.PACKAGE_READY.fullname} message' ])
+        package_host, package_path = Message.receive(server_connection=control_socket, msg_type=MessageType.PACKAGE_READY, log=log)
+
+        # download package
+        # TBD (path of the downloaded package file is `downloaded_package_path`)
+        package_dir, package_file = os.path.split(package_path)
+        downloaded_package_path = os.path.join(arguments.download_directory, package_file)
+        # copyfile(package_path, downloaded_package_path)
+        # emulate a Popen() of some external process; use scp as a placeholder
+        command = [ '/usr/bin/scp', f'-i {private_key_file}', f'{remote_user}@{package_host}:{package_path}', f'{downloaded_package_path}' ]
+        log.write_info([ f'[ __handshake__ ] transferring package: {" ".join(command)}' ])
+        complete_proc = subprocess.run(' '.join(command), shell=True)
+
+        # send VERIFICATION_READY
+        log.write_info([ f'[ __handshake__ ] sending {MessageType.VERIFICATION_READY.fullname} message to server' ])
+        Message.send(server_connection=control_socket, msg_type=MessageType.VERIFICATION_READY, log=log)
+
+        # send verification data
+        number_of_files = verify_and_store_data(control_socket, downloaded_package_path, log)
+
+        # send DATA_VERIFIED
+        log.write_info([ f'[ __handshake__ ] sending {MessageType.DATA_VERIFIED.fullname} message to server' ])
+        Message.send(server_connection=control_socket, msg_type=MessageType.DATA_VERIFIED, log=log, **{ 'number_of_files' : number_of_files })
+    except ErrorMessageReceived as exc:
+        server_error = exc
+        client_error = None
+    except ConnectionError as exc:
+        client_error = ControlConnectionError(msg=f'[ __handshake__ ] error communicating with server {str(exc)}')
+    except OSError as exc:
+        server_error = None
+        client_error = DownloadError(msg=f'[ __handshake__ ] error downloading package file from server {str(exc)}')
+    except subprocess.SubprocessError as exc:
+        server_error = None
+        client_error = SubprocessError(msg=f'[ __handshake__ ] {str(exc)}')
+    except Exception as exc:
+        server_error = None
+        client_error = HandshakeError(msg=f'[ __handshake__ ] {str(exc)}')
+
+    if client_error is not None:
+        log.write_error([ f'[ __handshake__ ] sending {MessageType.ERROR.fullname} message to server' ])
+        Message.send(server_connection=control_socket, msg_type=MessageType.ERROR, log=log, **{ 'error_message' : str(client_error) })
+
+    if server_error is None:
+        # receive REQUEST_COMPLETE
+        log.write_info([ f'[ __handshake__ ] waiting for server to send {MessageType.REQUEST_COMPLETE.fullname} message' ])
+        Message.receive(server_connection=control_socket, msg_type=MessageType.REQUEST_COMPLETE, log=log)
 
 if __name__ == "__main__":
     try:
@@ -408,6 +474,8 @@ if __name__ == "__main__":
             raise LoggingError(msg=f'{str(exc)}')
 
         info = socket.getaddrinfo(arguments.server, arguments.server_port)
+        log.write_debug([ f'[ __main__ ] network card info for {arguments.server}:{str(arguments.server_port)}:' ])
+        log.write_debug([ f'[ __main__ ] {card}' for card in info ])
         control_connected = False
         for address_info in info:
             family = address_info[0]
@@ -416,81 +484,63 @@ if __name__ == "__main__":
             if family == socket.AF_INET and sock_type == socket.SOCK_STREAM:
                 socket_address = address_info[4] # 2-tuple for AF_INET family
 
-                try:
-                    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as control_socket:
-                        log.write_info([ f'created socket' ])
+                if arguments.tunneling:
+                    # `remote_bind_address` is address of handshake service, with respect to gateway (solarweb1); since
+                    # the handshake server IS the gateway, use 127.0.0.1:6200
+                    handshake_address = ('127.0.0.1', socket_address[1])
+                    with SSHTunnelForwarder(arguments.server, ssh_username=arguments.remote_user, ssh_pkey=arguments.private_key_file, remote_bind_address=handshake_address) as server:
+                        local_binding = server.tunnel_bindings[handshake_address]
+                        log.write_debug([ f'[ __main__ ] created SSH tunnel: gateway {arguments.server}, local <> remote bindings {local_binding}:{handshake_address}'])
                         try:
-                            log.write_info([ f'connecting to {socket_address}' ])
-                            control_socket.connect((socket_address[0], socket_address[1]))
-                            control_connected = True
-                            log.write_info([ f'control connection established' ])
+                            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as control_socket:
+                                log.write_info([ f'created socket' ])
+                                try:
+                                    log.write_info([ f'connecting to {str(("127.0.0.1", local_binding[1]))}' ])
+                                    control_socket.connect(('127.0.0.1', local_binding[1]))
+                                    control_connected = True
+                                    log.write_info([ f'control connection established' ])
+                                except OSError as exc:
+                                    log.write_info([ f'WARNING: connection to {local_binding} failed - {str(exc)}' ])
+                                    control_socket.close()
+                                    control_socket = None
+                                    continue
+
+                                handshake(control_socket=control_socket, remote_user=arguments.remote_user, private_key_file=arguments.private_key_file, log=log, product=arguments.product, number_of_files=arguments.number_of_files, export_file_format=arguments.export_file_format, download_directory=arguments.download_directory)
+
+                                control_socket.shutdown(socket.SHUT_RDWR)
+                                log.write_info([ f'client shut down CONTROL connection' ])
+
+                            # control socket was closed
+                            log.write_info([ f'client closed CONTROL connection' ])
                         except OSError as exc:
-                            log.write_info([ f'WARNING: connection to {socket_address} failed - {str(exc)}' ])
-                            control_socket.close()
-                            control_socket = None
-                            continue
+                            log.write_info([ str(exc) ])
+                            raise TcpClientError(msg=f'failure creating TCP client')
+                else:
+                    try:
+                        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as control_socket:
+                            log.write_info([ f'created socket' ])
+                            try:
+                                log.write_info([ f'connecting to {socket_address}' ])
+                                control_socket.connect((socket_address[0], socket_address[1]))
+                                control_connected = True
+                                log.write_info([ f'control connection established' ])
+                            except OSError as exc:
+                                log.write_info([ f'WARNING: connection to {socket_address} failed - {str(exc)}' ])
+                                control_socket.close()
+                                control_socket = None
+                                continue
 
-                        # connected to server; perform workflow
-                        client_error = None
-                        server_error = None
-                        try:
-                            number_of_files = 0
+                            handshake(control_socket=control_socket, log=log, product=arguments.product, number_of_files=arguments.number_of_files, export_file_format=arguments.export_file_format, download_directory=arguments.download_directory)
 
-                            # send CLIENT_READY
-                            log.write_info([ f'[ __main __ ] sending {MessageType.CLIENT_READY.fullname} message to server' ])
-                            Message.send(server_connection=control_socket, msg_type=MessageType.CLIENT_READY, log=log, **{ 'product' : arguments.product, 'number_of_files' : arguments.number_of_files, 'export_file_format' : arguments.export_file_format })
+                            control_socket.shutdown(socket.SHUT_RDWR)
+                            log.write_info([ f'client shut down CONTROL connection' ])
 
-                            # receive PACKAGE_READY (or ERROR)
-                            log.write_info([ f'[ __main __ ] waiting for server to send {MessageType.PACKAGE_READY.fullname} message' ])
-                            package_host, package_path = Message.receive(server_connection=control_socket, msg_type=MessageType.PACKAGE_READY, log=log)
 
-                            # download package
-                            # TBD (path of the downloaded package file is `downloaded_package_path`)
-                            package_dir, package_file = os.path.split(package_path)
-                            downloaded_package_path = os.path.join(arguments.download_directory, package_file)
-                            copyfile(package_path, downloaded_package_path)
-
-                            # send VERIFICATION_READY
-                            log.write_info([ f'[ __main __ ] sending {MessageType.VERIFICATION_READY.fullname} message to server' ])
-                            Message.send(server_connection=control_socket, msg_type=MessageType.VERIFICATION_READY, log=log)
-
-                            # send verification data
-                            number_of_files = verify_and_store_data(control_socket, downloaded_package_path, log)
-
-                            # send DATA_VERIFIED
-                            log.write_info([ f'[ __main __ ] sending {MessageType.DATA_VERIFIED.fullname} message to server' ])
-                            Message.send(server_connection=control_socket, msg_type=MessageType.DATA_VERIFIED, log=log, **{ 'number_of_files' : number_of_files })
-                        except ErrorMessageReceived as exc:
-                            server_error = exc
-                            client_error = None
-                        except ConnectionError as exc:
-                            client_error = ControlConnectionError(msg=f'[ __main __ ] error communicating with server {str(exc)}')
-                        except OSError as exc:
-                            server_error = None
-                            client_error = DownloadError(msg=f'[ __main __ ] error downloading package file from server {str(exc)}')
-                        except subprocess.SubprocessError as exc:
-                            server_error = None
-                            client_error = SubprocessError(msg=f'[ __main __ ] {str(exc)}')
-                        except Exception as exc:
-                            server_error = None
-                            client_error = HandshakeError(msg=f'[ __main __ ] {str(exc)}')
-
-                        if client_error is not None:
-                            log.write_error([ f'[ __main __ ] sending {MessageType.ERROR.fullname} message to server' ])
-                            Message.send(server_connection=control_socket, msg_type=MessageType.ERROR, log=log, **{ 'error_message' : str(client_error) })
-
-                        if server_error is None:
-                            # receive REQUEST_COMPLETE
-                            log.write_info([ f'[ __main __ ] waiting for server to send {MessageType.REQUEST_COMPLETE.fullname} message' ])
-                            Message.receive(server_connection=control_socket, msg_type=MessageType.REQUEST_COMPLETE, log=log)
-
-                        control_socket.shutdown(socket.SHUT_RDWR)
-                        log.write_info([ f'client shut down CONTROL connection' ])
-                    # control socket was closed
-                    log.write_info([ f'client closed CONTROL connection' ])
-                except OSError as exc:
-                    log.write_info([ str(exc) ])
-                    raise TcpClientError(msg=f'failure creating TCP client')
+                        # control socket was closed
+                        log.write_info([ f'client closed CONTROL connection' ])
+                    except OSError as exc:
+                        log.write_info([ str(exc) ])
+                        raise TcpClientError(msg=f'failure creating TCP client')
 
             if control_connected:
                 break

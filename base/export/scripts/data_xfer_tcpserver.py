@@ -207,7 +207,7 @@ class Message(object):
 
         if error_message is not None:
             log.write_error([ f'[ Message.receive ] error parsing message `{error_message}`' ])
-            message = ErrorMessage(json_message=f'{{ "message" : {MessageType.ERROR.fullname}, "error_message" : {error_message} }}')
+            message = ErrorMessage(json_message=f'{{ "message" : "{MessageType.ERROR.fullname}", "error_message" : "{error_message}" }}')
         else:
             if not hasattr(message, 'message'):
                 log.write_error([ f'[ Message.receive ] message missing `message` attribute' ])
@@ -306,18 +306,18 @@ class Arguments(Args):
 
             # optional
             parser.add_argument('-c', '--chunk_size', help='the number of records to process at one time', metavar='<record chunk size>', dest='chunk_size', default=1024)
+            parser.add_argument('-H', '--package-host', help='the server hosting the packages', metavar='<package host>', dest='package_host', default=package_host)
             parser.add_argument('-l', '--log_file', help='the path to the log file', metavar='<log file>', dest='log_file', default=log_file)
             parser.add_argument('-L', '--logging_level', help='the amount of logging to perform; in order of increasing verbosity: critical, error, warning, info, debug', metavar='<logging level>', dest='logging_level', action=DrmsLogLevelAction, default=DrmsLogLevel.ERROR)
             parser.add_argument('-P', '--port', help='the port to listen on for new client connections', metavar='<listening port>', dest='listen_port', default=listen_port)
+            parser.add_argument('-R', '--package-root', help='the root path of the packages', metavar='<package root>', dest='package_root', default=package_root)
             parser.add_argument('-S', '--server', help='the server host accepting client connections', metavar='<server>', dest='server', default=server)
 
             arguments = Arguments(parser=parser, args=args)
 
             # add needed drms parameters
-            arguments.export_bin = '/home/arta/jsoctrees/JSOC/_linux_avx/base/export/apps'
+            arguments.export_bin = '/opt/netdrms/bin/linux_avx/'
             arguments.export_production_db_user = export_production_db_user
-            arguments.package_host = package_host
-            arguments.package_root = package_root
 
             cls._arguments = arguments
 
@@ -466,7 +466,7 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
 
             while True:
                 drms_id = await proc.stdout.readline() # bytes
-                if not drms_id:
+                if drms_id == b'':
                     break
                 await self._drms_ids.put(drms_id.decode().rstrip()) # strings
 
@@ -547,19 +547,31 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
                     break
 
             # cannot start reading until all recnums have been sent to export code
+            total_num_bytes_read = 0
+            total_num_bytes_written = 0
             while True:
                 # read data package file from export subprocess
                 bytes_read = await proc.stdout.read(16384)
-                if not bytes_read:
+                if bytes_read == b'':
+                    self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.create_package ] got end of file - total num bytes read {total_num_bytes_read}, total num bytes written {total_num_bytes_written}' ])
                     break
+
+                total_num_bytes_read += len(bytes_read)
 
                 # write binary data chunk to package file
                 num_bytes_written = 0
                 while num_bytes_written < len(bytes_read):
                     num_bytes_written += self._data_file.write(bytes_read[num_bytes_written:])
+                    # self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.create_package ] wrote {num_bytes_written} bytes to tar file' ])
+
+                total_num_bytes_written += num_bytes_written
+                # self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.create_package ] read {len(bytes_read)} bytes, wrote {num_bytes_written} bytes to tar file' ])
+
+            self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.create_package ] total num bytes read {total_num_bytes_read}, total num bytes written {total_num_bytes_written}' ])
 
             await proc.wait()
-            self.server.log.write_debug([f'[ DataTransferTCPRequestHandler.create_package ] child process terminated (pid {str(proc.pid)})'])
+            self._data_file.flush()
+            self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.create_package ] child process terminated (pid {str(proc.pid)})' ])
         except (ValueError, OSError) as exc:
             raise SubprocessError(msg=f'[ stream_package ] {str(exc)}' )
         except Exception as exc:
@@ -660,13 +672,14 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
                     else:
                         message_buffer.append(full_line)
 
-                full_lines = '\n'.join(full_line_buffer)
+                full_lines = full_line_buffer
 
                 if client_end:
                     # combine next lines to make the DATA_VERIFIED message
                     self._verified_message_json = '\n'.join(message_buffer)
                     self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.receive_verification ] verified-message json {self._verified_message_json}' ])
 
+                self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.receive_verification ] extracting verified recnums from  {str(full_lines)}' ])
                 verified_recnums = [ self._drms_id_regex.match(line.split()[0]).group(1) for line in full_lines if line.split()[1] == 'V' ]
                 self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.receive_verification ] verified recnums: {",".join(verified_recnums)}' ])
 
