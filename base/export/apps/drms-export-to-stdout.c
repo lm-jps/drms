@@ -915,7 +915,7 @@ static void Restore_stderr_on_error(int saved_pipes[2], int *saved_stderr, FILE 
 
 /* subset should be a set of records in a single series */
 /* generates a single FITS file from all records in subset */
-static ExpToStdoutStatus_t ExportRecordSetKeywordsToStdout(DRMS_RecordSet_t *subset, const char *series, int make_tar, int export_from_manifest, int dump_file_name, int suppress_stderr, const char *ffmt, const char *class_name, const char *map_file, size_t *bytes_exported, size_t max_tar_file_size, int *num_records_exported, json_t *info_data_arr, json_t *error_data_arr, char **error_buf, char **manifest_buf)
+static ExpToStdoutStatus_t ExportRecordSetKeywordsToStdout(DRMS_RecordSet_t *subset, const char *series, int make_tar, int export_from_manifest, int dump_file_name, int suppress_stderr, const char *ffmt, const char *class_name, const char *map_file, size_t *bytes_exported, size_t max_tar_file_size, int *num_records_exported, json_t *info_data_arr, json_t *error_data_arr, char **error_buf, char **manifest_buf, size_t *sz_manifest_buf)
 {
     ExpToStdoutStatus_t exp_status = ExpToStdoutStatus_Success;
     int drms_status = DRMS_SUCCESS;
@@ -943,7 +943,6 @@ static ExpToStdoutStatus_t ExportRecordSetKeywordsToStdout(DRMS_RecordSet_t *sub
     long long max_recnum = -1;
     char *series_lower = NULL;
     char drms_id[128];
-    size_t sz_manifest_buf = 512;
 
     secs = time(NULL);
     local_time = localtime(&secs);
@@ -1237,13 +1236,17 @@ static ExpToStdoutStatus_t ExportRecordSetKeywordsToStdout(DRMS_RecordSet_t *sub
                             }
                             else if (export_from_manifest && manifest_buf)
                             {
-                                *manifest_buf = calloc(sz_manifest_buf, sizeof(char));
+                                if (!*manifest_buf)
+                                {
+                                    *manifest_buf = calloc(*sz_manifest_buf, sizeof(char));
+                                }
+
                                 series_lower = strdup(series);
                                 strtolower(series_lower);
 
                                 /* make keyword-only DRMS_ID */
                                 snprintf(drms_id, sizeof(drms_id), "%s:%lld-%lld:keywords$", series_lower, min_recnum, max_recnum);
-                                insert_into_manifest(drms_id, fits_file_name, manifest_buf, &sz_manifest_buf);
+                                insert_into_manifest(drms_id, fits_file_name, manifest_buf, sz_manifest_buf);
 
                                 free(series_lower);
                                 series_lower = NULL;
@@ -1355,7 +1358,7 @@ static ExpToStdoutStatus_t ExportRecordSetKeywordsToStdout(DRMS_RecordSet_t *sub
 /* loop over segments */
 /* segCompression is an array of FITSIO macros, one for each segment, that specify the type of compression to perform; if NULL, then compress all segments with Rice compression
  */
-static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int export_from_manifest, int dumpFileName, int suppress_stderr, DRMS_Record_t *expRec, const char *ffmt, CFITSIO_COMPRESSION_TYPE *segCompression, int compressAllSegs, const char *classname, const char *mapfile, size_t *bytesExported, size_t maxTarFileSize, size_t *numFilesExported, json_t *infoDataArr, json_t *errorDataArr, char **manifest_buf)
+static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int export_from_manifest, int dumpFileName, int suppress_stderr, DRMS_Record_t *expRec, const char *ffmt, CFITSIO_COMPRESSION_TYPE *segCompression, int compressAllSegs, const char *classname, const char *mapfile, size_t *bytesExported, size_t maxTarFileSize, size_t *numFilesExported, json_t *infoDataArr, json_t *errorDataArr, char **manifest_buf, size_t * sz_manifest_buf)
 {
     ExpToStdoutStatus_t expStatus = ExpToStdoutStatus_Success;
     int drmsStatus = DRMS_SUCCESS;
@@ -1381,7 +1384,6 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int export_from_man
     char msg[256];
     char errMsg[512];
     char drms_id[128];
-    size_t sz_manifest_buf = 512;
     char *series_lower = NULL;
     char *segment_lower = NULL;
 
@@ -1752,7 +1754,7 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int export_from_man
                     {
                         if (!*manifest_buf)
                         {
-                            *manifest_buf = calloc(sz_manifest_buf, sizeof(char));
+                            *manifest_buf = calloc(*sz_manifest_buf, sizeof(char));
                         }
 
                         series_lower = strdup(expRec->seriesinfo->seriesname);
@@ -1762,7 +1764,7 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int export_from_man
 
                         /* make keyword-only DRMS_ID */
                         snprintf(drms_id, sizeof(drms_id), "%s:%lld:%s", series_lower, expRec->recnum, segment_lower);
-                        insert_into_manifest(drms_id, formattedFitsName, manifest_buf, &sz_manifest_buf);
+                        insert_into_manifest(drms_id, formattedFitsName, manifest_buf, sz_manifest_buf);
 
                         free(segment_lower);
                         segment_lower = NULL;
@@ -1872,7 +1874,7 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int export_from_man
 /* loop over records */
 /* segCompression is an array of FITSIO macros, one for each segment, that specify the type of compression to perform; if NULL, then compress all segments with Rice compression
  */
-static ExpToStdoutStatus_t ExportRecordSetToStdout(DRMS_Env_t *env, int makeTar, int export_from_manifest, int dumpFileName, int suppress_stderr, DRMS_RecordSet_t *expRS, const char *ffmt, CFITSIO_COMPRESSION_TYPE *segCompression, int compressAllSegs, int dump_keywords_only, const char *classname, const char *mapfile, size_t *bytesExported, size_t maxTarFileSize, size_t *numFilesExported, json_t *infoDataArr, json_t *errorDataArr, char **error_buf, char **manifest_buf)
+static ExpToStdoutStatus_t ExportRecordSetToStdout(DRMS_Env_t *env, int makeTar, int export_from_manifest, int dumpFileName, int suppress_stderr, DRMS_RecordSet_t *expRS, const char *ffmt, CFITSIO_COMPRESSION_TYPE *segCompression, int compressAllSegs, int dump_keywords_only, const char *classname, const char *mapfile, size_t *bytesExported, size_t maxTarFileSize, size_t *numFilesExported, json_t *infoDataArr, json_t *errorDataArr, char **error_buf, char **manifest_buf, size_t *sz_manifest_buf)
 {
     int drmsStatus = DRMS_SUCCESS;
     ExpToStdoutStatus_t expStatus = ExpToStdoutStatus_Success;
@@ -1904,7 +1906,6 @@ static ExpToStdoutStatus_t ExportRecordSetToStdout(DRMS_Env_t *env, int makeTar,
     char *manifest_series = NULL;
 
     char drms_id[128];
-    size_t sz_manifest_buf = 512;
     char *series_lower = NULL;
     char *segment_lower = NULL;
 
@@ -1975,7 +1976,7 @@ static ExpToStdoutStatus_t ExportRecordSetToStdout(DRMS_Env_t *env, int makeTar,
                         subset->ss_n = 1;
                         drms_recordset_fetchnext_setcurrent(subset, -1); /* set iterator to first record */
                         subset->env = expRS->env;
-                        expStatus = ExportRecordSetKeywordsToStdout(subset, series, makeTar, export_from_manifest, dumpFileName, suppress_stderr, ffmt, classname, mapfile, bytesExported, maxTarFileSize, &num_records_exported, infoDataArr, errorDataArr, error_buf, manifest_buf);
+                        expStatus = ExportRecordSetKeywordsToStdout(subset, series, makeTar, export_from_manifest, dumpFileName, suppress_stderr, ffmt, classname, mapfile, bytesExported, maxTarFileSize, &num_records_exported, infoDataArr, errorDataArr, error_buf, manifest_buf, sz_manifest_buf);
 
                         drms_close_records(subset, DRMS_FREE_RECORD);
                     }
@@ -1999,7 +2000,7 @@ static ExpToStdoutStatus_t ExportRecordSetToStdout(DRMS_Env_t *env, int makeTar,
                         recsAttempted++;
 
                         /* export each segment file in this record */
-                        expStatus = ExportRecordToStdout(makeTar, export_from_manifest, dumpFileName, suppress_stderr, expRecord, ffmt, segCompression, compressAllSegs, classname, mapfile, bytesExported, maxTarFileSize, numFilesExported, infoDataArr, errorDataArr, manifest_buf);
+                        expStatus = ExportRecordToStdout(makeTar, export_from_manifest, dumpFileName, suppress_stderr, expRecord, ffmt, segCompression, compressAllSegs, classname, mapfile, bytesExported, maxTarFileSize, numFilesExported, infoDataArr, errorDataArr, manifest_buf, sz_manifest_buf);
                         if (expStatus == ExpToStdoutStatus_TarTooLarge)
                         {
                             break;
@@ -2145,6 +2146,7 @@ int DoIt(void)
     json_t *errorRoot = NULL; /* for ERROR_LIST_PATH file inside tar file (makeTar == 1) */
     json_t *errorDataArr = NULL;
     char *manifest_buf = NULL;
+    size_t sz_manifest_buf = 512;
     char *infoJson = NULL;
     char *errorJson = NULL;
     char *jsonFileContent = NULL;
@@ -2319,7 +2321,7 @@ int DoIt(void)
 
         /* since the following call dives into lib DRMS, it could print error and warnings messages to stderr; capture those if we are
          * suppressing writing to stderr */
-        expStatus = ExportRecordSetToStdout(drms_env, makeTar, export_from_manifest, dumpFileName, suppress_stderr, expRS, fileTemplate, segCompression, compressAllSegs, dump_keywords_only, mapClass, mapFile, &bytesExported, maxTarFileSize, &numFilesExported, infoDataArr, errorDataArr, &error_buf_tmp, &manifest_buf);
+        expStatus = ExportRecordSetToStdout(drms_env, makeTar, export_from_manifest, dumpFileName, suppress_stderr, expRS, fileTemplate, segCompression, compressAllSegs, dump_keywords_only, mapClass, mapFile, &bytesExported, maxTarFileSize, &numFilesExported, infoDataArr, errorDataArr, &error_buf_tmp, &manifest_buf, &sz_manifest_buf);
 
         /* -- ART -- */
         if (!manifest_buf)
