@@ -1,4 +1,5 @@
 import asyncio
+from copy import deepcopy
 from functools import partial
 from json import loads as json_loads, dumps as json_dumps, decoder
 from os.path import join as path_join
@@ -33,6 +34,7 @@ class ErrorCode(ExportErrorCode):
     MESSAGE_RECEIVE = (108, 'error receiving message')
     SUBPROCESS = (109, 'error calling DRMS module')
     TCP_CLIENT = (110, 'TCP socket error')
+    BACKEND_INTERFACE = (111, 'bad arguments to backend')
 
 class ExpServerBaseError(ExportError):
     def __init__(self, *, exc_info=None, error_message=None):
@@ -80,6 +82,9 @@ class SubprocessError(ExpServerBaseError):
 
 class TCPClientError(ExpServerBaseError):
     _export_error = ErrorCode.TCP_CLIENT
+
+class JsocFetchLegacyRequestError(ExpServerBaseError):
+    _export_error = ErrorCode.BACKEND_INTERFACE
 
 class Request:
     def __init__(self, db_host, db_port, db_user):
@@ -290,6 +295,91 @@ class CheckAddressLegacyRequest(Request):
         response =  CheckAddressLegacyResponse(self, db_host, db_port, db_user, export_bin, export_scripts)
         return response
 
+class CheckAddressLegacyRequest(Request):
+    def __init__(self, *, db_host, db_port=None, db_user=None, address, **kwargs):
+        super().__init__(db_host, db_port, db_user)
+        self._args_dict['address'] = address
+        self._args_dict.update(kwargs);
+
+    def generate_response(self, db_host, db_port, db_user, export_bin, export_scripts):
+        response =  CheckAddressLegacyResponse(self, db_host, db_port, db_user, export_bin, export_scripts)
+        return response
+
+class JsocFetchLegacyRequest(Request):
+    def __init__(self, *, db_host, db_port=None, db_user=None, address, operation, **kwargs):
+        super().__init__(db_host, db_port, db_user)
+        self._args_dict['notify'] = address
+        self._args_dict['op'] = operation
+        self._args_dict['W'] = 1 # do not generate web page, return JSON instead
+
+        legacy_arguments = deepcopy(kwargs)
+        if operation.strip().lower() == 'exp_status':
+            request_id = legacy_arguments.get('request_id')
+            if request_id is None:
+                raise JsocFetchLegacyRequestError(error_message=f'missing required argument `request_id`')
+
+            self._args_dict['requestid'] = request_id
+            del legacy_arguments['request_id']
+        elif operation.strip().lower() == 'exp_request':
+            specification = legacy_arguments.get('specification')
+            if specification is None:
+                raise JsocFetchLegacyRequestError(error_message=f'missing required argument `specification`')
+
+            self._args_dict['ds'] = specification
+            del legacy_arguments['specification']
+
+        self._args_dict.update(legacy_arguments);
+
+    def generate_response(self, db_host, db_port, db_user, export_bin, export_scripts):
+        response =  JsocFetchLegacyResponse(self, db_host, db_port, db_user, export_bin, export_scripts)
+        return response
+
+class JsocInfoLegacyRequest(Request):
+    def __init__(self, *, db_host, db_port=None, db_user=None, operation, specification, **kwargs):
+        super().__init__(db_host, db_port, db_user)
+        self._args_dict['op'] = operation
+        self._args_dict['ds'] = specification
+        self._args_dict['s'] = 1
+        self._args_dict.update(kwargs);
+
+    def generate_response(self, db_host, db_port, db_user, export_bin, export_scripts):
+        response =  JsocInfoLegacyResponse(self, db_host, db_port, db_user, export_bin, export_scripts)
+        return response
+
+class ShowInfoLegacyRequest(Request):
+    def __init__(self, *, db_host, db_port=None, db_user=None, specification, **kwargs):
+        super().__init__(db_host, db_port, db_user)
+        self._args_dict['ds'] = specification
+        self._args_dict.update(kwargs);
+
+    def generate_response(self, db_host, db_port, db_user, export_bin, export_scripts):
+        response =  ShowInfoLegacyResponse(self, db_host, db_port, db_user, export_bin, export_scripts)
+        return response
+
+class ShowSeriesLegacyRequest(Request):
+    def __init__(self, *, db_host, db_port=None, db_user=None, series_regex, **kwargs):
+        super().__init__(db_host, db_port, db_user)
+        self._args_dict['q'] = 1 # do not print HTTP headers
+        self._args_dict['z'] = 1 # print json
+        self._args_dict.update(kwargs);
+        self._positional_args.append(series_regex)
+
+    def generate_response(self, db_host, db_port, db_user, export_bin, export_scripts):
+        response =  ShowSeriesLegacyResponse(self, db_host, db_port, db_user, export_bin, export_scripts)
+        return response
+
+class ShowExtSeriesLegacyRequest(Request):
+    def __init__(self, *, db_host, db_port=None, db_user=None, series_regex, **kwargs):
+        super().__init__(db_host, db_port, db_user)
+        self._args_dict['filter'] = series_regex
+        self._args_dict['noheader'] = 1
+        self._args_dict['dbhost'] = db_host
+        self._args_dict.update(kwargs);
+
+    def generate_response(self, db_host, db_port, db_user, export_bin, export_scripts):
+        response =  ShowExtSeriesLegacyResponse(self, db_host, db_port, db_user, export_bin, export_scripts)
+        return response
+
 class QuitRequest(Request):
     def __init__(self):
         super().__init__(None, None, None)
@@ -347,8 +437,9 @@ class Response():
         # noop, by default
         return data
 
-    async def send(self, writer):
+    async def _send(self, writer, partial=False):
         args_list = self.make_argslist()
+        command_path = args_list[0]
 
         Session.log.write_debug([ f'[ Response.send ] arguments: ' ])
         Session.log.write_debug(args_list)
@@ -357,13 +448,20 @@ class Response():
 
         proc = await asyncio.subprocess.create_subprocess_shell(' '.join(args_list), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
 
+        first = True
         while True:
             response = await proc.stdout.read(8192) # bytes
             if not response or response == b'':
                 break
 
             # write to the client socket
-            await send_message_async(writer, self.escape_data(response.decode('utf8')))
+            if first:
+                if not partial and response.lstrip()[:1] != b'{':
+                    # when sending a response to the client, it must be formatted as a message (i.e., JSON object)
+                    raise SubprocessError(error_message=f'[ Response.send ] failure running {self.__class__.__name__} command; {command_path} response is not JSON (starts with {response[:8].decode("utf8")})')
+
+            await send_text_async(writer, self.escape_data(response.decode('utf8')))
+            first = False
 
         await proc.wait()
 
@@ -385,6 +483,14 @@ class Response():
                 raise SubprocessError(error_message=f'[ Response.send ] failure running {self.__class__.__name__} command; {command_path} returned status code {str(proc.returncode)}' )
         else:
             raise SubprocessError(error_message=f'[ Response.send ] failure running {self.__class__.__name__} command; no return code' )
+
+    async def send(self, writer):
+        # send a JSON resonse
+        await self._send(writer)
+
+    async def send_partial(self, writer):
+        # send text (part of a JSON response)
+        await self._send(writer, True)
 
 class ParseSpecificationResponse(Response):
     _cmd = 'drms_parserecset'
@@ -409,11 +515,11 @@ class RecordInfoTableResponse(Response):
         suffix = None
 
         # start JSON (the caller needs to receive valid JSON, but show_info will dump a text string)
-        await send_message_async(writer, '{\n  "table" : "')
+        await send_text_async(writer, '{\n  "table" : "')
 
         try:
             # dump table as a big string; parent will call show_info
-            await super().send(writer)
+            await super().send_partial(writer)
 
             # send success status - 0
             suffix = '",\n  "status" : 0\n}\n'
@@ -425,7 +531,7 @@ class RecordInfoTableResponse(Response):
             # we have already started sending a JSON string
         finally:
             # send closing JSON curly brace
-            await send_message_async(writer, suffix)
+            await send_text_async(writer, suffix)
 
 class PremiumExportResponse(Response):
     _cmd = 'jsoc_fetch'
@@ -521,6 +627,71 @@ class CheckAddressLegacyResponse(Response):
 
         return args_list
 
+class JsocFetchLegacyResponse(Response):
+    _cmd = 'jsoc_fetch'
+
+class JsocInfoLegacyResponse(Response):
+    _cmd = 'jsoc_info'
+
+class ShowInfoLegacyResponse(Response):
+    _cmd = 'show_info'
+
+    def escape_data(self, data):
+        # noop, by default
+        return data.encode('unicode_escape').decode('utf8')
+
+    async def send(self, writer):
+        suffix = None
+
+        # start JSON (the caller needs to receive valid JSON, but show_info will dump a text string)
+        await send_text_async(writer, '{\n  "text" : "')
+
+        try:
+            # dump table as a big string; parent will call show_info
+            await super().send_partial(writer)
+
+            # send success status - 0
+            suffix = '",\n  "status" : 0\n}\n'
+        except:
+            # send faliure status - 1
+            suffix = '",\n  "status" : 1\n}\n'
+
+            # do not re-raise since this would cause the server to respond with a new JSON string, but
+            # we have already started sending a JSON string
+        finally:
+            # send closing JSON curly brace
+            await send_text_async(writer, suffix)
+
+class ShowSeriesLegacyResponse(Response):
+    _cmd = 'show_series'
+
+class ShowExtSeriesLegacyResponse(Response):
+    _cmd = 'showextseries.py'
+
+    def make_argslist(self):
+        # default to bin command line
+        args_list = None
+
+        command_path = path_join(f'{self._export_scripts}', f'{self.__class__._cmd}')
+        Session.log.write_debug([ f'[ ShowExtSeriesLegacyResponse.make_argslist ] running DRMS script {command_path}' ])
+
+        # `--debug` signals to showextseries.py that the arguments exist in a querystring
+        args_list = [ f'{sys_executable}', command_path, '--debug' ]
+
+        query_string = []
+        for key, val in self._args_dict.items():
+            if val is not None and len(str(val)) > 0:
+                query_string.append(f'{key}={quote(str(val))}')
+
+        for key, val in self._request.args_dict.items():
+            if val is not None and len(str(val)) > 0:
+                query_string.append(f'{key}={quote(str(val))}')
+
+        args_list.append(f"'{'&'.join(query_string)}'")
+        args_list.append('2>/dev/null')
+
+        return args_list
+
 class QuitResponse(Response):
     _cmd = None
 
@@ -604,7 +775,7 @@ def parse_message(json_message_buffer, buffer, open_count, close_count):
         if buffer[0] == '{':
             open_count += 1
         else:
-            raise MessageSyntaxError(error_message=f'[ parse_message ] invalid message synax; first character must be {str("{")}')
+            raise MessageSyntaxError(error_message=f'[ parse_message ] invalid message syntax; first character must be {str("{")}')
 
         json_message_buffer.append(buffer[0])
         buffer = buffer[1:]
@@ -690,6 +861,7 @@ class Connection:
     def get_log(cls):
         return Session.log
 
+# client
 def get_message(connection):
     json_message_buffer = []
     open_count = 0
@@ -707,6 +879,7 @@ def get_message(connection):
                     raise MessageReceiveError(error_message=f'[ get_message ] while waiting for message, peer terminated connection')
                     break
 
+            Session.log.write_debug([ f'[ get_message ] received message chunk from server:', buffer ])
             json_message_buffer, buffer, open_count, close_count = parse_message(json_message_buffer, buffer, open_count, close_count)
         except socket_timeout as exc:
             raise MessageTimeoutError(exc_info=sys_exc_info(), error_message=f'{str(exc)}')
@@ -718,6 +891,7 @@ def get_message(connection):
     Session.log.write_debug([ f'received message:', f'{message}' ])
     return message
 
+# server
 async def get_message_async(reader):
     json_message_buffer = []
     open_count = 0
@@ -742,6 +916,7 @@ async def get_message_async(reader):
     Session.log.write_debug([ f'received message:', f'{message}' ])
     return message
 
+# client
 def send_message(connection, json_message):
     num_bytes_sent_total = 0
     num_bytes_sent = 0
@@ -757,11 +932,18 @@ def send_message(connection, json_message):
             raise MessageTimeoutError(exc_info=sys_exc_info(), error_message=f'{str(exc)}')
     Session.log.write_debug([ f'message successfully sent' ])
 
+# server
 async def send_message_async(writer, json_message):
-    Session.log.write_debug([ f'sending message:', json_message ])
+    Session.log.write_debug([ f'[ send_message_async ] sending message:', json_message ])
     writer.write(json_message.encode('utf8'))
     await writer.drain()
-    Session.log.write_debug([ f'message successfully sent' ])
+    Session.log.write_debug([ f'[ send_message_async ] message successfully sent' ])
+
+async def send_text_async(writer, text):
+    Session.log.write_debug([ f'[ send_text_async ] sending text:', text ])
+    writer.write(text.encode('utf8'))
+    await writer.drain()
+    Session.log.write_debug([ f'[ send_text_async ] text successfully sent' ])
 
 async def send_data_async(writer, binary_data):
     writer.write(binary_data)
@@ -834,6 +1016,16 @@ async def get_request(reader):
         request = ExportStatusRequest(**request_dict)
     elif request_type == 'legacy_check_address':
         request = CheckAddressLegacyRequest(**request_dict)
+    elif request_type == 'legacy_jsoc_fetch':
+        request = JsocFetchLegacyRequest(**request_dict)
+    elif request_type == 'legacy_jsoc_info':
+        request = JsocInfoLegacyRequest(**request_dict)
+    elif request_type == 'legacy_show_info':
+        request = ShowInfoLegacyRequest(**request_dict)
+    elif request_type == 'legacy_show_series':
+        request = ShowSeriesLegacyRequest(**request_dict)
+    elif request_type == 'legacy_show_ext_series':
+        request = ShowExtSeriesLegacyRequest(**request_dict)
     elif request_type == 'quit':
         request = QuitRequest()
     else:
@@ -865,7 +1057,7 @@ async def handle_client(reader, writer, timeout, db_host, db_port, db_user, expo
             except asyncio.TimeoutError:
                 raise MessageTimeoutError(exc_info=sys_exc_info(), error_message=f'[ handle_client ] timeout event waiting sending message to client {writer.get_extra_info("peername")!r}')
             except Exception as exc:
-                raise MessageSendError(exc_info=sys_exc_info(), error_message=f'[ handle_client] {str(exc)}')
+                raise MessageSendError(exc_info=sys_exc_info(), error_message=f'[ handle_client ] {str(exc)}')
 
             if isinstance(request, QuitRequest) or isinstance(request, StreamedExportRequest):
                 # StreamedExportRequest --> the server dumps the export content on the writer after sending
