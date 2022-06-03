@@ -26,6 +26,7 @@ import random
 import argparse
 import inspect
 from queue import Queue, Empty, Full
+
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../include'))
 from drmsparams import DRMSParams
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../base/libs/py'))
@@ -134,8 +135,8 @@ RET_SHUTDOWN_REQUESTED = 23
 RET_NO_SUS_TO_DOWNLOAD = 24
 RET_DOWNLOADER = 25
 RET_SUPATH_CGI = 26
-RET_UNABLE_TO_START_THREAD = 27
-RET_QUEUE_FULL = 28
+RET_IO_ERROR = 27
+RET_UNABLE_TO_START_THREAD = 28
 RET_DUPLICATE_DISPATCHER_TYPE = 29
 RET_TOO_MANY_THREADS = 30
 RET_UNABLE_TO_CONNECT_TO_DB = 31
@@ -195,7 +196,7 @@ class TerminationHandler(object):
         # Acquire locks.
         self.rsLock = DrmsLock(self.lockFile, self.pidStr, False)
         if not self.rsLock.acquireLock():
-            raise LockException('remote SUMS already running')
+            raise LockException(msg='remote SUMS already running')
 
         self.log.writeCritical([ 'starting up remote-SUMS daemon' ])
         self.log.writeCritical([ 'logging threshold level is ' + self.log.getLevel() ]) # Critical - always write the log level to the log
@@ -214,10 +215,10 @@ class TerminationHandler(object):
             self.log.writeInfo([ 'Connected to SUMS database ' + self.sumsdbname + ' on ' + self.sumsdbhost + ':' + str(self.sumsdbport) + ' as user ' + self.sumsdbuser + '.' ])
         except psycopg2.DatabaseError as exc:
             self.__exit__(*sys.exc_info()) # clean up
-            raise DBConnectionException('Unable to connect to a database.')
+            raise DBConnectionException(msg='Unable to connect to a database.', exc_info=sys.exc_info())
         except psycopg2.Error as exc:
             self.__exit__(*sys.exc_info()) # clean up
-            raise DBConnectionException('Unable to connect to a database.')
+            raise DBConnectionException(msg='Unable to connect to a database.', exc_info=sys.exc_info())
 
         return self
 
@@ -229,8 +230,15 @@ class TerminationHandler(object):
         self.log.writeDebug([ 'TerminationHandler.__exit__() called' ])
         if etype is not None:
             # If the context manager was exited without an exception, then etype is None
-            import traceback
-            self.log.writeDebug(traceback.format_exc(5).splitlines())
+            # import traceback
+            # self.log.writeDebug(traceback.format_exc(5).splitlines())
+
+            if isinstance(etype, (RemoteSumsException)):
+                error = value
+            else:
+                error = RemoteSumsException(exc_info=(etype, value, traceback))
+
+            self.log.writeDebug([ '[ __exit__ ] ' + str(error) ])
 
         print('Remote SUMS shutting down...')
         self.finalStuff()
@@ -247,7 +255,7 @@ class TerminationHandler(object):
 
         if etype == SystemExit:
             print('and done')
-            raise TerminationException('Termination signal handler called.')
+            raise TerminationException(msg='Termination signal handler called.')
 
     def saveSignal(self, signo, frame):
         if self.savedSignals == None:
@@ -296,7 +304,7 @@ class TerminationHandler(object):
             finally:
                 Dispatcher.lock.release()
 
-            if dispatcher and isinstance(dispatcher, (Dispatcher)) and dispatcher.isAlive():
+            if dispatcher and isinstance(dispatcher, (Dispatcher)) and dispatcher.is_alive():
                 # wait for pending Dispatcher tasks to complete
                 dispatcher.queue.join()
                 dispatcher.join()
@@ -331,7 +339,7 @@ class TerminationHandler(object):
                 if gotLock:
                     ScpWorker.lock.release()
 
-            if scpWorker and isinstance(scpWorker, (ScpWorker)) and scpWorker.isAlive():
+            if scpWorker and isinstance(scpWorker, (ScpWorker)) and scpWorker.is_alive():
                 # can't hold worker lock here - when the worker terminates, it acquires the same lock
                 self.log.writeInfo([ 'waiting for Scp Worker (ID ' + str(scpWorker.id) + ') to halt' ])
                 scpWorker.join() # will block, possibly for ever
@@ -362,7 +370,7 @@ class TerminationHandler(object):
                 if gotLock:
                     HighPriorityDownloader.lock.release()
 
-            if downloader and isinstance(downloader, (HighPriorityDownloader)) and downloader.isAlive():
+            if downloader and isinstance(downloader, (HighPriorityDownloader)) and downloader.is_alive():
                 downloader.join()
 
         # shut-down Downloader threads
@@ -391,7 +399,7 @@ class TerminationHandler(object):
                 if gotLock:
                     Downloader.lock.release()
 
-            if downloader and isinstance(downloader, (Downloader)) and downloader.isAlive():
+            if downloader and isinstance(downloader, (Downloader)) and downloader.is_alive():
                 downloader.join()
 
         if self.sumsconn:
@@ -420,12 +428,11 @@ class SumsDrmsParams(DRMSParams):
         val = super(SumsDrmsParams, self).get(name)
 
         if val is None:
-            raise DrmsParamsException('Unknown DRMS parameter: ' + name + '.')
+            raise DrmsParamsException(msg='Unknown DRMS parameter: ' + name + '.')
         return val
 
 
 class Arguments(object):
-
     def __init__(self, parser):
         # This could raise in a few places. Let the caller handle these exceptions.
         self.parser = parser
@@ -446,7 +453,7 @@ class Arguments(object):
                 if type != 'CmdlParser-ArgUnrecognized' and type != 'CmdlParser-ArgBadformat':
                     raise # Re-raise
 
-                raise RSArgsException(msg)
+                raise RSArgsException(msg=msg, exc_info=sys.exc_info())
             else:
                 raise # Re-raise
 
@@ -456,7 +463,7 @@ class Arguments(object):
             # set attributes directly in the Arguments instance.
             setattr(self, name, value)
         else:
-            raise RSArgsException('Attempt to set an argument that already exists: ' + name + '.')
+            raise RSArgsException(msg='Attempt to set an argument that already exists: ' + name + '.')
 
     def setAllArgs(self):
         for key,val in list(vars(self.parsedArgs).items()):
@@ -466,7 +473,7 @@ class Arguments(object):
         try:
             return getattr(self, name)
         except AttributeError as exc:
-            raise RSArgsException('Unknown argument: ' + name + '.')
+            raise RSArgsException(msg='Unknown argument: ' + name + '.', exc_info=sys.exc_info())
 
     def dump(self, log):
         attrList = []
@@ -549,211 +556,128 @@ class Log(object):
                 self.log.critical(self.__prependFrameInfo(line))
             self.fileHandler.flush()
 
-
+# base exception
 class RemoteSumsException(Exception):
+    def __init__(self, *, exc_info=None, msg=None):
+        if exc_info is not None:
+            import traceback
 
-    def __init__(self, msg):
-        super(RemoteSumsException, self).__init__(msg)
+            # for use with some exception handlers
+            self.exc_info = exc_info
+            e_type, e_obj, e_tb = exc_info
+            file_info = traceback.extract_tb(e_tb)[-1]
+            file_name = file_info.filename if hasattr(file_info, 'filename') else ''
+            line_number = str(file_info.lineno) if hasattr(file_info, 'lineno') else ''
+
+            if msg is None:
+                msg = f'[ {os.path.basename(file_name)}:{line_number} - {e_type.__name__}:{str(e_obj)} ]'
+            else:
+                msg = f'{msg}'
+
         self.msg = msg # also in args[0] due to base-class constructor
         self.retcode = RET_UNKNOWN_ERROR
 
-class DrmsParamsException(RemoteSumsException):
+        super().__init__(msg)
 
-    def __init__(self, msg):
-        super(DrmsParamsException, self).__init__(msg)
-        self.retcode = RET_UNKOWN_DRMSPARAMETER
+class DrmsParamsException(RemoteSumsException):
+    _retcode = RET_UNKOWN_DRMSPARAMETER
 
 class RSArgsException(RemoteSumsException):
-
-    def __init__(self, msg):
-        super(RSArgsException, self).__init__(msg)
-        self.retcode = RET_INVALID_REMOTE_SUMS_ARGUMENT
+    _retcode = RET_INVALID_REMOTE_SUMS_ARGUMENT
 
 class InvalidArgumentException(RemoteSumsException):
-
-    def __init__(self, msg):
-        super(InvalidArgumentException, self).__init__(msg)
-        self.retcode = RET_INVALID_ARGUMENT
+    _retcode = RET_INVALID_ARGUMENT
 
 class NoSUReferenceException(RemoteSumsException):
-
-    def __init__(self, msg):
-        super(NoSUReferenceException, self).__init__(msg)
-        self.retcode = RET_SU_NOT_REFERENCED
+    _retcode = RET_SU_NOT_REFERENCED
 
 class WorkerReferenceException(RemoteSumsException):
-
-    def __init__(self, msg):
-        super(WorkerReferenceException, self).__init__(msg)
-        self.retcode = RET_WORKER_REFERENCE_ERROR
+    _retcode = RET_WORKER_REFERENCE_ERROR
 
 class LockException(RemoteSumsException):
-
-    def __init__(self, msg):
-        super(LockException, self).__init__(msg)
-        self.retcode = RET_UNABLE_TO_ACQUIRE_LOCK
+    _retcode = RET_UNABLE_TO_ACQUIRE_LOCK
 
 class LockAndHoldException(RemoteSumsException):
-
-    def __init__(self, msg):
-        super(LockAndHoldException, self).__init__(msg)
-        self.retcode = RET_UNABLE_TO_LOCK_OBJECT
+    _retcode = RET_UNABLE_TO_LOCK_OBJECT
 
 class ReqtableReadException(RemoteSumsException):
-
-    def __init__(self, msg):
-        super(ReqtableReadException, self).__init__(msg)
-        self.retcode = RET_UNABLE_TO_READ_REQTABLE
+    _retcode = RET_UNABLE_TO_READ_REQTABLE
 
 class ReqtableWriteException(RemoteSumsException):
-
-    def __init__(self, msg):
-        super(ReqtableWriteException, self).__init__(msg)
-        self.retcode = RET_UNABLE_TO_WRITE_REQTABLE
+    _retcode = RET_UNABLE_TO_WRITE_REQTABLE
 
 class SitetableReadException(RemoteSumsException):
-
-    def __init__(self, msg):
-        super(SitetableReadException, self).__init__(msg)
-        self.retcode = RET_UNABLE_TO_READ_SITETABLE
+    _retcode = RET_UNABLE_TO_READ_SITETABLE
 
 class DuplicateSUException(RemoteSumsException):
-
-    def __init__(self, msg):
-        super(DuplicateSUException, self).__init__(msg)
-        self.retcode = RET_DUPLICATE_SUNUM
+    _retcode = RET_DUPLICATE_SUNUM
 
 class UnknownSunumException(RemoteSumsException):
-
-    def __init__(self, msg):
-        super(UnknownSunumException, self).__init__(msg)
-        self.retcode = RET_UNKNOWN_SUNUM
+    _retcode = RET_UNKNOWN_SUNUM
 
 class SumsAPIException(RemoteSumsException):
-
-    def __init__(self, msg):
-        super(SumsAPIException, self).__init__(msg)
-        self.retcode = RET_ERROR_CALLING_SUMS_API
+    _retcode = RET_ERROR_CALLING_SUMS_API
 
 class UnknownRequestidException(RemoteSumsException):
-
-    def __init__(self, msg):
-        super(UnknownRequestidException, self).__init__(msg)
-        self.retcode = RET_UNKNOWN_REQUESTID
+    _retcode = RET_UNKNOWN_REQUESTID
 
 class DuplicateRequestidException(RemoteSumsException):
-
-    def __init__(self, msg):
-        super(DuplicateRequestidException, self).__init__(msg)
-        self.retcode = RET_DUPLICATE_REQUESTID
+    _retcode = RET_DUPLICATE_REQUESTID
 
 class GetSeriesInfoException(RemoteSumsException):
-
-    def __init__(self, msg):
-        super(GetSeriesInfoException, self).__init__(msg)
-        self.retcode = RET_UNABLE_TO_GET_SERIES_INFO
+    _retcode = RET_UNABLE_TO_GET_SERIES_INFO
 
 class InvalidSunumException(RemoteSumsException):
-
-    def __init__(self, msg):
-        super(InvalidSunumException, self).__init__(msg)
-        self.retcode = RET_INVALID_SUNUM
+    _retcode = RET_INVALID_SUNUM
 
 class UnknownSitecodeException(RemoteSumsException):
-
-    def __init__(self, msg):
-        super(UnknownSitecodeException, self).__init__(msg)
-        self.retcode = RET_UNKNOWN_SITE_CODE
+    _retcode = RET_UNKNOWN_SITE_CODE
 
 class ScpSUException(RemoteSumsException):
-
-    def __init__(self, msg):
-        super(ScpSUException, self).__init__(msg)
-        self.retcode = RET_UNABLE_TO_DOWNLOAD_SU
+    _retcode = RET_UNABLE_TO_DOWNLOAD_SU
 
 class ShutDownException(RemoteSumsException):
-
-    def __init__(self, msg):
-        super(ShutDownException, self).__init__(msg)
-        self.retcode = RET_SHUTDOWN_REQUESTED
+    _retcode = RET_SHUTDOWN_REQUESTED
 
 class NoSusForDlException(RemoteSumsException):
-
-    def __init__(self, msg):
-        super(NoSusForDlException, self).__init__(msg)
-        self.retcode = RET_NO_SUS_TO_DOWNLOAD
+    _retcode = RET_NO_SUS_TO_DOWNLOAD
 
 class DownloaderException(RemoteSumsException):
-
-    def __init__(self, msg):
-        super(DownloaderException, self).__init__(msg)
-        self.retcode = RET_DOWNLOADER
+    _retcode = RET_DOWNLOADER
 
 class SUPathCGIException(RemoteSumsException):
-
-    def __init__(self, msg):
-        super(SUPathCGIException, self).__init__(msg)
-        self.retcode = RET_SUPATH_CGI
+    _retcode = RET_SUPATH_CGI
 
 class RSIOException(RemoteSumsException):
-
-    def __init__(self, msg):
-        super(RSIOException, self).__init__(msg)
-        self.retcode = RET_IO_ERROR
+    _retcode = RET_IO_ERROR
 
 class StartThreadException(RemoteSumsException):
-
-    def __init__(self, msg):
-        super(StartThreadException, self).__init__(msg)
-        self.retcode = RET_UNABLE_TO_START_THREAD
-
-class QueueFullException(RemoteSumsException):
-
-    def __init__(self, msg):
-        super(QueueFullException, self).__init__(msg)
-        self.retcode = RET_QUEUE_FULL
+    _retcode = RET_UNABLE_TO_START_THREAD
 
 class DuplicateDispatcherType(RemoteSumsException):
-
-    def __init__(self, msg):
-        super(DuplicateDispatcherType, self).__init__(msg)
-        self.retcode = RET_DUPLICATE_DISPATCHER_TYPE
+    _retcode = RET_DUPLICATE_DISPATCHER_TYPE
 
 class MaxThreadsException(RemoteSumsException):
-
-    def __init__(self, msg):
-        super(MaxThreadsException, self).__init__(msg)
-        self.retcode = RET_TOO_MANY_THREADS
+    _retcode = RET_TOO_MANY_THREADS
 
 class DBConnectionException(RemoteSumsException):
-
-    def __init__(self, msg):
-        super(DBConnectionException, self).__init__(msg)
-        self.retcode = RET_UNABLE_TO_CONNECT_TO_DB
+    _retcode = RET_UNABLE_TO_CONNECT_TO_DB
 
 class DBResponseException(RemoteSumsException):
-
-    def __init__(self, msg):
-        super(DBResponseException, self).__init__(msg)
-        self.retcode = RET_UNEXPECTED_DB_RESPONSE
+    _retcode = RET_UNEXPECTED_DB_RESPONSE
 
 class TimeoutException(RemoteSumsException):
-
-    def __init__(self, msg):
-        super(TimeoutException, self).__init__(msg)
-
-        # do not set retcode - this error is never fatal
+    pass
+    # do not set retcode - this error is never fatal
 
 class TerminationException(RemoteSumsException):
-
-    def __init__(self, msg):
-        super(TerminationException, self).__init__(msg)
-        self.retcode = RET_USER_TERMINATED
-
+    _retcode = RET_USER_TERMINATED
 
 class NotTimeToLogException(RemoteSumsException):
-    def __init__(self):
-        super(NotTimeToLogException, self).__init__('')
+    pass
+
+class DispatcherException(RemoteSumsException):
+    pass
 
 class CheckTimer(object):
     """context manager for checking for time-to-write, and updating last write time"""
@@ -827,8 +751,8 @@ class IntervalLogger(object):
 class StorageUnit(object):
     def __init__(self, sunum, starttime, refcount, status, errmsg):
         self.sunum = sunum
-        self.starttime = starttime
-        self.refcount = refcount
+        self._starttime = starttime
+        self._refcount = refcount
         self.status = status
         self.errmsg = errmsg
         self.suSize = None
@@ -842,7 +766,7 @@ class StorageUnit(object):
 
     def setSeries(self, value):
         if not isinstance(value, (str)):
-            raise InvalidArgumentException('setSeries(): argument must be a str')
+            raise InvalidArgumentException(msg='setSeries(): argument must be a str')
 
         self.series = value
 
@@ -854,7 +778,7 @@ class StorageUnit(object):
 
     def setExpiration(self, value):
         if not isinstance(value, (datetime)):
-            raise InvalidArgumentException('setExpiration(): argument must be a datetime')
+            raise InvalidArgumentException(msg='setExpiration(): argument must be a datetime')
 
         if value < datetime.now():
             self.expiration = datetime.now()
@@ -866,29 +790,37 @@ class StorageUnit(object):
 
     def setArchive(self, value):
         if not isinstance(value, (bool)):
-            raise InvalidArgumentException('setArchive(): argument must be a bool')
+            raise InvalidArgumentException(msg='setArchive(): argument must be a bool')
 
     def getTapegroup(self):
         return self.tapegroup
 
     def setTapegroup(self, value):
         if not isinstance(value, (int)):
-            raise InvalidArgumentException('setTapegroup(): argument must be an int')
+            raise InvalidArgumentException(msg='setTapegroup(): argument must be an int')
 
         self.tapegroup = value
 
     @property
     def start_time(self):
-        return self.starttime
+        return self._starttime
 
     @start_time.setter
     def start_time(self, value):
         if not isinstance(value, (datetime)):
-            raise InvalidArgumentException('start_time(): argument must be a datetime')
-        self.starttime = value
+            raise InvalidArgumentException(msg='start_time(): argument must be a datetime')
+        self._starttime = value
+
+    @property
+    def refcount(self):
+        return self._refcount
+
+    @refcount.setter
+    def refcount(self, value):
+        self._refcount = value
 
     def touch(self):
-        self.starttime = datetime.now(timezone.utc)
+        self._starttime = datetime.now(timezone.utc)
 
     def getStatus(self):
         return self.status
@@ -896,10 +828,10 @@ class StorageUnit(object):
     # Set properties that are saved to the DB.
     def setStatus(self, codeValue, msgValue):
         if not isinstance(codeValue, (str)):
-            raise InvalidArgumentException('setStatus(): fist argument must be a str.')
+            raise InvalidArgumentException(msg='setStatus(): fist argument must be a str.')
 
         if not isinstance(msgValue, (str)) and msgValue is not None:
-            raise InvalidArgumentException('setStatus(): second argument must be a str or None.')
+            raise InvalidArgumentException(msg='setStatus(): second argument must be a str or None.')
 
         self.status = codeValue
         if msgValue is not None:
@@ -915,7 +847,7 @@ class StorageUnit(object):
 
     def setPath(self, value):
         if not isinstance(value, (str)) and value is not None:
-            raise InvalidArgumentException('setPath(): argument must be a str or None')
+            raise InvalidArgumentException(msg='setPath(): argument must be a str or None')
 
         self.path = value
 
@@ -924,7 +856,7 @@ class StorageUnit(object):
 
     def setSize(self, value):
         if not isinstance(value, (int)):
-            raise InvalidArgumentException('setSize(): argument must be an int')
+            raise InvalidArgumentException(msg='setSize(): argument must be an int')
 
         self.suSize = value
 
@@ -933,10 +865,10 @@ class StorageUnit(object):
 
     def setWorker(self, value):
         if not isinstance(value, (Downloader)):
-            raise InvalidArgumentException('setWorker(): argument must be a Downloader')
+            raise InvalidArgumentException(msg='setWorker(): argument must be a Downloader')
 
         if self.worker:
-            raise WorkerReferenceException('cannot set worker for SU ' + str(self.sunum) + '; worker already exists')
+            raise WorkerReferenceException(msg='cannot set worker for SU ' + str(self.sunum) + '; worker already exists')
 
         self.worker = value
 
@@ -944,12 +876,12 @@ class StorageUnit(object):
         self.worker = None
 
     def stopWorker(self):
-        if hasattr(self, 'worker') and self.worker and isInstance(self.worker, (Downloader)) and self.worker.isAlive():
+        if hasattr(self, 'worker') and self.worker and isInstance(self.worker, (Downloader)) and self.worker.is_alive():
             self.worker.stop()
-            if self.worker.isAlive():
+            if self.worker.is_alive():
                 # Give the worker 15 seconds to self-terminate.
                 self.worker.join(15)
-            if self.worker.isAlive():
+            if self.worker.is_alive():
                 # Apparently, there is no way to kill a thread from another thread. So, we are just going to
                 # orphan the thread (so it doesn't use up our maxThreads quota).
                 try:
@@ -1105,7 +1037,7 @@ class SuTable:
                 su = sus[0]
                 su.setWorker(worker)
             else:
-                raise WorkerReferenceException('cannot set worker for SU ' + str(self.sunum) + '; SU does not exist')
+                raise WorkerReferenceException(msg='cannot set worker for SU ' + str(self.sunum) + '; SU does not exist')
         finally:
             self.releaseLock()
 
@@ -1126,7 +1058,7 @@ class SuTable:
 
                 try:
                     if not sunumStr in self.suDict or not self.suDict[sunumStr]:
-                        raise UnknownSunumException('(__get) no SU-table record exists for SU ' + sunumStr)
+                        raise UnknownSunumException(msg='(__get) no SU-table record exists for SU ' + sunumStr)
                     foundSUs.append(self.suDict[sunumStr])
                 except:
                     notfoundSunums.append(asunum)
@@ -1233,7 +1165,7 @@ class SuTable:
                         if su.status == 'W':
                             su.touch()
                             if su.worker is None:
-                                raise WorkerReferenceException('no worker thread assigned to SU ' + str(su.sunum))
+                                raise WorkerReferenceException(msg='no worker thread assigned to SU ' + str(su.sunum))
                             if scpInfoSet == False:
                                 scpUser = su.worker.scpUser
                                 scpHost = su.worker.scpHost
@@ -1251,10 +1183,11 @@ class SuTable:
                         pass
             except StopIteration:
                 pass
-        except:
-            import traceback
-            self.log.writeError(traceback.format_exc(5).splitlines())
+        except Exception as exc:
             nworking = []
+
+            error = RemoteSumsException(exc_info=sys.exc_info())
+            self.log.writeError([ '[ SuTable.getNextNWorkingSUs ] ' + str(error) ])
 
         return (nworking, (scpUser, scpHost, scpPort))
 
@@ -1268,7 +1201,7 @@ class SuTable:
                 self.suMap[str(sunum)] = []
 
             if kwargs['requestid'] in self.suMap[str(sunum)]:
-                raise DuplicateRequestidException('duplicate SU Map entry: requestid = ' + str(kwargs['requestid']) + ', sunum = ' + str(sunum))
+                raise DuplicateRequestidException(msg='duplicate SU Map entry: requestid = ' + str(kwargs['requestid']) + ', sunum = ' + str(sunum))
 
             self.suMap[str(sunum)].append(kwargs['requestid'])
 
@@ -1276,22 +1209,13 @@ class SuTable:
         for su in kwargs['sus']:
             if str(su.sunum) in self.suMap:
                 self.suMap[str(su.sunum)].remove(kwargs['requestid'])
+                self.log.writeDebug([ '[ SuTable.removeRequestFromSUMap ] removed ' + str(su.sunum) + '==>' + str(kwargs['requestid']) + ' from suMap request list' ])
                 if len(self.suMap[str(su.sunum)]) == 0:
                     del self.suMap[str(su.sunum)]
+                    self.log.writeDebug([ '[ SuTable.removeRequestFromSUMap ] removed ' + str(su.sunum) + ' from suMap' ])
 
-    def presentInSUMap(self, **kwargs):
-        sunums = kwargs['sunums']
-        requestID = kwargs['requestid']
-        answer = True
-
-        for sunum in sunums:
-            if str(sunum) not in self.suMap or requestID not in self.suMap[str(sunum)]:
-                answer = False
-                break
-
-        return answer
-
-    def getActiveSUs(self, **kwargs):
+    def get_dispatched_sunums(self, **kwargs):
+        # successfully added to sutable, sumap, and if needed, to dispatch queue, in `dispatchSUs`
         return [ sunum for sunum in kwargs['sunums'] if str(sunum) in self.suMap ]
 
     @classmethod
@@ -1321,7 +1245,7 @@ class SuTable:
                                     rv.append(ansunum)
                         except psycopg2.Error as exc:
                             # Handle database-command errors. These are all due to problems communicating with the SUMS db.
-                            raise SumsAPIException(exc.diag.message_primary + ': ' + cmd + '.')
+                            raise SumsAPIException(msg=exc.diag.message_primary + ': ' + cmd + '.', exc_info=sys.exc_info())
                         finally:
                             # Not making changes, so rollback always.
                             SuTable.sumsConn.rollback()
@@ -1370,7 +1294,7 @@ class ReqTable:
 
                     # now we gotta check to make sure all columns are there (but 'type' might not be there, since it was added after remote SUMS went public)
                     if not all(acol in cols for acol in [ 'requestid', 'dbhost', 'dbport', 'dbname', 'starttime', 'sunums', 'status', 'errmsg' ]):
-                        raise ReqtableReadException('at least one request table column is missing')
+                        raise ReqtableReadException(msg='at least one request table column is missing')
 
                     cmd2 = 'SELECT ' + ','.join(cols) + ' FROM ' + self.tableName
                     cursor.execute(cmd2)
@@ -1397,7 +1321,7 @@ class ReqTable:
                             elif c.lower() == 'type':
                                 # ensure this is a valid type
                                 if v not in REQTYPE_CODES:
-                                    raise ReqtableReadException('unknown request type ' + v)
+                                    raise ReqtableReadException(msg='unknown request type ' + v)
                                 self.reqDict[requestidStr][c] = dict(zip(REQTYPE_CODES, REQTYPE_TEXT))[v]
                             else:
                                 self.reqDict[requestidStr][c] = v
@@ -1407,11 +1331,10 @@ class ReqTable:
                             self.reqDict[requestidStr]['type'] = 'GENERIC'
 
                         # internal attributes
-                        self.reqDict[requestidStr]['todispatch'] = list(set(self.reqDict[requestidStr]['sunums'])).copy() # as sunums are dispatched, they are removed from the 'todispatch' list
-                        self.reqDict[requestidStr]['complete'] = []
+                        self.reqDict[requestidStr]['sunums_completed'] = []
                         self.reqDict[requestidStr]['dirty'] = False
         except psycopg2.Error as exc:
-            raise ReqtableReadException(exc.diag.message_primary)
+            raise ReqtableReadException(msg=str(exc), exc_info=sys.exc_info())
         finally:
             ReqTable.rsConn.rollback()
 
@@ -1437,7 +1360,6 @@ class ReqTable:
     def refresh(self):
         # read the table from the database anew, but put the new request info into a temporary ReqTable
         # SLOW code
-        self.log.writeDebug([ 'refreshing requests dictionary' ])
         tmpTable = ReqTable(self.tableName, self.timeOut, None, self.log)
         tmpTable.tryRead()
         # end SLOW code
@@ -1448,14 +1370,10 @@ class ReqTable:
             # save attributes not saved in the db
             saved = {}
             for (key, val) in self.reqDict.items():
-                if 'todispatch' not in saved:
-                    saved['todispatch'] = {}
+                if 'sunums_completed' not in saved:
+                    saved['sunums_completed'] = {}
 
-                if 'complete' not in saved:
-                    saved['complete'] = {}
-
-                saved['todispatch'][key] = val['todispatch']
-                saved['complete'][key] = val['complete'] # list of SUs already downloaded for this request
+                saved['sunums_completed'][key] = val['sunums_completed'] # list of SUs already downloaded for this request
 
             # replace existing reqDict items with newly read items
             # the dispatcher queue might have items with the request in them
@@ -1466,7 +1384,7 @@ class ReqTable:
             #   1. collect the request's SUs in a list
             #   2. call removeRequestFromSUMap() on the request and its SUs - this removes all traces of the request
             #      from the SU map
-            #   3. call removeSUs() on the list of this request's SUs - this is necessary so that the refcount
+            #   3. call `removeSUs` on the list of this request's SUs - this is necessary so that the refcount
             #      on the SUs gets decremented, possibly removing the SUs entirely
             for reqIDStr in self.reqDict:
                 if reqIDStr not in tmpTable.reqDict:
@@ -1486,8 +1404,7 @@ class ReqTable:
             # no need to hold a lock since only the main thread accesses the request status
             for (key, val) in self.reqDict.items():
                 if self.reqDict[key]['status'] != 'N':
-                    self.reqDict[key]['todispatch'] = saved['todispatch'][key]
-                    self.reqDict[key]['complete'] = saved['complete'][key]
+                    self.reqDict[key]['sunums_completed'] = saved['sunums_completed'][key]
         finally:
             self.releaseLock()
 
@@ -1537,7 +1454,7 @@ class ReqTable:
                 self.log.writeError(traceback.format_exc(5).splitlines())
                 ReqTable.rsConn.rollback()
                 self.log.writeDebug([ 'rolling-back req table DB update' ])
-                raise ReqtableWriteException(exc.diag.message_primary)
+                raise ReqtableWriteException(msg=str(exc), exc_info=sys.exc_info())
 
             return True
         else:
@@ -1568,7 +1485,7 @@ class ReqTable:
                 requestidStr = str(requestid)
 
                 if not requestidStr in self.reqDict or not self.reqDict[requestidStr]:
-                    raise UnknownRequestidException('No request-table record exists for ID ' + requestidStr + '.')
+                    raise UnknownRequestidException(msg='No request-table record exists for ID ' + requestidStr + '.')
 
                 del self.reqDict[requestidStr]
 
@@ -1585,7 +1502,7 @@ class ReqTable:
                     needsRollback = False
                     # The cursor has been closed, but the transaction has not been committed, as designed.
             except psycopg2.Error as exc:
-                raise ReqtableWriteException(exc.diag.message_primary + ': ' + cmd)
+                raise ReqtableWriteException(msg=str(exc) + ': ' + cmd, exc_info=sys.exc_info())
             finally:
                 if needsRollback:
                     ReqTable.rsConn.rollback()
@@ -1597,7 +1514,7 @@ class ReqTable:
             requestidStr = str(arequestid)
 
             if not requestidStr in self.reqDict or not self.reqDict[requestidStr]:
-                raise UnknownRequestidException('No request-table record exists for ID ' + requestidStr + '.')
+                raise UnknownRequestidException(msg='No request-table record exists for ID ' + requestidStr + '.')
 
             self.reqDict[requestidStr]['status'] = code
             if msg:
@@ -1618,7 +1535,7 @@ class ReqTable:
             requestidStr = str(arequestid)
 
             if not requestidStr in self.reqDict or not self.reqDict[requestidStr]:
-                raise UnknownRequestidException('No request-table record exists for ID ' + requestidStr + '.')
+                raise UnknownRequestidException(msg='No request-table record exists for ID ' + requestidStr + '.')
 
             toRet.append(self.reqDict[requestidStr])
 
@@ -1692,7 +1609,7 @@ class SiteTable:
                 # we want to try again, until we time-out
                 natt += 1
                 if natt > 2:
-                    raise SitetableReadException("unable to access URL " + self.url)
+                    raise SitetableReadException(msg="unable to access URL " + self.url, exc_info=sys.exc_info())
                 if type(exc.response) is str:
                     msg = exc.response
                 else:
@@ -1704,7 +1621,7 @@ class SiteTable:
         siteInfo = json.loads(siteInfoStr)
 
         if siteInfo['status'] != 'success':
-            raise SitetableReadException("Failure calling cgi '" + self.url + "'.")
+            raise SitetableReadException(msg="Failure calling cgi '" + self.url + "'.")
 
         # siteInfo is a dictionary, keyed by site name. Each dictionary entry is a dictionay, with two keys: code and baseurl.
         for asite, info in siteInfo.items():
@@ -1737,7 +1654,7 @@ class SiteTable:
     def getCode(sunum):
         code = sunum >> 48
         if code & 0xC000 != 0:
-            raise InvalidSunumException('The site-code value of SUNUM ' + sunum + ' is out of range (valid range is 0 to 16383).')
+            raise InvalidSunumException(msg='The site-code value of SUNUM ' + sunum + ' is out of range (valid range is 0 to 16383).')
 
         return code
 
@@ -1745,7 +1662,7 @@ class SiteTable:
         code = SiteTable.getCode(sunum)
 
         if not str(code) in self.siteMap or not self.siteMap[str(code)]:
-            raise UnknownSitecodeException('There is no site in the site table for code ' + str(code) + '.')
+            raise UnknownSitecodeException(msg='There is no site in the site table for code ' + str(code) + '.')
 
         name = self.siteMap[str(code)]
         url = self.siteDict[name]['baseurl']
@@ -1755,7 +1672,7 @@ class SiteTable:
         code = SiteTable.getCode(sunum)
 
         if not str(code) in self.siteMap or not self.siteMap[str(code)]:
-            raise UnknownSitecodeException('There is no site in the site table for code ' + str(code) + '.')
+            raise UnknownSitecodeException(msg='There is no site in the site table for code ' + str(code) + '.')
 
         name = self.siteMap[str(code)]
         url = urllib.parse.urljoin(self.siteDict[name]['baseurl'], self.siteDict[name]['cgi-supath'])
@@ -1881,7 +1798,7 @@ class ScpWorker(threading.Thread):
                                 sunums.append(su.sunum)
                                 serverPath = su.worker.path
                                 if not serverPath:
-                                    raise ScpSUException('server SU path is not known')
+                                    raise ScpSUException(msg='server SU path is not known')
                                 paths.append(serverPath)
 
                                 # Set status to D to prevent another ScpWorker from processing the download. Must do this
@@ -1919,11 +1836,11 @@ class ScpWorker(threading.Thread):
                         except OSError as exc:
                             import traceback
                             self.log.writeError(traceback.format_exc(5).splitlines())
-                            raise ScpSUException('Cannot run scp command.')
+                            raise ScpSUException(msg='Cannot run scp command.', exc_info=sys.exc_info())
                         except ValueError as exc:
                             import traceback
                             self.log.writeError(traceback.format_exc(5).splitlines())
-                            raise ScpSUException('scp command called with invalid arguments.')
+                            raise ScpSUException(msg='scp command called with invalid arguments.', exc_info=sys.exc_info())
 
                         # Poll for completion
                         remainingSunums = sunums # SUs that have NOT timed out
@@ -1945,7 +1862,7 @@ class ScpWorker(threading.Thread):
                                     msg = 'Command "' + cmd + '" returned non-zero status code ' + str(proc.returncode) + '.'
                                     if err is not None:
                                         self.log.writeError([ 'scp stderr msg: ' + err.decode('UTF8') ])
-                                    raise ScpSUException(msg)
+                                    raise ScpSUException(msg=msg)
                                 break
 
                             # this locks the SU Table so that Downloaders do not do things like remove workers while this code is running
@@ -1980,12 +1897,12 @@ class ScpWorker(threading.Thread):
                                 except TimeoutExpired:
                                     self.log.writeWarning([ 'unable to kill scp for ScpWorker ' + str(self.id) ])
 
-                                raise ShutDownException('ScpWorker ' + str(self.id) + ' is observing the global shutdown and exiting now')
+                                raise ShutDownException(msg='ScpWorker ' + str(self.id) + ' is observing the global shutdown and exiting now')
 
                             if len(remainingSunums) == 0:
                                 # go on to the next set of requested SUs; don't exit the ScpWorker thread
                                 proc.kill()
-                                raise NoSusForDlException('the downloads of all SUs in the payload have timed out')
+                                raise NoSusForDlException(msg='the downloads of all SUs in the payload have timed out')
 
                             time.sleep(1) # In scp process poll loop.
                             # end proc-wait loop
@@ -2171,14 +2088,14 @@ class Downloader(threading.Thread):
                 self.log.writeDebug([ 'Downloader is running for SU ' + str(self.sunum) ])
 
                 if self.su.getStatus() != 'P':
-                    raise DownloaderException('SU ' + str(self.sunum) + ' is not pending')
+                    raise DownloaderException(msg='SU ' + str(self.sunum) + ' is not pending')
 
                 suDlPath = os.path.join(self.tmpdir, 'D' + str(self.sunum))
 
                 scpDlNotified = False
 
                 if self.sdEvent.isSet():
-                    raise ShutDownException('downloader thread for SU ' + str(self.sunum) + ' is observing the global shutdown and exiting now')
+                    raise ShutDownException(msg='downloader thread for SU ' + str(self.sunum) + ' is observing the global shutdown and exiting now')
 
                 with self.scpComplete:
                     # Let an ScpWorker thread handle the download. We do that by setting the status to 'W'.
@@ -2212,7 +2129,7 @@ class Downloader(threading.Thread):
                         # encounter the 8-hour scpComplete time-out, then when it cleans up below, it will mess up the ScpWorker, but
                         # the ScpWorker will handle an scp error
                         self.log.writeWarning([ 'downloader for SU ' + str(self.sunum) + ' timed-out' ])
-                        raise DownloaderException('the download of SU ' + str(self.sunum) + ' timed-out')
+                        raise DownloaderException(msg='the download of SU ' + str(self.sunum) + ' timed-out')
                     else:
                         # download complete (ScpWorker can no longer modify SU obj)
                         pass
@@ -2234,15 +2151,15 @@ class Downloader(threading.Thread):
                     elif suStatus == 'D':
                         # the shutdown event happened while a scp was in progress
                         self.log.writeInfo([ 'shutdown called while download of SU ' + str(self.sunum) + ' was in progress' ])
-                        raise ShutDownException('downloader thread for SU ' + str(self.sunum) + ' is observing the global shutdown and exiting now')
+                        raise ShutDownException(msg='downloader thread for SU ' + str(self.sunum) + ' is observing the global shutdown and exiting now')
                     elif suStatus == 'W':
                         self.log.writeInfo([ 'shutdown called before ScpWorker could download SU ' + str(self.sunum) ])
-                        raise ShutDownException('downloader thread for SU ' + str(self.sunum) + ' is observing the global shutdown and exiting now')
+                        raise ShutDownException(msg='downloader thread for SU ' + str(self.sunum) + ' is observing the global shutdown and exiting now')
                     elif suStatus == 'E':
-                        raise DownloaderException('the download of SU ' + str(self.sunum) + ' errored-out')
+                        raise DownloaderException(msg='the download of SU ' + str(self.sunum) + ' errored-out')
                     else:
                         # unexpected status
-                        raise DownloaderException('unexpected status ' + suStatus + ' for the download of SU ' + str(self.sunum))
+                        raise DownloaderException(msg='unexpected status ' + suStatus + ' for the download of SU ' + str(self.sunum))
                 else:
                     # the ScpWorker finished processing the SU download, and that was not due to a shutdown event
                     if suStatus == 'F':
@@ -2250,12 +2167,12 @@ class Downloader(threading.Thread):
                     elif suStatus == 'D':
                         # a download timeout occurred
                         self.log.writeInfo([ 'shutdown called while download of SU ' + str(self.sunum) + ' was in progress' ])
-                        raise DownloaderException('the download of SU ' + str(self.sunum) + ' timed-out')
+                        raise DownloaderException(msg='the download of SU ' + str(self.sunum) + ' timed-out')
                     elif suStatus == 'E':
-                        raise DownloaderException('the download of SU ' + str(self.sunum) + ' errored-out')
+                        raise DownloaderException(msg='the download of SU ' + str(self.sunum) + ' errored-out')
                     else:
                         # unexpected status
-                        raise DownloaderException('unexpected status ' + suStatus + ' for the download of SU ' + str(self.sunum))
+                        raise DownloaderException(msg='unexpected status ' + suStatus + ' for the download of SU ' + str(self.sunum))
 
                 # At this point, we need to allocate (mkdir) a new SU directory, move the downloaded SU content into this SUDIR,
                 # then commit the newly created SU into SUMS. The previous incarnations of remote-sums-type code all used the SUMS
@@ -2317,7 +2234,7 @@ class Downloader(threading.Thread):
                             cursor.execute(cmd)
                             records = cursor.fetchall()
                             if len(records) != 1:
-                                raise SumsAPIException('Unexpected response when fetching sumid from sequence.')
+                                raise SumsAPIException(msg='Unexpected response when fetching sumid from sequence.')
 
                             sumid = records[0][0]
 
@@ -2342,7 +2259,7 @@ class Downloader(threading.Thread):
                             cursor.execute(cmd)
                             records = cursor.fetchall()
                             if len(records) < 1:
-                                raise SumsAPIException('Cannot allocate a new Storage Unit in SUMS - out of space.')
+                                raise SumsAPIException(msg='Cannot allocate a new Storage Unit in SUMS - out of space.')
 
                             partitions = []
                             for rec in records:
@@ -2381,7 +2298,7 @@ class Downloader(threading.Thread):
                         except shutil.Error as exc:
                             import traceback
                             self.log.writeError(traceback.format_exc(5).splitlines())
-                            raise RSIOException('Unable to move SU file ' + afile + ' into SUdir ' + sudir + '.')
+                            raise RSIOException(msg='Unable to move SU file ' + afile + ' into SUdir ' + sudir + '.', exc_info=sys.exc_info())
 
                         self.log.writeDebug([ 'move of SU ' + str(self.sunum) + ' content succeeded' ])
 
@@ -2480,7 +2397,7 @@ class Downloader(threading.Thread):
                             shutil.rmtree(sudir)
                         if os.path.exists(suDlPath):
                             shutil.rmtree(suDlPath)
-                        raise SumsAPIException(exc.diag.message_primary + ': ' + cmd + '.')
+                        raise SumsAPIException(msg=str(exc) + ': ' + cmd + '.', exc_info=sys.exc_info())
                     except Exception as exc:
                         # Clean-up
                         if os.path.exists(sudir):
@@ -2515,7 +2432,7 @@ class Downloader(threading.Thread):
                     if os.path.exists(suDlPath):
                         shutil.rmtree(suDlPath)
                 except OSError as exc:
-                    raise RSIOException(exc.strerror)
+                    raise RSIOException(msg=str(exc), exc_info=sys.exc_info())
 
                 self.log.writeDebug([ 'removal of temporary directory ' + suDlPath + ' succeeded' ])
                 self.log.writeDebug([ 'downloader for SU ' + str(self.sunum) + ' terminating; unsetting worker' ])
@@ -2615,10 +2532,9 @@ class Downloader(threading.Thread):
             su.removeWorker() # noop if SU has no worker
 
             if isinstance(exc, RuntimeError):
-                raise StartThreadException('cannot start a new ' + dl.downloaderType.__name__ + ' thread due to system resource limitations')
+                raise StartThreadException(msg='cannot start a new ' + dl.downloaderType.__name__ + ' thread due to system resource limitations', exc_info=sys.exc_info())
             else:
-                import traceback
-                raise StartThreadException(traceback.format_exc(5))
+                raise StartThreadException(msg=str(exc), exc_info=sys.exc_info())
 
     @classmethod
     def setMaxThreads(cls, maxThreads):
@@ -2688,8 +2604,7 @@ def getSeriesInfo(series, dbuser, dbname, dbhost, dbport, log, **kwargs):
 
         # Man, there is no way to get an error message from any exception object that will provide any information why
         # the connection failed.
-        msg = 'unable to connect to the database (no, I do not know why)'
-        raise GetSeriesInfoException(msg)
+        raise GetSeriesInfoException(msg=str(exc), exc_info=sys.exc_info())
 
     return (expiration, archive, tapegroup)
 
@@ -2731,6 +2646,9 @@ class DispatcherQueueItem(object):
 
         self.queued = False # gets set to True when the item is put on the dispatcher queue
 
+    def __str__(self):
+        return str(self.__dict__)
+
 class Dispatcher(threading.Thread):
     '''
     starts a Downloader for each SU in the sunums list; the SUs all originate from one site
@@ -2745,6 +2663,7 @@ class Dispatcher(threading.Thread):
         self.log = kwargs['log']
         self.downloaderType = kwargs['downloaderType']
         self.queue = Queue(16) # non-blocking, one per Dispatcher instance
+        self._queue_item_ready = threading.Condition()
 
     def processRequest(self):
         # process offline SUs
@@ -2758,11 +2677,17 @@ class Dispatcher(threading.Thread):
 
                 if queueItem.lastitem:
                     # shutdown
-                    self.log.writeInfo([ 'got last item in dispatcher queue' ])
+                    self.log.writeInfo([ '[ Dispatcher.processRequest ] got last item in dispatcher queue' ])
                     self.queue.task_done()
                     break
 
-                self.log.writeDebug([ 'got dispatcher queue item for sunums ' + ','.join([ str(sunum) for sunum in queueItem.sunums ]) ])
+                with self._queue_item_ready:
+                    if not queueItem.queued:
+                        # there was an issue adding the request's SUs to either the sutable and/or the sumap, so ignore
+                        # this queue item
+                        continue
+
+                self.log.writeDebug([ '[ Dispatcher.processRequest ] got dispatcher queue item for sunums ' + ','.join([ str(sunum) for sunum in queueItem.sunums ]) ])
 
                 # process the SUs for the source site represented by its url
                 workingSus = {}
@@ -2770,7 +2695,8 @@ class Dispatcher(threading.Thread):
 
                 try:
                     # the sunums in queueItem all have an SU object (created in dispatchSU()), and they have never had a
-                    # Worker created for them
+                    # Worker created for them;
+                    # getSUs locks the sutable
                     sus, missingSunums = queueItem.sutable.getSUs(releaseTableLock=False, sunums=queueItem.sunums)
                     try:
                         workingSus = dict([ [ str(su.sunum), su ] for su in sus ])
@@ -2787,7 +2713,7 @@ class Dispatcher(threading.Thread):
                         url = queueItem.cgi + '?' + data
 
                         try:
-                            self.log.writeDebug([ 'requesting paths for SUNUMs ' + sunumLst + '; URL is ' + url ])
+                            self.log.writeDebug([ '[ Dispatcher.processRequest ] requesting paths for SUNUMs ' + sunumLst + '; URL is ' + url ])
                             with urllib.request.urlopen(url) as response:
                                 dlInfoStr = response.read().decode('UTF-8')
                         except urllib.error.URLError as exc:
@@ -2795,8 +2721,8 @@ class Dispatcher(threading.Thread):
                                 msg = exc.response
                             else:
                                 msg = ''
-                            self.log.writeWarning([ 'unable to obtain SU info from provider (' + msg + ')' ])
-                            raise SUPathCGIException(msg)
+                            self.log.writeWarning([ '[ Dispatcher.processRequest ] unable to obtain SU info from provider (' + msg + ')' ])
+                            raise SUPathCGIException(msg=str(exc), exc_info=sys.exc_info())
 
                         dlInfo = json.loads(dlInfoStr)
 
@@ -2812,7 +2738,7 @@ class Dispatcher(threading.Thread):
                                 try:
                                     su = workingSus[str(sunum)]
                                 except KeyError:
-                                    self.log.writeWarning([ 'SUNUM ' + str(sunum) + ' returned by SU-path CGI is not recognized; skipping' ])
+                                    self.log.writeWarning([ '[ Dispatcher.processRequest ] SUNUM ' + str(sunum) + ' returned by SU-path CGI is not recognized; skipping' ])
                                     # can't set status since there is no su
                                     skip = True
 
@@ -2823,7 +2749,7 @@ class Dispatcher(threading.Thread):
                                         # failed SUs
                                         msg = 'SU ' + str(sunum) + ' is not valid at the providing site'
                                         su.setStatus('C', msg)
-                                        self.log.writeWarning([ msg ])
+                                        self.log.writeWarning([ '[ Dispatcher.processRequest ] ' + msg ])
                                         skip = True
                                     elif path == '':
                                         # An empty-string path means that the SUNUM was valid, but that the SU referred to was offline (it may or
@@ -2831,7 +2757,7 @@ class Dispatcher(threading.Thread):
                                         # ART - I need to figure out how to place the SUNUM in SUMS so that its archive flag is N (not archived).
                                         msg = 'SU ' + str(sunum) + ' refers to an SU that is valid at the providing site, but it is offline and cannot be downloaded'
                                         su.setStatus('C', msg)
-                                        self.log.writeWarning([ msg ])
+                                        self.log.writeWarning([ '[ Dispatcher.processRequest ] ' + msg ])
                                         skip = True
 
                                 if not skip:
@@ -2880,7 +2806,7 @@ class Dispatcher(threading.Thread):
                                     self.downloaderType.lock.acquire()
                                     try:
                                         if len(self.downloaderType.tList) < self.downloaderType.maxThreads:
-                                            self.log.writeInfo([ 'instantiating a ' + self.downloaderType.__name__ + ' for SU ' + str(su.sunum) ])
+                                            self.log.writeInfo([ '[ Dispatcher.processRequest ] instantiating a ' + self.downloaderType.__name__ + ' for SU ' + str(su.sunum) ])
 
                                             # assign new worker to su
                                             self.downloaderType.newThread(su=su, path=path, sutable=queueItem.sutable, scpuser=dlInfo['scpUser'], scphost=dlInfo['scpHost'], scpport=dlInfo['scpPort'], binpath=queueItem.binpath, hastapesys=queueItem.hastapesys, tmpdir=queueItem.tmpdir, log=self.log)
@@ -2894,7 +2820,7 @@ class Dispatcher(threading.Thread):
                                     finally:
                                         self.downloaderType.lock.release()
 
-                                    self.log.writeDebug([ 'Dispatcher thread waiting for thread slot for SU ' + str(su.sunum) ])
+                                    self.log.writeDebug([ '[ Dispatcher.processRequest ] Dispatcher thread waiting for thread slot for SU ' + str(su.sunum) ])
                                     self.downloaderType.eventMaxThreads.wait()
                                     # we woke up, but we do not know if there are any open threads in the thread pool; loop and check
                                     # tList again
@@ -2908,7 +2834,7 @@ class Dispatcher(threading.Thread):
                             # slots (at the JSOC); since a request for an offline SU entails an asynchronous tape read, performing these requests,
                             # making a request for a large number of SUs could saturate the export system for days;
                             # log an error if we get here.
-                            self.log.writeInfo([ 'request includes one or more SUs that are offline at the providing site; an export request was started to put them online' ])
+                            self.log.writeInfo([ '[ Dispatcher.processRequest ] request includes one or more SUs that are offline at the providing site; an export request was started to put them online' ])
                             for sunumStr, su in workingSus.items():
                                 su.setStatus('E', 'an export request was started - this is no longer allowed')
                         else:
@@ -2924,20 +2850,20 @@ class Dispatcher(threading.Thread):
                     for sunumStr, su in workingSus.items():
                         su.setStatus('E', 'exception ' + exc.__class__.__name__ + ' in dispatcher')
                 except ValueError: # it would be better to use JSONDecodeError, but that is not available till Py 3.5
-                    self.log.writeWarning([ 'improperly formatted JSON in response to ' + url ])
+                    self.log.writeWarning([ '[ Dispatcher.processRequest ] improperly formatted JSON in response to ' + url ])
 
                     for sunumStr, su in workingSus.items():
                         su.setStatus('E', 'improperly formatted JSON in response')
                 except:
                     # handle this unknown exception - do not allow the dispatcher thread to terminate with an unhandled exception
-                    self.log.writeError([ 'unknown exception in dispatcher ' + self.name + ' - printing call stack' ])
+                    self.log.writeError([ '[ Dispatcher.processRequest ] unknown exception in dispatcher ' + self.name + ' - printing call stack' ])
                     import traceback
                     self.log.writeError(traceback.format_exc(8).splitlines())
                 finally:
                     for sunumStr, su in workingSus.items():
                         if su.sunum not in hasDownloader:
                             DownloaderCompleteQueueItem.addCompleteQueueItemToQueue(su=su, queue=queueItem.sutable.queue, log=self.log)
-                            self.log.writeDebug([ '[ processRequest() ] (failed to start Worker) successfully added a DownloaderCompleteQueueItem for SU ' +  str(su.sunum)])
+                            self.log.writeDebug([ '[ Dispatcher.processRequest ] (failed to start Worker) successfully added a DownloaderCompleteQueueItem for SU ' +  str(su.sunum)])
 
                     self.queue.task_done()
             # end of while loop over queue item; thread is terminating
@@ -2946,7 +2872,7 @@ class Dispatcher(threading.Thread):
             Dispatcher.lock.acquire()
             try:
                 Dispatcher.tList.remove(self) # this thread is no longer one of the running threads.
-                self.log.writeInfo([ 'Dispatcher ' + self.name + ' halted' ])
+                self.log.writeInfo([ '[ Dispatcher.processRequest ] Dispatcher ' + self.name + ' halted' ])
             finally:
                 Dispatcher.lock.release()
 
@@ -2955,45 +2881,52 @@ class Dispatcher(threading.Thread):
         dispType = dict(zip(REQTYPE_TEXT, [ globals()[dcls] for dcls in REQTYPE_DOWNLOADER ]))[reqtype]
         return cls.reqTypeMap[dispType.__name__]
 
-    # called from the main thread only
+    # called from the main thread only; sutable lock must be held
     @classmethod
     def addSUChunk(cls, **kwargs):
         sutable = kwargs['sutable']
         request = kwargs['request']
         log = kwargs['log']
         item = DispatcherQueueItem(**kwargs)
+        sus_added_to_table = False
+        sus_added_to_map = False
 
-        # must create SU objects before placing the item in the dispatcher queue, otherwise dispatcher thread will not
-        # find them, which is necessary for it to request paths and create a Downloader thread;
-        # create a new SU object for each sunum sent to the dispatcher thread; addSUs() locks/releases SU table
-        sutable.acquireLock()
+        # main is holding the sutable lock, so it is OK to first attempt to add an item to the dispatcher queue (which
+        # will read SUs from the sutable) THEN add SUs to the sutable and sumap; the dispatcher will block until
+        # the attempt to dispatch each SU has succeeded or not (not, if the queue was full)
+        dispatcher = cls.getDispatcher(item.reqtype)
+
         try:
-            # since we have the SU Table lock, if we cannot put the item on the dispatcher queue,
-            # we can rollback the changes to the SU Map and the SU Table sudict
-            allSUs = []
-            existingSUs, newSUs = sutable.addSUs(sunums=item.sunums, locktable=False)
-            log.writeDebug([ '[ addSUChunk() ] successfully inserted new SU objects ' + ','.join([ str(sunum) for sunum in item.sunums ]) ])
-            allSUs.extend(existingSUs)
-            allSUs.extend(newSUs)
-
-            # we also have to add to the SU map before sending to the dispatcher thread
-            sutable.addRequestToSUMap(sunums=item.sunums, requestid=request['requestid'])
-            log.writeDebug([ '[ addSUChunk() ] successfully added ' + str(request['requestid']) + ' to suMap for SUs ' + ','.join([ str(sunum) for sunum in item.sunums ]) ])
-
-            dispatcher = cls.getDispatcher(item.reqtype)
-
-            try:
-                # add to the queue - the call will NOT block if queue is full; this allows caller to try again later
+            # add to the queue - the call will NOT block if queue is full; this allows caller to try again later
+            with dispatcher._queue_item_ready:
                 dispatcher.queue.put_nowait(item)
+                log.writeDebug([ '[ Dispatcher.addSUChunk ] queued item ' + str(item) ])
+
+                existingSUs, newSUs = sutable.addSUs(sunums=item.sunums, locktable=False)
+                sus_added_to_table = True
+                log.writeDebug([ '[ Dispatcher.addSUChunk ] successfully inserted new SU objects ' + ','.join([ str(sunum) for sunum in item.sunums ]) ])
+
+                sutable.addRequestToSUMap(sunums=item.sunums, requestid=request['requestid'])
+                sus_added_to_map = True
+                log.writeDebug([ '[ Dispatcher.addSUChunk ] successfully added ' + str(request['requestid']) + ' to suMap for SUs ' + ','.join([ str(sunum) for sunum in item.sunums ]) ])
+
                 item.queued = True
-            except Full:
-                log.writeWarning([ 'cannot add Request to Dispatcher queue - it is full; request ' + str(request['requestid']) + ', unable to add SU chunk: ' + ','.join([ str(ansunum) for ansunum in item.sunums ]) ])
-                # undo
-                sutable.removeRequestFromSUMap(sus=allSUs, requestid=request['requestid']) # decrements refcount
-                sutable.removeSUs(sunums=[ su.sunum for su in allSUs ], locktable=False) # decrements refcount
-                item.queued = False
-        finally:
-            sutable.releaseLock()
+                dispatcher._queue_item_ready.notify()
+        except Full:
+            log.writeWarning([ '[ Dispatcher.addSUChunk ] cannot add Request to Dispatcher queue - it is full; request ' + str(request['requestid']) + ', unable to add SU chunk: ' + ','.join([ str(ansunum) for ansunum in item.sunums ]) ])
+        except Exception as exc:
+            error = RemoteSumsException(exc_info=sys.exc_info())
+            log.writeError([ '[ Dispatcher.addSUChunk ] ' + str(error) ])
+
+        if not item.queued:
+            # need to check `queued` in Dispatcher.processRequest
+            if sus_added_to_map:
+                sutable.removeRequestFromSUMap(sus=existingSUs + newSUs, requestid=request['requestid'])
+
+            if sus_added_to_table:
+                sutable.removeSUs(sunums=item.sunums, locktable=False)
+
+            # `item` abandoned
 
         return item
 
@@ -3012,7 +2945,7 @@ class Dispatcher(threading.Thread):
             # cannot start a new thread, so rollback and re-raise so the calling thread can handle the error
             cls.tList.remove(dispatcher)
 
-            raise StartThreadException('cannot start a new Dispatcher thread due to system resource limitations')
+            raise StartThreadException(msg='cannot start a new Dispatcher thread due to system resource limitations', exc_info=sys.exc_info())
 
         return dispatcher
 
@@ -3105,9 +3038,11 @@ def getSUSites(sunums, sites, request, log):
     returns a 2-tuple:
       first element - a dictionary where they key is a source site CGI, and the value is a list of SUs that the site serves
       second element - a list of currently online SUs
+      third element - a list of sunums with no providing site
     '''
     siteSUs = {}
     onlineSUs = []
+    no_providing_site = []
 
     offlineSUs = SuTable.offline(sunums, log)
 
@@ -3125,6 +3060,7 @@ def getSUSites(sunums, sites, request, log):
             # Skip this request - invalid SU.
             msg = 'uknown site code for SU ' + str(sunum) + '; skipping SU for request ' + str(request['requestid'])
             log.writeWarning([ msg ])
+            no_providing_site.append(sunum)
             continue
 
         if siteCGI not in siteSUs:
@@ -3132,122 +3068,146 @@ def getSUSites(sunums, sites, request, log):
 
         siteSUs[siteCGI].append(sunum)
 
-    return (siteSUs, onlineSUs)
+    return (siteSUs, onlineSUs, no_providing_site)
 
-# called from the main thread only
+# called from the main thread only; request contains 'N'-status requests only
 # for each SU that is dispatched (a DownloaderCompleteQueueItem will be created), we need to create an SU object
-# (or increase a refcount) and call addRequestToSUMap(request, SU); we also need to remove that SU from all
-# existing requests' todispatch lists
+# (or increase a refcount) and call addRequestToSUMap(request, SU); we also need to add that SU to all
+# existing requests' dispatched lists
 def dispatchSUs(sites, request, sutable, reqtable, dbuser, binpath, tapesysexists, tmpdir, expiration, archive, tapegroup, log):
-    queuedSUs = set()
-    notQueuedSUs = set()
-    completedSUs = set()
+    sunums_added_to_table = []
+    sus_added_to_map = []
+    has_dispatchable_items = False
+    successfully_dispatched = False
 
     # send SUs to the dispatcher thread only if they have not been sent to the dispatcher thread already; to do so, use
-    # the sunums in request['todispatch']; send only offline SUs
-    # siteSunums is a dictionary where key is the site CGI, and the value is a list of unknown, offline SUs that
+    # the sunums in request['dispatched']; send only offline SUs
+    # offline_site_sunums is a dictionary where key is the site CGI, and the value is a list of unknown, offline SUs that
     # the site serves;
     # toComplete is a list of undispatched, but online remote SUs
 
-    # ART - this request could be very new so that its todispatch list was never updated when this code was run for
-    # a previous request; so this request's todispatch list could be inaccurate; update that now (by looking at
-    # the SU map which has an entry for every 'dispatched' request)
-    # NO NEED to acquire reqtable lock since only the main thread looks at 'todispatch' lists and modifies requests table
+    # NO NEED to acquire reqtable lock since only the main thread looks at 'dispatched' lists and modifies requests table
+
+    # since the sutable lock is held the entire time SUs are dispatched (added to a dispatcher queue, added to SUtable, added to SUmap),
+    # there can be no interruptions to this process - all SUs for the request are either dispatched or not (not partially dispatched)
     sutable.acquireLock()
     try:
-        activeSUs = sutable.getActiveSUs(sunums=request['todispatch'])
-        setBefore = set(request['todispatch'])
-        request['todispatch'] = list(setBefore - set(activeSUs))
+        item = None
+        request_sunums = request['sunums']
 
-        # these SUs removed from the 'todispatch' list also need to have a addSUs() and addRequestToSUMap() called on them;
-        # otherwise, they will never be added to the 'complete' list; basically, whenever you dispatch on SU, you also
-        # have to add it to the global list of SUs and you have to add it to the SU Map
-        sutable.addSUs(sunums=list(setBefore - set(request['todispatch'])), locktable=False)
-        sutable.addRequestToSUMap(sunums=list(setBefore - set(request['todispatch'])), requestid=request['requestid'])
-    finally:
-        sutable.releaseLock()
+        # SUs could have been part of another request, in which case they might already have been dispatched
+        dispatched_sunums = sutable.get_dispatched_sunums(sunums=request_sunums)
+        to_dispatch_sunums = list(set(request_sunums) - set(dispatched_sunums))
 
-    # from here to the end of this method, only 'todispatch' SUs will be processed
-    siteSunums, onlineSunums = getSUSites(request['todispatch'], sites, request, log)
-    for cgi, sunumList in siteSunums.items():
-        if len(sunumList) > 0:
-            # Chunk is a list of SUNUMs (up to 64 of them).
-            sunumList.sort()
-            chunker = Chunker(sunumList, 64)
-            for chunk in chunker:
-                try:
-                    # will NOT block if there are no spots in the Dispatcher queue
-                    item = Dispatcher.addSUChunk(cgi=cgi, sunums=chunk, sutable=sutable, dbuser=dbuser, request=request, binpath=binpath, hastapesys=tapesysexists, tmpdir=tmpdir, expiration=expiration, archive=archive, tapegroup=tapegroup, log=log)
+        offline_site_sunums, online_sunums, no_site_sunums = getSUSites(to_dispatch_sunums, sites, request, log)
+        log.writeDebug([ '[ dispatchSUs ] request ' + str(request['requestid']) + ': offline SUs (' + str(offline_site_sunums) + '), online SUs (' + str(online_sunums) + ', (' + str(no_site_sunums) + ')' ])
 
-                    # keep track of all SUs dispatched - we will need to use this information to update each request's todispatch list
-                    if item.queued:
-                        queuedSUs = queuedSUs | set(item.sunums)
-                        log.writeDebug([ 'added an item to the dispatcher queue for SU chunk: ' + ','.join([ str(ansunum) for ansunum in item.sunums ]) ])
-                    else:
-                        # pretend that these sunums were never passed to dispatchSUs()
-                        notQueuedSUs = notQueuedSUs | set(item.sunums)
-                except QueueFullException as exc:
-                    # non-blocking put failed (because queue was full);
-                    # none of the SUs in this chunk will appear in the SU Table (and they will not have Downloaders);
-                    # the todispatch list mechanism will ensure these SUs get dispatched during the check on pending request
-                    log.writeDebug([ 'dispatcher queue full; for request' + str(request['requestid']) + ', unable to add SU chunk: ' + ','.join([ str(ansunum) for ansunum in chunk ]) ])
-                except RemoteSumsException as exc:
-                    # do not die - just reject the request's current chunk; we do not know exactly which SUs made it into the
-                    # SU Table, but at least one either did not or it did, but with status E; the request will eventually
-                    # error-out when the other SUs complete (successfully or not)
-                    if type(exc.response) is str:
-                        log.writeWarning([ exc.response ])
-                    log.writeWarning([ 'failed to process SUs ' + ','.join([ str(sunum) for sunum in chunk ]), 'skipping this chunk' ])
-                except Exception:
-                    import traceback
+        # process dispatchable SUs first since this involves queuing them for download; if the queuing process fails (queue full),
+        # we need to rollback, so queue first; for the other SUs, the dispatching process will likely succeed, so do those second
 
-                    msg = traceback.format_exc(5)
-                    log.writeWarning([ msg ])
-                    log.writeWarning([ 'failed to process SUs ' + ','.join([ str(sunum) for sunum in chunk ]), 'skipping this chunk' ])
+        # offline, dispatchable SUs
+        if len(offline_site_sunums) > 0:
+            has_dispatchable_items = True
+            item = None
 
-    # now deal with online SUs (even though we have not sent them to a dispatcher, we should consider them dispatched and completed);
-    # for each online SU that does not already have an SU object, we want to create one and we want to create a DownloadComplete queue
-    # item
-    sutable.acquireLock()
-    try:
-        # we want to insert a new SU object if the SU object does not already exist; otherwise, we want to
+            for cgi, sunums in offline_site_sunums.items():
+                # Chunk is a list of SUNUMs (up to 64 of them).
+                sunums.sort()
+                chunker = Chunker(sunums, 64)
+                for chunk in chunker:
+                    try:
+                        # will NOT block if there are no spots in the Dispatcher queue
+                        item = Dispatcher.addSUChunk(cgi=cgi, sunums=chunk, sutable=sutable, dbuser=dbuser, request=request, binpath=binpath, hastapesys=tapesysexists, tmpdir=tmpdir, expiration=expiration, archive=archive, tapegroup=tapegroup, log=log)
+
+                        # keep track of all SUs dispatched - we will need to use this information to update each request's todispatch list
+                        if item.queued:
+                            sunums_added_to_table.extend(item.sunums)
+                            sus, missing_sunums = sutable.getSUs(lockTable=False, releaseTableLock=False, sunums=item.sunums)
+                            sus_added_to_map.extend(sus)
+                            log.writeDebug([ '[ dispatchSUs ] added an item to the dispatcher queue for SU chunk: ' + ','.join([ str(ansunum) for ansunum in item.sunums ]) ])
+                        else:
+                            raise DispatcherException(msg='unable to queue dispatchable items: ' + ','.join([ str(sunum) for sunum in items.sunums ]))
+                    except RemoteSumsException as exc:
+                        # do not die, but reject the request; try again later
+                        raise DispatcherException(exc_info=sys.exc_info())
+                    except Exception:
+                        raise DispatcherException(exc_info=sys.exc_info())
+
+        # dispatched SUs
+
+        # these were previously dispatched, either for different requests,
+        # or for the current request if the latter was only partially dispatched previously
+        if len(dispatched_sunums) > 0:
+            existing_sus, new_sus = sutable.addSUs(sunums=dispatched_sunums, locktable=False)
+            sunums_added_to_table.extend([ su.sunum for su in existing_sus ])
+
+            if len(new_sus) > 0:
+                raise DispatcherException(msg='request has previously-dispatched SUs, but one or more were not found in the SU table')
+
+            sutable.addRequestToSUMap(sunums=dispatched_sunums, requestid=request['requestid'])
+            sus_added_to_map.extend(existing_sus)
+
+        # no-provider SUs
+
+        # if an sunum to be dispatched could not be because there is no site to provide the SU, then
+        # we need to call `addCompleteQueueItemToQueue`
+        if len(no_site_sunums) > 0:
+            existing_sus, new_sus = sutable.addSUs(sunums=no_site_sunums, locktable=False, status='E')
+
+            if len(existing_sus) > 0:
+                # `no_site_sunums` SUs have never been dispatched
+                raise DispatcherException(msg='SUs without a providing site should not have been dispatched, but these were: ' + ','.join([ su.sunum for su in existing_sus ]))
+
+            sunums_added_to_table.extend([ su.sunum for su in new_sus ])
+
+            sutable.addRequestToSUMap(sunums=no_site_sunums, requestid=request['requestid'])
+            sus_added_to_map.extend(new_sus)
+
+            log.writeError([ '[ dispatchSUs ] unable to locate site to provide SU ' + ','.join([ str(su.sunum) for su in new_sus ]) + '; setting status to E' ])
+
+            for su in new_sus:
+                DownloaderCompleteQueueItem.addCompleteQueueItemToQueue(su=su, queue=sutable.queue, log=log)
+                log.writeDebug([ '[ dispatchSUs ] successfully added a DownloaderCompleteQueueItem for SU ' +  str(su.sunum)])
+
+        # online SUs
+
+        # even though we have not dispatched online SUs, we should consider them dispatched and completed;
+        # for each online SU that does not already have an SU object, we want to create one and we want to create a DownloadComplete queue
+        # item;
+        # `addSUs` will insert a new SU object if the SU object does not already exist; otherwise, it will
         # increment the refcount on the SU object; set the SU statuses to C;
-        # set the initial status to 'C'; we have to lock this since the Dispatcher thread also creates new SUs
-        existingSUs, newSUs = sutable.addSUs(sunums=onlineSunums, locktable=False, status='C') # this will bump refcount if the SU object already exist
-        for su in existingSUs + newSUs:
-            rslog.writeDebug([ '[ dispatchSUs() ] adding ' + str(request['requestid']) + ' to suMap for SU ' + str(su.sunum) ])
-            sutable.addRequestToSUMap(sunums=[ su.sunum ], requestid=request['requestid'])
-            # add all existingSUs to completedSUs; this request (time T2) might be newer than the previous request (time T1)
-            # that contained the SU that was added to completedSUs previously (at T1); this SU was removed from all requests'
-            # todispatch lists previously (at T1), before this request existed (at T2)
-            completedSUs.add(su.sunum)
+        if len(online_sunums) > 0:
+            existing_sus, new_sus = sutable.addSUs(sunums=online_sunums, locktable=False, status='C')
+            sunums = [ su.sunum for su in (existing_sus + new_sus) ]
+            sunums_added_to_table.extend(sunums)
+            sutable.addRequestToSUMap(sunums=sunums, requestid=request['requestid'])
+            sus_added_to_map.extend(existing_sus + new_sus)
+            rslog.writeDebug([ '[ dispatchSUs ] added ' + ','.join([ str(sunum) for sunum in sunums ]) + ' to ' + str(request['requestid']) + ' mapping'  ])
 
-        for su in newSUs:
-            # only create ONE DownloaderCompleteQueueItem() for each SU across ALL new SU requests; if we attempt to
-            # dispatch an ONLINE SU that has already been dispatched, then the SU will not be in newSUs
-            DownloaderCompleteQueueItem.addCompleteQueueItemToQueue(su=su, queue=sutable.queue, log=log)
-            log.writeDebug([ '[ dispatchSUs() ] successfully added a DownloaderCompleteQueueItem for SU ' +  str(su.sunum)])
+            for su in new_sus:
+                # if an online SU was already in the sutable and sumap, then we don't want to add a completequeueitem
+                # because the SU was downloaded as part of a previous request, and that download brought the
+                # SU online, and it also will (or has) added a completequeueitem that will be processed by
+                # main, which will then complete the current request
+                DownloaderCompleteQueueItem.addCompleteQueueItemToQueue(su=su, queue=sutable.queue, log=log)
+                log.writeDebug([ '[ dispatchSUs ] successfully added a DownloaderCompleteQueueItem for SU ' +  str(su.sunum)])
 
-        for sunum in request['sunums']:
-            if sunum not in notQueuedSUs and not sutable.presentInSUMap(sunums=[ sunum ], requestid=request['requestid']):
-                existingSUs, newSUs = sutable.addSUs(sunums=[ sunum ], locktable=False, status='C') # this will bump refcount if the SU object already exist
-                rslog.writeDebug([ '[ dispatchSUs() ] adding ' + str(request['requestid']) + ' to suMap for SU ' + str(sunum) ])
-                sutable.addRequestToSUMap(sunums=[ sunum ], requestid=request['requestid'])
-                completedSUs.add(sunum)
+        successfully_dispatched = True
+    except Exception as exc:
+        # rollback, if added to sutable or sumap
+        if len(sus_added_to_map) > 0:
+            # remove from both sutable and sumap
+            sutable.removeRequestFromSUMap(sus=sus_added_to_map, requestid=request['requestid'])
+
+        if len(sunums_added_to_table) > 0:
+            sutable.removeSUs(sunums=sunums_added_to_table, locktable=False)
+
+        # warning message
+        log.writeInfo([ '[ dispatchSUs ] ' + str(exc) ])
     finally:
         sutable.releaseLock()
 
-    # update the request's todispatch list (the main thread is the only one to modify request items - no need for locking)
-    # SUs sent to dispatcher + online SUs not dispatched previously (not processed by dispatchSUs())
-    dispatchedSUs = queuedSUs | completedSUs
-
-    reqtable.acquireLock()
-    try:
-        for request in reqtable.get():
-            request['todispatch'] = list(set(request['todispatch']) - dispatchedSUs)
-    finally:
-        reqtable.releaseLock()
-
+    return successfully_dispatched
 
 if __name__ == "__main__":
     rv = RET_SUCCESS
@@ -3276,7 +3236,7 @@ if __name__ == "__main__":
         arguments = Arguments(parser)
 
         if arguments.nWorkers < 3:
-            raise RSArgsException('must specify a minimum of 3 worker threads')
+            raise RSArgsException(msg='must specify a minimum of 3 worker threads')
 
         if not hasattr(arguments, 'expiration') and not hasattr(arguments, 'lifespan'):
             # try RS_SU_EXPIRATION first
@@ -3292,7 +3252,7 @@ if __name__ == "__main__":
                     arguments.setArg('expiration', datetime.now() + timedelta(days=lifespan))
                 except DrmsParamsException:
                     # neither expiration nor lifepan
-                    raise RSArgsException('must provide either the expiration or lifespan argument')
+                    raise RSArgsException(msg='must provide either the expiration or lifespan argument', exc_info=sys.exc_inf())
 
         if not hasattr(arguments, 'archive'):
             try:
@@ -3336,9 +3296,9 @@ if __name__ == "__main__":
 
         # TerminationHandler opens a DB connection to the RS database (which is the same as the DRMS database, most likely).
         with TerminationHandler(thContainer) as th:
-            rslog.writeInfo([ 'setting download timeout to ' + str(arguments.dltimeout) + ' (the daemon must complete the download within this interval)' ])
-            rslog.writeInfo([ 'setting request timeout to ' + str(arguments.reqtimeout) + ' (the daemon must locate the request within this interval)' ])
-            rslog.writeInfo([ 'setting scp timeout to ' + str(arguments.scpTimeOut) + ' (each ScpWorker waits this long at most before initiating the next scp)' ])
+            rslog.writeInfo([ '[ main ] setting download timeout to ' + str(arguments.dltimeout) + ' (the daemon must complete the download within this interval)' ])
+            rslog.writeInfo([ '[ main ] setting request timeout to ' + str(arguments.reqtimeout) + ' (the daemon must locate the request within this interval)' ])
+            rslog.writeInfo([ '[ main ] setting scp timeout to ' + str(arguments.scpTimeOut) + ' (each ScpWorker waits this long at most before initiating the next scp)' ])
 
             rsConn = th.rsConn()
             sumsConn = th.sumsConn()
@@ -3346,7 +3306,7 @@ if __name__ == "__main__":
             rsDbLock = threading.RLock() # global
             sumsDbLock = threading.Lock() # global
 
-            rslog.writeInfo([ 'obtained script file lock' ])
+            rslog.writeInfo([ '[ main ] obtained script file lock' ])
 
             reqTable = arguments.reqtable
 
@@ -3371,6 +3331,7 @@ if __name__ == "__main__":
             SuTable.sumsDbLock = sumsDbLock # Class variable
 
             reqTableObj = ReqTable(reqTable, arguments.reqtimeout, arguments.dltimeout, rslog)
+            # does not populate reqDict
             suTableObj = reqTableObj.getSuTable()
 
             Downloader.sumsConn = sumsConn
@@ -3397,29 +3358,29 @@ if __name__ == "__main__":
             try:
                 for nthread in range(1, arguments.nWorkers + 1):
                     if len(ScpWorker.tList) < ScpWorker.maxThreads - 2:
-                        rslog.writeInfo([ 'instantiating ScpWorker ' + str(nthread) + ' with priority ' + str(100) ])
+                        rslog.writeInfo([ '[ main ] instantiating ScpWorker ' + str(nthread) + ' with priority ' + str(100) ])
                         ScpWorker.newThread(id=nthread, sutable=suTableObj, tmpdir=arguments.tmpdir, maxsus=arguments.scpMaxNumSUs, maxpayload=arguments.scpMaxPayload, scptimeout=arguments.scpTimeOut, priority=100, log=rslog)
                     else:
                         break # The finally clause will ensure the ScpWorker lock is released.
 
                 # high priority ScpWorkers
                 for nthread in range(arguments.nWorkers + 1, arguments.nWorkers + 3):
-                    rslog.writeInfo([ 'instantiating ScpWorker ' + str(nthread) + ' with priority ' + str(0) ])
+                    rslog.writeInfo([ '[ main ] instantiating ScpWorker ' + str(nthread) + ' with priority ' + str(0) ])
                     ScpWorker.newThread(id=nthread, sutable=suTableObj, tmpdir=arguments.tmpdir, maxsus=arguments.scpMaxNumSUs, maxpayload=arguments.scpMaxPayload, scptimeout=arguments.scpTimeOut, priority=0, log=rslog)
             finally:
                 ScpWorker.lock.release()
 
             Dispatcher.lock.acquire()
             try:
-                rslog.writeInfo([ 'instantiating the downloader Dispatcher' ])
+                rslog.writeInfo([ '[ main ] instantiating the downloader Dispatcher' ])
                 dispatcher = Dispatcher.new(name='downloader-dispatcher', downloaderType=Downloader, log=rslog)
-                rslog.writeInfo([ 'downloader Dispatcher is running' ])
+                rslog.writeInfo([ '[ main ] downloader Dispatcher is running' ])
 
-                rslog.writeInfo([ 'instantiating the high-priority download Dispatcher' ])
+                rslog.writeInfo([ '[ main ] instantiating the high-priority download Dispatcher' ])
                 highPriorityDispatcher = Dispatcher.new(name='high-priority-downloader-dispatcher', downloaderType=HighPriorityDownloader, log=rslog)
-                rslog.writeInfo([ 'high-priority download Dispatcher is running' ])
+                rslog.writeInfo([ '[ main ] high-priority download Dispatcher is running' ])
             except StartThreadException as exc:
-                raise StartThreadException('cannot start Dispatcher')
+                raise StartThreadException(msg='cannot start Dispatcher', exc_info=sys.exc_info())
             finally:
                 Dispatcher.lock.release()
 
@@ -3437,18 +3398,15 @@ if __name__ == "__main__":
                 # interrupts when an exception happens (so we can terminate remote sums)
 
                 reqsPending = reqTableObj.getPending()
-                rslog.writeInfo([ 'there are ' + str(len(reqsPending)) + ' pending requests on start-up'])
+                rslog.writeInfo([ '[ main ] there are ' + str(len(reqsPending)) + ' pending requests on start-up'])
 
                 # request is a dictionary
                 for request in reqsPending:
                     # use a set() to remove duplicates IN THE SAME REQUEST
                     sunums = list(set(request['sunums'])) # the SUs may or may not have been dispatched in previous iterations
-                    rslog.writeInfo([ 'found an interrupted download request, id ' + str(request['requestid']) + ', for SUNUMs ' + ','.join([str(sunum) for sunum in sunums]) ])
+                    rslog.writeInfo([ '[ main ] found an interrupted download request, id ' + str(request['requestid']) + ', for SUNUMs ' + ','.join([str(sunum) for sunum in sunums]) ])
 
-                    # FOR ALL OFFLINE SUs, dispatchSUs() will asynchronously add/++refcount a SU to the sutable, and add an entry in the SU map;
-                    # it will also remove the offline SUs from ALL requests' 'todispatch' lists; for all ONLINE SUs, dispatchSUs() will synchronously
-                    # add a new status=C SU to the sutable, and add an entry to the SU map; it will also remove the offline SUs from ALL requests'
-                    # 'todispatch' lists
+                    # atomic operation - adds SUs to sutable and sumap, and puts offline SUs in dispatcher queue
                     dispatchSUs(sites, request, suTableObj, reqTableObj, arguments.dbuser, arguments.binpath, arguments.tapesysexists, arguments.tmpdir, arguments.expiration, arguments.archive, arguments.tapegroup, rslog)
 
                     # At this point, both the requests table and SU table have been modified, but have not been flushed to disk.
@@ -3491,7 +3449,7 @@ if __name__ == "__main__":
                             suTableObj.acquireLock()
                             try:
                                 completeItem = suTableObj.queue.get_nowait()
-                                rslog.writeDebug([ 'processing download-complete item for SU ' + str(completeItem.su.sunum) ])
+                                rslog.writeDebug([ '[ main ] processing download-complete item for SU ' + str(completeItem.su.sunum) ])
                             except Empty:
                                 # no DownloaderCompleteItem item available; move on to processing new requests
                                 break
@@ -3505,9 +3463,9 @@ if __name__ == "__main__":
                             # thread (but there is no contention between these two threads); there is no thread contention possible
                             # for the SU contents
                             if completeItem.su.status == 'E':
-                                rslog.writeInfo([ 'download of SU ' + str(completeItem.su.sunum)  + ' has errored-out; ' + completeItem.su.errmsg ])
+                                rslog.writeInfo([ '[ main ] download of SU ' + str(completeItem.su.sunum)  + ' has errored-out; ' + completeItem.su.errmsg ])
                             elif completeItem.su.status == 'C':
-                                rslog.writeInfo([ 'download of SU ' + str(completeItem.su.sunum)  + ' has completed' ])
+                                rslog.writeInfo([ '[ main ] download of SU ' + str(completeItem.su.sunum)  + ' has completed' ])
                             elif completeItem.su.status == 'P' or completeItem.su.status == 'W' or completeItem.su.status == 'D':
                                 # the Downloader no longer exists, so this is an error
                                 completeItem.su.setStatus('E', 'download for SU ' + str(completeItem.su.sunum) + ' did not properly complete')
@@ -3521,14 +3479,14 @@ if __name__ == "__main__":
                                 suTableObj.acquireLock() # because we need to access suTableObj.suMap
                                 try:
                                     for requestID in suTableObj.suMap[str(completeItem.su.sunum)]:
-                                        # add this SU to the request['complete'] list
+                                        # add this SU to the request['sunums_completed'] list
 
                                         # we cannot cache the actual request dict because we refresh the set of requests near
                                         # the end of the main loop; so we cache the requestID, and then we have to hash into
                                         # the request dict to get the current request dict for that requestID
                                         request = reqTableObj.get([ requestID ])[0]
-                                        if completeItem.su.sunum not in request['complete']:
-                                            request['complete'].append(completeItem.su.sunum)
+                                        if completeItem.su.sunum not in request['sunums_completed']:
+                                            request['sunums_completed'].append(completeItem.su.sunum)
                                             rslog.writeDebug([ 'added ' + str(completeItem.su.sunum) + ' to complete list for request ' + str(request['requestid']) ])
                                 finally:
                                     suTableObj.releaseLock()
@@ -3540,15 +3498,17 @@ if __name__ == "__main__":
 
                     # the Downloaders check for orphaned SUs (SUs without workers - no progress can be made) - no
                     # need to do that here; but we need to check for missing Downloaders
+                    # requests whose SUs have not been dispatched (either a new request, or one where a dispatching a
+                    # request failed) still have status 'N' and so are not pending
                     reqsPending = reqTableObj.getPending()
                     for request in reqsPending:
                         sunums = set(request['sunums'])
-                        completedSunums = set(request['complete'])
+                        completedSunums = set(request['sunums_completed'])
 
                         sunumList = ','.join([ str(sunum) for sunum in list(sunums) ])
 
-                        rslog.writeDebug([ 'request ' + str(request['requestid']) + ' sunums: ' + sunumList ])
-                        rslog.writeDebug([ 'request ' + str(request['requestid']) + ' complete SUs: ' + ','.join([ str(sunum) for sunum in list(completedSunums) ]) ])
+                        rslog.writeDebug([ '[ main ] request ' + str(request['requestid']) + ' sunums: ' + sunumList ])
+                        rslog.writeDebug([ '[ main ] request ' + str(request['requestid']) + ' complete SUs: ' + ','.join([ str(sunum) for sunum in list(completedSunums) ]) ])
 
                         if len(sunums.symmetric_difference(completedSunums)) == 0:
                             # request has completed
@@ -3565,16 +3525,16 @@ if __name__ == "__main__":
 
                                 # remove sunum-->request map items
                                 suTableObj.removeRequestFromSUMap(sus=sus, requestid=request['requestid']) # decrements refcount
-                                rslog.writeDebug([ 'removed SUs: ' + sunumList + ' from SU map' ])
+                                rslog.writeDebug([ '[ main ] removed SUs: ' + sunumList + ' from SU map' ])
                                 suTableObj.removeSUs(sunums=[ su.sunum for su in sus ], locktable=False) # decrements refcount
-                                rslog.writeDebug([ 'removed SUs: ' + sunumList ])
+                                rslog.writeDebug([ '[ main ] removed SUs: ' + sunumList ])
 
                                 # this request is done; set this request's status to 'C' or 'E', and decrement the refcount on each SU
                                 if reqError:
-                                    rslog.writeInfo([ 'request number ' + str(request['requestid']) + ' for SUNUM(s) ' + sunumList + ' errored-out' ])
+                                    rslog.writeInfo([ '[ main ] request number ' + str(request['requestid']) + ' for SUNUM(s) ' + sunumList + ' errored-out' ])
                                     reqTableObj.setStatus([ request['requestid'] ], 'E', errMsg)
                                 else:
-                                    rslog.writeInfo([ 'request number ' + str(request['requestid']) + ' for SUNUM(s) ' + sunumList + ' completed successfully' ])
+                                    rslog.writeInfo([ '[ main ] request number ' + str(request['requestid']) + ' for SUNUM(s) ' + sunumList + ' completed successfully' ])
                                     reqTableObj.setStatus([ request['requestid'] ], 'C')
                             finally:
                                 suTableObj.releaseLock()
@@ -3582,61 +3542,42 @@ if __name__ == "__main__":
                             # commit status changes to the requests table
                             updateDbAndCommit(rslog, rsConn, rsDbLock, reqTableObj, [ request['requestid'] ])
                         else:
-                            # check to see if any request has undispatched SUs
-                            if len(request['todispatch']) > 0:
-                                # a Dispatcher asynchronously inserts rows into the SU Table, and it may block waiting for a Downloader;
-                                # it may be that for this request, some of the SUs do not appear in the SU Table yet, or if they do,
-                                # they might be lacking a Downloader;
+                            # not all SU have been processed, but at the same time all have been dispatched; if the worker attribute
+                            # (Downloader) of the SU is not None, then we started a Downloader for this SU; if that Downloader died,
+                            # then we need to set the SU status to E
 
-                                # not in SU Table; one of two things is possible:
-                                # 1. they are in the Dispatcher queue (not yet being processed by the Dispatcher thread)
-                                # 2. the attempt to insert them into the Dispatcher queue failed because the queue was full
-                                # if #1 is the case, we do nothing; if #2 is the case, then we need to re-try inserting them
-                                # into the Dispatcher queue - use request to determine which queue to use; since all the SUs in
-                                # missingSunums belong to one request, we can use the todispatch list method to determine
-                                # which SUs to put into the dispatch queue
-                                sunums = list(set(request['todispatch']) ) # the SUs that have not been dispatched yet
-                                rslog.writeDebug([ 'request ' + str(request['requestid']) + ' (obj ' + str(id(request)) + ')' + ' has un-dispatched SUs: ' + ','.join([ str(sunum) for sunum in sunums ]) ])
-                                dispatchSUs(sites, request, suTableObj, reqTableObj, arguments.dbuser, arguments.binpath, arguments.tapesysexists, arguments.tmpdir, arguments.expiration, arguments.archive, arguments.tapegroup, rslog)
+                            # there is the error case where an SU has been dispatched, but no Downloader was ever created (a queue
+                            # item was added, but for some reason, the dispatcher never created a Downloader);
+                            # sunums have been dispatched
+                            sus, missingSunums = suTableObj.getSUs(releaseTableLock=False, sunums=sunums)
+                            try:
+                                # the sus are in the SU Table, so they should have a Downloader (it is possible that an SU has been dispatched
+                                # but has not yet been assigned a Downloader because the Dispatcher thread has yet to read its queue item)
+                                dispatcher = Dispatcher.getDispatcher(request['type'])
 
-                                # At this point, both the requests table and SU table have been modified, but have not been flushed to disk.
-                                # Flush them, but do this inside a transaction so that the first does not happen without the second.
-                                updateDbAndCommit(rslog, rsConn, rsDbLock, reqTableObj, [ request['requestid'] ])
-                            else:
-                                # not all SU have been processed, but at the same time all have been dispatched; if the worker attribute
-                                # (Downloader) of the SU is not None, then we started a Downloader for this SU; if that Downloader died,
-                                # then we need to set the SU status to E
+                                for su in sus:
+                                    # we lock the Downloader lock whenever we set/unset the worker in the su object
+                                    dispatcher.downloaderType.lock.acquire()
+                                    try:
+                                        if hasattr(su, 'worker') and su.worker is not None:
+                                            # a downloader thread has definitely been started; it should be alive
+                                            if not isinstance(su.worker, (Downloader)) or not su.worker.is_alive():
+                                                # set SU status to E
+                                                su.setStatus('E', 'download for SU ' + str(su.sunum) + ' lost its Downloader unexpectedly')
 
-                                # there is the error case where an SU has been dispatched, but no Downloader was ever created (a queue
-                                # item was added, but for some reason, the dispatcher never created a Downloader);
-                                # sunums are the pending SUs (all SUs have been dispatched)
-                                sunums = list(set(request['todispatch']))
-                                sus, missingSunums = suTableObj.getSUs(releaseTableLock=False, sunums=sunums)
-                                try:
-                                    # the sus are in the SU Table, so they should have a Downloader (it is possible that an SU has been dispatched
-                                    # but has not yet been assigned a Downloader because the Dispatcher thread has yet to read its queue item)
-                                    dispatcher = Dispatcher.getDispatcher(request['type'])
+                                                # put a complete item in the queue so that the main thread will handle this in the
+                                                # pending requests section (do no further SU-completion processing here)
+                                                DownloaderCompleteQueueItem.addCompleteQueueItemToQueue(su=su, queue=suTableObj.queue, log=rslog)
+                                                rslog.writeDebug([ '[ main ] successfully added a DownloaderCompleteQueueItem for SU ' +  str(su.sunum)])
 
-                                    for su in sus:
-                                        # we lock the Downloader lock whenever we set/unset the worker in the su object
-                                        dispatcher.downloaderType.lock.acquire()
-                                        try:
-                                            if hasattr(su, 'worker') and su.worker is not None:
-                                                # a downloader thread has definitely been started; it should be alive
-                                                if not isinstance(su.worker, (Downloader)) or not su.worker.isAlive():
-                                                    # set SU status to E
-                                                    su.setStatus('E', 'download for SU ' + str(su.sunum) + ' lost its Downloader unexpectedly')
+                                    finally:
+                                        dispatcher.downloaderType.lock.release()
 
-                                                    # put a complete item in the queue so that the main thread will handle this in the
-                                                    # pending requests section (do no further SU-completion processing here)
-                                                    DownloaderCompleteQueueItem.addCompleteQueueItemToQueue(su=su, queue=suTableObj.queue, log=rslog)
-                                                    rslog.writeDebug([ 'successfully added a DownloaderCompleteQueueItem for SU ' +  str(su.sunum)])
-
-                                        finally:
-                                            downloaderType.lock.release()
-
-                                finally:
-                                    suTableObj.releaseLock()
+                                    # ART - should check for timeout for a Downloader to start (a dispatched SU might never get
+                                    # assigned to a downloader); should set status to 'E' if timeout occurs and
+                                    # call `addCompleteQueueItemToQueue`
+                            finally:
+                                suTableObj.releaseLock()
                 except:
                     # pass this to the enclosing handler
                     raise
@@ -3667,7 +3608,7 @@ if __name__ == "__main__":
                     for request in reqsNew:
                         timeNow = datetime.now(request['starttime'].tzinfo)
                         if timeNow > request['starttime'] + reqTableObj.timeout:
-                            ilogger.writeInfo([ 'request number ' + str(request['requestid']) + ' timed-out' ])
+                            ilogger.writeInfo([ '[ main ] request number ' + str(request['requestid']) + ' timed-out' ])
                             reqTableObj.setStatus([ request['requestid'] ], 'E', 'request timed-out')
 
                             try:
@@ -3683,18 +3624,15 @@ if __name__ == "__main__":
                         # use a set() to remove duplicates IN THE SAME REQUEST
 
                         sunums = list(set(request['sunums'])) # the SUs that have not been dispatched yet
-                        rslog.writeInfo([ 'found a new download request, id ' + str(request['requestid']) + ', for SUNUMs ' + ','.join([ str(sunum) for sunum in sunums ]) ])
+                        rslog.writeInfo([ '[ main ] found a new download request, id ' + str(request['requestid']) + ', for SUNUMs ' + ','.join([ str(sunum) for sunum in sunums ]) ])
 
-                        # sunumsToSetToComplete - SUs that were NOT dispatched because they were online already; if they were
-                        # not online, but already part of another request, they DO get dispatched; then the dispatcher does NOT
-                        # create a Downloader for the SU;
-                        # it is possible that the dispatcher was full, so some SUs might not have been dispatched; there will
-                        # be additional attempts in the pending-request processing part of the main loop
-                        dispatchSUs(sites, request, suTableObj, reqTableObj, arguments.dbuser, arguments.binpath, arguments.tapesysexists, arguments.tmpdir, arguments.expiration, arguments.archive, arguments.tapegroup, rslog)
-
-                        # the new request has been fully processed; change its status from 'N' to 'P';
-                        # this call modifies the requests object and it acquires each SU's lock
-                        reqTableObj.setStatus([ request['requestid'] ], 'P')
+                        # this is an all-or-nothing action for this request - either all SUs were dispatched (added to sutable, sumap,
+                        # and, if needed, to dispatch queue), or none were
+                        # does not raise
+                        if dispatchSUs(sites, request, suTableObj, reqTableObj, arguments.dbuser, arguments.binpath, arguments.tapesysexists, arguments.tmpdir, arguments.expiration, arguments.archive, arguments.tapegroup, rslog):
+                            # the new request has been fully processed; change its status from 'N' to 'P';
+                            # this call modifies the requests object and it acquires each SU's lock
+                            reqTableObj.setStatus([ request['requestid'] ], 'P')
 
                         # At this point, both the requests table and SU table have been modified, but have not been flushed to disk.
                         # Flush them, but do this inside a transaction so that the first does not happen without the second.
@@ -3717,7 +3655,7 @@ if __name__ == "__main__":
                 ######################
 
             # Save the db state when exiting.
-            rslog.writeInfo([ 'remote-sums daemon is exiting; saving database tables' ])
+            rslog.writeInfo([ '[ main ] remote-sums daemon is exiting; saving database tables' ])
             updateDbAndCommit(rslog, rsConn, rsDbLock, reqTableObj, None)
 
         # DB connection was terminated.
@@ -3746,10 +3684,10 @@ if __name__ == "__main__":
             print(msg, file=sys.stderr)
         rv = RET_UNKNOWN_ERROR
 
-if rslog:
-    rslog.writeInfo([ 'exiting with return status ' + str(rv) ])
-# Will not exit process if threads are still running. Set global shutdown flag that threads are monitoring. When they see the flag, they
-# will terminate too.
+    if rslog:
+        rslog.writeInfo([ 'exiting with return status ' + str(rv) ])
 
-logging.shutdown()
-sys.exit(rv)
+    # Will not exit process if threads are still running. Set global shutdown flag that threads are monitoring. When they see the flag, they
+    # will terminate too.
+    logging.shutdown()
+    sys.exit(rv)
