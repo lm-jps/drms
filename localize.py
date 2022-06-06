@@ -848,7 +848,7 @@ def configureComps(defs, mDefs):
 
         if not hasicc and not hasgcc:
             print('Fatal error: Acceptable C compiler not found! You will be unable to build the DRMS library.', file=sys.stderr)
-            rv = bool(1)
+            rv = bool(0) # Art - don't bail, we might be using drmsparams.py and not care about the rest of DRMS
         elif hasicc:
             mDefs.extend(list('\nCOMPILER = icc'))
             # mDefs.extend(list('\nICC_VERSION = blah'))
