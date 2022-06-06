@@ -105,7 +105,6 @@ class Message(object):
     def __init__(self, *, json_message=None, **kwargs):
         if json_message is None:
             self._data = MakeObject(name='data_class', data=kwargs)()
-
         else:
             self._data = MakeObject(name='data_class', data=json_message)()
 
@@ -147,28 +146,32 @@ class Message(object):
         return message
 
     @classmethod
-    def receive(cls, *, client_socket, msg_type, log):
+    def receive(cls, *, client_socket, msg_type, initial_buffer=None, log):
+        buffer = None
         json_message_buffer = []
         open_count = 0
         close_count = 0
         timeout_event = None
 
         while True:
-            try:
-                # this is a non-blocking socket; timeout is 1 second
-                binary_buffer = client_socket.recv(1024) # blocking
-                if timeout_event is None:
-                    timeout_event = datetime.now() + timedelta(30)
-                if binary_buffer == b'':
-                    break
-            except socket.timeout as exc:
-                # no data written to pipe
-                if datetime.now() > timeout_event:
-                    raise MessageTimeoutError(msg=f'[ Message.receive ] timeout event waiting for client {self.request.getpeername()} to send message')
-                    log.write_debug([ f'[ Message.receive ] waiting for client {self.request.getpeername()} to send message...' ])
-                continue
+            if initial_buffer is not None and len(initial_buffer) > 0 and buffer is None:
+                buffer = initial_buffer
+            else:
+                try:
+                    # this is a non-blocking socket; timeout is 1 second
+                    binary_buffer = client_socket.recv(1024) # blocking
+                    if timeout_event is None:
+                        timeout_event = datetime.now() + timedelta(30)
+                    if binary_buffer == b'':
+                        break
+                except socket.timeout as exc:
+                    # no data written to pipe
+                    if datetime.now() > timeout_event:
+                        raise MessageTimeoutError(msg=f'[ Message.receive ] timeout event waiting for client {self.request.getpeername()} to send message')
+                        log.write_debug([ f'[ Message.receive ] waiting for client {self.request.getpeername()} to send message...' ])
+                    continue
 
-            buffer = binary_buffer.decode('UTF-8')
+                buffer = binary_buffer.decode('UTF-8')
 
             if len(json_message_buffer) == 0:
                 # look for opening curly brace
@@ -265,7 +268,7 @@ class VerificationReadyMessage(Message):
 class DataVerifiedMessage(Message):
     def __init__(self, *, json_message=None, **kwargs):
         super().__init__(json_message=json_message, **kwargs)
-        self.values = (self.number_of_files)
+        self.values = (self.number_of_files, )
 
 class RequestCompleteMessage(Message):
     def __init__(self, *, json_message=None, **kwargs):
@@ -385,9 +388,7 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
             # receive DATA_VERIFIED message from client;
             # client must send a message here (after they have sent the requisite '\.\n'); this allows the client to notify
             # the server of an error
-            data_verified_message = Message.new_instance(json_message=self._verified_message_json)
-            if not isinstance(data_verified_message, DataVerifiedMessage):
-                raise UnexpectedMessageError(msg=f'{MessageType.get_member(data_verified_message.message)}')
+            number_of_files_verified = self._verified_message_values
 
             # send REQUEST_COMPLETE
             self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.handle ] sending {MessageType.REQUEST_COMPLETE.fullname} message to client `{str(self.client_address)}`' ])
@@ -675,13 +676,22 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
                 full_lines = full_line_buffer
 
                 if client_end:
-                    # combine next lines to make the DATA_VERIFIED message
-                    self._verified_message_json = '\n'.join(message_buffer)
-                    self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.receive_verification ] verified-message json {self._verified_message_json}' ])
+                    # combine next lines to make the DATA_VERIFIED message; the problem is that
+                    # part of the message could already be in the full_lines buffer, and part
+                    # could still be in the socket, unread; or all of it could be in the full_lines
+                    # buffer, or all of it could be in the socket;
+                    # use `Message.receive` with an initialized_buffer to parse properly; returns
+                    # a list of messages values (in this case, a list with one element - the number
+                    # of files verified)
+                    self._verified_message_values = Message.receive(client_socket=client_socket, msg_type=MessageType.DATA_VERIFIED, initial_buffer=''.join(message_buffer), log=self.server.log)
+                    self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.receive_verification ] verified-message values {str(self._verified_message_values)}' ])
 
-                self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.receive_verification ] extracting verified recnums from  {str(full_lines)}' ])
-                verified_recnums = [ self._drms_id_regex.match(line.split()[0]).group(1) for line in full_lines if line.split()[1] == 'V' ]
-                self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.receive_verification ] verified recnums: {",".join(verified_recnums)}' ])
+                    break
+
+                if len(full_lines) > 0:
+                    self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.receive_verification ] extracting verified recnums from  {str(full_lines)}' ])
+                    verified_recnums = [ self._drms_id_regex.match(line.split()[0]).group(1) for line in full_lines if line.split()[1] == 'V' ]
+                    self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.receive_verification ] verified recnums: {",".join(verified_recnums)}' ])
 
                 for recnum in verified_recnums:
                     # we know we have some verification data
@@ -691,9 +701,6 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
                     await self._verified_recnums.put(recnum)
 
                 self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.receive_verification ] finished sending {len(verified_recnums)} recnums for verification processing (for client `{str(self.client_address)}`)' ])
-
-                if client_end:
-                    break
             except socket.timeout as exc:
                 # no data written to pipe
                 raise MessageTimeoutError(msg=f'timeout event waiting for server {data_socket.getpeername()} to send data')
@@ -789,6 +796,8 @@ if __name__ == "__main__":
             log = DrmsLog(arguments.log_file, arguments.logging_level, formatter)
         except Exception as exc:
             raise LoggingError(msg=f'{str(exc)}')
+
+        log.write_info([ f'[ __main__ ] arguments: {str(arguments)}' ])
 
         # socket addresses available on the hosting machine
         addresses = get_addresses(family=socket.AF_INET, log=log)
