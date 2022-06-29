@@ -349,9 +349,9 @@ if($OKfile && $OKhkdayfile && $OKfdsorbit && $OKnogofile && $OKff && $OKmp && $O
     $cmd = "time build_lev1_mgr mode=fsn instru=aia dsin=$DSINAIA dsout=$DSOUTAIA bfsn=$firstfsn efsn=$lastfsn numqsub=3 logfile=/usr/local/logs/lev1/build_lev1_mgr_aia.$utcdate.log";
   }
   else { 
-    #!!TEMP increase numqsub from default 2 to 3 for 2018.08.17 image anomaly processing catchup
+    #!!TEMP increase numqsub from default 3 to 6 for 2022.06.21 power outage processing catchup
     #-Hao
-    $cmd = "time build_lev1_mgr mode=fsn instru=hmi dsin=$DSINHMI dsout=$DSOUTHMI bfsn=$firstfsn efsn=$lastfsn numqsub=3 logfile=/usr/local/logs/lev1/build_lev1_mgr_hmi.$utcdate.log";
+    $cmd = "time build_lev1_mgr mode=fsn instru=hmi dsin=$DSINHMI dsout=$DSOUTHMI bfsn=$firstfsn efsn=$lastfsn numqsub=6 logfile=/usr/local/logs/lev1/build_lev1_mgr_hmi.$utcdate.log";
   }
   print "$cmd\n";
   if($EXECUTE) {
