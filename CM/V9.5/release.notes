@@ -1,0 +1,102 @@
+Release Notes JSOC V9.5
+14JUL2022
+
+New features:
+------------
+- implements export-system flask webapp, which includes:
+  - database functions to support direct database queries
+  - a socket server that accepts JSON messages from the flask app, runs DRMS code, and returns
+    JSON messages back to the app
+  - a WSGI port of CGI interface for legacy use; raw original export-system JSON responses are
+    returned
+  - a logging system used directly by the flask app, and also all code invoked by the app
+  - many tests for the WSGI interface
+- implements server and client TCP applications to deliver final-archive data to SDAC
+- implements a replacement for sum_rm, sums_steward.py
+  - allows the user to specify a `SUMS put` file to which the paths of newly created Storage Units (SUs)
+    are written - this allows a production user to run administrative programs, such as chown and chmod,
+    on each SU
+  - uses new features in sumsd.py that support the use of the SUMS put file
+- organizes python modules into packages that are installed as part of the NetDRMS installation
+- augments on-demand retrieval of linked-record information, one record at a time, from the database with
+  pre-fetch retrievals of chunked of linked records
+  - removes DRMS-link following code from the code that 'stages' DRMS records
+  - adds code to follow links to the code that retrieves parent-record information from the database
+  - improves performance
+  - partial linked-records are now cached (the parts reachable from the parent records)
+  - used by show_info to reduce the memory footprint, and to speed up execution
+- implements a very fast method for copying information between HContainer_t structures; replaces the
+  original inefficient method with the new one in code that retrieves record-information from the database
+- adds support for 'manifest' record-set specifications
+  - these specifications are used by final-archive delivery server code
+  - several database functions were written to manipulate manifest tables
+- reorganizes export-processing code so that the output images size to input image size ratio can
+  be calculated in DRMS code; before this change, the ratio calculation was performed in JavaScript,
+  which was not available to DRMS wrappers such as Sunpy/drms
+  - adds JSON processing argument to jsoc_fetch and jsoc_info for Sunpy/drms use
+- improves efficiency of FITS export code
+  - the original code used the method used by FITSIO's imcopy program to copy images in memory
+  - the new code uses different FITSIO calls to copy FITS structures, and runs much faster
+- ports the remaining python-2 scripts to python-3 scripts
+- implements a program to create database-table snapshots as a method of replicating DB table info
+  without Slony
+- improves performance of list-insertion
+- implements write_to_file() python method in drms lock-file code
+- implements update_effective_date.py, a script to update the `effective date` in SUMS
+- ports the private su_rsb.noaa_activeregions series to a public jsoc.noaa_active_regions series for use
+  with the export system's processing functionality
+- adds a pull-down in the processing section of the export system that allows the user to select the
+  disambiguation method to use for the HmiB2Ptr processing step
+- implements, in securedrms.py, an asyncio method that exports data to the caller without
+  without writing intermediate files; export data are created in memory and streamed to the user
+  using a python generator function in the flask app
+- improves efficiency of keyword-alias code
+
+Bug fixes:
+---------
+- disentangles fitsio.h, cfitsio.h, tasrw.h, and drms_fitsrw.h include-path confusion
+- fixes a bug in ingest_from_fits code that maps FITS keyword names into their corresponding DRMS keyword names
+- fixes a bug in recounting SU objects
+- fixes use of uninitialized variables
+- fixes memory leaks
+- fixes buffer overruns
+- fixes code that closes DRMS records - patches up memory leaks
+- fixes problems with rsumsd.py not resuming interrupted requests; the processes of dispatching new requests and
+  resuming interrupted ones was greatly simplified to remove the complexity that led to bugs
+- fixes jsoc_info so that is operates on record-set specifications that contain subsets
+- fixes an issue where too many floating-point digits were being printed during export
+- fixes an issue in code updating COMMENT and HISTORY DRMS keywords
+- fixes numerous issues with the export.html UI and email registration
+
+Getting/Using this release:
+--------------------------
+This release has been installed in /home/jsoc/cvs/JSOC. To use these binaries, you can run them
+directly:
+
+$ /home/jsoc/cvs/JSOC/bin/linux_x86_64/show_info -j hmi.M_45s
+
+for example. Or you can put /home/jsoc/cvs/JSOC/bin/linux_x86_64 in your path environment variable.
+
+You can instead build your own executables - even if you do not have access to lab machines.
+If you do have lab access, you can "check out" a fresh copy of the release source files by
+running
+
+$ cd <directory of releases>
+$ /home/jsoc/dlsource.pl -r Ver_9-5 # to obtain JSOC 9.5
+$ /home/jsoc/dlsource.pl -f net -r NetDRMS_Ver_9-5 # to obtain NetDRMS 9.5
+
+These commands will create a directory named "JSOC" that will contain the release
+source files. After checking out the source files, you would then configure and build by running
+
+$ cd JSOC
+$ ./configure
+$ make
+
+If instead of downloading a new source-code tree, you can update an existing one by running
+
+$ $ cd <release root directory>
+$ /home/jsoc/dlsource.pl -r Ver_9-5 -o update # to update to JSOC 9.5
+$ /home/jsoc/dlsource.pl -r NetDRMS_Ver_9-5 -o update # to update to NetDRMS 9.5
+
+If you do not have lab access, you can still download the NetDRMS release. Detailed
+instructions are at http://jsoc.stanford.edu/jsocwiki/DRMSSetup#install-netdrms.
