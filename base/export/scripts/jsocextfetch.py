@@ -239,37 +239,15 @@ try:
 
         server = jsonObj['server']
 
-        #############################
-        ## Run log-cgi-instance.py ##
-        #############################
-        # create row for instance ID in instance table and fetch instance ID argument
-
         # JSOC_DBHOST is the internal server; jsocextfetch.py is called from the external website only when the original request was supported by the
         # internal database.
         # W=1 ==> do not print HTML headers; this script should do that
         # p=1 ==> a pass-through to internal server is occurring (generate a requestID with an "_X" to denote this)
         extraArgs = [ 'JSOC_DBHOST=' + server, 'DRMS_DBTIMEOUT=900000', 'W=1', 'p=1' ]
-        formData = '&'.join(allArgs + extraArgs)
 
-        cmdList = [ binPy3, os.path.join(scriptDir, 'log-cgi-instance.py'), script, webserver, url, formData, method, ip ]
-
-        try:
-            resp = check_output(cmdList)
-            output = resp.decode('utf-8').rstrip()
-        except ValueError as exc:
-            output = ''
-            import traceback
-            raise Exception('logcgi', traceback.format_exc(1), RET_LOGCGI)
-        except CalledProcessError as exc:
-            # the partial output is saved in exc.output
-            # if log-cgi-instance.py is not found, then python3 returns error code 2; a message gets printed to stderr
-            output = exc.output.decode('utf-8').rstrip()
-
-        # output is either the empty string (on error) or the new instance ID
-        if len(output) > 0:
-            instanceID = int(output)
-        else:
-            instanceID = -1
+        # no longer calls log-cgi-instance.py; force a instid > 0 to let jsoc_fetch know that
+        # it was invoked as a CGI
+        instanceID = 122566
 
         ####################
         ## Run jsoc_fetch ##
@@ -314,36 +292,13 @@ try:
     else:
         # NOT A NEW EXPORT REQUEST (a status request or a re-export request)
 
-        #############################
-        ## Run log-cgi-instance.py ##
-        #############################
-        # create row for instance ID in instance table and fetch instance ID argument
-
         # W=1 ==> do not print HTML headers; this script should do that
-        # JSOC_DBHOST is the internal server; jsocextfetch.py is called from the external website only when the original request was supported by the
-        # internal database
+        # JSOC_DBHOST is the internal server; jsocextfetch.py is called from the external website only when the original request was supported by the internal database
         extraArgs = [ 'JSOC_DBHOST=' + server, 'DRMS_DBTIMEOUT=900000', 'W=1' ]
-        formData = '&'.join(allArgs + extraArgs)
 
-        cmdList = [ binPy3, os.path.join(scriptDir, 'log-cgi-instance.py'), script, webserver, url, formData, method, ip ]
-
-        try:
-            resp = check_output(cmdList)
-            output = resp.decode('utf-8').rstrip()
-        except ValueError as exc:
-            output = ''
-            import traceback
-            raise Exception('logcgi', traceback.format_exc(1), RET_LOGCGI)
-        except CalledProcessError as exc:
-            # the partial output is saved in exc.output
-            # if log-cgi-instance.py is not found, then python3 returns error code 2; a message gets printed to stderr
-            output = exc.output.decode('utf-8').rstrip()
-
-        # output is either the empty string (on error) or the new instance ID
-        if len(output) > 0:
-            instanceID = int(output)
-        else:
-            instanceID = -1
+        # no longer calls log-cgi-instance.py; force a instid > 0 to let jsoc_fetch know that
+        # it was invoked as a CGI
+        instanceID = 122566
 
         ####################
         ## Run jsoc_fetch ##
