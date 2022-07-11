@@ -23,6 +23,11 @@
 #define kFE_PRIMARY_KEY_SHORT "DRMS primary key"
 #define kFE_PRIMARY_KEY_FORMAT "%s"
 
+#define kFE_LICENSE "LICENSE"
+#define kFE_LICENSE_COMMENT "CC0 1.0"
+#define kFE_LICENSE_SHORT "CC0 1.0"
+#define kFE_LICENSE_FORMAT "%s"
+
 /* keyword that can never be placed in a FITS file via DRMS */
 
 #undef A
@@ -2180,6 +2185,27 @@ CFITSIO_KEYWORD *fitsexport_mapkeys(DRMS_Record_t *rec, DRMS_Segment_t *seg, con
     }
 
     if (CFITSIO_SUCCESS != (fitsrwRet = cfitsio_append_header_key(&fitskeys, kFE_PRIMARY_KEY, kFITSRW_Type_String, 0, (void *)primary_key, kFE_PRIMARY_KEY_FORMAT, kFE_PRIMARY_KEY_SHORT, NULL, &fits_key)))
+    {
+        fprintf(stderr, "FITSRW returned '%d'\n", fitsrwRet);
+        statint = DRMS_ERROR_FITSRW;
+    }
+    else
+    {
+        total_keys++;
+        if (ttypes)
+        {
+            ttype = (CFITSIO_BINTABLE_TTYPE *)(fits_key->key_name);
+            list_llinserttail(ttypes, &ttype);
+        }
+
+        if (tforms)
+        {
+            tform = (CFITSIO_BINTABLE_TFORM *)(fits_key->key_tform);
+            list_llinserttail(tforms, &tform);
+        }
+    }
+
+    if (CFITSIO_SUCCESS != (fitsrwRet = cfitsio_append_header_key(&fitskeys, kFE_LICENSE, kFITSRW_Type_String, 0, (void *)kFE_LICENSE, kFE_LICENSE_FORMAT, kFE_LICENSE_SHORT, NULL, &fits_key)))
     {
         fprintf(stderr, "FITSRW returned '%d'\n", fitsrwRet);
         statint = DRMS_ERROR_FITSRW;
