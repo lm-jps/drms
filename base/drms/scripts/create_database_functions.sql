@@ -305,6 +305,8 @@ CREATE TYPE keyinfo2 AS
 (
     series varchar(64),
     keyword varchar(32),
+    link varchar(32),
+    link_type varchar(16),
     datatype varchar(16),
     keyworddefault text,
     format varchar(32),
@@ -323,7 +325,8 @@ DECLARE
     linkedseries varchar;
     linkedkeyword varchar;
     linkmaprecord RECORD;
-    origflags integer;
+    parent_key_values RECORD;
+    link_type varchar;
 BEGIN
     -- origkeyword is needed in the case that the caller provides NULL for datakeyword (requesting information about all keyword in a series)
     FOR linkmaprecord IN SELECT K.keyword, K.linkedseries, K.linkedkeyword FROM drms_linkedkeyword(dataseries, datakeyword) AS K LOOP
@@ -339,14 +342,17 @@ BEGIN
             IF linkedseries IS NULL THEN
                 -- not a linked series
                 -- return original series and keyword name so the caller can locate the information by input values easily
-                RETURN QUERY EXECUTE 'SELECT seriesname::varchar AS series, keywordname::varchar AS keyword, type::varchar AS datatype, defaultval::text AS keyworddefault, format::varchar AS format, unit::varchar AS unit, isconstant::integer AS scope_type, persegment::integer AS flags, description::text as description FROM ' || quote_ident(namespace) || '.drms_keyword WHERE lower(seriesname) = $1 AND lower(keywordname) = $2' USING lower(dataseries), lower(origkeyword);
+                RETURN QUERY EXECUTE 'SELECT seriesname::varchar AS series, keywordname::varchar AS keyword, NULL::varchar AS link, NULL::varchar AS link_type, type::varchar AS datatype, defaultval::text AS keyworddefault, format::varchar AS format, unit::varchar AS unit, isconstant::integer AS scope_type, persegment::integer AS flags, description::text as description FROM ' || quote_ident(namespace) || '.drms_keyword WHERE lower(seriesname) = $1 AND lower(keywordname) = $2' USING lower(dataseries), lower(origkeyword);
                 EXIT;
             ELSE
                 -- linked series
                 -- must return original implicit (bit 1), internal-prime (bit 2), and external-prime (bit 3) flags values, but linked per-segment (bit 0) value (select `flags` from the linked series and extract the bit 0 value, then poke that value into the original series' `flags` value)
                 -- also, must return original rank (top 16 bits)
-                EXECUTE 'SELECT persegment FROM ' || namespace || '.drms_keyword WHERE lower(seriesname) = lower(' || quote_literal(dataseries) || ') AND lower(keywordname) = lower(' || quote_literal(origkeyword) || ')' INTO origflags;
-                RETURN QUERY EXECUTE 'SELECT ' || quote_literal(dataseries) || '::varchar AS series, ' || quote_literal(origkeyword) || '::varchar AS keyword, datatype, keyworddefault, format, unit, isconstant, ((' || quote_literal(origflags) || '::integer::bit(32) & X''FFFFFFFE'') | (flags::bit(32) & X''00000001''))::integer AS flags, description FROM drms_followkeywordlink(' || quote_literal(linkedseries) || ',' || quote_literal(linkedkeyword) || ')';
+                EXECUTE 'SELECT linkname, persegment FROM ' || namespace || '.drms_keyword WHERE lower(seriesname) = lower(' || quote_literal(dataseries) || ') AND lower(keywordname) = lower(' || quote_literal(origkeyword) || ')' INTO parent_key_values;
+
+                EXECUTE 'SELECT type FROM ' || namespace || '.drms_link WHERE lower(seriesname) = lower(' || quote_literal(dataseries) || ') AND lower(linkname) = lower(' || quote_literal(parent_key_values.linkname) || ')' INTO link_type;
+
+                RETURN QUERY EXECUTE 'SELECT ' || quote_literal(dataseries) || '::varchar AS series, ' || quote_literal(origkeyword) || '::varchar AS keyword, ' || quote_literal(parent_key_values.linkname) || '::varchar AS link, ' || quote_literal(link_type) || '::varchar AS link_type, ' || 'datatype, keyworddefault, format, unit, scope_type, ((' || quote_literal(parent_key_values.persegment) || '::integer::bit(32) & X''FFFFFFFE'') | (flags::bit(32) & X''00000001''))::integer AS flags, description FROM drms_followkeywordlink2(' || quote_literal(linkedseries) || ',' || quote_literal(linkedkeyword) || ')';
                 EXIT;
             END IF;
         END LOOP;
