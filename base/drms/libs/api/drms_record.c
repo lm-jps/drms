@@ -6364,6 +6364,10 @@ static LinkedList_t *faux_record_set_to_list(DRMS_RecordSet_t *faux_record_set)
 /* `keys` - an hcontainer of DRMS_Keyword_t pointers (to template keywords)
  * `where` -
  */
+
+/* called ONLY from an `open_records` or `open_recordchunk` function; this implies that
+ * if any record in the set is already cached, we should blow it away and re-cache it
+ */
 DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *seriesname, char *where, const char *pkwhere, const char *npkwhere, int filter, int mixed, const char *qoverride, DB_Binary_Result_t *br_override, int allvers, int nrecs, HContainer_t *firstlast, HContainer_t *pkwhereNFL, int recnumq, int cursor, HContainer_t *links, /* Links to fetch from db. */ HContainer_t *keys, /* Keys to fetch from db. */ HContainer_t *segs, /* Segs to fetch from db. */ int initialize_links, int *status)
 {
     int i,throttled;
@@ -6390,6 +6394,11 @@ DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *se
     DRMS_Keyword_t *drms_keyword = NULL;
     DRMS_Keyword_t **keyword_ptr = NULL;
     void *hash_slot = NULL;
+    DRMS_Record_t *cached_record = NULL;
+    DRMS_Keyword_t *cached_keyword = NULL;
+    HIterator_t *alias_iter = NULL;
+    DRMS_Keyword_t **p_template_keyword = NULL;
+    const char *template_alias = NULL;
 
     CHECKNULL_STAT(env,status);
 
@@ -6529,14 +6538,6 @@ DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *se
         }
         hiter_free(&hit);
     }
-
-
-
-
-
-
-
-
 
     for (i=0; i<rs->n; i++)
     {
@@ -6711,28 +6712,13 @@ DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *se
         }
         else
         {
-            if ((rs->records[i] = hcon_lookup(&env->record_cache, hashkey)) == NULL)
-            {
-                /* Allocate a slot in the hash indexed record cache. */
-                rs->records[i] = hcon_allocslot(&env->record_cache, hashkey);
+            /* if the record is already in the cache, then overwrite it; we are here because
+             * the user explicitly asked to open the record with an `open_records` or `open_recordchunk` call;
+             * the cached record could be a partial record (only true if )
+             */
+            cached_record = hcon_lookup(&env->record_cache, hashkey);
 
-                /* Populate the slot with values from the template. */
-                drms_copy_record_struct_ext(rs->records[i], template, copy_keywords_container, NULL, NULL, NULL);
-
-                /* Set refcount to initial value of 1. */
-                if (rs->records[i])
-                {
-                   rs->records[i]->refcount = 1;
-                }
-
-                /* Set new unique record number. */
-                rs->records[i]->recnum = recnum;
-
-                /* The suinfo field is allocated on-demand, and must be set to NULL so that there is
-                 * no attempt to free an unallocated suinfo pointer in drms_free_record(). */
-                rs->records[i]->suinfo = NULL;
-            }
-            else
+            if (cached_record != NULL)
             {
                 /* the record is in the cache because [1] a previous drms_open_records() call put it there OR
                  * [2] link-following code operating on a different record set linked to this record and put it
@@ -6749,14 +6735,76 @@ DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *se
                  *   [3] when drms_close_records() is called on a superset with N instances of this record,
                  *       drms_free_record() will be called N times on this record
                  *
-                 * a problem with caching is that if we get here, then the original record gets overwritten, but
-                 * with exactly the same record info; a user can select record sets that overlap, and we
-                 * don't detect that before running SQL to select records - and even if we did catch duplication,
-                 * sql does not provide an efficient means to exclude records; so we have to overwrite to noop
-                 * effect
+                 * the cached record fields will be overwritten by the results of the SQL SELECT statement on
+                 * the series data table; we need to do this because when a user calls open_records, they
+                 * are asking for access to a specified set of keywords; although this set might be
+                 * cached, there is a chance that it was not because we can cache partial LINKED records
+                 * (not non-linked records); so, we need to re-cache the columns that the user is now requesting
                  */
+                rs->records[i] = cached_record;
+
+                /* partial records can be missing keywords, but no other objects;
+                 * delete existing keywords and aliases */
+                hcon_free(&cached_record->keywords);
+                hcon_destroy(&cached_record->keyword_aliases);
+
+                /* create new keywords from the template */
+                copy_keywords_container(&cached_record->keywords, &template->keywords);
+
+                /* re-create aliases */
+                cached_record->keyword_aliases = hcon_create(sizeof(DRMS_Keyword_t *), DRMS_MAXKEYNAMELEN, NULL, NULL, NULL, NULL, 0);
+
+                if (cached_record->keyword_aliases)
+                {
+                    alias_iter = hiter_create(template->keyword_aliases);
+
+                    if (alias_iter)
+                    {
+                        while ((p_template_keyword = (DRMS_Keyword_t **)hiter_extgetnext(alias_iter, &template_alias)) != NULL)
+                        {
+                            cached_keyword = hcon_lookup_lower(&cached_record->keywords, (*p_template_keyword)->info->name);
+                            if (cached_keyword)
+                            {
+                                hcon_insert_lower(cached_record->keyword_aliases, template_alias, &cached_keyword);
+                            }
+                        }
+
+                        hiter_destroy(&alias_iter);
+                    }
+                }
+
+                /* Set parent pointers. */
+                hiter_new(&hit, &cached_record->keywords);
+                while((cached_keyword = (DRMS_Keyword_t *)hiter_getnext(&hit)) != NULL)
+                {
+                    cached_keyword->record = cached_record;
+                }
+                hiter_free(&hit);
+
                 rs->records[i]->refcount++;
-                free(rs->records[i]->sessionns);
+                if (rs->records[i]->sessionns)
+                {
+                    free(rs->records[i]->sessionns);
+                    rs->records[i]->sessionns = NULL;
+                }
+            }
+            else
+            {
+                /* Allocate a slot in the hash indexed record cache. */
+                rs->records[i] = hcon_allocslot(&env->record_cache, hashkey);
+
+                /* populate the slot with values from the template */
+                drms_copy_record_struct_ext(rs->records[i], template, copy_keywords_container, NULL, NULL, NULL);
+
+                /* set refcount to initial value of 1 */
+                rs->records[i]->refcount = 1;
+
+                /* set new unique record number */
+                rs->records[i]->recnum = recnum;
+
+                /* the suinfo field is allocated on-demand, and must be set to NULL so that there is
+                 * no attempt to free an unallocated suinfo pointer in drms_free_record() */
+                rs->records[i]->suinfo = NULL;
             }
         }
 
@@ -6878,24 +6926,9 @@ DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *se
     return NULL;
 }
 
-DRMS_RecordSet_t *drms_retrieve_records(DRMS_Env_t *env,
-                                        const char *seriesname,
-                                        char *where,
-                                        const char *pkwhere,
-                                        const char *npkwhere,
-                                        int filter, int mixed,
-                                        HContainer_t *goodsegcont, /* deprecated, not used */
-                                        int allvers,
-                                        int nrecs,
-                                        HContainer_t *firstlast,
-                                        HContainer_t *pkwhereNFL,
-                                        int recnumq,
-                                        int cursor,
-                                        HContainer_t *links,
-                                        HContainer_t *keys,
-                                        HContainer_t *segs,
-                                        int *status)
+DRMS_RecordSet_t *drms_retrieve_records(DRMS_Env_t *env, const char *seriesname, char *where, const char *pkwhere, const char *npkwhere, int filter, int mixed, HContainer_t *goodsegcont, /* deprecated, not used */ int allvers, int nrecs, HContainer_t *firstlast, HContainer_t *pkwhereNFL, int recnumq, int cursor, HContainer_t *links, HContainer_t *keys, HContainer_t *segs, int *status)
 {
+    /* ART - no longer used */
     return drms_retrieve_records_internal(env, seriesname, where, pkwhere, npkwhere, filter, mixed, NULL, NULL, allvers, nrecs, firstlast, pkwhereNFL, recnumq, cursor, NULL, keys, NULL, 1, status);
 }
 
