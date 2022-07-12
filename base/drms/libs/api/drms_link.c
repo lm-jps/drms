@@ -337,7 +337,11 @@ DRMS_Record_t *drms_link_follow(DRMS_Record_t *rec, const char *linkname, int *s
     }
 }
 
-/* `record_list` has no duplicate records */
+/* 'resolves' all links - for each parent record in `record_list`, the recnum field of the link structure
+ * id'd by `link` is set to the child recnum
+ *
+ * `record_list` has no duplicate records
+ */
 static int drms_link_determine_recnum(DRMS_Env_t *env, const char *link, DRMS_Record_t *template_record, LinkedList_t *record_list)
 {
     char link_lower[DRMS_MAXLINKNAMELEN] = {0};
@@ -364,6 +368,8 @@ static int drms_link_determine_recnum(DRMS_Env_t *env, const char *link, DRMS_Re
     DRMS_Link_t *parent_link = NULL;
     char parent_hash_key[DRMS_MAXHASHKEYLEN] = {0};
     int status = DRMS_SUCCESS;
+
+    XASSERT(link && template_record && record_list && record_list->nitems > 0);
 
     snprintf(link_lower, sizeof(link_lower), "%s", link);
     strtolower(link_lower);
@@ -534,7 +540,7 @@ LinkedList_t *drms_link_follow_recordset(DRMS_Env_t *env, DRMS_Record_t *templat
     LinkedList_t *linked_records = NULL;
     const char *child_hash_key_retrieved = NULL;
 
-    XASSERT(template_record && record_list);
+    XASSERT(template_record && record_list && record_list->nitems > 0);
 
     template_link = hcon_lookup_lower(&template_record->links, link);
     XASSERT(template_link);

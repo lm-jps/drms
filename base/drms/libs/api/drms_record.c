@@ -6826,7 +6826,7 @@ DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *se
 #endif
   }
 
-    if (initialize_links)
+    if (initialize_links && rs->n >0)
     {
         /* prefetch linked records / follow all links; iterate through all links from template record */
         if (hcon_size(&template->links) > 0)
