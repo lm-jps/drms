@@ -5968,7 +5968,7 @@ static int next_prime_number(int number)
     return prime_number;
 }
 
-static HContainer_t *make_reachable_keywords(DRMS_Record_t *template_record, DRMS_Record_t *parent_template_record, HContainer_t *keywords)
+static HContainer_t *make_reachable_keywords(const char *link, DRMS_Record_t *template_record, DRMS_Record_t *parent_template_record, HContainer_t *keywords)
 {
     HContainer_t *reachable_keywords = NULL; /* value is DRMS_Keyword_t (not pointer)*/
     int hash_prime_number = -1;
@@ -6022,7 +6022,7 @@ static HContainer_t *make_reachable_keywords(DRMS_Record_t *template_record, DRM
             }
         }
 
-        if (parent_drms_keyword->info->islink)
+        if (parent_drms_keyword->info->islink && strcasecmp(parent_drms_keyword->info->linkname, link) == 0)
         {
             template_drms_keyword = hcon_lookup_lower(&template_record->keywords, parent_drms_keyword->info->target_key);
             XASSERT(template_drms_keyword);
@@ -6127,7 +6127,7 @@ static int cache_linked_records(DRMS_Env_t *env, DRMS_Record_t *template_record,
             if (keywords)
             {
                 /* filter child keywords with the list of keywords in the parent */
-                child_keywords = make_reachable_keywords(child_template_record, template_record, keywords);
+                child_keywords = make_reachable_keywords(drms_link->info->name, child_template_record, template_record, keywords);
             }
 
             status = cache_linked_records(env, child_template_record, linked_records_list, child_keywords, link_map);
@@ -6156,7 +6156,7 @@ static int cache_linked_records(DRMS_Env_t *env, DRMS_Record_t *template_record,
  *
  * no duplicates are returned in link_map
  */
-HContainer_t *drms_retrieve_linked_recordset(DRMS_Env_t *env, DRMS_Record_t *template_record, DRMS_Record_t *parent_template_record, HContainer_t *keywords, HContainer_t *link_hash_map, int initialize_links, int *status)
+HContainer_t *drms_retrieve_linked_recordset(DRMS_Env_t *env, const char *link, DRMS_Record_t *template_record, DRMS_Record_t *parent_template_record, HContainer_t *keywords, HContainer_t *link_hash_map, int initialize_links, int *status)
 {
     HContainer_t *reachable_keywords = NULL; /* value is DRMS_Keyword_t (not pointer)*/
     int keyword_index = -1;
@@ -6180,7 +6180,7 @@ HContainer_t *drms_retrieve_linked_recordset(DRMS_Env_t *env, DRMS_Record_t *tem
      *
      * copy from this filtered set of keywords instead of the keywords in the template record
      */
-    reachable_keywords = make_reachable_keywords(template_record, parent_template_record, keywords);
+    reachable_keywords = make_reachable_keywords(link, template_record, parent_template_record, keywords);
     drms_record_list = list_llcreate(sizeof(DRMS_Record_t *), NULL);
     XASSERT(drms_record_list);
 

@@ -640,7 +640,7 @@ LinkedList_t *drms_link_follow_recordset(DRMS_Env_t *env, DRMS_Record_t *templat
              *
              * `template_record` is parent record template;
              * `link_map_retrieved` key is USABLE hash key  */
-            link_map_retrieved = drms_retrieve_linked_recordset(env, child_template_record, template_record, keywords, link_hash_map, 1, &drms_status);
+            link_map_retrieved = drms_retrieve_linked_recordset(env, link, child_template_record, template_record, keywords, link_hash_map, 1, &drms_status);
 
             if (drms_status == DRMS_SUCCESS)
             {
