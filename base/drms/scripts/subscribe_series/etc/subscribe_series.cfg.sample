@@ -1,0 +1,61 @@
+# Subscribe series file name <Subscription_node_id>.subscribe_series.cfg
+
+# file paths
+kLocalLogDir=awriteablelocalpath
+kLocalWorkingDir=awriteablelocalpath
+kSQLIngestionProgram=pathtoget_slony_logs.pl
+kDeleteSeriesProgram=pathtodelete_series
+
+# Required connection information for communicatoin between localhost and the subscription server
+# webdb_ip		# target IP address
+webdb_ip=solarport.stanford.edu
+# webdb_dir		# target dir 
+webdb_dir=/data/pgsql/slon_logs/triggers/
+# webdb_user		# user to connect to the target ip 
+webdb_user=jsocexp
+# pg_host		# host of the subsribers database
+pg_host=localhost
+# pg_port		# port of the subscribers database
+pg_port=5432
+# pg_user		# user of the subscribers database
+pg_user=slony
+# slony_cluster		# name of the webdb slony cluster
+slony_cluster=jsoc
+# pg_dbname		# name of the subscribers database
+pg_dbname=jsoc
+# pg_schema		# name of the schema the data will live in
+pg_schema=public
+# archive		#
+archive=0
+# retention		#
+retention=21
+# tapegroup		#
+tapegroup=1
+# attempts		# number of attemps the script checks webdb_ip for notifications, each attempt is 5 seconds apart
+attempts=50
+# ingestion_path	# the path to put the ingestion die file to stop the ingestion script.
+ingestion_path=/home/production/drms/base/drms/scripts/subscribe_series/etc/
+
+##### Values for get_slony_logs.pl
+## path to fast scp instance.
+scp_cmd=/usr/bin/scp
+## path to fast ssh instance.
+ssh_cmd=/usr/bin/ssh
+## remote machine name
+rmt_hostname=solarport.stanford.edu
+## port to fast scp server in remote machine
+ssh_rmt_port=55000            
+## user login in remote machine
+rmt_user=jsocexp
+## directory in remote machine where slony logs get stage
+rmt_slony_dir=/data/pgsql/slon_logs/site_logs   
+## local slony cluster directory area
+slony_logs=/home/production/subscribe_series/slon_logs
+## psql path
+PSQL='/usr/bin/psql'
+## list of people to email in case some problem occurs.
+email_list='igor@noao.edu' 								
+
+
+#node			node name or id
+node=thenameofyournode
