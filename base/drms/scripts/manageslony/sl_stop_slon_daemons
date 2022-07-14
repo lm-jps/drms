@@ -1,0 +1,18 @@
+#!/bin/bash
+# Usage: ./sl_stop_slon_daemons <slony pid file>
+. ../etc/slony.env
+
+if [ $# -ne 1 ]
+then
+	echo "Usage $0 <slony pid file>"
+fi
+
+# gets pid id from pid file
+pid=`cat $1`
+
+echo "Found pid is $pid" > ../log/sl_stop_slon_daemons.log
+echo "Killing $pid" >> ../log/sl_stop_slon_daemons.log
+
+kill $pid
+
+echo "Finished running $0" >> ../log/sl_stop_slon_daemons.log

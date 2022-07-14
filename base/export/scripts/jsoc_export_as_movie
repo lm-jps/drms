@@ -1,0 +1,255 @@
+#!/bin/bash
+export RGBDEF=/home/jsoc/cvs/Development/JSOC/proj/workflow/scripts/rgb.txt 
+export JSOC_DBHOST=hmidb
+
+
+# expects args of form name=value for names: ds, reqid, expversion, method, protocol, out_dir, ffmt, ...
+#use as jsoc_export_as_movie  ds  reqid expversion  export_ method  protocol  output_path ffmt cparms    
+#                             1    2       3             4            5           6        7      8    
+
+# get all args and set the values
+for cmdarg; do declare "$cmdarg"; done
+
+echo $in, $reqid, $expversion, $protocol, $outpath, $ffmt, $cparms
+
+# set defaults
+in=${in:-NOT_SPECIFIED}
+reqid=${reqid:-NOT_SPECIFIED}
+expversion=${expversion:-NOT_SPECIFIED}
+method=${method:-NOT_SPECIFIED}
+protocol=${protocol:-NOT_SPECIFIED}
+outpath=${outpath:-NOT_SPECIFIED}
+ffmt=${ffmt:-NOT_SPECIFIED}
+cparms=${cparms:-NOT_SPECIFIED}
+# deal with min and max for each case below
+# max=${max:-NOT_SPECIFIED}
+# min=${min:-NOT_SPECIFIED}
+CT=${CT:-NOT_SPECIFIED}
+scale=${scale:-"4"}
+
+echo $in, $reqid, $expversion, $protocol, $outpath, $ffmt, $cparms
+
+#make sure all arguments are there, or get from colortable
+
+cd $outpath
+#set env variables
+tkey=T_REC
+
+type=jpg    # default could also do jpg
+movie_type=$protocol  # expect mpg or mp4
+
+nRec=`show_info -cq ds=$in`
+rm -rf index.txt ; rm -rf tmpImages/*.* ; rm -rf  *.$movie_type  ;rm -f images;
+rm -rf *.$type;  rm -rf data* 
+ 
+if (( $nRec < 1 ))
+ then 
+    echo "No records exist"
+    exit 2
+fi   
+
+# Write into the new index.txt
+
+echo "# JSOC " > index.txt
+echo "reqid=$reqid" >>index.txt
+echo "expversion=$expversion" >>index.txt  
+echo "method=$method" >>index.txt  
+echo "protocol=$protocol" >>index.txt  
+echo "dir=$outpath" >>index.txt  
+echo "filefmt=$ffmt" >>index.txt  
+echo "cparams=$cparms" >>index.txt  
+#echo "keywords= jpg and $protocol files">>index.txt
+#echo "# DATA ">>index.txt
+
+#check to see if its an AIA or HMI data set.
+
+  instr=`echo $in | awk -F'[.]' 'NR==1{print substr($1, 1, 3)}' $hglog `
+  seriesName=`echo $in | awk  -F'[[]' 'NR==1{print $1}' $hglog `
+    
+if [[ $instr == [Hh][Mm][Ii] ]] 
+  then    
+    {
+    #content=`show_info -q ds=$in n=1 key=CONTENT`
+  
+    content=`echo $in | awk  -F'[.]' 'NR==1{print substr($2, 1, 2)}' $hglog`
+    tkey=T_REC
+    junk=`show_info key=T_REC ds=$in`
+    if [ $? ]
+      then 
+        tkey=T_OBS
+    fi
+
+    p=u
+    datavals=`show_info key=DATAVALS -q n=1 ds=$in`
+    if (( $datavals < 1000000 ))
+      then 
+        declare -i scale=1     # default -could read in as a parameter
+        p=u
+      fi
+      
+      # default use jpg
+      min_fl_sz=10000      #min file size
+
+      seriesName=`echo $in | awk  -F'[[]' 'NR==1{print $1}' $hglog `
+
+      case "$content" in 
+        [Mm]_) 
+          max=${max:-"1500"}
+          min=${min:-"-1500"}
+          render_image in=$in  min=$min max=$max  pallette=/home/priya/Colormaps/grey.sao scaling=mag \
+                       tkey=$tkey outname=$seriesName scale=$scale type=$type  \
+                       out='| ppmlabel -color black -background white -size {%2:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95' \
+                       -{$p}  -c  outid=time
+        ;;
+      [Ii][Cc]  )
+        if [[ $seriesName = *Ic_noLimbDark* ]]
+          then 
+            max=${max:-"1.2"}
+            min=${min:-"0.3"}
+            render_image in=$in   min=$min max=$max  scaling=minmaxgiven    pallette=/home/priya/Colormaps/heat.sao \
+                         tkey=$tkey outname=$seriesName  scale=$scale  type=$type  \
+                         out='| ppmlabel -color black -background white -size {%2:5} -x 15 -y {%98} -text \"SDO/HMI  Ic:{ID}\" | pnmtojpeg -quality=95'  \
+                         -{$p}   outid=time
+           else
+             max=${max:-"75000"}
+             min=${min:-"20000"}
+             render_image in=$in  min=$min max=$max    pallette=/home/priya/Colormaps/heat.sao \
+                        outname=$seriesName  scale=$scale  type=$type  \
+                        out='| ppmlabel -color black -background white -size {%2:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95' \
+                        -{$p} outid=time
+            fi
+         ;;
+      [lL][Dd] )
+        render_image in=$in   pallette=/home/priya/Colormaps/bb.sao outname=$seriesName scale=$scale  type=$type tkey=$tkey  \
+                     out='| ppmlabel -color black -background white -size {%2:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95' \
+                     -{$p}  -c outid=time
+        ;;
+      [lL][Ww])
+        render_image in=$in   pallette=/home/priya/Colormaps/bb.sao outname=$seriesName scale=$scale type=$type tkey=$tkey \
+                     out='| ppmlabel -color black -background white -size {%2:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  \
+                     -{$p} -c outid=time
+        ;;     
+      [Vv]_)
+        render_image in=$in  pallette=/home/priya/Colormaps/bb.sao outname=$seriesName scale=$scale type=$type tkey=$tkey \
+                     out='| ppmlabel -color black -background white -size {%2:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  \
+                     -{$p} -c outid=time
+        ;;
+        
+      *) 
+        echo -e Out of case command
+        ;;
+    esac
+    }
+  elif [[ $instr == [Aa][Ii][Aa] ]] 
+    then
+      { 
+    datavals=`show_info key=DATAVALS -q n=1 ds=$in`
+    if (( $datavals < 1000000 ))
+      then 
+        declare -i scale=1     # default -could read in as a parameter
+        p=u
+      fi
+      seriesName=`echo $in | awk  -F'[[]' 'NR==1{print $1}' $hglog `
+      min_val=100
+      wvl_arr=(94 131 171 193 211 304 335 1600 1700 4500)
+      max_val=(100 2000 2000 10000 10000 10000 1000 1000 2500 10000)
+      for i in  0 1 2 3 4 5 6 7 8 9; do wvl=${wvl_arr[$i]}; let max_$wvl=${max_val[$i]}; done
+
+      for wvl in 171 211 94 335 4500 1600 131 1700 193 304
+        do 
+              in_new=$in[?WAVELNTH=$wvl?]
+   
+          if [ $wvl == 171 ]
+            then 
+              scaling=SQRT
+            else 
+              scaling=LOG
+          fi 
+    
+ 
+          tkey=T_REC
+          junk=`show_info key=T_REC ds=$in_new`
+          if [ $? ]
+            then 
+              tkey=T_OBS
+            fi
+                         
+          max=${max:-$[max_$wvl]}
+          min=${min:-$min_val}
+          render_image in=$in_new pallette=/home/priya/Colormaps/AIA/aia_$wvl.lut tkey=$tkey \
+                       out='| ppmlabel -color white -size {%2:5} -x 15 -y {%98} -text \"SDO/AIA  '$wvl':{ID}\" | pnmtojpeg -quality=95' \
+                       outname=aia_$wvl  min=$min max=$max  scale=$scale outid=time  type=$type scaling=$scaling -{$p}
+          # omit -w
+
+        done 
+      }
+    else
+      echo "P=png/Mpeg cannot be made for this dataset"
+    fi
+
+  ls *.$type>images 
+  mkdir tmpImages
+
+  N=`wc -l <images`
+  i=1
+  while (( $i  <=  $N ))
+    do 
+    img=`head --lines $i <images | tail -1`
+    I=`printf "%04d" $i`
+    if [[ -e $img ]]
+      then 
+        ln  $img  tmpImages/$I.$type
+        let i+=1
+      else
+        echo "no frame for $img" 
+        let i+=1
+      fi 
+    done
+
+#make movie
+cd tmpImages
+ffmpeg -qscale 5 -r 20 -b 9600 -i  %04d.$type   ../$seriesName.$movie_type
+
+cd ../
+
+#write into index.txt
+ #du -ch *.jpg
+
+export_files=`find -type f -iname "*.jpg"`
+export_files=$export_files,*.$protocol
+total=0
+for f in $export_files; do
+     if [ -f $f ]; then
+         Sz=`stat -c "%s" "$f"`
+         total=$(($Sz + $total))
+     fi
+ done    
+
+totK=$(echo "scale=3; $total / 1024 " | bc -l)
+totM=$(echo "scale=3; $totK / 1024 " | bc -l)
+
+echo "Size = $totM ">>index.txt
+echo "hello"
+# kk=`show_info -q key=Status  ds='jsoc.export['$reqid']'  `
+echo "status=0"  >>index.txt
+
+echo "Movie name=$seriesName.$movie_type " >>index.txt 
+echo "# DATA ">>index.txt
+
+  show_info -iq ds=$in> data1
+
+
+
+echo "movie of the following data">>mv1
+echo $seriesName.$movie_type >>mv2
+paste  mv1  mv2 >>index.txt 
+paste  data1  images >> index.txt
+
+rm mv1;rm mv2
+rm -rf tmpImages/*.*
+rmdir tmpImages
+rm images
+
+# rm -f $outpath/data1 ; rm -f $outpath/images 
+# rm -f $outpath/*.jpg
+ 

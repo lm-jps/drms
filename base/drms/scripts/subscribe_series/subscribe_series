@@ -1,0 +1,968 @@
+#!/bin/bash
+#export SSH_AUTH_SOCK=/tmp/ssh-HgUgDH2809/agent.2809
+#export SSH_AGENT_PID=2810
+
+function RM {
+
+  cmd="/bin/rm";
+  args="$@"
+
+  $cmd $@
+  if [ $? -ne 0 ]
+  then
+    logecho "error running command [$cmd $args]"
+    return 1;
+  else
+    logwrite "successful rm command [$cmd $args]"
+    return 0;
+  fi
+}
+
+## shell wrappers declaration - From Igor (slight mod by Art)
+function MV {
+
+  cmd="/bin/mv";
+  args="$@"
+
+  $cmd $@
+  if [ $? -ne 0 ]
+  then
+    logecho "error running command [$cmd $args]"
+    return 1;
+  else
+    logwrite "successful mv command [$cmd $args]"
+    return 0;
+  fi
+}
+
+function SCP {
+
+  cmd="scp";
+  args="$@"
+
+  $cmd $@
+  if [ $? -ne 0 ]
+  then
+    logecho "error running command [$cmd $args]"
+    return 1;
+  else
+    logwrite "successful scp command [$cmd $args]"
+    return 0
+  fi
+}
+
+function SSH {
+
+  cmd="ssh";
+  args="$@"
+
+  $cmd $@
+  if [ $? -ne 0 ]
+  then
+    logecho "error running command [$cmd $args]"
+    return 1;
+  else
+    logwrite "successful ssh command [$cmd $args]"
+    return 0;
+  fi
+}
+
+# If there is a second argument to logwrite, regardless of 
+# what that argument is, an empty date line will be written
+logwrite () {
+        echo `date +"%m-%d-%Y %H:%M:%S - "` "$1" >> "$logfile"
+        if [ ! $2 == "" ]
+        then
+        	echo `date +"%m-%d-%Y %H:%M:%S - "` >> "$logfile"
+        fi
+}
+
+## logs to log file and stdout!                                                               
+function logecho {
+  if [ ! -z "$logfile" ]
+  then
+    echo $1 | tee -a $logfile;
+  fi
+}
+
+function TableExists () {
+    exists=0
+    ns=$1
+    relname=$2
+    seq=$3
+
+    if [ $seq -ne 0 ]
+    then
+        cmd="\ds"
+    else
+        cmd="\dt"
+    fi
+
+    psql -p "$pg_port" -h "$pg_host" -U "$pg_user" -t -c "$cmd $ns.$relname" "$pg_dbname" > sqlcheck.tmp 2>&1
+
+    result=`egrep 'No matching' sqlcheck.tmp`
+
+    if [ -z "$result" ]
+    then
+        exists=1
+    fi
+
+    return $exists
+}
+
+function SetState() {
+    state=$1;
+    logwrite "Setting state to $state."
+    echo "$state" > "$statefile"
+}
+
+function GetState() {
+    if [ ! -f $statefile ] 
+    then
+        state=start
+    else
+        state=`awk '{print $1}' "$statefile"`;
+    fi
+    logwrite "Getting state $state."
+}
+
+# This function will attempt to download a file from the server. If the download is incomplete,
+# five attempts will be made to resume and complete the download by downloading partial files.
+function ManagedDownload() {
+    src=$1
+    tgt=$2
+    err=0
+    srcsz=0
+    tgtsz=0
+    srcbak="$src"'.ssbak'
+    tgtbak="$tgt"'.ssbak'
+
+    # First, compare file sizes (cheap/easy way to see if the file has been completely downloaded,
+    # I'm sure some kind of hash would be better).
+    srcsz=`SSH "$webdb_user@$webdb_ip" 'stat -c%s '"$src"`
+    if [ $? -ne 0 ]
+    then
+        # Some error calling ssh
+        err=1
+    fi
+
+    if [ $err -eq 0 ]
+    then
+        attempt=1
+        while [ 1 -eq 1 ]
+        do
+            if [ $attempt -gt 5 ]
+            then
+                logwrite "ManagedDownload() exceeded 5 attempts; bailing."
+                err=1
+                break
+            fi
+
+            if [ ! -f $tgt ]
+            then
+                tgtsz=0
+            else
+                tgtsz=`stat -c%s "$tgt"`
+            fi
+
+            if [ $srcsz -gt $tgtsz ]
+            then
+                # Incomplete download
+                # Rename original file, copy just the part needed, then download the copied part
+               
+                if [ $attempt -eq 1 ]
+                then
+                    `SCP "$webdb_user@$webdb_ip:$src $tgt"`
+                else
+                    `SSH "$webdb_user@$webdb_ip" 'dd if='"$src"' of='"$srcbak"' ibs='"$tgtsz"' skip=1'`
+                    if [ $? -eq 0 ]
+                    then
+                        # Copy $srcbak locally
+                        `SCP "$webdb_user@$webdb_ip:$srcbak $tgtbak"`
+                    fi
+
+                    if [ $? -eq 0 ]
+                    then
+                        # Append $tgtbak to $tgt
+                        logwrite "Appending $tgtbak to $tgt."
+                        cat $tgtbak >> $tgt 
+                    fi
+                fi
+
+                attempt=$(( $attempt + 1 ))
+            elif [ $tgtsz -gt $srcsz ]; then
+                # Some fatal error
+                err=1
+            else
+                # The two files are the same size, so quit
+                break
+            fi
+        done
+    fi
+
+    # Clean up remote and local backup files
+    # The remote file may not exist, but the -f flag will suppress the error
+    `SSH "$webdb_user@$webdb_ip" 'rm -f '"$srcbak"`
+    if [ -f $tgtbak ]
+    then
+        logwrite "Cleaning up local backup (partial) file '$tgtbak'"
+        RM -f $tgtbak
+    fi
+
+    return $err
+}
+
+function CheckSchema () {
+    # Add check for slony cluster schema (eg, _jsoc), and don't proceed if it exists
+    # If entry in admin.ns exists, do not apply createns.sql. However, 
+    # we cannot assume that the drms_* tables and sequence exist. If any of these
+    # tables is missing, bail.
+    #   name - schema of series being subscribed to
+    #   owner - PG user that owns this series (should be slony)
+
+    nsname=$1
+
+    adminnsexist=0
+    schemaexist=0
+
+    # Check for schema existence
+    logwrite "Executing [psql -p $pg_port -h $pg_host -U $pg_user -t -c SELECT * FROM pg_catalog.pg_namespace WHERE nspname = '$nsname' $pg_dbname]"
+    psql -p "$pg_port" -h "$pg_host" -U "$pg_user" -t -c "SELECT * FROM pg_catalog.pg_namespace WHERE nspname = '$nsname'" "$pg_dbname" > sqlcheck.tmp 2>&1
+    result=`egrep '.' sqlcheck.tmp`
+    if [ ! -z "$result" ]
+    then
+        schemaexist=1
+    fi
+
+    # Check for admin.ns entry existence
+    logwrite "Executing [psql -p $pg_port -h $pg_host -U $pg_user -t -c SELECT * FROM admin.ns WHERE name = '$nsname' AND owner = '$pg_user' $pg_dbname]"
+    psql -p "$pg_port" -h "$pg_host" -U "$pg_user" -t -c "SELECT * FROM admin.ns WHERE name = '$nsname' AND owner = '$pg_user'" "$pg_dbname" > sqlcheck.tmp 2>&1
+    result=`egrep '.' sqlcheck.tmp`
+    if [ ! -z "$result" ]
+    then
+        adminnsexist=1
+    fi
+
+    logwrite "Table schema check: $schemaexist; schema adminns entry check: $adminnsexist."
+
+    # If one or the other exists, then we can't apply createns.sql AND the schema, admin.ns entry, drms_* tables must exist
+    check=good
+    docreatens=1
+    if [ $schemaexist -ne 0 -o $adminnsexist -ne 0 ]
+    then
+        docreatens=0
+        if [ $schemaexist -eq 0 -o $adminnsexist -eq 0 ]
+        then
+            check=failed
+            logecho "Missing schema or entry in the admin.ns table; failing."
+        else
+                # Search for tables
+            TableExists $nsname "drms_series" 0
+            result=$?
+
+            if [ ! $result ]
+            then
+                check=failed
+            fi
+
+            if [ ! $check == "failed" ]
+            then
+                TableExists $nsname "drms_keyword" 0
+                result=$?
+            fi
+            
+            if [ ! $result ]
+            then
+                check=failed
+            fi
+
+            if [ ! $check == "failed" ]
+            then
+                TableExists $nsname "drms_link" 0
+                result=$?
+            fi
+            
+            if [ ! $result ]
+            then
+                check=failed
+            fi
+
+            if [ ! $check == "failed" ]
+            then
+                TableExists $nsname "drms_segment" 0
+                result=$?
+            fi
+            
+            if [ ! $result ]
+            then
+                check=failed
+            fi
+
+            if [ ! $check == "failed" ]
+            then
+                TableExists $nsname "drms_session" 0
+                result=$?
+            fi
+            
+            if [ ! $result ]
+            then
+                check=failed
+            fi
+
+            if [ ! $check == "failed" ]
+            then
+                TableExists $nsname "drms_sessionid_seq" 1
+                result=$?
+            fi
+            
+            if [ ! $result ]
+            then
+                check=failed
+            fi
+
+            if [ $check == "failed" ]
+            then
+                logecho "Incomplete set of schema drms_* tables; failing."
+            fi
+        fi
+    fi
+
+    RM -f sqlcheck.tmp
+
+    if [ $check == "failed" ]
+    then
+        return 0
+    elif [ $docreatens -eq 0 ]; then
+        return 1
+    else
+        return 2
+    fi
+}
+
+#--------------------------------------------------------------------
+# Setting up the log
+#--------------------------------------------------------------------
+
+## checks if a preferred LOCAL_LOG_DIR has been specified in the $config_file                 
+if [ -z "$kLocalLogDir" ]
+then
+  logfile=../log/$0.log
+else
+  logfile="$kLocalLogDir/$0.log"
+fi
+
+if [ -z "$kMaxLog" ]
+then
+  maxlog=1048576
+else
+  maxlog="$kMaxLog"
+fi
+
+if [ ! -f "$logfile" ]
+then
+  touch "$logfile"
+  if [ $? -ne 0 ]
+  then
+    logecho "Couldn't touch log file [$logfile] ... exiting."
+    exit 1;
+  fi
+else
+  # log exists, truncate if getting too big
+  sz=`stat -c%s $logfile`
+  if [ $sz -ge $maxlog ]
+  then
+    : > "$logfile"
+    if [ $? -ne 0 ]
+      then
+        logecho "Couldn't truncate log file [$logfile] ... exiting."
+      exit 1;
+    fi
+  fi
+fi
+
+
+
+logwrite "Starting $0 from $scriptdir" nl
+
+#--------------------------------------------------------------------
+# syntax check
+#--------------------------------------------------------------------
+if [ $# -eq 3 ]
+then
+	config_file="$1"
+	subscribe_file="$2"
+	rsFile="$3"
+else
+	error="ERROR: Usage: $0 <configuration file> <subscribe request file> <ssh-agent_rs file>"
+	echo $error
+	exit
+fi
+
+# XXX - ART
+# Make this relative to working dir
+statefile=ssstate.txt
+
+# extract seriesname from the $subscribe_file file
+# XXX - ART
+# Create an array of series - the createns check must be on a per-series basis.
+# We only care about series being subscribed to (and not being dropped from subscription)
+subserieslst=`cat $subscribe_file | egrep '^[^#[:space:]]' | grep -vi unsubscribe | awk '{print $1}'`
+unsubserieslst=`cat $subscribe_file | egrep '^[^#[:space:]]' | grep -i unsubscribe | awk '{print $1}'`
+
+logwrite "Series being subscribed to:"
+
+ctr=0
+while [ 1 -eq 1 ]
+do
+    index=$(( $ctr + 1 ))
+    awkscr='{print $'"$index"'}'
+    str=`echo $subserieslst | awk "$awkscr"`
+    if [ -z "$str" ]
+    then
+        break
+    fi
+    subseries[$ctr]=$str
+    logwrite "$str"
+    ctr=$(( $ctr + 1 ))
+done
+
+logwrite "Series being dropped from subscription:"
+ctr=0
+while [ 1 -eq 1 ]
+do
+    index=$(( $ctr + 1 ))
+    awkscr='{print $'"$index"'}'
+    str=`echo $unsubserieslst | awk "$awkscr"`
+    if [ -z "$str" ]
+    then
+        break
+    fi
+    unsubseries[$ctr]=$str
+    logwrite "$str"
+    ctr=$(( $ctr + 1 ))
+done
+
+# extract action from subscribe_list.cfg (if at least one action is unsubscribe, then we need to 
+# force get_slony_logs.pl after the die file has been removed)
+
+if [ ${#unsubseries[@]} -gt 0 ]
+then
+    unsubscribe=1
+else
+    unsubscribe=0
+fi
+
+if [ -z "$kSQLIngestionProgram" ]
+then
+  ingestprog=get_slony_logs.pl
+else
+  ingestprog="$kSQLIngestionProgram"
+fi
+
+if [ -z "$kDeleteSeriesProgram" ]
+then
+  delseriesprog=delete_series
+else
+  delseriesprog="$kDeleteSeriesProgram"
+fi
+
+. "$config_file"
+
+
+#--------------------------------------------------------------------
+# Set up ssh keys
+#--------------------------------------------------------------------
+echo > set.sh
+exec < "$rsFile"
+while read line; do
+        set - $line
+        if [ "$1" == "setenv" ]; then
+                tag="$2"
+                shift
+                shift
+                echo "export ${tag}=$*  " >> set.sh
+                export ${tag}="$*"
+        fi
+done
+
+. set.sh
+
+RM -f set.sh
+
+#--------------------------------------------------------------------
+# Get state of previous subscribe_series run
+#--------------------------------------------------------------------
+GetState
+if [ $state == "end" ]
+then
+    # Prevous run completely successfully, set to start
+    SetState "start"
+fi
+#--------------------------------------------------------------------
+# Prepare trigger file
+#--------------------------------------------------------------------
+
+if [ $state == "start" ]
+then
+    echo > temp.tgr
+    logwrite "Created temp.tgr"
+    echo "archive $archive" >> temp.tgr
+    echo "retention $retention" >> temp.tgr
+    echo "tapegroup $tapegroup" >> temp.tgr
+    echo "node $node" >> temp.tgr
+
+    cat "$subscribe_file" | grep -v "\#" >> temp.tgr
+    SetState "crtrigger_comp"
+fi
+
+#--------------------------------------------------------------------
+# Check to see if the schema and database exists on the subscribers database
+#--------------------------------------------------------------------
+
+if [ $state == "crtrigger_comp" ]
+then
+    logwrite "Executing [psql -p $pg_port -U $pg_user $pg_dbname -c '\dt admin.*' | grep \" ns \"]"
+    check=`psql -p "$pg_port" -U "$pg_user" "$pg_dbname" -c '\dt admin.*' | grep " ns "`
+    
+    if [ ! "$check" == "" ]
+    then
+	logwrite "admin schema and table ns exist" 
+    else
+	logwrite "ERROR: admin schema and table ns do NOT exist" 
+	logwrite "ABORTING"
+	logwrite "Removing temp.tgr"
+	RM -f temp.tgr
+	logwrite "Exiting $0"
+	exit 1
+    fi
+fi
+
+#--------------------------------------------------------------------
+# Stopping ingestion script and copy trigger file to Manager
+#--------------------------------------------------------------------
+
+if [ $state == "crtrigger_comp" ]
+then
+    logwrite "Stopping the ingestion script (creating die file)"
+    logwrite "Creating get_slony_logs.$node.die in $ingestion_path" nl
+    echo > "$ingestion_path/get_slony_logs.$node.die"
+    triggerfile="$node".subscribe_series.tgr
+    logwrite "Renaming temp.tgr to $triggerfile" nl
+    MV -f temp.tgr "$triggerfile"
+
+
+    logwrite "Copying $triggerfile to $webdb_user@$webdb_ip:$webdb_dir" nl
+
+# XXX - ART
+# What we want to do is to use file locking so that the server
+# doesn't try to read the trigger file until the client is done with
+# it. The client (this script) should lock the file, then 
+# scp it, then chgrp/chmod it (this script should do the
+# chgrp/chmod).
+    chmod g+w "$triggerfile"
+    SCP -p "$triggerfile" "$webdb_user@$webdb_ip:$webdb_dir/."
+
+    logwrite "Removing $triggerfile" nl
+
+    RM -f "$triggerfile"
+    SetState "crdie_comp"
+fi
+
+#--------------------------------------------------------------------
+# Loop waiting for sqldone file to continue (meaning sql is ready to be applied)
+#--------------------------------------------------------------------
+
+if [ $state == "crdie_comp" ]
+then
+    logecho -n "Waiting to retrieve the sql file from the subscription manager"
+    counter=0
+    while [ 1 -eq 1 ]
+    do	
+	if [ $counter -ge $attempts ] 
+	then
+	    logecho "ERROR: Did not find $node.subscribe_series.sqldone after 20 tries"
+	    logecho "ERROR: Couldn't find the sql file required to continue!"
+	    logecho "ABORTING - exiting $0"
+	    exit
+	fi		
+
+        result=`SSH "$webdb_user@$webdb_ip" 'ls '"'$webdb_dir'"`;
+
+        ## error on SSH; couldn't find $webdb_dir                                                 
+        error=`echo $result | grep -i error`;
+        if [ ! -z "$error" ]
+        then
+            logecho "Couldn't find $webdb_dir directory ... exiting";
+            exit 1;
+        fi
+
+        check=`echo $result | grep "$node.subscribe_series.sqldone"`;
+	
+	if [ ! -z "$check" ]
+	then
+	    logwrite "Found $node.subscribe_series.sqldone, continuing"
+	    logecho
+	    logecho "Subscription manager finished creating the sql file, retrieving it."
+	    break
+	else
+	    counter=$(( $counter + 1 ))
+	    logwrite "Did not find $node.subscribe_series.sqldone, sleeping for five seconds"
+	    logecho -n "."
+	    sleep 5
+	fi
+
+    done
+
+
+    unset check
+    unset error
+    unset result
+
+# Checking trigger file for failure code
+    result=`SSH $webdb_user@$webdb_ip 'cat '"'$webdb_dir/$node.subscribe_series.sqldone'"`;
+
+## Check for error in remote ssh command; trigger file not found or failed SSH
+    error=`echo $result | grep -i error`;
+    if [ ! -z $error ] ;
+    then
+        logecho "Fail cat $webdb_dir/$node.subscribe_series.sqldone"
+        exit 1;
+    fi
+
+    check=`echo $result | grep failure`;
+
+    if [ ! "$check" == "" ]
+    then
+	logecho "ERROR: One or more of the schemas did not exist on the webdb"
+	logecho "ERROR: ABORTING!" nl
+	logwrite "Removing sqldone trigger file from webdb"
+        SSH "$webdb_user@$webdb_ip" 'rm -f '"'$webdb_dir/$node.subscribe_series.sqldone'"
+	logwrite "Restarting the ingestion script"
+	logwrite "Removing ingestion.die in $ingestion_path" nl
+	RM -f "$ingestion_path/get_slony_logs.$node.die"
+	exit 1;
+    fi
+
+    SetState "crsql_comp"
+fi
+
+unset check
+unset error
+unset result
+
+# sqldone file found, transferring sql file to local machine
+logwrite "Copying and removing $node.sql.tar.gz file from $webdb_user@$webdb_ip"
+
+success=true
+
+ManagedDownload "$webdb_dir/$node.sql.tar.gz" "./$node.sql.tar.gz"
+if [ $? -eq 0 ]
+then
+    SetState "dlsql_comp"
+
+    logwrite "Executing: tar -xzvf $node.sql.tar.gz"
+    tar -xzvf "$node.sql.tar.gz"
+
+    logwrite "Removing $node.sql.tar.gz" nl
+    RM -f "$node.sql.tar.gz"
+else
+    # Major problem, must tell server to clean up
+    success=false
+fi
+
+# We did all we could to download the sql file, so remove it.
+# If the user killed this script while downloading was happening
+# then the following line will not be executed, and 
+# downloading can resume from where it left off.
+SSH "$webdb_user@$webdb_ip" 'rm -f '"'$webdb_dir/$node.sql.tar.gz'"
+if [ $? -ne 0 ]
+then
+    # Fatal error - if the .sql file doesn't get cleaned up
+    # then this might confuse subsequent runs of this script
+    exit 1
+fi
+
+#--------------------------------------------------------------------
+# Execute the SQL files, return a value 
+#--------------------------------------------------------------------
+
+if [ $state == "dlsql_comp" ]
+then
+    if [ $success == "true" ]
+    then
+        # Get all the namespace names
+        ctr=0
+        while [ $ctr -lt ${#subseries} ]
+        do
+            onename=`echo ${subseries[$ctr]%%.*}`
+            allnames="$allnames"$'\n'"$onename"
+            ctr=$(( $ctr + 1 ))
+        done
+
+        # Find unique ones
+        nsnameslst=`echo "$allnames" | awk '!x[$0]++'`
+
+        # Make an array of the unique ns names
+        logwrite "Namespaces of series being subscribed to:"
+        ctr=0
+        while [ 1 -eq 1 ]
+        do
+            index=$(( $ctr + 1 ))
+            awkscr='{print $'"$index"'}'
+            str=`echo $nsnameslst | awk "$awkscr"`
+            if [ -z "$str" ]
+            then
+                break
+            fi
+            nsnames[$ctr]=$str
+            logwrite "$str"
+            ctr=$(( $ctr + 1 ))
+        done
+
+        logwrite "  (${#nsnames[@]} namespaces total)"
+        
+        ctr=0
+        while [ $ctr -lt ${#nsnames[@]} ]
+        do
+            logwrite "series namespace is ${nsnames[$ctr]}"
+            CheckSchema ${nsnames[$ctr]}
+            result=$?
+
+            logwrite "CheckSchema return value is $result."
+
+            if [ $result -eq 0 ]
+            then
+                # Check failed
+                logwrite "CheckSchema detected corrupted schema ${nsnames[$ctr]}"
+                check=failed
+            elif [ $result -eq 1 ]; then
+                # Check succeeded, don't apply createns
+                docreatens=0
+                check=good
+            else
+                # Check succeeded, apply createns
+                docreatens=1
+                check=good
+            fi
+
+            if [ ! $check == "failed" ]
+            then
+                if [ $docreatens -ne 0 ]
+                then
+                    logecho "Applying SQL file $node.${nsnames[$ctr]}.createns.sql to database"
+                    logwrite "Executing [psql -p $pg_port -h $pg_host -U $pg_user -ef $node.${nsnames[$ctr]}.createns.sql $pg_dbname]"
+                    psql -p "$pg_port" -h "$pg_host" -U "$pg_user" -ef "$node.${nsnames[$ctr]}.createns.sql" "$pg_dbname" > sqlcheck.tmp 2>&1
+                    result=`cat sqlcheck.tmp`
+                    logwrite $result
+
+                    # XXX - ART
+                    # no check of results of application of createns.sql (must check the output!!!)
+                    logwrite "Removing the $node.${nsnames[$ctr]}.createns.sql file"
+                else
+                    logwrite "Check for existing schema $nsname succeeded - no need to apply $node.${nsnames[$ctr]}.createns.sql"
+                fi
+                RM -f "$node.${nsnames[$ctr]}.createns.sql"
+            else
+                success=false
+                break;
+            fi
+
+            ctr=$(( $ctr + 1 ))
+        done
+
+        unset check
+
+        if [ $success == "true" ]
+        then
+            logecho "Applying SQL file $node.subscribe_series.sql to database"
+            logwrite "Executing [psql -p $pg_port -h $pg_host -U $pg_user -ef $node.subscribe_series.sql $pg_dbname]"
+            psql -p "$pg_port" -h "$pg_host" -U "$pg_user" -ef "$node.subscribe_series.sql" "$pg_dbname" > sqlcheck.tmp 2>&1
+            result=`cat sqlcheck.tmp`
+            logwrite $result
+
+            check=`cat sqlcheck.tmp | grep "ERROR:"`
+            logwrite "Checking for errors with $node.subscribe_series.sql"
+            logwrite "Found errors: [$check]" nl
+
+            if [  ! "$check" == "" ] 
+            then
+	        logwrite "Failed to apply $node.subscribe_series.sql"
+	        logwrite "Rolling back to previous state"
+	        success=false
+            else
+	        logwrite "Application of $node.subscribe_series.sql succeded, continuing"
+                logwrite "Removing the $node.subscribe_series.sql file"
+                RM -f "$node.subscribe_series.sql"
+	        success=true
+            fi
+        fi
+
+        RM -f sqlcheck.tmp
+
+        if [ $success == "true" ]
+        then
+            SetState "applsql_comp"
+        fi
+    fi
+fi
+
+# The following code should always run, regardless of errors above.
+# It triggers the clean-up of the server files.
+if [ $success == "true" ]
+then
+	# SQL applictaion was a success, appending [success true] to the cfg file on webdb
+	logwrite "SQL application successful, appending [success=true] to the cfg file on webdb"
+	SSH "$webdb_user@$webdb_ip" 'echo '"success true"' >> '"'$webdb_dir/$node.subscribe_series.cfg'"
+else
+	# SQL application was unsuccessful, appending [success false] to the cfg file on webdb
+	logwrite "SQL application unsuccessful, appending [success=false] to the cfg file on webdb"
+        logecho "Failure to apply SQL file '$node.subscribe_series.sql' from server: ABORTING!"
+	SSH "$webdb_user@$webdb_ip" 'echo '"success false"' >> '"'$webdb_dir/$node.subscribe_series.cfg'"
+fi
+
+SSH "$webdb_user@$webdb_ip" 'cp -f '"'$webdb_dir/$node.subscribe_series.cfg'"' '"'$webdb_dir/$node.subscribe_series.sqlapplied'"
+
+unset result
+unset check
+
+#--------------------------------------------------------------------
+# Loop waiting for done file to continue (which signifies that manager is done and has cleaned up)
+#--------------------------------------------------------------------
+
+if [ $state == "applsql_comp" ]
+then
+    logecho -n "Waiting for the subscription manager to finish updating the subscription parser, complete, and clean-up"
+    counter=0
+    while [ 1 -eq 1 ]
+    do	
+	if [ "$counter" -ge "$attempts" ] 
+	then
+	    logwrite "ERROR: Did not find $node.subscribe_series.done after $attempts tries"
+	    logwrite "ERROR: Exiting $0 " nl
+	    logecho "ERROR: The subscription manager has not reported it has finished updating the subscription parser after $attempts tries!"
+	    logecho "ABORTING!"
+	    exit 1;
+	fi		
+
+        result=`SSH "$webdb_user@$webdb_ip" 'ls '"'$webdb_dir'"`;
+
+        logwrite "result is $result"
+
+        ## Check for error in remote ssh command; Couldn't find $webdb_dir directory
+        error=`echo $result | grep -i error`;
+        if [ ! -z $error ] ;
+        then
+            logecho "Couldn't find $webdb_dir directory or broken SSH ... exiting"
+            exit 1;
+        fi
+
+	check=`echo $result | grep "$node.subscribe_series.done"`
+	
+	if [ ! "$check" == "" ]
+	then
+	    logwrite "Found $node.subscribe_series.done, continuing"
+	    logecho
+	    logecho "Subscription manager has finished updating the parser and cleaned-up."
+	    break
+	else
+	    counter=$(( $counter + 1 ))
+	    logwrite "Did not find $node.subscribe_series.done, sleeping for five seconds"
+	    logecho -n "."
+	    sleep 5
+	fi
+
+    done
+
+    SetState "crdone_comp"
+fi
+
+unset check
+unset error
+unset result
+
+#--------------------------------------------------------------------
+# Starting the ingestion script (by removing the die file)
+#--------------------------------------------------------------------
+
+if [ $state == "crdone_comp" ]
+then
+    logwrite "Starting the ingestion script"
+    logwrite "Removing ingestion.die in $ingestion_path" nl
+    RM -f "$ingestion_path/get_slony_logs.$node.die"
+    if [ $? -ne 0 ]
+    then
+        logwrite "Unable to remove die file '$ingestion_path/get_slony_logs.$node.die'"
+        success=false
+    else
+        logwrite "Cleaning up the done file '$webdb_dir/$node.subscribe_series.done' (which the server cleanup file wrote)" nl
+        SSH "$webdb_user@$webdb_ip" 'rm -f '"'$webdb_dir/$node.subscribe_series.done'"
+        
+        if [ $? -eq 0 ]
+        then
+            SetState "rmdie_comp"
+        else
+            success=false
+        fi
+    fi
+fi
+
+#--------------------------------------------------------------------
+# Force ingestion script (if unsubscribing to a series)
+#   If any series is being removed from subscription, then
+#   get_slony_logs.pl must be run to force application
+#   of all logs that contain the series being removed. After
+#   this happens, then it is safe to remove the series
+#   (with the delete_series program run as user slony).
+#--------------------------------------------------------------------
+if [ $state == "rmdie_comp" ]
+then
+    if [ $unsubscribe -eq 1 ]
+    then
+        logwrite "At least one series was removed from subscription; run ingest program, then delete series removed from subscription."
+        logwrite "Running $ingestprog $config_file."
+        "$ingestprog" "$config_file"
+        if [ $? -ne 0 ]
+        then
+            logwrite "SQL-log-ingestion failure - unable to delete series $series."
+            success=false
+        else
+            SetState "forceing_comp"
+
+            # Delete all series in the unsubscribe list
+            ctr=0
+            while [ $ctr -lt ${#unsubseries[@]} ]
+            do
+                # Make sure to ask if the user want to delete the series, if not
+                # then they need to manually delete before re-subscribing
+                logwrite "Running $delseriesprog ${unsubseries[$ctr]} JSOC_DBUSER=slony."
+                echo "yes"$'\n'"yes"$'\n' | "$delseriesprog" "${unsubseries[$ctr]}" JSOC_DBUSER=slony
+                if [ $? -ne 0 ]
+                then
+                    logwrite "Failure to delete series ${unsubseries[$ctr]}."
+                    success=false
+                    # but continue with other series
+                fi
+                ctr=$(( $ctr + 1 ))
+            done
+
+            if [ $success == "true" ]
+            then
+                SetState "delseries_comp"
+            fi
+        fi
+    fi 
+fi
+
+#--------------------------------------------------------------------
+# Finish
+#--------------------------------------------------------------------
+logwrite "$0 complete"
+logecho
+
+if [ $success  == "true" ]
+then
+    SetState "end"
+    logecho "Subscription process completed successfully!"
+else
+    logecho "Subscription process did not complete successfully!"
+fi

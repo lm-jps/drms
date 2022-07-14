@@ -16,9 +16,6 @@ dir	:= $(d)/myproj
 dir	:= $(d)/cookbook
 -include		$(SRCDIR)/$(dir)/Rules.mk
 
-# A site might request a Stanford proj directory, other than the standard ones above
--include $(LOCALIZATIONDIR)/projRules.mk
-
 # Standard things
 d		:= $(dirstack_$(sp))
 sp		:= $(basename $(sp))

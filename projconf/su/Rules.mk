@@ -34,21 +34,15 @@ dir	:= $(d)/flatfield
 -include		$(SRCDIR)/$(dir)/Rules.mk
 endif
 
-# The mag stuff doesn't build on gcc
-ifeq ($(COMPILER), icc)
 dir     := $(d)/mag
 -include                $(SRCDIR)/$(dir)/Rules.mk
 dir	:= $(d)/maps_avgs
 -include		$(SRCDIR)/$(dir)/Rules.mk
-dir     := $(d)/globalhs
--include                $(SRCDIR)/$(dir)/Rules.mk
-endif
-
 dir	:= $(d)/myproj
 -include		$(SRCDIR)/$(dir)/Rules.mk
 dir	:= $(d)/util
 -include		$(SRCDIR)/$(dir)/Rules.mk
-dir	:= $(d)/lev1.5_hmi
+dir	:= $(d)/globalhs
 -include		$(SRCDIR)/$(dir)/Rules.mk
 dir     := $(d)/rings
 -include                $(SRCDIR)/$(dir)/Rules.mk
@@ -58,9 +52,6 @@ dir     := $(d)/farside
 -include                $(SRCDIR)/$(dir)/Rules.mk
 dir     := $(d)/timed
 -include                $(SRCDIR)/$(dir)/Rules.mk
-dir     := $(d)/vfisv
--include                $(SRCDIR)/$(dir)/Rules.mk
-
 
 
 # Standard things

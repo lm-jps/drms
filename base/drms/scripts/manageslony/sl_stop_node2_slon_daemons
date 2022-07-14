@@ -1,0 +1,36 @@
+#!/bin/bash
+
+. ../etc/slony.env
+
+ps -ef | grep -w slon | grep -w dbname | grep -w port > slon_kill_temp.txt
+
+exec < slon_kill_temp.txt
+while read line
+do
+	#removes excess spaces, replacing any number of spaces with one space
+	while [[ "$line" =~ "  " ]]
+		do
+			line=${line//"  "/" "}
+		done
+	
+	# spits the line into variables
+	set - $line
+	# assigns the needed variables from the line to our own
+	shift;
+	var1=$1; shift; 
+	var2=$1; shift; shift; shift;
+	var3=$9;
+	echo "Found pid is $var3" >> ../log/ws_failover-slon.log
+	# if the daemon is the slaved daemon, and if the ppid is 1, kill it
+	if [[ $SLAVEHOST = ${var3:5} ]]
+		then
+		if [[ $var2 = "1" ]]
+			then
+			echo "Killing $var1" >> ../log/ws_failover-slon.log
+			kill $var1
+		fi
+	fi
+
+done
+
+rm slon_kill_temp.txt

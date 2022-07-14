@@ -1,0 +1,2 @@
+#schemaname.seriesname          subscribe/unsubscribe (if new_site = true, assumes these are "subscribe")
+su_arta.vw_v_lev18		unsubscribe

@@ -1,0 +1,291 @@
+#!/bin/bash
+currDt=`date`
+pidfile=$0.pid
+logfile=../log/$0.log
+diefile=$0.die
+
+#--------------------------------------------------------------------
+# Setting up the log
+#--------------------------------------------------------------------
+echo > $logfile
+logwrite () {
+        echo `date +"%m-%d-%Y %H:%M:%S - "` "$1" >> $logfile
+        if [ ! $2 == "" ]
+        then
+                echo `date +"%m-%d-%Y %H:%M:%S - "` >> $logfile
+        fi
+}
+
+logwrite "Starting $0" nl
+
+#--------------------------------------------------------------------
+# syntax check
+#--------------------------------------------------------------------
+if [ $# -eq 1 ]
+then
+        config_file=$1
+        logwrite "Using $config_file" nl
+else
+        error="ERROR: Usage: $0 <configuration file>"
+        echo $error
+        logwrite "$error"
+        exit
+fi
+
+# dot the config file
+. $config_file
+
+
+logwrite "Starting $0" nl
+
+trap "echo 'caught a signal'; rm -f $pidfile; exit" HUP INT TERM
+
+#-------------------------------------------------------------------------
+# Checking for another process already running
+#-------------------------------------------------------------------------
+if [ -f $pidfile ]
+then
+        pid=`cat $pidfile`
+        if ps -p $pid | grep -qv PID
+        then
+                echo "somebody else is running at [$currDt]"
+                exit
+        else
+                echo "found orphaned pid file at [$currDt]"
+        fi
+fi
+
+echo $$ > $pidfile
+while [ 1 -eq 1 ]
+do
+
+if [ -f $diefile ]
+then
+	logwrite "Die file found, dying"
+        rm -f $pidfile
+        exit
+fi
+
+#-------------------------------------------------------------------------
+# Reads the subscription request file into the arrays:
+# $series[] is the name of the series
+# $request[] is what type of request it is (subscribe or unsubscribe)
+#-------------------------------------------------------------------------
+# Find trigger files for sql_gen
+ls -1 $triggerdir | grep .subscribe_series.tgr > temp.txt
+
+counter=0
+exec < temp.txt
+	while read line
+	do
+                # skips blank lines
+                if [ ${#line} -eq 0 ]
+                then
+                        continue
+                fi
+		
+		logwrite "Found file $line"
+                triggerfile[$counter]=$line
+
+                counter=$(( $counter + 1 ))
+
+	done
+
+#-------------------------------------------------------------------------
+# For each trigger file found, extract the information and execute subscription_update
+#-------------------------------------------------------------------------
+counter=0
+while [ $counter -ne ${#triggerfile[*]} ]
+do
+	logwrite "Extracting data from ${triggerfile[$counter]}" 
+	# Find the node name and new_site values and adds to new  file
+	subupdatefile=${triggerfile[$counter]/tgr/subupdate}
+	echo > $subupdatefile
+	exec < $triggerdir/${triggerfile[$counter]}
+		while read line
+		do
+			# skips blank lines
+               		if [ ${#line} -eq 0 ]
+       		            then
+       		                 continue
+               		fi
+		
+			set - $line
+
+			if [ $1 == "node" ]
+			then
+				node=$2
+				logwrite "Node is $node"
+			elif [ $1 == "archive" ]
+			then
+				archive=$2
+				logwrite "Archive is $archive"
+				continue
+			elif [ $1 == "retention" ]
+			then
+				retention=$2
+				logwrite "Retention is $retention"
+				continue
+			elif [ $1 == "tapegroup" ]
+			then
+				tapegroup=$2
+				logwrite "tapegroup is $tapegroup"
+				continue
+			else
+				logwrite "Adding $1 $2 to $subupdatefile"
+				echo $1 $2 >> $subupdatefile
+			fi
+		done
+
+#-------------------------------------------------------------------------
+# Check to see if the subscriber is a new subscriber, or an old one.
+#-------------------------------------------------------------------------
+	nodecheck=" "$node" "
+	new_site=true
+	logwrite "Checking for existing directory named $node"
+	for i in `ls -1 $subscribers_dir`
+	do
+	compare=" "$i" "
+	logwrite "Comparing [$nodecheck] with [$compare]"
+	if [ ! "$nodecheck" == "$compare" ]
+	then
+		logwrite "Found no $node directory in $subscribers_dir"
+		#echo "new_site $new_site" >> $triggerdir/$node.subscribe_series.tgr
+	elif [ "$nodecheck" == "$compare" ]
+	then
+		logwrite "Found $node directory in $subscribers_dir, setting new_site to false"
+		new_site="false"
+		#echo "new_site $new_site" >> $triggerdir/$node.subscribe_series.tgr
+	fi
+	done
+	
+	logwrite "Appending [new_site $new_site] to $triggerdir/$node.subscribe_series.tgr"
+	echo "new_site $new_site" >> $triggerdir/$node.subscribe_series.tgr
+		
+	logwrite "Executing [./subscription_update $node $new_site $archive $retention $tapegroup $subupdatefile]" 
+		
+	# Executing [./subscription_update $node $new_site $archive $retention $tapegroup $subupdatefile &]
+	./subscription_update $node $new_site $archive $retention $tapegroup $subupdatefile &
+		
+	# Renaming trigger file from $node.subscribe_series.tgr to $node.subscribe_series.cfg
+	logwrite "Move $triggerdir/${triggerfile[$counter]} $triggerdir/${triggerfile[$counter]/tgr/cfg}" nl
+	mv -f $triggerdir/${triggerfile[$counter]} $triggerdir/${triggerfile[$counter]/tgr/cfg}
+
+	# Increasing counter to move to the next array element
+	counter=$(( $counter + 1 ))
+
+	#unset the node and new_site variables
+	unset node
+	unset new_site
+done		
+
+# removes temp text file for finding the subscribe_series.tgr trigger files
+rm -f temp.txt
+
+
+#-------------------------------------------------------------------------
+# Looks for sqlapplied trigger files
+# Reads the sqlapplied files into the arrays:
+# $series[] is the name of the series
+# $request[] is what type of request it is (subscribe or unsubscribe)
+#-------------------------------------------------------------------------
+# Find trigger files for sql_gen
+ls -1 $triggerdir | grep .subscribe_series.sqlapplied > temp.txt
+
+counter=0
+exec < temp.txt
+	while read line
+	do
+                # skips blank lines
+                if [ ${#line} -eq 0 ]
+                then
+                        continue
+                fi
+		
+		logwrite "Found file $line"
+
+		# For each file found ($line) adding it to the sqlappliedfile array
+                sqlappliedfile[$counter]=$line
+
+		# Increase array counter
+                counter=$(( $counter + 1 ))
+
+	done
+
+#-------------------------------------------------------------------------
+# For each sqlapplied file found, extract the information and execute subscription_update
+#-------------------------------------------------------------------------
+counter=0
+while [ $counter -ne ${#sqlappliedfile[*]} ]
+do
+	logwrite "Extracting data from ${sqlappliedfile[$counter]}"
+	# Finds the node name and new_site values and adds to new sqlgen file
+	appliedfile=${sqlappliedfile[$counter]/sqlapplied/cleanup}
+	echo > $appliedfile
+	exec < $triggerdir/${sqlappliedfile[$counter]}		
+		while read line
+		do
+			# skips blank lines
+               		if [ ${#line} -eq 0 ]
+       		            then
+       		                 continue
+               		fi
+		
+			set - $line
+
+			if [ $1 == "node" ]
+			then
+				node=$2
+				logwrite "Node is $node"
+			elif [ $1 == "success" ]
+			then
+				success=$2
+				logwrite "Success is $success"
+			elif [ $1 == "new_site" ]
+			then
+				new_site=$2
+				logwrite "New_site is $new_site"
+			else
+				logwrite "Adding $1 $2 to $appliedfile"
+				echo $1 $2 >> $appliedfile
+			fi
+		done
+
+	logwrite "Executing ./subscription_cleanup $node $new_site $success $appliedfile &" 
+	logwrite "NOTE: Syntax: ./subscription_cleanup <node> <new subscription, true/false> <successful sql applictation true/false> <the sqlgen file with subscription info> &" nl
+
+	# Executing [./subscription_cleanup $node $new_site $success $appliedfile &]
+	./subscription_cleanup $node $new_site $success $appliedfile &
+
+	logwrite "Removing $triggerdir/${sqlappliedfile[$counter]}" nl
+	rm -f $triggerdir/${sqlappliedfile[$counter]}
+
+	# Increase the counter so next array elemenet is used
+	counter=$(( $counter + 1 ))
+
+	#unset the node, success, and new_site variables
+	unset node
+	unset success
+	unset new_site
+done		
+
+# removes temp text file for finding the subscribe_series.tgr trigger files
+rm -f temp.txt
+
+
+if [ -f $diefile ]
+then
+	logwrite "Die file found, dying" 
+        rm -f $pidfile
+        exit
+fi
+
+sleep 10
+
+# removes values from triggerfile array.
+unset triggerfile
+unset sqlappliedfile
+
+done
+
+rm -f $pidfile

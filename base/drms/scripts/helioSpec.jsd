@@ -1,0 +1,23 @@
+# *********************** Global information ************************
+Seriesname:	"su_arta.TestFDSHelio"
+Description:	"This series contains predicted 5-week heliocentric orbit state vectors."
+Author:		"Art Amezcua"
+Owner:		"arta"
+Unitsize:	10000
+Archive:	0
+Retention:	2
+Tapegroup:	0
+Index:		OBS_DATE
+
+# **************************** Keywords ******************************
+Keyword:	OBS_DATE, time, variable, record, 1977.01.01_UT, UTC, "UTC", "Date for which prediction is made."
+Keyword:	X, double, variable, record, 0.0, %f, "km", "X-coordinate position."
+Keyword:	Y, double, variable, record, 0.0, %f, "km", "Y-coordinate position."
+Keyword:	Z, double, variable, record, 0.0, %f, "km", "Z-coordinate position."
+Keyword:	Vx, double, variable, record, 0.0, %f, "km/sec", "X-component of velocity vector."
+Keyword:	Vy, double, variable, record, 0.0, %f, "km/sec", "Y-component of velocity vector."
+Keyword:	Vz, double, variable, record, 0.0, %f, "km/sec", "Z-component of velocity vector."
+
+
+# ************************** Data Segments ***************************
+# None

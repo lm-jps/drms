@@ -1,0 +1,79 @@
+#!/bin/bash
+
+# Do not parse logs if archivelogs.pl is currently archiving them; so wrap this
+# function in a call to drms_flock.pl
+
+workDir=/usr/local/pgsql/log
+slon_logs_source_dir=/usr/local/pgsql/slon_logs
+prep_binary=/usr/local/pgsql/bin/prep_slon_logs
+prep_cfg=/solarport/pgsql/slon_logs/etc/slon_parser.cfg
+prep_log=/usr/local/pgsql/log/prep_slon_logs.log
+logs2skip=2
+currDt=`date`
+
+pidfn=$(basename $0).pid
+pidfile="$workDir/$pidfn"
+
+trap "echo 'caught a signal'; rm -f $pidfile; exit" HUP INT TERM
+
+if [ -f $pidfile ]
+then
+    pid=`cat $pidfile`
+    if ps -p $pid | grep -qv PID
+    then
+        echo "somebody else is running at [$currDt]"
+        exit
+    else
+        echo "found orphaned pid file at [$currDt]"
+    fi
+fi
+
+echo $$ > $pidfile
+
+echo "Running [$0] at [$currDt]"
+
+process_logs=0
+
+#ls -1tr $slon_logs_source_dir/*.sql > $workDir/src.lst
+ls -1tr $slon_logs_source_dir > $workDir/src.lst.2
+grep ".sql$" $workDir/src.lst.2 >  $workDir/src.lst
+/bin/rm -f $workDir/src.lst.2
+
+
+tmpLine=`wc -l $workDir/src.lst`
+set - $tmpLine
+lineCnt=$1
+echo "found [$lineCnt] logs"
+
+if [ $lineCnt -lt 1 ]; then
+	echo -e "\nno logs to process...\nAborting\n"
+	/bin/rm -f $workDir/src.lst
+	exit
+else
+	lineCnt=`expr $lineCnt - $logs2skip`
+	echo "set counter (logs to process) to [$lineCnt]"
+fi
+
+if [ $lineCnt -lt 1 ] ; then
+	echo -e "\nno logs to process...\nAborting\n"
+	/bin/rm -f $workDir/src.lst
+	exit
+fi
+
+proc_cntr=0
+
+
+for I in `cat $workDir/src.lst`; do
+	echo "Parsing [$proc_cntr][$I]"
+	$prep_binary ${slon_logs_source_dir}/${I} $prep_cfg $prep_log
+	wait
+	echo "renaming [$I]"
+	/bin/mv -f  ${slon_logs_source_dir}/${I} ${slon_logs_source_dir}/${I}.parsed
+	proc_cntr=`expr $proc_cntr + 1`
+	if [ $proc_cntr -ge $lineCnt ] ; then
+		break
+	fi
+done
+
+/bin/rm -f $workDir/src.lst
+rm -f $pidfile
