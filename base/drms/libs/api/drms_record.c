@@ -6083,7 +6083,9 @@ static HContainer_t *make_reachable_keywords(const char *link, DRMS_Record_t *te
 
 /* the record set argument need not be a first record set (i.e., one that can have drms_close_records() called on ); to indicate
  * this, the argument is named `record_list` and is a LinkedList_t
- *   `keywords` are the keywords from the template_record series that have been requested */
+ *   `keywords` - the parent-series keywords from the template_record series that have been requested;
+ *                if keywords == NULL, then the parent has requested ALL keywords
+*/
 static int cache_linked_records(DRMS_Env_t *env, DRMS_Record_t *template_record, LinkedList_t *record_list, HContainer_t *keywords, HContainer_t *link_map)
 {
     HIterator_t hit;
@@ -6124,11 +6126,9 @@ static int cache_linked_records(DRMS_Env_t *env, DRMS_Record_t *template_record,
                 break;
             }
 
-            if (keywords)
-            {
-                /* filter child keywords with the list of keywords in the parent */
-                child_keywords = make_reachable_keywords(drms_link->info->name, child_template_record, template_record, keywords);
-            }
+            /* filter child keywords with the list of keywords in the parent; if keywords == NULL, then
+             * no filtering will happen */
+            child_keywords = make_reachable_keywords(drms_link->info->name, child_template_record, template_record, keywords);
 
             status = cache_linked_records(env, child_template_record, linked_records_list, child_keywords, link_map);
             /* no duplicate linked records because link_map key is record hash of linked record */
@@ -6155,6 +6155,9 @@ static int cache_linked_records(DRMS_Env_t *env, DRMS_Record_t *template_record,
  * module might try to access other keywords too)
  *
  * no duplicates are returned in link_map
+ *
+ * `keywords` - the keywords of the template_record->seriesinfo->series series to cache; if
+ * keywords == NULL, then cache all of them
  */
 HContainer_t *drms_retrieve_linked_recordset(DRMS_Env_t *env, const char *link, DRMS_Record_t *template_record, DRMS_Record_t *parent_template_record, HContainer_t *keywords, HContainer_t *link_hash_map, int initialize_links, int *status)
 {
@@ -6178,9 +6181,11 @@ HContainer_t *drms_retrieve_linked_recordset(DRMS_Env_t *env, const char *link, 
      * need to sort because the call to columnList() in drms_populate_recordset()
      * will sort the keywords according to rank
      *
-     * copy from this filtered set of keywords instead of the keywords in the template record
+     * copy from this filtered set of keywords instead of the keywords in the template record; if
+     * keyword == NULL, then no filtering happens
      */
     reachable_keywords = make_reachable_keywords(link, template_record, parent_template_record, keywords);
+
     drms_record_list = list_llcreate(sizeof(DRMS_Record_t *), NULL);
     XASSERT(drms_record_list);
 
@@ -6654,16 +6659,18 @@ DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *se
             if (rs->records[i]->keyword_aliases)
             {
                 hiter_new(&hit, template->keyword_aliases);
-                while ((keyword_ptr = (DRMS_Keyword_t **)hiter_getnext(&hit)) != NULL)
+
+                while ((keyword_ptr = (DRMS_Keyword_t **)hiter_extgetnext(&hit, &template_alias)) != NULL)
                 {
                     template_keyword = *keyword_ptr;
 
                     drms_keyword = hcon_lookup_lower(&rs->records[i]->keywords, template_keyword->info->name);
                     if (drms_keyword)
                     {
-                        hcon_insert_lower(rs->records[i]->keyword_aliases, template_keyword->info->name, &drms_keyword);
+                        hcon_insert_lower(rs->records[i]->keyword_aliases, template_alias, &drms_keyword);
                     }
                 }
+
                 hiter_free(&hit);
             }
 
