@@ -1187,7 +1187,7 @@ int base_strip_whitespace(const char *string_in, char **string_out)
 {
     int err = 0;
     static regex_t *reg_expression = NULL;
-    const char *pattern = "^[[:space:]]*([[:print:]]+)[[:space:]]*$";
+    const char *pattern = "^[[:space:]]*([[:print:]]*[[:alnum:][:punct:]])[[:space:]]*$";
     regmatch_t matches[2]; /* index 0 is the entire string */
 
     if (!reg_expression)

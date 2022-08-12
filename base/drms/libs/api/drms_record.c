@@ -10908,8 +10908,8 @@ int ParseRecSetDescInternal(const char *recsetsStr, char **allvers, char ***sets
     int status = DRMS_SUCCESS;
     RSParseState_t state = kRSParseState_Begin;
     RSParseState_t oldstate;
-    char *rsstr = strdup(recsetsStr);
-    char *pc = rsstr;
+    char *rsstr = NULL;
+    char *pc = NULL;
     LinkedList_t *intSets = NULL;
     LinkedList_t *intSettypes = NULL;
     LinkedList_t *intAllVers = NULL;
@@ -10937,7 +10937,7 @@ int ParseRecSetDescInternal(const char *recsetsStr, char **allvers, char ***sets
     DRMS_RecordSetType_t currSettype;
     char currAllVers = 'n';
     int countMultiRS = 0;
-    char *endInput = rsstr + strlen(rsstr); /* points to null terminator */
+    char *endInput = NULL;
     int nfilter = 0;
     int recnumrsseen = 0;
     DRMS_RecQueryInfo_t intinfo = 0;
@@ -10945,6 +10945,10 @@ int ParseRecSetDescInternal(const char *recsetsStr, char **allvers, char ***sets
     /* Test for an empty string. */
     int empty = 0;
     char *ptest = NULL;
+
+    base_strip_whitespace(recsetsStr, &rsstr);
+    pc = rsstr;
+    endInput = rsstr + strlen(rsstr); /* points to null terminator */
 
     ptest = rsstr;
     empty = (DSElem_SkipWS(&ptest) == 0);
