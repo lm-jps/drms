@@ -29,6 +29,9 @@ static unsigned int gRSChunkSize = 128;
 /* Cache the summary-table check */
 static HContainer_t *gSummcon = NULL;
 
+#define MAXIMUM_LIMIT 75000
+#define CAP_LIMIT(a)  ((a) > MAXIMUM_LIMIT ? MAXIMUM_LIMIT : (a))
+
 typedef enum
 {
    /* Begin parsing dataset string. */
@@ -156,9 +159,9 @@ static DRMS_RecordSet_t *OpenPlainFileRecords(DRMS_Env_t *env,
 					      char **pkeysout,
 					      int *status);
 
-DRMS_RecordSet_t *drms_open_recordset_internal(DRMS_Env_t *env, const char *rsquery, int openLinks, LinkedList_t *keys, int *status);
+DRMS_RecordSet_t *drms_open_recordset_internal(DRMS_Env_t *env, const char *rsquery, int openLinks, int cache_full_record, LinkedList_t *keys, int *status);
 
-static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *seriesname, char *where, const char *pkwhere, const char *npkwhere, int filter, int mixed, const char *qoverride, DB_Binary_Result_t *br_override, int allvers, int nrecs, HContainer_t *firstlast, HContainer_t *pkwhereNFL, int recnumq, int cursor, HContainer_t *links, /* Links to fetch from db. */HContainer_t *keys, /* Keys to fetch from db. */ HContainer_t *segs, /* Segs to fetch from db. */ int initialize_links, int *status);
+static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *seriesname, char *where, const char *pkwhere, const char *npkwhere, int filter, int mixed, const char *qoverride, DB_Binary_Result_t *br_override, int allvers, int nrecs, HContainer_t *firstlast, HContainer_t *pkwhereNFL, int recnumq, int cursor, HContainer_t *links, /* Links to fetch from db. */HContainer_t *keys, /* Keys to fetch from db. */ HContainer_t *segs, /* Segs to fetch from db. */ int initialize_links, int cache_full_record, int *status);
 
 static void RSFree(const void *val);
 /* end drms_open_records() helpers */
@@ -1595,7 +1598,7 @@ static int get_manifest_temp_table(char *tabname, int size)
  * `template_keys_out` - an hcon of template keyword structs used in all SQL queries - opening/retrieving records
  * `seg_names_out` - an hcon of segment names used in all SQL queries - opening/retrieving records
  */
-DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *recordsetname, int openlinks, int retrieverecs, int nrecslimit, LinkedList_t *keylist, LinkedList_t **llistout, char **allversout, int **hasshadowout, int *status)
+DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *recordsetname, int openlinks, int cache_full_record, int retrieverecs, int nrecslimit, LinkedList_t *keylist, LinkedList_t **llistout, char **allversout, int **hasshadowout, int *status)
 {
     DRMS_RecordSet_t *rs = NULL;
     DRMS_RecordSet_t *ret = NULL;
@@ -2237,11 +2240,11 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *record
                         XASSERT(allvers[iSet] != '\0');
                         if (env->verbose)
                         {
-                            TIME(rs = drms_retrieve_records_internal(env, seriesname, query, pkwhere, npkwhere, filter, mixed, *manifest_override != '\0' ? manifest_override : NULL, NULL, allvers[iSet] == 'y', nrecslimit, firstlast, pkwhereNFL, recnumq, 0, NULL, filter_keys ? unsorted : NULL, filter_segs ? set_template_segs[iSet] : NULL, openlinks, &stat));
+                            TIME(rs = drms_retrieve_records_internal(env, seriesname, query, pkwhere, npkwhere, filter, mixed, *manifest_override != '\0' ? manifest_override : NULL, NULL, allvers[iSet] == 'y', nrecslimit, firstlast, pkwhereNFL, recnumq, 0, NULL, filter_keys ? unsorted : NULL, filter_segs ? set_template_segs[iSet] : NULL, openlinks, cache_full_record, &stat));
                         }
                         else
                         {
-                            rs = drms_retrieve_records_internal(env, seriesname, query, pkwhere, npkwhere, filter, mixed, *manifest_override != '\0' ? manifest_override : NULL, NULL, allvers[iSet] == 'y', nrecslimit, firstlast, pkwhereNFL, recnumq, 0, NULL, filter_keys ? unsorted : NULL, filter_segs ? set_template_segs[iSet] : NULL, openlinks, &stat);
+                            rs = drms_retrieve_records_internal(env, seriesname, query, pkwhere, npkwhere, filter, mixed, *manifest_override != '\0' ? manifest_override : NULL, NULL, allvers[iSet] == 'y', nrecslimit, firstlast, pkwhereNFL, recnumq, 0, NULL, filter_keys ? unsorted : NULL, filter_segs ? set_template_segs[iSet] : NULL, openlinks, cache_full_record, &stat);
                         }
                         /* Remove unrequested segments now */
                     }
@@ -2696,7 +2699,7 @@ DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, const char *recordsetname, 
    char *allvers = NULL;
    DRMS_RecordSet_t *ret = NULL;
 
-   ret = drms_open_records_internal(env, recordsetname, 1, 1, 0, NULL, NULL, &allvers, NULL, status);
+   ret = drms_open_records_internal(env, recordsetname, 1, 1, 1, 0, NULL, NULL, &allvers, NULL, status);
    if (allvers)
    {
       free(allvers);
@@ -2705,7 +2708,7 @@ DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, const char *recordsetname, 
    return ret;
 }
 
-DRMS_RecordSet_t *drms_open_nrecords_internal(DRMS_Env_t *env, const char *recordsetname, int n, int openLinks, int *status)
+static DRMS_RecordSet_t *drms_open_nrecords_internal(DRMS_Env_t *env, const char *recordsetname, int n, int openLinks, int cache_full_record, int *status)
 {
     DRMS_RecordSet_t *rs = NULL;
     DRMS_Record_t **recs = NULL;
@@ -2717,7 +2720,7 @@ DRMS_RecordSet_t *drms_open_nrecords_internal(DRMS_Env_t *env, const char *recor
     int *hasshadow = NULL;
 
 
-    rs = drms_open_records_internal(env, recordsetname, openLinks, 1, n, NULL, NULL, NULL, &hasshadow, &statint);
+    rs = drms_open_records_internal(env, recordsetname, openLinks, cache_full_record, 1, n, NULL, NULL, NULL, &hasshadow, &statint);
 
     /* If there is a shadow table, then the order of the n records is already by increasing
      * prime-key values. If a shadow-table was used to generated the SQL query that selects records,
@@ -2796,7 +2799,7 @@ DRMS_RecordSet_t *drms_open_nrecords_internal(DRMS_Env_t *env, const char *recor
 
 DRMS_RecordSet_t *drms_open_nrecords(DRMS_Env_t *env, const char *recordsetname, int n, int *status)
 {
-    return drms_open_nrecords_internal(env, recordsetname, n, 1, status);
+    return drms_open_nrecords_internal(env, recordsetname, n, 1, 1, status);
 }
 
 /* keylist is a string containing a comma-separated list of keywords. This records returned will
@@ -2842,7 +2845,7 @@ DRMS_RecordSet_t *drms_open_recordswithkeys(DRMS_Env_t *env, const char *specifi
                      list_llinserttail(list, key);
                 }
 
-                ret = drms_open_records_internal(env, specification, 1, 1, 0, list, NULL, &allvers, NULL, status);
+                ret = drms_open_records_internal(env, specification, 1, 1, 1, 0, list, NULL, &allvers, NULL, status);
 
                 list_llfree(&list);
 
@@ -2871,7 +2874,7 @@ DRMS_RecordSet_t *drms_open_recordswithkeys(DRMS_Env_t *env, const char *specifi
     }
     else
     {
-        ret = drms_open_records_internal(env, specification, 1, 1, 0, NULL, NULL, &allvers, NULL, status);
+        ret = drms_open_records_internal(env, specification, 1, 1, 1, 0, NULL, NULL, &allvers, NULL, status);
     }
 
     if (allvers)
@@ -2894,33 +2897,33 @@ DRMS_RecordSet_t *drms_open_records2(DRMS_Env_t *env, const char *specification,
     {
         if (env->verbose)
         {
-            TIME(ret = drms_open_recordset_internal(env, specification, openLinks, keys, status));
+            TIME(ret = drms_open_recordset_internal(env, specification, openLinks, 0, keys, status));
         }
         else
         {
-            ret = drms_open_recordset_internal(env, specification, openLinks, keys, status);
+            ret = drms_open_recordset_internal(env, specification, openLinks, 0, keys, status);
         }
     }
     else if (nrecs != 0)
     {
         if (env->verbose)
         {
-            TIME(ret = drms_open_nrecords_internal(env, specification, nrecs, openLinks, status));
+            TIME(ret = drms_open_nrecords_internal(env, specification, nrecs, openLinks, 0, status));
         }
         else
         {
-            ret = drms_open_nrecords_internal(env, specification, nrecs, openLinks, status);
+            ret = drms_open_nrecords_internal(env, specification, nrecs, openLinks, 0, status);
         }
     }
     else
     {
         if (env->verbose)
         {
-            TIME(ret = drms_open_records_internal(env, specification, openLinks, 1, nrecs, keys, &statementList, &allvers, NULL, status));
+            TIME(ret = drms_open_records_internal(env, specification, openLinks, 0, 1, nrecs, keys, &statementList, &allvers, NULL, status));
         }
         else
         {
-            ret = drms_open_records_internal(env, specification, openLinks, 1, nrecs, keys, &statementList, &allvers, NULL, status);
+            ret = drms_open_records_internal(env, specification, openLinks, 0, 1, nrecs, keys, &statementList, &allvers, NULL, status);
         }
     }
 
@@ -2940,22 +2943,22 @@ DRMS_RecordSet_t *drms_open_records_from_manifest(DRMS_Env_t *env, const char *m
     {
         if (env->verbose)
         {
-            TIME(record_set = drms_open_recordset_internal(env, manifest_specificaton, open_links, keys, status));
+            TIME(record_set = drms_open_recordset_internal(env, manifest_specificaton, open_links, 0, keys, status));
         }
         else
         {
-            record_set = drms_open_recordset_internal(env, manifest_specificaton, open_links, keys, status);
+            record_set = drms_open_recordset_internal(env, manifest_specificaton, open_links, 0, keys, status);
         }
     }
     else
     {
         if (env->verbose)
         {
-            TIME(record_set = drms_open_records_internal(env, manifest_specificaton, open_links, chunk_records, 0, keys, NULL, NULL, NULL, status));
+            TIME(record_set = drms_open_records_internal(env, manifest_specificaton, open_links, 0, chunk_records, 0, keys, NULL, NULL, NULL, status));
         }
         else
         {
-            record_set = drms_open_records_internal(env, manifest_specificaton, open_links, chunk_records, 0, keys, NULL, NULL, NULL, status);
+            record_set = drms_open_records_internal(env, manifest_specificaton, open_links, 0, chunk_records, 0, keys, NULL, NULL, NULL, status);
         }
     }
 
@@ -6086,7 +6089,7 @@ static HContainer_t *make_reachable_keywords(const char *link, DRMS_Record_t *te
  *   `keywords` - the parent-series keywords from the template_record series that have been requested;
  *                if keywords == NULL, then the parent has requested ALL keywords
 */
-static int cache_linked_records(DRMS_Env_t *env, DRMS_Record_t *template_record, LinkedList_t *record_list, HContainer_t *keywords, HContainer_t *link_map)
+static int cache_linked_records(DRMS_Env_t *env, DRMS_Record_t *template_record, LinkedList_t *record_list, HContainer_t *keywords, HContainer_t *link_map, int cache_full_record)
 {
     HIterator_t hit;
     DRMS_Link_t *drms_link = NULL;
@@ -6110,7 +6113,7 @@ static int cache_linked_records(DRMS_Env_t *env, DRMS_Record_t *template_record,
         drms_link_getpidx(template_record); /* sets pidx needed by drms_link_follow_recordset() */
 
         /* no duplicate linked records */
-        linked_records_list = drms_link_follow_recordset(env, template_record, record_list, drms_link->info->name, keywords, link_map, &status);
+        linked_records_list = drms_link_follow_recordset(env, template_record, record_list, drms_link->info->name, keywords, link_map, cache_full_record, &status);
 
         if (status != DRMS_SUCCESS)
         {
@@ -6128,12 +6131,20 @@ static int cache_linked_records(DRMS_Env_t *env, DRMS_Record_t *template_record,
 
             /* filter child keywords with the list of keywords in the parent; if keywords == NULL, then
              * no filtering will happen */
-            child_keywords = make_reachable_keywords(drms_link->info->name, child_template_record, template_record, keywords);
+            if (cache_full_record)
+            {
+                status = cache_linked_records(env, child_template_record, linked_records_list, NULL, link_map, 1);
+                /* no duplicate linked records because link_map key is record hash of linked record */
+            }
+            else
+            {
+                child_keywords = make_reachable_keywords(drms_link->info->name, child_template_record, template_record, keywords);
 
-            status = cache_linked_records(env, child_template_record, linked_records_list, child_keywords, link_map);
-            /* no duplicate linked records because link_map key is record hash of linked record */
+                status = cache_linked_records(env, child_template_record, linked_records_list, child_keywords, link_map, 0);
+                /* no duplicate linked records because link_map key is record hash of linked record */
 
-            hcon_destroy(&child_keywords);
+                hcon_destroy(&child_keywords);
+            }
 
             if (status != DRMS_SUCCESS)
             {
@@ -6142,7 +6153,8 @@ static int cache_linked_records(DRMS_Env_t *env, DRMS_Record_t *template_record,
         }
 
         /* do not free linked records; they are in the cache and will be freed when drms_free_records(rs) is
-         * called */
+         * called; but free list containing them */
+        list_llfree(&linked_records_list);
     }
 
     hiter_free(&hit);
@@ -6159,7 +6171,7 @@ static int cache_linked_records(DRMS_Env_t *env, DRMS_Record_t *template_record,
  * `keywords` - the keywords of the template_record->seriesinfo->series series to cache; if
  * keywords == NULL, then cache all of them
  */
-HContainer_t *drms_retrieve_linked_recordset(DRMS_Env_t *env, const char *link, DRMS_Record_t *template_record, DRMS_Record_t *parent_template_record, HContainer_t *keywords, HContainer_t *link_hash_map, int initialize_links, int *status)
+HContainer_t *drms_retrieve_linked_recordset(DRMS_Env_t *env, const char *link, DRMS_Record_t *template_record, DRMS_Record_t *parent_template_record, HContainer_t *keywords, HContainer_t *link_hash_map, int initialize_links, int retrieve_full_records, int *status)
 {
     HContainer_t *reachable_keywords = NULL; /* value is DRMS_Keyword_t (not pointer)*/
     int keyword_index = -1;
@@ -6184,7 +6196,10 @@ HContainer_t *drms_retrieve_linked_recordset(DRMS_Env_t *env, const char *link, 
      * copy from this filtered set of keywords instead of the keywords in the template record; if
      * keyword == NULL, then no filtering happens
      */
-    reachable_keywords = make_reachable_keywords(link, template_record, parent_template_record, keywords);
+    if (!retrieve_full_records)
+    {
+        reachable_keywords = make_reachable_keywords(link, template_record, parent_template_record, keywords);
+    }
 
     drms_record_list = list_llcreate(sizeof(DRMS_Record_t *), NULL);
     XASSERT(drms_record_list);
@@ -6373,7 +6388,7 @@ static LinkedList_t *faux_record_set_to_list(DRMS_RecordSet_t *faux_record_set)
 /* called ONLY from an `open_records` or `open_recordchunk` function; this implies that
  * if any record in the set is already cached, we should blow it away and re-cache it
  */
-DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *seriesname, char *where, const char *pkwhere, const char *npkwhere, int filter, int mixed, const char *qoverride, DB_Binary_Result_t *br_override, int allvers, int nrecs, HContainer_t *firstlast, HContainer_t *pkwhereNFL, int recnumq, int cursor, HContainer_t *links, /* Links to fetch from db. */ HContainer_t *keys, /* Keys to fetch from db. */ HContainer_t *segs, /* Segs to fetch from db. */ int initialize_links, int *status)
+DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *seriesname, char *where, const char *pkwhere, const char *npkwhere, int filter, int mixed, const char *qoverride, DB_Binary_Result_t *br_override, int allvers, int nrecs, HContainer_t *firstlast, HContainer_t *pkwhereNFL, int recnumq, int cursor, HContainer_t *links, /* Links to fetch from db. */ HContainer_t *keys, /* Keys to fetch from db. */ HContainer_t *segs, /* Segs to fetch from db. */ int initialize_links, int cache_full_record, int *status)
 {
     int i,throttled;
     int stat = 0;
@@ -6435,7 +6450,7 @@ DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *se
             recsize = drms_record_memsize(template);
         }
 
-        limit = (long long)((0.4e6 * env->query_mem) / recsize);
+        limit = CAP_LIMIT((long long)((0.4e6 * env->query_mem) / recsize));
     }
     else
     {
@@ -6849,7 +6864,7 @@ DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *se
                 if (record_list)
                 {
                     /* no duplicate linked records */
-                    stat = cache_linked_records(env, template, record_list, keys, link_map);
+                    stat = cache_linked_records(env, template, record_list, keys, link_map, cache_full_record);
                     list_llfree(&record_list);
                 }
                 else
@@ -6936,7 +6951,7 @@ DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, const char *se
 DRMS_RecordSet_t *drms_retrieve_records(DRMS_Env_t *env, const char *seriesname, char *where, const char *pkwhere, const char *npkwhere, int filter, int mixed, HContainer_t *goodsegcont, /* deprecated, not used */ int allvers, int nrecs, HContainer_t *firstlast, HContainer_t *pkwhereNFL, int recnumq, int cursor, HContainer_t *links, HContainer_t *keys, HContainer_t *segs, int *status)
 {
     /* ART - no longer used */
-    return drms_retrieve_records_internal(env, seriesname, where, pkwhere, npkwhere, filter, mixed, NULL, NULL, allvers, nrecs, firstlast, pkwhereNFL, recnumq, cursor, NULL, keys, NULL, 1, status);
+    return drms_retrieve_records_internal(env, seriesname, where, pkwhere, npkwhere, filter, mixed, NULL, NULL, allvers, nrecs, firstlast, pkwhereNFL, recnumq, cursor, NULL, keys, NULL, 1, 1, status);
 }
 
 char *drms_query_string(DRMS_Env_t *env, const char *seriesname, char *where, const char *pkwhere, const char *npkwhere, int filter, int mixed, DRMS_QueryType_t qtype, void *data, HContainer_t *keys, HContainer_t *segs, int allvers, HContainer_t *firstlast, HContainer_t *pkwhereNFL, int recnumq, int cursor, int openLinks, long long *limit)
@@ -7232,7 +7247,7 @@ char *drms_query_string(DRMS_Env_t *env, const char *seriesname, char *where, co
         {
           if (*limit == 0)
           {
-              *limit = (long long)((1.1e6*env->query_mem)/recsize);
+              *limit = CAP_LIMIT((long long)((1.1e6 * env->query_mem) / recsize));
           }
 
           if (!allvers)
@@ -7424,7 +7439,7 @@ char *drms_query_string(DRMS_Env_t *env, const char *seriesname, char *where, co
 
           if (*limit == 0)
           {
-              *limit = (long long)((1.1e6*env->query_mem)/recsize);
+              *limit = CAP_LIMIT((long long)((1.1e6 * env->query_mem) / recsize));
           }
 
           nrecs = *(int *)(data);
@@ -13000,6 +13015,7 @@ int drms_open_recordchunk(DRMS_Env_t *env,
           char sqlquery[DRMS_MAXQUERYLEN];
           char *seriesname = NULL;
           int openLinkedRecords = 0;
+          int cache_full_record = 1;
 
           nrecs = 0;
 
@@ -13036,8 +13052,9 @@ int drms_open_recordchunk(DRMS_Env_t *env,
 
                   /* Unrequested segments are now filtered out. They didn't used to be filtered out. */
                   openLinkedRecords = rs->cursor->openLinks;
+                  cache_full_record = rs->cursor->cache_full_record;
 
-                  fetchedrecs = drms_retrieve_records_internal(env, seriesname, NULL, NULL, NULL, 0, 0, sqlquery, NULL, rs->cursor->allvers[iset], 0, NULL, NULL, 0, 1, NULL, rs->ss_template_keys[iset], /* hcon of keyword structs */ rs->ss_template_segs[iset], /* hcon of keyword structs */ openLinkedRecords,&stat);
+                  fetchedrecs = drms_retrieve_records_internal(env, seriesname, NULL, NULL, NULL, 0, 0, sqlquery, NULL, rs->cursor->allvers[iset], 0, NULL, NULL, 0, 1, NULL, rs->ss_template_keys[iset], /* hcon of keyword structs */ rs->ss_template_segs[iset], /* hcon of keyword structs */ openLinkedRecords, cache_full_record, &stat);
 
                   free(seriesname);
                   seriesname = NULL;
@@ -13272,7 +13289,7 @@ static int drms_close_current_recordchunk(DRMS_RecordSet_t *rs)
 /* `keys` - a linked list of keyword names
  * `keys_out` - an hcon of keyword structs
  */
-DRMS_RecordSet_t *drms_open_recordset_internal(DRMS_Env_t *env, const char *rsquery, int openLinks, LinkedList_t *keys, int *status)
+DRMS_RecordSet_t *drms_open_recordset_internal(DRMS_Env_t *env, const char *rsquery, int openLinks, int cache_full_record, LinkedList_t *keys, int *status)
 {
     DRMS_RecordSet_t *rs = NULL;
     long long guid = -1;
@@ -13298,7 +13315,7 @@ DRMS_RecordSet_t *drms_open_recordset_internal(DRMS_Env_t *env, const char *rsqu
         {
             /* Since we are not retrieving records just yet, rsquery will not be evaluated
              * by PG. */
-            rs = drms_open_records_internal(env, tmp, openLinks, 0, 0, keys, &querylist, &allvers, NULL, &stat);
+            rs = drms_open_records_internal(env, tmp, openLinks, cache_full_record, 0, 0, keys, &querylist, &allvers, NULL, &stat);
             free(tmp);
         }
         else
@@ -13321,6 +13338,7 @@ DRMS_RecordSet_t *drms_open_recordset_internal(DRMS_Env_t *env, const char *rsqu
             rs->cursor->infoneeded = 0;
             rs->cursor->suinfo = NULL;
             rs->cursor->openLinks = openLinks;
+            rs->cursor->cache_full_record = cache_full_record;
 
             iset = 0;
             list_llreset(querylist);
@@ -13487,7 +13505,7 @@ DRMS_RecordSet_t *drms_open_recordset_internal(DRMS_Env_t *env, const char *rsqu
 
 DRMS_RecordSet_t *drms_open_recordset(DRMS_Env_t *env, const char *rsquery, int *status)
 {
-    return drms_open_recordset_internal(env, rsquery, 1, NULL, status);
+    return drms_open_recordset_internal(env, rsquery, 1, 1, NULL, status);
 }
 
 /* Returns next record in current chunk, unless no more records in current chunk.

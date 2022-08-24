@@ -595,6 +595,8 @@ struct DRMS_RecSetCursor_struct
   HContainer_t *suinfo;
 
   int openLinks; /* set in drms_open_recordset_internal(); passed into drms_open_recordset_internal() by client (e.g., show_info) */
+
+  int cache_full_record; /* set in drms_open_recordset_internal(); passed into drms_open_recordset_internal() by client (e.g., show_info) */
 };
 
 /** \brief DRMS cursor struct reference */

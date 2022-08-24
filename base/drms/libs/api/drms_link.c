@@ -519,7 +519,7 @@ static inline void drms_link_make_usable_hashkey(char *usable_hash_key, const ch
   * this, the argument is named `record_list` and is a LinkedList_t
   *
   * `template_record` is the series to which all records in `record_list` belong */
-LinkedList_t *drms_link_follow_recordset(DRMS_Env_t *env, DRMS_Record_t *template_record, LinkedList_t *record_list, const char *link, HContainer_t *keywords, HContainer_t *link_map, int *status)
+LinkedList_t *drms_link_follow_recordset(DRMS_Env_t *env, DRMS_Record_t *template_record, LinkedList_t *record_list, const char *link, HContainer_t *keywords, HContainer_t *link_map, int cache_full_record, int *status)
 {
     DRMS_Link_t *template_link = NULL;
     DRMS_Record_t *child_template_record = NULL;
@@ -605,6 +605,13 @@ LinkedList_t *drms_link_follow_recordset(DRMS_Env_t *env, DRMS_Record_t *templat
                 {
                     /* no duplicate linked records */
                     hcon_insert(link_map, child_usable_hash_key, &child_drms_record);
+
+                    if (!linked_records)
+                    {
+                        linked_records = list_llcreate(sizeof(DRMS_Record_t *), NULL);
+                        XASSERT(record_list);
+                    }
+
                     list_llinserttail(linked_records, &child_drms_record);
                 }
             }
@@ -640,7 +647,7 @@ LinkedList_t *drms_link_follow_recordset(DRMS_Env_t *env, DRMS_Record_t *templat
              *
              * `template_record` is parent record template;
              * `link_map_retrieved` key is USABLE hash key  */
-            link_map_retrieved = drms_retrieve_linked_recordset(env, link, child_template_record, template_record, keywords, link_hash_map, 1, &drms_status);
+            link_map_retrieved = drms_retrieve_linked_recordset(env, link, child_template_record, template_record, keywords, link_hash_map, 1, cache_full_record, &drms_status);
 
             if (drms_status == DRMS_SUCCESS)
             {
@@ -649,6 +656,12 @@ LinkedList_t *drms_link_follow_recordset(DRMS_Env_t *env, DRMS_Record_t *templat
                 {
                     child_drms_record = *child_drms_record_ptr;
                     hcon_insert(link_map, hcon_key, &child_drms_record);
+
+                    if (!linked_records)
+                    {
+                        linked_records = list_llcreate(sizeof(DRMS_Record_t *), NULL);
+                        XASSERT(record_list);
+                    }
 
                     /* no duplicate linked records */
                     list_llinserttail(linked_records, &child_drms_record);
