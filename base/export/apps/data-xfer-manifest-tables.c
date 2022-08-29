@@ -173,7 +173,7 @@ static int fetch_ids(DRMS_Env_t *env, const char *series, LinkedList_t *segments
     char buffer[256] = {0};
     char *separator = NULL;
     char *ptr_recnum = NULL;
-    Hash_Table_t recnum_hash;
+    HContainer_t *recnum_hash = NULL;
     char *recnum_list = NULL;
     size_t sz_recnum_list = 512;
     int first = -1;
@@ -207,6 +207,9 @@ static int fetch_ids(DRMS_Env_t *env, const char *series, LinkedList_t *segments
         /* returns IDs ordered by ascending recnum */
         snprintf(command, sizeof(command), "SELECT drms_id FROM drms.get_n_drms_ids('%s', ARRAY[%s], %d)", series, segment_list, number_ids);
 
+        fprintf(stderr, command);
+        fprintf(stderr, "\n");
+
         free(segment_list);
         segment_list = NULL;
 
@@ -215,7 +218,7 @@ static int fetch_ids(DRMS_Env_t *env, const char *series, LinkedList_t *segments
         {
             if (query_result->num_cols == 1)
             {
-                hash_init(&recnum_hash, 89, 0, (int (*)(const void *, const void *))strcmp, hash_universal_hash);
+                recnum_hash = hcon_create(sizeof(char), 32, NULL, NULL, NULL, NULL, 0);
 
                 /* print all to `stream_out` (`stream_out` should be fully buffered) */
                 setvbuf(stream_out, NULL, _IOFBF, 0);
@@ -228,7 +231,7 @@ static int fetch_ids(DRMS_Env_t *env, const char *series, LinkedList_t *segments
                     separator = strchr(ptr_recnum, ':');
                     *separator = '\0';
 
-                    if (!hash_member(&recnum_hash, ptr_recnum))
+                    if (!hcon_member(recnum_hash, ptr_recnum))
                     {
                         if (!first)
                         {
@@ -241,7 +244,8 @@ static int fetch_ids(DRMS_Env_t *env, const char *series, LinkedList_t *segments
                         }
 
                         recnum_list = base_strcatalloc(recnum_list, ptr_recnum, &sz_recnum_list);
-                        hash_insert(&recnum_hash, ptr_recnum, "T");
+                        fprintf(stderr, "added %s to recnum_list\n", ptr_recnum);
+                        hcon_insert(recnum_hash, ptr_recnum, "T");
                     }
 
                     /* stream out to caller */
@@ -249,7 +253,7 @@ static int fetch_ids(DRMS_Env_t *env, const char *series, LinkedList_t *segments
                     fprintf(stream_out, "\n");
                 }
 
-                hash_free(&recnum_hash);
+                hcon_destroy(&recnum_hash);
 
                 fflush(stream_out);
             }
@@ -288,7 +292,8 @@ static int update_manifest(DRMS_Env_t *env, const char *series, LinkedList_t *se
     size_t buffer_length = 0;
     ssize_t number_chars = 0;
     size_t total_number_chars = 0;
-    char command[256];
+    char *command = NULL;
+    size_t sz_command = 512;
     DB_Text_Result_t *query_result = NULL;
     char drms_id[128];
     char *recnum_list = NULL;
@@ -361,8 +366,25 @@ static int update_manifest(DRMS_Env_t *env, const char *series, LinkedList_t *se
                         recnum_list = (char *)recnum_list_in;
                     }
 
-                    snprintf(command, sizeof(command), "SELECT drms_id AS answer FROM drms.update_drms_ids('%s', ARRAY[%s], ARRAY[%s], '%s')", series, segment_list, recnum_list, new_value);
+
+                    command = calloc(sizeof(char), sz_command);
+
+                    command = base_strcatalloc(command, "SELECT drms_id AS answer FROM drms.update_drms_ids('", &sz_command);
+                    command = base_strcatalloc(command, series, &sz_command);
+                    command = base_strcatalloc(command, "', ARRAY[", &sz_command);
+                    command = base_strcatalloc(command, segment_list, &sz_command);
+                    command = base_strcatalloc(command, "], ARRAY[", &sz_command);
+                    command = base_strcatalloc(command, recnum_list, &sz_command);
+                    command = base_strcatalloc(command, "], '", &sz_command);
+                    command = base_strcatalloc(command, new_value, &sz_command);
+                    command = base_strcatalloc(command, "')", &sz_command);
+
+                    fprintf(stderr, command);
+                    fprintf(stderr, "\n");
+
                     query_result = drms_query_txt(drms_env->session, command);
+
+                    free(command);
 
                     if (query_result->num_rows == 1 && query_result->num_cols == 1)
                     {
