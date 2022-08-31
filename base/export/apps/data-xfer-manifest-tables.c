@@ -16,7 +16,7 @@ typedef enum
 #define OPTION_SEGMENTS "segments"
 #define OPTION_SEGMENTS_DEFAULT "*"
 #define OPTION_ID_VALUE "new_value"
-#define OPTION_ID_VALUE_DEFAULT "Y"
+#define OPTION_ID_VALUE_DEFAULT "?" // a dummy because a value is required only when the operation is `update`
 
 #define OPERATION_CREATE "create"
 #define OPERATION_DELETE "delete"
