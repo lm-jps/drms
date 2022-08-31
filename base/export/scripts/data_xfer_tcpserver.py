@@ -20,8 +20,6 @@ from drms_utils import CmdlParser, Arguments as Args, MakeObject, Formatter as D
 from drms_parameters import DRMSParams, DPMissingParameterError
 from drms_export import Error as ExportError, ErrorCode as ExportErrorCode
 
-DEFAULT_LOG_FILE = 'dx_log.txt'
-
 class ErrorCode(ExportErrorCode):
     PARAMETERS = (1, 'failure locating DRMS parameters')
     ARGUMENTS = (2, 'bad arguments')
@@ -293,7 +291,6 @@ class Arguments(Args):
                 package_root = drms_params.get_required('DX_PACKAGE_ROOT')
                 export_bin = drms_params.get_required('BIN_EXPORT')
                 export_production_db_user = drms_params.get_required('EXPORT_PRODUCTION_DB_USER')
-                log_file = os.path.join(drms_params.get_required('EXPORT_LOG_DIR'), DEFAULT_LOG_FILE)
             except DPMissingParameterError as exc:
                 raise ParametersError(msg=str(exc))
 
@@ -310,8 +307,8 @@ class Arguments(Args):
             # optional
             parser.add_argument('-c', '--chunk_size', help='the number of records to process at one time', metavar='<record chunk size>', dest='chunk_size', default=1024)
             parser.add_argument('-H', '--package-host', help='the server hosting the packages', metavar='<package host>', dest='package_host', default=package_host)
-            parser.add_argument('-l', '--log_file', help='the path to the log file', metavar='<log file>', dest='log_file', default=log_file)
-            parser.add_argument('-L', '--logging_level', help='the amount of logging to perform; in order of increasing verbosity: critical, error, warning, info, debug', metavar='<logging level>', dest='logging_level', action=DrmsLogLevelAction, default=DrmsLogLevel.ERROR)
+            parser.add_argument('-l', '--log-file', help='the path to the log file', metavar='<log file>', dest='log_file', default=None)
+            parser.add_argument('-L', '--logging-level', help='the amount of logging to perform; in order of increasing verbosity: critical, error, warning, info, debug', metavar='<logging level>', dest='logging_level', action=DrmsLogLevelAction, default=DrmsLogLevel.ERROR)
             parser.add_argument('-P', '--port', help='the port to listen on for new client connections', metavar='<listening port>', dest='listen_port', default=listen_port)
             parser.add_argument('-R', '--package-root', help='the root path of the packages', metavar='<package root>', dest='package_root', default=package_root)
             parser.add_argument('-S', '--server', help='the server host accepting client connections', metavar='<server>', dest='server', default=server)
@@ -319,7 +316,7 @@ class Arguments(Args):
             arguments = Arguments(parser=parser, args=args)
 
             # add needed drms parameters
-            arguments.export_bin = '/opt/netdrms/bin/linux_avx/'
+            arguments.export_bin = '/opt/netdrms-9.51/bin/linux_avx/'
             arguments.export_production_db_user = export_production_db_user
 
             cls._arguments = arguments
@@ -345,6 +342,9 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
     def __init__(self, request, client_address, server):
         self._drms_id_regex = None
         super().__init__(request, client_address, server)
+
+
+
 
     # self.server is the DataTransferTCPServer
     def handle(self):
@@ -443,7 +443,7 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
     async def receive_verification_and_update_manifest(self, *, client_socket, product):
         # after the last verification-data line, the client sends a single line with the chars '\\.\n'
         self._receive_is_done = False
-        self._verified_recnums = asyncio.Queue()
+        self._verified_segments = asyncio.Queue()
         self._verification_data_exist = False
 
         data_event = asyncio.Event()
@@ -492,20 +492,18 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
             raise SubprocessError(msg=f'[ fetch_drms_ids ] {str(exc)}' )
 
     async def export_package(self, *, product, file_template=None):
-        chunk_of_recnums = OrderedDict()
+        chunk_of_segments = OrderedDict()
         if self._drms_id_regex is None:
-            self._drms_id_regex = re.compile(r'[a-z_][a-z_0-9$]*[.][a-z_][a-z_0-9$]*:([0-9]+):[a-z_][a-z_0-9$]*')
+            self._drms_id_regex = re.compile(r'[a-z_][a-z_0-9$]*[.][a-z_][a-z_0-9$]*:([0-9]+):([a-z_][a-z_0-9$]*)')
 
-        # [*] filter ==> provide drms-export-to-stdout manifest series recnums via stdin
+        # [*] filter ==> provide drms-export-to-stdout manifest series recnums via stdin (used
+        # in drms_open_records() - we want to open all records, segments and all, even
+        # if we won't be exporting all segments)
         specification = f'{product}_manifest::[*]'
-        arg_list = [ 'a=0', 's=0', 'e=1', 'm=1', 'DRMS_DBUTF8CLIENTENCODING=1', f'spec={specification}' ]
+        arg_list = [ 'a=0', 's=0', 'e=1', 'm=1', 'DRMS_DBUTF8CLIENTENCODING=1', f'spec={specification}', f'JSOC_DBUSER={self.server.export_production_db_user}', f'JSOC_DBHOST={self.server.db_host}' ]
 
         if file_template is not None and len(file_template) > 0:
             arg_list.append(f'ffmt={file_template}')
-
-        arg_list.append('DRMS_DBUTF8CLIENTENCODING=1')
-        arg_list.append(f'JSOC_DBUSER={self.server.export_production_db_user}')
-        arg_list.append(f'JSOC_DBHOST={self.server.db_host}')
 
         try:
             # we need to run drms-export-to-stdout, even if no DRMS_IDs are available for processing; running drms-export-to-stdout will create an empty manifest file in this case
@@ -516,12 +514,14 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
 
             while True:
                 # a list of recnum decimal byte strings
-                while len(chunk_of_recnums) < self.server.chunk_size:
+                while len(chunk_of_segments) < self.server.chunk_size:
                     try:
                         drms_id = self._drms_ids.get_nowait()
                         # since DRMS_IDs are specific to a segment, a set of DRMS_IDs might contain duplicate recnums; remove dupes with an OrderedDict
                         recnum = self._drms_id_regex.match(drms_id).group(1)
-                        chunk_of_recnums[recnum] = 0
+                        segment = self._drms_id_regex.match(drms_id).group(2)
+                        segment_id = f'{str(recnum)}:{str(segment)}'
+                        chunk_of_segments[segment_id] = 0
                         self._drms_ids.task_done()
                     except asyncio.QueueEmpty:
                         # got all available recnums
@@ -532,13 +532,13 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
                         # more recnums to come; wait for queue to fill a bit
                         await asyncio.sleep(0.5)
 
-                # we have our chunk of recnums in `chunk_of_recnums` (consumed from the self._drms_ids queue)
+                # we have our chunk of recnums in `chunk_of_segments` (consumed from the self._drms_ids queue)
                 if proc.returncode is None:
-                    if len(chunk_of_recnums) > 0:
+                    if len(chunk_of_segments) > 0:
                         # send recnums to drms-export-to-stdout (which is expecting recnums from stdin)
-                        self.server.log.write_debug([f'[ DataTransferTCPRequestHandler.create_package ] sending {",".join(chunk_of_recnums)} to process (pid {str(proc.pid)})'])
-                        proc.stdin.write('\n'.join(list(chunk_of_recnums)).encode())
-                        self.server.log.write_debug([f'[ DataTransferTCPRequestHandler.create_package ] sent chunk of {str(len(chunk_of_recnums))} recnums to process (pid {str(proc.pid)})'])
+                        self.server.log.write_debug([f'[ DataTransferTCPRequestHandler.create_package ] sending {",".join(chunk_of_segments)} to process (pid {str(proc.pid)})'])
+                        proc.stdin.write('\n'.join(list(chunk_of_segments)).encode())
+                        self.server.log.write_debug([f'[ DataTransferTCPRequestHandler.create_package ] sent chunk of {str(len(chunk_of_segments))} recnums to process (pid {str(proc.pid)})'])
                         await proc.stdin.drain()
                 else:
                     raise SubprocessError(msg=f'export process died unexpectly, error code {str(proc.returncode)}')
@@ -553,6 +553,7 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
             while True:
                 # read data package file from export subprocess
                 bytes_read = await proc.stdout.read(16384)
+                # self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.create_package ] got bytes from drms-export-to-stdout {bytes_read.decode()}' ])
                 if bytes_read == b'':
                     self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.create_package ] got end of file - total num bytes read {total_num_bytes_read}, total num bytes written {total_num_bytes_written}' ])
                     break
@@ -688,25 +689,26 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
 
                     break
 
+                verified_segments = []
                 if len(full_lines) > 0:
                     self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.receive_verification ] extracting verified recnums from  {str(full_lines)}' ])
-                    verified_recnums = [ self._drms_id_regex.match(line.split()[0]).group(1) for line in full_lines if line.split()[1] == 'V' ]
-                    self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.receive_verification ] verified recnums: {",".join(verified_recnums)}' ])
+                    verified_segments = [ ( self._drms_id_regex.match(line.split()[0]).group(1), self._drms_id_regex.match(line.split()[0]).group(2) ) for line in full_lines if line.split()[1] == 'V' ]
+                    self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.receive_verification ] verified segments: {",".join([ recnum + ":" + segment for recnum, segment in verified_segments ])}' ])
 
-                for recnum in verified_recnums:
+                for recnum, segment in verified_segments:
                     # we know we have some verification data
                     if not self._verification_data_exist:
                         self._verification_data_exist = True
                         data_event.set()
-                    await self._verified_recnums.put(recnum)
+                    await self._verified_segments.put((recnum, segment))
 
-                self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.receive_verification ] finished sending {len(verified_recnums)} recnums for verification processing (for client `{str(self.client_address)}`)' ])
+                self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.receive_verification ] finished sending {len(verified_segments)} recnums for verification processing (for client `{str(self.client_address)}`)' ])
             except socket.timeout as exc:
                 # no data written to pipe
                 raise MessageTimeoutError(msg=f'timeout event waiting for server {data_socket.getpeername()} to send data')
 
         self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.receive_verification ] finished receiving verification data from client `{str(self.client_address)}`' ])
-        await self._verified_recnums.join()
+        await self._verified_segments.join()
         self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.receive_verification ] finished waiting for verification processing to complete (for client `{str(self.client_address)}`)' ])
         self._receive_is_done = True
         if not self._verification_data_exist:
@@ -719,20 +721,18 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
         if self._verification_data_exist:
             # only run the manifest-update code if there are verification data
             try:
-                # unlike the subprocess module, the asyncio.subprocess module runs asynchronously
-                arg_list = [ f'series={product}', f'operation=update', f'new_value=Y', f'JSOC_DBUSER={self.server.export_production_db_user}', f'JSOC_DBHOST={self.server.db_host}' ]
-
-                self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.update_manifest ] running manifest manager for client `{str(self.client_address)}`: {str(arg_list)}' ])
-                proc = await asyncio.subprocess.create_subprocess_exec(os.path.join(self.server.export_bin, 'data-xfer-manifest-tables'), *arg_list, stdin=asyncio.subprocess.PIPE)
-
-                chunk_of_recnums = []
-
                 while True:
                     # a list of recnum decimal byte strings
-                    while len(chunk_of_recnums) < self.server.chunk_size:
+                    chunk_of_segments = {} # str(recnum) -> list of str(segment)
+                    while len(chunk_of_segments) < self.server.chunk_size:
                         try:
-                            chunk_of_recnums.append(self._verified_recnums.get_nowait())
-                            self._verified_recnums.task_done()
+                            recnum, segment = self._verified_segments.get_nowait()
+
+                            if chunk_of_segments.get(str(recnum)) is None:
+                                chunk_of_segments[str(recnum)] = []
+
+                            chunk_of_segments[str(recnum)].append(segment)
+                            self._verified_segments.task_done()
                         except asyncio.QueueEmpty:
                             # got all available recnums
                             if self._receive_is_done:
@@ -742,19 +742,36 @@ class DataTransferTCPRequestHandler(socketserver.BaseRequestHandler):
                             # more recnums to come; wait for queue to fill a bit
                             await asyncio.sleep(0.5)
 
-                    # we have our chunk of recnums in `chunk_of_recnums`
-                    if len(chunk_of_recnums) > 0:
-                        proc.stdin.write('\n'.join(chunk_of_recnums).encode())
-                        self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.update_manifest ] updated chunk of {len(chunk_of_recnums)} recnums in manifest for client `{str(self.client_address)}`' ])
-                        await proc.stdin.drain()
-                        chunk_of_recnums = []
+                    # we have our chunk of recnums in `chunk_of_segments`
+                    if len(chunk_of_segments) > 0:
+                        # arrange by segments -> recnums, a la:
+                        # (segA) -> 5
+                        # (segA, segB) -> 1, 8, 3, 22
+                        # (segB) -> 2
+                        segment_map = {} # segment list -> list of str(recnum)
+                        for recnum, segments in chunk_of_segments.items():
+                            segment_list = ','.join(segments)
+                            if segment_map.get(segment_list) is None:
+                                segment_map[segment_list] = []
+
+                            segment_map[segment_list].append(recnum)
+
+                        for segment_list, recnums in segment_map.items():
+                            # unlike the subprocess module, the asyncio.subprocess module runs asynchronously
+                            arg_list = [ f'series={product}', f'operation=update', f'new_value=Y', f'segments={segment_list}', f'JSOC_DBUSER={self.server.export_production_db_user}', f'JSOC_DBHOST={self.server.db_host}' ]
+
+                            self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.update_manifest ] running manifest manager for client `{str(self.client_address)}`: {str(arg_list)}' ])
+                            proc = await asyncio.subprocess.create_subprocess_exec(os.path.join(self.server.export_bin, 'data-xfer-manifest-tables'), *arg_list, stdin=asyncio.subprocess.PIPE)
+
+                            proc.stdin.write('\n'.join(recnums).encode())
+                            self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.update_manifest ] updated chunk of {len(recnums)} recnums in manifest for client `{str(self.client_address)}`' ])
+                            await proc.stdin.drain()
+                            proc.stdin.close()
+                            await proc.wait()
 
                     if self._receive_is_done:
-                        proc.stdin.close()
                         self.server.log.write_debug([ f'[ DataTransferTCPRequestHandler.update_manifest ] done updating manifest for client `{str(self.client_address)}`' ])
                         break
-
-                await proc.wait()
             except (ValueError, OSError) as exc:
                 raise SubprocessError(msg=f'[ fetch_drms_ids ] {str(exc)}' )
 
@@ -793,7 +810,10 @@ if __name__ == "__main__":
         arguments = get_arguments()
         try:
             formatter = DrmsLogFormatter('%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
-            log = DrmsLog(arguments.log_file, arguments.logging_level, formatter)
+            if arguments.log_file is None:
+                log = DrmsLog(sys.stdout, arguments.logging_level, formatter)
+            else:
+                log = DrmsLog(arguments.log_file, arguments.logging_level, formatter)
         except Exception as exc:
             raise LoggingError(msg=f'{str(exc)}')
 
