@@ -2107,7 +2107,13 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *record
                                 snprintf(recnum_line, sizeof(recnum_line), "%s\n", line);
                                 ptr_segment = ptr_separator + 1;
                                 ptr_separator = strchr(ptr_segment, '\n');
-                                *ptr_separator = '\0';
+
+                                if (ptr_separator)
+                                {
+                                    /* the last line may have no newline! */
+                                    *ptr_separator = '\0';
+                                }
+
                                 snprintf(segment_id, sizeof(segment_id), "%s:%s", line, ptr_segment);
 
                                 if (PQputCopyData(env->session->db_handle->db_connection, recnum_line, strlen(recnum_line)) == -1)
