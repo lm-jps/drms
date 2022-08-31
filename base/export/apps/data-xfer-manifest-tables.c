@@ -12,22 +12,31 @@ typedef enum
 #define ARG_SERIES "series"
 #define ARG_OPERATION "operation"
 #define OPTION_NUMBER "n"
+#define OPTION_NUMBER_DEFAULT "4096"
 #define OPTION_SEGMENTS "segments"
+#define OPTION_SEGMENTS_DEFAULT "*"
 #define OPTION_ID_VALUE "new_value"
-#define OPTION_ID_VALUE_DEFAULT "*"
+#define OPTION_ID_VALUE_DEFAULT "Y"
 
 #define OPERATION_CREATE "create"
 #define OPERATION_DELETE "delete"
 #define OPERATION_UPDATE "update"
 #define OPERATION_FETCH "fetch"
 
+struct segment_obj_struct
+{
+    char recnum[32];
+    char segment[DRMS_MAXSEGNAMELEN];
+};
+
+typedef struct segment_obj_struct segment_obj_t;
 
 ModuleArgs_t module_args[] =
 {
     { ARG_STRING, ARG_SERIES, NULL, "data series for which the manifest table exists" },
     { ARG_STRING, ARG_OPERATION, NULL, "the manifest-table operation to perform (create, delete, update, fetch)" },
-    { ARG_INT, OPTION_NUMBER, "4096", "when the operation is `fetch`, this option is the number of DRMS_IDs to fetch" },
-    { ARG_STRINGS, OPTION_SEGMENTS, "*", "when the operation is `fetch`, this option is a list of segments for which DRMS_IDs will be fetched" },
+    { ARG_INT, OPTION_NUMBER, OPTION_NUMBER_DEFAULT, "when the operation is `fetch`, this option is the number of DRMS_IDs to fetch" },
+    { ARG_STRINGS, OPTION_SEGMENTS, OPTION_SEGMENTS_DEFAULT, "when the operation is `fetch`, this option is a list of segments for which DRMS_IDs will be fetched; `*` implies all segments" },
     { ARG_STRING, OPTION_ID_VALUE, OPTION_ID_VALUE_DEFAULT, "when the operation is `update`, this option is the new value for the provided DRMS IDs" },
     { ARG_END }
 };
@@ -51,7 +60,8 @@ static int validate_segments(DRMS_Env_t *env, LinkedList_t *list, const char *se
     {
         if (number_segments == 1 && strcmp(segments[0], "*") == 0)
         {
-            /* all segments */
+            /* all segments - the command line contained `segments=*` (or no `segments` argument, which will
+             * cause segments to default to '*') */
 
             /* do not follow links */
             while ((segment = drms_record_nextseg(template, &iterator, 0)) != NULL)
@@ -162,7 +172,7 @@ static int delete_manifest(DRMS_Env_t *env, const char *series)
     return error;
 }
 
-static int fetch_ids(DRMS_Env_t *env, const char *series, LinkedList_t *segments, int number_ids, FILE *stream_out, char **recnum_list_out)
+static int fetch_ids(DRMS_Env_t *env, const char *series, LinkedList_t *segments, int number_ids, FILE *stream_out, LinkedList_t **segment_obj_list_out)
 {
     int error = 0;
     char *segment_list = NULL;
@@ -173,11 +183,14 @@ static int fetch_ids(DRMS_Env_t *env, const char *series, LinkedList_t *segments
     char buffer[256] = {0};
     char *separator = NULL;
     char *ptr_recnum = NULL;
-    HContainer_t *recnum_hash = NULL;
-    char *recnum_list = NULL;
-    size_t sz_recnum_list = 512;
+    char *ptr_segment = NULL;
+    HContainer_t *segment_hash = NULL;
+    char segment_id[64] = {0};
     int first = -1;
+    segment_obj_t segment_obj;
+    LinkedList_t *segment_obj_list = NULL;
     ListNode_t *node = NULL;
+
     DB_Text_Result_t *query_result = NULL;
     int row_index = -1;
 
@@ -218,7 +231,7 @@ static int fetch_ids(DRMS_Env_t *env, const char *series, LinkedList_t *segments
         {
             if (query_result->num_cols == 1)
             {
-                recnum_hash = hcon_create(sizeof(char), 32, NULL, NULL, NULL, NULL, 0);
+                segment_hash = hcon_create(sizeof(char), 64, NULL, NULL, NULL, NULL, 0);
 
                 /* print all to `stream_out` (`stream_out` should be fully buffered) */
                 setvbuf(stream_out, NULL, _IOFBF, 0);
@@ -230,22 +243,23 @@ static int fetch_ids(DRMS_Env_t *env, const char *series, LinkedList_t *segments
                     ptr_recnum = strchr(buffer, ':') + 1;
                     separator = strchr(ptr_recnum, ':');
                     *separator = '\0';
+                    ptr_segment = separator + 1;
 
-                    if (!hcon_member(recnum_hash, ptr_recnum))
+                    snprintf(segment_id, sizeof(segment_id), "%s:%s", ptr_recnum, ptr_segment);
+                    if (!hcon_member(segment_hash, segment_id))
                     {
-                        if (!first)
+                        if (!segment_obj_list)
                         {
-                            recnum_list = base_strcatalloc(recnum_list, ", ", &sz_recnum_list);
-                        }
-                        else
-                        {
-                            recnum_list = calloc(sz_recnum_list, sizeof(char));
+                            segment_obj_list = list_llcreate(sizeof(segment_obj_t), NULL);
                             first = 0;
                         }
 
-                        recnum_list = base_strcatalloc(recnum_list, ptr_recnum, &sz_recnum_list);
-                        fprintf(stderr, "added %s to recnum_list\n", ptr_recnum);
-                        hcon_insert(recnum_hash, ptr_recnum, "T");
+                        snprintf(segment_obj.recnum, sizeof(segment_obj.recnum), "%s", ptr_recnum);
+                        snprintf(segment_obj.segment, sizeof(segment_obj.segment), "%s", ptr_segment);
+                        list_llinserttail(segment_obj_list, &segment_obj);
+
+                        fprintf(stderr, "added %s to segment_obj_list\n", segment_id);
+                        hcon_insert(segment_hash, segment_id, "T");
                     }
 
                     /* stream out to caller */
@@ -253,8 +267,7 @@ static int fetch_ids(DRMS_Env_t *env, const char *series, LinkedList_t *segments
                     fprintf(stream_out, "\n");
                 }
 
-                hcon_destroy(&recnum_hash);
-
+                hcon_destroy(&segment_hash);
                 fflush(stream_out);
             }
             else
@@ -280,7 +293,7 @@ static int fetch_ids(DRMS_Env_t *env, const char *series, LinkedList_t *segments
 
     if (!error)
     {
-        *recnum_list_out = recnum_list;
+        *segment_obj_list_out = segment_obj_list;
     }
 
     return error;
@@ -462,6 +475,49 @@ static int update_manifest(DRMS_Env_t *env, const char *series, LinkedList_t *se
     return error;
 }
 
+static int update_one_manifest(DRMS_Env_t *env, const char *series, const char *recnum, const char *segment, const char *new_value)
+{
+    char *command = NULL;
+    size_t sz_command = 512;
+    DB_Text_Result_t *query_result = NULL;
+    int error = 0;
+
+    command = calloc(sizeof(char), sz_command);
+
+    command = base_strcatalloc(command, "SELECT drms_id AS answer FROM drms.update_drms_ids('", &sz_command);
+    command = base_strcatalloc(command, series, &sz_command);
+    command = base_strcatalloc(command, "', ARRAY['", &sz_command);
+    command = base_strcatalloc(command, segment, &sz_command);
+    command = base_strcatalloc(command, "'], ARRAY[", &sz_command);
+    command = base_strcatalloc(command, recnum, &sz_command);
+    command = base_strcatalloc(command, "], '", &sz_command);
+    command = base_strcatalloc(command, new_value, &sz_command);
+    command = base_strcatalloc(command, "')", &sz_command);
+
+    fprintf(stderr, command);
+    fprintf(stderr, "\n");
+
+    query_result = drms_query_txt(drms_env->session, command);
+
+    free(command);
+
+    if (query_result->num_rows == 1 && query_result->num_cols == 1)
+    {
+        if (*query_result->field[0][0] != 't')
+        {
+            error = 1;
+            fprintf(stderr, "[ update_one_manifest ] failure updating manifest table\n");
+        }
+    }
+    else
+    {
+        error = 1;
+        fprintf(stderr, "[ update_one_manifest ] unexpected number of rows or columns returned (rows=%d, cols=%d)\n", query_result->num_rows, query_result->num_cols);
+    }
+
+    return error;
+}
+
 int DoIt(void)
 {
     int drms_error = DRMS_SUCCESS;
@@ -476,7 +532,9 @@ int DoIt(void)
     int series_exists = -1;
     char series_lower[DRMS_MAXSERIESNAMELEN] = {0};
     char *manifest_table = NULL;
-    char *recnum_list = NULL;
+    LinkedList_t *segment_obj_list = NULL;
+    ListNode_t *node = NULL;
+    segment_obj_t *segment_obj = NULL;
     int error = 0;
 
     series = params_get_str(&cmdparams, ARG_SERIES);
@@ -521,21 +579,28 @@ int DoIt(void)
                     }
                     else if (strcasecmp(operation, OPERATION_FETCH) == 0)
                     {
-                        error = fetch_ids(drms_env, series, segment_list, number_ids, stdout, &recnum_list);
+                        error = fetch_ids(drms_env, series, segment_list, number_ids, stdout, &segment_obj_list);
                         if (!error)
                         {
-                            if (recnum_list)
+                            if (segment_obj_list)
                             {
-                                /* there might have been no available DRMS_IDs, in which case the manifest need to be updated */
-                                error = update_manifest(drms_env, series, segment_list, "P", NULL, recnum_list);
+                                list_llreset(segment_obj_list);
+                                while ((node = list_llnext(segment_obj_list)) != NULL)
+                                {
+                                    segment_obj = (segment_obj_t *)node->data;
+
+                                    /* there might have been no available DRMS_IDs, in which case the manifest need to be updated */
+                                    error = update_one_manifest(drms_env, series, segment_obj->recnum, segment_obj->segment, "P");
+
+                                    if (error)
+                                    {
+                                        break;
+                                    }
+                                }
                             }
                         }
 
-                        if (recnum_list)
-                        {
-                            free(recnum_list);
-                            recnum_list = NULL;
-                        }
+                        list_llfree(&segment_obj_list);
                     }
                     else
                     {
