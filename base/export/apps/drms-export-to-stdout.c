@@ -1358,7 +1358,7 @@ static ExpToStdoutStatus_t ExportRecordSetKeywordsToStdout(DRMS_RecordSet_t *sub
 /* loop over segments */
 /* segCompression is an array of FITSIO macros, one for each segment, that specify the type of compression to perform; if NULL, then compress all segments with Rice compression
  */
-static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int export_from_manifest, int dumpFileName, int suppress_stderr, DRMS_Record_t *expRec, const char *ffmt, CFITSIO_COMPRESSION_TYPE *segCompression, int compressAllSegs, const char *classname, const char *mapfile, size_t *bytesExported, size_t maxTarFileSize, size_t *numFilesExported, json_t *infoDataArr, json_t *errorDataArr, char **manifest_buf, size_t * sz_manifest_buf)
+static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int export_from_manifest, int dumpFileName, int suppress_stderr, DRMS_Record_t *expRec, const char *ffmt, CFITSIO_COMPRESSION_TYPE *segCompression, int compressAllSegs, const char *classname, const char *mapfile, size_t *bytesExported, size_t maxTarFileSize, size_t *numFilesExported, json_t *infoDataArr, json_t *errorDataArr, char **manifest_buf, size_t *sz_manifest_buf, HContainer_t *export_filter)
 {
     ExpToStdoutStatus_t expStatus = ExpToStdoutStatus_Success;
     int drmsStatus = DRMS_SUCCESS;
@@ -1386,6 +1386,7 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int export_from_man
     char drms_id[128];
     char *series_lower = NULL;
     char *segment_lower = NULL;
+    char segment_id[64] = {0};
 
     if (makeTar)
     {
@@ -1398,6 +1399,13 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int export_from_man
     iSeg = 0;
     while ((segIn = drms_record_nextseg(expRec, &last, 0)) != NULL)
     {
+        /* filter in */
+        snprintf(segment_id, sizeof(segment_id), "%lld:%s", expRec->recnum, segIn->info->name);
+        if (export_filter && !hcon_member(export_filter, segment_id))
+        {
+            continue;
+        }
+
         if (segIn->info->islink)
         {
             if ((segTgt = drms_segment_lookup(expRec, segIn->info->name)) == NULL)
@@ -1874,7 +1882,7 @@ static ExpToStdoutStatus_t ExportRecordToStdout(int makeTar, int export_from_man
 /* loop over records */
 /* segCompression is an array of FITSIO macros, one for each segment, that specify the type of compression to perform; if NULL, then compress all segments with Rice compression
  */
-static ExpToStdoutStatus_t ExportRecordSetToStdout(DRMS_Env_t *env, int makeTar, int export_from_manifest, int dumpFileName, int suppress_stderr, DRMS_RecordSet_t *expRS, const char *ffmt, CFITSIO_COMPRESSION_TYPE *segCompression, int compressAllSegs, int dump_keywords_only, const char *classname, const char *mapfile, size_t *bytesExported, size_t maxTarFileSize, size_t *numFilesExported, json_t *infoDataArr, json_t *errorDataArr, char **error_buf, char **manifest_buf, size_t *sz_manifest_buf)
+static ExpToStdoutStatus_t ExportRecordSetToStdout(DRMS_Env_t *env, int makeTar, int export_from_manifest, int dumpFileName, int suppress_stderr, DRMS_RecordSet_t *expRS, const char *ffmt, CFITSIO_COMPRESSION_TYPE *segCompression, int compressAllSegs, int dump_keywords_only, const char *classname, const char *mapfile, size_t *bytesExported, size_t maxTarFileSize, size_t *numFilesExported, json_t *infoDataArr, json_t *errorDataArr, char **error_buf, char **manifest_buf, size_t *sz_manifest_buf, HContainer_t *export_filter)
 {
     int drmsStatus = DRMS_SUCCESS;
     ExpToStdoutStatus_t expStatus = ExpToStdoutStatus_Success;
@@ -2000,7 +2008,7 @@ static ExpToStdoutStatus_t ExportRecordSetToStdout(DRMS_Env_t *env, int makeTar,
                         recsAttempted++;
 
                         /* export each segment file in this record */
-                        expStatus = ExportRecordToStdout(makeTar, export_from_manifest, dumpFileName, suppress_stderr, expRecord, ffmt, segCompression, compressAllSegs, classname, mapfile, bytesExported, maxTarFileSize, numFilesExported, infoDataArr, errorDataArr, manifest_buf, sz_manifest_buf);
+                        expStatus = ExportRecordToStdout(makeTar, export_from_manifest, dumpFileName, suppress_stderr, expRecord, ffmt, segCompression, compressAllSegs, classname, mapfile, bytesExported, maxTarFileSize, numFilesExported, infoDataArr, errorDataArr, manifest_buf, sz_manifest_buf, export_filter);
                         if (expStatus == ExpToStdoutStatus_TarTooLarge)
                         {
                             break;
@@ -2153,6 +2161,7 @@ int DoIt(void)
     json_t *recobj = NULL;
     char specbuf[1024];
     char numbuf[16];
+    HContainer_t *export_filter = NULL;
 
     /* read and process arguments */
     rsSpec = params_get_str(&cmdparams, ARG_RS_SPEC);
@@ -2257,7 +2266,7 @@ int DoIt(void)
     {
         if (export_from_manifest)
         {
-            expRS = drms_open_records_from_manifest(drms_env, rsSpec, NULL, 1, 0, &drmsStatus);
+            expRS = drms_open_records_from_manifest(drms_env, rsSpec, NULL, 1, 0, &export_filter, &drmsStatus);
         }
         else
         {
@@ -2321,7 +2330,7 @@ int DoIt(void)
 
         /* since the following call dives into lib DRMS, it could print error and warnings messages to stderr; capture those if we are
          * suppressing writing to stderr */
-        expStatus = ExportRecordSetToStdout(drms_env, makeTar, export_from_manifest, dumpFileName, suppress_stderr, expRS, fileTemplate, segCompression, compressAllSegs, dump_keywords_only, mapClass, mapFile, &bytesExported, maxTarFileSize, &numFilesExported, infoDataArr, errorDataArr, &error_buf_tmp, &manifest_buf, &sz_manifest_buf);
+        expStatus = ExportRecordSetToStdout(drms_env, makeTar, export_from_manifest, dumpFileName, suppress_stderr, expRS, fileTemplate, segCompression, compressAllSegs, dump_keywords_only, mapClass, mapFile, &bytesExported, maxTarFileSize, &numFilesExported, infoDataArr, errorDataArr, &error_buf_tmp, &manifest_buf, &sz_manifest_buf, export_filter);
 
         /* -- ART -- */
         if (!manifest_buf)
@@ -2512,6 +2521,8 @@ int DoIt(void)
         free(segCompression);
         segCompression = NULL;
     }
+
+    hcon_destroy(&export_filter);
 
     return expStatus;
 }

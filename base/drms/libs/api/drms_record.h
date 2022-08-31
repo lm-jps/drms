@@ -52,8 +52,7 @@ typedef enum DRMS_RecChunking_enum DRMS_RecChunking_t;
 /* Retrieve a recordset specified by the DRMS dataset name string
    given in the argument "datasetname". The records are inserted into
    the record cache and marked read-only. */
-
-DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *recordsetname, int openlinks, int cache_full_record, int retrieverecs, int nrecslimit, LinkedList_t *keylist, LinkedList_t **llistout, char **allversout, int **hasshadowout, int *status);
+DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *recordsetname, int openlinks, int cache_full_record, int retrieverecs, int nrecslimit, LinkedList_t *keylist, LinkedList_t **llistout, char **allversout, int **hasshadowout, HContainer_t ** export_filter_out, int *status);
 
 DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, const char *recordsetname, int *status);
 
@@ -63,7 +62,7 @@ DRMS_RecordSet_t *drms_open_nrecords(DRMS_Env_t *env, const char *recordsetname,
 
 DRMS_RecordSet_t *drms_open_recordswithkeys(DRMS_Env_t *env, const char *specification, const char *keylist, int *status);
 
-DRMS_RecordSet_t *drms_open_records_from_manifest(DRMS_Env_t *env, const char *manifest_specificaton, LinkedList_t *keys, int chunk_records, int open_links, int *status);
+DRMS_RecordSet_t *drms_open_records_from_manifest(DRMS_Env_t *env, const char *manifest_specificaton, LinkedList_t *keys, int chunk_records, int open_links, HContainer_t **export_filter_out, int *status);
 
 int drms_open_recordchunk(DRMS_Env_t *env, DRMS_RecordSet_t *rs, DRMS_RecSetCursorSeek_t seektype, long long chunkindex, int *status);
 
