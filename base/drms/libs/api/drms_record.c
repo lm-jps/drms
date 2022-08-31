@@ -1653,6 +1653,7 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *record
     size_t buffer_length = 0;
     char *line = NULL;
     HContainer_t *export_filter = NULL;
+    HContainer_t *recnum_set = NULL;
     char recnum_line[32] = {0};
     char *ptr_separator = NULL;
     char *ptr_segment = NULL;
@@ -2116,21 +2117,35 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, const char *record
 
                                 snprintf(segment_id, sizeof(segment_id), "%s:%s", line, ptr_segment);
 
-                                if (PQputCopyData(env->session->db_handle->db_connection, recnum_line, strlen(recnum_line)) == -1)
-                                {
-                                    fprintf(stderr, "[ drms_open_records_internal ] query failed: %s", PQerrorMessage(env->session->db_handle->db_connection));
-                                    stat = 1;
-                                    db_unlock(env->session->db_handle);
-                                    goto failure;
-                                }
-
                                 if (!export_filter)
                                 {
                                     export_filter = hcon_create(sizeof(char), 64, NULL, NULL, NULL, NULL, 0);
                                 }
 
                                 hcon_insert(export_filter, segment_id, "T");
+
+                                if (!recnum_set)
+                                {
+                                    recnum_set = hcon_create(sizeof(char), 32, NULL, NULL, NULL, NULL, 0);
+                                }
+
+                                if (!hcon_member(recnum_set, line))
+                                {
+                                    /* do not add duplicate records (which can now happen since we are reading segment_id,
+                                     * not recnum, from stdin) */
+                                    if (PQputCopyData(env->session->db_handle->db_connection, recnum_line, strlen(recnum_line)) == -1)
+                                    {
+                                        fprintf(stderr, "[ drms_open_records_internal ] query failed: %s", PQerrorMessage(env->session->db_handle->db_connection));
+                                        stat = 1;
+                                        db_unlock(env->session->db_handle);
+                                        goto failure;
+                                    }
+
+                                    hcon_insert(recnum_set, line, "T");
+                                }
                             }
+
+                            hcon_destroy(&recnum_set);
 
                             pg_result = PQgetResult(env->session->db_handle->db_connection);
                             if (PQresultStatus(pg_result) != PGRES_COMMAND_OK)
@@ -2705,6 +2720,7 @@ failure:
     }
 
     hcon_destroy(&export_filter);
+    hcon_destroy(&recnum_set);
 
     if (status)
         *status = stat;
