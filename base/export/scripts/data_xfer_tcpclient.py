@@ -2,6 +2,7 @@
 
 from datetime import datetime, timedelta
 from enum import Enum
+import getpass
 import json
 import os
 from shutil import copyfile
@@ -84,6 +85,7 @@ class Arguments(Args):
             try:
                 server = drms_params.get_required('DX_SERVER')
                 server_port = int(drms_params.get_required('DX_LISTEN_PORT'))
+                remote_user = getpass.getuser()
             except DPMissingParameterError as exc:
                 raise ParametersError(msg=str(exc))
 
@@ -98,12 +100,12 @@ class Arguments(Args):
             parser.add_argument('product', help='the data product to which the files belong', metavar='<product>', dest='product', required=True)
 
             # optional
-            parser.add_argument('-d', '--download_directory', help='the directory to which tar file will be downloaded', metavar='<download directory>', dest='download_directory', default='.')
-            parser.add_argument('-e', '--export_file_format', help='the export file-name format string to be used when creating the exported files', metavar='<export file format>', dest='export_file_format', default=None)
-            parser.add_argument('-l', '--logging_level', help='the amount of logging to perform; in order of increasing verbosity: critical, error, warning, info, debug', metavar='<logging level>', dest='logging_level', action=DrmsLogLevelAction, default=DrmsLogLevel.ERROR)
-            parser.add_argument('-n', '--number_of_files', help='the number of data files/DRMS_IDs to process at one time', metavar='<number of files>', dest='number_of_files', default=1024)
+            parser.add_argument('-d', '--download-directory', help='the directory to which tar file will be downloaded', metavar='<download directory>', dest='download_directory', default='.')
+            parser.add_argument('-e', '--export-file-format', help='the export file-name format string to be used when creating the exported files', metavar='<export file format>', dest='export_file_format', default=None)
+            parser.add_argument('-l', '--logging-level', help='the amount of logging to perform; in order of increasing verbosity: critical, error, warning, info, debug', metavar='<logging level>', dest='logging_level', action=DrmsLogLevelAction, default=DrmsLogLevel.ERROR)
+            parser.add_argument('-n', '--number-of-files', help='the number of data files/DRMS_IDs to process at one time', metavar='<number of files>', dest='number_of_files', default=1024)
             parser.add_argument('-t', '--tunneling-off', help='if set, then access handshake server directly', dest='tunneling', action='store_false')
-            parser.add_argument('-r', '--remote-user', help='the user on the server that will be authenticated', metavar='<remote user>', dest='remote_user', default=None)
+            parser.add_argument('-r', '--remote-user', help='the user on the server that will be authenticated', metavar='<remote user>', dest='remote_user', default=remote_user)
             parser.add_argument('-p', '--private-key-file', help='the local file containing the private SSH key to be used for authentication on the server', metavar='<private key file>', dest='private_key_file', default=None)
 
             arguments = Arguments(parser=parser, args=args)
@@ -405,7 +407,7 @@ def verify_and_store_data(control_socket, downloaded_package_path, log):
 
     return number_of_files
 
-def handshake(*, control_socket, remote_user=None, private_key_file=None, log, product, number_of_files, export_file_format, download_directory):
+def handshake(*, control_socket, remote_user, private_key_file=None, log, product, number_of_files, export_file_format, download_directory):
     # connected to server; perform workflow
     client_error = None
     server_error = None
@@ -426,7 +428,12 @@ def handshake(*, control_socket, remote_user=None, private_key_file=None, log, p
         downloaded_package_path = os.path.join(arguments.download_directory, package_file)
         # copyfile(package_path, downloaded_package_path)
         # emulate a Popen() of some external process; use scp as a placeholder
-        command = [ '/usr/bin/scp', f'-i {private_key_file}', f'{remote_user}@{package_host}:{package_path}', f'{downloaded_package_path}' ]
+        command = [ '/usr/bin/scp' ]
+        if private_key_file is not None:
+            command.append(f'-i {private_key_file}')
+
+        command.extend([ f'{remote_user}@{package_host}:{package_path}', f'{downloaded_package_path}' ])
+
         log.write_info([ f'[ __handshake__ ] transferring package: {" ".join(command)}' ])
         complete_proc = subprocess.run(' '.join(command), shell=True)
 
@@ -472,6 +479,8 @@ if __name__ == "__main__":
             log = DrmsLog(stdout, arguments.logging_level, formatter)
         except Exception as exc:
             raise LoggingError(msg=f'{str(exc)}')
+
+        log.write_info([ f'[ __main__ ] arguments: {str(arguments)}' ])
 
         info = socket.getaddrinfo(arguments.server, arguments.server_port)
         log.write_debug([ f'[ __main__ ] network card info for {arguments.server}:{str(arguments.server_port)}:' ])
@@ -530,7 +539,7 @@ if __name__ == "__main__":
                                 control_socket = None
                                 continue
 
-                            handshake(control_socket=control_socket, log=log, product=arguments.product, number_of_files=arguments.number_of_files, export_file_format=arguments.export_file_format, download_directory=arguments.download_directory)
+                            handshake(control_socket=control_socket, remote_user=arguments.remote_user, private_key_file=arguments.private_key_file, log=log, product=arguments.product, number_of_files=arguments.number_of_files, export_file_format=arguments.export_file_format, download_directory=arguments.download_directory)
 
                             control_socket.shutdown(socket.SHUT_RDWR)
                             log.write_info([ f'client shut down CONTROL connection' ])
