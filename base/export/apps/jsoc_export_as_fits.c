@@ -503,11 +503,14 @@ static int parse_specification(DRMS_Env_t *env, const char *specification, DRMS_
 
                     if (segment_list)
                     {
-                        /* segments[0] has "{}" */
-                        clean_segments = strdup(segments[0] + 1);
-                        clean_segments[strlen(clean_segments) - 1] = '\0';
+                        /* segments[0] contains "{}" if segment filter exists; NULL otherwise */
+                        if (segments[0] && *segments[0] != '\0')
+                        {
+                            clean_segments = strdup(segments[0] + 1);
+                            clean_segments[strlen(clean_segments) - 1] = '\0';
+                        }
 
-                        if (strlen(clean_segments) > 0)
+                        if (clean_segments && *clean_segments != '\0')
                         {
                             for (segment = strtok_r(clean_segments, ",", &saver); segment; segment = strtok_r(NULL, ",", &saver))
                             {
@@ -532,6 +535,12 @@ static int parse_specification(DRMS_Env_t *env, const char *specification, DRMS_
                 }
             }
         }
+    }
+
+    if (clean_segments)
+    {
+        free(clean_segments);
+        clean_segments = NULL;
     }
 
     if (clean_specification)
