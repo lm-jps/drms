@@ -424,111 +424,316 @@ static unsigned long long MapexportRecordToDir(DRMS_Record_t *recin, const char 
    return tsize;
 }
 
+static DRMS_Segment_t *linked_segment(DRMS_Env_t *env, DRMS_Segment_t *template_segment)
+{
+    DRMS_Segment_t *child_template_segment = NULL;
+    DRMS_Link_t *link = NULL;
+    DRMS_Record_t *child_template_record = NULL;
+
+    if (template_segment->info->islink)
+    {
+        link = (DRMS_Link_t *)hcon_lookup_lower(&template_segment->record->links, template_segment->info->linkname);
+        if (link)
+        {
+            child_template_record = (DRMS_Record_t *)hcon_lookup_lower(&env->series_cache, link->info->target_series);
+        }
+
+        if (child_template_record)
+        {
+            child_template_segment = (DRMS_Segment_t *)hcon_lookup_lower(&child_template_record->segments, template_segment->info->target_seg);
+        }
+    }
+
+    return child_template_segment;
+}
+
+static int parse_specification(DRMS_Env_t *env, const char *specification, DRMS_Record_t **template_record_out, LinkedList_t **segments_out)
+{
+    char *clean_specification = NULL;
+    char *all_versions = NULL;
+    char **sets = NULL;
+    DRMS_RecordSetType_t *set_types = NULL;
+    char **series = NULL;
+    char **filters = NULL;
+    char **segments = NULL;
+    int number_sets = 0;
+    DRMS_RecQueryInfo_t info;
+    char *segment = NULL;
+    char *saver = NULL;
+    char *clean_segments = NULL;
+    char segment_buffer[DRMS_MAXSEGNAMELEN] = {0};
+    int drms_status = DRMS_SUCCESS;
+
+    int error = 0;
+    DRMS_Record_t *template_record = NULL;
+    DRMS_Record_t *template_segment = NULL;
+    LinkedList_t *segment_list = NULL;
+
+    base_strip_whitespace(specification, &clean_specification);
+
+    if (drms_record_parserecsetspec_plussegs(clean_specification, &all_versions, &sets, &set_types, &series, &filters, &segments, &number_sets, &info) != DRMS_SUCCESS)
+    {
+        fprintf(stderr, "invalid specification `%s`\n", specification);
+        error = 1;
+    }
+    else if (number_sets != 1)
+    {
+        fprintf(stderr, "jsoc_export_as_fits does not support subsetted record-set specifications\n");
+        error = 1;
+    }
+
+    if (!error)
+    {
+        if (template_record_out)
+        {
+            template_record = drms_template_record(env, series[0], &drms_status);
+
+            if (!template_record || drms_status != DRMS_SUCCESS)
+            {
+                fprintf(stderr, "unknown series `%s`\n", series[0]);
+                error = 1;
+            }
+            else
+            {
+                *template_record_out = template_record;
+
+                if (segments_out)
+                {
+                    segment_list = list_llcreate(DRMS_MAXSEGNAMELEN, NULL);
+
+                    if (segment_list)
+                    {
+                        /* segments[0] has "{}" */
+                        clean_segments = strdup(segments[0] + 1);
+                        clean_segments[strlen(clean_segments) - 1] = '\0';
+
+                        if (strlen(clean_segments) > 0)
+                        {
+                            for (segment = strtok_r(clean_segments, ",", &saver); segment; segment = strtok_r(NULL, ",", &saver))
+                            {
+                                /* don't follow links */
+                                template_segment = hcon_lookup_lower(&(template_record->segments), segment);
+
+                                if (!template_segment)
+                                {
+                                    fprintf(stderr, "unknown segment `%s`\n", segment);
+                                    error = 1;
+                                }
+                                else
+                                {
+                                    snprintf(segment_buffer, sizeof(segment_buffer), "%s", segment);
+                                    list_llinserttail(segment_list, segment_buffer);
+                                }
+                            }
+                        }
+
+                        *segments_out = segment_list;
+                    }
+                }
+            }
+        }
+    }
+
+    if (clean_specification)
+    {
+        free(clean_specification);
+        clean_specification = NULL;
+    }
+
+    drms_record_freerecsetspecarr_plussegs(&all_versions, &sets, &set_types, &series, &filters, &segments, number_sets);
+
+    return error;
+}
+
+static int fetch_linked_segments(DRMS_Env_t *env, DRMS_Record_t *template_record, LinkedList_t *segments)
+{
+    DRMS_Segment_t *template_segment = NULL;
+    int number_segments = -1;
+    ListNode_t *list_node = NULL;
+    char *segment = NULL;
+    HIterator_t *current_segment_hit = NULL;
+    int b_fetch_linked_segments = -1;
+
+    number_segments = list_llgetnitems(segments);
+
+    b_fetch_linked_segments = 0;
+    if (segments && number_segments > 0 && number_segments != hcon_size(&template_record->segments))
+    {
+        /* a subset of segments is being requested */
+        list_llreset(segments);
+        while (!b_fetch_linked_segments && (list_node = list_llnext(segments)) != NULL)
+        {
+            segment = (char *)list_node->data;
+            template_segment = (DRMS_Segment_t *)hcon_lookup_lower(&template_record->segments, segment);
+
+            while (template_segment)
+            {
+                template_segment = linked_segment(env, template_segment);
+
+                if (template_segment)
+                {
+                    if (!template_segment->info->islink)
+                    {
+                        b_fetch_linked_segments = 1;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    else
+    {
+        /* all segments are being requested */
+        while (!b_fetch_linked_segments && (template_segment = drms_record_nextseg(template_record, &current_segment_hit, 0)) != NULL)
+        {
+            while (template_segment)
+            {
+                template_segment = linked_segment(env, template_segment);
+
+                if (template_segment)
+                {
+                    if (!template_segment->info->islink)
+                    {
+                        b_fetch_linked_segments = 1;
+                        break;
+                    }
+                }
+            }
+        }
+
+        hiter_destroy(&current_segment_hit);
+    }
+
+    return b_fetch_linked_segments;
+}
+
 static unsigned long long MapexportToDir(DRMS_Env_t *env, const char *rsinquery, const char *ffmt, const char *outpath, FILE *pklist, const char *classname, const char *mapfile, int *tcount, TIME *exptime, const char **cparms, MymodError_t *status)
 {
-   int stat = DRMS_SUCCESS;
-   MymodError_t modstat = kMymodErr_Success;
-   DRMS_RecordSet_t *rsin = NULL;
-   DRMS_Record_t *recin = NULL;
-   int iRec = 0;
-   int nSets = 0;
-   int iSet = 0;
-   int nRecs = 0;
-   int RecordLimit = *tcount;
-   unsigned long long tsize = 0;
-   int errorCount = 0;
-   int okayCount = 0;
-   int count;
-   int itcount;
+    int stat = DRMS_SUCCESS;
+    MymodError_t modstat = kMymodErr_Success;
+    DRMS_RecordSet_t *rsin = NULL;
+    DRMS_Record_t *recin = NULL;
+    int iRec = 0;
+    int nSets = 0;
+    int iSet = 0;
+    int nRecs = 0;
+    int RecordLimit = *tcount;
+    unsigned long long tsize = 0;
+    int errorCount = 0;
+    int okayCount = 0;
+    int count;
+    int itcount;
+    DRMS_Record_t *template_record = NULL;
+    LinkedList_t *segments = NULL;
+    int b_fetch_linked_segments = -1;
 
+    itcount = 0;
 
-   itcount = 0;
-   //    JEAFPrintLocalTime(stdout, "Calling drms_open_records().");
+    /* parse specification */
+    if (parse_specification(env, rsinquery, &template_record, &segments))
+    {
+        modstat = kMymodErr_BadRecSetQuery;
+    }
 
-   if (RecordLimit == 0)
-     //     rsin = drms_open_recordset(env, rsinquery, &stat);
-     // temporarily reverting to drms_open_records until I can fix the problem with
-     // not passing a segment-list ot drms_open_recordset().
-     rsin = drms_open_records(env, rsinquery, &stat);
-   else
-     rsin = drms_open_nrecords(env, rsinquery, RecordLimit, &stat);
-   //        JEAFPrintLocalTime(stdout, "Done calling drms_open_records().");
+    if (modstat == kMymodErr_Success)
+    {
+        b_fetch_linked_segments = fetch_linked_segments(env, template_record, segments);
+    }
 
-   if (rsin)
-   {
-      /* stage records to reduce number of calls to SUMS. */
-      drms_stage_records(rsin, 1, 0);
-      nSets = rsin->ss_n;
+    list_llfree(&segments);
 
-      for (iSet = 0; iSet < nSets; iSet++)
-      {
-         nRecs = drms_recordset_getssnrecs(rsin, iSet, &stat);
+    if (modstat == kMymodErr_Success)
+    {
+        /* temporarily reverting to drms_open_records until I can fix the problem with
+         * not passing a segment-list to drms_open_recordset()
+         */
+        rsin = drms_open_records2(env, rsinquery, NULL, 0, RecordLimit, 1, &stat);
+    }
 
-         if (stat != DRMS_SUCCESS)
-         {
-            fprintf(stderr, "Failure calling drms_recordset_getssnrecs(), skipping subset '%d'.\n", iSet);
-         }
-         else
-         {
-            for (iRec = 0; iRec < nRecs; iRec++)
+    if (rsin)
+    {
+        /* stage records to reduce number of calls to SUMS. */
+        if (b_fetch_linked_segments)
+        {
+            drms_stage_records(rsin, 1, 0);
+        }
+        else
+        {
+            drms_stage_records_dontretrievelinks(rsin, 1);
+        }
+
+        nSets = rsin->ss_n;
+
+        for (iSet = 0; iSet < nSets; iSet++)
+        {
+            nRecs = drms_recordset_getssnrecs(rsin, iSet, &stat);
+
+            if (stat != DRMS_SUCCESS)
             {
-               recin = drms_recordset_fetchnext(env, rsin, &stat, NULL, NULL);
-
-               if (!recin)
-               {
-                  /* Exit rec loop - last record was fetched last time. */
-                  break;
-               }
-
-               count = 0;
-               tsize += MapexportRecordToDir(recin, ffmt, outpath, pklist, classname, mapfile, &count, cparms, &modstat, NULL);
-               if (modstat == kMymodErr_Success)
-               {
-                  okayCount++;
-                  itcount += count;
-               }
-               else
-               {
-                  errorCount++;
-               }
+                fprintf(stderr, "Failure calling drms_recordset_getssnrecs(), skipping subset '%d'.\n", iSet);
             }
-         }
-      }
+            else
+            {
+                for (iRec = 0; iRec < nRecs; iRec++)
+                {
+                    recin = drms_recordset_fetchnext(env, rsin, &stat, NULL, NULL);
 
-      modstat = kMymodErr_Success; /* Could have been set to BAD in loop above, but okayCount and errorCount
-                                    * account for fatal errors in the loop, not modstat. */
+                    if (!recin)
+                    {
+                        /* Exit rec loop - last record was fetched last time. */
+                        break;
+                    }
 
-      if (errorCount > 0)
-      {
-         fprintf(stderr,"Export failed for %d segments of %d attempted.\n", errorCount, errorCount + okayCount);
-      }
+                    count = 0;
+                    tsize += MapexportRecordToDir(recin, ffmt, outpath, pklist, classname, mapfile, &count, cparms, &modstat, NULL);
 
-      if (exptime)
-      {
-         *exptime = CURRENT_SYSTEM_TIME;
-      }
-      if (tcount)
-      {
-         *tcount = itcount;
-      }
-   }
-   else
-   {
-      fprintf(stderr, "Record-set query '%s' is not valid.\n", rsinquery);
-      modstat = kMymodErr_BadRecSetQuery;
-   }
+                    if (modstat == kMymodErr_Success)
+                    {
+                        okayCount++;
+                        itcount += count;
+                    }
+                    else
+                    {
+                        errorCount++;
+                    }
+                }
+            }
+        }
 
-   if (rsin)
-   {
-      drms_close_records(rsin, DRMS_FREE_RECORD);
-   }
+        modstat = kMymodErr_Success; /* Could have been set to BAD in loop above, but okayCount and errorCount
+                              * account for fatal errors in the loop, not modstat. */
+        if (errorCount > 0)
+        {
+            fprintf(stderr,"Export failed for %d segments of %d attempted.\n", errorCount, errorCount + okayCount);
+        }
 
-   if (status)
-   {
-      *status = modstat;
-   }
+        if (exptime)
+        {
+            *exptime = CURRENT_SYSTEM_TIME;
+        }
 
-   return tsize;
+        if (tcount)
+        {
+            *tcount = itcount;
+        }
+    }
+    else
+    {
+        fprintf(stderr, "Record-set query '%s' is not valid.\n", rsinquery);
+        modstat = kMymodErr_BadRecSetQuery;
+    }
+
+    if (rsin)
+    {
+        drms_close_records(rsin, DRMS_FREE_RECORD);
+    }
+
+    if (status)
+    {
+        *status = modstat;
+    }
+
+    return tsize;
 }
 
 static char *GenErrMsg(const char *fmt, ...)
