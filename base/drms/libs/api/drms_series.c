@@ -20,7 +20,7 @@
 #define kShadowColNRecs "nrecords"
 #define kShadowTrig "updateshadowtrig"
 #define kShadowTrigFxn "updateshadow"
-#define kLimitCutoff 50000
+#define kLimitCutoff 100000 // switch between JOIN and recnum IN (...)
 
 #if (defined TRACKSHADOWS && TRACKSHADOWS)
     #define kShadowTrackTab "drms.shadowtrack"
