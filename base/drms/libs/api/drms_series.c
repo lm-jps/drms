@@ -20,7 +20,7 @@
 #define kShadowColNRecs "nrecords"
 #define kShadowTrig "updateshadowtrig"
 #define kShadowTrigFxn "updateshadow"
-#define kLimitCutoff 100000 // switch between JOIN and recnum IN (...)
+#define kLimitCutoff 50000 // switch between JOIN and recnum IN (...)
 
 #if (defined TRACKSHADOWS && TRACKSHADOWS)
     #define kShadowTrackTab "drms.shadowtrack"
@@ -4951,20 +4951,14 @@ char *drms_series_nrecords_querystringB(const char *series, const char *npkwhere
             }
             else
             {
-                /* Create the temporary table. */
-                query = base_strcatalloc(query, "CREATE TEMPORARY TABLE ", &stsz);
-                query = base_strcatalloc(query, tabname, &stsz);
-                query = base_strcatalloc(query, " ON COMMIT DROP AS SELECT recnum FROM ", &stsz);
-                query = base_strcatalloc(query, shadow, &stsz);
-                query = base_strcatalloc(query, ";\n", &stsz);
-
                 /* Select the records from the series table. */
                 query = base_strcatalloc(query, "SELECT count(*) FROM ", &stsz);
                 query = base_strcatalloc(query, lcseries, &stsz);
-                query = base_strcatalloc(query, " AS T WHERE T.recnum IN (SELECT recnum FROM ", &stsz);
-                query = base_strcatalloc(query, tabname, &stsz);
-                query = base_strcatalloc(query, ") AND ", &stsz);
+                query = base_strcatalloc(query, " AS T WHERE ", &stsz);
                 query = base_strcatalloc(query, npkwhere, &stsz);
+                query = base_strcatalloc(query, " AND T.recnum IN (SELECT recnum FROM ", &stsz);
+                query = base_strcatalloc(query, shadow, &stsz);
+                query = base_strcatalloc(query, ")", &stsz);
             }
         }
         else
@@ -5081,7 +5075,11 @@ char *drms_series_nrecords_querystringD(const char *series, const char *pkwhere,
                 /* Create the temporary table. */
                 query = base_strcatalloc(query, "CREATE TEMPORARY TABLE ", &stsz);
                 query = base_strcatalloc(query, tabname, &stsz);
-                query = base_strcatalloc(query, " ON COMMIT DROP AS SELECT recnum FROM ", &stsz);
+                query = base_strcatalloc(query, "(recnum bigint, PRIMARY KEY (recnum)) ON COMMIT DROP;", &stsz);
+                query = base_strcatalloc(query, "INSERT INTO ", &stsz);
+                query = base_strcatalloc(query, tabname, &stsz);
+                query = base_strcatalloc(query, "(recnum) ", &stsz);
+                query = base_strcatalloc(query, "SELECT recnum FROM ", &stsz);
                 query = base_strcatalloc(query, shadow, &stsz);
                 query = base_strcatalloc(query, " WHERE ", &stsz);
                 query = base_strcatalloc(query, pkwhere, &stsz);
@@ -5202,6 +5200,7 @@ static int InnerFLSelect(int npkeys, HContainer_t *firstlast, size_t *stsz, char
     char fl;
     char tmptab[256];
     char prevtmptab[256];
+    const char *previous_table = NULL;
 
     init = 0;
     for (iloop = 0; iloop < npkeys; iloop++)
@@ -5219,24 +5218,28 @@ static int InnerFLSelect(int npkeys, HContainer_t *firstlast, size_t *stsz, char
                 if (init != 0)
                 {
                    *query = base_strcatalloc(*query, ";", stsz);
+                   previous_table = prevtmptab;
+                }
+                else
+                {
+                    previous_table = shadow;
                 }
 
                 *query = base_strcatalloc(*query, "CREATE TEMPORARY TABLE ", stsz);
                 *query = base_strcatalloc(*query, tmptab, stsz);
-                *query = base_strcatalloc(*query, " ON COMMIT DROP AS ", stsz);
+                *query = base_strcatalloc(*query, "(LIKE ", stsz);
+                *query = base_strcatalloc(*query, previous_table, stsz);
+                *query = base_strcatalloc(*query, ", PRIMARY KEY (recnum)) ", stsz);
+                *query = base_strcatalloc(*query, "ON COMMIT DROP;", stsz);
+                *query = base_strcatalloc(*query, "INSERT INTO ", stsz);
+                *query = base_strcatalloc(*query, tmptab, stsz);
+                *query = base_strcatalloc(*query, "(recnum, ", stsz);
+                *query = base_strcatalloc(*query, pkeylist, stsz);
+                *query = base_strcatalloc(*query, ") ", stsz);
                 *query = base_strcatalloc(*query, "SELECT recnum, ", stsz);
                 *query = base_strcatalloc(*query, pkeylist, stsz);
                 *query = base_strcatalloc(*query, " FROM ", stsz);
-
-                if (init == 0)
-                {
-                    *query = base_strcatalloc(*query, shadow, stsz);
-                }
-                else
-                {
-                    *query = base_strcatalloc(*query, prevtmptab, stsz);
-                }
-
+                *query = base_strcatalloc(*query, previous_table, stsz);
                 *query = base_strcatalloc(*query, " WHERE ", stsz);
                 *query = base_strcatalloc(*query, pkey[iloop], stsz);
                 *query = base_strcatalloc(*query, " = (SELECT ", stsz);
@@ -5252,16 +5255,7 @@ static int InnerFLSelect(int npkeys, HContainer_t *firstlast, size_t *stsz, char
 
                 *query = base_strcatalloc(*query, pkey[iloop], stsz);
                 *query = base_strcatalloc(*query, ") FROM ", stsz);
-
-                if (init == 0)
-                {
-                    *query = base_strcatalloc(*query, shadow, stsz);
-                }
-                else
-                {
-                    *query = base_strcatalloc(*query, prevtmptab, stsz);
-                }
-
+                *query = base_strcatalloc(*query, previous_table, stsz);
                 *query = base_strcatalloc(*query, ")", stsz);
 
                 snprintf(prevtmptab, sizeof(prevtmptab), "%s", tmptab);
@@ -5295,23 +5289,28 @@ static int InnerFLSelect(int npkeys, HContainer_t *firstlast, size_t *stsz, char
                     if (init != 0)
                     {
                         *query = base_strcatalloc(*query, ";", stsz);
+                        previous_table = prevtmptab;
+                    }
+                    else
+                    {
+                        previous_table = shadow;
                     }
 
                     *query = base_strcatalloc(*query, "CREATE TEMPORARY TABLE ", stsz);
                     *query = base_strcatalloc(*query, tmptab, stsz);
-                    *query = base_strcatalloc(*query, " ON COMMIT DROP AS ", stsz);
+                    *query = base_strcatalloc(*query, "(LIKE ", stsz);
+                    *query = base_strcatalloc(*query, previous_table, stsz);
+                    *query = base_strcatalloc(*query, ", PRIMARY KEY (recnum)) ", stsz);
+                    *query = base_strcatalloc(*query, "ON COMMIT DROP;", stsz);
+                    *query = base_strcatalloc(*query, "INSERT INTO ", stsz);
+                    *query = base_strcatalloc(*query, tmptab, stsz);
+                    *query = base_strcatalloc(*query, "(recnum, ", stsz);
+                    *query = base_strcatalloc(*query, pkeylist, stsz);
+                    *query = base_strcatalloc(*query, ") ", stsz);
                     *query = base_strcatalloc(*query, "SELECT recnum, ", stsz);
                     *query = base_strcatalloc(*query, pkeylist, stsz);
                     *query = base_strcatalloc(*query, " FROM ", stsz);
-
-                    if (init == 0)
-                    {
-                        *query = base_strcatalloc(*query, shadow, stsz);
-                    }
-                    else
-                    {
-                        *query = base_strcatalloc(*query, prevtmptab, stsz);
-                    }
+                    *query = base_strcatalloc(*query, previous_table, stsz);
 
                     if (ppkwhere)
                     {
@@ -5384,6 +5383,8 @@ char *drms_series_nrecords_querystringFL(DRMS_Env_t *env, const char *series, co
                  * the CREATE statements are executed first, then a cursor is created on the
                  * remaining statements that follow the ";\n". */
                 query = base_strcatalloc(query, ";\n", &stsz);
+
+                // XXX ART XXX
 
                 query = base_strcatalloc(query, "SELECT count(*) FROM ", &stsz);
                 query = base_strcatalloc(query, lcseries, &stsz);
@@ -5577,20 +5578,13 @@ char *drms_series_all_querystringA(DRMS_Env_t *env, const char *series, const ch
 
                     if (istat == DRMS_SUCCESS)
                     {
-                        /* Create the temporary table. */
-                        query = base_strcatalloc(query, "CREATE TEMPORARY TABLE ", &stsz);
-                        query = base_strcatalloc(query, tabname, &stsz);
-                        query = base_strcatalloc(query, " ON COMMIT DROP AS SELECT recnum FROM ", &stsz);
-                        query = base_strcatalloc(query, shadow, &stsz);
-                        query = base_strcatalloc(query, ";\n", &stsz);
-
                         /* Select the records from the series table. */
                         query = base_strcatalloc(query, "SELECT ", &stsz);
                         query = base_strcatalloc(query, fields, &stsz);
                         query = base_strcatalloc(query, " FROM ", &stsz);
                         query = base_strcatalloc(query, lcseries, &stsz);
                         query = base_strcatalloc(query, " WHERE recnum IN (SELECT recnum FROM ", &stsz);
-                        query = base_strcatalloc(query, tabname, &stsz);
+                        query = base_strcatalloc(query, shadow, &stsz);
                         query = base_strcatalloc(query, ") ORDER BY ", &stsz);
                         query = base_strcatalloc(query, qualpkeylist, &stsz);
                         query = base_strcatalloc(query, " LIMIT ", &stsz);
@@ -5724,23 +5718,16 @@ char *drms_series_all_querystringB(DRMS_Env_t *env, const char *series, const ch
 
                     if (istat == DRMS_SUCCESS)
                     {
-                        /* Create the temporary table. */
-                        query = base_strcatalloc(query, "CREATE TEMPORARY TABLE ", &stsz);
-                        query = base_strcatalloc(query, tabname, &stsz);
-                        query = base_strcatalloc(query, " ON COMMIT DROP AS SELECT recnum FROM ", &stsz);
-                        query = base_strcatalloc(query, shadow, &stsz);
-                        query = base_strcatalloc(query, ";\n", &stsz);
-
                         /* Select the records from the series table. */
                         query = base_strcatalloc(query, "SELECT ", &stsz);
                         query = base_strcatalloc(query, fields, &stsz);
                         query = base_strcatalloc(query, " FROM ", &stsz);
                         query = base_strcatalloc(query, lcseries, &stsz);
-                        query = base_strcatalloc(query, " WHERE recnum IN (SELECT recnum FROM ", &stsz);
-                        query = base_strcatalloc(query, tabname, &stsz);
-                        query = base_strcatalloc(query, ") AND ", &stsz);
+                        query = base_strcatalloc(query, " WHERE ", &stsz);
                         query = base_strcatalloc(query, npkwhere, &stsz);
-                        query = base_strcatalloc(query, " ORDER BY ", &stsz);
+                        query = base_strcatalloc(query, " AND recnum IN (SELECT recnum FROM ", &stsz);
+                        query = base_strcatalloc(query, shadow, &stsz);
+                        query = base_strcatalloc(query, ") ORDER BY ", &stsz);
                         query = base_strcatalloc(query, qualpkeylist, &stsz);
                         query = base_strcatalloc(query, " LIMIT ", &stsz);
                         query = base_strcatalloc(query, limitstr, &stsz);
@@ -5906,11 +5893,23 @@ char *drms_series_all_querystringC(DRMS_Env_t *env, const char *series, const ch
                         /* Create the temporary table. */
                         query = base_strcatalloc(query, "CREATE TEMPORARY TABLE ", &stsz);
                         query = base_strcatalloc(query, tabname, &stsz);
-                        query = base_strcatalloc(query, " ON COMMIT DROP AS SELECT recnum FROM ", &stsz);
+                        query = base_strcatalloc(query, "(LIKE ", &stsz);
+                        query = base_strcatalloc(query, shadow, &stsz);
+                        query = base_strcatalloc(query, ", PRIMARY KEY (recnum)) ", &stsz);
+                        query = base_strcatalloc(query, "ON COMMIT DROP;", &stsz);
+                        query = base_strcatalloc(query, "INSERT INTO ", &stsz);
+                        query = base_strcatalloc(query, tabname, &stsz);
+                        query = base_strcatalloc(query, "(recnum, ", &stsz);
+                        query = base_strcatalloc(query, qualpkeylist, &stsz);
+                        query = base_strcatalloc(query, ") ", &stsz);
+                        query = base_strcatalloc(query, "SELECT recnum, ", &stsz);
+                        query = base_strcatalloc(query, qualpkeylist, &stsz);
+                        query = base_strcatalloc(query, " FROM ", &stsz);
                         query = base_strcatalloc(query, shadow, &stsz);
                         query = base_strcatalloc(query, " WHERE ", &stsz);
                         query = base_strcatalloc(query, pkwhere, &stsz);
                         query = base_strcatalloc(query, ";\n", &stsz);
+
                         /* Select the records from the series table. */
                         query = base_strcatalloc(query, "SELECT ", &stsz);
                         query = base_strcatalloc(query, fields, &stsz);
@@ -6069,7 +6068,11 @@ char *drms_series_all_querystringD(DRMS_Env_t *env, const char *series, const ch
                         /* Create the temporary table. */
                         query = base_strcatalloc(query, "CREATE TEMPORARY TABLE ", &stsz);
                         query = base_strcatalloc(query, tabname, &stsz);
-                        query = base_strcatalloc(query, " ON COMMIT DROP AS SELECT recnum FROM ", &stsz);
+                        query = base_strcatalloc(query, "(recnum bigint, PRIMARY KEY (recnum)) ON COMMIT DROP;", &stsz);
+                        query = base_strcatalloc(query, "INSERT INTO ", &stsz);
+                        query = base_strcatalloc(query, tabname, &stsz);
+                        query = base_strcatalloc(query, "(recnum) ", &stsz);
+                        query = base_strcatalloc(query, "SELECT recnum FROM ", &stsz);
                         query = base_strcatalloc(query, shadow, &stsz);
                         query = base_strcatalloc(query, " WHERE ", &stsz);
                         query = base_strcatalloc(query, pkwhere, &stsz);
@@ -6243,6 +6246,8 @@ char *drms_series_all_querystringFL(DRMS_Env_t *env, const char *series, const c
                      * remaining statements that follow the ";\n". */
                     query = base_strcatalloc(query, ";\n", &stsz);
 
+                    // XXX ART XXX
+
                     query = base_strcatalloc(query, "SELECT ", &stsz);
                     query = base_strcatalloc(query, fields, &stsz);
                     query = base_strcatalloc(query, " FROM ", &stsz);
@@ -6383,7 +6388,11 @@ char *drms_series_n_querystringA(DRMS_Env_t *env, const char *series, const char
                 /* Create the temporary table. */
                 query = base_strcatalloc(query, "CREATE TEMPORARY TABLE ", &stsz);
                 query = base_strcatalloc(query, tabname, &stsz);
-                query = base_strcatalloc(query, " ON COMMIT DROP AS SELECT recnum FROM ", &stsz);
+                query = base_strcatalloc(query, "(recnum bigint, PRIMARY KEY (recnum)) ON COMMIT DROP;", &stsz);
+                query = base_strcatalloc(query, "INSERT INTO ", &stsz);
+                query = base_strcatalloc(query, tabname, &stsz);
+                query = base_strcatalloc(query, "(recnum) ", &stsz);
+                query = base_strcatalloc(query, "SELECT recnum FROM ", &stsz);
                 query = base_strcatalloc(query, shadow, &stsz);
                 query = base_strcatalloc(query, " ORDER BY ", &stsz);
                 query = base_strcatalloc(query, orderpkeylist, &stsz);
@@ -6399,6 +6408,8 @@ char *drms_series_n_querystringA(DRMS_Env_t *env, const char *series, const char
                 }
 
                 query = base_strcatalloc(query, ";\n", &stsz);
+
+                // XXX ART XXX
 
                 /* Select the records from the series table. */
                 query = base_strcatalloc(query, "SELECT ", &stsz);
@@ -6482,6 +6493,7 @@ char *drms_series_n_querystringB(DRMS_Env_t *env, const char *series, const char
     int desc; /* If 1, then we are sorting the records in descending order. */
     char nrecsstr[32];
     char *qualfields = NULL;
+    char *pkeylist = NULL;
     char *qualpkeylist = NULL;
     char *orderpkeylist = NULL; /* A comma-separated list of primary-key constituents. Each
                                  * key name will have " DESC" appeneded if nrecs < 0. */
@@ -6509,6 +6521,8 @@ char *drms_series_n_querystringB(DRMS_Env_t *env, const char *series, const char
 
             qualfields = PrependFields(fields, "T1.", &istat);
 
+            pkeylist = CreatePKeyList(env, series, NULL, NULL, NULL, NULL, 0, &istat);
+
             /* Create a list of all prime key names. */
             qualpkeylist = CreatePKeyList(env, series, "T1.", NULL, NULL, NULL, 0, &istat);
 
@@ -6529,7 +6543,17 @@ char *drms_series_n_querystringB(DRMS_Env_t *env, const char *series, const char
                 /* Create the temporary table. */
                 query = base_strcatalloc(query, "CREATE TEMPORARY TABLE ", &stsz);
                 query = base_strcatalloc(query, tabname, &stsz);
-                query = base_strcatalloc(query, " ON COMMIT DROP AS SELECT T1.recnum, ", &stsz);
+                query = base_strcatalloc(query, "(LIKE ", &stsz);
+                query = base_strcatalloc(query, shadow, &stsz);
+                query = base_strcatalloc(query, ", PRIMARY KEY(recnum), UNIQUE(", &stsz);
+                query = base_strcatalloc(query, pkeylist, &stsz);
+                query = base_strcatalloc(query, ")) ON COMMIT DROP;", &stsz);
+                query = base_strcatalloc(query, "INSERT INTO ", &stsz);
+                query = base_strcatalloc(query, tabname, &stsz);
+                query = base_strcatalloc(query, "(recnum, ", &stsz);
+                query = base_strcatalloc(query, pkeylist, &stsz);
+                query = base_strcatalloc(query, ") ", &stsz);
+                query = base_strcatalloc(query, "SELECT T1.recnum, ", &stsz);
                 query = base_strcatalloc(query, qualpkeylist, &stsz);
                 query = base_strcatalloc(query, " FROM ", &stsz);
                 query = base_strcatalloc(query, shadow, &stsz);
@@ -6564,6 +6588,8 @@ char *drms_series_n_querystringB(DRMS_Env_t *env, const char *series, const char
 
                     query = base_strcatalloc(query, ";\n", &stsz);
 
+                    // XXX ART XXX
+
                     /* Select the records from the series table. */
                     query = base_strcatalloc(query, "SELECT ", &stsz);
                     query = base_strcatalloc(query, qualfields, &stsz);
@@ -6586,6 +6612,8 @@ char *drms_series_n_querystringB(DRMS_Env_t *env, const char *series, const char
             orderpkeylist = NULL;
             free(qualpkeylist);
             qualpkeylist = NULL;
+            free(pkeylist);
+            pkeylist = NULL;
             free(qualfields);
             qualfields = NULL;
         }
@@ -6688,7 +6716,11 @@ char *drms_series_n_querystringC(DRMS_Env_t *env, const char *series, const char
                 /* Create the temporary table. */
                 query = base_strcatalloc(query, "CREATE TEMPORARY TABLE ", &stsz);
                 query = base_strcatalloc(query, tabname, &stsz);
-                query = base_strcatalloc(query, " ON COMMIT DROP AS SELECT recnum FROM ", &stsz);
+                query = base_strcatalloc(query, "(recnum bigint, PRIMARY KEY (recnum)) ON COMMIT DROP;", &stsz);
+                query = base_strcatalloc(query, "INSERT INTO ", &stsz);
+                query = base_strcatalloc(query, tabname, &stsz);
+                query = base_strcatalloc(query, "(recnum) ", &stsz);
+                query = base_strcatalloc(query, "SELECT recnum FROM ", &stsz);
                 query = base_strcatalloc(query, shadow, &stsz);
                 query = base_strcatalloc(query, " WHERE ", &stsz);
                 query = base_strcatalloc(query, pkwhere, &stsz);
@@ -6706,6 +6738,8 @@ char *drms_series_n_querystringC(DRMS_Env_t *env, const char *series, const char
                 }
 
                 query = base_strcatalloc(query, ";\n", &stsz);
+
+                // XXX ART XXX
 
                 /* Select the records from the series table. */
                 query = base_strcatalloc(query, "SELECT ", &stsz);
@@ -6786,6 +6820,7 @@ char *drms_series_n_querystringD(DRMS_Env_t *env, const char *series, const char
     int desc; /* If 1, then we are sorting the records in descending order. */
     char nrecsstr[32];
     char *qualfields = NULL;
+    char *pkeylist = NULL;
     char *qualpkeylist = NULL;
     char *orderpkeylist = NULL; /* A comma-separated list of primary-key constituents. Each
                                  * key name will have " DESC" appeneded if nrecs < 0. */
@@ -6813,6 +6848,11 @@ char *drms_series_n_querystringD(DRMS_Env_t *env, const char *series, const char
 
             /* Prepend all column names in fields with T (just in case the series table has a column named "therec"). */
             qualfields = PrependFields(fields, "T1.", &istat);
+
+            if (istat == DRMS_SUCCESS)
+            {
+                pkeylist = CreatePKeyList(env, series, NULL, NULL, NULL, NULL, 0, &istat);
+            }
 
             /* Create a list of all prime key names. */
             if (istat == DRMS_SUCCESS)
@@ -6842,10 +6882,19 @@ char *drms_series_n_querystringD(DRMS_Env_t *env, const char *series, const char
 
             if (istat == DRMS_SUCCESS)
             {
-               /* Create the temporary table. */
+                /* Create the temporary table. */
                 query = base_strcatalloc(query, "CREATE TEMPORARY TABLE ", &stsz);
                 query = base_strcatalloc(query, tabname, &stsz);
-                query = base_strcatalloc(query, " ON COMMIT DROP AS SELECT T1.recnum, ", &stsz);
+                query = base_strcatalloc(query, "(LIKE ", &stsz);
+                query = base_strcatalloc(query, shadow, &stsz);
+                query = base_strcatalloc(query, ", PRIMARY KEY (recnum)) ", &stsz);
+                query = base_strcatalloc(query, "ON COMMIT DROP;", &stsz);
+                query = base_strcatalloc(query, "INSERT INTO ", &stsz);
+                query = base_strcatalloc(query, tabname, &stsz);
+                query = base_strcatalloc(query, "(recnum, ", &stsz);
+                query = base_strcatalloc(query, pkeylist, &stsz);
+                query = base_strcatalloc(query, ") ", &stsz);
+                query = base_strcatalloc(query, "SELECT T1.recnum, ", &stsz);
                 query = base_strcatalloc(query, qualpkeylist, &stsz);
                 query = base_strcatalloc(query, " FROM ", &stsz);
                 query = base_strcatalloc(query, shadow, &stsz);
@@ -6870,6 +6919,8 @@ char *drms_series_n_querystringD(DRMS_Env_t *env, const char *series, const char
 
                 query = base_strcatalloc(query, ";\n", &stsz);
 
+                // XXX ART XXX
+
                 /* Select the records from the series table. */
                 query = base_strcatalloc(query, "SELECT ", &stsz);
                 query = base_strcatalloc(query, qualfields, &stsz);
@@ -6887,6 +6938,8 @@ char *drms_series_n_querystringD(DRMS_Env_t *env, const char *series, const char
             orderpkeylist = NULL;
             free(qualpkeylist);
             qualpkeylist = NULL;
+            free(pkeylist);
+            pkeylist = NULL;
             free(qualfields);
             qualfields = NULL;
         }
@@ -6973,6 +7026,8 @@ char *drms_series_n_querystringFL(DRMS_Env_t *env, const char *series, const cha
                      * the CREATE statements are executed first, then a cursor is created on the
                      * remaining statements that follow the ";\n". */
                     query = base_strcatalloc(query, ";\n", &stsz);
+
+                    // XXX ART XXX
 
                     query = base_strcatalloc(query, "SELECT ", &stsz);
                     query = base_strcatalloc(query, fields, &stsz);

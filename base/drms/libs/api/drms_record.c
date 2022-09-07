@@ -7799,7 +7799,7 @@ char *drms_query_string(DRMS_Env_t *env, const char *seriesname, char *where, co
         limitedtable = base_strcatalloc(limitedtable, nrecs > 0 ? pidx_names_bare : pidx_names_desc_bare, &cmdSz); XASSERT(limitedtable);
         limitedtable = base_strcatalloc(limitedtable, " limit ", &cmdSz); XASSERT(limitedtable);
 
-        snprintf(numBuf, sizeof(numBuf), "%d", abs(nrecs) * fudge);
+        snprintf(numBuf, sizeof(numBuf), "%d", CAP_LIMIT(abs(nrecs) * fudge));
         limitedtable = base_strcatalloc(limitedtable, numBuf, &cmdSz); XASSERT(limitedtable);
     }
   }
@@ -7996,7 +7996,7 @@ char *drms_query_string(DRMS_Env_t *env, const char *seriesname, char *where, co
   }
   if (qtype != DRMS_QUERY_COUNT)
   {
-    long long actualLimit = *limit;
+    long long actualLimit = CAP_LIMIT(*limit);
     int limitRows = !cursor;
 
     if (qtype == DRMS_QUERY_N)
@@ -8011,7 +8011,7 @@ char *drms_query_string(DRMS_Env_t *env, const char *seriesname, char *where, co
 
         if (abs(nrecs) < *limit)
         {
-           actualLimit = abs(nrecs);
+           actualLimit = CAP_LIMIT(abs(nrecs));
         }
 
         if (limitRows)
