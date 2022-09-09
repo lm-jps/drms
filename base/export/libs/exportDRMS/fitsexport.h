@@ -44,6 +44,8 @@ int fitsexport_mapexport_to_cfitsio_file(CFITSIO_FILE *file, DRMS_Segment_t *seg
 
 int fitsexport_mapexport_keywords_to_cfitsio_file(CFITSIO_FILE *file, DRMS_Record_t *rec, long long row_number, const char *clname, const char *mapfile);
 
+int fitsexport_mapexport_data_tofile(DRMS_Segment_t *output_segment, DRMS_Array_t *image_array, const char *output_path, const char *file_name_format);
+
 CFITSIO_KEYWORD *fitsexport_mapkeys(DRMS_Record_t *rec, DRMS_Segment_t *seg, const char *clname, const char *mapfile, int *num_keys, LinkedList_t *ttypes, LinkedList_t *tforms, int *status);
 
 /* Exporting DRMS keywords to FITS keywords */

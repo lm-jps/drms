@@ -70,19 +70,19 @@ DRMS_Segment_t *drms_segment_lookupindex(DRMS_Record_t *rec, int index, int foll
    is linked. Creates DRMS segment prototypes (type ::DRMS_Segment_t)
    for the target record prototype (@a target), using @a source as a template.
    The main difference between the DRMS segments in @a source and those in @a target
-   is that @a source could be a record that is a series record template 
-   (@c DRMS_Env_t.series_cache) or a member of the record cache 
+   is that @a source could be a record that is a series record template
+   (@c DRMS_Env_t.series_cache) or a member of the record cache
    (@c DRMS_Env_t.record_cache), but @a target cannot be either of those
    types of records.
-   
-   @param target Output DRMS record prototype which will contain the 
+
+   @param target Output DRMS record prototype which will contain the
    created DRMS segment prototypes.
    @param source Input DRMS record, which contains source DRMS segments
    that will be used to initialize the created DRMS segment prototypes.
    @return Container pointing to the segment container of @a target.
 */
-HContainer_t *drms_create_segment_prototypes(DRMS_Record_t *target, 
-					     DRMS_Record_t *source, 
+HContainer_t *drms_create_segment_prototypes(DRMS_Record_t *target,
+					     DRMS_Record_t *source,
 					     int *status);
 
 /* Return a container of DRMS_SegmentInfo_t structs.  Caller owns the returned container. */
@@ -100,8 +100,8 @@ HContainer_t *drms_create_segment_prototypes(DRMS_Record_t *target,
    @a seriesName's segments. Caller is responsible for freeing the created
    ::HContainer_t by calling ::drms_segment_destroyinfocon.
 */
-HContainer_t *drms_segment_createinfocon(DRMS_Env_t *drmsEnv, 
-					 const char *seriesName, 
+HContainer_t *drms_segment_createinfocon(DRMS_Env_t *drmsEnv,
+					 const char *seriesName,
 					 int *status);
 
 /**
@@ -141,14 +141,14 @@ void drms_segment_fprint(FILE *segfile, DRMS_Segment_t *seg);
    associated with @a seg in @a filename. The size of the buffer to which @a filename
    points must be at least DRMS_MAXPATHLEN+1 bytes long.
 
-   After creating a new series record, but before committing it to PostgreSQL, 
-   all segment's files get written into SUMS, typically with the ::drms_segment_write 
-   call or the ::drms_segment_write_from_file call. During this writing, 
+   After creating a new series record, but before committing it to PostgreSQL,
+   all segment's files get written into SUMS, typically with the ::drms_segment_write
+   call or the ::drms_segment_write_from_file call. During this writing,
    the segment's file name is assigned. The name gets saved in the record's sg_XXX_file
    column (where XXX refers to
-   the segment number) when the containing record gets committed into 
+   the segment number) when the containing record gets committed into
    the database. When an existing series' records are opened, the name in the
-   sg_XXX_file column is then used to populate the segment's filename field, 
+   sg_XXX_file column is then used to populate the segment's filename field,
    where it then becomes available when the ::drms_segment_filename function
    is called.
 
@@ -160,8 +160,8 @@ void drms_segment_filename(DRMS_Segment_t *seg, char *filename);
 /* Estimated size of segment in bytes. */
 /**
    Returns the total size of the @a seg data array, in bytes
-   (product of the number of data elements and size of the datatype). 
-   If the segment data type is ::DRMS_TYPE_STRING, the size returned 
+   (product of the number of data elements and size of the datatype).
+   If the segment data type is ::DRMS_TYPE_STRING, the size returned
    is only the number of data elements times the size of an address.
    So, for the ::DRMS_TYPE_STRING datatype, this function
    probably does not provide the desired information.
@@ -173,8 +173,8 @@ void drms_segment_filename(DRMS_Segment_t *seg, char *filename);
 long long drms_segment_size(DRMS_Segment_t *seg, int *status);
 
 /* Returns 1 if the segments' meta-data match */
-/** 
-    Returns 1 if both segments exist (or are NULL) and have the same rank, 
+/**
+    Returns 1 if both segments exist (or are NULL) and have the same rank,
     dimensions, protocol, blocksizes (if they are of
     protocol ::DRMS_TAS), type, and scope; 0 otherwise.
 
@@ -241,9 +241,9 @@ int drms_segment_getdims(DRMS_Segment_t *seg, DRMS_SegmentDimInfo_t *di);
    @param autobzero bzero value to offset data by, returned by reference.
    @param autobscale bscale value to scale data by, returned by reference
 */
-void drms_segment_autoscale(DRMS_Segment_t *seg, 
-			    DRMS_Array_t *arr, 
-			    double *autobzero, 
+void drms_segment_autoscale(DRMS_Segment_t *seg,
+			    DRMS_Array_t *arr,
+			    double *autobzero,
 			    double *autobscale);
 
 /* Set block sizes for tiled/blocked storage. */
@@ -263,7 +263,7 @@ void drms_segment_setblocksize(DRMS_Segment_t *seg, int *blksz);
    segment. The blocksize is reserved for use with segments of protocol
    ::DRMS_TAS (tiled array storage) only, but is not used in any of the
    read/write functions described here.
-   
+
    @param seg The segment whose blocksize array is to be set.
    @param blksz Input blocksizes.
 */
@@ -283,15 +283,15 @@ void drms_segment_getblocksize(DRMS_Segment_t *seg, int *blksz);
 
 /**** External functions (for modules) ****/
 
-/* Open a data segment. 
+/* Open a data segment.
 
-   a) If the corresponding data file exists, read the 
-   entire data array into memory. Convert it to the type given as 
-   argument. If type=DRMS_TYPE_RAW then  the data is 
+   a) If the corresponding data file exists, read the
+   entire data array into memory. Convert it to the type given as
+   argument. If type=DRMS_TYPE_RAW then  the data is
    read into an array of the same type it is stored as on disk.
-   b) If the data file does not exist, then return a data array filed with 
+   b) If the data file does not exist, then return a data array filed with
    the MISSING value for the given type.
-*/ 
+*/
 
 /**
    @name Read and Write
@@ -304,8 +304,8 @@ void drms_segment_getblocksize(DRMS_Segment_t *seg, int *blksz);
 
    @param seg The segments whose file is to be opened.
    @param newfilename If the storage unit referenced by the segment is a DRMS_READWRITE storage unit
-   and the caller intends to write a file that does not yet exist, @a newfilename will be the 
-   name of the new file. Otherwise, the new file will be given a default name formed from a 
+   and the caller intends to write a file that does not yet exist, @a newfilename will be the
+   name of the new file. Otherwise, the new file will be given a default name formed from a
    combination of the segment name and the protocol type.
    @param append If the storage unit referenced by the segment is a DRMS_READWRITE storage unit,
    and @a append is set to 1, then when the segment's file is opened, the writing stream pointer is
@@ -318,7 +318,7 @@ void drms_segment_getblocksize(DRMS_Segment_t *seg, int *blksz);
  */
 FILE *drms_segment_fopen(DRMS_Segment_t *seg, const char *newfilename, int append, int *status);
 
-/** 
+/**
     Reads the data associated with @a seg into memory
     in a newly created ::DRMS_Array_t struct, converting the data to the requested
     @a type (unless @a type = ::DRMS_TYPE_RAW, in which case the data type
@@ -329,7 +329,7 @@ FILE *drms_segment_fopen(DRMS_Segment_t *seg, const char *newfilename, int appen
     @param status DRMS status (see drms_statuscodes.h). 0 if successful, non-0 otherwise.
     @return The created DRMS array struct.
 */
-DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type, 
+DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
 				int *status);
 /**
    Similar to ::drms_segment_read, except
@@ -343,7 +343,7 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
     @param end The index value, in all dimensions, that ends the slice.
     @return The created DRMS array struct.
 */
-DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type, 
+DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type,
 				     axislen_t *start, axislen_t *end, int *status);
 
 /**
@@ -351,7 +351,7 @@ DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type,
    opened with ::drms_segment_fopen.
 
    @param fptr The previously opened file pointer.
-   @return If the file pointer was successfully closed, then DRMS_SUCCESS is returned. Otherwise, 
+   @return If the file pointer was successfully closed, then DRMS_SUCCESS is returned. Otherwise,
    DRMS_ERROR_IOERROR is returned.
  */
 
@@ -363,49 +363,49 @@ int drms_segment_fclose(FILE *fptr);
 /**
    Writes the data from the DRMS array @a arr into the
    file associated with the segment @a seg, provided that the segment uses
-   one of the supported non-ready-only protocols (::DRMS_BINARY, 
-   ::DRMS_BINZIP, ::DRMS_FITS, ::DRMS_FITZ, and DRMS_TAS). The array 
+   one of the supported non-ready-only protocols (::DRMS_BINARY,
+   ::DRMS_BINZIP, ::DRMS_FITS, ::DRMS_FITZ, and DRMS_TAS). The array
    dimensions must match those of the segment.
    If @a autoscale is non-zero, the function ::drms_segment_autoscale
    is invoked before output.
 
    @a seg and @a arr both contain bzero and bscale fields. If seg->bzero is not 0 or
-   seg->bscale is not 1, then the data file contains values in "scaled units" 
+   seg->bscale is not 1, then the data file contains values in "scaled units"
    (the original values, which were in "physical units", have been scaled
-   and an offset has been applied). The meaning of arr->bzero 
-   and arr->bscale depends on whether arr->type is a floating-point type or 
-   not, and whether arr->israw is 1 or not. When arr->type is a floating-point 
-   data type, then the data values in arr->data are assumed to be in 
+   and an offset has been applied). The meaning of arr->bzero
+   and arr->bscale depends on whether arr->type is a floating-point type or
+   not, and whether arr->israw is 1 or not. When arr->type is a floating-point
+   data type, then the data values in arr->data are assumed to be in
    physical units and arr->israw is ignored. But
    when arr->type is an integer data type, then arr->data may be in either
    physical or scaled units. If arr->israw is 1, then the values in arr->data
-   are in scaled units,  
+   are in scaled units,
    and if arr->israw is 0, then arr->data values are in physical units.
 
    Depending on arr->type, arr->israw, and seg->type ::drms_segment_write will
    scale (apply arr->bzero and arr->bscale), inverse scale (apply -arr->bzero / arr->bscale
-   and  1.0 / arr->bscale), or data-type convert the data values 
+   and  1.0 / arr->bscale), or data-type convert the data values
    in arr->data before writing the values to disk. Scaling is the
    process of converting from values in scaled units to
    values in physical units. Inverse scaling is the opposite process:
    converting from physical units to scaled units. Inverse scaling
-   simply scales floating-point values into integers such that 
+   simply scales floating-point values into integers such that
    applying arr->bzero and arr->bscale to these integers reconstructs
    the original floating-point data values. Data-type conversion
    converts from one data type to another. For example, if the conversion
-   is from an integer to a float, then an original value of 23.7 
-   would round to 24. Data-type conversion always happens when 
+   is from an integer to a float, then an original value of 23.7
+   would round to 24. Data-type conversion always happens when
    arr->type does not equal seg->type.
 
    If the data values are in physical units (either floating-point data, or
-   arr->israw is 0) and seg->type is a floating-point type, then no scaling 
+   arr->israw is 0) and seg->type is a floating-point type, then no scaling
    occurs. If the data values are in physical units and seg->type
    is an integer type, then the caller can specify whether or not inverse
-   scaling should occur. If arr->bzero is 0 and arr->bscale is 1, then 
+   scaling should occur. If arr->bzero is 0 and arr->bscale is 1, then
    no inverse scaling will occur and the data file will contain values in physical
    units. If arr->bzero is not 0 or arr->bscale is not 1, then
    inverse scaling will occur.
-   
+
    If the data values are in scaled units (arr->israw is 1 and arr->type
    is an integer type) and seg->type is a floating-point type,
    then scaling occurs and data values are stored in physical units.
@@ -414,7 +414,7 @@ int drms_segment_fclose(FILE *fptr);
 
    @param seg The segment whose file is to be written to the filesystem.
    @param arr The array containing the data that is to be written to the output file.
-   @param autoscale If 0, do not invoke ::drms_segment_autoscale. Otherwise, invoke 
+   @param autoscale If 0, do not invoke ::drms_segment_autoscale. Otherwise, invoke
    ::drms_segment_autoscale.
    @return DRMS status (see drms_statuscodes.h). 0 if successful, non-0 otherwise.
 */
@@ -423,27 +423,27 @@ int drms_segment_write(DRMS_Segment_t *seg, DRMS_Array_t *arr, int autoscale);
 int drms_segment_writewithkeys(DRMS_Segment_t *seg, DRMS_Array_t *arr, int autoscale);
 
 /**
-   
+
    @param seg The segment that refers to a file which contains an image to
    which a slice of data will be written.
    @param arr The array that contains a slice of data to be written.
    @param start A vector of index values in the segment-file's image space that
-   identifies a pixel 
+   identifies a pixel
 
 The index value, in all dimensions, that starts the slice.
    @param end The index value, in all dimensions, that ends the slice.
    @return The created DRMS array struct.
  */
-int drms_segment_writeslice(DRMS_Segment_t *seg, 
-                            DRMS_Array_t *arr, 
-                            axislen_t *start, 
-                            axislen_t *end, 
+int drms_segment_writeslice(DRMS_Segment_t *seg,
+                            DRMS_Array_t *arr,
+                            axislen_t *start,
+                            axislen_t *end,
                             int autoscale);
 
-int drms_segment_writeslice_ext(DRMS_Segment_t *seg, 
-                                DRMS_Array_t *arr, 
-                                axislen_t *start, 
-                                axislen_t *end, 
+int drms_segment_writeslice_ext(DRMS_Segment_t *seg,
+                                DRMS_Array_t *arr,
+                                axislen_t *start,
+                                axislen_t *end,
                                 int *finaldims,
                                 int autoscale);
 
@@ -474,7 +474,7 @@ static inline int drms_segment_ranksort(const void *he1, const void *he2)
 {
    DRMS_Segment_t *s1 = (DRMS_Segment_t *)hcon_getval(*((HContainerElement_t **)he1));
    DRMS_Segment_t *s2 = (DRMS_Segment_t *)hcon_getval(*((HContainerElement_t **)he2));
-   
+
    XASSERT(s1 && s2);
 
    return (s1->info->segnum < s2->info->segnum) ? -1 : (s1->info->segnum > s2->info->segnum ? 1 : 0);
@@ -482,6 +482,6 @@ static inline int drms_segment_ranksort(const void *he1, const void *he2)
 
 DRMS_Segment_t *drms_template_segment_followlink(DRMS_Segment_t *srcseg, int *statret);
 
+DRMS_Array_t *drms_segment_scale_output_array(DRMS_Segment_t *segment, DRMS_Array_t *data_array);
+
 #endif
-
-

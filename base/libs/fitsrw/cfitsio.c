@@ -5443,14 +5443,16 @@ int fitsrw_read(int verbose,
 }
 
 /*
- * filein - the name of the fits file to be written ("-" for stdout; passed into lower-level functions to indicate that a FITS file is being streamed to stdout)
+ * filein - the name of the fits file to be written ("-" --> `callback` is a FITS file, in-memory or not
+ *   if `callback` is NULL, then an in-memory FITS file is created)
  * info - image essential metadata (e.g., bitpix, naxes, ...); NULL if fitsData provided
  * image - the image data to be written to the fits file; NULL if fitsData provided
  * fitsData - an alternate way to supply image data; a FITS file (fitsfile *) that contains only image data
- * cparms - a FITS file compression string (NULL for stdout streaming)
+ * cparms - a FITS file compression string (NULL for stdout streaming) [ ignored when fitsfile_exists ]
  * keylist - FITS file metadata
  * header - an alternate way to supply metadata; a FITS file (fitsfile *) that contains only a header
- * callback - a function called in the tar-on-fly workflow (fitsfile * for stdout - writing to this FITS file will cause file data to be streamed to stdout)
+ * callback - if `filein` is "-", then `callback` is a fitsfile *; otherwise, `callback` is a function
+     called in the tar-on-fly workflow
  */
 int fitsrw_write3(int verbose, const char *filein, CFITSIO_IMAGE_INFO *info, void *image, CFITSIO_DATA *fitsData, const char *cparms, CFITSIO_KEYWORD *keylist, CFITSIO_HEADER *fitsHeader, export_callback_func_t callback)
 {
@@ -5460,17 +5462,33 @@ int fitsrw_write3(int verbose, const char *filein, CFITSIO_IMAGE_INFO *info, voi
     int datatype;
     int imgtype;
     char filename[PATH_MAX];
-    int streaming = 0;
+    int fitsfile_exists = -1;
+    int callback_exists = -1;
     int copyFits = 0;
     fitsfile *fptr = NULL;
+    CFITSIO_FILE *cfitsio_file = NULL;
     int cfiostat = 0; /* MUST start with no-error status, else CFITSIO will fail. */
     char cfiostatErrmsg[FLEN_STATUS];
     int fileCreated = 0;
-    long long imgSize =0;
+    long long imgSize = 0;
+    CFITSIO_IMAGE_INFO fpinfo;
+    CFITSIO_IMAGE_INFO fpinfonew;
 
-    if (filein && ((info && image) || fitsData))
+    if (callback != NULL)
     {
-        streaming = (strcmp(filein, "-") == 0);
+        fitsfile_exists = 0;
+        callback_exists = 1;
+
+        if (filein && (strcmp(filein, "-") == 0))
+        {
+            fitsfile_exists = 1;
+            callback_exists = 0;
+            cfitsio_file = (CFITSIO_FILE *)callback;
+        }
+    }
+
+    if ((filein || fitsfile_exists) && ((info && image) || fitsData))
+    {
         copyFits = (!info || !image);
 
         if (!copyFits)
@@ -5538,7 +5556,7 @@ int fitsrw_write3(int verbose, const char *filein, CFITSIO_IMAGE_INFO *info, voi
 
                 /* In the future, perhaps we override this method of specifying compression
                 * with the CFITSIO API call that specifies it. */
-                if (!streaming)
+                if (!fitsfile_exists)
                 {
                     /* not stdout */
                     if (cparms && *cparms)
@@ -5563,26 +5581,25 @@ int fitsrw_write3(int verbose, const char *filein, CFITSIO_IMAGE_INFO *info, voi
         if (!err)
         {
             //ISS fly-tar START
-            if (callback != NULL)
+            if (callback_exists)
             {
-                if (!streaming)
-                {
-                    /* not stdout */
-                    int retVal = 0;
+                /* not stdout */
+                int retVal = 0;
 
-                    (*callback)("create", &fptr, filein, cparms, &cfiostat, &retVal);
-                    if (retVal)
-                    {
-                        err = CFITSIO_ERROR_FILE_IO;
-                    }
-                }
-                else
+                (*callback)("create", &fptr, filein, cparms, &cfiostat, &retVal);
+                if (retVal)
                 {
-                    /* we are writing the FITS file to stdout; the FITS file has already been created (in memory);
-                     * callback has the fitsfile; this file's CFITSIO_IMAGE_INFO has NOT been stored in the global hash
-                     * (in memory files for stdout-streaming are not subject to caching) */
-                    fptr = (fitsfile *)callback;
+                    err = CFITSIO_ERROR_FILE_IO;
                 }
+            }
+            else if (fitsfile_exists)
+            {
+                /* if the fits file is "in-memory", then this file's CFITSIO_IMAGE_INFO has NOT been stored
+                 * in the global hash (in memory files for stdout-streaming are not subject to caching); this
+                 * is the case when "streaming" the fits file; but the fits file could also be a non-in-memory
+                 * file
+                 */
+                fptr = cfitsio_file->fptr;
             }
             else
             {
@@ -5731,59 +5748,56 @@ int fitsrw_write3(int verbose, const char *filein, CFITSIO_IMAGE_INFO *info, voi
         /* set the fpinfo struct with the values from image_info (but do not overwrite the fhash field) */
 
         //ISS fly-tar
-        if (callback != NULL )
+        if (callback_exists)
         {
-            if (!streaming)
+            //ISS fly-tar
+            (*callback)("stdout", fptr, image, &cfiostat);
+            if (cfiostat)
             {
-                //ISS fly-tar
-                (*callback)("stdout", fptr, image, &cfiostat);
-                if (cfiostat)
-                {
-                    fprintf(stderr, "Trouble executing callback [%s]\n", filename);
-                    err = CFITSIO_ERROR_LIBRARY;
-                }
+                fprintf(stderr, "Trouble executing callback [%s]\n", filename);
+                err = CFITSIO_ERROR_LIBRARY;
             }
         }
         else
         {
-            /* we are not streaming; this means that fptr has a cached CFITSIO_IMAGE_INFO globally */
-            CFITSIO_IMAGE_INFO fpinfo;
-            CFITSIO_IMAGE_INFO fpinfonew;
-
-
-            /* this will fetch the hash key for the cached CFITSIO_IMAGE_INFO */
-            if (fitsrw_getfpinfo_ext((TASRW_FilePtr_t)fptr, (TASRW_FilePtrInfo_t)&fpinfo))
+            if (!cfitsio_file->in_memory)
             {
-                fprintf(stderr, "Invalid fitsfile pointer '%p'.\n", fptr);
-                err = CFITSIO_ERROR_FILE_IO;
-            }
-            else
-            {
-                /* fpinfo contains the hash key into the global CFITSIO_IMAGE_INFO container */
-                if (copyFits)
-                {
-                    /* info is NULL - we need to create it from the image info in fptr itself; this fptr's
-                     * CFITSIO_IMAGE_INFO has already been cached in the global hash () */
-                    CfSetImageInfo(&fpinfonew, fptr);
-                }
-                else
-                {
-                    /* I guess this is faster since the CFITSIO_IMAGE_INFO already exists in the !copyFits case */
-                    fpinfonew = *info;
-                }
+                /* we have a non-in-memory fits file; this means that fptr has a cached CFITSIO_IMAGE_INFO globally */
 
-                snprintf(fpinfonew.fhash, sizeof(fpinfonew.fhash), "%s", fpinfo.fhash);
-
-                if (fitsrw_setfpinfo_ext((TASRW_FilePtr_t)fptr, (TASRW_FilePtrInfo_t)&fpinfonew))
+                /* this will fetch the hash key for the cached CFITSIO_IMAGE_INFO */
+                if (fitsrw_getfpinfo_ext((TASRW_FilePtr_t)fptr, (TASRW_FilePtrInfo_t)&fpinfo))
                 {
-                    fprintf(stderr, "Unable to update file pointer information.\n");
+                    fprintf(stderr, "Invalid fitsfile pointer '%p'.\n", fptr);
                     err = CFITSIO_ERROR_FILE_IO;
                 }
                 else
                 {
-                    if (fitsrw_closefptr(verbose, (TASRW_FilePtr_t)fptr))
+                    /* fpinfo contains the hash key into the global CFITSIO_IMAGE_INFO container */
+                    if (copyFits)
                     {
+                        /* info is NULL - we need to create it from the image info in fptr itself; this fptr's
+                         * CFITSIO_IMAGE_INFO has already been cached in the global hash () */
+                        CfSetImageInfo(&fpinfonew, fptr);
+                    }
+                    else
+                    {
+                        /* I guess this is faster since the CFITSIO_IMAGE_INFO already exists in the !copyFits case */
+                        fpinfonew = *info;
+                    }
+
+                    snprintf(fpinfonew.fhash, sizeof(fpinfonew.fhash), "%s", fpinfo.fhash);
+
+                    if (fitsrw_setfpinfo_ext((TASRW_FilePtr_t)fptr, (TASRW_FilePtrInfo_t)&fpinfonew))
+                    {
+                        fprintf(stderr, "Unable to update file pointer information.\n");
                         err = CFITSIO_ERROR_FILE_IO;
+                    }
+                    else
+                    {
+                        if (fitsrw_closefptr(verbose, (TASRW_FilePtr_t)fptr))
+                        {
+                            err = CFITSIO_ERROR_FILE_IO;
+                        }
                     }
                 }
             }
@@ -5791,7 +5805,6 @@ int fitsrw_write3(int verbose, const char *filein, CFITSIO_IMAGE_INFO *info, voi
     }
 
     return err;
-
 }
 
 int fitsrw_write(int verbose, const char *filein, CFITSIO_IMAGE_INFO *info, void *image, const char *cparms, CFITSIO_KEYWORD *keylist)
@@ -5802,4 +5815,13 @@ int fitsrw_write(int verbose, const char *filein, CFITSIO_IMAGE_INFO *info, void
 int fitsrw_write2(int verbose, const char *filein, CFITSIO_IMAGE_INFO *info, void *image, const char *cparms, CFITSIO_KEYWORD *keylist, export_callback_func_t callback) //ISS fly-tar - fitsfile * for stdout
 {
     return fitsrw_write3(verbose, filein, info, image, NULL, cparms, keylist, NULL, callback);
+}
+
+int cfitsio_write_header_and_image(CFITSIO_FILE *file, CFITSIO_IMAGE_INFO *info, void *image, const char *cparms, CFITSIO_KEYWORD *keylist)
+{
+    /* a non-NULL export_callback_func_t implies that a FITS file exists already; if one exists, then
+     * "-" implies that that export_callback_func_t argument contains a FITS file, in-memory or
+     * otherwise; otherwise the export_callback_func_t argument is a function that returns the existing
+     * FITS file */
+    return fitsrw_write2(0, "-", info, image, cparms, keylist, (export_callback_func_t)(file));
 }

@@ -4,6 +4,7 @@
 #include "util.h"
 #include "tasrw.h"
 #include "atoinc.h"
+#include "exputil.h"
 #include <sys/mman.h>
 #include <openssl/md5.h>
 #include <regex.h>
@@ -27,6 +28,13 @@
 #define kFE_LICENSE_COMMENT "CC0 1.0"
 #define kFE_LICENSE_SHORT "CC0 1.0"
 #define kFE_LICENSE_FORMAT "%s"
+
+#define FE_COMPRESSION_NONE "none"
+#define FE_COMPRESSION_RICE "rice"
+#define FE_COMPRESSION_GZIP1 "gzip1"
+#define FE_COMPRESSION_GZIP2 "gzip2"
+#define FE_COMPRESSION_PLIO "plio"
+#define FE_COMPRESSION_HCOMP "hcompress"
 
 /* keyword that can never be placed in a FITS file via DRMS */
 
@@ -1303,6 +1311,424 @@ int fitsexport_export_tofile(DRMS_Segment_t *seg, const char *cparms, const char
 int fitsexport_mapexport_tofile(DRMS_Segment_t *seg, const char *cparms, const char *clname, const char *mapfile, const char *fileout, char **actualfname, unsigned long long *expsize)
 {
    return fitsexport_mapexport_tofile2(seg->record, seg, 0, cparms, clname, mapfile, fileout, actualfname, expsize, (export_callback_func_t) NULL);  //ISS fly-tar
+}
+
+/* redirects `stream_fd` to `pipe_fds[1]`, the write end of a pipe; returns the read end of the pipe as `read_stream`;
+ * returns the original stream that `stream_fd` pointed to as `saved_stream`
+ */
+static int fitsexport_capture_stream(int stream_fd, int saved_pipes[2], int *saved_stream, FILE **read_stream)
+{
+    int pipe_fds[2] = {-1, -1};
+    int saved = -1;
+    FILE *stream = NULL;
+    int error = 0;
+
+    if (pipe(pipe_fds) == -1)
+    {
+        fprintf(stderr, "[ fitsexport_capture_stream ] unable to create pipe\n");
+        error = 1;
+    }
+
+    if (!error)
+    {
+        saved = dup(stream_fd);
+
+        if (saved != -1)
+        {
+            if (dup2(pipe_fds[1], stream_fd) != -1)
+            {
+                /* open read-end stream */
+                stream = fdopen(pipe_fds[0], "r");
+                if (!stream)
+                {
+                    /* restore stderr */
+                    dup2(saved, stream_fd);
+                    fprintf(stderr, "[ fitsexport_capture_stream ] unable to open read end of pipe\n");
+                    error = 1;
+                }
+            }
+            else
+            {
+                fprintf(stderr, "[ fitsexport_capture_stream ] unable to redirect stream to write end of pipe\n");
+                error = 1;
+            }
+        }
+        else
+        {
+            fprintf(stderr, "[ fitsexport_capture_stream ] unable to save stream file descriptor\n");
+            error = 1;
+        }
+    }
+
+    if (!error)
+    {
+        saved_pipes[0] = pipe_fds[0];
+        saved_pipes[1] = pipe_fds[1];
+        *saved_stream = saved;
+        *read_stream = stream;
+    }
+    else
+    {
+        if (stream)
+        {
+            fclose(stream);
+        }
+
+        if (saved != -1)
+        {
+            close(saved);
+        }
+
+        if (pipe_fds[0] != -1)
+        {
+            close(pipe_fds[0]);
+        }
+
+        if (pipe_fds[1] != -1)
+        {
+            close(pipe_fds[1]);
+        }
+    }
+
+    return error;
+}
+
+static int fitsexport_capture_stdout(int saved_pipes[2], int *saved_stdout, FILE **read_stream)
+{
+    return fitsexport_capture_stream(STDOUT_FILENO, saved_pipes, saved_stdout, read_stream);
+}
+
+static int fitsexport_capture_stderr(int saved_pipes[2], int *saved_stderr, FILE **read_stream)
+{
+    return fitsexport_capture_stream(STDERR_FILENO, saved_pipes, saved_stderr, read_stream);
+}
+
+static int fitsexport_restore_stdout_dump_fits_file(int saved_pipes[2], int *saved_stdout, FILE **stream_with_stdout, FILE *output_file)
+{
+    char buffer[1025] = {0};
+    size_t num_bytes = 0;
+    int error = 0;
+
+    /* necessary to close write-end of pipe so that reading from the read end does not block; and
+     * to close write-end of pipe, we need to first restore stdout (make STDOUT_FILENO point back to whatever
+     * STDOUT_FILENO was pointing to - probably tty - before redirection) */
+    if (dup2(*saved_stdout, STDOUT_FILENO) == -1)
+    {
+        error = 1;
+    }
+
+    close(*saved_stdout);
+    *saved_stdout = -1;
+
+    if (close(saved_pipes[1]) == -1)
+    {
+       error = 1;
+    }
+
+    saved_pipes[1] = -1;
+
+    /* read the read end of the pipe */
+    while (1)
+    {
+        memset(buffer, '\0', sizeof(buffer));
+        num_bytes = fread(buffer, sizeof(char), sizeof(buffer) - 1, *stream_with_stdout);
+        if (num_bytes <= 0)
+        {
+            break;
+        }
+        else
+        {
+            fwrite(buffer, sizeof(char), num_bytes, output_file);
+        }
+    }
+
+    /* close read stream */
+    fclose(*stream_with_stdout);
+    *stream_with_stdout = NULL;
+
+    /* close read pipe */
+    close(saved_pipes[0]);
+    saved_pipes[0] = -1;
+
+    return error;
+}
+
+static void fitsexport_restore_stderr_and_print(int saved_pipes[2], int *saved_stderr, FILE **stream_with_stderr)
+{
+    char buffer[1025] = {0};
+    size_t num_bytes = 0;
+    int error = 0;
+
+    /* necessary to close write-end of pipe so that reading from the read end does not block; and
+     * to close write-end of pipe, we need to first restore stderr (make STDERR_FILENO point back to whatever
+     * STDERR_FILENO was pointing to - probably tty - before redirection) */
+    if (dup2(*saved_stderr, STDERR_FILENO) == -1)
+    {
+        fprintf(stderr, "[ fitsexport_restore_stderr_and_print ] unable to restore stderr file descriptor\n");
+        error = 1;
+    }
+
+    close(*saved_stderr);
+    *saved_stderr = -1;
+
+    if (close(saved_pipes[1]) == -1)
+    {
+        fprintf(stderr, "[ fitsexport_restore_stderr_and_print ] unable to close write end of pipe\n");
+        error = 1;
+    }
+
+    saved_pipes[1] = -1;
+
+    if (!error)
+    {
+        /* read the read end of the pipe */
+        while (1)
+        {
+            memset(buffer, '\0', sizeof(buffer));
+            num_bytes = fread(buffer, sizeof(char), sizeof(buffer) - 1, *stream_with_stderr);
+            if (num_bytes <= 0)
+            {
+                break;
+            }
+            else
+            {
+                fprintf(stderr, buffer);
+            }
+        }
+    }
+
+    /* close read stream */
+    fclose(*stream_with_stderr);
+    *stream_with_stderr = NULL;
+
+    /* close read pipe */
+    close(saved_pipes[0]);
+    saved_pipes[0] = -1;
+}
+
+/* the cfitsio compression type enum is defined in image_info_def.h */
+static int fitsexport_compression_string_to_cfitsio_type(const char *compression_string, CFITSIO_COMPRESSION_TYPE *cfitsio_compression_type)
+{
+    char *stripped_compression_string = NULL;
+    char *ptr_compression_type = NULL;
+    static regex_t *reg_expression = NULL;
+    const char *compression_string_pattern = "^[ ]*(compress[ ])?([a-zA-Z0-9]+)[ ]*$";
+    regmatch_t matches[3]; /* index 0 is the entire string */
+    int error = 0;
+
+    /* ART - this does not get freed! */
+    if (!reg_expression)
+    {
+        reg_expression = calloc(1, sizeof(regex_t));
+        if (reg_expression)
+        {
+            if (regcomp(reg_expression, compression_string_pattern, REG_EXTENDED) != 0)
+            {
+                fprintf(stderr, "[ fitsexport_compression_string_to_cfitsio_type ] invalid regular expression\n");
+                error = 1;
+            }
+        }
+        else
+        {
+            fprintf(stderr, "[ fitsexport_compression_string_to_cfitsio_type ] out of memory\n");
+            error = 1;
+        }
+    }
+
+    if (!error)
+    {
+        stripped_compression_string = strdup(compression_string);
+        if (stripped_compression_string)
+        {
+            if (regexec(reg_expression, compression_string, sizeof(matches) / sizeof(matches[0]), matches, 0) == 0)
+            {
+                /* match */
+                stripped_compression_string[matches[2].rm_eo] = '\0';
+                ptr_compression_type = &stripped_compression_string[matches[2].rm_so];
+            }
+        }
+        else
+        {
+            fprintf(stderr, "[ fitsexport_compression_string_to_cfitsio_type ] out of memory\n");
+            error = 1;
+        }
+    }
+
+    if (!error)
+    {
+        if (strcasecmp(ptr_compression_type, FE_COMPRESSION_NONE) == 0)
+        {
+            *cfitsio_compression_type = CFITSIO_COMPRESSION_NONE;
+        }
+        else if (strcasecmp(ptr_compression_type, FE_COMPRESSION_RICE) == 0)
+        {
+            *cfitsio_compression_type = CFITSIO_COMPRESSION_RICE;
+        }
+        else if (strcasecmp(ptr_compression_type, FE_COMPRESSION_GZIP1) == 0)
+        {
+            *cfitsio_compression_type = CFITSIO_COMPRESSION_GZIP1;
+        }
+        else if (strcasecmp(ptr_compression_type, FE_COMPRESSION_GZIP2) == 0)
+        {
+            /* fitsio may not support this type (available >= version 3.27) */
+            *cfitsio_compression_type = CFITSIO_COMPRESSION_GZIP2;
+        }
+        else if (strcasecmp(ptr_compression_type, FE_COMPRESSION_PLIO) == 0)
+        {
+            *cfitsio_compression_type = CFITSIO_COMPRESSION_PLIO;
+        }
+        else if (strcasecmp(ptr_compression_type, FE_COMPRESSION_HCOMP) == 0)
+        {
+            *cfitsio_compression_type = CFITSIO_COMPRESSION_HCOMP;
+        }
+        else
+        {
+            fprintf(stderr, "[ fitsexport_compression_string_to_cfitsio_type ] invalid compression-type string %s\n", compression_string);
+            error = 1;
+        }
+    }
+
+    if (stripped_compression_string)
+    {
+        free(stripped_compression_string);
+        stripped_compression_string = NULL;
+    }
+
+    return error;
+}
+
+/* output_segment contains:
+ *   cparms
+ *   record - contains keyword values
+ *
+ */
+int fitsexport_mapexport_data_tofile(DRMS_Segment_t *output_segment, DRMS_Array_t *image_array, const char *output_path, const char *file_name_format)
+{
+    int number_keys = 0;
+    int axis_index = -1;
+    DRMS_Array_t *output_array = NULL;
+    CFITSIO_KEYWORD *fits_keywords = NULL;
+    char output_file_name[DRMS_MAXPATHLEN] = {0};
+    char output_file_path[DRMS_MAXPATHLEN] = {0};
+    FILE *output_file = NULL;
+    CFITSIO_COMPRESSION_TYPE compression_type = CFITSIO_COMPRESSION_NONE;
+    DRMS_Segment_t *linked_output_segment = NULL;
+    CFITSIO_IMAGE_INFO image_info;
+    CFITSIO_FILE *output_cfitsio_file = NULL;
+    int drms_status = DRMS_SUCCESS;
+
+    if (image_array->naxis != output_segment->info->naxis)
+    {
+        fprintf(stderr, "[ fitsexport_mapexport_data_tofile ] number of axes in image array (%d) does not match the number of axes in segment (%d)\n", image_array->naxis, output_segment->info->naxis);
+        drms_status = DRMS_ERROR_EXPORT;
+    }
+
+    if (drms_status == DRMS_SUCCESS)
+    {
+        if (output_segment->info->scope != DRMS_VARDIM)
+        {
+            for (axis_index = 0; axis_index < image_array->naxis; axis_index++)
+            {
+                if (image_array->axis[axis_index] != output_segment->axis[axis_index])
+            	  {
+                    fprintf(stderr, "[ fitsexport_mapexport_data_tofile ] dimension of axis %d in image array (%d) does not match the value in segment (%d)\n", axis_index, image_array->axis[axis_index], output_segment->axis[axis_index]);
+                    drms_status = DRMS_ERROR_EXPORT;
+                    break;
+                }
+            }
+        }
+        else
+        {
+            for (axis_index = 0; axis_index < image_array->naxis; axis_index++)
+            {
+                output_segment->axis[axis_index] = image_array->axis[axis_index];
+            }
+        }
+    }
+
+    if (drms_status == DRMS_SUCCESS)
+    {
+        output_array = drms_segment_scale_output_array(output_segment, image_array);
+
+        if (drms_fitsrw_SetImageInfo(output_array, &image_info))
+        {
+            drms_status = DRMS_ERROR_EXPORT;
+        }
+    }
+
+    if (drms_status == DRMS_SUCCESS)
+    {
+        if (output_segment->info->islink)
+        {
+            if ((linked_output_segment = drms_segment_lookup(output_segment->record, output_segment->info->name)) == NULL)
+            {
+                fprintf(stderr, "[ fitsexport_mapexport_data_tofile ] unable to located linked segment\n");
+                drms_status = DRMS_ERROR_EXPORT;
+            }
+        }
+
+        if (drms_status == DRMS_SUCCESS)
+        {
+            drms_status = exputl_mk_expfilename(output_segment, linked_output_segment, file_name_format, output_file_name);
+            snprintf(output_file_path, sizeof(output_file_path), "%s/%s", output_path, output_file_name);
+        }
+    }
+
+    if (drms_status == DRMS_SUCCESS)
+    {
+        if (cfitsio_create_file(&output_cfitsio_file, output_file_path, CFITSIO_FILE_TYPE_IMAGE, NULL, NULL, NULL))
+        {
+            drms_status = DRMS_ERROR_EXPORT;
+        }
+    }
+
+    if (drms_status == DRMS_SUCCESS)
+    {
+        if (*output_segment->cparms != '\0')
+        {
+            if (fitsexport_compression_string_to_cfitsio_type(output_segment->cparms, &compression_type))
+            {
+                drms_status = DRMS_ERROR_EXPORT;
+            }
+            else
+            {
+                if (cfitsio_set_export_compression_type(output_cfitsio_file, compression_type))
+                {
+                    drms_status = DRMS_ERROR_EXPORT;
+                }
+            }
+        }
+        else
+        {
+            if (cfitsio_set_export_compression_type(output_cfitsio_file, CFITSIO_COMPRESSION_RICE))
+            {
+                drms_status = DRMS_ERROR_EXPORT;
+            }
+        }
+    }
+
+    if (drms_status == DRMS_SUCCESS)
+    {
+        fits_keywords = fitsexport_mapkeys(NULL, output_segment, NULL, NULL, &number_keys, NULL, NULL, &drms_status);
+    }
+
+    if (drms_status == DRMS_SUCCESS)
+    {
+        if (cfitsio_write_header_and_image(output_cfitsio_file, &image_info, output_array->data, NULL, fits_keywords))
+        {
+            drms_status = DRMS_ERROR_EXPORT;
+        }
+    }
+
+    if (output_array != image_array)
+    {
+        drms_free_array(output_array);
+        output_array = NULL;
+    }
+
+    /* not restoring stdout or printing FITS file if there was some error */
+
+    return drms_status;
 }
 
 int fitsexport_mapexport_tofile2(DRMS_Record_t *rec, DRMS_Segment_t *seg, long long row_number, const char *cparms, /* NULL for stdout */ const char *clname, const char *mapfile, const char *fileout, /* "-" for stdout */ char **actualfname, /* NULL for stdout */ unsigned long long *expsize, /* NULL for stdout */ export_callback_func_t callback) //ISS fly-tar - fitsfile * for stdout

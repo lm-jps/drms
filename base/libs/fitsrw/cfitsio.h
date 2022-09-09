@@ -315,6 +315,7 @@ int cfitsio_dump_image(void* image, CFITSIO_IMAGE_INFO* info,
 
 int cfitsio_key_to_cards(CFITSIO_KEYWORD *key, LinkedList_t **cards);
 
+int cfitsio_write_header_and_image(CFITSIO_FILE *file, CFITSIO_IMAGE_INFO *info, void *image, const char *cparms, CFITSIO_KEYWORD *keylist);
 //****************************************************************************
 
 #endif

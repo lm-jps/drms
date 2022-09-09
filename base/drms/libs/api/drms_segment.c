@@ -1735,6 +1735,11 @@ static DRMS_Array_t *ScaleOutputArray(DRMS_Segment_t *seg, DRMS_Array_t *arr, in
    return out;
 }
 
+DRMS_Array_t *drms_segment_scale_output_array(DRMS_Segment_t *segment, DRMS_Array_t *data_array)
+{
+		return ScaleOutputArray(segment, data_array, 0);
+}
+
 /* Write the array argument to the file occupied by the
    segment argument. The array dimension and type must match the
    segment dimension and type. */
