@@ -2139,7 +2139,7 @@ static int RecordLoopNoCursor(DRMS_Env_t *env, DRMS_RecordSet_t *recordset, Link
                     specifications = drms_record_get_specification_list(env, recordset, &status);
                     list_llreset(specifications);
                 }
-  
+
                 node = list_llnext(specifications);
                 specification = *(char **)node->data;
             }
@@ -2299,10 +2299,10 @@ int DoIt(void)
     LinkedList_t *segsSpecified = NULL; /* the verified seg columns to print, specified by either the 'seg' or '-A' argument*/
     LinkedList_t *linksSpecified = NULL; /* the verified link columns to print, specified by the '-K' argument */
 
-    Hash_Table_t keysHT;
-    Hash_Table_t validKeysHT;
-    Hash_Table_t segsHT;
-    Hash_Table_t linksHT;
+    HContainer_t *keysHT = NULL;
+    HContainer_t *validKeysHT = NULL;
+    HContainer_t *segsHT = NULL;
+    HContainer_t *linksHT = NULL;
 
     int show_keys = -1;
     int show_segs = -1;
@@ -3312,13 +3312,16 @@ int DoIt(void)
                                             break;
                                         }
 
-                                        hash_init(&keysHT, 89, 0, (int (*)(const void *, const void *))strcmp, hash_universal_hash);
+                                        if (!keysHT)
+                                        {
+                                            keysHT = hcon_create(sizeof(char), DRMS_MAXKEYNAMELEN, NULL, NULL, NULL, NULL, 0);
+                                        }
                                     }
 
-                                    if (!hash_member(&keysHT, oneKey->info->name))
+                                    if (!hcon_member_lower(keysHT, oneKey->info->name))
                                     {
                                         list_llinserttail(keysSpecified, oneKey->info->name);
-                                        hash_insert(&keysHT, oneKey->info->name, "T");
+                                        hcon_insert_lower(keysHT, oneKey->info->name, "T");
                                     }
 
                                     if (!validKeysSpecified)
@@ -3330,13 +3333,16 @@ int DoIt(void)
                                             break;
                                         }
 
-                                        hash_init(&validKeysHT, 89, 0, (int (*)(const void *, const void *))strcmp, hash_universal_hash);
+                                        if (!validKeysHT)
+                                        {
+                                            validKeysHT = hcon_create(sizeof(char), DRMS_MAXKEYNAMELEN, NULL, NULL, NULL, NULL, 0);
+                                        }
                                     }
 
-                                    if (!hash_member(&validKeysHT, oneKey->info->name))
+                                    if (!hcon_member_lower(validKeysHT, oneKey->info->name))
                                     {
                                         list_llinserttail(validKeysSpecified, oneKey->info->name); /* to drms_open_records() - must be valid keys */
-                                        hash_insert(&validKeysHT, oneKey->info->name, "T");
+                                        hcon_insert(validKeysHT, oneKey->info->name, "T");
                                     }
                                 }
                             }
@@ -3353,14 +3359,17 @@ int DoIt(void)
                                         break;
                                     }
 
-                                    hash_init(&keysHT, 89, 0, (int (*)(const void *, const void *))strcmp, hash_universal_hash);
+                                    if (!keysHT)
+                                    {
+                                        keysHT = hcon_create(sizeof(char), DRMS_MAXKEYNAMELEN, NULL, NULL, NULL, NULL, 0);
+                                    }
                                 }
 
-                                if (!hash_member(&keysHT, keysArrIn[iKey]))
+                                if (!hcon_member_lower(keysHT, keysArrIn[iKey]))
                                 {
                                     snprintf(tmp_keyword_name, sizeof(tmp_keyword_name), keysArrIn[iKey]);
                                     list_llinserttail(keysSpecified, tmp_keyword_name);
-                                    hash_insert(&keysHT, tmp_keyword_name, "T");
+                                    hcon_insert_lower(keysHT, tmp_keyword_name, "T");
                                 }
 
                                 if (validKey)
@@ -3374,13 +3383,16 @@ int DoIt(void)
                                             break;
                                         }
 
-                                        hash_init(&validKeysHT, 89, 0, (int (*)(const void *, const void *))strcmp, hash_universal_hash);
+                                        if (!validKeysHT)
+                                        {
+                                            validKeysHT = hcon_create(sizeof(char), DRMS_MAXKEYNAMELEN, NULL, NULL, NULL, NULL, 0);
+                                        }
                                     }
 
-                                    if (!hash_member(&validKeysHT, oneKey->info->name))
+                                    if (!hcon_member_lower(validKeysHT, oneKey->info->name))
                                     {
                                         list_llinserttail(validKeysSpecified, oneKey->info->name); /* to drms_open_records() - must be valid keys */
-                                        hash_insert(&validKeysHT, oneKey->info->name, "T");
+                                        hcon_insert_lower(validKeysHT, oneKey->info->name, "T");
                                     }
                                 }
                             }
@@ -3563,14 +3575,18 @@ int DoIt(void)
         {
             /* cannot be NULL in call to drms_open_records2(), otherwise */
             validKeysSpecified = list_llcreate(DRMS_MAXKEYNAMELEN, NULL);
-            hash_init(&validKeysHT, 89, 0, (int (*)(const void *, const void *))strcmp, hash_universal_hash);
+
+            if (!validKeysHT)
+            {
+                validKeysHT = hcon_create(sizeof(char), DRMS_MAXKEYNAMELEN, NULL, NULL, NULL, NULL, 0);
+            }
         }
 
         recordset = drms_open_records2(drms_env, in, validKeysSpecified, max_recs == 0, max_recs, retrieveLinks, &status);
 
         if (validKeysSpecified)
         {
-            hash_free(&validKeysHT);
+            hcon_destroy(&validKeysHT);
             list_llfree(&validKeysSpecified);
         }
 
@@ -3776,7 +3792,7 @@ int DoIt(void)
 
     if (keysSpecified)
     {
-        hash_free(&keysHT);
+        hcon_destroy(&keysHT);
         list_llfree(&keysSpecified);
     }
 
