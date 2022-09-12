@@ -729,7 +729,7 @@ static int GetLogDirs(DRMS_Env_t *env, DRMS_Record_t **recs, int nrecs, HContain
                 snprintf(session_id_str, sizeof(session_id_str), "%lld", session_id);
                 if (session_id_list_str == NULL)
                 {
-                    session_id_list_str = calloc(1, sizeof(sz_session_id_list_str));
+                    session_id_list_str = calloc(1, sz_session_id_list_str);
                 }
 
                 session_id_list_str = base_strcatalloc(session_id_list_str, session_id_str, &sz_session_id_list_str);
