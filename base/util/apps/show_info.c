@@ -3483,13 +3483,17 @@ int DoIt(void)
                                     if (!segsSpecified)
                                     {
                                         segsSpecified = list_llcreate(DRMS_MAXSEGNAMELEN, NULL);
-                                        hash_init(&segsHT, 13, 0, (int (*)(const void *, const void *))strcmp, hash_universal_hash);
+
+                                        if (!segsHT)
+                                        {
+                                            segsHT = hcon_create(sizeof(char), DRMS_MAXSEGNAMELEN, NULL, NULL, NULL, NULL, 0);
+                                        }
                                     }
 
-                                    if (!hash_member(&segsHT, oneSeg->info->name))
+                                    if (!hcon_member_lower(segsHT, oneSeg->info->name))
                                     {
                                         list_llinserttail(segsSpecified, oneSeg->info->name);
-                                        hash_insert(&segsHT, oneSeg->info->name, "T");
+                                        hcon_insert_lower(segsHT, oneSeg->info->name, "T");
                                     }
                                 }
                             }
@@ -3498,15 +3502,19 @@ int DoIt(void)
                                 if (!segsSpecified)
                                 {
                                     segsSpecified = list_llcreate(DRMS_MAXSEGNAMELEN, NULL);
-                                    hash_init(&segsHT, 13, 0, (int (*)(const void *, const void *))strcmp, hash_universal_hash);
+
+                                    if (!segsHT)
+                                    {
+                                        segsHT = hcon_create(sizeof(char), DRMS_MAXSEGNAMELEN, NULL, NULL, NULL, NULL, 0);
+                                    }
                                 }
 
                                 /* work with ALL keys specified on command line */
-                                if (!hash_member(&segsHT, segsArrIn[iSeg]))
+                                if (!hcon_member_lower(segsHT, segsArrIn[iSeg]))
                                 {
                                     snprintf(tmp_segment_name, sizeof(tmp_segment_name), segsArrIn[iSeg]);
                                     list_llinserttail(segsSpecified, tmp_segment_name);
-                                    hash_insert(&segsHT, tmp_segment_name, "T");
+                                    hcon_insert_lower(segsHT, tmp_segment_name, "T");
                                 }
                             }
 
@@ -3539,13 +3547,17 @@ int DoIt(void)
                             if (!linksSpecified)
                             {
                                 linksSpecified = list_llcreate(DRMS_MAXLINKNAMELEN, NULL);
-                                hash_init(&linksHT, 13, 0, (int (*)(const void *, const void *))strcmp, hash_universal_hash);
+
+                                if (!linksHT)
+                                {
+                                    linksHT = hcon_create(sizeof(char), DRMS_MAXLINKNAMELEN, NULL, NULL, NULL, NULL, 0);
+                                }
                             }
 
-                            if (!hash_member(&linksHT, oneLink->info->name))
+                            if (!hcon_member_lower(linksHT, oneLink->info->name))
                             {
                                 list_llinserttail(linksSpecified, oneLink->info->name);
-                                hash_insert(&linksHT, oneLink->info->name, "T");
+                                hcon_insert_lower(linksHT, oneLink->info->name, "T");
                             }
                         }
 
@@ -3780,13 +3792,13 @@ int DoIt(void)
 
     if (linksSpecified)
     {
-        hash_free(&linksHT);
+        hcon_destroy(&linksHT);
         list_llfree(&linksSpecified);
     }
 
     if (segsSpecified)
     {
-        hash_free(&segsHT);
+        hcon_destroy(&segsHT);
         list_llfree(&segsSpecified);
     }
 
@@ -3810,5 +3822,22 @@ int DoIt(void)
 
   drms_close_records(recordset, DRMS_FREE_RECORD);
   fflush(stdout);
-  show_info_return(status);
+  // show_info_return(status);
+
+  if (suinfo)
+  {
+     hcon_destroy(&suinfo);
+  }
+  if (given_sunum)
+  {
+     free(given_sunum);
+     given_sunum = NULL;
+  }
+  if (sunum_rs_query)
+  {
+     free(sunum_rs_query);
+     sunum_rs_query = NULL;
+  }
+  return(status);
+
   }
