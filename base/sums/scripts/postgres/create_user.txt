@@ -1,6 +1,0 @@
-rem this is Oracle stuff. Haven't tried yet for Postgres
-create user dsowner identified by <password>  DEFAULT TABLESPACE USERS
-QUOTA UNLIMITED on USERS;
-
-grant DBA to dsowner;
-
