@@ -1,14 +1,14 @@
 # Note: this design uses target-specific flags, because it's the only
 # way to get the value of a variable that's different for each
 # subdirectory, $(d), into the build recipes. Once you go that way,
-# you can as well use the feature to specify (extra) objects and 
+# you can as well use the feature to specify (extra) objects and
 # libraries to be linked or archived.
 
 
 # Standard stuff
 
 .SUFFIXES:
-.SUFFIXES:	.c .o 
+.SUFFIXES:	.c .o
 
 all:		targets
 
@@ -16,8 +16,9 @@ all:		targets
 
 dir	:= base
 -include		$(SRCDIR)/$(dir)/Rules.mk
+
 dir	:= proj
--include		$(SRCDIR)/$(LOCALIZATIONDIR)/Rules.mk
+-include		$(SRCDIR)/$(LOCALIZATIONDIR)/includes.mk
 
 # Non-default targets
 idl:		$(LIBJSOC_MAIN_SOCK_I)
@@ -47,8 +48,8 @@ $(IIOBJ):	CF_TGT := $(CF_TGT) -DIDLLIB
 		$(FCOMP)
 
 # If a .f file is to be compiled more than one, the Rules.mk file that
-# contains the rules for that .f file exists in a subdirectory of the 
-# directory that contains the .f file.  As a result, the stem of the 
+# contains the rules for that .f file exists in a subdirectory of the
+# directory that contains the .f file.  As a result, the stem of the
 # of the corresponding .o file is the child of the stem of the .f file.
 %.o:		../%.f
 		$(FCOMP)
@@ -60,8 +61,8 @@ $(IIOBJ):	CF_TGT := $(CF_TGT) -DIDLLIB
 		$(COMP)
 
 # If a .c file is to be compiled more than one, the Rules.mk file that
-# contains the rules for that .c file exists in a subdirectory of the 
-# directory that contains the .c file.  As a result, the stem of the 
+# contains the rules for that .c file exists in a subdirectory of the
+# directory that contains the .c file.  As a result, the stem of the
 # of the corresponding .o file is the child of the stem of the .c file.
 %.o:		../%.c
 		$(COMP)
@@ -79,7 +80,7 @@ $(IIOBJ):	CF_TGT := $(CF_TGT) -DIDLLIB
 targets:	$(TGT_BIN) $(TGT_LIB)
 
 # These targets merely contain commands to be executed, i.e. they collect
-# only .PHONY targets, even if they're not explicitly marked as such. 
+# only .PHONY targets, even if they're not explicitly marked as such.
 # The install target does not collect dependencies (other than for forcing
 # things to be built) because it's always considered 'out of date' anway as
 # it's a .PHONY target. Instead, it collects installation commands that will be
@@ -92,4 +93,3 @@ clean:
 # Prevent make from removing any build targets, including intermediate ones
 
 .SECONDARY:	$(CLEAN)
-

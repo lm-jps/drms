@@ -7,8 +7,8 @@ import re
 import os
 import stat
 import filecmp
-import xml.etree.ElementTree as ET
 from subprocess import check_output, CalledProcessError
+import shlex
 
 
 # Constants
@@ -213,19 +213,10 @@ dirstack_$(sp)	:= $(d)
 d		:= $(dir)
 """
 
-RULESSUFFIX = """dir	:= $(d)/example
--include		$(SRCDIR)/$(dir)/Rules.mk
-dir	:= $(d)/cookbook
--include		$(SRCDIR)/$(dir)/Rules.mk
-dir	:= $(d)/myproj
--include		$(SRCDIR)/$(dir)/Rules.mk
-
-# Standard things
+RULESSUFFIX = """# Standard things
 d		:= $(dirstack_$(sp))
 sp		:= $(basename $(sp))
 """
-
-TARGETPREFIX = """$(PROJOBJDIR):\n\t+@[ -d $@ ] || mkdir -p $@"""
 
 ICC_MAJOR = 9
 ICC_MINOR = 0
@@ -353,10 +344,23 @@ def processMakeParam(mDefs, key, val, platDict, machDict):
 
 def processParam(cfgfile, line, regexpQuote, regexp, keymap, defs, cDefs, mDefsGen, mDefsMake, perlConstSection, perlInitSection, pyConstSection, pyInitSection, shConstSection, platDict, machDict, section):
     status = 0
+    parameter_added = {}
+    keyCfgSp  = None
+    val = None
 
     if ''.join(section) == 'defs' or not cfgfile:
-        matchobj = regexp.match(line)
-        if not matchobj is None:
+        if type(line) is str:
+            matchobj = regexp.match(line)
+
+            if not matchobj is None:
+                # We have a key-value line
+                keyCfgSp = matchobj.group(1)
+                val = matchobj.group(2)
+                print(f'herer, key={keyCfgSp}, val={val}')
+        else:
+            keyCfgSp, val = list(line.items())
+
+        if keyCfgSp is not None and val is not None:
             # We have a key-value line
             keyCfgSp = matchobj.group(1)
             val = matchobj.group(2)
@@ -369,7 +373,7 @@ def processParam(cfgfile, line, regexpQuote, regexp, keymap, defs, cDefs, mDefsG
                 elif keyCfgSp == 'LOCAL_CONFIG_SET' or keyCfgSp == 'DRMS_SAMPLE_NAMESPACE':
                     # Ignore parameters that are not useful and shouldn't have been there in the first place. But
                     # they have been released to the world, so we have to account for them.
-                    return bool(0)
+                    return None
                 elif not cfgfile:
                     # Should not be doing mapping for addenda
                     key = keyCfgSp
@@ -385,6 +389,8 @@ def processParam(cfgfile, line, regexpQuote, regexp, keymap, defs, cDefs, mDefsG
 
                 # master defs dictionary
                 defs[key] = val
+
+                parameter_added[key] = val
 
                 # C header file
                 if quote == "q":
@@ -443,56 +449,33 @@ def processParam(cfgfile, line, regexpQuote, regexp, keymap, defs, cDefs, mDefsG
             defs[key] = val
             processMakeParam(mDefsMake, key, val, platDict, machDict)
 
-    return bool(0)
+    return parameter_added
 
 # We have some extraneous line or a newline - ignore.
 
-def processXML(xml, projRules, projTarget):
-    rv = bool(0)
+def process_project_repos(project_includes):
+    print(f'[ process_project_repos ]')
+    error = False
+    ordered_files = []
 
-    # <projects>
-    root = ET.fromstring(xml)
+    # iterate through all proj subdirectories
+    for subdirectory in os.listdir('proj'):
+        stripped_subdirectory = subdirectory.strip()
+        path = os.path.join('proj', stripped_subdirectory)
 
-    # Iterate through each proj child.
-    for proj in root.iter('proj'):
-        # Rules.mk
-        nameElem = proj.find('name')
-        rulesStr = 'dir     := $(d)/' + nameElem.text + '\n-include          $(SRCDIR)/$(dir)/Rules.mk\n'
+        # skip any dir in proj that does not have a Rules.mk file
+        if os.path.isfile(os.path.join(path, 'Rules.mk')):
+            if os.path.isdir(path):
+                ordered_files.append(stripped_subdirectory)
 
-        # make doesn't support logical operations in ifeq conditionals (you can't do ifeq (A AND B)),
-        # so we need to write:
-        #   ifeq (A)
-        #      ifeq (B)
-        #        <do something>
-        #      endif
-        #   endif
+    ordered_files.sort()
 
-        rulesPref = '';
-        rulesSuff = '';
+    for stripped_subdirectory in ordered_files:
+        project_includes.append(f'dir     := $(d)/{stripped_subdirectory}')
 
-        filters = proj.find('filters')
-        if filters is not None:
-            for filter in filters.findall('filter'):
-                rulesPref += 'ifeq ($(' + filter.find('name').text + '),' + filter.find('value').text + ')\n'
-                rulesSuff += 'endif\n'
+    return error
 
-        if len(rulesPref) > 0 and len(rulesSuff) > 0:
-            projRules.extend(list(rulesPref))
-            projRules.extend(list(rulesStr))
-            projRules.extend(list(rulesSuff))
-        else:
-            projRules.extend(list(rulesStr))
-
-        # target.mk
-        subdirs = proj.find('subdirs')
-        if subdirs is not None:
-            for subdir in subdirs.findall('subdir'):
-                targetStr = '\n\t+@[ -d $@/' + nameElem.text + '/' + subdir.text + ' ] || mkdir -p $@/' + nameElem.text + '/' + subdir.text
-                projTarget.extend(list(targetStr))
-
-    return rv
-
-def determineSection(line, regexpStyle, regexpDefs, regexpMake, regexpProjMkRules, regexpProj, regexpProjCfg):
+def determineSection(line, regexpStyle, regexpDefs, regexpMake):
     matchobj = regexpStyle.match(line)
     if matchobj:
         return 'style'
@@ -505,27 +488,13 @@ def determineSection(line, regexpStyle, regexpDefs, regexpMake, regexpProjMkRule
     if not matchobj is None:
         return 'make'
 
-    matchobj = regexpProjMkRules.match(line)
-    if not matchobj is None:
-        return 'projmkrules'
-
-    matchobj = regexpProj.match(line)
-    if not matchobj is None:
-        return 'proj'
-
-    matchobj = regexpProjCfg.match(line)
-    if not matchobj is None:
-        return 'projcfg'
-
     return None
 
 # defs is a dictionary containing all parameters (should they be needed in this script)
-# projCfg is the list containing the configure script content.
-# projMkRules is the list containing the make_basic.mk content.
-# projRules is the list containing the Rules.mk content.
-# projTargert is the list containing the target.mk content.
-def parseConfig(fin, keymap, addenda, defs, cDefs, mDefsGen, mDefsMake, projCfg, projMkRules, projRules, projTarget, perlConstSection, perlInitSection, pyConstSection, pyInitSection, shConstSection):
-    rv = bool(0)
+def parseConfig(fin, keymap, addenda, defs, cDefs, mDefsGen, mDefsMake, project_includes, perlConstSection, perlInitSection, pyConstSection, pyInitSection, shConstSection):
+    error = False
+
+    print(f'addenda is {str(addenda)}')
 
     # Open required config file (config.local)
     try:
@@ -533,9 +502,6 @@ def parseConfig(fin, keymap, addenda, defs, cDefs, mDefsGen, mDefsMake, projCfg,
         regexpStyle = re.compile(r"^__STYLE__")
         regexpDefs = re.compile(r"^__DEFS__")
         regexpMake = re.compile(r"^__MAKE__")
-        regexpProjMkRules = re.compile(r"__PROJ_MK_RULES__")
-        regexpProj = re.compile(r"^__PROJ__")
-        regexpProjCfg = re.compile(r"^__PROJCFG__")
         regexpComm = re.compile(r"^\s*#")
         regexpSp = re.compile(r"^s*$")
         regexpQuote = re.compile(r"^\s*(\w):(.+)")
@@ -547,8 +513,6 @@ def parseConfig(fin, keymap, addenda, defs, cDefs, mDefsGen, mDefsMake, projCfg,
         ignoreKeymap = False
         platDict = {}
         machDict = {}
-
-        xml = None
 
         # Process the parameters in the configuration file
         if not fin is None:
@@ -563,7 +527,7 @@ def parseConfig(fin, keymap, addenda, defs, cDefs, mDefsGen, mDefsMake, projCfg,
                     # Skip whitespace line
                     continue
 
-                newSection = determineSection(line, regexpStyle, regexpDefs, regexpMake, regexpProjMkRules, regexpProj, regexpProjCfg)
+                newSection = determineSection(line, regexpStyle, regexpDefs, regexpMake)
                 if not newSection is None:
                     section = newSection
 
@@ -580,7 +544,7 @@ def parseConfig(fin, keymap, addenda, defs, cDefs, mDefsGen, mDefsMake, projCfg,
                         if line.strip(' \n').lower() == 'new' and keymap:
                             ignoreKeymap = True
 
-                    newSection = determineSection(line, regexpStyle, regexpDefs, regexpMake, regexpProjMkRules, regexpProj, regexpProjCfg)
+                    newSection = determineSection(line, regexpStyle, regexpDefs, regexpMake)
                     if not newSection is None:
                         section = newSection
                     continue
@@ -597,7 +561,7 @@ def parseConfig(fin, keymap, addenda, defs, cDefs, mDefsGen, mDefsMake, projCfg,
                             if not matchobj is None:
                                 break;
                             mDefsMake.extend(list(line))
-                        newSection = determineSection(line, regexpStyle, regexpDefs, regexpMake, regexpProjMkRules, regexpProj, regexpProjCfg)
+                        newSection = determineSection(line, regexpStyle, regexpDefs, regexpMake)
                         if not newSection is None:
                             section = newSection
                         continue
@@ -609,40 +573,6 @@ def parseConfig(fin, keymap, addenda, defs, cDefs, mDefsGen, mDefsMake, projCfg,
                     else:
                         keymapActual = keymap
                     ppRet = processParam(iscfg, line, regexpQuote, regexp, keymapActual, defs, cDefs, mDefsGen, mDefsMake, perlConstSection, perlInitSection, pyConstSection, pyInitSection, shConstSection, platDict, machDict, section)
-
-                    if ppRet:
-                        break
-                elif section == 'projcfg':
-                    # Copy the line ver batim to the projCfg list (configure)
-                    for line in fin:
-                        matchobj = regexpDiv.match(line)
-                        if not matchobj is None:
-                            break;
-                        projCfg.extend(list(line))
-                    newSection = determineSection(line, regexpStyle, regexpDefs, regexpMake, regexpProjMkRules, regexpProj, regexpProjCfg)
-                    if not newSection is None:
-                        section = newSection
-                    continue
-                elif section == 'projmkrules':
-                    # Copy the line ver batim to the projMkRules list (make_basic.mk)
-                    for line in fin:
-                        matchobj = regexpDiv.match(line)
-                        if not matchobj is None:
-                            break;
-                        projMkRules.extend(list(line))
-                    newSection = determineSection(line, regexpStyle, regexpDefs, regexpMake, regexpProjMkRules, regexpProj, regexpProjCfg)
-                    if not newSection is None:
-                        section = newSection
-                    continue
-                elif section == 'proj':
-                    # Must parse xml and use the project-specific information to populate the Rules.mk and target.mk files.
-                    # Collect all xml lines for now, then process after file-read loop.
-                    if xml is None:
-                        # The first time through this section, line is the config.local div, __PROJ__. Discard that.
-                        xml = ''
-                        continue
-                    else:
-                        xml += line
                 else:
                     # Unknown section
                     raise Exception('unknownSection', section)
@@ -656,86 +586,85 @@ def parseConfig(fin, keymap, addenda, defs, cDefs, mDefsGen, mDefsMake, projCfg,
         if msg == 'invalidConfigFile':
             violator = exc.args[1]
             print(violator, file=sys.stderr)
-            rv = bool(1)
+            error = True
         elif msg == 'badKeyMapKey':
             # If we are here, then there was a non-empty keymap, and the parameter came from
             # the configuration file.
             violator = exc.args[1]
             print('Unknown parameter name ' + "'" + violator + "'" + ' in ' + fin.name + '.', file=sys.stderr)
-            rv = bool(1)
+            error = True
         elif msg == 'badQuoteQual':
             # The bad quote qualifier came from the configuration file, not the addenda, since
             # we will have fixed any bad qualifiers in the addenda (which is populated by code).
             violator = exc.args[1]
             print('Unknown quote qualifier ' + "'" + violator + "'" + ' in ' + fin.name + '.', file=sys.stderr)
-            rv = bool(1)
+            error = True
         elif msg == 'missingQuoteQual':
             violator = exc.args[1]
             print('Missing quote qualifier for parameter ' + "'" + violator + "'" + ' in ' + fin.name + '.', file=sys.stderr)
-            rv = bool(1)
+            error = True
         elif msg == 'paramNameTooLong':
             violator = exc.args[1]
             print('Macro name ' + "'" + violator + "' is too long.", file=sys.stderr)
-            rv = bool(1)
+            error = True
         elif msg == 'unknownSection':
             violator = exc.args[1]
             print('Unknown section ' + "'" + violator + "' in configuration file.", file=sys.stderr)
-            rv = bool(1)
+            error = True
         else:
             # re-raise the exception
             raise
 
-    if not rv:
-        if not xml is None:
-            # Process xml.
-            rv = processXML(xml, projRules, projTarget)
+    if not error:
+        if project_includes is not None:
+            error = process_project_repos(project_includes)
 
     # Process addenda - these are parameters that are not configurable and must be set in the
     # NetDRMS build.
-    if not rv:
+    if not error:
         iscfg = bool(0)
-        for key in addenda:
-            item = key + ' ' + addenda[key]
+        for key, val in addenda.items():
+            item = f'{key} {val}'
+            print(f'addenda item {item}')
             if ignoreKeymap:
                 keymapActual = None
             else:
                 keymapActual = keymap
             ppRet = processParam(iscfg, item, regexpQuote, regexp, keymapActual, defs, cDefs, mDefsGen, mDefsMake, perlConstSection, perlInitSection, pyConstSection, pyInitSection, shConstSection, platDict, machDict, 'defs')
-            if ppRet:
-                break;
 
     # Put information collected in platDict and machDict into mDefs. Must do this here, and not in processParam, since
     # we need to parse all platform-specific make variables before grouping them into platform categories.
-    if not rv:
+    if not error:
         for plat in platDict:
             mDefsMake.extend(list('\nifeq ($(JSOC_MACHINE), linux_' + plat.lower() + ')'))
             for var in platDict[plat]:
                 mDefsMake.extend(list('\n' + var + ' = ' + platDict[plat][var]))
             mDefsMake.extend(list('\nendif\n'))
 
-    if not rv:
+    if not error:
         for mach in machDict:
             mDefsMake.extend(list('\nifeq ($(MACHTYPE), ' + mach + ')'))
             for var in machDict[mach]:
                 mDefsMake.extend(list('\n' + var + ' = ' + machDict[mach][var]))
             mDefsMake.extend(list('\nendif\n'))
-    return rv
+    return error
 
-def getMgrUIDLine(defs, uidParam):
-    rv = bool(0)
+def getMgrUIDLine(sums_manager, uidParam):
+    error = False
 
-    cmd = 'id -u ' + defs['SUMS_MANAGER']
-    try:
-        ret = check_output(cmd, shell=True)
-        uidParam['q:SUMS_MANAGER_UID'] = ret.decode("utf-8")
-    except ValueError:
-        print('Unable to run cmd: ' + cmd + '.')
-        rv = bool(1)
-    except CalledProcessError:
-        print('Command ' + "'" + cmd + "'" + ' ran improperly.')
-        rv = bool(1)
+    if sums_manager and len(sums_manager) > 0:
+        cmd = [ 'id', '-u', shlex.quote(sums_manager) ]
+        try:
+            ret = check_output(cmd)
+            uidParam['q:SUMS_MANAGER_UID'] = ret.decode("utf-8")
+        except ValueError:
+            print('Unable to run cmd: ' + cmd + '.')
+            error = True
+        except CalledProcessError:
+            print('Command ' + "'" + cmd + "'" + ' ran improperly.')
+            error = True
 
-    return rv
+    return error
 
 def isVersion(maj, min, majDef, minDef):
     res = 0
@@ -933,49 +862,28 @@ def writeParamsFiles(base, cfile, mfile, pfile, pyfile, shfile, cDefs, mDefsGen,
 
     return rv
 
-def writeProjFiles(pCfile, pMfile, pRfile, pTfile, projCfg, projMkRules, projRules, projTarget):
-    rv = bool(0)
+def write_project_includes(project_includes_file, project_includes):
+    error = False
 
-    try:
-        if projCfg:
-            with open(pCfile, 'w') as cout:
-                # configure
-                print(''.join(projCfg), file=cout)
-
-        if projMkRules:
-            with open(pMfile, 'w') as mout:
-                # make_basic.mk
-                print(PREFIX, file=mout)
-                print(''.join(projMkRules), file=mout)
-
-        if projRules:
-            with open(pRfile, 'w') as rout:
+    if project_includes_file is not None:
+        try:
+            with open(project_includes_file, 'w') as file_out:
                 # Rules.mk
-                print(PREFIX, file=rout)
-                print(''.join(projRules), file=rout)
+                print(PREFIX, file=file_out)
+                print(RULESPREFIX, file=file_out)
 
-        if projTarget:
-            with open(pTfile, 'w') as tout:
-                # target.mk
-                print(PREFIX, file=tout)
-                print(''.join(projTarget), file=tout)
-    except IOError as exc:
-        type, value, traceback = sys.exc_info()
-        print(exc.strerror, file=sys.stderr)
-        print('Unable to open ' + "'" + value.filename + "'.", file=sys.stderr)
-        rv = bool(1)
+                for dir_variable in project_includes:
+                    print(dir_variable, file=file_out)
+                    print(f'-include          $(SRCDIR)/$(dir)/Rules.mk', file=file_out)
 
-    if not rv:
-        if os.path.exists(pCfile):
-            try:
-                os.chmod(pCfile, stat.S_IRWXU | stat.S_IRGRP | stat.S_IROTH)
-            except OSError as exc:
-                type, value, traceback = sys.exc_info()
-                print('Unable to chmod file ' + "'" + value.filename + "'.", file=sys.stderr)
-                print(exc.strerror, file=sys.stderr)
-                rv = bool(1)
+                print('', file=file_out)
+                print(RULESSUFFIX, file=file_out)
 
-    return rv
+        except IOError as exc:
+            print(f'unable to open {project_includes_file} for writing ({str(exc)})', file=sys.stderr)
+            error = True
+
+    return error
 
 def generateSumRmCfg(defs):
     rv = bool(0)
@@ -1087,18 +995,15 @@ def generateSumRmCfg(defs):
 
     return rv
 
-def configureNet(cfgfile, cfile, mfile, pfile, pyfile, shfile, pCfile, pMfile, pRfile, pTfile, base, keymap, createSumRmCfg):
-    rv = bool(0)
+def configureNet(cfgfile, cfile, mfile, pfile, pyfile, shfile, project_includes_file, base, keymap, createSumRmCfg):
+    error = False
 
     defs = {}
     cDefs = list()
     mDefsGen = list()
     mDefsMake = list()
     mDefsComps = list()
-    projCfg = list()
-    projMkRules = list()
-    projRules = list()
-    projTarget = list()
+    project_includes = []
     perlConstSection = list()
     perlInitSection = list()
     pyConstSection = list()
@@ -1122,45 +1027,35 @@ def configureNet(cfgfile, cfile, mfile, pfile, pyfile, shfile, pCfile, pMfile, p
         with open(cfgfile, 'r') as fin:
             # Process configuration parameters
 
-            # Always create a Rules.mk and target.mk, even if no proj XML is provided. All builds should have the proj/example and
-            # proj/cookbook directories. The required make information is in RULESPREFIX, TARGETPREFIX, and RULESSUFFIX. RULESSUFFIX
-            # must be added after the xml has been parsed.
-            projRules.extend(list(RULESPREFIX))
-            projTarget.extend(list(TARGETPREFIX))
-
-            rv = parseConfig(fin, keymap, addenda, defs, cDefs, mDefsGen, mDefsMake, projCfg, projMkRules, projRules, projTarget, perlConstSection, perlInitSection, pyConstSection, pyInitSection, shConstSection)
-            if not rv:
-                projRules.extend(RULESSUFFIX)
-
+            error = parseConfig(fin, keymap, addenda, defs, cDefs, mDefsGen, mDefsMake, project_includes, perlConstSection, perlInitSection, pyConstSection, pyInitSection, shConstSection)
+            if not error:
                 # Must add a parameter for the SUMS_MANAGER UID (for some reason). This must be done after the
                 # config file is processed since an input to getMgrUIDLine() is one of the config file's
                 # parameter values.
 
                 # CANNOT run this unless sunroom2 home directories are accessible
                 uidParam = {}
-                rv = getMgrUIDLine(defs, uidParam)
-
-                if rv == bool(0):
-                    rv = parseConfig(None, keymap, uidParam, defs, cDefs, mDefsGen, None, projCfg, projMkRules, projRules, projTarget, perlConstSection, perlInitSection, pyConstSection, pyInitSection, shConstSection)
+                error = getMgrUIDLine(defs.get('SUMS_MANAGER', None), uidParam)
+                if not error and len(uidParam) > 0:
+                    error = parseConfig(None, keymap, uidParam, defs, cDefs, mDefsGen, None, None, perlConstSection, perlInitSection, pyConstSection, pyInitSection, shConstSection)
 
                 # ignore the error where the SUMS manager UID cannot be determined
-                rv = 0
+                error = False
 
             # Configure the compiler-selection make variables.
-            if not rv:
-                rv = configureComps(defs, mDefsComps)
+            if not error:
+                error = configureComps(defs, mDefsComps)
 
             # Write out the parameter files.
-            if not rv:
-                rv = writeParamsFiles(base, cfile, mfile, pfile, pyfile, shfile, cDefs, mDefsGen, mDefsMake, mDefsComps, perlConstSection, perlInitSection, pyConstSection, pyInitSection, shConstSection)
+            if not error:
+                error = writeParamsFiles(base, cfile, mfile, pfile, pyfile, shfile, cDefs, mDefsGen, mDefsMake, mDefsComps, perlConstSection, perlInitSection, pyConstSection, pyInitSection, shConstSection)
 
-            # Write out the project-specific make files (make_basic.mk, Rules.mk, and target.mk).
-            if not rv:
-                rv = writeProjFiles(pCfile, pMfile, pRfile, pTfile, projCfg, projMkRules, projRules, projTarget)
+            if not error:
+                error = write_project_includes(project_includes_file, project_includes)
 
             # Write out the sum_rm.cfg file.
-            if not rv and createSumRmCfg:
-                rv = generateSumRmCfg(defs)
+            if not error and createSumRmCfg:
+                error = generateSumRmCfg(defs)
     except IOError as exc:
         print(exc.strerror, file=sys.stderr)
         print('Unable to read configuration file ' + cfgfile + '.', file=sys.stderr)
@@ -1173,34 +1068,31 @@ def configureNet(cfgfile, cfile, mfile, pfile, pyfile, shfile, pCfile, pMfile, p
 
         if type == 'unexpectedIccRet':
             print('icc -V returned this unexpected message:\n' + msg, file=sys.stderr)
-            rv = bool(1)
+            error = True
         elif type == 'unexpectedGccRet':
             print('gcc -v returned this unexpected message:\n' + msg, file=sys.stderr)
-            rv = bool(1)
+            error = True
         elif type == 'unexpectedIfortRet':
             print('ifort -V returned this unexpected message:\n' + msg, file=sys.stderr)
-            rv = bool(1)
+            error = True
         elif type == 'unexpectedGfortranRet':
             print('gfortran -v returned this unexpected message:\n' + msg, file=sys.stderr)
-            rv = bool(1)
+            error = True
         else:
             # re-raise the exception
             raise
 
-    return rv
+    return error
 
-def configureSdp(cfgfile, cfile, mfile, pfile, pyfile, shfile, pCfile, pMfile, pRfile, pTfile, base):
-    rv = bool(0)
+def configureSdp(cfgfile, cfile, mfile, pfile, pyfile, shfile, project_includes_file, base):
+    error = False
 
     defs = {}
     cDefs = list()
     mDefsGen = list()
     mDefsMake = list()
-    projCfg = list()
-    projMkRules = list()
-    projRules = list()
-    projTarget = list()
     mDefsComps = list()
+    project_includes = []
     perlConstSection = list()
     perlInitSection = list()
     pyConstSection = list()
@@ -1220,38 +1112,28 @@ def configureSdp(cfgfile, cfile, mfile, pfile, pyfile, shfile, pCfile, pMfile, p
 
     try:
         with open(cfgfile, 'r') as fin:
+            error = parseConfig(fin, None, addenda, defs, cDefs, mDefsGen, mDefsMake, project_includes, perlConstSection, perlInitSection, pyConstSection, pyInitSection, shConstSection)
 
-            # Always create a Rules.mk and target.mk, even if no proj XML is provided. All builds should have the proj/example and
-            # proj/cookbook directories. The required make information is in RULESPREFIX, TARGETPREFIX, and RULESSUFFIX. RULESSUFFIX
-            # must be added after the xml has been parsed.
-            projRules.extend(list(RULESPREFIX))
-            projTarget.extend(list(TARGETPREFIX))
-
-            rv = parseConfig(fin, None, addenda, defs, cDefs, mDefsGen, mDefsMake, projCfg, projMkRules, projRules, projTarget, perlConstSection, perlInitSection, pyConstSection, pyInitSection, shConstSection)
-
-            if not rv:
-                projRules.extend(RULESSUFFIX)
-
+            if not error:
                 # Must add a parameter for the SUMS_MANAGER UID (for some reason)
                 uidParam = {}
-                rv = getMgrUIDLine(defs, uidParam)
-                if not rv:
-                    rv = parseConfig(None, None, uidParam, defs, cDefs, mDefsGen, None, projCfg, projMkRules, projRules, projTarget, perlConstSection, perlInitSection, pyConstSection, pyInitSection, shConstSection)
+                error = getMgrUIDLine(defs.get('SUMS_MANAGER', None), uidParam)
+                if not error and len(uidParam) > 0:
+                    error = parseConfig(None, None, uidParam, defs, cDefs, mDefsGen, None, None, perlConstSection, perlInitSection, pyConstSection, pyInitSection, shConstSection)
 
                 # ignore the error where the SUMS manager UID cannot be determined
-                rv = 0
+                error = False
 
                 # Configure the compiler-selection make variables.
-                if not rv:
-                    rv = configureComps(defs, mDefsComps)
+                if not error:
+                    error = configureComps(defs, mDefsComps)
 
                 # Write out the parameter files.
-                if not rv:
-                    rv = writeParamsFiles(base, cfile, mfile, pfile, pyfile, shfile, cDefs, mDefsGen, mDefsMake, mDefsComps, perlConstSection, perlInitSection, pyConstSection, pyInitSection, shConstSection)
+                if not error:
+                    error = writeParamsFiles(base, cfile, mfile, pfile, pyfile, shfile, cDefs, mDefsGen, mDefsMake, mDefsComps, perlConstSection, perlInitSection, pyConstSection, pyInitSection, shConstSection)
 
-                # Write out the project-specific make files (make_basic.mk, Rules.mk, and target.mk).
-                if not rv:
-                    rv = writeProjFiles(pCfile, pMfile, pRfile, pTfile, projCfg, projMkRules, projRules, projTarget)
+                if not error:
+                    error = write_project_includes(project_includes_file, project_includes)
 
                 # At Stanford, skip the creation of the sum_rm configuration file. config.local will still
                 # have the SUMRM parameters, but they will not be used.
@@ -1268,24 +1150,24 @@ def configureSdp(cfgfile, cfile, mfile, pfile, pyfile, shfile, pCfile, pMfile, p
         if type == 'unexpectedIccRet':
             msg = exc.args[1]
             print('icc -V returned this unexpected message:\n' + msg, file=sys.stderr)
-            rv = bool(1)
+            error = True
         elif type == 'unexpectedGccRet':
             msg = exc.args[1]
             print('gcc -v returned this unexpected message:\n' + msg, file=sys.stderr)
-            rv = bool(1)
+            error = True
         elif type == 'unexpectedIfortRet':
             msg = exc.args[1]
             print('ifort -V returned this unexpected message:\n' + msg, file=sys.stderr)
-            rv = bool(1)
+            error = True
         elif type == 'unexpectedGfortranRet':
             msg = exc.args[1]
             print('gfortran -v returned this unexpected message:\n' + msg, file=sys.stderr)
-            rv = bool(1)
+            error = True
         else:
             # re-raise the exception
             raise
 
-    return rv
+    return error
 
 # Beginning of program
 rv = RET_SUCCESS
@@ -1315,10 +1197,7 @@ if rv == RET_SUCCESS:
     pfile = optD['dir'] + '/' + optD['base'] + '.pm'
     pyfile = optD['dir'] + '/' + optD['base'] + '.py'
     shfile = optD['dir'] + '/' + optD['base'] + '.sh'
-    pCfile = optD['dir'] + '/configure'
-    pMfile = optD['dir'] + '/make_basic.mk'
-    pRfile = optD['dir'] + '/Rules.mk'
-    pTfile = optD['dir'] + '/target.mk'
+    project_includes_file = os.path.join(optD['dir'], 'includes.mk')
 
     if net:
         try:
@@ -1345,11 +1224,11 @@ if rv == RET_SUCCESS:
 
         # We also need to set the UID of the SUMS manager. We have the name of the
         # SUMS manager (it is in the configuration file)
-        configureNet(NET_CFG, cfile, mfile, pfile, pyfile, shfile, pCfile, pMfile, pRfile, pTfile, optD['base'], keymap, 'server' in optD)
+        configureNet(NET_CFG, cfile, mfile, pfile, pyfile, shfile, project_includes_file, optD['base'], keymap, 'server' in optD)
     else:
         # A Stanford user can override the parameters in configsdp.txt by copying that file to config.local,
         # and then editing config.local. So, if config.local exists, use that.
         if os.path.isfile(cdir + '/' + NET_CFG):
-            configureSdp(NET_CFG, cfile, mfile, pfile, pyfile, shfile, pCfile, pMfile, pRfile, pTfile, optD['base'])
+            configureSdp(NET_CFG, cfile, mfile, pfile, pyfile, shfile, project_includes_file, optD['base'])
         else:
-            configureSdp(SDP_CFG, cfile, mfile, pfile, pyfile, shfile, pCfile, pMfile, pRfile, pTfile, optD['base'])
+            configureSdp(SDP_CFG, cfile, mfile, pfile, pyfile, shfile, project_includes_file, optD['base'])

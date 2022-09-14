@@ -313,8 +313,8 @@ endif
         find ../base/drms/scripts -mindepth 1 -path \*CVS -prune -o -print | ${PERLBIN} -MFile::Basename -n -e 'my($bn) = basename($_); chomp($bn); my($path) = $_; chomp($path); if (!(-e $bn)) { `ln -s $_`; if ($? >> 8 == 0) { print "   " . $path . " OK\n"; } else { print "   " . $path . " ERROR - could not create link\n"; } }'
 
         # Project-specific scripts - these won't show up if you don't have the project source.
-        if (-x ${LOCALIZATIONDIR}/configure) then
-            ${LOCALIZATIONDIR}/configure
+        find ../proj/lev0/scripts -mindepth 1 -path \*CVS -prune -o -print | ${PERLBIN} -MFile::Basename -n -e 'my($bn) = basename($_); chomp($bn); my($path) = $_; chomp($path); if (!(-e $bn)) { `ln -s $_`; if ($? >> 8 == 0) { print "   " . $path . " OK\n"; } else { print "   " . $path . " ERROR - could not create link\n"; } }'
+
         endif
         cd ..
     endif

@@ -24,12 +24,16 @@ all:    $(PROJOBJDIR) $(OBJDIR)
 MAKETARGET = $(MAKE) --no-print-directory -C $@ -f $(WORKINGDIR)/Makefile \
 		SRCDIR=$(WORKINGDIR) $(MAKECMDGOALS)
 
-.PHONY: $(PROJOBJDIR) $(OBJDIR) 
+.PHONY: $(PROJOBJDIR) $(OBJDIR)
+
+$(PROJOBJDIR)::
+	+@[ -d $@ ] || mkdir -p $@
 
 # Create the project-specific directories too, if they exist.
-# This supplementary target.mk file is built by the configure script, using either 
+# This supplementary target.mk file is built by the configure script, using either
 # configsdp.txt (for a JSOC-SDP checkout) or a custom configuration file as input.
--include $(WORKINGDIR)/$(LOCALIZATIONDIR)/target.mk
+PATH_FILES := $(shell find $(WORKINGDIR)/proj -name paths.mk -printf "%p ")
+-include $(PATH_FILES)
 
 $(OBJDIR):
 	+@[ -d bin/$(MACH) ] || mkdir -p bin/$(MACH)
@@ -70,9 +74,6 @@ $(OBJDIR):
 	+@[ -d $@/base/sums/libs/api ] || mkdir -p $@/base/sums/libs/api
 	+@[ -d $@/base/sums/libs/pg ] || mkdir -p $@/base/sums/libs/pg
 	+@[ -d $@/base/util/apps ] || mkdir -p $@/base/util/apps
-	+@[ -d $@/proj/example/apps ] || mkdir -p $@/proj/example/apps
-	+@[ -d $@/proj/myproj/apps ] || mkdir -p $@/proj/myproj/apps
-	+@[ -d $@/proj/cookbook ] || mkdir -p $@/proj/cookbook
 	+@$(MAKETARGET)
 
 # These rules keep make from trying to use the match-anything rule below to
@@ -99,4 +100,3 @@ Makefile : ;
 .PHONY: clean
 clean:
 	rm -rf $(OBJDIR); rm -rf bin/$(MACH); rm -rf lib/$(MACH)
-
