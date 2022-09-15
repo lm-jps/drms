@@ -356,7 +356,6 @@ def processParam(cfgfile, line, regexpQuote, regexp, keymap, defs, cDefs, mDefsG
                 # We have a key-value line
                 keyCfgSp = matchobj.group(1)
                 val = matchobj.group(2)
-                print(f'herer, key={keyCfgSp}, val={val}')
         else:
             keyCfgSp, val = list(line.items())
 
@@ -458,20 +457,21 @@ def process_project_repos(project_includes):
     error = False
     ordered_files = []
 
-    # iterate through all proj subdirectories
-    for subdirectory in os.listdir('proj'):
-        stripped_subdirectory = subdirectory.strip()
-        path = os.path.join('proj', stripped_subdirectory)
+    if os.path.exists('proj'):
+        # iterate through all proj subdirectories
+        for subdirectory in os.listdir('proj'):
+            stripped_subdirectory = subdirectory.strip()
+            path = os.path.join('proj', stripped_subdirectory)
 
-        # skip any dir in proj that does not have a Rules.mk file
-        if os.path.isfile(os.path.join(path, 'Rules.mk')):
-            if os.path.isdir(path):
-                ordered_files.append(stripped_subdirectory)
+            # skip any dir in proj that does not have a Rules.mk file
+            if os.path.isfile(os.path.join(path, 'Rules.mk')):
+                if os.path.isdir(path):
+                    ordered_files.append(stripped_subdirectory)
 
-    ordered_files.sort()
+        ordered_files.sort()
 
-    for stripped_subdirectory in ordered_files:
-        project_includes.append(f'dir     := $(d)/{stripped_subdirectory}')
+        for stripped_subdirectory in ordered_files:
+            project_includes.append(f'dir     := $(d)/{stripped_subdirectory}')
 
     return error
 
@@ -493,8 +493,6 @@ def determineSection(line, regexpStyle, regexpDefs, regexpMake):
 # defs is a dictionary containing all parameters (should they be needed in this script)
 def parseConfig(fin, keymap, addenda, defs, cDefs, mDefsGen, mDefsMake, project_includes, perlConstSection, perlInitSection, pyConstSection, pyInitSection, shConstSection):
     error = False
-
-    print(f'addenda is {str(addenda)}')
 
     # Open required config file (config.local)
     try:
@@ -625,7 +623,6 @@ def parseConfig(fin, keymap, addenda, defs, cDefs, mDefsGen, mDefsMake, project_
         iscfg = bool(0)
         for key, val in addenda.items():
             item = f'{key} {val}'
-            print(f'addenda item {item}')
             if ignoreKeymap:
                 keymapActual = None
             else:
