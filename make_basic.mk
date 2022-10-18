@@ -26,8 +26,13 @@ endif
 #
 COMPILER = icc
 FCOMPILER = ifort
+ifeq ($(JSOC_MACHINE), linux_avx2)
+MPICOMPILER = mpiicc
+MPIFCOMPILER = mpiifort
+else
 MPICOMPILER = $(MPI_PATH)/mpicc
 MPIFCOMPILER = $(MPI_PATH)/mpif90
+endif
 
 # can set through drmsparams.mk or through environment
 ifneq ($(JSOC_COMPILER),)
@@ -126,10 +131,17 @@ GSLL = -L$(GSL_LIBS)
 GSLLIBS = $(GSLL) -lgsl
 
 # FFTW
+ifeq ($(JSOC_MACHINE), linux_avx2)
+FFTWH =
+FFTWL =
+FFTW3LIBS =
+FFTW3FLIBS =
+else
 FFTWH = -I$(FFTW_INCS)
 FFTWL = -L$(FFTW_LIBS)
 FFTW3LIBS = $(FFTWL) -lfftw3
 FFTW3FLIBS = $(FFTWL) -lfftw3f
+endif
 
 # TAR
 LIBTARH = -I$(TAR_INCS)
@@ -222,9 +234,16 @@ endif
 #
 # Link flags for all targets
 #
+ifeq ($(JSOC_MACHINE), linux_avx2)
+LL_ALL		= $(SYSLIBS) -lcurl -ltirpc
+else
 LL_ALL		= $(SYSLIBS) -lcurl
+endif
 
-ifeq ($(JSOC_MACHINE), linux_avx)
+ifeq ($(JSOC_MACHINE), linux_avx2)
+GCC_LF_ALL	= $(STATIC) -Wl,--copy-dt-needed-entries
+ICC_LF_ALL	= $(STATIC) -qopenmp -Wl,-export-dynamic -Wl,--copy-dt-needed-entries
+else ifeq ($(JSOC_MACHINE), linux_avx)
 GCC_LF_ALL	= $(STATIC) -Wl,--copy-dt-needed-entries
 ICC_LF_ALL	= -diag-disable 10237 $(STATIC) -openmp -static-intel -Wl,-export-dynamic -Wl,--copy-dt-needed-entries
 else
@@ -234,7 +253,11 @@ endif
 
 # Fortran global LINK flags
 ifeq ($(FCOMPILER), ifort)
+ifeq ($(JSOC_MACHINE), linux_avx2)
+F_LF_ALL        = -nofor-main -qopenmp -Wl,-export-dynamic
+else
 F_LF_ALL	= -diag-disable 10237 -nofor-main  -openmp -static-intel -Wl,-export-dynamic
+endif
 endif
 #***********************************************************************************************#
 
@@ -243,7 +266,11 @@ endif
 # GLOBAL COMPILE FLAGS
 #
 GCC_CF_GCCCOMP  = -DGCCCOMP
+ifeq ($(JSOC_MACHINE), linux_avx2)
+ICC_CF_ICCCOMP  = -DICCCOMP -qopenmp
+else
 ICC_CF_ICCCOMP  = -DICCCOMP -openmp
+endif
 
 # can't figure out how to get stupid make to do if/else if/else
 ifeq ($(DEBUG), 0)
@@ -252,6 +279,10 @@ ifeq ($(DEBUG), 0)
   ifeq ($(JSOC_MACHINE), linux_x86_64)
     ICC_CF_ALL = -I$(SRCDIR)/base/include -std=c99 -D_GNU_SOURCE $(ICC_WARN) $(ICC_CF_ICCCOMP) $(CUSTOMSW) $(GLOBALSW) -DNDEBUG
     GCC_CF_ALL	= -I$(SRCDIR)/base/include -std=gnu99 -O2 -march=opteron $(GCC_WARN) $(GCC_CF_GCCCOMP) $(CUSTOMSW) $(GLOBALSW)
+  endif
+
+  ifeq ($(JSOC_MACHINE), linux_avx2)
+    ICC_CF_ALL = -diag-disable=cpu-dispatch,warn,10441 -axcore-avx512,core-avx2 -I/usr/include/tirpc -I$(SRCDIR)/base/include -std=c99 -D_GNU_SOURCE $(ICC_WARN) $(ICC_CF_ICCCOMP) $(CUSTOMSW) $(GLOBALSW) -DNDEBUG
   endif
 
   ifeq ($(JSOC_MACHINE), linux_avx)
@@ -273,6 +304,12 @@ else
 endif
 
 # Fortran global COMPILE flags
+ifeq ($(JSOC_MACHINE), linux_avx2)
+  ifeq ($(FCOMPILER), ifort)
+    F_CF_ALL := -diag-disable=cpu-dispatch,warn -axcore-avx512,core-avx2 -qopenmp
+  endif
+endif
+
 ifeq ($(JSOC_MACHINE), linux_avx)
   ifeq ($(FCOMPILER), ifort)
     F_CF_ALL := -xavx -openmp

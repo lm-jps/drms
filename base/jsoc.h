@@ -23,6 +23,8 @@
 #include <string.h>
 #include <strings.h>
 #include <sys/times.h>
+#include <sys/time.h>
+#include <sys/resource.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <time.h>

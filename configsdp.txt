@@ -173,6 +173,7 @@ CFITSIO_LIB             cfitsio
 POSTGRES_INCS:X86_64    /usr/include
 POSTGRES_INCS:IA32      /usr/include
 POSTGRES_INCS:AVX       /usr/include
+POSTGRES_INCS:AVX2      /usr/include
 POSTGRES_INCS:IA64      /usr/include/pgsql
 POSTGRES_INCS:j1       /usr/include/pgsql
 POSTGRES_INCS:d02      /usr/include/pgsql
@@ -183,6 +184,7 @@ POSTGRES_INCS:dcs      /usr/include/pgsql
 POSTGRES_LIBS:X86_64    /usr/lib64
 POSTGRES_LIBS:IA32      /usr/lib
 POSTGRES_LIBS:AVX       /usr/lib64
+POSTGRES_LIBS:AVX2      /usr/lib64
 POSTGRES_LIBS:IA64      /usr/lib
 POSTGRES_LIBS:j1       /usr/lib64
 POSTGRES_LIBS:d02      /usr/lib
@@ -193,6 +195,7 @@ POSTGRES_LIBS:dcs      /usr/lib64
 CFITSIO_INCS:X86_64     /home/jsoc/include
 CFITSIO_INCS:IA32       /home/jsoc/include
 CFITSIO_INCS:AVX        /home/jsoc/avx/include
+CFITSIO_INCS:AVX2       /home/jsoc/avx2/include
 CFITSIO_INCS:IA64       /home/jsoc/include
 CFITSIO_INCS:j1         /home/jsoc/include
 CFITSIO_INCS:d02        __CFITSIO_NOT_INSTALLED__
@@ -203,6 +206,7 @@ CFITSIO_INCS:dcs        /home/jsoc/include
 CFITSIO_LIBS:X86_64     /home/jsoc/lib/linux-x86_64
 CFITSIO_LIBS:IA32       /home/jsoc/lib/linux-ia32
 CFITSIO_LIBS:AVX        /home/jsoc/avx/lib
+CFITSIO_LIBS:AVX2       /home/jsoc/avx2/lib
 CFITSIO_LIBS:IA64       /home/jsoc/lib/linux-ia64
 CFITSIO_LIBS:j1         /home/jsoc/lib/linux-x86_64
 CFITSIO_LIBS:d02        __CFITSIO_NOT_INSTALLED__
@@ -213,51 +217,63 @@ CFITSIO_LIBS:dcs        /home/jsoc/lib/linux-x86_64
 FFTW_INCS:X86_64        /home/jsoc/include
 FFTW_INCS:IA32          /home/jsoc/include
 FFTW_INCS:AVX           /home/jsoc/avx/include
+FFTW_INCS:AVX2		/dev/null
 FFTW_INCS:IA64          /home/jsoc/include
 
 FFTW_LIBS:X86_64        /home/jsoc/lib/linux-x86_64
 FFTW_LIBS:IA32          /home/jsoc/lib/linux-ia32
 FFTW_LIBS:AVX           /home/jsoc/avx/lib
+FFTW_LIBS:AVX2		/dev/null
 FFTW_LIBS:IA64          /home/jsoc/lib/linux-x86_64
 
 GSL_INCS:X86_64         /home/jsoc/include
 GSL_INCS:IA32           /home/jsoc/include
 GSL_INCS:AVX            /home/jsoc/avx/include
+GSL_INCS:AVX2		/home/jsoc/avx2/include
 GSL_INCS:IA64           /home/jsoc/include
 
 GSL_LIBS:X86_64         /home/jsoc/lib/linux-x86_64
 GSL_LIBS:IA32           /home/jsoc/lib/linux-ia32
 GSL_LIBS:AVX            /home/jsoc/avx/lib
+GSL_LIBS:AVX2		/home/jsoc/avx2/lib
 GSL_LIBS:IA64           /home/jsoc/lib/linux-x86_64
 
 MPI_INCS:X86_64         /home/jsoc/mpich2/include
 MPI_INCS:IA32
 MPI_INCS:AVX            /home/jsoc/avx/include
+MPI_INCS:AVX2         	/dev/null
 MPI_INCS:IA64
 
 MPI_LIBS:X86_64         /home/jsoc/mpich2/lib
 MPI_LIBS:AVX            /home/jsoc/avx/lib
+MPI_LIBS:AVX2           /dev/null
 
 MPI_PATH:X86_64         /home/jsoc/mpich2/bin
 MPI_PATH:AVX            /home/jsoc/avx/bin
+MPI_PATH:AVX2           /dev/null
 
 TAR_INCS:X86_64         /home/jsoc/include
 TAR_INCS:IA32           /home/jsoc/include
 TAR_INCS:AVX            /home/jsoc/avx/include
+TAR_INCS:AVX2           /home/jsoc/avx/include
 TAR_INCS:IA64           /home/jsoc/include
 
 TAR_LIBS:X86_64         /home/jsoc/lib/linux-x86_64
 TAR_LIBS:IA32           /home/jsoc/lib/linux-ia32
 TAR_LIBS:AVX            /home/jsoc/lib/linux_avx
+TAR_LIBS:AVX2           /home/jsoc/lib/linux_avx
 TAR_LIBS:IA64           /home/jsoc/lib/linux-ia64
 
 PY_LIB                  python3.5m
 PY_INCS:X86_64          /home/jsoc/anaconda3/include/python3.5m
 PY_INCS:AVX             /home/jsoc/anaconda3/include/python3.5m
+PY_INCS:AVX2            /home/jsoc/anaconda3/include/python3.5m
 PY_LIBS:X86_64          /home/jsoc/anaconda3/lib
 PY_LIBS:AVX             /home/jsoc/anaconda3/lib
+PY_LIBS:AVX2            /home/jsoc/anaconda3/lib
 PY_HOME:X86_64          /home/jsoc/anaconda3
 PY_HOME:AVX             /home/jsoc/anaconda3
+PY_HOME:AVX2            /home/jsoc/anaconda3
 
 MEX_CC                  /usr/bin/gcc
 
